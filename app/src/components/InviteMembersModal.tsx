@@ -128,23 +128,15 @@ export default function InviteMembersModal({ visible, onClose, churchName, churc
     const phoneDisplay = rawDigits.length >= 10 ? rawDigits.slice(-10) : contactPhone;
     const phoneText = phoneDisplay ? `: ${phoneDisplay}` : '';
     const nameGreeting = contactName && contactName.trim() ? contactName.trim() : 'Brother/Sister';
-
-    const churchCodeParam = encodeURIComponent(churchCode || '');
-    const churchInviteLink = `https://wechristian.app/invite?code=${churchCodeParam}`;
-    const playStoreLink = `https://play.google.com/store/apps/details?id=com.wechristian.app&referrer=${churchCodeParam}`;
+    const playStoreLink = `https://play.google.com/store/apps/details?id=com.rhemaglobalministries.app`;
 
     return `Greetings in Jesus' Name! 🙏✨
 
 Dear ${nameGreeting},
 
-You are warmly invited to join our ${churchName} Mobile Application! ⛪
+You are warmly invited to join the ${churchName || 'Rhema Global Ministries'} Mobile Application! ⛪
 
 Your church profile has already been registered for you, so you DO NOT need to sign up. Simply download the app and Sign In directly with your registered mobile number${phoneText}.
-
-🏛️ Church Code: ${churchCode || 'Provided by Church'}
-
-🔗 Church Invitation Link:
-${churchInviteLink}
 
 📲 Download App from Google Play Store:
 ${playStoreLink}

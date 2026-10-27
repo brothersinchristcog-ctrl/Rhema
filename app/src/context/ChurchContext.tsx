@@ -3,14 +3,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { firestore } from '../services/firebaseConfig';
 import ChurchService, { ChurchDetails } from '../services/ChurchService';
 import { useAuth } from './AuthContext';
+import { RHEMA_CHURCH_ID, RHEMA_CHURCH_NAME, RHEMA_DEFAULT_THEME } from '../constants/ChurchConfig';
 
 interface ChurchContextType {
   activeChurch: ChurchDetails | null;
-  churchId: string | null;
+  churchId: string;
   setChurchId: (id: string) => Promise<void>;
   setActiveChurch: (church: ChurchDetails | null) => void;
   loading: boolean;
-  // Multi-branch impersonation
+  // Multi-branch impersonation (maintained for compatibility)
   originalChurchId: string | null;
   isImpersonating: boolean;
   impersonatedBranchName: string | null;
@@ -18,25 +19,46 @@ interface ChurchContextType {
   stopImpersonation: () => Promise<void>;
 }
 
+const DEFAULT_RHEMA_DETAILS: ChurchDetails = {
+  id: RHEMA_CHURCH_ID,
+  name: RHEMA_CHURCH_NAME,
+  churchCode: 'RHEMA',
+  subdomain: 'rhema',
+  contactEmail: 'contact@rhemaglobalministries.org',
+  contactPhone: '+1234567890',
+  tagline: 'Transforming Lives Through The Word of God',
+  aboutUs: 'Welcome to Rhema Global Ministries. A Bible-believing, Christ-centered ministry.',
+  isActive: true,
+  theme: RHEMA_DEFAULT_THEME,
+  useWeChristianDailyPromise: true,
+  whatsappIntegrationEnabled: false,
+  features: {
+    hasSermons: true,
+    hasDailyPromises: true,
+    hasWorshipSongs: true,
+    hasGiving: true,
+    hasWhatsAppAutomation: false,
+  },
+};
+
 const ChurchContext = createContext<ChurchContextType | undefined>(undefined);
 
 export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { member } = useAuth();
-  const [activeChurch, setActiveChurch] = useState<ChurchDetails | null>(null);
-  const [churchId, setChurchIdState] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [activeChurch, setActiveChurch] = useState<ChurchDetails | null>(DEFAULT_RHEMA_DETAILS);
+  const [churchId, setChurchIdState] = useState<string>(RHEMA_CHURCH_ID);
+  const [loading, setLoading] = useState(false);
 
   // Multi-branch impersonation state
   const [originalChurchId, setOriginalChurchId] = useState<string | null>(null);
   const [impersonatedBranchName, setImpersonatedBranchName] = useState<string | null>(null);
   const isImpersonating = !!originalChurchId;
 
-  // Real-time listener for active church document so changes (service timings, theme, etc.) reflect immediately
+  // Real-time listener for Rhema Global Ministries church document
   useEffect(() => {
-    if (!churchId) return;
     const unsub = firestore()
       .collection('churches')
-      .doc(churchId)
+      .doc(RHEMA_CHURCH_ID)
       .onSnapshot(
         (docSnap) => {
           if (docSnap && docSnap.exists()) {
@@ -48,64 +70,27 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           console.warn('[ChurchContext] onSnapshot error:', error);
         }
       );
+
+    // Initial sync with FirestoreService and Notifications
+    require('../services/FirestoreService').default.setChurchId(RHEMA_CHURCH_ID).catch(() => {});
+    require('../services/NotificationService').default.subscribeToChurchTopic(RHEMA_CHURCH_ID).catch(() => {});
+
     return () => unsub();
-  }, [churchId]);
-
-  // When auth state changes, if the member has a churchId, use it.
-  useEffect(() => {
-    if (member && member.churchId) {
-      setChurchId(member.churchId);
-    }
-  }, [member]);
-
-  // Load selected churchId from cache on boot if not logged in
-  useEffect(() => {
-    const loadCachedChurch = async () => {
-      try {
-        const cachedId = await AsyncStorage.getItem('@cached_church_id');
-        if (cachedId && !churchId) {
-          await setChurchId(cachedId);
-        }
-      } catch (e) {
-        // ignore
-      } finally {
-        if (!churchId) {
-          setLoading(false);
-        }
-      }
-    };
-    if (!member) {
-      loadCachedChurch();
-    }
-  }, [member]);
+  }, []);
 
   const setChurchId = async (id: string) => {
-    setLoading(true);
+    // Single church app: churchId is locked to Rhema Global Ministries
+    const targetId = id || RHEMA_CHURCH_ID;
     try {
-      const details = await ChurchService.getChurchDetails(id);
+      const details = await ChurchService.getChurchDetails(targetId);
       if (details) {
-        if (churchId && churchId !== id) {
-          await require('../services/NotificationService').default.unsubscribeFromChurchTopic(churchId);
-        }
         setActiveChurch(details);
-        setChurchIdState(id);
-        await AsyncStorage.setItem('@cached_church_id', id);
-        // Sync with FirestoreService singleton
-        await require('../services/FirestoreService').default.setChurchId(id);
-        await require('../services/NotificationService').default.subscribeToChurchTopic(id);
-      } else {
-        console.warn('Church not found for id:', id);
-        if (churchId) {
-          await require('../services/NotificationService').default.unsubscribeFromChurchTopic(churchId);
-        }
-        setActiveChurch(null);
-        setChurchIdState(null);
-        await AsyncStorage.removeItem('@cached_church_id');
+        setChurchIdState(targetId);
+        await AsyncStorage.setItem('@cached_church_id', targetId);
+        await require('../services/FirestoreService').default.setChurchId(targetId);
       }
     } catch (e) {
       console.error('Error setting churchId', e);
-    } finally {
-      setLoading(false);
     }
   };
 

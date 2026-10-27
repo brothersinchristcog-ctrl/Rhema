@@ -184,12 +184,13 @@ export default function App() {
   }, [slideAnim]);
 
   const linking = {
-    prefixes: ['wechristian://', 'https://wechristian.app'],
+    prefixes: ['rhemaglobal://', 'https://rhemaglobalministries.org', 'wechristian://', 'https://wechristian.app'],
     config: {
       screens: {
         Auth: {
           screens: {
-            ChurchSelection: 'invite',
+            Login: 'login',
+            SignUp: 'signup',
           }
         }
       }
@@ -247,7 +248,7 @@ export default function App() {
             </View>
             <Text style={styles.updateTitle}>Update Available!</Text>
             <Text style={styles.updateText}>
-              A new version of We Christian is available. Please update to get the latest features and improvements.
+              A new version of Rhema Global Ministries is available. Please update to get the latest features and improvements.
             </Text>
             <TouchableOpacity 
               style={styles.updateButton} 
@@ -255,7 +256,7 @@ export default function App() {
                 // Link to Play Store / App Store
                 const link = Platform.OS === 'ios' 
                   ? 'itms-apps://itunes.apple.com/app/idYOUR_APP_ID' 
-                  : 'market://details?id=com.wechristian.app';
+                  : 'market://details?id=com.rhemaglobalministries.app';
                 Linking.openURL(link).catch(() => {
                   alert('Please open your app store to update.');
                 });

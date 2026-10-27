@@ -86,8 +86,10 @@ class AttendanceService {
 
       // Strict Rule 1: Must be an official Church Attendance payload or Member payload
       const isOfficialAction = data && typeof data === 'object' && (
+        data.action === 'Rhema_Attendance' ||
         data.action === 'WeChristian_Attendance' ||
         data.action === 'ChurchOfGod_Attendance' ||
+        data.action === 'Rhema_Member' ||
         data.action === 'WeChristian_Member' ||
         data.action === 'Member_Checkin' ||
         Boolean(data.memberId)
@@ -96,7 +98,7 @@ class AttendanceService {
       if (!isOfficialAction) {
         return {
           valid: false,
-          error: `Please scan the official ${currentChurchName || 'Church of God'} attendance QR code.`,
+          error: `Please scan the official ${currentChurchName || 'Rhema Global Ministries'} attendance QR code.`,
         };
       }
 

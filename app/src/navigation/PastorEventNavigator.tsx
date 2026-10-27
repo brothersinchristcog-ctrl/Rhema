@@ -22,6 +22,7 @@ const Stack = createNativeStackNavigator<PastorEventStackParamList>();
 export default function PastorEventNavigator() {
   return (
     <Stack.Navigator
+      id="pastor-event-stack"
       screenOptions={{
         headerShown: false
       }}

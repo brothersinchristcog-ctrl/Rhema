@@ -1,5 +1,5 @@
 {
-  "name": "we-christian",
+  "name": "rhema-global-ministries",
   "version": "1.0.6",
   "main": "index.js",
   "scripts": {
@@ -39,6 +39,7 @@
     "cheerio": "^1.2.0",
     "country-state-city": "^3.2.1",
     "date-fns": "^4.4.0",
+    "dayjs": "^1.11.21",
     "expo": "~54.0.37",
     "expo-application": "~7.0.8",
     "expo-auth-session": "~7.0.11",

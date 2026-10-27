@@ -1,52 +1,26 @@
 {
   "project_info": {
-    "project_number": "962252889183",
-    "project_id": "wechristian-67f07",
-    "storage_bucket": "wechristian-67f07.firebasestorage.app"
+    "project_number": "771098328860",
+    "project_id": "rhema-global-ministries",
+    "storage_bucket": "rhema-global-ministries.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:962252889183:android:8d1ab41705b2d6e70f8fea",
+        "mobilesdk_app_id": "1:771098328860:android:abc9c28a7098910080c4d9",
         "android_client_info": {
-          "package_name": "com.wechristian.app"
+          "package_name": "com.rhemaglobalministries.app"
         }
       },
-      "oauth_client": [
-        {
-          "client_id": "962252889183-5jj3agmio6447l0lkepjrb6kvuvrs1t0.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.wechristian.app",
-            "certificate_hash": "36d716feb0ee3ee00422f32d2f2e4aa19a5bf36b"
-          }
-        },
-        {
-          "client_id": "962252889183-rs90gflqej8453a9ogrr3udd40av4dur.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.wechristian.app",
-            "certificate_hash": "c53431ee538accbce4ab4e1e0c008ba4afeb5293"
-          }
-        },
-        {
-          "client_id": "962252889183-jomnitu1s1317td9fmdq9qbo7d8sdbhb.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
+      "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyDXP8v94YOvitLaixotzmOvRJsaoFuGf20"
+          "current_key": "AIzaSyAaBqR9uZhARSF6kvBNwu6BBikcHUsLoXo"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "962252889183-jomnitu1s1317td9fmdq9qbo7d8sdbhb.apps.googleusercontent.com",
-              "client_type": 3
-            }
-          ]
+          "other_platform_oauth_client": []
         }
       }
     }

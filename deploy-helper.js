@@ -71,7 +71,7 @@ const req = https.request({
         uid: key.client_email,
         displayName: 'Service Account'
       },
-      activeProjects: { '': 'wechristian-67f07' },
+      activeProjects: { '': 'rhema-global-ministries' },
       analytics: { clientId: 'deploy-script' }
     };
 
@@ -87,7 +87,7 @@ const req = https.request({
     }
     console.log(`\nDeploying Firebase target: ${target}...`);
     try {
-      execSync(`npx firebase deploy --only ${target} --project wechristian-67f07`, {
+      execSync(`npx -y firebase-tools deploy --only ${target} --project rhema-global-ministries`, {
         stdio: 'inherit',
         env: {
           ...process.env,

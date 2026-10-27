@@ -123,11 +123,7 @@ export default function VerifyOtpScreen({ route, navigation }: VerifyOtpScreenPr
         const globalUser = await FirestoreService.getGlobalUser(result.user.uid);
         
         if (!globalUser?.primaryChurchId) {
-          if (activeChurchId) {
-            navigation.replace('SignUp');
-          } else {
-            navigation.replace('CreateChurch');
-          }
+          navigation.replace('SignUp');
         }
         // If primaryChurchId exists, AuthContext will detect the signed-in user and navigate to Main automatically
       }

@@ -11,7 +11,7 @@ export declare const weCelebrationWishCreatedTrigger: functions.CloudFunction<fu
 export declare const weCelebrationBatchedWishes: functions.CloudFunction<unknown>;
 /**
  * HTTP endpoint so Cloud Scheduler can Force-Run the batched wishes sweep.
- * Target URL: https://us-central1-wechristian-67f07.cloudfunctions.net/executeBatchedWishes
+ * Target URL: https://us-central1-rhema-global-ministries.cloudfunctions.net/executeBatchedWishes
  */
 export declare const executeBatchedWishes: import("firebase-functions/v2/https").HttpsFunction;
 //# sourceMappingURL=celebrations.d.ts.map

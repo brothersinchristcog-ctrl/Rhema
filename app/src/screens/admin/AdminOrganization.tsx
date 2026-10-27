@@ -41,7 +41,7 @@ export default function AdminOrganization({ navigation }: any) {
     if (!branchSuccess) return;
     try {
       await Share.share({
-        message: `We've created a new branch: ${branchSuccess.name}!\nYou have been added to "${activeChurch?.name || 'our Church'}" on WeChristian!\n\nPlease download the app here: https://play.google.com/store/apps/details?id=com.wechristian.app\n\nOnce downloaded, sign in with your phone number. If asked, use Church Code: ${branchSuccess.code}`
+        message: `We've created a new branch: ${branchSuccess.name}!\nYou have been added to "${activeChurch?.name || 'Rhema Global Ministries'}"!\n\nPlease download the app here: https://play.google.com/store/apps/details?id=com.rhemaglobalministries.app\n\nOnce downloaded, sign in directly with your phone number.`
       });
     } catch (error) {
       console.log(error);
@@ -51,7 +51,7 @@ export default function AdminOrganization({ navigation }: any) {
   const handleShareBranch = async (branch: ChurchDetails) => {
     try {
       await Share.share({
-        message: `We've created a new branch: ${branch.name}!\nYou have been added to "${activeChurch?.name || 'our Church'}" on WeChristian!\n\nPlease download the app here: https://play.google.com/store/apps/details?id=com.wechristian.app\n\nOnce downloaded, sign in with your phone number. If asked, use Church Code: ${branch.churchCode}`
+        message: `We've created a new branch: ${branch.name}!\nYou have been added to "${activeChurch?.name || 'Rhema Global Ministries'}"!\n\nPlease download the app here: https://play.google.com/store/apps/details?id=com.rhemaglobalministries.app\n\nOnce downloaded, sign in directly with your phone number.`
       });
     } catch (error) {
       console.log(error);

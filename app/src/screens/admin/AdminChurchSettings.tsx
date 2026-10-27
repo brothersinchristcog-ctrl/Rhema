@@ -120,7 +120,7 @@ export default function AdminChurchSettings({ navigation }: any) {
       if (section === 'name' || section === 'tagline' || section === 'contactEmail' || section === 'contactPhone' || section === 'address' || section === 'aboutUs' || section === 'latitude' || section === 'longitude') {
         (newForm as any)[section] = value;
       } else {
-        newForm[section] = { ...(newForm[section] as any || {}), [field]: value } as any;
+        (newForm as any)[section] = { ...((newForm as any)[section] || {}), [field]: value };
       }
       return newForm;
     });
@@ -404,40 +404,16 @@ export default function AdminChurchSettings({ navigation }: any) {
             <View>
               {!isEditing && <Text style={styles.viewModeHint}>Tap 'Edit' in the top right to make changes.</Text>}
 
-              {/* Church Code Card */}
-              {(form as any).churchCode || form.subdomain ? (
-                <View style={styles.churchCodeCard}>
-                  <Text style={styles.churchCodeLabel}>CHURCH JOIN CODE</Text>
-                  <Text style={[styles.churchCodeValue, { color: primaryColor }]}>
-                    {(form as any).churchCode || (form.subdomain || '').toUpperCase()}
-                  </Text>
-                  <Text style={styles.churchCodeHint}>Share this code with your congregation to let them join</Text>
-                  <View style={styles.churchCodeActions}>
-                    <TouchableOpacity
-                      style={[styles.churchCodeBtn, { borderColor: primaryColor }]}
-                      onPress={() => {
-                        const code = (form as any).churchCode || (form.subdomain || '').toUpperCase();
-                        Clipboard.setString(code);
-                        setAlertConfig({ visible: true, title: 'Copied!', message: `Church code "${code}" copied to clipboard.`, type: 'success' });
-                      }}
-                    >
-                      <Text style={[styles.churchCodeBtnTxt, { color: primaryColor }]}>📋 Copy Code</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.churchCodeBtn, { borderColor: primaryColor }]}
-                      onPress={() => {
-                        const code = (form as any).churchCode || (form.subdomain || '').toUpperCase();
-                        Share.share({
-                          message: `Join "${form.name}" on WeChristian! Use the church code: ${code}`,
-                          title: `Join ${form.name} on WeChristian`,
-                        });
-                      }}
-                    >
-                      <Text style={[styles.churchCodeBtnTxt, { color: primaryColor }]}>📤 Share Code</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ) : null}
+              {/* Dedicated Church Badge */}
+              <View style={[styles.churchCodeCard, { borderColor: primaryColor }]}>
+                <Text style={styles.churchCodeLabel}>MINISTRY APP STATUS</Text>
+                <Text style={[styles.churchCodeValue, { color: primaryColor, fontSize: 18 }]}>
+                  {form.name || 'Rhema Global Ministries'}
+                </Text>
+                <Text style={styles.churchCodeHint}>
+                  Dedicated single-church app. All members automatically connect directly without requiring a join code.
+                </Text>
+              </View>
 
               <Text style={styles.sectionLabel}>Basic Information</Text>
 

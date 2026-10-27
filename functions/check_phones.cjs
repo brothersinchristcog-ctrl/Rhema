@@ -1,7 +1,7 @@
 const admin = require('firebase-admin');
 
 // Initialize without credentials, assuming we are logged into gcloud or it works via GOOGLE_APPLICATION_CREDENTIALS
-admin.initializeApp({ projectId: 'wechristian-67f07' });
+admin.initializeApp({ projectId: 'rhema-global-ministries' });
 
 const db = admin.firestore();
 

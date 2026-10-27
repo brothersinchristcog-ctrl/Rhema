@@ -53,14 +53,14 @@ async function main() {
       id_token: null
     },
     user: { email: key.client_email, uid: key.client_email, displayName: 'SA' },
-    activeProjects: { '': 'wechristian-67f07' },
+    activeProjects: { '': 'rhema-global-ministries' },
     analytics: { clientId: 'deploy-script' }
   };
 
   fs.writeFileSync(path.join(configstoreDir, 'firebase-tools.json'), JSON.stringify(config, null, 2));
   console.log('Credentials written. Deploying...');
 
-  execSync('firebase deploy --only functions --project wechristian-67f07', {
+  execSync('firebase deploy --only functions --project rhema-global-ministries', {
     stdio: 'inherit',
     env: { ...process.env, GOOGLE_APPLICATION_CREDENTIALS: path.join(__dirname, 'key.json') }
   });

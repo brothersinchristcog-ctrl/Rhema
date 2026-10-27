@@ -7,7 +7,7 @@ const getDb = () => getFirestore();
 const CLIENT_ID = process.env.GOOGLE_YOUTUBE_CLIENT_ID || '';
 const CLIENT_SECRET = process.env.GOOGLE_YOUTUBE_CLIENT_SECRET || '';
 const REDIRECT_URI = process.env.GOOGLE_YOUTUBE_REDIRECT_URI ||
-    'https://us-central1-wechristian-67f07.cloudfunctions.net/youtubeOAuthCallback';
+    'https://us-central1-rhema-global-ministries.cloudfunctions.net/youtubeOAuthCallback';
 const YOUTUBE_SCOPES = [
     'https://www.googleapis.com/auth/youtube',
     'https://www.googleapis.com/auth/youtube.force-ssl',

@@ -2,7 +2,7 @@
 # Run this script from: C:\Users\yraje\WeChristian2\
 # Usage: .\deploy.ps1
 
-$keyFile = "C:\Users\yraje\WeChristian2\key.json"
+$keyFile = "$PSScriptRoot\key.json"
 
 # Step 1: Read the service account key
 $key = Get-Content $keyFile | ConvertFrom-Json
@@ -55,7 +55,7 @@ $firebaseConfig = @{
         email = $key.client_email
         uid   = $key.client_email
     }
-    activeProjects = @{ "" = "wechristian-67f07" }
+    activeProjects = @{ "" = "rhema-global-ministries" }
 } | ConvertTo-Json -Depth 5
 
 $firebaseConfig | Out-File -FilePath "$configstoreDir\firebase-tools.json" -Encoding utf8
@@ -64,4 +64,4 @@ Write-Host "Firebase credentials configured!" -ForegroundColor Green
 # Step 6: Deploy
 Write-Host "`nDeploying Firebase Functions..." -ForegroundColor Cyan
 $env:GOOGLE_APPLICATION_CREDENTIALS = $keyFile
-firebase deploy --only functions --project wechristian-67f07
+firebase deploy --only functions --project rhema-global-ministries

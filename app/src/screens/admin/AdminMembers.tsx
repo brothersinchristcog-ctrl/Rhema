@@ -381,27 +381,19 @@ export default function AdminMembers() {
                 setAlertConfig(prev => ({ ...prev, visible: false }));
                 if (!editMemberId) {
                   // Share functionality after OK for new members
-                  const churchName = activeChurch?.name || 'WeChristian Church';
-                  const churchCode = activeChurch?.subdomain?.toUpperCase() || (activeChurch as any)?.churchCode?.toUpperCase() || '';
+                  const churchName = activeChurch?.name || 'Rhema Global Ministries';
                   const memberPhone = newMemberForm.phone || '';
                   const memberDigits = memberPhone.replace(/\D/g, '').slice(-10);
-                  const churchCodeParam = encodeURIComponent(churchCode);
-                  const churchInviteLink = `https://wechristian.app/invite?code=${churchCodeParam}`;
-                  const playStoreLink = `https://play.google.com/store/apps/details?id=com.wechristian.app&referrer=${churchCodeParam}`;
+                  const playStoreLink = `https://play.google.com/store/apps/details?id=com.rhemaglobalministries.app`;
 
                   const shareMsg = 
 `Greetings in Jesus' Name! 🙏✨
 
 Dear ${newMemberForm.name || 'Brother/Sister'},
 
-You are warmly invited to join our ${churchName} Mobile Application! ⛪
+You are warmly invited to join the ${churchName} Mobile Application! ⛪
 
 Your church profile has already been registered for you, so you DO NOT need to sign up. Simply download the app and Sign In directly with your mobile number${memberDigits ? `: ${memberDigits}` : ''}.
-
-🏛️ Church Code: ${churchCode}
-
-🔗 Church Invitation Link:
-${churchInviteLink}
 
 📲 Download App from Google Play Store:
 ${playStoreLink}

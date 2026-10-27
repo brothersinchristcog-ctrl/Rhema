@@ -26,10 +26,9 @@ export default function JoinSuccessScreen({ navigation, route }: Props) {
   const primary = activeChurch?.theme?.primaryColor || '#1a2d5a';
 
   const handleShare = () => {
-    if (!churchCode) return;
     Share.share({
-      message: `Join "${churchName}" on WeChristian!\n\nUse the church code: ${churchCode}\n\nDownload the app here: https://play.google.com/store/apps/details?id=com.wechristian.app`,
-      title: `Join ${churchName} on WeChristian`,
+      message: `Join ${churchName || 'Rhema Global Ministries'}!\n\nDownload the official Rhema app here: https://play.google.com/store/apps/details?id=com.rhemaglobalministries.app`,
+      title: `Welcome to ${churchName || 'Rhema Global Ministries'}`,
     });
   };
 
@@ -46,88 +45,71 @@ export default function JoinSuccessScreen({ navigation, route }: Props) {
           {/* Title & Church Details */}
           <View style={styles.headerTextBlock}>
             <Text style={styles.title}>
-              {isNewChurch ? 'Church Registered! 🎉' : 'Welcome to the Family! 🙏'}
+              Welcome to the Family! 🙏
             </Text>
             <View style={styles.churchNamePill}>
               <ShieldCheck size={16} color="#38BDF8" />
-              <Text style={styles.churchNameText}>{churchName || 'Your Church'}</Text>
+              <Text style={styles.churchNameText}>{churchName || 'Rhema Global Ministries'}</Text>
             </View>
             <Text style={styles.subtitle}>
-              {isNewChurch
-                ? 'Your church has been successfully created. Share your church code with your members to start connecting.'
-                : 'Select your membership status below to continue:'}
+              Select your membership status below to continue:
             </Text>
           </View>
 
-          {/* New Church Admin Code Display */}
-          {isNewChurch && churchCode && (
-            <View style={styles.codeCard}>
-              <Text style={styles.codeLabel}>YOUR CHURCH CODE</Text>
-              <Text style={styles.codeValue}>{churchCode}</Text>
-              <Text style={styles.codeHint}>Share this code with your congregation members</Text>
-              <TouchableOpacity style={styles.shareBtn} onPress={handleShare}>
-                <Share2 size={16} color="#38BDF8" />
-                <Text style={styles.shareBtnTxt}>Share Code</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+          {/* Member Guidance Cards */}
+          <View style={styles.guidanceContainer}>
+            {/* Option 1: Existing Member via Church Registry -> Navigate to Sign In */}
+            <TouchableOpacity
+              activeOpacity={0.78}
+              style={styles.optionCard}
+              onPress={() => navigation.navigate('Login', { showPhoneInput: true, fromJoinSuccess: true })}
+            >
+              <View style={styles.optionHeader}>
+                <View style={[styles.optionIconCircle, { backgroundColor: 'rgba(56, 189, 248, 0.15)' }]}>
+                  <UserCheck size={20} color="#38BDF8" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.optionTag}>ALREADY REGISTERED MEMBER</Text>
+                  <Text style={styles.optionHeading}>Existing Church Member</Text>
+                </View>
+                <View style={styles.chevronWrap}>
+                  <ArrowRight size={18} color="#38BDF8" />
+                </View>
+              </View>
+              <Text style={styles.optionBody}>
+                If your church profile has already been registered in our ministry records, select <Text style={styles.highlightText}>Sign In</Text> and enter your registered mobile number to receive your verification code.
+              </Text>
+              <View style={styles.cardTapAction}>
+                <Text style={styles.cardTapActionText}>👉 Tap this card to Sign In</Text>
+              </View>
+            </TouchableOpacity>
 
-          {/* Member Guidance Cards (Clickable options with interactive feedback) */}
-          {!isNewChurch && (
-            <View style={styles.guidanceContainer}>
-              {/* Option 1: Existing Member via SMS/WhatsApp -> Navigate to Sign In */}
-              <TouchableOpacity
-                activeOpacity={0.78}
-                style={styles.optionCard}
-                onPress={() => navigation.navigate('Login', { showPhoneInput: true, fromJoinSuccess: true })}
-              >
-                <View style={styles.optionHeader}>
-                  <View style={[styles.optionIconCircle, { backgroundColor: 'rgba(56, 189, 248, 0.15)' }]}>
-                    <UserCheck size={20} color="#38BDF8" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.optionTag}>ALREADY REGISTERED MEMBER</Text>
-                    <Text style={styles.optionHeading}>Invitation via SMS or WhatsApp</Text>
-                  </View>
-                  <View style={styles.chevronWrap}>
-                    <ArrowRight size={18} color="#38BDF8" />
-                  </View>
+            {/* Option 2: New Member -> Navigate to Sign Up */}
+            <TouchableOpacity
+              activeOpacity={0.78}
+              style={[styles.optionCard, styles.optionCardSecondary]}
+              onPress={() => navigation.navigate('SignUp')}
+            >
+              <View style={styles.optionHeader}>
+                <View style={[styles.optionIconCircle, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
+                  <UserPlus size={20} color="#F59E0B" />
                 </View>
-                <Text style={styles.optionBody}>
-                  If your pastor added you as a church member and sent you the Church Code along with your invitation via <Text style={styles.highlightText}>SMS or WhatsApp</Text>, your church profile has already been registered. You do not need to Sign Up. Enter the Church Code and select <Text style={styles.highlightText}>Sign In</Text> using your registered mobile number.
-                </Text>
-                <View style={styles.cardTapAction}>
-                  <Text style={styles.cardTapActionText}>👉 Tap this card to Sign In</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.optionTag, { color: '#F59E0B' }]}>NEW CHURCH MEMBER</Text>
+                  <Text style={styles.optionHeading}>Register for the First Time</Text>
                 </View>
-              </TouchableOpacity>
-
-              {/* Option 2: New Member -> Navigate to Sign Up */}
-              <TouchableOpacity
-                activeOpacity={0.78}
-                style={[styles.optionCard, styles.optionCardSecondary]}
-                onPress={() => navigation.navigate('SignUp')}
-              >
-                <View style={styles.optionHeader}>
-                  <View style={[styles.optionIconCircle, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
-                    <UserPlus size={20} color="#F59E0B" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.optionTag, { color: '#F59E0B' }]}>NEW CHURCH MEMBER</Text>
-                    <Text style={styles.optionHeading}>Code shared without personal invitation</Text>
-                  </View>
-                  <View style={[styles.chevronWrap, { backgroundColor: 'rgba(245, 158, 11, 0.15)', borderColor: 'rgba(245, 158, 11, 0.3)' }]}>
-                    <ArrowRight size={18} color="#F59E0B" />
-                  </View>
+                <View style={[styles.chevronWrap, { backgroundColor: 'rgba(245, 158, 11, 0.15)', borderColor: 'rgba(245, 158, 11, 0.3)' }]}>
+                  <ArrowRight size={18} color="#F59E0B" />
                 </View>
-                <Text style={styles.optionBody}>
-                  If your pastor has only shared the Church Code with you, without adding you as a member and sending you a personal invitation via <Text style={styles.highlightText}>SMS or WhatsApp</Text>, enter the Church Code and select <Text style={styles.highlightText}>Sign Up</Text> to register as a new church member.
-                </Text>
-                <View style={[styles.cardTapAction, styles.cardTapActionSecondary]}>
-                  <Text style={[styles.cardTapActionText, { color: '#F59E0B' }]}>👉 Tap this card to Sign Up</Text>
-                </View>
-              </TouchableOpacity>
-            </View>
-          )}
+              </View>
+              <Text style={styles.optionBody}>
+                If you are joining Rhema Global Ministries for the first time, select <Text style={styles.highlightText}>Register</Text> to create your member profile. No church code or join code required.
+              </Text>
+              <View style={[styles.cardTapAction, styles.cardTapActionSecondary]}>
+                <Text style={[styles.cardTapActionText, { color: '#F59E0B' }]}>👉 Tap this card to Register</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
 
           {/* For New Church Admin Only: Continue Button */}
           {isNewChurch && (

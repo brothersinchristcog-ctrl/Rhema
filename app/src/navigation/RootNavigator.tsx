@@ -485,6 +485,7 @@ function TabNavigator() {
   return (
     <>
       <Tab.Navigator
+        id="main-tab-navigator"
         key={language}
         tabBar={(props) => <CustomTabBar key={language} {...props} />}
         screenOptions={{ headerShown: false }}
@@ -807,7 +808,7 @@ function Navigation() {
   };
 
   return (
-    <Stack.Navigator key={navigationKey} screenOptions={{ headerShown: false, animation: 'none' }}>
+    <Stack.Navigator id="root-navigator" key={navigationKey} screenOptions={{ headerShown: false, animation: 'none' }}>
       {user ? (
         showAdminView ? (
           <>

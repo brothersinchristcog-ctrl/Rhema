@@ -1124,10 +1124,11 @@ export default function AdminServicePlanner({ navigation }: any) {
                         placeholder="e.g. Walking in the Spirit"
                         placeholderTextColor="#94A3B8"
                         onChangeText={t => {
-                          setSelectedPlan(prev => prev ? {
-                            ...prev,
-                            sermon: { ...(prev.sermon || {}), title: t }
-                          } : null);
+                          setSelectedPlan(prev => {
+                            if (!prev) return null;
+                            const current = prev.sermon || { title: '', code: '', speaker: '', keyVerses: '' };
+                            return { ...prev, sermon: { ...current, title: t } };
+                          });
                         }}
                       />
                     </View>
@@ -1139,10 +1140,11 @@ export default function AdminServicePlanner({ navigation }: any) {
                         placeholder="e.g. A101"
                         placeholderTextColor="#94A3B8"
                         onChangeText={t => {
-                          setSelectedPlan(prev => prev ? {
-                            ...prev,
-                            sermon: { ...(prev.sermon || {}), code: t }
-                          } : null);
+                          setSelectedPlan(prev => {
+                            if (!prev) return null;
+                            const current = prev.sermon || { title: '', code: '', speaker: '', keyVerses: '' };
+                            return { ...prev, sermon: { ...current, code: t } };
+                          });
                         }}
                       />
                     </View>
@@ -1157,10 +1159,11 @@ export default function AdminServicePlanner({ navigation }: any) {
                         placeholder="e.g. Pastor / Guest Speaker"
                         placeholderTextColor="#94A3B8"
                         onChangeText={t => {
-                          setSelectedPlan(prev => prev ? {
-                            ...prev,
-                            sermon: { ...(prev.sermon || {}), speaker: t }
-                          } : null);
+                          setSelectedPlan(prev => {
+                            if (!prev) return null;
+                            const current = prev.sermon || { title: '', code: '', speaker: '', keyVerses: '' };
+                            return { ...prev, sermon: { ...current, speaker: t } };
+                          });
                         }}
                       />
                     </View>
@@ -1172,10 +1175,11 @@ export default function AdminServicePlanner({ navigation }: any) {
                         placeholder="e.g. Rom 8:1-14"
                         placeholderTextColor="#94A3B8"
                         onChangeText={t => {
-                          setSelectedPlan(prev => prev ? {
-                            ...prev,
-                            sermon: { ...(prev.sermon || {}), keyVerses: t }
-                          } : null);
+                          setSelectedPlan(prev => {
+                            if (!prev) return null;
+                            const current = prev.sermon || { title: '', code: '', speaker: '', keyVerses: '' };
+                            return { ...prev, sermon: { ...current, keyVerses: t } };
+                          });
                         }}
                       />
                     </View>

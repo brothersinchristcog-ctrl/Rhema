@@ -28,7 +28,8 @@ export default function AuthNavigator() {
 
   return (
     <Stack.Navigator
-      initialRouteName={churchId ? "Login" : "ChurchSelection"}
+      id="auth-stack"
+      initialRouteName="Login"
       screenOptions={{
         headerStyle: { backgroundColor: Theme.Colors.primary },
         headerTintColor: '#fff',

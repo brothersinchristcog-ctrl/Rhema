@@ -1068,7 +1068,7 @@ export default function AdminAttendance() {
                 <Text style={styles.qrModalSub} numberOfLines={1}>
                   {isEvent 
                     ? `${qrModalState.event!.dateStr} · ${qrModalState.event!.timeStr}`
-                    : `Permanent Church Code: ${churchCode || 'Active'}`}
+                    : 'Rhema Global Ministries Attendance QR'}
                 </Text>
               </View>
               <TouchableOpacity onPress={closeQRModal} style={styles.qrModalCloseBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>

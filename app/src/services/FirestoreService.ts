@@ -1,5 +1,6 @@
 import { firestore, FieldValue } from './firebaseConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { RHEMA_CHURCH_ID } from '../constants/ChurchConfig';
 
 // ─── Data Interfaces ─────────────────────────────────────────────────────────
 
@@ -232,16 +233,16 @@ export interface ChurchInvoice {
 // ─── Service Layer ────────────────────────────────────────────────────────────
 
 class FirestoreService {
-  private churchId: string | null = null;
+  private churchId: string = RHEMA_CHURCH_ID;
 
   async setChurchId(id: string) {
-    this.churchId = id;
-    await AsyncStorage.setItem('@active_church_id', id);
+    this.churchId = id || RHEMA_CHURCH_ID;
+    await AsyncStorage.setItem('@active_church_id', this.churchId);
   }
 
-  async getChurchId(): Promise<string | null> {
+  async getChurchId(): Promise<string> {
     if (this.churchId) return this.churchId;
-    this.churchId = await AsyncStorage.getItem('@active_church_id');
+    this.churchId = await AsyncStorage.getItem('@active_church_id') || RHEMA_CHURCH_ID;
     return this.churchId;
   }
 
@@ -731,22 +732,29 @@ class FirestoreService {
 
   async getGlobalUser(uid: string): Promise<GlobalUser | null> {
     try {
-      // Find all memberships across all churches for this uid
+      const targetChurchId = await this.getChurchId() || RHEMA_CHURCH_ID;
+      // 1. Direct check in Rhema Global Ministries member profile (instant, zero index latency)
+      const directDoc = await firestore().collection('churches').doc(targetChurchId).collection('members').doc(uid).get();
+      if (directDoc.exists()) {
+        const data = directDoc.data();
+        if (!data?.status || data?.status === 'Active') {
+          return { uid: directDoc.id, primaryChurchId: targetChurchId, ...data } as GlobalUser;
+        }
+      }
+
+      // 2. Fallback across all memberships
       const snap = await firestore().collectionGroup('members').where('id', '==', uid).get();
       if (!snap.empty) {
-        // Prioritize the 'Active' membership
         let activeDoc = snap.docs.find(d => {
           const data = d.data();
-          return !data.status || data.status === 'Active'; // default to Active if missing
+          return !data.status || data.status === 'Active';
         });
 
         if (!activeDoc) {
-          // If the user has memberships but NONE are active (all 'Left' or 'Inactive'),
-          // we return null to force them into onboarding so they can join a new church.
           return null;
         }
 
-        const churchId = activeDoc.ref.parent.parent?.id;
+        const churchId = activeDoc.ref.parent.parent?.id || targetChurchId;
         return { uid: activeDoc.id, primaryChurchId: churchId, ...activeDoc.data() } as GlobalUser;
       }
       return null;
@@ -784,125 +792,27 @@ class FirestoreService {
     const possibleFormats = formats.filter(v => v !== undefined && v !== null && !Number.isNaN(v));
     
     try {
-      if (!churchId) churchId = await this.getChurchId() || undefined;
+      const targetChurchId = churchId || await this.getChurchId() || RHEMA_CHURCH_ID;
       
       const auth = require('@react-native-firebase/auth').default;
       if (!auth().currentUser) {
         await auth().signInAnonymously();
       }
 
-      // Helper for manual fallback
-      const runManualFallback = async () => {
-        console.log("Running manual fallback traversal...");
-        const churchesSnap = await firestore().collection('churches').get();
-        let bestMember: any = null;
-        for (const churchDoc of churchesSnap.docs) {
-          const queries = possibleFormats.map(format => 
-            churchDoc.ref.collection('members').where('phone', '==', format).get()
-          );
-          const results = await Promise.all(queries);
-          for (const snap of results) {
-            for (const doc of snap.docs) {
-              const data = doc.data();
-              const isElevated = String(data.userType || '').toUpperCase().includes('ADMIN') || String(data.userType || '').toUpperCase().includes('SUPER');
-              if (!bestMember || isElevated) {
-                bestMember = { id: doc.id, churchId: churchDoc.id, ...data };
-              }
-              if (isElevated) break;
-            }
-          }
-        }
-        if (bestMember) {
-          return { exists: true, member: bestMember as AppMember };
-        }
-        return { exists: false };
-      };
-
-      if (!churchId) {
-        try {
-          console.log("Trying collectionGroup search...");
-          const queries = possibleFormats.map(format => 
-            firestore().collectionGroup('members').where('phone', '==', format).get()
-          );
-          const results = await Promise.all(queries);
-          let bestMember: any = null;
-          for (const snap of results) {
-            for (const doc of snap.docs) {
-              const data = doc.data();
-              const isElevated = String(data.userType || '').toUpperCase().includes('ADMIN') || String(data.userType || '').toUpperCase().includes('SUPER');
-              if (!bestMember || isElevated) {
-                bestMember = { id: doc.id, churchId: doc.ref.parent.parent?.id, ...data };
-              }
-              if (isElevated) break;
-            }
-          }
-          if (bestMember) {
-            console.log("Found member in collectionGroup.");
-            return { exists: true, member: bestMember as AppMember };
-          }
-          return { exists: false };
-        } catch (cgError: any) {
-          console.log("Collection group index failed, falling back...", cgError.message);
-          return await runManualFallback();
-        }
-      }
-
-      // Enforce strictChurch using collectionGroup if specific query fails or to avoid index requirements
-      if (strictChurch) {
-        console.log(`Checking strict church: ${churchId} using collectionGroup fallback.`);
-        try {
-          const queries = possibleFormats.map(format => 
-            firestore().collectionGroup('members').where('phone', '==', format).get({ source: 'server' })
-          );
-          const results = await Promise.all(queries);
-          let bestMember: any = null;
-          let foundAny = false;
-          for (const snap of results) {
-            for (const doc of snap.docs) {
-              foundAny = true;
-              const data = doc.data();
-              console.log("Found matching member doc at path:", doc.ref.path, "with data:", JSON.stringify(data));
-              // Ensure this member actually belongs to the requested church
-              const parentChurchId = doc.ref.parent.parent?.id;
-              console.log("Validating churchId. Parent churchId:", parentChurchId, "Data churchId:", data.churchId, "Expected:", churchId);
-              if (parentChurchId === churchId || data.churchId === churchId) {
-                const isElevated = String(data.userType || '').toUpperCase().includes('ADMIN') || String(data.userType || '').toUpperCase().includes('SUPER');
-                if (!bestMember || isElevated) {
-                  bestMember = { id: doc.id, churchId: parentChurchId, ...data };
-                }
-                if (isElevated) break;
-              }
-            }
-          }
-          if (bestMember) {
-            return { exists: true, member: bestMember as AppMember };
-          }
-          if (!foundAny) {
-            console.log("Strict church mode: collectionGroup found absolutely no matching documents for any format.");
-          } else {
-            console.log("Strict church mode: member found, but it belonged to a different church.");
-          }
-          return { exists: false };
-        } catch (err: any) {
-          console.log("Strict church query failed:", err.message);
-          return { exists: false };
-        }
-      }
-
-      // If NOT strictChurch, try specific first, then global fallback
+      // 1. Direct subcollection query in Rhema Global Ministries (fastest, standard index)
       try {
-        console.log(`Checking specific church: ${churchId}`);
+        console.log(`Checking specific church: ${targetChurchId}`);
         const queries = possibleFormats.map(format => 
-          firestore().collection('churches').doc(churchId!).collection('members').where('phone', '==', format).get({ source: 'server' })
+          firestore().collection('churches').doc(targetChurchId).collection('members').where('phone', '==', format).get({ source: 'server' })
         );
         const results = await Promise.all(queries);
         let bestMember: any = null;
         for (const snap of results) {
           for (const doc of snap.docs) {
             const data = doc.data();
-            const isElevated = String(data.userType || '').toUpperCase().includes('ADMIN') || String(data.userType || '').toUpperCase().includes('SUPER');
+            const isElevated = String(data.userType || '').toUpperCase().includes('ADMIN') || String(data.userType || '').toUpperCase().includes('SUPER') || String(data.userType || '').toUpperCase().includes('PASTOR');
             if (!bestMember || isElevated) {
-              bestMember = { id: doc.id, churchId: churchId, ...data };
+              bestMember = { id: doc.id, churchId: targetChurchId, ...data };
             }
             if (isElevated) break;
           }
@@ -912,6 +822,10 @@ class FirestoreService {
         }
       } catch (err: any) {
         console.log("Specific church query failed:", err.message);
+      }
+
+      if (strictChurch) {
+        return { exists: false };
       }
 
       // Fallback: Check all members collections
@@ -936,8 +850,8 @@ class FirestoreService {
           return { exists: true, member: bestMember as AppMember };
         }
       } catch (cgError: any) {
-         console.log("Global collection group index failed, falling back...", cgError.message);
-         return await runManualFallback();
+        console.log("Global collection group query failed:", cgError.message);
+        return { exists: false };
       }
 
       return { exists: false };

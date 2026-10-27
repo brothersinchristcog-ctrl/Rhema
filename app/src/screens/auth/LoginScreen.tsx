@@ -159,7 +159,7 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
             adjustsFontSizeToFit={true}
             minimumFontScale={0.6}
           >
-            {activeChurch?.name || 'We Christian'}
+            {activeChurch?.name || 'Rhema Global Ministries'}
           </Text>
           <Text style={[styles.bibleQuote, { marginTop: 40, marginBottom: 0, fontSize: 15, fontStyle: 'normal', opacity: 0.9, paddingHorizontal: 20 }]}>
             A place to connect, pray, and walk together in faith as one church family.
@@ -181,17 +181,14 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
               <Text style={styles.mainActionBtnTxt}>Sign In</Text>
             </TouchableOpacity>
 
-            {!activeChurch && (
-              <TouchableOpacity 
-                style={[styles.signUpBtn, { flex: 1, marginLeft: 8 }]}
-                onPress={() => {
-                  setIsCreatingChurch(true);
-                  setShowPhoneInput(true);
-                }}
-              >
-                <Text style={styles.signUpBtnTxt}>Register</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity 
+              style={[styles.signUpBtn, { flex: 1, marginLeft: 12 }]}
+              onPress={() => {
+                navigation.navigate('SignUp');
+              }}
+            >
+              <Text style={styles.signUpBtnTxt}>Register</Text>
+            </TouchableOpacity>
           </View>
 
           <TouchableOpacity 
@@ -234,10 +231,10 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
           </TouchableOpacity>
           <View style={styles.titleCol}>
             <Text style={styles.pageTitle} numberOfLines={1} adjustsFontSizeToFit>
-              {activeChurch ? 'Welcome Back' : (isCreatingChurch ? 'Register Church' : 'Sign In')}
+              Welcome Back
             </Text>
             <Text style={styles.pageSub} numberOfLines={1} adjustsFontSizeToFit>
-              {activeChurch ? 'Sign in to your member account' : (isCreatingChurch ? 'Verify number for new church' : 'Verify number to continue')}
+              Sign in to your member account
             </Text>
           </View>
           <View style={{ width: 60 }} />

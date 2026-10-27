@@ -2391,7 +2391,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
   const handleManualCodeSubmit = async () => {
     const code = manualCodeInput.trim().toUpperCase();
     if (!code) {
-      Alert.alert('Missing Code', 'Please enter your church code.');
+      Alert.alert('Missing Code', 'Please enter your attendance code or PIN.');
       return;
     }
 
@@ -3644,14 +3644,14 @@ export default function AttendanceScreen({ navigation, route }: any) {
             <View style={styles.manualIconCircle}>
               <QrCode size={28} color="#1E3A8A" strokeWidth={2.2} />
             </View>
-            <Text style={styles.manualModalTitle}>Enter Church Code</Text>
+            <Text style={styles.manualModalTitle}>Enter Attendance Code</Text>
             <Text style={styles.manualModalSub}>
-              Enter your church code or ID to mark your attendance.
+              Enter attendance check-in code or event PIN to mark your attendance.
             </Text>
 
             <TextInput
               style={styles.manualInput}
-              placeholder={churchCode ? `e.g. ${churchCode}` : "Enter church code..."}
+              placeholder="Enter attendance code..."
               placeholderTextColor="#94a3b8"
               value={manualCodeInput}
               onChangeText={setManualCodeInput}

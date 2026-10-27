@@ -50,14 +50,14 @@ async function main() {
       uid: key.client_email,
       displayName: 'Service Account'
     },
-    activeProjects: { '': 'wechristian-67f07' },
+    activeProjects: { '': 'rhema-global-ministries' },
     analytics: { clientId: 'deploy-script' }
   };
 
   const configPath = path.join(configstoreDir, 'firebase-tools.json');
   fs.writeFileSync(configPath, JSON.stringify(firebaseConfig, null, 2));
   console.log(`Credentials saved to: ${configPath}`);
-  console.log('\nNow run: firebase deploy --only functions --project wechristian-67f07');
+  console.log('\nNow run: firebase deploy --only functions --project rhema-global-ministries');
 }
 
 main().catch(e => {

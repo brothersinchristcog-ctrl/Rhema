@@ -217,7 +217,7 @@ export const weCelebrationBatchedWishes = functions.pubsub.schedule('*/10 * * * 
 });
 /**
  * HTTP endpoint so Cloud Scheduler can Force-Run the batched wishes sweep.
- * Target URL: https://us-central1-wechristian-67f07.cloudfunctions.net/executeBatchedWishes
+ * Target URL: https://us-central1-rhema-global-ministries.cloudfunctions.net/executeBatchedWishes
  */
 export const executeBatchedWishes = onRequest({ cors: true }, async (req, res) => {
     try {

@@ -12,7 +12,7 @@ const Stack = createNativeStackNavigator<MemberGalleryStackParamList>();
 
 export default function MemberGalleryNavigator() {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
+    <Stack.Navigator id="member-gallery-stack" screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
       <Stack.Screen name="MemberGalleryDashboard" component={MemberGalleryDashboard} />
       <Stack.Screen name="MemberGalleryAlbumDetail" component={MemberGalleryAlbumDetail} />
     </Stack.Navigator>

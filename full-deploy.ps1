@@ -3,7 +3,7 @@
 # Run from: C:\Users\yraje\WeChristian2\
 # Usage: powershell -ExecutionPolicy Bypass -File .\full-deploy.ps1
 
-Set-Location "C:\Users\yraje\WeChristian2"
+Set-Location $PSScriptRoot
 
 Write-Host "Step 1: Signing JWT with Node.js..." -ForegroundColor Cyan
 $jwtJson = node sign-jwt.js | ConvertFrom-Json
@@ -55,7 +55,7 @@ $firebaseConfig = @{
         displayName    = "Service Account"
         email_verified = $true
     }
-    activeProjects = @{ "" = "wechristian-67f07" }
+    activeProjects = @{ "" = "rhema-global-ministries" }
     analytics      = @{ clientId = "deploy-script" }
 } | ConvertTo-Json -Depth 6
 
@@ -65,4 +65,4 @@ Write-Host "  Credentials written! Expiry: 58 minutes from now" -ForegroundColor
 Write-Host "Step 4: Deploying Firebase Functions (run immediately!)..." -ForegroundColor Cyan
 # Do NOT set GOOGLE_APPLICATION_CREDENTIALS - let firebase use the configstore token
 Remove-Item Env:GOOGLE_APPLICATION_CREDENTIALS -ErrorAction SilentlyContinue
-firebase deploy --only functions --project wechristian-67f07
+firebase deploy --only functions --project rhema-global-ministries

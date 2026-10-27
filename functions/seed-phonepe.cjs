@@ -3,7 +3,7 @@ const { getFirestore } = require('firebase-admin/firestore');
 
 async function seed() {
   if (!getApps().length) {
-    initializeApp({ projectId: 'wechristian-67f07' });
+    initializeApp({ projectId: 'rhema-global-ministries' });
   }
   const db = getFirestore();
   

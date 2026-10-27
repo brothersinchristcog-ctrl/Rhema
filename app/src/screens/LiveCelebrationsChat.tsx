@@ -119,7 +119,7 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
   
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const typingTimeoutRef = useRef<any>(null);
   const isTypingLocally = useRef(false);
   
   const [initialLastReadTime, setInitialLastReadTime] = useState<number>(0);

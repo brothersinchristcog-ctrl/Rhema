@@ -58,7 +58,7 @@ export class YouTubeLiveService {
         console.warn('[YouTubeLiveService] getYoutubeAuthUrl callable notice, using direct OAuth fallback:', callErr?.message);
         // Direct OAuth URL fallback so the user is never blocked
         const clientId = '962252889183-0pd9bj9acde4oql7nuonko603sg69pbv.apps.googleusercontent.com';
-        const redirectUri = 'https://us-central1-wechristian-67f07.cloudfunctions.net/youtubeOAuthCallback';
+        const redirectUri = 'https://us-central1-rhema-global-ministries.cloudfunctions.net/youtubeOAuthCallback';
         const scopes = [
           'https://www.googleapis.com/auth/youtube',
           'https://www.googleapis.com/auth/youtube.force-ssl',
