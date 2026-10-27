@@ -1,0 +1,56 @@
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders
+/ios
+/android
+
+# Scratch / temp scripts (root-level only)
+/restore_*.js
+/refactor_*.js
+/refactor_*.py
+/run_*.js
+/safeEventListRefactor*.js
+/fix_*.js
+/master_restore.js
+/recover_scripts.js
+/find_scratch.js
+/extract_*.js
+/chat*.json
+/*.txt
+/stitch_design.html

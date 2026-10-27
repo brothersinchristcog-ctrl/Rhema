@@ -1,0 +1,110 @@
+{
+  "expo": {
+    "name": "We Christian",
+    "slug": "we-christian",
+    "scheme": "wechristian",
+    "version": "1.0.6",
+    "orientation": "portrait",
+    "icon": "./assets/logo.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.wechristian.app",
+      "googleServicesFile": "./GoogleService-Info.plist",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "config": {
+        "googleMapsApiKey": "AIzaSyAa7M7Xr7W_hNOpy3BeSHMBD6oEYjD78HA"
+      }
+    },
+    "android": {
+      "package": "com.wechristian.app",
+      "googleServicesFile": "./google-services.json",
+      "blockedPermissions": [
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-logo.png",
+        "backgroundColor": "#000000"
+      },
+      "edgeToEdgeEnabled": true,
+      "versionCode": 33,
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyAa7M7Xr7W_hNOpy3BeSHMBD6oEYjD78HA"
+        }
+      },
+      "notificationChannels": [
+        {
+          "name": "Daily Verse",
+          "importance": "HIGH",
+          "showBadge": true,
+          "sound": "default",
+          "id": "daily_verse"
+        }
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "@react-native-firebase/app",
+      [
+        "@react-native-firebase/auth",
+        {
+          "ios": {
+            "experimentalUrlScheme": false
+          }
+        }
+      ],
+      "@react-native-firebase/messaging",
+      "@react-native-community/datetimepicker",
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Allow We Christian to access your microphone to create events via voice."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "saveOnly": true
+        }
+      ],
+      "expo-web-browser",
+      "@react-native-google-signin/google-signin",
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Allow We Christian to access your contacts to invite members to the church."
+        }
+      ],
+      "./withRazorpayPatch.js",
+      "expo-font",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow We Christian to access your location to verify attendance at the church."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "c20972c0-5a37-49f5-80f9-7d38334454c0"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    }
+  }
+}

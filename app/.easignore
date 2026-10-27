@@ -1,0 +1,8 @@
+android/
+ios/
+node_modules/
+.expo/
+dist/
+web-build/
+android/app/build/
+android/app/.cxx/

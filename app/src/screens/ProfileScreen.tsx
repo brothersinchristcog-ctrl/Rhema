@@ -1,0 +1,1486 @@
+import React, { useEffect, useState } from 'react';
+import { 
+  StyleSheet, 
+  View, 
+  Text, 
+  TouchableOpacity, 
+  ScrollView, 
+  ActivityIndicator,
+  RefreshControl,
+  StatusBar,
+  Platform,
+  Dimensions,
+  Modal,
+  TextInput,
+  Alert,
+  Image,
+  Switch,
+  Share
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { 
+  ChevronRight, 
+  LogOut, 
+  User, 
+  Bell, 
+  Moon, 
+  Heart, 
+  CreditCard,
+  Globe,
+  Check,
+  X,
+  CheckCircle2,
+  HelpCircle,
+  MapPin,
+  Crown,
+  Award,
+  Shield,
+  Sun,
+  Sparkles,
+  Search
+} from 'lucide-react-native';
+import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
+import FirestoreService, { AppMember } from '../services/FirestoreService';
+import ReferralService from '../services/ReferralService';
+import { useChurch } from '../context/ChurchContext';
+import SecurityService from '../services/SecurityService';
+import * as ImagePicker from 'expo-image-picker';
+import * as Application from 'expo-application';
+import Constants from 'expo-constants';
+import { Lock } from 'lucide-react-native';
+import storage from '@react-native-firebase/storage';
+import DateTimePickerModal from 'react-native-modal-datetime-picker';
+import { formatDateDisplay } from '../utils/DateUtils';
+import { CHURCH_SKILL_CATEGORIES, ALL_PREDEFINED_SKILLS } from '../constants/churchSkills';
+
+const { width } = Dimensions.get('window');
+
+export default function ProfileScreen({ navigation }: any) {
+  const { user, signOut, member: authMember, setViewMode, setMember: setGlobalMember } = useAuth();
+  const { activeChurch, isImpersonating, impersonatedBranchName, stopImpersonation } = useChurch();
+  const { isDark, toggleTheme, colors } = useTheme();
+  const { language, setLanguage, languages, currentLanguageOption, t } = useLanguage();
+  
+  const [member, setMember] = useState<AppMember | null>(authMember as AppMember | null);
+  const [loading, setLoading] = useState(!authMember);
+  const [refreshing, setRefreshing] = useState(false);
+  const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+  const [isLanguageModalVisible, setIsLanguageModalVisible] = useState(false);
+  const [isNotifyModalVisible, setIsNotifyModalVisible] = useState(false);
+  const [localPhotoUrl, setLocalPhotoUrl] = useState<string | null>(null);
+  const [referralCode, setReferralCode] = useState<string | null>(null);
+  const [generatingCode, setGeneratingCode] = useState(false);
+  
+  // Notification States
+  const [dailyPromiseNotify, setDailyPromiseNotify] = useState(true);
+  const [newSermonNotify, setNewSermonNotify] = useState(true);
+  const [eventReminderNotify, setEventReminderNotify] = useState(true);
+  const [prayerNotify, setPrayerNotify] = useState(false);
+  // Skill Picker States
+  const [skillPickerVisible, setSkillPickerVisible] = useState(false);
+  const [activeSkillField, setActiveSkillField] = useState<'primarySkill' | 'secondarySkill' | null>(null);
+  const [skillSearchText, setSkillSearchText] = useState('');
+  const [selectedCategoryTab, setSelectedCategoryTab] = useState<string>('all');
+  const [customSkillInput, setCustomSkillInput] = useState('');
+
+  const [editForm, setEditForm] = useState({
+    firstName: authMember?.firstName || '',
+    lastName: authMember?.lastName || '',
+    email: authMember?.email || '',
+    city: authMember?.city || authMember?.village || authMember?.mailingCity || '',
+    mailingStreet: authMember?.mailingStreet || '',
+    mailingState: authMember?.mailingState || '',
+    dob: authMember?.dob || '',
+    baptismDate: authMember?.baptismDate || '',
+    anniversaryDate: authMember?.anniversaryDate || '',
+    primarySkill: authMember?.primarySkill || '',
+    secondarySkill: authMember?.secondarySkill || ''
+  });
+  const [updating, setUpdating] = useState(false);
+  const [isDatePickerVisible, setDatePickerVisibility] = useState(false);
+  const [activeDateField, setActiveDateField] = useState<'dob' | 'baptismDate' | 'anniversaryDate' | null>(null);
+
+  const filteredSkillList = React.useMemo(() => {
+    let list: string[] = [];
+    if (selectedCategoryTab === 'all') {
+      list = ALL_PREDEFINED_SKILLS;
+    } else {
+      const cat = CHURCH_SKILL_CATEGORIES.find(c => c.id === selectedCategoryTab);
+      list = cat ? cat.skills : ALL_PREDEFINED_SKILLS;
+    }
+
+    if (skillSearchText.trim()) {
+      const query = skillSearchText.trim().toLowerCase();
+      return ALL_PREDEFINED_SKILLS.filter(s => s.toLowerCase().includes(query));
+    }
+    return list;
+  }, [selectedCategoryTab, skillSearchText]);
+
+  const handleConfirmDate = (date: Date) => {
+    const formattedDate = date.toISOString().split('T')[0];
+    if (activeDateField === 'dob') setEditForm({ ...editForm, dob: formattedDate });
+    if (activeDateField === 'baptismDate') setEditForm({ ...editForm, baptismDate: formattedDate });
+    if (activeDateField === 'anniversaryDate') setEditForm({ ...editForm, anniversaryDate: formattedDate });
+    setDatePickerVisibility(false);
+  };
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  
+  // Custom Alert Modals
+  const [successModalVisible, setSuccessModalVisible] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
+  const [infoModalVisible, setInfoModalVisible] = useState(false);
+  const [infoMessage, setInfoMessage] = useState('');
+  const [confirmModalVisible, setConfirmModalVisible] = useState(false);
+  const [confirmConfig, setConfirmConfig] = useState<{title: string, message: string, onConfirm: () => Promise<void>, isDestructive?: boolean}>({ title: '', message: '', onConfirm: async () => {}, isDestructive: false });
+
+  const fetchProfileData = async () => {
+    try {
+      const searchPhone = user?.phoneNumber || (member as AppMember)?.phone || (member as any)?.phoneNumber;
+      if (searchPhone) {
+        const contactCheck = await FirestoreService.checkContactExists(searchPhone);
+        if (contactCheck?.exists && contactCheck.member) {
+          setMember(contactCheck.member);
+          if (setGlobalMember) {
+            setGlobalMember(contactCheck.member);
+          }
+          setEditForm({
+            firstName: contactCheck.member.firstName || '',
+            lastName: contactCheck.member.lastName || '',
+            email: contactCheck.member.email || '',
+            city: contactCheck.member.city || contactCheck.member.village || contactCheck.member.mailingCity || '',
+            mailingStreet: contactCheck.member.mailingStreet || '',
+            mailingState: contactCheck.member.mailingState || '',
+            dob: contactCheck.member.dob || '',
+            baptismDate: contactCheck.member.baptismDate || '',
+            anniversaryDate: contactCheck.member.anniversaryDate || '',
+            primarySkill: contactCheck.member.primarySkill || '',
+            secondarySkill: contactCheck.member.secondarySkill || ''
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const handleReferralShare = async () => {
+    try {
+      let code = referralCode;
+      if (!code) {
+        if (!user) return;
+        setGeneratingCode(true);
+        const name = member?.name || `${member?.firstName || ''} ${member?.lastName || ''}`.trim() || user.displayName || 'Friend';
+        code = await ReferralService.getOrCreateReferralCode(user.uid, name, member?.churchId || activeChurch?.id);
+        setReferralCode(code);
+        setGeneratingCode(false);
+      }
+      
+      await Share.share({
+        message: `Join WeChristian! Register your church and get started using my referral code: ${code}\n\nDownload app: https://play.google.com/store/apps/details?id=com.wechristian.app&referrer=${code}`,
+        title: 'WeChristian Referral'
+      });
+    } catch (error) {
+      setGeneratingCode(false);
+      Alert.alert('Error', 'Could not generate referral code');
+    }
+  };
+
+  const handleUpdateProfile = async () => {
+    if (!member) return;
+    setUpdating(true);
+    try {
+      const updatedDetails = {
+        ...editForm,
+        mailingCity: editForm.city, // Keep synced for any legacy UI
+        name: `${editForm.firstName || ''} ${editForm.lastName || ''}`.trim()
+      };
+      await FirestoreService.updateMemberProfile(member.churchId || activeChurch?.id || '', member.id, updatedDetails);
+      if (user) {
+        await user.updateProfile({ displayName: updatedDetails.name });
+      }
+      setIsEditModalVisible(false);
+      setSuccessMessage('Your personal details (Name, Email, and Address) have been updated directly in your church record.');
+      setTimeout(() => setSuccessModalVisible(true), 300);
+      fetchProfileData();
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to update profile');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const pickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.5,
+    });
+
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      const selectedUri = result.assets[0].uri;
+      
+      setConfirmConfig({
+        title: 'Confirm Photo',
+        message: 'Do you want to set this cropped image as your profile photo?',
+        isDestructive: false,
+        onConfirm: async () => {
+          try {
+            setUpdating(true);
+            if (user) {
+              // Upload to Firebase Storage
+              const reference = storage().ref(`profile_photos/${user.uid}/profile_${Date.now()}.jpg`);
+              await reference.putFile(selectedUri);
+              const downloadUrl = await reference.getDownloadURL();
+
+              setLocalPhotoUrl(downloadUrl);
+              
+              await user.updateProfile({
+                photoURL: downloadUrl
+              });
+              
+              // Sync the photo URL to the Firestore member document so admins can see it
+              if (member && (member.churchId || activeChurch?.id)) {
+                await FirestoreService.updateMemberProfile(member.churchId || activeChurch?.id || '', member.id, {
+                  profilePhoto: downloadUrl,
+                  photoRemoved: false
+                });
+              }
+
+              setConfirmModalVisible(false);
+              setSuccessMessage(t('profile.photoUpdatedSuccess'));
+              setTimeout(() => setSuccessModalVisible(true), 300);
+            }
+          } catch (error: any) {
+            Alert.alert(t('common.error'), t('common.error') + ': ' + error.message);
+          } finally {
+            setUpdating(false);
+          }
+        }
+      });
+      setConfirmModalVisible(true);
+    }
+  };
+
+  const handleRemovePhoto = async () => {
+    setConfirmConfig({
+      title: t('profile.removePhotoConfirmTitle'),
+      message: t('profile.removePhotoConfirmMsg'),
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          setUpdating(true);
+          if (user) {
+            setLocalPhotoUrl(null);
+            await user.updateProfile({
+              photoURL: null as any
+            });
+
+            // Sync the removal to the Firestore member document
+            if (member && (member.churchId || activeChurch?.id)) {
+              await FirestoreService.updateMemberProfile(member.churchId || activeChurch?.id || '', member.id, {
+                profilePhoto: null,
+                photoURL: null,
+                photoUrl: null,
+                profileImageUrl: null,
+                PhotoUrl: null,
+                Photo: null,
+                photoRemoved: true
+              });
+            }
+
+            setConfirmModalVisible(false);
+            setSuccessMessage(t('profile.photoRemovedSuccess'));
+            setTimeout(() => setSuccessModalVisible(true), 300);
+          }
+        } catch (error: any) {
+          Alert.alert('Error', 'Failed to remove photo: ' + error.message);
+        } finally {
+          setUpdating(false);
+        }
+      }
+    });
+    setConfirmModalVisible(true);
+  };
+
+    useEffect(() => {
+      fetchProfileData();
+      checkBiometrics();
+    }, [user]);
+
+    useEffect(() => {
+      const m: any = member;
+      let dbPhoto = null;
+      if (m) {
+        if (m.photoRemoved || m.profilePhoto === null) {
+          dbPhoto = null;
+        } else {
+          dbPhoto = m.profilePhoto || m.photoURL || m.photoUrl || m.profileImageUrl || m.PhotoUrl || m.Photo;
+        }
+      }
+      
+      if (member) {
+        setLocalPhotoUrl(dbPhoto || null);
+      } else {
+        setLocalPhotoUrl(user?.photoURL || null);
+      }
+    }, [user, member]);
+
+  const checkBiometrics = async () => {
+    const available = await SecurityService.isBiometricAvailable();
+    const enabled = await SecurityService.isBiometricEnabled();
+    setBiometricAvailable(available);
+    setBiometricEnabled(enabled);
+  };
+
+  const toggleBiometrics = async (val: boolean) => {
+    if (val) {
+      const success = await SecurityService.authenticate(activeChurch?.name);
+      if (success) {
+        await SecurityService.setBiometricPreference(true);
+        setBiometricEnabled(true);
+      } else {
+        setBiometricEnabled(false);
+      }
+    } else {
+      await SecurityService.setBiometricPreference(false);
+      setBiometricEnabled(false);
+    }
+  };
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchProfileData();
+  };
+
+  const getInitials = (name: string) => {
+    if (!name) return '??';
+    const parts = name.split(' ');
+    if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    return name[0].toUpperCase();
+  };
+
+  if (loading && !refreshing) {
+    return (
+      <View style={[styles.loadingContainer, { backgroundColor: '#1a2d5a' }]}>
+        <ActivityIndicator size="large" color="#FCD34D" />
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#f8fafc' }]}>
+      <StatusBar barStyle="light-content" backgroundColor="#1a2d5a" />
+
+      {isImpersonating ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <Shield size={64} color="#1a2d5a" style={{ marginBottom: 20 }} />
+          <Text style={{ fontSize: 24, fontWeight: '800', color: '#1a2d5a', textAlign: 'center', marginBottom: 12 }}>
+            Admin View
+          </Text>
+          <Text style={{ fontSize: 16, color: '#64748b', textAlign: 'center', marginBottom: 30, lineHeight: 24 }}>
+            You are currently viewing {impersonatedBranchName} as an administrator. Your personal profile is not active in this view.
+          </Text>
+          <TouchableOpacity 
+            style={{ backgroundColor: '#1a2d5a', paddingVertical: 14, paddingHorizontal: 32, borderRadius: 12 }}
+            onPress={stopImpersonation}
+          >
+            <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Return to Main Church</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <>
+          <ScrollView 
+            showsVerticalScrollIndicator={false} 
+            contentContainerStyle={styles.scrollContent}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1a2d5a" />}
+            bounces={true}
+          >
+          {/* ── Hero Section (Navy) ── */}
+      <LinearGradient 
+        colors={['#2b52a1', '#1a3673']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.heroSection}
+      >
+        <View style={styles.headerTop}>
+          <View style={{ width: 40 }} />
+          <TouchableOpacity style={styles.themeToggle} onPress={toggleTheme}>
+            {isDark
+              ? <Sun size={18} color="#FCD34D" />
+              : <Moon size={18} color="#fff" />
+            }
+          </TouchableOpacity>
+        </View>
+
+        {/* ── Hero Content ── */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, marginTop: 14, width: '100%' }}>
+          {/* Avatar */}
+          <View style={[styles.avatarContainer, { marginTop: 0, marginRight: 18 }]}>
+            {localPhotoUrl ? (
+              <Image source={{ uri: localPhotoUrl }} style={styles.avatarImg} />
+            ) : (
+              <View style={styles.avatarCircle}>
+                <User size={42} color="#fff" strokeWidth={1.5} />
+              </View>
+            )}
+          </View>
+
+          {/* Name + Greeting */}
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 22, fontWeight: '800', color: '#fff', lineHeight: 28 }}>
+              {member?.firstName ? `${member.firstName} ${member.lastName || ''}` : member?.name || user?.displayName || 'Beloved Member'}
+            </Text>
+            {/* Member Since Pill */}
+            <View style={{ marginTop: 8, alignSelf: 'flex-start', backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 }}>
+              <Text style={{ color: '#e2e8f0', fontSize: 12, fontWeight: '500' }}>
+                {t('profile.memberSince', { year: member?.joinDate ? new Date(member.joinDate).getFullYear() : '2026' })}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* ── Stats Row ── */}
+        <View style={{ paddingHorizontal: 16, width: '100%', marginTop: 20 }}>
+          <View style={styles.statsCard}>
+            <View style={styles.statItem}>
+              <View style={[styles.statIconContainer, { backgroundColor: '#3b82f6' }]}>
+                <MapPin size={14} color="#fff" strokeWidth={2.5} />
+              </View>
+              <View style={styles.statTextCol}>
+                <Text style={styles.statLabel} numberOfLines={1} adjustsFontSizeToFit>{t('profile.village')}</Text>
+                <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>{member?.mailingCity || 'N/A'}</Text>
+              </View>
+            </View>
+
+            <View style={styles.statDivider} />
+
+            <View style={styles.statItem}>
+              <View style={[styles.statIconContainer, { backgroundColor: '#10b981' }]}>
+                <Globe size={14} color="#fff" strokeWidth={2.5} />
+              </View>
+              <View style={styles.statTextCol}>
+                <Text style={styles.statLabel} numberOfLines={1} adjustsFontSizeToFit>{t('profile.language')}</Text>
+                <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>{currentLanguageOption.nativeName}</Text>
+              </View>
+            </View>
+
+            <View style={styles.statDivider} />
+
+            <View style={styles.statItem}>
+              <View style={[styles.statIconContainer, { backgroundColor: '#8b5cf6' }]}>
+                <Crown size={14} color="#fff" strokeWidth={2.5} />
+              </View>
+              <View style={styles.statTextCol}>
+                <Text style={styles.statLabel} numberOfLines={1} adjustsFontSizeToFit>{t('profile.role')}</Text>
+                <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>
+                  {(member?.userType || 'MEMBER').toUpperCase()}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Member Skills Badges in Hero */}
+          {(member?.primarySkill || member?.secondarySkill) ? (
+            <View style={{ marginTop: 12, width: '100%', flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
+              {member?.primarySkill ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' }}>
+                  <Award size={12} color="#FDE68A" style={{ marginRight: 5 }} />
+                  <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>
+                    {member.primarySkill}
+                  </Text>
+                </View>
+              ) : null}
+              {member?.secondarySkill ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)' }}>
+                  <Sparkles size={12} color="#C7D2FE" style={{ marginRight: 5 }} />
+                  <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>
+                    {member.secondarySkill}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+        </View>
+      </LinearGradient>
+
+        {/* Stats removed for accuracy */}
+
+        {/* ── Account Section ── */}
+        <Text style={styles.sectionLabel}>{t('profile.accountSection')}</Text>
+        <View style={styles.menuGroup}>
+          {(String(member?.userType || '').toUpperCase().includes('ADMIN') || String(member?.userType || '').toUpperCase().includes('SUPER')) && (
+            <MenuItem 
+              icon={<Shield size={20} color="#1a2d5a" />} 
+              iconBg="#e6f0fa"
+              title={t('profile.adminDashboard')} 
+              sub={t('profile.adminDashboardSub')} 
+              onPress={() => setViewMode('admin')}
+            />
+          )}
+          <MenuItem 
+            icon={<User size={20} color="#1a2d5a" />} 
+            iconBg="#eff6ff"
+            title={t('profile.myProfile')} 
+            sub={t('profile.myProfileSub')} 
+            onPress={() => setIsEditModalVisible(true)}
+          />
+          <MenuItem 
+            icon={<CreditCard size={20} color="#94a3b8" />} 
+            iconBg="#f1f5f9"
+            title={t('profile.givingHistory')} 
+            sub={t('profile.givingHistorySub')} 
+            onPress={() => {
+              navigation.navigate('GivingHistory');
+            }}
+          />
+
+          {(String(member?.userType || '').toUpperCase().includes('ADMIN') || String(member?.userType || '').toUpperCase().includes('SUPER') || String(member?.userType || '').toUpperCase().includes('PASTOR')) && (
+            <MenuItem 
+              icon={<CreditCard size={20} color="#d97706" />} 
+              iconBg="#fffbeb"
+              title={t('profile.churchSubscription')} 
+              sub={t('profile.churchSubscriptionSub')} 
+              isLast 
+              onPress={() => {
+                navigation.navigate('Subscription');
+              }}
+            />
+          )}
+        </View>
+
+        {/* ── Settings Section ── */}
+        <Text style={styles.sectionLabel}>{t('profile.settingsSection')}</Text>
+        <View style={styles.menuGroup}>
+          <MenuItem 
+            icon={<Bell size={20} color="#0891b2" />} 
+            iconBg="#eff6ff"
+            title={t('profile.notifications')} 
+            sub={t('profile.notificationsSub')} 
+            onPress={() => {
+              setIsLanguageModalVisible(false);
+              setIsNotifyModalVisible(true);
+            }}
+          />
+          <MenuItem 
+            icon={<Globe size={20} color="#166534" />} 
+            iconBg="#f0fdf4"
+            title={t('profile.language')} 
+            sub={`${currentLanguageOption.nativeName} (${currentLanguageOption.name})`} 
+            onPress={() => {
+              setIsNotifyModalVisible(false); // Close other modal
+              setIsLanguageModalVisible(true);
+            }}
+          />
+          <MenuItem 
+            icon={<Moon size={20} color="#d97706" />} 
+            iconBg="#fffbeb"
+            title={t('profile.darkMode')} 
+            sub={t('profile.darkModeCurrently', { mode: isDark ? t('profile.modeDark') : t('profile.modeLight') })} 
+            isLast 
+            onPress={toggleTheme}
+          />
+        </View>
+
+        {/* ── Security Section ── */}
+        {biometricAvailable && (
+          <>
+            <Text style={styles.sectionLabel}>{t('profile.securitySection')}</Text>
+            <View style={styles.menuGroup}>
+              <View style={[styles.menuItem, { borderBottomWidth: 0 }]}>
+                <View style={[styles.iconBox, { backgroundColor: '#fdf2f2' }]}>
+                  <Lock size={20} color="#c0392b" />
+                </View>
+                <View style={styles.menuContent}>
+                  <Text style={styles.menuTitle}>{t('profile.biometricLock')}</Text>
+                  <Text style={styles.menuSub}>{t('profile.biometricSub')}</Text>
+                </View>
+                <Switch 
+                  value={biometricEnabled} 
+                  onValueChange={toggleBiometrics}
+                  trackColor={{ false: '#e2e8f0', true: '#1a2d5a' }}
+                />
+              </View>
+            </View>
+          </>
+        )}
+
+        {/* ── Referrals Section ── */}
+        <Text style={styles.sectionLabel}>{t('profile.referralsSection')}</Text>
+        <View style={styles.menuGroup}>
+          <MenuItem 
+            icon={<Award size={20} color="#8b5cf6" />} 
+            iconBg="#f3e8ff"
+            title={t('profile.referChurch')} 
+            sub={generatingCode ? t('profile.generatingCode') : (referralCode ? t('profile.yourCode', { code: referralCode }) : t('profile.referChurchSub'))} 
+            isLast 
+            onPress={handleReferralShare}
+          />
+        </View>
+
+        {/* ── Sign Out Button ── */}
+        <TouchableOpacity 
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: '#0f172a',
+            paddingVertical: 16,
+            paddingHorizontal: 32,
+            borderRadius: 100, // Pill shape
+            alignSelf: 'center',
+            marginTop: 40,
+            marginBottom: 20,
+            shadowColor: '#0f172a',
+            shadowOpacity: 0.25,
+            shadowRadius: 12,
+            shadowOffset: { width: 0, height: 6 },
+            elevation: 8
+          }}
+          onPress={signOut}
+        >
+          <LogOut size={20} color="#ffffff" style={{ marginRight: 10 }} />
+          <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: '700' }}>{t('profile.signOut')}</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.versionTxt}>
+          {t('profile.version')} {Constants.expoConfig?.version || '1.0.6'}
+        </Text>
+      </ScrollView>
+
+      {/* ── Edit Profile Modal (Using View for better reliability) ── */}
+      {isEditModalVisible && (
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t('profile.editProfile')}</Text>
+              <TouchableOpacity onPress={() => setIsEditModalVisible(false)}>
+                <Text style={styles.closeText}>{t('common.cancel')}</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.modalScroll}>
+              <View style={styles.photoEditSection}>
+                <View style={styles.modalAvatarCircle}>
+                   {localPhotoUrl ? (
+                     <Image source={{ uri: localPhotoUrl }} style={styles.modalAvatarImg} />
+                   ) : (
+                     <User size={40} color="#fff" strokeWidth={1.5} />
+                   )}
+                </View>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 10 }}>
+                  <TouchableOpacity style={styles.changePhotoBtn} onPress={pickImage}>
+                    <Text style={styles.changePhotoText}>{t('profile.changePhoto')}</Text>
+                  </TouchableOpacity>
+                  {localPhotoUrl ? (
+                    <TouchableOpacity style={styles.removePhotoBtn} onPress={handleRemovePhoto}>
+                      <Text style={styles.removePhotoText}>{t('profile.removePhoto')}</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>{t('profile.firstName')}</Text>
+                <TextInput 
+                  style={styles.input}
+                  value={editForm.firstName}
+                  onChangeText={(t) => setEditForm({...editForm, firstName: t})}
+                  placeholder={t('profile.firstName')}
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>{t('profile.lastName')}</Text>
+                <TextInput 
+                  style={styles.input}
+                  value={editForm.lastName}
+                  onChangeText={(t) => setEditForm({...editForm, lastName: t})}
+                  placeholder={t('profile.lastName')}
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>{t('profile.email')}</Text>
+                <TextInput 
+                  style={styles.input}
+                  value={editForm.email}
+                  onChangeText={(t) => setEditForm({...editForm, email: t})}
+                  placeholder={t('profile.email')}
+                  keyboardType="email-address"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>{t('profile.birthday')}</Text>
+                <TouchableOpacity 
+                  style={[styles.input, { justifyContent: 'center' }]}
+                  onPress={() => {
+                    setActiveDateField('dob');
+                    setDatePickerVisibility(true);
+                  }}
+                >
+                  <Text style={{ fontSize: 15, color: editForm.dob ? '#1e293b' : '#94a3b8' }}>
+                    {editForm.dob ? formatDateDisplay(editForm.dob) : t('profile.selectDate')}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>{t('profile.baptismDate')}</Text>
+                <TouchableOpacity 
+                  style={[styles.input, { justifyContent: 'center' }]}
+                  onPress={() => {
+                    setActiveDateField('baptismDate');
+                    setDatePickerVisibility(true);
+                  }}
+                >
+                  <Text style={{ fontSize: 15, color: editForm.baptismDate ? '#1e293b' : '#94a3b8' }}>
+                    {editForm.baptismDate ? formatDateDisplay(editForm.baptismDate) : t('profile.selectDate')}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>{t('profile.weddingAnniversaryDate')}</Text>
+                <TouchableOpacity 
+                  style={[styles.input, { justifyContent: 'center' }]}
+                  onPress={() => {
+                    setActiveDateField('anniversaryDate');
+                    setDatePickerVisibility(true);
+                  }}
+                >
+                  <Text style={{ fontSize: 15, color: editForm.anniversaryDate ? '#1e293b' : '#94a3b8' }}>
+                    {editForm.anniversaryDate ? formatDateDisplay(editForm.anniversaryDate) : t('profile.selectDate')}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Primary Skill */}
+              <View style={styles.inputGroup}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <Text style={styles.inputLabel}>Primary Skill</Text>
+                  {editForm.primarySkill ? (
+                    <TouchableOpacity onPress={() => setEditForm({ ...editForm, primarySkill: '' })}>
+                      <Text style={{ fontSize: 11, color: '#dc2626', fontWeight: '600' }}>Clear</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+                <TouchableOpacity 
+                  style={[styles.input, { justifyContent: 'space-between', flexDirection: 'row', alignItems: 'center' }]}
+                  onPress={() => {
+                    setActiveSkillField('primarySkill');
+                    setSkillSearchText('');
+                    setSelectedCategoryTab('all');
+                    setCustomSkillInput('');
+                    setSkillPickerVisible(true);
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
+                    <Award size={16} color={editForm.primarySkill ? '#1a2d5a' : '#94a3b8'} style={{ marginRight: 8 }} />
+                    <Text style={{ fontSize: 15, color: editForm.primarySkill ? '#1e293b' : '#94a3b8' }} numberOfLines={1}>
+                      {editForm.primarySkill || 'Select Primary Skill'}
+                    </Text>
+                  </View>
+                  <ChevronRight size={18} color="#94a3b8" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Secondary Skill */}
+              <View style={styles.inputGroup}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <Text style={styles.inputLabel}>Secondary Skill</Text>
+                  {editForm.secondarySkill ? (
+                    <TouchableOpacity onPress={() => setEditForm({ ...editForm, secondarySkill: '' })}>
+                      <Text style={{ fontSize: 11, color: '#dc2626', fontWeight: '600' }}>Clear</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+                <TouchableOpacity 
+                  style={[styles.input, { justifyContent: 'space-between', flexDirection: 'row', alignItems: 'center' }]}
+                  onPress={() => {
+                    setActiveSkillField('secondarySkill');
+                    setSkillSearchText('');
+                    setSelectedCategoryTab('all');
+                    setCustomSkillInput('');
+                    setSkillPickerVisible(true);
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
+                    <Sparkles size={16} color={editForm.secondarySkill ? '#4338ca' : '#94a3b8'} style={{ marginRight: 8 }} />
+                    <Text style={{ fontSize: 15, color: editForm.secondarySkill ? '#1e293b' : '#94a3b8' }} numberOfLines={1}>
+                      {editForm.secondarySkill || 'Select Secondary Skill'}
+                    </Text>
+                  </View>
+                  <ChevronRight size={18} color="#94a3b8" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>{t('profile.phoneManagedByAuth')}</Text>
+                <TextInput 
+                  style={[styles.input, { backgroundColor: '#f1f5f9', color: '#64748b' }]}
+                  value={user?.phoneNumber || ''}
+                  editable={false}
+                />
+              </View>
+
+              <View style={styles.inputRow}>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.inputLabel}>{t('profile.city')}</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={editForm.city}
+                    onChangeText={(t) => setEditForm({...editForm, city: t})}
+                    placeholder={t('profile.city')}
+                  />
+                </View>
+                <View style={[styles.inputGroup, { flex: 1, marginLeft: 10 }]}>
+                  <Text style={styles.inputLabel}>{t('profile.state')}</Text>
+                  <TextInput 
+                    style={styles.input}
+                    value={editForm.mailingState}
+                    onChangeText={(t) => setEditForm({...editForm, mailingState: t})}
+                    placeholder={t('profile.state')}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>{t('profile.streetAddress')}</Text>
+                <TextInput 
+                  style={styles.input}
+                  value={editForm.mailingStreet}
+                  onChangeText={(t) => setEditForm({...editForm, mailingStreet: t})}
+                  placeholder={t('profile.streetAddress')}
+                  multiline
+                />
+              </View>
+
+              <TouchableOpacity 
+                style={[styles.saveBtn, updating && { opacity: 0.7 }]} 
+                onPress={handleUpdateProfile}
+                disabled={updating}
+              >
+                {updating ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.saveBtnText}>{t('profile.updateProfileBtn')}</Text>
+                )}
+              </TouchableOpacity>
+              
+              <View style={{ height: 60 }} />
+            </ScrollView>
+
+            <DateTimePickerModal
+              isVisible={isDatePickerVisible}
+              mode="date"
+              onConfirm={handleConfirmDate}
+              onCancel={() => setDatePickerVisibility(false)}
+              date={
+                activeDateField && editForm[activeDateField] 
+                ? new Date(editForm[activeDateField]) 
+                : new Date()
+              }
+              maximumDate={new Date()}
+            />
+
+            {/* Skill Picker Modal */}
+            <Modal
+              visible={skillPickerVisible}
+              transparent
+              animationType="slide"
+              onRequestClose={() => setSkillPickerVisible(false)}
+            >
+              <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+                <View style={{ width: '100%', backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '85%', paddingBottom: 24 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 18, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      {activeSkillField === 'primarySkill' ? (
+                        <Award size={20} color="#1a2d5a" style={{ marginRight: 8 }} />
+                      ) : (
+                        <Sparkles size={20} color="#4338CA" style={{ marginRight: 8 }} />
+                      )}
+                      <Text style={{ fontSize: 18, fontWeight: '800', color: '#1a2d5a' }}>
+                        {activeSkillField === 'primarySkill' ? 'Select Primary Skill' : 'Select Secondary Skill'}
+                      </Text>
+                    </View>
+                    <TouchableOpacity onPress={() => setSkillPickerVisible(false)} style={{ backgroundColor: '#f1f5f9', padding: 6, borderRadius: 20 }}>
+                      <X size={18} color="#1a2d5a" />
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Category Tabs */}
+                  <View style={{ paddingVertical: 10, paddingHorizontal: 16 }}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                      <TouchableOpacity
+                        style={[
+                          styles.catTab,
+                          selectedCategoryTab === 'all' && styles.catTabActive
+                        ]}
+                        onPress={() => setSelectedCategoryTab('all')}
+                      >
+                        <Text style={[styles.catTabTxt, selectedCategoryTab === 'all' && styles.catTabTxtActive]}>All Skills</Text>
+                      </TouchableOpacity>
+                      {CHURCH_SKILL_CATEGORIES.map(cat => (
+                        <TouchableOpacity
+                          key={cat.id}
+                          style={[
+                            styles.catTab,
+                            selectedCategoryTab === cat.id && styles.catTabActive
+                          ]}
+                          onPress={() => setSelectedCategoryTab(cat.id)}
+                        >
+                          <Text style={[styles.catTabTxt, selectedCategoryTab === cat.id && styles.catTabTxtActive]}>{cat.name}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+
+                  {/* Search Input */}
+                  <View style={{ paddingHorizontal: 16, marginBottom: 8 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#f1f5f9', borderRadius: 10, paddingHorizontal: 12, height: 40 }}>
+                      <Search size={16} color="#94a3b8" style={{ marginRight: 8 }} />
+                      <TextInput
+                        placeholder="Search skill..."
+                        placeholderTextColor="#94a3b8"
+                        value={skillSearchText}
+                        onChangeText={setSkillSearchText}
+                        style={{ flex: 1, fontSize: 13, color: '#1e293b' }}
+                      />
+                      {skillSearchText ? (
+                        <TouchableOpacity onPress={() => setSkillSearchText('')}>
+                          <X size={14} color="#94a3b8" />
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+                  </View>
+
+                  {/* Skills List */}
+                  <ScrollView style={{ paddingHorizontal: 16, maxHeight: 260 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                    {filteredSkillList.map((skill) => {
+                      const isSelected = activeSkillField && editForm[activeSkillField] === skill;
+                      return (
+                        <TouchableOpacity
+                          key={skill}
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            paddingVertical: 12,
+                            paddingHorizontal: 12,
+                            borderBottomWidth: 1,
+                            borderBottomColor: '#f1f5f9',
+                            backgroundColor: isSelected ? '#eff6ff' : 'transparent',
+                            borderRadius: 8
+                          }}
+                          onPress={() => {
+                            if (activeSkillField) {
+                              setEditForm(prev => ({ ...prev, [activeSkillField]: skill }));
+                            }
+                            setSkillPickerVisible(false);
+                          }}
+                        >
+                          <Text style={{ fontSize: 14, fontWeight: isSelected ? '700' : '500', color: isSelected ? '#1a2d5a' : '#334155' }}>
+                            {skill}
+                          </Text>
+                          {isSelected && <Check size={18} color="#1a2d5a" />}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+
+                  {/* Custom Skill Input */}
+                  <View style={{ paddingHorizontal: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#f1f5f9', marginTop: 8 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748b', marginBottom: 6, textTransform: 'uppercase' }}>
+                      Or Add Custom Skill
+                    </Text>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <TextInput
+                        style={{ flex: 1, borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 10, paddingHorizontal: 12, height: 42, color: '#1e293b', fontSize: 13 }}
+                        placeholder="Type custom skill..."
+                        placeholderTextColor="#94a3b8"
+                        value={customSkillInput}
+                        onChangeText={setCustomSkillInput}
+                      />
+                      <TouchableOpacity
+                        style={{ backgroundColor: '#1a2d5a', paddingHorizontal: 14, borderRadius: 10, justifyContent: 'center', alignItems: 'center' }}
+                        onPress={() => {
+                          if (customSkillInput.trim() && activeSkillField) {
+                            setEditForm(prev => ({ ...prev, [activeSkillField]: customSkillInput.trim() }));
+                            setCustomSkillInput('');
+                            setSkillPickerVisible(false);
+                          }
+                        }}
+                      >
+                        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>Apply</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+              </View>
+            </Modal>
+          </View>
+        </View>
+      )}
+
+      {/* ── Language Selection Modal ── */}
+      {isLanguageModalVisible && (
+        <View style={styles.modalOverlay}>
+          <View style={styles.bottomSheetContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t('profile.selectLanguage')}</Text>
+              <TouchableOpacity onPress={() => setIsLanguageModalVisible(false)}>
+                <X size={24} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false} bounces={false}>
+              <View style={styles.langList}>
+                {languages.map((lang) => (
+                  <TouchableOpacity 
+                    key={lang.code}
+                    style={[
+                      styles.langItem, 
+                      language === lang.code && styles.langItemActive
+                    ]}
+                    onPress={() => {
+                      setLanguage(lang.code);
+                      setTimeout(() => setIsLanguageModalVisible(false), 200);
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                      <View style={[
+                        { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
+                        language === lang.code
+                          ? { backgroundColor: '#1a2d5a' }
+                          : { backgroundColor: '#f1f5f9' }
+                      ]}>
+                        <Text style={{ fontSize: 14, fontWeight: '800', color: language === lang.code ? '#fff' : '#64748b' }}>
+                          {lang.nativeName.charAt(0)}
+                        </Text>
+                      </View>
+                      <View>
+                        <Text style={[
+                          styles.langName,
+                          language === lang.code && styles.langTextActive
+                        ]}>{lang.nativeName}</Text>
+                        <Text style={styles.langNative}>{lang.name}</Text>
+                      </View>
+                    </View>
+                    {language === lang.code && (
+                      <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#1a2d5a', justifyContent: 'center', alignItems: 'center' }}>
+                        <Check size={14} color="#fff" />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      )}
+
+      {/* ── Notification Preferences Modal ── */}
+      {isNotifyModalVisible && (
+        <View style={styles.modalOverlay}>
+          <View style={styles.bottomSheetContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t('profile.notifications')}</Text>
+              <TouchableOpacity onPress={() => setIsNotifyModalVisible(false)}>
+                <X size={24} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.notifyList}>
+              <View style={styles.notifyItem}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.notifyName}>{t('profile.dailyPromiseNotif')}</Text>
+                  <Text style={styles.notifyDesc}>{t('profile.dailyPromiseNotifDesc')}</Text>
+                </View>
+                <Switch 
+                  value={dailyPromiseNotify} 
+                  onValueChange={setDailyPromiseNotify}
+                  trackColor={{ false: '#e2e8f0', true: '#1a2d5a' }}
+                />
+              </View>
+
+              <View style={styles.notifyItem}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.notifyName}>{t('profile.newSermonsNotif')}</Text>
+                  <Text style={styles.notifyDesc}>{t('profile.newSermonsNotifDesc')}</Text>
+                </View>
+                <Switch 
+                  value={newSermonNotify} 
+                  onValueChange={setNewSermonNotify}
+                  trackColor={{ false: '#e2e8f0', true: '#1a2d5a' }}
+                />
+              </View>
+
+              <View style={styles.notifyItem}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.notifyName}>{t('profile.eventsNotif')}</Text>
+                  <Text style={styles.notifyDesc}>{t('profile.eventsNotifDesc')}</Text>
+                </View>
+                <Switch 
+                  value={eventReminderNotify} 
+                  onValueChange={setEventReminderNotify}
+                  trackColor={{ false: '#e2e8f0', true: '#1a2d5a' }}
+                />
+              </View>
+
+              <View style={styles.notifyItem}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.notifyName}>{t('profile.prayerNotif')}</Text>
+                  <Text style={styles.notifyDesc}>{t('profile.prayerNotifDesc')}</Text>
+                </View>
+                <Switch 
+                  value={prayerNotify} 
+                  onValueChange={setPrayerNotify}
+                  trackColor={{ false: '#e2e8f0', true: '#1a2d5a' }}
+                />
+              </View>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Success Modal */}
+      <Modal visible={successModalVisible} transparent animationType="fade">
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: '#fff', borderRadius: 24, padding: 32, width: '100%', alignItems: 'center', elevation: 10, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 20 }}>
+            <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: '#dcfce7', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+              <CheckCircle2 size={32} color="#16a34a" />
+            </View>
+            <Text style={{ fontSize: 20, fontWeight: '700', color: '#1e293b', marginBottom: 8 }}>{t('profile.successTitle')}</Text>
+            <Text style={{ fontSize: 15, color: '#64748b', textAlign: 'center', marginBottom: 24, lineHeight: 22 }}>
+              {successMessage}
+            </Text>
+            <TouchableOpacity 
+              style={{ backgroundColor: '#1a2d5a', paddingVertical: 14, paddingHorizontal: 32, borderRadius: 24, width: '100%', alignItems: 'center' }}
+              onPress={() => setSuccessModalVisible(false)}
+            >
+              <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>{t('common.ok')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Info / Coming Soon Modal */}
+      <Modal visible={infoModalVisible} transparent animationType="fade">
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: '#fff', borderRadius: 24, padding: 32, width: '100%', alignItems: 'center', elevation: 10, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 20 }}>
+            <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: '#e0f2fe', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+              <HelpCircle size={32} color="#0284c7" />
+            </View>
+            <Text style={{ fontSize: 20, fontWeight: '700', color: '#1e293b', marginBottom: 8 }}>Coming Soon!</Text>
+            <Text style={{ fontSize: 15, color: '#64748b', textAlign: 'center', marginBottom: 24, lineHeight: 22 }}>
+              {infoMessage}
+            </Text>
+            <TouchableOpacity 
+              style={{ backgroundColor: '#0284c7', paddingVertical: 14, paddingHorizontal: 32, borderRadius: 24, width: '100%', alignItems: 'center' }}
+              onPress={() => setInfoModalVisible(false)}
+            >
+              <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>{t('common.ok')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Confirm Modal */}
+      <Modal visible={confirmModalVisible} transparent animationType="fade">
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: '#fff', borderRadius: 24, padding: 32, width: '100%', alignItems: 'center', elevation: 10, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 20 }}>
+            <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: confirmConfig.isDestructive ? '#fee2e2' : '#e0e7ff', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+              <HelpCircle size={32} color={confirmConfig.isDestructive ? '#ef4444' : '#4f46e5'} />
+            </View>
+            <Text style={{ fontSize: 20, fontWeight: '700', color: '#1e293b', marginBottom: 8 }}>{confirmConfig.title}</Text>
+            <Text style={{ fontSize: 15, color: '#64748b', textAlign: 'center', marginBottom: 28, lineHeight: 22 }}>
+              {confirmConfig.message}
+            </Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, width: '100%' }}>
+              <TouchableOpacity 
+                style={{ flex: 1, backgroundColor: '#f1f5f9', paddingVertical: 14, borderRadius: 24, alignItems: 'center' }}
+                onPress={() => setConfirmModalVisible(false)}
+                disabled={updating}
+              >
+                <Text style={{ color: '#64748b', fontSize: 15, fontWeight: '700' }}>{t('common.cancel')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={{ flex: 1, backgroundColor: confirmConfig.isDestructive ? '#ef4444' : '#1a2d5a', paddingVertical: 14, borderRadius: 24, alignItems: 'center' }}
+                onPress={() => confirmConfig.onConfirm()}
+                disabled={updating}
+              >
+                {updating ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>{confirmConfig.isDestructive ? t('common.delete') : t('common.confirm')}</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      </>
+      )}
+    </View>
+  );
+}
+
+function MenuItem({ icon, iconBg, title, sub, isLast, onPress }: any) {
+  return (
+    <TouchableOpacity 
+      style={[styles.menuItem, isLast && { borderBottomWidth: 0 }]} 
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <View style={[styles.iconBox, { backgroundColor: iconBg }]}>
+        {icon}
+      </View>
+      <View style={styles.menuContent}>
+        <Text style={styles.menuTitle}>{title}</Text>
+        <Text style={styles.menuSub}>{sub}</Text>
+      </View>
+      <ChevronRight size={16} color="#cbd5e1" />
+    </TouchableOpacity>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+
+  // Hero Section
+  heroSection: { 
+    backgroundColor: 'transparent', 
+    paddingTop: Platform.OS === 'ios' ? 60 : (StatusBar.currentHeight ? StatusBar.currentHeight + 10 : 45), 
+    paddingBottom: 28,
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
+    alignItems: 'center'
+  },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20, alignItems: 'center', alignSelf: 'stretch' },
+  themeToggle: { backgroundColor: 'rgba(255,255,255,0.15)', width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
+  themeToggleText: { color: '#fff', fontSize: 10, fontWeight: '800' },
+
+  avatarContainer: { alignItems: 'center', marginTop: 0 },
+  avatarCircle: { 
+    width: 90, height: 90, borderRadius: 45, backgroundColor: '#c0392b', 
+    justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#e0c88a'
+  },
+  avatarImg: { width: 90, height: 90, borderRadius: 45, borderWidth: 3, borderColor: '#e0c88a' },
+  avatarText: { color: '#fff', fontSize: 32, fontWeight: '800' },
+  verifiedBadge: { 
+    position: 'absolute', 
+    bottom: 0, 
+    right: -5, 
+    backgroundColor: '#FCD34D', 
+    width: 24, 
+    height: 24, 
+    borderRadius: 12, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    borderWidth: 2, 
+    borderColor: '#1a2d5a',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 3
+  },
+
+  userInfo: { alignItems: 'center', marginTop: 15 },
+  userName: { fontSize: 20, fontWeight: '800', color: '#fff' },
+  userSub: { fontSize: 12, color: '#aac4e8', marginTop: 4 },
+  
+  badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 15 },
+  badge: { backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
+  badgeActive: { backgroundColor: 'rgba(252,211,77,0.2)' },
+  badgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  
+  statsCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginTop: 20,
+    width: '100%'
+  },
+  statItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1
+  },
+  statIconContainer: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8
+  },
+  statTextCol: {
+    justifyContent: 'center',
+    flex: 1
+  },
+  statLabel: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+    marginBottom: 2
+  },
+  statValue: {
+    color: '#cbd5e1',
+    fontSize: 9,
+    fontWeight: '500'
+  },
+  statDivider: {
+    width: 1,
+    height: 30,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    marginHorizontal: 10
+  },
+
+  scrollContent: { paddingBottom: 150 },
+
+  // Menu List
+  sectionLabel: { fontSize: 11, fontWeight: '800', color: '#94a3b8', letterSpacing: 0.8, marginHorizontal: 25, marginTop: 25, marginBottom: 12 },
+  menuGroup: { backgroundColor: '#fff', marginHorizontal: 20, borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: '#f1f5f9' },
+  menuItem: { flexDirection: 'row', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: '#f8fafc' },
+  iconBox: { width: 42, height: 42, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
+  menuContent: { flex: 1 },
+  menuTitle: { fontSize: 14, fontWeight: '700', color: '#1e293b' },
+  menuSub: { fontSize: 11, color: '#94a3b8', marginTop: 2 },
+
+  // Modal
+  modalOverlay: { 
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)', 
+    justifyContent: 'flex-end', 
+    zIndex: 1000 
+  },
+  modalContent: { 
+    backgroundColor: '#fff', 
+    borderTopLeftRadius: 30, 
+    borderTopRightRadius: 30, 
+    height: '85%',
+    padding: 24, 
+    zIndex: 1001,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 15,
+    elevation: 10
+  },
+  bottomSheetContent: {
+    backgroundColor: '#fff', 
+    borderTopLeftRadius: 30, 
+    borderTopRightRadius: 30, 
+    padding: 24, 
+    paddingBottom: 120, // Keep this high to clear the tab bar
+    zIndex: 1001,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 15,
+    elevation: 10
+  },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25 },
+  modalTitle: { fontSize: 20, fontWeight: '800', color: '#1a2d5a' },
+  closeText: { color: '#ef4444', fontWeight: '700' },
+  modalScroll: { flex: 1 },
+  
+  photoEditSection: { alignItems: 'center', marginBottom: 30, backgroundColor: '#f8fafc', padding: 20, borderRadius: 20, borderStyle: 'dashed', borderWidth: 1, borderColor: '#cbd5e1' },
+  modalAvatarCircle: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#c0392b', justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
+  modalAvatarImg: { width: 80, height: 80, borderRadius: 40 },
+  modalAvatarText: { color: '#fff', fontSize: 28, fontWeight: '800' },
+  changePhotoBtn: { backgroundColor: '#fff', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#1a2d5a' },
+  changePhotoText: { color: '#1a2d5a', fontSize: 12, fontWeight: '700' },
+  removePhotoBtn: { backgroundColor: '#fff', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#ef4444' },
+  removePhotoText: { color: '#ef4444', fontSize: 12, fontWeight: '700' },
+
+  inputGroup: { marginBottom: 20 },
+  inputRow: { flexDirection: 'row', alignItems: 'center' },
+  inputLabel: { fontSize: 12, fontWeight: '700', color: '#475569', marginBottom: 8, marginLeft: 4 },
+  input: { 
+    backgroundColor: '#f8fafc', 
+    borderWidth: 1.5, 
+    borderColor: '#e2e8f0', 
+    borderRadius: 15, 
+    padding: 15, 
+    fontSize: 15, 
+    color: '#1e293b' 
+  },
+  saveBtn: { 
+    backgroundColor: '#1a2d5a', 
+    padding: 18, 
+    borderRadius: 15, 
+    alignItems: 'center', 
+    marginTop: 10,
+    marginBottom: 40,
+    elevation: 4,
+    shadowColor: '#1a2d5a',
+    shadowOpacity: 0.3,
+    shadowRadius: 10
+  },
+  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+
+  versionTxt: { textAlign: 'center', fontSize: 11, color: '#cbd5e1', marginTop: 40 },
+
+  // Language Modal
+  langList: { gap: 6 },
+  langItem: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'space-between', 
+    paddingVertical: 10,
+    paddingHorizontal: 14, 
+    borderRadius: 12, 
+    backgroundColor: '#f8fafc',
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0'
+  },
+  langItemActive: { 
+    backgroundColor: '#eff6ff', 
+    borderColor: '#1a2d5a' 
+  },
+  langName: { fontSize: 15, fontWeight: '700', color: '#1e293b' },
+  langTextActive: { color: '#1a2d5a' },
+  langNative: { fontSize: 11, color: '#64748b', marginTop: 1 },
+
+  // Notification Modal
+  notifyList: { gap: 16 },
+  notifyItem: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'space-between', 
+    paddingVertical: 8 
+  },
+  notifyName: { fontSize: 16, fontWeight: '700', color: '#1e293b' },
+  notifyDesc: { fontSize: 12, color: '#64748b', marginTop: 2 },
+
+  catTab: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#f1f5f9',
+  },
+  catTabActive: {
+    backgroundColor: '#1a2d5a',
+  },
+  catTabTxt: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  catTabTxtActive: {
+    color: '#ffffff',
+    fontWeight: '700',
+  },
+});

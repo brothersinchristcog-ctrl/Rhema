@@ -1,0 +1,1120 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  StyleSheet,
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  TextInput,
+  Dimensions,
+  Linking,
+  ActivityIndicator,
+  Alert,
+  StatusBar,
+  Platform,
+  Share,
+  Modal,
+  Animated
+} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { 
+  Lock, 
+  Coins,
+  CreditCard,
+  Share2,
+  CheckCircle2,
+  ArrowLeft,
+  ShieldCheck,
+  XCircle,
+  Info,
+  Clock
+} from 'lucide-react-native';
+import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
+import { useChurch } from '../context/ChurchContext';
+import { useLanguage } from '../context/LanguageContext';
+import { SupportedLanguage } from '../locales';
+import FirestoreService, { AppMember } from '../services/FirestoreService';
+import { functions } from '../services/firebaseConfig';
+import storage from '@react-native-firebase/storage';
+import * as ImagePicker from 'expo-image-picker';
+import RazorpayCheckout from 'react-native-razorpay';
+import * as WebBrowser from 'expo-web-browser';
+import { LinearGradient } from 'expo-linear-gradient';
+
+const { width } = Dimensions.get('window');
+
+interface CategoryItem {
+  id: string;
+  icon: string;
+  labelEn: string;
+  labelTe: string;
+  labels: Record<SupportedLanguage, string>;
+}
+
+const CATEGORIES: CategoryItem[] = [
+  {
+    id: 'Tithe',
+    icon: '🙏',
+    labelEn: 'Tithe',
+    labelTe: 'దశమభాగం',
+    labels: {
+      en: 'Tithe',
+      te: 'దశమభాగం',
+      hi: 'दशमांश',
+      ta: 'தசமபாகம்',
+      kn: 'ದಶಮಾಂಶ',
+      ml: 'ദശാംശം',
+      mr: 'दशांश'
+    }
+  },
+  {
+    id: 'Offering',
+    icon: '🎁',
+    labelEn: 'Offering',
+    labelTe: 'కానుక',
+    labels: {
+      en: 'Offering',
+      te: 'కానుక',
+      hi: 'भेंट',
+      ta: 'காணிக்கை',
+      kn: 'ಕಾಣಿಕೆ',
+      ml: 'കാഴ്ച',
+      mr: 'अर्पण'
+    }
+  },
+  {
+    id: 'Missions',
+    icon: '🌍',
+    labelEn: 'Missions',
+    labelTe: 'సేవా నిధి',
+    labels: {
+      en: 'Missions',
+      te: 'సేవా నిధి',
+      hi: 'सेवा निधि',
+      ta: 'ஊழிய நிதி',
+      kn: 'ಸೇವಾ నిధి',
+      ml: 'മിഷൻ ഫണ്ട്',
+      mr: 'सेवा निधी'
+    }
+  },
+  {
+    id: 'Building',
+    icon: '🏛️',
+    labelEn: 'Building',
+    labelTe: 'నిర్మాణ నిధి',
+    labels: {
+      en: 'Building',
+      te: 'నిర్మాణ నిధి',
+      hi: 'भवन निर्माण',
+      ta: 'கட்டிட நிதி',
+      kn: 'ಕಟ್ಟಡ ನಿಧಿ',
+      ml: 'നിർമ്മാണ ഫണ്ട്',
+      mr: 'इमारत निधी'
+    }
+  },
+  {
+    id: 'Special',
+    icon: '💎',
+    labelEn: 'Special',
+    labelTe: 'ప్రత్యేక కానుక',
+    labels: {
+      en: 'Special',
+      te: 'ప్రత్యేక కానుక',
+      hi: 'विशेष भेंट',
+      ta: 'சிறப்பு காணிக்கை',
+      kn: 'ವಿಶೇಷ ಕಾಣಿಕೆ',
+      ml: 'പ്രത്യേക സംഭാവന',
+      mr: 'विशेष दान'
+    }
+  },
+  {
+    id: 'Others',
+    icon: '📝',
+    labelEn: 'Others',
+    labelTe: 'ఇతర',
+    labels: {
+      en: 'Others',
+      te: 'ఇతర',
+      hi: 'अन्य',
+      ta: 'மற்றவை',
+      kn: 'ಇತರ',
+      ml: 'മറ്റുള്ളവ',
+      mr: 'इतर'
+    }
+  }
+];
+
+const PRESETS = [50, 100, 500, 1000, 5000];
+
+const GIVING_WORDS = [
+  { key: 'joy', colors: ['rgba(59,130,246,0.3)', 'rgba(59,130,246,0.05)'] as const, border: '#3b82f6', textCol: '#60a5fa' },
+  { key: 'love', colors: ['rgba(239,68,68,0.3)', 'rgba(239,68,68,0.05)'] as const, border: '#ef4444', textCol: '#f87171' },
+  { key: 'faith', colors: ['rgba(234,179,8,0.3)', 'rgba(234,179,8,0.05)'] as const, border: '#facc15', textCol: '#fde047' },
+];
+
+export default function GivingScreen({ navigation }: any) {
+  const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+  const { isDark, toggleTheme } = useTheme();
+  const { activeChurch } = useChurch();
+  const { t, language } = useLanguage();
+  const amountInputRef = useRef<TextInput>(null);
+  const [member, setMember] = useState<AppMember | null>(null);
+  const [activeCat, setActiveCat] = useState('Tithe');
+  const [amount, setAmount] = useState('500');
+  const [loading, setLoading] = useState(false);
+  const [customEventName, setCustomEventName] = useState('');
+  const [showEventModal, setShowEventModal] = useState(false);
+  
+  // Custom Status Modal State
+  const [statusModalConfig, setStatusModalConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error' | 'info';
+  }>({ visible: false, title: '', message: '', type: 'success' });
+  
+  const [paymentMethod, setPaymentMethod] = useState<'razorpay' | 'upi'>('razorpay');
+  const [receiptImage, setReceiptImage] = useState<string | null>(null);
+  const [uploadingReceipt, setUploadingReceipt] = useState(false);
+
+  // Pull giving details from the active church; fall back to defaults
+  const giving = activeChurch?.givingDetails;
+  const upiId = giving?.upiId || '';
+  const phonepeNum = giving?.phonepeNumber || '';
+  const payeeName = activeChurch?.name || 'Your Church';
+
+  const [wordIdx, setWordIdx] = useState(0);
+  const scrollAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setWordIdx(prev => {
+        const isLastRealWord = prev === GIVING_WORDS.length - 1;
+        const nextIdx = prev + 1; // Can go to GIVING_WORDS.length (the fake duplicate)
+
+        Animated.timing(scrollAnim, {
+          toValue: -nextIdx * 38, // Fixed height per word
+          duration: 500,
+          useNativeDriver: true,
+        }).start(() => {
+          if (isLastRealWord) {
+            // Instantly snap back to the first 'Joy' after animating to the fake one
+            scrollAnim.setValue(0);
+            setWordIdx(0);
+          }
+        });
+        return nextIdx;
+      });
+    }, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const fetchMember = async () => {
+      if (user?.phoneNumber) {
+        const result = await FirestoreService.checkContactExists(user.phoneNumber);
+        if (result?.exists && result.member) {
+          setMember(result.member);
+        }
+      }
+    };
+    fetchMember();
+  }, [user]);
+
+  const handlePickReceipt = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setReceiptImage(result.assets[0].uri);
+      }
+    } catch (err) {
+      console.error('Error picking image:', err);
+      Alert.alert('Error', 'Failed to pick image');
+    }
+  };
+
+  const submitUpiDonation = async () => {
+    if (!receiptImage) {
+      Alert.alert('Missing Receipt', 'Please upload a screenshot of your payment receipt.');
+      return;
+    }
+
+    const numAmt = parseFloat(amount);
+    if (isNaN(numAmt) || numAmt < 1) {
+      Alert.alert('Invalid Amount', 'Please enter a valid amount (Minimum ₹1).');
+      return;
+    }
+
+    setUploadingReceipt(true);
+    setLoading(true);
+    try {
+      // Upload image
+      const filename = receiptImage.substring(receiptImage.lastIndexOf('/') + 1);
+      const storageRef = storage().ref(`donations/receipts/${member?.id || user?.uid}_${Date.now()}_${filename}`);
+      
+      const response = await fetch(receiptImage);
+      const blob = await response.blob();
+      
+      await storageRef.put(blob);
+      const downloadUrl = await storageRef.getDownloadURL();
+
+      const finalPurpose = activeCat === 'Others' ? `Others: ${customEventName.trim()}` : activeCat;
+
+      // Save donation
+      await FirestoreService.createDonation({
+        amount: numAmt,
+        donationType: finalPurpose,
+        category: finalPurpose, // Added for Admin compatibility
+        date: new Date().toISOString().split('T')[0], // Added for Admin compatibility
+        donorName: member?.name || member?.firstName || '', // Added for Admin compatibility
+        donorPhone: user?.phoneNumber || member?.phone || '', // Added for Admin compatibility
+        contactId: member?.id || '',
+        accountId: member?.accountId || '',
+        phone: user?.phoneNumber || '',
+        churchId: activeChurch?.id || '',
+        status: 'Pending Verification',
+        paymentMethod: 'UPI/PhonePe',
+        receiptUrl: downloadUrl
+      });
+
+      // Add Admin Push Notification for UPI
+      try {
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+        const dateStr = `${now.toISOString().split('T')[0]} • ${timeStr}`;
+
+        await FirestoreService.createNotificationBroadcast({
+          title: `New UPI Donation: ₹${numAmt}`,
+          content: `${member?.name || member?.firstName || 'A member'} uploaded a UPI payment receipt for ₹${numAmt}. Please verify.`,
+          date: dateStr,
+          type: 'donation',
+          targetChurchId: activeChurch?.id,
+          targetAudience: 'Admin',
+        });
+      } catch (err) {
+        console.warn('Failed to send donation notification:', err);
+      }
+
+      setStatusModalConfig({
+        visible: true,
+        title: 'Success',
+        message: 'Your donation receipt has been submitted and is pending verification. Thank you!',
+        type: 'success'
+      });
+      setReceiptImage(null);
+      setAmount('500');
+    } catch (err) {
+      console.error('Submit UPI error:', err);
+      Alert.alert('Error', 'Failed to submit donation. Please try again.');
+    } finally {
+      setUploadingReceipt(false);
+      setLoading(false);
+    }
+  };
+
+  const handlePayment = async () => {
+    const numAmt = parseFloat(amount);
+    if (isNaN(numAmt) || numAmt < 1) {
+      Alert.alert('Invalid Amount', 'Please enter a valid amount (Minimum ₹1).');
+      return;
+    }
+
+    if (activeCat === 'Others' && !customEventName.trim()) {
+      Alert.alert('Missing Info', 'Please enter the Event or Offering name.');
+      return;
+    }
+
+    if (paymentMethod === 'upi') {
+      // Just alert if they didn't attach. The actual submit is a different button for UPI.
+      return;
+    }
+
+    const finalPurpose = activeCat === 'Others' ? `Others: ${customEventName.trim()}` : activeCat;
+
+    setLoading(true);
+    try {
+      const donationRef = await FirestoreService.createDonation({
+        amount: numAmt,
+        donationType: finalPurpose,
+        contactId: member?.id || '',
+        accountId: member?.accountId || '',
+        phone: user?.phoneNumber || '',
+        churchId: activeChurch?.id || '',
+        status: 'pending',
+        paymentMethod: 'Razorpay'
+      });
+      
+      // 2. Call Cloud Function to initiate Razorpay order
+      const createOrderFn = functions().httpsCallable('createRazorpayDonationOrderV6');
+      
+      const response = await createOrderFn({
+        amount: numAmt,
+        churchId: activeChurch?.id || '',
+        purpose: finalPurpose
+      });
+
+      const { success, orderId, keyId } = response.data as any;
+
+      if (success && orderId && keyId) {
+        // 3. Open Razorpay Checkout Modal
+        const options = {
+          description: `Donation: ${finalPurpose}`,
+          image: activeChurch?.theme?.logoUrl || 'https://cdn-icons-png.flaticon.com/512/8662/8662584.png',
+          currency: 'INR',
+          key: keyId,
+          amount: numAmt * 100,
+          name: activeChurch?.name || 'Your Church',
+          order_id: orderId,
+          prefill: {
+            email: user?.email || '',
+            contact: user?.phoneNumber || member?.phone || '',
+            name: member?.firstName ? `${member.firstName} ${member.lastName || ''}` : ''
+          },
+          theme: { color: activeChurch?.theme?.primaryColor || '#1a2d5a' }
+        };
+
+        RazorpayCheckout.open(options).then(async (data: any) => {
+          // 4. Verify payment with backend
+          try {
+            const verifyFn = functions().httpsCallable('verifyRazorpayDonationV6');
+            const verifyRes = await verifyFn({
+              razorpay_payment_id: data.razorpay_payment_id,
+              razorpay_order_id: data.razorpay_order_id,
+              razorpay_signature: data.razorpay_signature,
+              churchId: activeChurch?.id,
+              donationId: donationRef
+            });
+            if ((verifyRes.data as any).success) {
+              // Add Admin Push Notification for Razorpay
+              try {
+                const now = new Date();
+                const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+                const dateStr = `${now.toISOString().split('T')[0]} • ${timeStr}`;
+
+                await FirestoreService.createNotificationBroadcast({
+                  title: `New Donation: ₹${numAmt}`,
+                  content: `${member?.name || member?.firstName || 'A member'} has made a successful online donation of ₹${numAmt}.`,
+                  date: dateStr,
+                  type: 'donation',
+                  targetChurchId: activeChurch?.id,
+                  targetAudience: 'Admin',
+                });
+              } catch (err) {
+                console.warn('Failed to send donation notification:', err);
+              }
+
+              setStatusModalConfig({
+                visible: true,
+                title: 'Success',
+                message: 'Your donation was successful. Thank you!',
+                type: 'success'
+              });
+            } else {
+              Alert.alert('Verification Failed', 'Payment verification failed.');
+            }
+          } catch (verifyError: any) {
+            console.error('Verify Error:', verifyError);
+            Alert.alert('Error', 'Payment verification failed.');
+          }
+        }).catch((error: any) => {
+          console.log('Razorpay Checkout Error:', error);
+          let errorMessage = 'The payment process was cancelled or encountered an error. Please try again.';
+          
+          if (error && error.description) {
+            try {
+              const parsedDesc = JSON.parse(error.description);
+              if (parsedDesc.error?.reason === 'payment_cancelled') {
+                errorMessage = 'You cancelled the payment process.';
+              } else if (parsedDesc.error?.code === 'BAD_REQUEST_ERROR') {
+                errorMessage = 'Payment could not be processed due to a configuration issue. Please try again or contact the church administrator.';
+              } else if (parsedDesc.error?.description) {
+                errorMessage = parsedDesc.error.description;
+              }
+            } catch (e) {
+              if (typeof error.description === 'string') {
+                if (error.description.toLowerCase().includes('cancel')) {
+                  errorMessage = 'You cancelled the payment process.';
+                } else {
+                  errorMessage = `Payment could not be completed: ${error.description}`;
+                }
+              }
+            }
+          }
+
+          setStatusModalConfig({
+            visible: true,
+            title: 'Payment Failed',
+            message: errorMessage,
+            type: 'error'
+          });
+        });
+
+      } else {
+        Alert.alert('Error', 'Could not initiate payment. Please try again later.');
+      }
+    } catch (error: any) {
+      console.log('Payment Process:', error?.message);
+      if (error.message?.includes('Giving is not configured for this church yet')) {
+         setStatusModalConfig({
+           visible: true,
+           title: 'Not Configured',
+           message: 'Giving is not configured for this church yet, please reach out to your church admin/pastor.',
+           type: 'info'
+         });
+      } else {
+         setStatusModalConfig({
+           visible: true,
+           title: 'Payment Failed',
+           message: error.message || 'An error occurred while initiating the payment.',
+           type: 'error'
+         });
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCopy = async (text: string, label: string) => {
+    try {
+      await Share.share({
+        message: text,
+      });
+    } catch (err) {
+      console.error(err);
+      Alert.alert('Error', 'Failed to share details.');
+    }
+  };
+
+  return (
+    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#f8fafc' }]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor="transparent" translucent={true} />
+      
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        {/* ── Page Header ── */}
+        <View style={[styles.header, { backgroundColor: isDark ? '#0f172a' : '#f8fafc', paddingTop: insets.top + 10, marginHorizontal: -16 }]}>
+          <View style={styles.headerTop}>
+            <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} hitSlop={{top:10, bottom:10, left:10, right:10}}>
+              <ArrowLeft size={24} color={isDark ? "#FCD34D" : "#1a2d5a"} />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.backBtn} 
+              onPress={() => navigation.navigate('GivingHistory')}
+              hitSlop={{top:10, bottom:10, left:10, right:10}}
+            >
+              <Clock size={22} color={isDark ? "#FCD34D" : "#1a2d5a"} />
+            </TouchableOpacity>
+          </View>
+          
+          <View style={styles.headerContent}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 12, marginTop: 10 }}>
+              <Text style={[styles.headerTitle, { color: isDark ? '#fff' : '#1e293b' }]}>{t('giving.giveWith')}</Text>
+              
+              <LinearGradient
+                colors={GIVING_WORDS[wordIdx % GIVING_WORDS.length].colors as [string, string]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={{
+                  borderWidth: 1.5, 
+                  borderColor: GIVING_WORDS[wordIdx % GIVING_WORDS.length].border, 
+                  borderRadius: 30, 
+                  paddingHorizontal: 16, 
+                  height: 38,
+                  minWidth: 110,
+                  alignItems: 'center',
+                  marginLeft: 8,
+                  overflow: 'hidden'
+                }}
+              >
+                <Animated.View style={{ transform: [{ translateY: scrollAnim }] }}>
+                  {[...GIVING_WORDS, GIVING_WORDS[0]].map((w, index) => {
+                    const wordLabel = w.key === 'joy' ? t('giving.joy') : w.key === 'love' ? t('giving.love') : t('giving.faith');
+                    return (
+                      <View key={`${w.key}-${index}`} style={{ height: 38, justifyContent: 'center', alignItems: 'center' }}>
+                        <Text style={{ 
+                          fontSize: 20, 
+                          fontStyle: 'italic', 
+                          color: w.textCol, 
+                          fontWeight: '600', 
+                          fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif' 
+                        }}>
+                          {wordLabel}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </Animated.View>
+              </LinearGradient>
+            </View>
+            <Text style={[styles.headerQuote, { color: isDark ? '#94a3b8' : '#64748b' }]}>{t('giving.verseQuote')}</Text>
+          </View>
+        </View>
+
+        <View>
+            {/* ── Category Selection ── */}
+        <View style={[styles.sectionCard, isDark && { backgroundColor: 'transparent', elevation: 0, borderWidth: 0, paddingHorizontal: 0 }]}>
+          <Text style={[styles.sectionLabel, isDark && { color: '#94a3b8', paddingLeft: 4 }]}>{t('giving.selectCategory').toUpperCase()}</Text>
+          <View style={styles.grid}>
+            {CATEGORIES.map(cat => {
+              const primaryLabel = cat.labels[language] || cat.labelEn;
+              const secondaryLabel = language === 'en' ? cat.labelTe : cat.labelEn;
+
+              return (
+                <TouchableOpacity 
+                  key={cat.id} 
+                  style={[
+                    styles.gridItem, 
+                    { width: (width - (isDark ? 32 : 64) - 20) / 3 },
+                    activeCat === cat.id && styles.gridItemActive,
+                    isDark && { backgroundColor: '#1e293b', borderColor: '#334155' },
+                    activeCat === cat.id && isDark && { borderColor: '#FCD34D', backgroundColor: '#1e293b' }
+                  ]}
+                  onPress={() => {
+                    setActiveCat(cat.id);
+                    if (cat.id === 'Others') {
+                      setShowEventModal(true);
+                    }
+                  }}
+                >
+                  {activeCat === cat.id && (
+                    <View style={{ position: 'absolute', top: 8, right: 8 }}>
+                      <ShieldCheck size={16} color={isDark ? '#FCD34D' : '#1a2d5a'} />
+                    </View>
+                  )}
+                  <Text style={styles.catEmoji}>{cat.icon}</Text>
+                  <Text 
+                    style={[styles.catTitle, isDark && { color: '#f8fafc' }]} 
+                    numberOfLines={1} 
+                    adjustsFontSizeToFit
+                  >
+                    {primaryLabel}
+                  </Text>
+                  <Text 
+                    style={[styles.catTitleTe, isDark && { color: '#94a3b8' }]} 
+                    numberOfLines={1} 
+                    adjustsFontSizeToFit
+                  >
+                    {secondaryLabel}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* ── Amount Selection ── */}
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionLabel}>{t('giving.enterAmount').toUpperCase()} (₹)</Text>
+          <View style={styles.presetRow}>
+            {PRESETS.map(val => (
+              <TouchableOpacity 
+                key={val} 
+                style={[styles.presetBtn, amount === val.toString() && styles.presetBtnActive]}
+                onPress={() => setAmount(val.toString())}
+              >
+                <Text style={[styles.presetTxt, amount === val.toString() && styles.presetTxtActive]}>₹{val}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <TouchableOpacity activeOpacity={1} onPress={() => amountInputRef.current?.focus()} style={styles.inputWrapper}>
+             <Text style={{ fontSize: 22, fontWeight: '800', color: '#1a2d5a', marginRight: 4 }}>₹</Text>
+             <TextInput
+               ref={amountInputRef}
+               style={styles.amountInput}
+               keyboardType="numeric"
+               value={amount}
+               onChangeText={setAmount}
+               placeholder="0"
+               placeholderTextColor="#94a3b8"
+             />
+          </TouchableOpacity>
+
+          <View style={{ marginTop: 20 }}>
+            <Text style={styles.sectionLabel}>{t('giving.paymentMethod').toUpperCase()}</Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
+              <TouchableOpacity 
+                style={[styles.paymentMethodBtn, paymentMethod === 'razorpay' && styles.paymentMethodBtnActive]}
+                onPress={() => setPaymentMethod('razorpay')}
+              >
+                <Text style={[styles.paymentMethodTxt, paymentMethod === 'razorpay' && styles.paymentMethodTxtActive]}>Razorpay</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.paymentMethodBtn, paymentMethod === 'upi' && styles.paymentMethodBtnActive]}
+                onPress={() => setPaymentMethod('upi')}
+              >
+                <Text style={[styles.paymentMethodTxt, paymentMethod === 'upi' && styles.paymentMethodTxtActive]}>PhonePe / UPI</Text>
+              </TouchableOpacity>
+            </View>
+
+            {paymentMethod === 'razorpay' ? (
+              <TouchableOpacity 
+                style={[styles.payBtn, loading && { opacity: 0.7 }]}
+                onPress={handlePayment}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <View style={styles.payBtnInner}>
+                    <CreditCard size={20} color="#fff" />
+                    <Text style={styles.payBtnTxt}>{t('giving.giveNow')} ₹{amount}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            ) : (
+              <View style={[styles.upiFlowContainer, { backgroundColor: isDark ? '#1e293b' : '#f8fafc', borderColor: isDark ? '#334155' : '#e2e8f0' }]}>
+                <Text style={[styles.upiFlowTitle, { color: isDark ? '#fff' : '#1e293b' }]}>{t('giving.upiFlowTitle')}</Text>
+                <Text style={[styles.upiFlowSub, { color: isDark ? '#94a3b8' : '#64748b' }]}>{t('giving.upiFlowSub', { amount })}</Text>
+                
+                {upiId ? (
+                  <TouchableOpacity 
+                    style={styles.openUpiBtn}
+                    onPress={() => Linking.openURL(`upi://pay?pa=${upiId}&pn=${encodeURIComponent(payeeName)}&am=${amount}&cu=INR`)}
+                  >
+                    <Text style={styles.openUpiBtnTxt}>{t('giving.openUpiApp')}</Text>
+                  </TouchableOpacity>
+                ) : null}
+                
+                <View style={styles.uploadSection}>
+                  <TouchableOpacity style={[styles.uploadBtn, { borderColor: isDark ? '#475569' : '#cbd5e1' }]} onPress={handlePickReceipt}>
+                    {receiptImage ? (
+                      <Text style={{ color: '#16a34a', fontWeight: 'bold' }}>{t('giving.screenshotSelected')}</Text>
+                    ) : (
+                      <Text style={{ color: isDark ? '#cbd5e1' : '#64748b' }}>{t('giving.uploadScreenshot')}</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity 
+                  style={[styles.payBtn, (uploadingReceipt || !receiptImage) && { opacity: 0.7 }]}
+                  onPress={submitUpiDonation}
+                  disabled={uploadingReceipt || !receiptImage}
+                >
+                  {uploadingReceipt ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <View style={styles.payBtnInner}>
+                      <Text style={styles.payBtnTxt}>{t('giving.submitDonation')}</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+
+          {/* UPI Copy Box */}
+          <View style={[styles.upiInfoCard, { backgroundColor: isDark ? '#1e293b' : '#f8fafc', borderColor: isDark ? '#334155' : '#e2e8f0' }]}>
+            <Text style={[styles.upiSectionTitle, { color: isDark ? '#fcd34d' : '#1a2d5a' }]}>{t('giving.directTransferTitle')}</Text>
+            
+            {phonepeNum && (
+              <>
+                <View style={styles.upiDetailRow}>
+                  <View>
+                    <Text style={styles.upiLabel}>{t('giving.phonepeNumber')}</Text>
+                    <Text style={[styles.upiValue, { color: isDark ? '#fff' : '#1e293b' }]}>{phonepeNum}</Text>
+                  </View>
+                  <TouchableOpacity 
+                    style={[styles.copyBtn, { backgroundColor: isDark ? '#334155' : '#eff6ff' }]} 
+                    onPress={() => handleCopy(phonepeNum, 'PhonePe Number')}
+                  >
+                    <Share2 size={14} color={isDark ? '#fcd34d' : '#1a2d5a'} />
+                    <Text style={[styles.copyBtnTxt, { color: isDark ? '#fcd34d' : '#1a2d5a' }]}>{t('common.copy')}</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={[styles.upiDivider, { backgroundColor: isDark ? '#334155' : '#e2e8f0' }]} />
+              </>
+            )}
+
+            {upiId && (
+              <View style={styles.upiDetailRow}>
+                <View>
+                  <Text style={styles.upiLabel}>{t('giving.upiId')}</Text>
+                  <Text style={[styles.upiValue, { color: isDark ? '#fff' : '#1e293b' }]}>{upiId}</Text>
+                </View>
+                <TouchableOpacity 
+                  style={[styles.copyBtn, { backgroundColor: isDark ? '#334155' : '#eff6ff' }]} 
+                  onPress={() => handleCopy(upiId, 'UPI ID')}
+                >
+                  <Share2 size={14} color={isDark ? '#fcd34d' : '#1a2d5a'} />
+                  <Text style={[styles.copyBtnTxt, { color: isDark ? '#fcd34d' : '#1a2d5a' }]}>{t('common.copy')}</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Additional UPIs */}
+            {giving?.upis?.map(upi => (
+              <React.Fragment key={upi.id}>
+                <View style={[styles.upiDivider, { backgroundColor: isDark ? '#334155' : '#e2e8f0' }]} />
+                <View style={styles.upiDetailRow}>
+                  <View>
+                    <Text style={styles.upiLabel}>UPI: {upi.name || 'Additional'}</Text>
+                    <Text style={[styles.upiValue, { color: isDark ? '#fff' : '#1e293b' }]}>{upi.upiId}</Text>
+                    {upi.phonepeNumber ? <Text style={[styles.upiValue, { color: isDark ? '#cbd5e1' : '#475569', fontSize: 12, marginTop: 2 }]}>PhonePe: {upi.phonepeNumber}</Text> : null}
+                  </View>
+                  <TouchableOpacity 
+                    style={[styles.copyBtn, { backgroundColor: isDark ? '#334155' : '#eff6ff' }]} 
+                    onPress={() => handleCopy(upi.upiId, 'UPI ID')}
+                  >
+                    <Share2 size={14} color={isDark ? '#fcd34d' : '#1a2d5a'} />
+                    <Text style={[styles.copyBtnTxt, { color: isDark ? '#fcd34d' : '#1a2d5a' }]}>{t('common.copy')}</Text>
+                  </TouchableOpacity>
+                </View>
+              </React.Fragment>
+            ))}
+          </View>
+
+          {/* Bank Transfer Box */}
+          {(giving?.accountNumber || giving?.banks?.length) ? (
+            <View style={[styles.upiInfoCard, { backgroundColor: isDark ? '#1e293b' : '#f8fafc', borderColor: isDark ? '#334155' : '#e2e8f0' }]}>
+              <Text style={[styles.upiSectionTitle, { color: isDark ? '#fcd34d' : '#1a2d5a' }]}>{t('giving.bankTransferTitle')}</Text>
+              
+              {giving?.accountNumber && (
+                <View style={styles.bankSection}>
+                  <Text style={styles.upiLabel}>{t('giving.primaryBank')}</Text>
+                  <Text style={[styles.upiValue, { color: isDark ? '#fff' : '#1e293b' }]}>{giving?.bankName || 'Bank Name Not Set'}</Text>
+                  <Text style={[styles.upiValue, { color: isDark ? '#cbd5e1' : '#475569', fontSize: 13, marginTop: 2 }]}>{giving?.accountName || 'Account Name Not Set'}</Text>
+                  <Text style={[styles.upiValue, { color: isDark ? '#cbd5e1' : '#475569', fontSize: 13, marginTop: 2 }]}>{t('giving.accountNumber')}: {giving?.accountNumber}</Text>
+                  <Text style={[styles.upiValue, { color: isDark ? '#cbd5e1' : '#475569', fontSize: 13, marginTop: 2 }]}>{t('giving.ifscCode')}: {giving?.ifscCode}</Text>
+                </View>
+              )}
+
+              {/* Additional Banks */}
+              {giving?.banks?.map(bank => (
+                <React.Fragment key={bank.id}>
+                  {(giving?.accountNumber || bank.id !== giving?.banks?.[0]?.id) && <View style={[styles.upiDivider, { backgroundColor: isDark ? '#334155' : '#e2e8f0', marginVertical: 16 }]} />}
+                  <View style={styles.bankSection}>
+                    <Text style={styles.upiLabel}>{bank.name?.toUpperCase() || t('giving.additionalBank')}</Text>
+                    <Text style={[styles.upiValue, { color: isDark ? '#fff' : '#1e293b' }]}>{bank.bankName}</Text>
+                    <Text style={[styles.upiValue, { color: isDark ? '#cbd5e1' : '#475569', fontSize: 13, marginTop: 2 }]}>{bank.accountName}</Text>
+                    <Text style={[styles.upiValue, { color: isDark ? '#cbd5e1' : '#475569', fontSize: 13, marginTop: 2 }]}>{t('giving.accountNumber')}: {bank.accountNumber}</Text>
+                    <Text style={[styles.upiValue, { color: isDark ? '#cbd5e1' : '#475569', fontSize: 13, marginTop: 2 }]}>{t('giving.ifscCode')}: {bank.ifscCode}</Text>
+                  </View>
+                </React.Fragment>
+              ))}
+            </View>
+          ) : null}
+
+          <View style={styles.securityFooter}>
+             <Lock size={12} color="#94a3b8" />
+             <Text style={styles.securityText}>{t('giving.securedBy')}</Text>
+          </View>
+          </View>
+          </View>
+      </ScrollView>
+
+      {/* Others Event Name Modal */}
+      <Modal visible={showEventModal} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: isDark ? '#1e293b' : '#fff' }]}>
+            <Text style={[styles.modalTitle, { color: isDark ? '#fff' : '#1e293b' }]}>{t('giving.eventNameTitle')}</Text>
+            <Text style={[styles.modalSubtitle, { color: isDark ? '#94a3b8' : '#64748b' }]}>{t('giving.eventNameSub')}</Text>
+            
+            <TextInput
+              style={[styles.inputWrapper, { width: '100%', marginBottom: 20 }]}
+              placeholder={t('giving.eventNamePlaceholder')}
+              placeholderTextColor="#94a3b8"
+              value={customEventName}
+              onChangeText={setCustomEventName}
+            />
+            
+            <View style={{ flexDirection: 'row', gap: 12, width: '100%', justifyContent: 'flex-end', marginTop: 4 }}>
+              <TouchableOpacity 
+                style={{ paddingHorizontal: 20, paddingVertical: 8, borderRadius: 20, backgroundColor: isDark ? '#334155' : '#f1f5f9' }}
+                onPress={() => {
+                  setShowEventModal(false);
+                  if (!customEventName.trim()) {
+                    setActiveCat('Tithe'); // Revert if cancelled
+                  }
+                }}
+              >
+                <Text style={{ color: isDark ? '#cbd5e1' : '#475569', fontWeight: '700', fontSize: 13 }}>{t('common.cancel')}</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={{ paddingHorizontal: 20, paddingVertical: 8, borderRadius: 20, backgroundColor: '#1a2d5a' }}
+                onPress={() => {
+                  if (customEventName.trim()) {
+                    setShowEventModal(false);
+                  } else {
+                    Alert.alert('Required', 'Please enter a name or tap Cancel.');
+                  }
+                }}
+              >
+                <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>{t('common.save')}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Beautiful Status Modal */}
+      <Modal visible={statusModalConfig.visible} animationType="fade" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: isDark ? '#1e293b' : '#fff', paddingVertical: 40 }]}>
+            <View style={{ 
+              width: 64, height: 64, borderRadius: 32, 
+              backgroundColor: statusModalConfig.type === 'error' ? '#fee2e2' : statusModalConfig.type === 'info' ? '#e0f2fe' : '#dcfce7', 
+              justifyContent: 'center', alignItems: 'center', marginBottom: 20 
+            }}>
+              {statusModalConfig.type === 'error' ? (
+                <XCircle size={36} color="#ef4444" />
+              ) : statusModalConfig.type === 'info' ? (
+                <Info size={36} color="#0ea5e9" />
+              ) : (
+                <CheckCircle2 size={36} color="#16a34a" />
+              )}
+            </View>
+            <Text style={[styles.modalTitle, { color: isDark ? '#fff' : '#1e293b', fontSize: 22, textAlign: 'center' }]}>{statusModalConfig.title}</Text>
+            <Text style={[styles.modalSubtitle, { color: isDark ? '#94a3b8' : '#64748b', fontSize: 15, marginTop: 4, textAlign: 'center' }]}>
+              {statusModalConfig.message}
+            </Text>
+            
+            <TouchableOpacity 
+              style={[styles.modalBtn, { backgroundColor: statusModalConfig.type === 'error' ? '#ef4444' : statusModalConfig.type === 'info' ? '#0ea5e9' : '#16a34a', width: '100%', marginTop: 24 }]}
+              onPress={() => setStatusModalConfig({ ...statusModalConfig, visible: false })}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  header: { 
+    paddingBottom: 20,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    marginBottom: 10,
+  },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20, alignItems: 'center' },
+  backBtn: { paddingVertical: 10 },
+  backBtnTxt: { color: '#FCD34D', fontSize: 16, fontWeight: '700' },
+  themeToggle: { backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
+  themeToggleText: { color: '#fff', fontSize: 10, fontWeight: '800' },
+  
+  headerContent: { alignItems: 'center', marginTop: -10 },
+  iconCircle: { width: 70, height: 70, borderRadius: 35, backgroundColor: 'rgba(252,211,77,0.15)', justifyContent: 'center', alignItems: 'center', marginBottom: 15 },
+  headerTitle: { fontSize: 26, fontWeight: '800', color: '#fff' },
+  headerSubTe: { fontSize: 13, color: '#FCD34D', fontWeight: '500', marginTop: 2 },
+  headerQuote: { fontSize: 13, color: '#aac4e8', marginTop: 6, fontStyle: 'italic' },
+
+  scrollContent: { padding: 16, paddingBottom: 40 },
+  comingSoonCard: {
+    borderRadius: 20, 
+    padding: 40, 
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 20,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    borderWidth: 1,
+  },
+  comingSoonTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    marginTop: 24,
+    marginBottom: 12
+  },
+  comingSoonText: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 22
+  },
+  sectionCard: { 
+    backgroundColor: '#fff', 
+    borderRadius: 20, 
+    padding: 16, 
+    marginBottom: 16,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    borderWidth: 1,
+    borderColor: '#f1f5f9'
+  },
+  sectionLabel: { fontSize: 11, fontWeight: '800', color: '#94a3b8', letterSpacing: 0.8, marginBottom: 15 },
+  
+  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  gridItem: { 
+    width: (width - 32 - 20) / 3, // 3 column grid with 10 spacing between each (20 total)
+    backgroundColor: '#fff', 
+    borderRadius: 16, 
+    paddingTop: 12,
+    paddingBottom: 10,
+    paddingHorizontal: 8,
+    alignItems: 'center', 
+    borderWidth: 1, 
+    borderColor: '#e2e8f0',
+    marginBottom: 10
+  },
+  gridItemActive: { borderColor: '#1a2d5a', borderWidth: 1.5, backgroundColor: '#f0f4ff' },
+  catEmoji: { fontSize: 22, marginBottom: 6 },
+  catTitle: { fontSize: 12, fontWeight: '700', color: '#1e293b', textAlign: 'center' },
+  catTitleTe: { fontSize: 9, color: '#64748b', marginTop: 2, textAlign: 'center' },
+  label: { fontSize: 12, fontWeight: '600', color: '#475569', marginBottom: 8, marginLeft: 4 },
+
+  presetRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 6, marginBottom: 15 },
+  presetBtn: { 
+    flex: 1, 
+    paddingVertical: 10, 
+    borderRadius: 12, 
+    borderWidth: 1, 
+    borderColor: '#e2e8f0', 
+    alignItems: 'center' 
+  },
+  presetBtnActive: { borderColor: '#1a2d5a', backgroundColor: '#f0f4ff', borderWidth: 2 },
+  presetTxt: { fontSize: 12, fontWeight: '700', color: '#1e293b' },
+  presetTxtActive: { color: '#1a2d5a' },
+
+  inputWrapper: { 
+    borderWidth: 2, 
+    borderColor: '#1a2d5a', 
+    borderRadius: 12, 
+    paddingHorizontal: 15, 
+    height: 54, 
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    backgroundColor: '#fff'
+  },
+  amountInput: { fontSize: 22, fontWeight: '800', color: '#1e293b', padding: 0, margin: 0, minWidth: 40 },
+
+  payBtn: { backgroundColor: '#15803d', borderRadius: 30, paddingVertical: 16, elevation: 4 },
+  payBtnInner: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  payBtnTxt: { color: '#fff', fontSize: 15, fontWeight: '800' },
+
+  securityFooter: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 15 },
+  securityText: { fontSize: 10, color: '#94a3b8', fontWeight: '500' },
+  
+  // UPI Card styles
+  upiInfoCard: {
+    borderRadius: 16,
+    padding: 16,
+    marginTop: 20,
+    borderWidth: 1,
+  },
+  upiSectionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    marginBottom: 12,
+  },
+  upiDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  upiLabel: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#94a3b8',
+    letterSpacing: 0.5,
+  },
+  upiValue: {
+    fontSize: 14,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  copyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    gap: 6,
+  },
+  copyBtnTxt: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  upiDivider: {
+    height: 1,
+    marginVertical: 12,
+  },
+  bankSection: { marginTop: 10 },
+  
+  paymentMethodBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    alignItems: 'center',
+    backgroundColor: 'transparent'
+  },
+  paymentMethodBtnActive: {
+    backgroundColor: '#1a2d5a',
+    borderColor: '#1a2d5a'
+  },
+  paymentMethodTxt: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#64748b'
+  },
+  paymentMethodTxtActive: {
+    color: '#fff'
+  },
+  upiFlowContainer: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 20,
+    marginTop: 10
+  },
+  upiFlowTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 8
+  },
+  upiFlowSub: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 15
+  },
+  openUpiBtn: {
+    backgroundColor: '#eff6ff',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#bfdbfe'
+  },
+  openUpiBtnTxt: {
+    color: '#1d4ed8',
+    fontWeight: '700',
+    fontSize: 14
+  },
+  uploadSection: {
+    marginBottom: 20
+  },
+  uploadBtn: {
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderRadius: 8,
+    paddingVertical: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.02)'
+  },
+
+  // Modal styles
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalContent: { width: '100%', borderRadius: 20, padding: 24, alignItems: 'center', elevation: 10 },
+  modalTitle: { fontSize: 18, fontWeight: '800', marginBottom: 8 },
+  modalSubtitle: { fontSize: 13, textAlign: 'center', marginBottom: 20, lineHeight: 20 },
+  modalBtn: { paddingVertical: 14, borderRadius: 12, alignItems: 'center' }
+});
