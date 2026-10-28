@@ -255,7 +255,7 @@ export default function AboutUsScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#fafafa' },
+  safe: { flex: 1, backgroundColor: '#FAF7F2' },
   header: {
     paddingTop: Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight ?? 24) + 12,
     paddingHorizontal: 20,
@@ -276,10 +276,10 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fafafa',
+    backgroundColor: '#FAF7F2',
   },
 
-  scroll: { flex: 1, backgroundColor: '#fafafa' },
+  scroll: { flex: 1, backgroundColor: '#FAF7F2' },
   scrollContent: { paddingHorizontal: 20 },
 
   heroSection: {

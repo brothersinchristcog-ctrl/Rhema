@@ -49,7 +49,7 @@ export default function BibleQuizResultScreen() {
     category && ui.categories[category] ? ui.categories[category] : categoryTitleParam;
 
   // Theme tokens
-  const bg = isDark ? '#0b1120' : '#f8fafc';
+  const bg = isDark ? '#0b1120' : '#FAF7F2';
   const cardBg = isDark ? '#111d31' : '#ffffff';
   const cardBorder = isDark ? '#1f2e47' : '#e2e8f0';
   const textPrimary = isDark ? '#f8fafc' : '#0f172a';

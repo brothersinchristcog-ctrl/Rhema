@@ -230,7 +230,7 @@ export default function SermonVideoScreen({ navigation, route }: any) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f0f2f7' },
+  container: { flex: 1, backgroundColor: '#FAF7F2' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#1a2d5a' },
   
   // Header

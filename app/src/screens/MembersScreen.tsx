@@ -316,7 +316,7 @@ export default function MembersScreen({ navigation }: any) {
   }, [relatedContacts, searchQuery, language]);
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#f8fafc' }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2' }]}>
       <StatusBar barStyle="light-content" backgroundColor="#1a2d5a" />
 
       {/* ── Page Header (Navy) ── */}
@@ -501,7 +501,7 @@ export default function MembersScreen({ navigation }: any) {
                     </View>
                   </View>
 
-                  <View style={[styles.cardDivider, { backgroundColor: isDark ? '#334155' : '#f1f5f9' }]} />
+                  <View style={[styles.cardDivider, { backgroundColor: isDark ? '#334155' : '#FAF7F2' }]} />
 
                   <View style={styles.cardDetails}>
                     {contactPhone ? (
@@ -606,7 +606,7 @@ export default function MembersScreen({ navigation }: any) {
             <Text style={[styles.successTitle, { color: isDark ? '#fff' : '#1a2d5a' }]}>{t('members.duplicateMemberTitle')}</Text>
             <Text style={styles.successSub}>{errorMessage}</Text>
             <TouchableOpacity 
-              style={[styles.successBtn, { backgroundColor: isDark ? '#334155' : '#f1f5f9' }]} 
+              style={[styles.successBtn, { backgroundColor: isDark ? '#334155' : '#FAF7F2' }]} 
               onPress={() => setShowErrorModal(false)}
             >
               <Text style={[styles.successBtnTxt, { color: isDark ? '#fff' : '#334155' }]}>{t('common.close')}</Text>
@@ -627,7 +627,7 @@ export default function MembersScreen({ navigation }: any) {
             
             <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
               <TouchableOpacity 
-                style={[styles.successBtn, { flex: 1, width: 'auto', paddingHorizontal: 0, backgroundColor: isDark ? '#334155' : '#f1f5f9' }]} 
+                style={[styles.successBtn, { flex: 1, width: 'auto', paddingHorizontal: 0, backgroundColor: isDark ? '#334155' : '#FAF7F2' }]} 
                 onPress={() => setShowDeleteConfirm(false)}
               >
                 <Text style={[styles.successBtnTxt, { color: isDark ? '#fff' : '#334155' }]}>{t('common.cancel')}</Text>
@@ -850,7 +850,7 @@ export default function MembersScreen({ navigation }: any) {
                   style={[
                     styles.pickerOption,
                     newMember.relation === option && styles.pickerOptionActive,
-                    { borderColor: isDark ? '#334155' : '#f1f5f9' }
+                    { borderColor: isDark ? '#334155' : '#FAF7F2' }
                   ]}
                   onPress={() => {
                     setNewMember({ ...newMember, relation: option });

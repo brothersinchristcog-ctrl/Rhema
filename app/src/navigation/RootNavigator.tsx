@@ -469,7 +469,7 @@ function TabNavigator() {
         id="main-tab-navigator"
         key={language}
         tabBar={(props) => <CustomTabBar key={language} {...props} />}
-        screenOptions={{ headerShown: false }}
+        screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: '#FAF7F2' } }}
       >
       <Tab.Screen 
         name="Home" 

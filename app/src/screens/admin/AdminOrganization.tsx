@@ -497,7 +497,7 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 20, fontWeight: '700', color: '#1a2d5a', marginBottom: 20 },
   label: { fontSize: 14, fontWeight: '600', color: '#475569', marginBottom: 8 },
   input: { borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, padding: 12, fontSize: 16, marginBottom: 16 },
-  codeContainer: { backgroundColor: '#f1f5f9', padding: 16, borderRadius: 12, marginBottom: 8 },
+  codeContainer: { backgroundColor: '#FAF7F2', padding: 16, borderRadius: 12, marginBottom: 8 },
   codeText: { color: '#1a2d5a', fontSize: 16, fontWeight: '700', letterSpacing: 1 },
   helpText: { fontSize: 12, color: '#64748b', marginBottom: 20, fontStyle: 'italic', textAlign: 'center' },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8 },

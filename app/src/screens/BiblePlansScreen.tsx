@@ -229,7 +229,7 @@ export default function BiblePlansScreen({ navigation }: any) {
     : 0;
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#f8fafc' }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2' }]}>
       <StatusBar barStyle="light-content" backgroundColor="#1a2d5a" />
       
       {/* Premium Navy Header */}

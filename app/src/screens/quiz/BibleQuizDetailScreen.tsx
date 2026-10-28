@@ -185,7 +185,7 @@ export default function BibleQuizDetailScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.center, { backgroundColor: isDark ? '#0b1120' : '#f8fafc' }]}>
+      <View style={[styles.container, styles.center, { backgroundColor: isDark ? '#0b1120' : '#FAF7F2' }]}>
         <ActivityIndicator size="large" color="#2563eb" />
         <Text style={[styles.loadingTxt, { color: isDark ? '#94a3b8' : '#64748b' }]}>
           Loading quiz details...
@@ -196,7 +196,7 @@ export default function BibleQuizDetailScreen() {
 
   if (notFound || !quiz) {
     return (
-      <View style={[styles.container, styles.center, { padding: 24, backgroundColor: isDark ? '#0b1120' : '#f8fafc' }]}>
+      <View style={[styles.container, styles.center, { padding: 24, backgroundColor: isDark ? '#0b1120' : '#FAF7F2' }]}>
         <View style={styles.errorIconBox}>
           <AlertCircle size={36} color="#DC2626" />
         </View>
@@ -268,7 +268,7 @@ export default function BibleQuizDetailScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0b1120' : '#f8fafc' }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#0b1120' : '#FAF7F2' }]}>
       <StatusBar barStyle="light-content" backgroundColor="#1a3673" />
 
       {/* Signature Gradient Header */}
@@ -547,7 +547,7 @@ export default function BibleQuizDetailScreen() {
           </View>
 
           {/* Divider */}
-          <View style={[styles.specDivider, { backgroundColor: isDark ? '#26354a' : '#f1f5f9' }]} />
+          <View style={[styles.specDivider, { backgroundColor: isDark ? '#26354a' : '#FAF7F2' }]} />
 
           {/* Helpful Guidance Bullets */}
           <View style={styles.guidanceWrap}>
@@ -604,7 +604,7 @@ export default function BibleQuizDetailScreen() {
                 styles.resultsSecondaryBtn,
                 {
                   borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : '#cbd5e1',
-                  backgroundColor: isDark ? '#1e293b' : '#f8fafc',
+                  backgroundColor: isDark ? '#1e293b' : '#FAF7F2',
                 },
               ]}
               onPress={handleViewResults}

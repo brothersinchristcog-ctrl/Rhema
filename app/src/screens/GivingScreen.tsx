@@ -493,12 +493,12 @@ export default function GivingScreen({ navigation }: any) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#f8fafc' }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2' }]}>
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor="transparent" translucent={true} />
       
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* ── Page Header ── */}
-        <View style={[styles.header, { backgroundColor: isDark ? '#0f172a' : '#f8fafc', paddingTop: insets.top + 10, marginHorizontal: -16 }]}>
+        <View style={[styles.header, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2', paddingTop: insets.top + 10, marginHorizontal: -16 }]}>
           <View style={styles.headerTop}>
             <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} hitSlop={{top:10, bottom:10, left:10, right:10}}>
               <ArrowLeft size={24} color={isDark ? "#FCD34D" : "#1a2d5a"} />
@@ -669,7 +669,7 @@ export default function GivingScreen({ navigation }: any) {
                 )}
               </TouchableOpacity>
             ) : (
-              <View style={[styles.upiFlowContainer, { backgroundColor: isDark ? '#1e293b' : '#f8fafc', borderColor: isDark ? '#334155' : '#e2e8f0' }]}>
+              <View style={[styles.upiFlowContainer, { backgroundColor: isDark ? '#1e293b' : '#FAF7F2', borderColor: isDark ? '#334155' : '#e2e8f0' }]}>
                 <Text style={[styles.upiFlowTitle, { color: isDark ? '#fff' : '#1e293b' }]}>{t('giving.upiFlowTitle')}</Text>
                 <Text style={[styles.upiFlowSub, { color: isDark ? '#94a3b8' : '#64748b' }]}>{t('giving.upiFlowSub', { amount })}</Text>
                 
@@ -710,7 +710,7 @@ export default function GivingScreen({ navigation }: any) {
           </View>
 
           {/* UPI Copy Box */}
-          <View style={[styles.upiInfoCard, { backgroundColor: isDark ? '#1e293b' : '#f8fafc', borderColor: isDark ? '#334155' : '#e2e8f0' }]}>
+          <View style={[styles.upiInfoCard, { backgroundColor: isDark ? '#1e293b' : '#FAF7F2', borderColor: isDark ? '#334155' : '#e2e8f0' }]}>
             <Text style={[styles.upiSectionTitle, { color: isDark ? '#fcd34d' : '#1a2d5a' }]}>{t('giving.directTransferTitle')}</Text>
             
             {phonepeNum && (
@@ -772,7 +772,7 @@ export default function GivingScreen({ navigation }: any) {
 
           {/* Bank Transfer Box */}
           {(giving?.accountNumber || giving?.banks?.length) ? (
-            <View style={[styles.upiInfoCard, { backgroundColor: isDark ? '#1e293b' : '#f8fafc', borderColor: isDark ? '#334155' : '#e2e8f0' }]}>
+            <View style={[styles.upiInfoCard, { backgroundColor: isDark ? '#1e293b' : '#FAF7F2', borderColor: isDark ? '#334155' : '#e2e8f0' }]}>
               <Text style={[styles.upiSectionTitle, { color: isDark ? '#fcd34d' : '#1a2d5a' }]}>{t('giving.bankTransferTitle')}</Text>
               
               {giving?.accountNumber && (
@@ -826,7 +826,7 @@ export default function GivingScreen({ navigation }: any) {
             
             <View style={{ flexDirection: 'row', gap: 12, width: '100%', justifyContent: 'flex-end', marginTop: 4 }}>
               <TouchableOpacity 
-                style={{ paddingHorizontal: 20, paddingVertical: 8, borderRadius: 20, backgroundColor: isDark ? '#334155' : '#f1f5f9' }}
+                style={{ paddingHorizontal: 20, paddingVertical: 8, borderRadius: 20, backgroundColor: isDark ? '#334155' : '#FAF7F2' }}
                 onPress={() => {
                   setShowEventModal(false);
                   if (!customEventName.trim()) {

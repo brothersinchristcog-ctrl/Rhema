@@ -293,7 +293,7 @@ export default function ContactUsScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#f5f0f0' },
+  safe: { flex: 1, backgroundColor: '#FAF7F2' },
   header: {
     paddingTop: Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight ?? 24) + 12,
     paddingHorizontal: 20,
@@ -310,9 +310,9 @@ const styles = StyleSheet.create({
   headerTitle: { color: '#fff', fontSize: 20, fontWeight: '800', marginBottom: 2 },
   headerSub: { color: 'rgba(255,255,255,0.65)', fontSize: 11, fontWeight: '500' },
 
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f5f0f0' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAF7F2' },
 
-  scroll: { flex: 1, backgroundColor: '#f5f0f0' },
+  scroll: { flex: 1, backgroundColor: '#FAF7F2' },
   scrollContent: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 40 },
 
   /* Details Card */

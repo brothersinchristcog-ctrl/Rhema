@@ -800,7 +800,7 @@ const styles = StyleSheet.create({
   },
   systemMessageContainer: {
     alignSelf: 'center',
-    backgroundColor: '#f1f5f9',
+    backgroundColor: '#FAF7F2',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 16,
@@ -814,7 +814,7 @@ const styles = StyleSheet.create({
   langToggleContainer: {
     flexDirection: 'row',
     marginLeft: 'auto',
-    backgroundColor: '#f1f5f9',
+    backgroundColor: '#FAF7F2',
     borderRadius: 20,
     padding: 2,
     borderWidth: 1,

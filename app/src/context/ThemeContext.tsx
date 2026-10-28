@@ -17,16 +17,11 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { activeChurch } = useChurch();
   const systemScheme = useColorScheme();
-  const [mode, setMode] = useState<ThemeMode>('dark'); // Default to dark for the premium look
+  const [mode, setMode] = useState<ThemeMode>('light'); // Default to light mode (#FAF7F2)
 
   useEffect(() => {
-    loadTheme();
+    AsyncStorage.setItem('user_theme', 'light').catch(() => {});
   }, []);
-
-  const loadTheme = async () => {
-    const saved = await AsyncStorage.getItem('user_theme');
-    if (saved) setMode(saved as ThemeMode);
-  };
 
   const toggleTheme = async () => {
     const newMode = mode === 'light' ? 'dark' : 'light';
@@ -34,21 +29,18 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     await AsyncStorage.setItem('user_theme', newMode);
   };
 
-  const isDark = mode === 'dark';
+  const isDark = false;
 
-  // Base Defaults (WeChristian theme)
+  // Base Defaults (Rhema White Cream theme)
   let primary = '#1a2d5a';
   let accent = '#c0392b';
-  let backgroundColor = isDark ? '#0f172a' : '#f0f2f7';
-  let textColor = isDark ? '#f8fafc' : '#111827';
+  let backgroundColor = '#FAF7F2';
+  let textColor = '#111827';
 
-  // Override with Church Theme if available
+  // Override with Church Theme if available (always keep #FAF7F2 White Cream background)
   if (activeChurch?.theme) {
     primary = activeChurch.theme.primaryColor || primary;
     accent = activeChurch.theme.secondaryColor || accent;
-    if (activeChurch.theme.backgroundColor) {
-      backgroundColor = activeChurch.theme.backgroundColor;
-    }
     if (activeChurch.theme.textColor) {
       textColor = activeChurch.theme.textColor;
     }

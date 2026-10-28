@@ -265,7 +265,7 @@ export default function EventsScreen({ navigation }: any) {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#f8fafc' }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2' }]}>
       <StatusBar barStyle="light-content" backgroundColor="#1a2d5a" />
       
       {/* ── Page Header ── */}

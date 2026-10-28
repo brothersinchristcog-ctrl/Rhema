@@ -354,7 +354,7 @@ export default function AdminQuizReports({ quizId, onBack }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#FAF7F2',
   },
   center: {
     justifyContent: 'center',
@@ -516,7 +516,7 @@ const styles = StyleSheet.create({
   },
   barContainer: {
     height: 6,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: '#FAF7F2',
     borderRadius: 3,
     overflow: 'hidden',
     marginTop: 8,

@@ -77,7 +77,7 @@ export default function AdminCelebrationsConfirm({
 const styles = StyleSheet.create({
     container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FAF7F2',
   },
   header: { 
     backgroundColor: '#1a2d5a', 

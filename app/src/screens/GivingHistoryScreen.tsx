@@ -168,7 +168,7 @@ export default function GivingHistoryScreen({ navigation }: any) {
   });
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#f8fafc' }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2' }]}>
       <StatusBar barStyle="light-content" />
       
       {/* ── Page Header ── */}
