@@ -363,7 +363,7 @@ export default function MemberNotesScreen({ navigation, route }: any) {
             </View>
             
             {item.category ? (
-              <View style={[styles.categoryBadge, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9' }]}>
+              <View style={[styles.categoryBadge, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2' }]}>
                 <Text style={[styles.categoryBadgeTxt, { color: isDark ? '#60a5fa' : '#1a2d5a' }]}>
                   {getCategoryLabel(item.category)}
                 </Text>
@@ -393,7 +393,7 @@ export default function MemberNotesScreen({ navigation, route }: any) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#f8fafc' }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2' }]}>
       <StatusBar barStyle="light-content" backgroundColor="#1a2d5a" />
 
       <CustomAlert 
@@ -561,7 +561,7 @@ export default function MemberNotesScreen({ navigation, route }: any) {
 
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
               <TouchableOpacity 
-                style={{ flex: 1, paddingVertical: 14, borderRadius: 12, backgroundColor: isDark ? '#334155' : '#f1f5f9', alignItems: 'center' }}
+                style={{ flex: 1, paddingVertical: 14, borderRadius: 12, backgroundColor: isDark ? '#334155' : '#FAF7F2', alignItems: 'center' }}
                 onPress={() => setMergeModalVisible(false)}
               >
                 <Text style={{ color: isDark ? '#fff' : '#475569', fontWeight: '700' }}>{t('memberNotes.cancel')}</Text>
@@ -603,7 +603,7 @@ export default function MemberNotesScreen({ navigation, route }: any) {
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity 
-                  style={[styles.modalCloseBtn, { backgroundColor: isDark ? '#334155' : '#f1f5f9' }]}
+                  style={[styles.modalCloseBtn, { backgroundColor: isDark ? '#334155' : '#FAF7F2' }]}
                   onPress={() => setModalVisible(false)}
                 >
                   <X size={20} color={isDark ? '#fff' : '#475569'} />
@@ -622,7 +622,7 @@ export default function MemberNotesScreen({ navigation, route }: any) {
                 return (
                   <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
                     <Text style={[styles.inputLabel, { marginBottom: 6 }]}>{t('memberNotes.sermonTitle')}</Text>
-                    <View style={[styles.titleInput, { backgroundColor: isDark ? '#0f172a' : '#f8fafc', borderColor: isDark ? '#334155' : '#e2e8f0', justifyContent: 'center' }]}>
+                    <View style={[styles.titleInput, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2', borderColor: isDark ? '#334155' : '#e2e8f0', justifyContent: 'center' }]}>
                       <Text style={{ color: isDark ? '#fff' : '#0f172a', fontSize: 15, fontWeight: '700' }}>{displayTitle}</Text>
                     </View>
 
@@ -630,7 +630,7 @@ export default function MemberNotesScreen({ navigation, route }: any) {
                       <>
                         <View style={{ height: 12 }} />
                         <Text style={[styles.inputLabel, { marginBottom: 6 }]}>{t('memberNotes.categoryLabel')}</Text>
-                        <View style={[styles.categoryPill, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9', borderColor: isDark ? '#334155' : '#e2e8f0', alignSelf: 'flex-start' }]}>
+                        <View style={[styles.categoryPill, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2', borderColor: isDark ? '#334155' : '#e2e8f0', alignSelf: 'flex-start' }]}>
                           <Text style={{ color: isDark ? '#60a5fa' : '#1a2d5a', fontSize: 12, fontWeight: '700' }}>
                             {getCategoryLabel(category)}
                           </Text>
@@ -641,7 +641,7 @@ export default function MemberNotesScreen({ navigation, route }: any) {
                     <View style={{ height: 15 }} />
 
                     <Text style={[styles.inputLabel, { marginBottom: 6 }]}>{t('memberNotes.sermonDetails')}</Text>
-                    <View style={[styles.contentInput, { backgroundColor: isDark ? '#0f172a' : '#f8fafc', borderColor: isDark ? '#334155' : '#e2e8f0', minHeight: 180, height: undefined }]}>
+                    <View style={[styles.contentInput, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2', borderColor: isDark ? '#334155' : '#e2e8f0', minHeight: 180, height: undefined }]}>
                       <Text style={{ color: isDark ? '#cbd5e1' : '#334155', fontSize: 14, lineHeight: 22 }}>
                         {displayContent}
                       </Text>

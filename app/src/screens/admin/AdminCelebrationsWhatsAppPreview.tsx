@@ -229,7 +229,7 @@ export default function AdminCelebrationsWhatsAppPreview({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FAF7F2',
   },
   content: {
     flex: 1,

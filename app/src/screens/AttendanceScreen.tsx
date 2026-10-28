@@ -4093,7 +4093,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FAF7F2',
   },
   header: {
     paddingHorizontal: 20,
@@ -5510,7 +5510,7 @@ const styles = StyleSheet.create({
   // ── Attendance Confirmation Screen Styles (Matches Screenshot 2) ──
   confirmScreenContainer: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FAF7F2',
   },
   confirmContentWrap: {
     flex: 1,

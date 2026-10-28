@@ -385,7 +385,7 @@ export default function VerseOfTheDayScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.fallbackContainer, { justifyContent: 'center', alignItems: 'center' }]}>
+      <View style={[styles.fallbackContainer, { backgroundColor: '#FAF7F2', justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
@@ -393,7 +393,7 @@ export default function VerseOfTheDayScreen() {
 
   if (verseData.length === 0) {
     return (
-      <View style={[styles.fallbackContainer, { justifyContent: 'center', alignItems: 'center' }]}>
+      <View style={[styles.fallbackContainer, { backgroundColor: '#FAF7F2', justifyContent: 'center', alignItems: 'center' }]}>
         <Text style={styles.errorText}>No verses available.</Text>
         <TouchableOpacity style={styles.backBtnFallback} onPress={() => {
           if (navigation.canGoBack()) {
@@ -409,7 +409,7 @@ export default function VerseOfTheDayScreen() {
   }
 
   return (
-    <View style={[styles.screenContainer, { backgroundColor: isDark ? '#0b1433' : '#f0f2f7' }]}>
+    <View style={[styles.screenContainer, { backgroundColor: '#FAF7F2' }]}>
       <StatusBar barStyle="light-content" backgroundColor="#1a2d5a" />
 
       {/* ── Page Header (matching Prayer Wall & Promise design) ── */}
@@ -451,8 +451,8 @@ export default function VerseOfTheDayScreen() {
 
       <ScrollView 
         showsVerticalScrollIndicator={false} 
-        style={styles.mainScroll}
-        contentContainerStyle={{ paddingBottom: 140 }}
+        style={[styles.mainScroll, { backgroundColor: '#FAF7F2' }]}
+        contentContainerStyle={{ paddingBottom: 140, backgroundColor: '#FAF7F2' }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => loadVerses(true)} tintColor="#1a2d5a" />
         }
@@ -718,14 +718,15 @@ export default function VerseOfTheDayScreen() {
 const getStyles = (isDark: boolean, colors: any) => StyleSheet.create({
   screenContainer: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: '#FAF7F2',
   },
   safeArea: {
     flex: 1,
+    backgroundColor: '#FAF7F2',
   },
   fallbackContainer: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: '#FAF7F2',
   },
   header: {
     backgroundColor: '#1a2d5a',

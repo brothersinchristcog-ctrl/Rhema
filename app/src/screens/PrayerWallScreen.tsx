@@ -534,15 +534,15 @@ export default function PrayerWallScreen({ navigation, route }: any) {
 
   if (loading && !refreshing) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: colors.primary }]}>
-        <ActivityIndicator size="large" color={colors.gold} />
+      <View style={[styles.loadingContainer, { backgroundColor: '#FAF7F2' }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
         <Text style={styles.loadingText}>{t('prayer.connecting')}</Text>
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#f8fafc' }]}>
+    <View style={[styles.container, { backgroundColor: '#FAF7F2' }]}>
       <StatusBar barStyle="light-content" backgroundColor="#1a2d5a" />
       
       <LinearGradient 
@@ -565,6 +565,7 @@ export default function PrayerWallScreen({ navigation, route }: any) {
       </LinearGradient>
 
       <FlatList
+        style={{ flex: 1, backgroundColor: '#FAF7F2' }}
         data={activeTab === 'my_requests' 
           ? prayers.filter(p => 
               p.contactId === member?.id || p.authorId === member?.id
@@ -632,8 +633,8 @@ export default function PrayerWallScreen({ navigation, route }: any) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  container: { flex: 1, backgroundColor: '#FAF7F2' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAF7F2' },
   loadingText: { color: '#1a2d5a', marginTop: 15, fontWeight: '600' },
 
   // Header
@@ -693,7 +694,7 @@ const styles = StyleSheet.create({
   catBtn: { 
     flexDirection: 'row', 
     alignItems: 'center', 
-    backgroundColor: '#f8fafc', 
+    backgroundColor: '#FAF7F2', 
     paddingHorizontal: 14, 
     paddingVertical: 8, 
     borderRadius: 25,
@@ -708,7 +709,7 @@ const styles = StyleSheet.create({
 
   composeInput: { 
     width: '100%', 
-    backgroundColor: '#f8fafc', 
+    backgroundColor: '#FAF7F2', 
     borderRadius: 16, 
     padding: 14, 
     fontSize: 14.5, 
@@ -843,7 +844,7 @@ const styles = StyleSheet.create({
   countTextAnswered: { color: '#059669', backgroundColor: '#f0fdf4' },
   metaText: { fontSize: 12, color: '#94a3b8', marginTop: 2 },
   
-  textContainer: { backgroundColor: '#f8fafc', padding: 18, borderRadius: 18, marginBottom: 15, borderWidth: 1, borderColor: '#f1f5f9' },
+  textContainer: { backgroundColor: '#FAF7F2', padding: 18, borderRadius: 18, marginBottom: 15, borderWidth: 1, borderColor: '#f1f5f9' },
   textContainerAnswered: { backgroundColor: '#f8fafc', borderLeftWidth: 3, borderLeftColor: '#10b981' },
   prayerText: { fontSize: 15, color: '#1e293b', lineHeight: 24, marginTop: 10, marginBottom: 16 },
   prayerTextAnswered: { color: '#334155', fontWeight: '500' },

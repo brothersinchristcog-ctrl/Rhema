@@ -25,7 +25,7 @@ export default function OnlineMeetingDetailScreen({ navigation, route }: any) {
   const [loading, setLoading] = useState(true);
 
   // Colors
-  const bgColor = isDark ? '#0f172a' : '#f8fafc';
+  const bgColor = isDark ? '#0f172a' : '#FAF7F2';
   const cardColor = isDark ? '#1e293b' : '#fff';
   const textColor = isDark ? '#fff' : '#1e293b';
   const mutedText = isDark ? '#94a3b8' : '#64748b';

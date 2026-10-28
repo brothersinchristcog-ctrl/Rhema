@@ -233,7 +233,7 @@ export default function SermonsScreen({ navigation }: any) {
 
     return (
       <TouchableOpacity 
-        style={[styles.sermonCard, { backgroundColor: isDark ? '#1e293b' : '#fff', borderColor: isDark ? '#334155' : '#f1f5f9' }]}
+        style={[styles.sermonCard, { backgroundColor: isDark ? '#1e293b' : '#fff', borderColor: isDark ? '#334155' : '#FAF7F2' }]}
         onPress={() => navigation.navigate('SermonVideo', { 
           sermonData: item
         })}
@@ -271,7 +271,7 @@ export default function SermonsScreen({ navigation }: any) {
     const countLabel = count === 1 ? t('sermons.sermonCountSingular') : t('sermons.sermonsCountPlural');
     return (
       <TouchableOpacity
-        style={[styles.sectionHeader, { borderLeftColor: color, backgroundColor: isDark ? '#1e293b' : '#f8fafc' }]}
+        style={[styles.sectionHeader, { borderLeftColor: color, backgroundColor: isDark ? '#1e293b' : '#FAF7F2' }]}
         onPress={() => toggleSection(title)}
         activeOpacity={0.7}
       >
@@ -297,7 +297,7 @@ export default function SermonsScreen({ navigation }: any) {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#f8fafc' }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2' }]}>
       <StatusBar barStyle="light-content" backgroundColor="#1a2d5a" />
       
       {/* Header */}

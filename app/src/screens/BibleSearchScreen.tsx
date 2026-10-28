@@ -305,7 +305,7 @@ export default function BibleSearchScreen({ route, navigation }: any) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#f8fafc' }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2' }]}>
       <StatusBar barStyle="light-content" backgroundColor="#1a2d5a" />
       
       {/* Header */}
@@ -370,7 +370,7 @@ export default function BibleSearchScreen({ route, navigation }: any) {
                 key={idx}
                 style={[
                   styles.suggestionItem,
-                  { borderBottomColor: isDark ? '#334155' : '#f1f5f9' },
+                  { borderBottomColor: isDark ? '#334155' : '#FAF7F2' },
                   idx === suggestions.slice(0, 6).length - 1 && { borderBottomWidth: 0 }
                 ]}
                 onPress={() => { setQuery(sugg); performSearch(sugg); setSuggestions([]); }}
@@ -562,7 +562,7 @@ export default function BibleSearchScreen({ route, navigation }: any) {
               keyExtractor={(_, index) => index.toString()}
               renderItem={({ item }) => (
                 <TouchableOpacity
-                  style={[styles.modalItem, { borderBottomColor: isDark ? '#334155' : '#f1f5f9' }]}
+                  style={[styles.modalItem, { borderBottomColor: isDark ? '#334155' : '#FAF7F2' }]}
                   onPress={() => handleSelectFilter(item.value)}
                 >
                   <Text style={[styles.modalItemTxt, { color: isDark ? '#f8fafc' : '#1e293b' }]}>

@@ -648,7 +648,7 @@ export default function BibleReaderScreen({ route, navigation }: any) {
 
             {/* Verse Preview */}
             {selectedVerseItem && (
-              <View style={[styles.optionsVersePreview, { backgroundColor: isDark ? '#0f172a' : '#f8fafc' }]}>
+              <View style={[styles.optionsVersePreview, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2' }]}>
                 <Text style={[styles.optionsVersePreviewText, { color: isDark ? '#cbd5e1' : '#334155' }]} numberOfLines={3}>
                   {selectedVerseItem.text}
                 </Text>
@@ -692,7 +692,7 @@ export default function BibleReaderScreen({ route, navigation }: any) {
             
             <View style={{ gap: 12 }}>
               <TouchableOpacity
-                style={[styles.optionsActionBtn, selectedVoice === 'female' ? { backgroundColor: '#1a2d5a' } : { backgroundColor: isDark ? '#334155' : '#f1f5f9' }]}
+                style={[styles.optionsActionBtn, selectedVoice === 'female' ? { backgroundColor: '#1a2d5a' } : { backgroundColor: isDark ? '#334155' : '#FAF7F2' }]}
                 onPress={() => {
                   setSelectedVoice('female');
                   AsyncStorage.setItem('@BibleVoicePref', 'female');
@@ -704,7 +704,7 @@ export default function BibleReaderScreen({ route, navigation }: any) {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.optionsActionBtn, selectedVoice === 'male' ? { backgroundColor: '#1a2d5a' } : { backgroundColor: isDark ? '#334155' : '#f1f5f9' }]}
+                style={[styles.optionsActionBtn, selectedVoice === 'male' ? { backgroundColor: '#1a2d5a' } : { backgroundColor: isDark ? '#334155' : '#FAF7F2' }]}
                 onPress={() => {
                   setSelectedVoice('male');
                   AsyncStorage.setItem('@BibleVoicePref', 'male');

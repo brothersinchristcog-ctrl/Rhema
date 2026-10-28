@@ -9,6 +9,6 @@ export const RHEMA_CHURCH_NAME = 'Rhema Global Ministries';
 export const RHEMA_DEFAULT_THEME = {
   primaryColor: '#1E3A8A',
   secondaryColor: '#D97706',
-  backgroundColor: '#FFFFFF',
+  backgroundColor: '#FAF7F2',
   textColor: '#0F172A'
 };

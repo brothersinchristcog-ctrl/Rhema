@@ -106,7 +106,7 @@ export default function PaymentResultScreen({ route, navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: '#FAF7F2',
     justifyContent: 'center',
     padding: 20
   },

@@ -125,7 +125,7 @@ export default function BibleScreen({ navigation }: any) {
   const filteredBooks = getFilteredBooks();
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#f8fafc' }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2' }]}>
       <StatusBar barStyle="light-content" />
       
       {/* Header */}
@@ -197,7 +197,7 @@ export default function BibleScreen({ navigation }: any) {
                 key={idx}
                 style={[
                   styles.suggestionItem,
-                  { borderBottomColor: isDark ? '#334155' : '#f1f5f9' },
+                  { borderBottomColor: isDark ? '#334155' : '#FAF7F2' },
                   idx === suggestions.length - 1 && { borderBottomWidth: 0 }
                 ]}
                 onPress={() => { setSearchQuery(sugg); setSuggestions([]); }}

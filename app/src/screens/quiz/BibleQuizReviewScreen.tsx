@@ -43,7 +43,7 @@ export default function BibleQuizReviewScreen() {
         style={[
           styles.container,
           styles.center,
-          { backgroundColor: isDark ? '#0b1120' : '#f8fafc' },
+          { backgroundColor: isDark ? '#0b1120' : '#FAF7F2' },
         ]}
       >
         <Text style={[styles.errorTxt, { color: isDark ? '#94a3b8' : '#64748B' }]}>
@@ -65,7 +65,7 @@ export default function BibleQuizReviewScreen() {
       : Math.max(insets.bottom, 16) + 20;
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0b1120' : '#f8fafc' }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#0b1120' : '#FAF7F2' }]}>
       <StatusBar barStyle="light-content" backgroundColor="#1a3673" />
 
       {/* Signature WeChristian Gradient Header */}

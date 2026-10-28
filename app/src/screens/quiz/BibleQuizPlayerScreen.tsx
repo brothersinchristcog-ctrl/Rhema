@@ -511,7 +511,7 @@ export default function BibleQuizPlayerScreen() {
         style={[
           styles.container,
           styles.center,
-          { backgroundColor: isDark ? '#0b1120' : '#f8fafc' },
+          { backgroundColor: isDark ? '#0b1120' : '#FAF7F2' },
         ]}
       >
         <ActivityIndicator size="large" color="#3B82F6" />
@@ -782,7 +782,7 @@ export default function BibleQuizPlayerScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0b1120' : '#f8fafc' }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#0b1120' : '#FAF7F2' }]}>
       <StatusBar barStyle="light-content" backgroundColor="#1a3673" />
 
       {/* 3 & 4. Clean, Distraction-Free Header (No "Bible Quiz", No "Question 1/5") */}

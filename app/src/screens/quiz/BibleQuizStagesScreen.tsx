@@ -144,7 +144,7 @@ export default function BibleQuizStagesScreen() {
   ];
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0b1120' : '#f8fafc' }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#0b1120' : '#FAF7F2' }]}>
       <StatusBar barStyle="light-content" backgroundColor="#1a3673" />
 
       {/* Header */}
@@ -260,7 +260,7 @@ export default function BibleQuizStagesScreen() {
           <Text style={[styles.sectionTitle, { color: isDark ? '#f8fafc' : '#0f172a' }]}>
             {quizLanguage === 'te' ? 'దశలు ఎంచుకోండి' : 'Select Stage'}
           </Text>
-          <View style={[styles.totalBadge, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9' }]}>
+          <View style={[styles.totalBadge, { backgroundColor: isDark ? '#1e293b' : '#FAF7F2' }]}>
             <Text style={[styles.totalBadgeTxt, { color: isDark ? '#94a3b8' : '#64748b' }]}>
               {completedCount}/{totalLevels} {ui.done}
             </Text>

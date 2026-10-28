@@ -140,7 +140,7 @@ export default function PromiseArchiveScreen({ navigation }: { navigation: any }
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0b1433' : '#f0f2f7' }]}>
+    <View style={[styles.container, { backgroundColor: '#FAF7F2' }]}>
       <StatusBar barStyle="light-content" backgroundColor="#1a2d5a" />
 
       {/* ── Page Header ── */}
@@ -164,6 +164,7 @@ export default function PromiseArchiveScreen({ navigation }: { navigation: any }
 
       <ScrollView 
         ref={scrollViewRef}
+        style={{ flex: 1, backgroundColor: '#FAF7F2' }}
         showsVerticalScrollIndicator={false} 
         contentContainerStyle={styles.scroll}
         refreshControl={
@@ -221,7 +222,7 @@ export default function PromiseArchiveScreen({ navigation }: { navigation: any }
             </View>
 
             {/* --- Devotional Note --- */}
-            <View style={[styles.reflectionBox, { backgroundColor: isDark ? '#14234b' : '#fff', borderColor: isDark ? '#1d3266' : '#f1f5f9' }]}>
+            <View style={[styles.reflectionBox, { backgroundColor: isDark ? '#14234b' : '#fff', borderColor: isDark ? '#1d3266' : '#FAF7F2' }]}>
               <Text style={[styles.reflectionTitle, { color: isDark ? '#e0e7ff' : '#1a2d5a' }]}>Devotional Note</Text>
               <Text style={[styles.reflectionText, { color: isDark ? '#94a3b8' : '#475569' }]}>
                 {stripHtml(selectedPromise.devotionalNote) || "In all seasons of life — in trials, in weakness, in uncertainty — we are not alone."}
@@ -250,8 +251,8 @@ export default function PromiseArchiveScreen({ navigation }: { navigation: any }
             )}
           </View>
         ) : !loading ? (
-          <View style={[styles.noTodayCard, { backgroundColor: isDark ? '#14234b' : '#fff', borderColor: isDark ? '#1d3266' : '#f1f5f9' }]}>
-            <View style={[styles.noTodayIcon, { backgroundColor: isDark ? '#1d3266' : '#f1f5f9' }]}>
+          <View style={[styles.noTodayCard, { backgroundColor: isDark ? '#14234b' : '#fff', borderColor: isDark ? '#1d3266' : '#FAF7F2' }]}>
+            <View style={[styles.noTodayIcon, { backgroundColor: isDark ? '#1d3266' : '#FAF7F2' }]}>
               <BookOpen size={30} color={isDark ? '#64748b' : '#64748b'} />
             </View>
             <Text style={[styles.noTodayTxt, { color: isDark ? '#e0e7ff' : '#1a2d5a' }]}>No Promise Yet</Text>
@@ -262,7 +263,7 @@ export default function PromiseArchiveScreen({ navigation }: { navigation: any }
 
         <View style={styles.historySection}>
           <Text style={[styles.historyLabel, { color: isDark ? '#e0e7ff' : '#1a2d5a' }]}>Past promises</Text>
-          <View style={[styles.historyCard, { backgroundColor: isDark ? '#14234b' : '#fff', borderColor: isDark ? '#1d3266' : '#f1f5f9' }]}>
+          <View style={[styles.historyCard, { backgroundColor: isDark ? '#14234b' : '#fff', borderColor: isDark ? '#1d3266' : '#FAF7F2' }]}>
             {promises.filter(p => p.date !== new Date().toISOString().split('T')[0]).slice(0, 10).map((item, index) => {
               const refString = `${item.verseReferenceEn || ''}${item.verseReferenceEn && item.verseReferenceTe ? ' - ' : ''}${item.verseReferenceTe || ''}` || stripHtml(item.verse).substring(0, 25) + '...';
 
@@ -275,8 +276,8 @@ export default function PromiseArchiveScreen({ navigation }: { navigation: any }
                   }}
                   style={[
                     styles.historyItem,
-                    { borderBottomColor: isDark ? '#1d3266' : '#f8fafc' },
-                    selectedPromise?.id === item.id && { backgroundColor: isDark ? '#1c3166' : '#f1f5f9' },
+                    { borderBottomColor: isDark ? '#1d3266' : '#FAF7F2' },
+                    selectedPromise?.id === item.id && { backgroundColor: isDark ? '#1c3166' : '#FAF7F2' },
                     index === Math.min(promises.length - 1, 9) && { borderBottomWidth: 0 }
                   ]}
                 >
@@ -300,7 +301,7 @@ export default function PromiseArchiveScreen({ navigation }: { navigation: any }
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f0f2f7' },
+  container: { flex: 1, backgroundColor: '#FAF7F2' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
   // Header

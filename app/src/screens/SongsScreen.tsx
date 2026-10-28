@@ -556,7 +556,7 @@ export default function SongsScreen({ navigation, route }: any) {
 
                 {activeService?.time ? (
                   <View style={{
-                    backgroundColor: isDark ? '#0f172a' : '#F1F5F9',
+                    backgroundColor: isDark ? '#0f172a' : '#FAF7F2',
                     paddingHorizontal: 8,
                     paddingVertical: 3,
                     borderRadius: 6,
@@ -644,7 +644,7 @@ export default function SongsScreen({ navigation, route }: any) {
                       paddingHorizontal: 12,
                       paddingVertical: 8,
                       borderRadius: 12,
-                      backgroundColor: isDark ? '#0f172a' : '#F8FAFC',
+                      backgroundColor: isDark ? '#0f172a' : '#FAF7F2',
                       borderWidth: 1.5,
                       borderColor: isDark ? '#334155' : '#E2E8F0',
                       flexDirection: 'row',
@@ -829,7 +829,7 @@ export default function SongsScreen({ navigation, route }: any) {
 
                 {s.timeSignature ? (
                   <View style={{
-                    backgroundColor: isDark ? '#0f172a' : '#F8FAFC',
+                    backgroundColor: isDark ? '#0f172a' : '#FAF7F2',
                     paddingHorizontal: 8,
                     paddingVertical: 3,
                     borderRadius: 6,
@@ -880,7 +880,7 @@ export default function SongsScreen({ navigation, route }: any) {
                   gap: 8,
                   paddingTop: 8,
                   borderTopWidth: 0.5,
-                  borderTopColor: isDark ? '#334155' : '#F1F5F9'
+                  borderTopColor: isDark ? '#334155' : '#FAF7F2'
                 }}>
                   {s.prelude ? (
                     <View style={{ flex: 1, backgroundColor: isDark ? '#042f2e' : '#F0FDFA', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 0.5, borderColor: isDark ? '#115e59' : '#99F6E4' }}>
@@ -923,7 +923,7 @@ export default function SongsScreen({ navigation, route }: any) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#f8fafc' }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2' }]}>
       <StatusBar barStyle="light-content" backgroundColor="#1a2d5a" />
       
       <CustomAlert 

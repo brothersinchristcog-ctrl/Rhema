@@ -70,7 +70,7 @@ export default function QuizLanguageModal({ visible, onClose }: QuizLanguageModa
                   onPress={onClose}
                   style={[
                     styles.closeBtn,
-                    { backgroundColor: isDark ? '#1e293b' : '#f1f5f9' },
+                    { backgroundColor: isDark ? '#1e293b' : '#FAF7F2' },
                   ]}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
@@ -95,9 +95,7 @@ export default function QuizLanguageModal({ visible, onClose }: QuizLanguageModa
                             : 'transparent',
                           borderColor: isSelected
                             ? '#2563EB'
-                            : isDark
-                            ? '#1e293b'
-                            : '#f1f5f9',
+                            : isDark ? '#1e293b' : '#FAF7F2',
                         },
                       ]}
                       onPress={() => handleSelect(lang.code)}

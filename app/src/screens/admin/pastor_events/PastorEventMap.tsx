@@ -540,7 +540,7 @@ const styles = StyleSheet.create({
     color: colors.primary
   },
   mockMapContainer: {
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#FAF7F2',
     position: 'relative',
     overflow: 'hidden'
   },

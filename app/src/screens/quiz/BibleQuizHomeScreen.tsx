@@ -94,7 +94,7 @@ export default function BibleQuizHomeScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0b1120' : '#f8fafc' }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#0b1120' : '#FAF7F2' }]}>
       <StatusBar barStyle="light-content" backgroundColor="#1a3673" />
 
       {/* Clean Hero Header */}

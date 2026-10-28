@@ -17,7 +17,7 @@ export const Colors = {
   goldLight: '#fef3c7',    // Soft Gold for Surface Tints
   
   // ── SURFACE & UI ──
-  background: '#f0f2f7',   // Main Screen Background
+  background: '#FAF7F2',   // Main Screen Background (White Cream)
   surface: '#ffffff',      // Card & Container Background
   border: '#e5e7eb',       // Light UI Borders
   

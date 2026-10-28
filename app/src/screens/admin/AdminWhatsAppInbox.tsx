@@ -582,7 +582,7 @@ const styles = StyleSheet.create({
   },
   inputContainer: {
     flex: 1,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#FAF7F2',
     borderRadius: 24,
     minHeight: 48,
     justifyContent: 'center',

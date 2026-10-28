@@ -119,12 +119,12 @@ export default function OnlineMeetingsScreen({ navigation }: any) {
   if (activeTab === 'live') displayList = liveMeetings;
   if (activeTab === 'completed') displayList = pastMeetings;
 
-  const bg = isDark ? '#0f172a' : '#f1f5f9';
+  const bg = isDark ? '#0f172a' : '#FAF7F2';
   const cardBg = isDark ? '#1e293b' : '#ffffff';
   const textPrimary = isDark ? '#f1f5f9' : '#0f172a';
   const textMuted = isDark ? '#94a3b8' : '#64748b';
   const border = isDark ? '#334155' : '#e2e8f0';
-  const pillBg = isDark ? '#0f172a' : '#f8fafc';
+  const pillBg = isDark ? '#0f172a' : '#FAF7F2';
 
   const formatDate = (dt: Date) =>
     dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
