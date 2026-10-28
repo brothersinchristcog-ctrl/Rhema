@@ -82,7 +82,7 @@ export default function AdminWeCelebrationsAutoTemplate({ onBack }: { onBack: ()
         [selectedMonth]: template
       };
 
-      await firestore().collection('churches').doc(activeChurch.id).update({
+      await firestore().collection('Rhema Church').doc(activeChurch.id).update({
         monthlyCelebrationTemplates: updatedMonthly
       });
 

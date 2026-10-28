@@ -283,7 +283,7 @@ class AttendanceService {
 
     try {
       const attendeesRef = firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(churchId)
         .collection('events')
         .doc(eventId)
@@ -317,7 +317,7 @@ class AttendanceService {
       if (records.length === 0) {
         try {
           const evDocSnap = await firestore()
-            .collection('churches')
+            .collection('Rhema Church')
             .doc(churchId)
             .collection('events')
             .doc(eventId)
@@ -329,7 +329,7 @@ class AttendanceService {
           // We do NOT resurrect deleted records from attendanceRequests for real events.
           if (!evExists) {
             const reqResponses = await firestore()
-              .collection('churches')
+              .collection('Rhema Church')
               .doc(churchId)
               .collection('attendanceRequests')
               .doc(eventId)
@@ -371,7 +371,7 @@ class AttendanceService {
     try {
       // 1. Try church-specific members collection
       const snap = await firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(churchId)
         .collection('members')
         .get();
@@ -461,7 +461,7 @@ class AttendanceService {
 
     try {
       const attendeeDocRef = firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(churchId)
         .collection('events')
         .doc(eventId)
@@ -524,7 +524,7 @@ class AttendanceService {
       await Promise.allSettled([
         attendeeDocRef.set(recordData),
         firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(churchId)
           .collection('attendanceRecords')
           .doc(recordDocId)
@@ -533,7 +533,7 @@ class AttendanceService {
             console.warn('[AttendanceService] Note writing to church attendanceRecords:', e?.message);
           }),
         firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(churchId)
           .collection('attendanceRequests')
           .doc(eventId)
@@ -565,7 +565,7 @@ class AttendanceService {
       const recordDocId = `${eventId}_${memberId}`;
       const deletePromises: Promise<any>[] = [
         firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(churchId)
           .collection('events')
           .doc(eventId)
@@ -573,7 +573,7 @@ class AttendanceService {
           .doc(memberId)
           .delete(),
         firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(churchId)
           .collection('attendanceRequests')
           .doc(eventId)
@@ -581,7 +581,7 @@ class AttendanceService {
           .doc(memberId)
           .delete(),
         firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(churchId)
           .collection('attendanceRecords')
           .doc(recordDocId)
@@ -592,7 +592,7 @@ class AttendanceService {
       // Also clean up any legacy auto-ID records in attendanceRecords
       try {
         const legacySnap = await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(churchId)
           .collection('attendanceRecords')
           .where('eventId', '==', eventId)
@@ -624,7 +624,7 @@ class AttendanceService {
       // 1. Fetch from church attendance records without composite index requirement
       try {
         const snap = await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(churchId)
           .collection('attendanceRecords')
           .where('memberId', '==', memberId)
@@ -638,7 +638,7 @@ class AttendanceService {
           if (d.eventId) {
             // Verify if the event's attendee doc still exists or if it was deleted in Firebase
             const attDoc = await firestore()
-              .collection('churches')
+              .collection('Rhema Church')
               .doc(churchId)
               .collection('events')
               .doc(d.eventId)
@@ -670,7 +670,7 @@ class AttendanceService {
       // are always retrieved even if attendanceRecords collection write had delay or restriction.
       try {
         const eventsSnap = await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(churchId)
           .collection('events')
           .limit(25)
@@ -684,7 +684,7 @@ class AttendanceService {
 
           // Check direct doc by memberId
           const attendeeDoc = await firestore()
-            .collection('churches')
+            .collection('Rhema Church')
             .doc(churchId)
             .collection('events')
             .doc(evDoc.id)
@@ -723,7 +723,7 @@ class AttendanceService {
           if (cleanPhone) {
             try {
               const phoneSnap = await firestore()
-                .collection('churches')
+                .collection('Rhema Church')
                 .doc(churchId)
                 .collection('events')
                 .doc(evDoc.id)
@@ -783,7 +783,7 @@ class AttendanceService {
     try {
       // Query strictly with equality filter on memberId so Firestore never needs a composite index
       const snap = await firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(churchId)
         .collection('attendanceRecords')
         .where('memberId', '==', memberId)
@@ -818,7 +818,7 @@ class AttendanceService {
             // Verify that the attendee record still exists under the event (not deleted in Firebase)
             if (d.eventId) {
               const attDoc = await firestore()
-                .collection('churches')
+                .collection('Rhema Church')
                 .doc(churchId)
                 .collection('events')
                 .doc(d.eventId)
@@ -847,7 +847,7 @@ class AttendanceService {
         const todayD = now.getDate();
 
         const genDoc = await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(churchId)
           .collection('events')
           .doc('general_service')

@@ -179,7 +179,7 @@ export default function AdminServicePlanner({ navigation }: any) {
         ServiceRosterService.getServicePlans(activeChurch.id),
         FirestoreService.getAllMembers(),
         firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(activeChurch.id)
           .collection('events')
           .orderBy('date', 'desc')

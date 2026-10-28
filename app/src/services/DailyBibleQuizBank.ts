@@ -388,7 +388,7 @@ export class DailyBibleQuizBank {
       const entity = this.createDailyQuizEntity(dateStr, 'global');
 
       const globalDocRef = firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc('global')
         .collection(this.QUIZZES_COLLECTION)
         .doc(entity.id);
@@ -453,7 +453,7 @@ export class DailyBibleQuizBank {
       // Fallback: check church subcollection if empty
       if (!snapshot || snapshot.empty) {
         snapshot = await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc('global')
           .collection(this.QUIZZES_COLLECTION)
           .where('isDailyQuiz', '==', true)

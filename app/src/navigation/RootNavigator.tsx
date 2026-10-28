@@ -155,7 +155,7 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
     useEffect(() => {
       if (!activeChurch?.id) return;
       const unsubscribe = firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(activeChurch.id)
         .collection('prayerRequests')
         .where('isPublic', '==', true)
@@ -437,26 +437,7 @@ function TabNavigator() {
   const useWeChristianDailyPromise = activeChurch?.useWeChristianDailyPromise !== false;
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const [globalUser, setGlobalUser] = useState<any>(null);
 
-  useEffect(() => {
-    if (user?.uid && !user.isAnonymous) {
-      const unsubscribe = firestore()
-        .collection('users')
-        .doc(user.uid)
-        .onSnapshot(
-          (doc) => {
-            if (doc.data()) {
-              setGlobalUser(doc.data());
-            }
-          },
-          (error) => {
-            console.error('Error listening to globalUser:', error);
-          }
-        );
-      return () => unsubscribe();
-    }
-  }, [user]);
 
   const isGuest = user?.isAnonymous;
   const isActualAdmin = String(member?.userType || '').toUpperCase().includes('ADMIN') || String(member?.userType || '').toUpperCase().includes('SUPER');
@@ -698,33 +679,7 @@ function Navigation() {
         // Initialize Daily Bible Quiz 5:00 AM Automated Notifications
         DailyQuizNotificationService.initialize();
 
-        // Proactive self-healing: Ensure user profile document has 'name' and 'phone' in Firestore
-        if (!user.isAnonymous) {
-          try {
-            const firestore = require('@react-native-firebase/firestore').default;
-            const doc = await firestore().collection('users').doc(user.uid).get();
-            const data = doc.data();
-            if (!data?.name || !data?.phone) {
-              console.log('🩹 [Self-Healing] Missing user profile details in Firestore. Fetching from Salesforce...');
-              const phoneClean = user.phoneNumber || '';
-              if (phoneClean) {
-                const FirestoreService = require('../services/FirestoreService').default;
-                const result = await FirestoreService.checkContactExists(phoneClean);
-                if (result && result.exists) {
-                  await firestore().collection('users').doc(user.uid).set({
-                    name: result.member?.name || '',
-                    phone: phoneClean,
-                    role: 'Member',
-                    onboardingComplete: true
-                  }, { merge: true });
-                  console.log('🩹 [Self-Healing] Firestore user profile successfully repaired!');
-                }
-              }
-            }
-          } catch (err) {
-            console.warn('⚠️ [Self-Healing] Profile recovery skipped:', err);
-          }
-        }
+
       };
       initNotifications();
     }
@@ -742,26 +697,9 @@ function Navigation() {
         return;
       }
 
-      // ── Member / Admin: Skip Onboarding ──
-      if (!user.isAnonymous) {
-        setOnboardingComplete(true);
-        return;
-      }
-
-      // ── Guest Mode: Show Onboarding (Reactive via Firestore) ──
-      unsub = firestore()
-        .collection('users')
-        .doc(user.uid)
-        .onSnapshot((doc) => {
-          if (doc.exists()) {
-            setOnboardingComplete(doc.data()?.onboardingComplete === true);
-          } else {
-            setOnboardingComplete(false);
-          }
-        }, (err) => {
-          console.log('Guest Onboarding Check Error:', err);
-          setOnboardingComplete(false); 
-        });
+      // ── Skip Onboarding directly for all users ──
+      setOnboardingComplete(true);
+      return;
     };
 
     checkOnboarding();

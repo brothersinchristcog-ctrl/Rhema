@@ -42,7 +42,7 @@ class DailyQuizNotificationService {
   async getScheduleConfig(): Promise<DailyQuizScheduleConfig> {
     try {
       const snap = await firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc('global')
         .collection('settings')
         .doc('daily_quiz_schedule')
@@ -112,7 +112,7 @@ class DailyQuizNotificationService {
 
       // 1. Write to Firestore global settings
       await firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc('global')
         .collection('settings')
         .doc('daily_quiz_schedule')
@@ -330,7 +330,7 @@ class DailyQuizNotificationService {
       const pushBody = config.customBody || `Today's Scripture challenge (${formatDateDisplay(dateStr)}) is ready. Test your knowledge and reflect on God's Word!`;
 
       // 1. Fetch all active churches
-      const churchesSnap = await firestore().collection('churches').get();
+      const churchesSnap = await firestore().collection('Rhema Church').get();
       const targetChurches: string[] = [];
       churchesSnap.docs.forEach((doc: any) => {
         if (doc.id !== 'global') {
@@ -341,7 +341,7 @@ class DailyQuizNotificationService {
       // 2. Add broadcast to each church (triggers Cloud Functions broadcast push to all members)
       for (const cId of targetChurches) {
         await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(cId)
           .collection('broadcasts')
           .add({
@@ -358,7 +358,7 @@ class DailyQuizNotificationService {
           .catch(() => {});
 
         await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(cId)
           .collection('notifications')
           .add({
@@ -378,7 +378,7 @@ class DailyQuizNotificationService {
 
       // 3. Mark lastBroadcastDate in Firestore
       await firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc('global')
         .collection('settings')
         .doc('daily_quiz_schedule')

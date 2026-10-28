@@ -857,7 +857,7 @@ export default function HomeScreen() {
 
       const todayStr = new Date().toISOString().split('T')[0];
       const unsubscribe = firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(activeChurch.id)
         .collection('live_celebrations')
         .doc(todayStr)
@@ -1165,7 +1165,7 @@ export default function HomeScreen() {
   useEffect(() => {
     if (!activeChurch?.id) return;
     const unsubscribe = firestore()
-      .collection('churches')
+      .collection('Rhema Church')
       .doc(activeChurch.id)
       .collection('online_meetings')
       .where('status', 'in', ['upcoming', 'live'])

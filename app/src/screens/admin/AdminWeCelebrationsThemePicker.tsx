@@ -37,7 +37,7 @@ export default function AdminWeCelebrationsThemePicker({ onBack, onSelectTheme, 
           style: "destructive",
           onPress: async () => {
             try {
-              await firestore().collection('churches').doc(activeChurch.id).update({
+              await firestore().collection('Rhema Church').doc(activeChurch.id).update({
                 customThemes: firestore.FieldValue.arrayRemove(theme)
               });
               if (activeChurch) {

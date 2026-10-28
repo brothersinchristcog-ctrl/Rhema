@@ -51,7 +51,7 @@ export default function AdminCelebrationsCustomTheme({ onBack, onSave }: { onBac
     try {
       if (imageUri && activeChurch?.id) {
         const ext = imageUri.substring(imageUri.lastIndexOf('.') + 1) || 'jpg';
-        const storagePath = `churches/${activeChurch.id}/themes/custom_${Date.now()}.${ext}`;
+        const storagePath = `Rhema Church/${activeChurch.id}/themes/custom_${Date.now()}.${ext}`;
         const reference = storage().ref(storagePath);
         await reference.putFile(imageUri);
         finalImageUrl = await reference.getDownloadURL();
@@ -66,7 +66,7 @@ export default function AdminCelebrationsCustomTheme({ onBack, onSave }: { onBac
       };
 
       if (activeChurch?.id) {
-        await firestore().collection('churches').doc(activeChurch.id).update({
+        await firestore().collection('Rhema Church').doc(activeChurch.id).update({
           customThemes: firestore.FieldValue.arrayUnion(newTheme)
         });
       }

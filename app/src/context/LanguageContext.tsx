@@ -60,11 +60,13 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setLanguageState(newLang);
       await AsyncStorage.setItem(STORAGE_KEY, newLang);
 
-      // Best effort sync to Firestore if user is authenticated
+      // Best effort sync to Firestore member profile if user is authenticated
       const currentUser = auth().currentUser;
       if (currentUser && !currentUser.isAnonymous) {
         firestore()
-          .collection('users')
+          .collection('Rhema Church')
+          .doc('rhema')
+          .collection('members')
           .doc(currentUser.uid)
           .set({ language: newLang }, { merge: true })
           .catch(() => {});

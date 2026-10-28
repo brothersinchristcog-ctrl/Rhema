@@ -835,7 +835,7 @@ export class BibleQuizBank {
       if (churchId && churchId !== 'global') {
         try {
           const snaps = await firestore()
-            .collection('churches')
+            .collection('Rhema Church')
             .doc(churchId)
             .collection('bibleQuizzes')
             .where('category', '==', category)

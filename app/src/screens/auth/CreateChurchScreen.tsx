@@ -231,7 +231,7 @@ export default function CreateChurchScreen({ navigation }: Props) {
       const variants = Array.from(new Set([v1, v2, v3, v4]));
 
       const duplicateCheck = await firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .where('contactPhone', 'in', variants)
         .get();
 
@@ -375,7 +375,7 @@ export default function CreateChurchScreen({ navigation }: Props) {
       const variants = Array.from(new Set([v1, v2, v3, v4]));
 
       const duplicateCheck = await firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .where('contactPhone', 'in', variants)
         .get();
 
@@ -387,7 +387,7 @@ export default function CreateChurchScreen({ navigation }: Props) {
         return;
       }
 
-      const docRef = await firestore().collection('churches').add(churchData);
+      const docRef = await firestore().collection('Rhema Church').add(churchData);
 
       // Notify Super Admins immediately about the new church registration
       ChurchService.notifySuperAdminsNewChurchRegistration({
@@ -404,7 +404,7 @@ export default function CreateChurchScreen({ navigation }: Props) {
         const adminDisplayName = pastorOrAdminName || member?.name || currentUser.displayName || 'Admin';
 
         // Create Admin member profile nested in this new church
-        await firestore().collection('churches').doc(docRef.id).collection('members').doc(currentUser.uid).set({
+        await firestore().collection('Rhema Church').doc(docRef.id).collection('members').doc(currentUser.uid).set({
           id: currentUser.uid,
           name: adminDisplayName,
           phone: member?.phone || currentUser.phoneNumber || cleanNum,
@@ -442,7 +442,7 @@ export default function CreateChurchScreen({ navigation }: Props) {
       if (selectedImage) {
         try {
           const ext = selectedImage.substring(selectedImage.lastIndexOf('.') + 1) || 'jpg';
-          const storagePath = `churches/${docRef.id}/brand/logo_${Date.now()}.${ext}`;
+          const storagePath = `Rhema Church/${docRef.id}/brand/logo_${Date.now()}.${ext}`;
           
           const reference = storage().ref(storagePath);
           await reference.putFile(selectedImage);

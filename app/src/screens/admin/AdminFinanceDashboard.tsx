@@ -161,7 +161,7 @@ export default function AdminFinanceDashboard({ navigation, routeParams }: any) 
     try {
       const churchId = member?.churchId || member?.primaryChurchId;
       if (churchId) {
-        const cDoc = await firestore().collection('churches').doc(churchId).get();
+        const cDoc = await firestore().collection('Rhema Church').doc(churchId).get();
         const docData: any = typeof cDoc.data === 'function' ? cDoc.data() : cDoc.data;
         if (docData) {
           if (docData.customExpenseItems && typeof docData.customExpenseItems === 'object') {
@@ -1419,7 +1419,7 @@ const openAddExpense = () => {
                     try {
                       const churchId = member?.churchId || member?.primaryChurchId;
                       if (churchId) {
-                        await firestore().collection('churches').doc(churchId).set({
+                        await firestore().collection('Rhema Church').doc(churchId).set({
                           customCategories: firestore.FieldValue.arrayUnion(name)
                         }, { merge: true });
                       }
@@ -1553,7 +1553,7 @@ const openAddExpense = () => {
                               try {
                                 const churchId = member?.churchId || member?.primaryChurchId;
                                 if (churchId) {
-                                  await firestore().collection('churches').doc(churchId).set({
+                                  await firestore().collection('Rhema Church').doc(churchId).set({
                                     customExpenseItems: {
                                       [groupName]: firestore.FieldValue.arrayUnion(name)
                                     }

@@ -57,7 +57,7 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // Real-time listener for Rhema Global Ministries church document
   useEffect(() => {
     const unsub = firestore()
-      .collection('churches')
+      .collection('Rhema Church')
       .doc(RHEMA_CHURCH_ID)
       .onSnapshot(
         (docSnap) => {

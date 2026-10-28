@@ -250,13 +250,13 @@ class FirestoreService {
   async getCollection(collectionName: string) {
     const id = await this.getChurchId();
     if (!id) throw new Error('Church ID not set');
-    return firestore().collection('churches').doc(id).collection(collectionName);
+    return firestore().collection('Rhema Church').doc(id).collection(collectionName);
   }
 
   async getChurchDoc() {
     const id = await this.getChurchId();
     if (!id) return null;
-    return firestore().collection('churches').doc(id);
+    return firestore().collection('Rhema Church').doc(id);
   }
 
   // ─── STRICT DUPLICATE CHECK FOR CHURCH ───
@@ -273,7 +273,7 @@ class FirestoreService {
     
     try {
       const queries = possibleFormats.map(format => 
-        firestore().collection('churches').doc(churchId).collection('members').where('phone', '==', format).get()
+        firestore().collection('Rhema Church').doc(churchId).collection('members').where('phone', '==', format).get()
       );
       const results = await Promise.all(queries);
       for (const snap of results) {
@@ -437,7 +437,7 @@ class FirestoreService {
   async deleteChurchSubscriptionHistory(churchId: string, subscriptionId: string) {
     try {
       await firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(churchId)
         .collection('subscriptions')
         .doc(subscriptionId)
@@ -451,7 +451,7 @@ class FirestoreService {
 
   async getSubscribedMembers(churchId: string, limitNum: number = 20, lastDoc?: any, searchQuery?: string, statusFilter: string = 'all') {
     try {
-      let membersRef = firestore().collection('churches').doc(churchId).collection('members');
+      let membersRef = firestore().collection('Rhema Church').doc(churchId).collection('members');
       
       let query: any = membersRef;
       
@@ -520,7 +520,7 @@ class FirestoreService {
   async getMemberSubscriptionHistory(churchId: string, memberId: string) {
     try {
       const snap = await firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(churchId)
         .collection('members')
         .doc(memberId)
@@ -538,7 +538,7 @@ class FirestoreService {
   async getChurchSubscriptionHistory(churchId: string) {
     try {
       const snap = await firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(churchId)
         .collection('subscriptions')
         .orderBy('paidAt', 'desc')
@@ -554,7 +554,7 @@ class FirestoreService {
   async deleteSubscriptionHistory(churchId: string, memberId: string, historyId: string) {
     try {
       await firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(churchId)
         .collection('members')
         .doc(memberId)
@@ -571,7 +571,7 @@ class FirestoreService {
   async logCancelledSubscription(churchId: string, memberId: string, amount: number, plan: string) {
     try {
       await firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(churchId)
         .collection('members')
         .doc(memberId)
@@ -627,7 +627,7 @@ class FirestoreService {
     // 2. Client Firestore Atomic Transaction Fallback
     return await firestore().runTransaction(async (transaction) => {
       const voucherRef = firestore().collection('vouchers').doc(normalizedCode);
-      const churchRef = firestore().collection('churches').doc(churchId);
+      const churchRef = firestore().collection('Rhema Church').doc(churchId);
 
       const voucherDoc = await transaction.get(voucherRef);
       if (!voucherDoc.exists) {
@@ -734,7 +734,7 @@ class FirestoreService {
     try {
       const targetChurchId = await this.getChurchId() || RHEMA_CHURCH_ID;
       // 1. Direct check in Rhema Global Ministries member profile (instant, zero index latency)
-      const directDoc = await firestore().collection('churches').doc(targetChurchId).collection('members').doc(uid).get();
+      const directDoc = await firestore().collection('Rhema Church').doc(targetChurchId).collection('members').doc(uid).get();
       if (directDoc.exists()) {
         const data = directDoc.data();
         if (!data?.status || data?.status === 'Active') {
@@ -766,7 +766,7 @@ class FirestoreService {
 
   async getMemberProfile(churchId: string, uid: string): Promise<AppMember | null> {
     try {
-      const docSnap = await firestore().collection('churches').doc(churchId).collection('members').doc(uid).get();
+      const docSnap = await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(uid).get();
       if (docSnap.exists()) {
         return { id: docSnap.id, ...docSnap.data() } as AppMember;
       }
@@ -803,7 +803,7 @@ class FirestoreService {
       try {
         console.log(`Checking specific church: ${targetChurchId}`);
         const queries = possibleFormats.map(format => 
-          firestore().collection('churches').doc(targetChurchId).collection('members').where('phone', '==', format).get({ source: 'server' })
+          firestore().collection('Rhema Church').doc(targetChurchId).collection('members').where('phone', '==', format).get({ source: 'server' })
         );
         const results = await Promise.all(queries);
         let bestMember: any = null;
@@ -870,7 +870,7 @@ class FirestoreService {
         }
       }
 
-      const docRef = await firestore().collection('churches').doc(churchId).collection('members').add({
+      const docRef = await firestore().collection('Rhema Church').doc(churchId).collection('members').add({
         ...details,
         status: 'Active',
         joinDate: new Date().toISOString(),
@@ -891,7 +891,7 @@ class FirestoreService {
           throw new Error('DUPLICATE_MEMBER');
         }
       }
-      await firestore().collection('churches').doc(churchId).collection('members').doc(memberId).update(details);
+      await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(memberId).update(details);
       return { success: true };
     } catch (error: any) {
       console.error("Error updating member:", error);
@@ -901,7 +901,7 @@ class FirestoreService {
 
   async adminRemoveMember(churchId: string, memberId: string) {
     try {
-      await firestore().collection('churches').doc(churchId).collection('members').doc(memberId).update({
+      await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(memberId).update({
         status: 'Left'
       });
       return { success: true };
@@ -913,7 +913,7 @@ class FirestoreService {
 
   async deleteMemberPermanent(churchId: string, memberId: string) {
     try {
-      await firestore().collection('churches').doc(churchId).collection('members').doc(memberId).delete();
+      await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(memberId).delete();
       return { success: true };
     } catch (error: any) {
       console.error("Error permanently deleting member:", error);
@@ -929,7 +929,7 @@ class FirestoreService {
           throw new Error('DUPLICATE_MEMBER');
         }
       }
-      await firestore().collection('churches').doc(churchId).collection('members').doc(memberId).set(details, { merge: true });
+      await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(memberId).set(details, { merge: true });
       return true;
     } catch (error) {
       console.error('Error updating member profile', error);
@@ -996,17 +996,11 @@ class FirestoreService {
 
   async updateLastAppOpened(uid: string) {
     try {
-      await firestore().collection('users').doc(uid).update({
+      const churchId = await this.getChurchId() || RHEMA_CHURCH_ID;
+      await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(uid).update({
+        lastAppOpened: FieldValue.serverTimestamp(),
         lastLogin: FieldValue.serverTimestamp()
       });
-      
-      const churchId = await this.getChurchId();
-      if (churchId) {
-        await firestore().collection('churches').doc(churchId).collection('members').doc(uid).update({
-          lastAppOpened: FieldValue.serverTimestamp(),
-          lastLogin: FieldValue.serverTimestamp()
-        });
-      }
     } catch (error) {
       console.warn('Error updating lastLogin globally', error);
     }
@@ -1016,7 +1010,7 @@ class FirestoreService {
     try {
       if (contactId === uid) return;
       
-      const membersRef = firestore().collection('churches').doc(churchId).collection('members');
+      const membersRef = firestore().collection('Rhema Church').doc(churchId).collection('members');
       const oldDoc = await membersRef.doc(contactId).get();
       
       const docExists = typeof oldDoc.exists === 'function' ? oldDoc.exists() : oldDoc.exists;
@@ -1036,7 +1030,7 @@ class FirestoreService {
 
   async getRelatedContacts(churchId: string, accountId: string): Promise<any[]> {
     try {
-      const snapshot = await firestore().collection('churches').doc(churchId).collection('members').where('accountId', '==', accountId).get();
+      const snapshot = await firestore().collection('Rhema Church').doc(churchId).collection('members').where('accountId', '==', accountId).get();
       return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     } catch (e) {
       return [];
@@ -1051,7 +1045,7 @@ class FirestoreService {
           throw new Error('DUPLICATE_MEMBER');
         }
       }
-      await firestore().collection('churches').doc(churchId).collection('members').add({ ...newMember, accountId });
+      await firestore().collection('Rhema Church').doc(churchId).collection('members').add({ ...newMember, accountId });
       return true;
     } catch (e) {
       throw e;
@@ -1069,10 +1063,10 @@ class FirestoreService {
 
       const memberData = { ...data, status: data.status || 'Active' };
       if (customId) {
-        await firestore().collection('churches').doc(churchId).collection('members').doc(customId).set(memberData);
+        await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(customId).set(memberData);
         return { success: true, id: customId };
       } else {
-        const docRef = await firestore().collection('churches').doc(churchId).collection('members').add(memberData);
+        const docRef = await firestore().collection('Rhema Church').doc(churchId).collection('members').add(memberData);
         return { success: true, id: docRef.id };
       }
     } catch (e) {
@@ -1284,10 +1278,10 @@ class FirestoreService {
         return allCached;
       }
 
-      const churchDoc = await firestore().collection('churches').doc(churchId).get();
+      const churchDoc = await firestore().collection('Rhema Church').doc(churchId).get();
       const disableMasterSongs = churchDoc.data()?.disableMasterSongs === true;
 
-      const customCol = firestore().collection('churches').doc(churchId).collection('worshipSongs');
+      const customCol = firestore().collection('Rhema Church').doc(churchId).collection('worshipSongs');
       const masterCol = firestore().collection('masterSongs');
 
       const fetchFromSource = async (source: 'cache' | 'server') => {
@@ -1390,7 +1384,7 @@ class FirestoreService {
       const churchId = await this.getChurchId();
       const customCats: string[] = [];
       if (churchId) {
-        const churchDoc = await firestore().collection('churches').doc(churchId).get();
+        const churchDoc = await firestore().collection('Rhema Church').doc(churchId).get();
         const data = churchDoc.data();
         if (Array.isArray(data?.sermonCategories)) {
           data.sermonCategories.forEach((c: any) => {
@@ -1438,7 +1432,7 @@ class FirestoreService {
     try {
       const churchId = await this.getChurchId();
       if (churchId) {
-        await firestore().collection('churches').doc(churchId).set({
+        await firestore().collection('Rhema Church').doc(churchId).set({
           sermonCategories: FieldValue.arrayUnion(trimmed),
           updatedAt: FieldValue.serverTimestamp(),
         }, { merge: true });
@@ -1527,7 +1521,7 @@ class FirestoreService {
       const churchId = await this.getChurchId();
       if (!churchId) return;
       const cleanServices = Array.isArray(services) ? services.filter(Boolean) : [];
-      await firestore().collection('churches').doc(churchId).collection('setlists').doc('all_services').set({
+      await firestore().collection('Rhema Church').doc(churchId).collection('setlists').doc('all_services').set({
         services: cleanServices,
         updatedAt: FieldValue.serverTimestamp()
       }, { merge: true });
@@ -1550,7 +1544,7 @@ class FirestoreService {
     try {
       const churchId = await this.getChurchId();
       if (!churchId) return null;
-      const docSnap = await firestore().collection('churches').doc(churchId).collection('setlists').doc('all_services').get();
+      const docSnap = await firestore().collection('Rhema Church').doc(churchId).collection('setlists').doc('all_services').get();
       const docExists = typeof (docSnap as any).exists === 'function' ? (docSnap as any).exists() : (docSnap as any).exists;
       if (docExists && docSnap.data()?.services) {
         const rawServices = docSnap.data()?.services;
@@ -1567,7 +1561,7 @@ class FirestoreService {
     try {
       const churchId = await this.getChurchId();
       if (!churchId) return;
-      await firestore().collection('churches').doc(churchId).collection('setlists').doc(service).set({
+      await firestore().collection('Rhema Church').doc(churchId).collection('setlists').doc(service).set({
         service,
         items,
         updatedAt: FieldValue.serverTimestamp()
@@ -1581,7 +1575,7 @@ class FirestoreService {
     try {
       const churchId = await this.getChurchId();
       if (!churchId) return null;
-      const docSnap = await firestore().collection('churches').doc(churchId).collection('setlists').doc(service).get();
+      const docSnap = await firestore().collection('Rhema Church').doc(churchId).collection('setlists').doc(service).get();
       const docExists = typeof (docSnap as any).exists === 'function' ? (docSnap as any).exists() : (docSnap as any).exists;
       if (docExists && docSnap.data()?.items) {
         return docSnap.data()?.items;
@@ -1925,7 +1919,7 @@ class FirestoreService {
 
   async getBibleProgress(churchId: string, memberId: string): Promise<any> {
     try {
-      const doc = await firestore().collection('churches').doc(churchId).collection('members').doc(memberId).collection('bible').doc('progress').get();
+      const doc = await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(memberId).collection('bible').doc('progress').get();
       return doc.exists() ? doc.data() : null;
     } catch (e) {
       return null;
@@ -1934,7 +1928,7 @@ class FirestoreService {
 
   async saveBibleProgress(churchId: string, memberId: string, progress: any) {
     try {
-      await firestore().collection('churches').doc(churchId).collection('members').doc(memberId).collection('bible').doc('progress').set(progress, { merge: true });
+      await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(memberId).collection('bible').doc('progress').set(progress, { merge: true });
       return true;
     } catch (e) {
       throw e;
@@ -2454,7 +2448,8 @@ class FirestoreService {
 
   async getNotificationPrefs(uid: string) {
     try {
-      const docSnap = await firestore().collection('users').doc(uid).get();
+      const churchId = await this.getChurchId() || RHEMA_CHURCH_ID;
+      const docSnap = await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(uid).get();
       if (docSnap.exists()) {
         return docSnap.data()?.notifications || null;
       }
@@ -2466,7 +2461,8 @@ class FirestoreService {
 
   async saveNotificationPrefs(uid: string, prefs: any) {
     try {
-      await firestore().collection('users').doc(uid).set({
+      const churchId = await this.getChurchId() || RHEMA_CHURCH_ID;
+      await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(uid).set({
         notifications: prefs,
         updatedAt: FieldValue.serverTimestamp()
       }, { merge: true });
@@ -2707,7 +2703,7 @@ class FirestoreService {
   async deleteDuplicateMember(churchId: string, docId: string): Promise<boolean> {
     try {
       if (!churchId || !docId) return false;
-      await firestore().collection('churches').doc(churchId).collection('members').doc(docId).delete();
+      await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(docId).delete();
       return true;
     } catch (error) {
       console.error('Error deleting duplicate member:', error);
@@ -2963,7 +2959,7 @@ class FirestoreService {
       }
 
       await db
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(churchId)
         .collection('aiSermons')
         .add({
@@ -2985,7 +2981,7 @@ class FirestoreService {
 
       try {
         const snapshot = await db
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(churchId)
           .collection('aiSermons')
           .orderBy('createdAt', 'desc')
@@ -2994,7 +2990,7 @@ class FirestoreService {
       } catch (orderErr) {
         // Fallback without orderBy if index is still building or missing
         const snapshot = await db
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(churchId)
           .collection('aiSermons')
           .get();
@@ -3021,7 +3017,7 @@ class FirestoreService {
       if (!churchId || !sermonId) return;
       const db = firestore();
       await db
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(churchId)
         .collection('aiSermons')
         .doc(sermonId)
@@ -3041,7 +3037,7 @@ class FirestoreService {
       if (!churchId || !sermonId) return;
       const db = firestore();
       await db
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(churchId)
         .collection('aiSermons')
         .doc(sermonId)
@@ -3077,7 +3073,7 @@ class FirestoreService {
       if (!churchId) return;
       const db = firestore();
       await db
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(churchId)
         .collection('aiContent')
         .add({ ...data, createdAt: FieldValue.serverTimestamp() });
@@ -3092,7 +3088,7 @@ class FirestoreService {
       if (!churchId) return [];
       const db = firestore();
       const snapshot = await db
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(churchId)
         .collection('aiContent')
         .get();
@@ -3114,7 +3110,7 @@ class FirestoreService {
       if (!churchId || !contentId) return;
       const db = firestore();
       await db
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(churchId)
         .collection('aiContent')
         .doc(contentId)

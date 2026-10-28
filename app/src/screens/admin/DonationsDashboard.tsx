@@ -129,7 +129,7 @@ export default function AdminDonationDashboard() {
     try {
       const churchId = member?.churchId || member?.primaryChurchId;
       if (churchId) {
-        const cDoc = await firestore().collection('churches').doc(churchId).get();
+        const cDoc = await firestore().collection('Rhema Church').doc(churchId).get();
         const docData: any = typeof cDoc.data === 'function' ? cDoc.data() : cDoc.data;
         if (docData) {
           if (docData.customDonationCategories && Array.isArray(docData.customDonationCategories)) {
@@ -628,7 +628,7 @@ export default function AdminDonationDashboard() {
       
       const newCats = Array.from(new Set([...categories, newCategoryName.trim()]));
       setCategories(newCats);
-      await firestore().collection('churches').doc(churchId).update({
+      await firestore().collection('Rhema Church').doc(churchId).update({
         customDonationCategories: newCats
       });
       setShowCategoryModal(false);

@@ -183,7 +183,7 @@ class ServiceRosterService {
     try {
       if (!churchId) return [];
       const snap = await firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(churchId)
         .collection('service_plans')
         .orderBy('date', 'desc')
@@ -208,7 +208,7 @@ class ServiceRosterService {
       if (list.length === 0) {
         try {
           const setlistDoc = await firestore()
-            .collection('churches')
+            .collection('Rhema Church')
             .doc(churchId)
             .collection('setlists')
             .doc('all_services')
@@ -267,7 +267,7 @@ class ServiceRosterService {
     try {
       if (!churchId || !planId) return null;
       const doc = await firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(churchId)
         .collection('service_plans')
         .doc(planId)
@@ -287,7 +287,7 @@ class ServiceRosterService {
   async saveServicePlan(churchId: string, plan: Partial<ServicePlan>): Promise<string> {
     try {
       if (!churchId) throw new Error('Church ID required');
-      const col = firestore().collection('churches').doc(churchId).collection('service_plans');
+      const col = firestore().collection('Rhema Church').doc(churchId).collection('service_plans');
       
       const payload: any = {
         ...plan,
@@ -315,7 +315,7 @@ class ServiceRosterService {
     try {
       if (!churchId || !planId) return;
       await firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(churchId)
         .collection('service_plans')
         .doc(planId)

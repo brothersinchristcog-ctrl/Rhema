@@ -352,7 +352,8 @@ export default function AttendanceScreen({ navigation, route }: any) {
 
   const fetchUserPhotos = async (): Promise<Record<string, string>> => {
     try {
-      const snap = await firestore().collection('users').limit(200).get();
+      const churchId = activeChurch?.id || 'rhema';
+      const snap = await firestore().collection('Rhema Church').doc(churchId).collection('members').limit(200).get();
       const photos: Record<string, string> = {};
       snap.forEach(doc => {
         const data = doc.data();
@@ -404,7 +405,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
       // Also check recent attendanceRequests responses for this member ONLY if the event record has not been deleted
       try {
         const reqSnap = await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(churchId)
           .collection('attendanceRequests')
           .limit(10)
@@ -414,7 +415,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
         for (const reqDoc of reqSnap.docs) {
           for (const cId of checkIds) {
             const respDoc = await firestore()
-              .collection('churches')
+              .collection('Rhema Church')
               .doc(churchId)
               .collection('attendanceRequests')
               .doc(reqDoc.id)
@@ -429,7 +430,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
               if (respData?.status === 'Present' || respData?.response === 'Yes') {
                 // Verify whether this event exists under events and whether the attendee was deleted there
                 const evAttDoc = await firestore()
-                  .collection('churches')
+                  .collection('Rhema Church')
                   .doc(churchId)
                   .collection('events')
                   .doc(reqDoc.id)
@@ -659,11 +660,11 @@ export default function AttendanceScreen({ navigation, route }: any) {
       // 1. Fetch church events & attendance requests concurrently for fast loading
       const [eventsSnap, fsEvents, attRequestsSnap] = await Promise.all([
         churchId 
-          ? firestore().collection('churches').doc(churchId).collection('events').get().catch(() => ({ docs: [] }))
+          ? firestore().collection('Rhema Church').doc(churchId).collection('events').get().catch(() => ({ docs: [] }))
           : Promise.resolve({ docs: [] }),
         FirestoreService.getEvents().catch(() => []),
         churchId
-          ? firestore().collection('churches').doc(churchId).collection('attendanceRequests').get().catch(() => ({ docs: [] }))
+          ? firestore().collection('Rhema Church').doc(churchId).collection('attendanceRequests').get().catch(() => ({ docs: [] }))
           : Promise.resolve({ docs: [] })
       ]);
 
@@ -749,7 +750,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
             try {
               const [snap, respSnap] = await Promise.all([
                 firestore()
-                  .collection('churches')
+                  .collection('Rhema Church')
                   .doc(churchId)
                   .collection('events')
                   .doc(item.id)
@@ -757,7 +758,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
                   .get()
                   .catch(() => ({ size: 0, docs: [] })),
                 firestore()
-                  .collection('churches')
+                  .collection('Rhema Church')
                   .doc(churchId)
                   .collection('attendanceRequests')
                   .doc(item.id)
@@ -1332,7 +1333,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
               if (targetEventId && targetChurchId) {
                 try {
                   const attDoc = await firestore()
-                    .collection('churches')
+                    .collection('Rhema Church')
                     .doc(targetChurchId)
                     .collection('events')
                     .doc(targetEventId)
@@ -1463,7 +1464,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
       if (!householdId) {
         try {
           const memDoc = await firestore()
-            .collection('churches')
+            .collection('Rhema Church')
             .doc(targetChurchId)
             .collection('members')
             .doc(scannedMId)
@@ -1483,7 +1484,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
       // 1. Query by household accountId
       if (householdId) {
         const snap1 = await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(targetChurchId)
           .collection('members')
           .where('accountId', '==', householdId)
@@ -1497,7 +1498,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
       // 2. Query where accountId is the scanned member's ID if different
       if (scannedMId && scannedMId !== householdId) {
         const snap2 = await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(targetChurchId)
           .collection('members')
           .where('accountId', '==', scannedMId)
@@ -1528,7 +1529,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
           if (targetEventId && targetEventId !== 'general_service') {
             try {
               const attDoc = await firestore()
-                .collection('churches')
+                .collection('Rhema Church')
                 .doc(targetChurchId)
                 .collection('events')
                 .doc(targetEventId)
@@ -1658,7 +1659,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
         if (targetChurchId && targetEventId) {
           await Promise.allSettled([
             firestore()
-              .collection('churches')
+              .collection('Rhema Church')
               .doc(targetChurchId)
               .collection('events')
               .doc(targetEventId)
@@ -1666,7 +1667,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
               .doc(famId)
               .delete(),
             firestore()
-              .collection('churches')
+              .collection('Rhema Church')
               .doc(targetChurchId)
               .collection('attendanceRequests')
               .doc(targetEventId)
@@ -1718,7 +1719,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
     try {
       if (!targetChurchId || !targetEventId) return [];
       const snap = await firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(targetChurchId)
         .collection('events')
         .doc(targetEventId)
@@ -2029,7 +2030,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
       let churchToValidate: any = activeChurch;
       if (!LocationService.getChurchCoordinates(churchToValidate) && targetChurchId) {
         try {
-          const churchSnap = await firestore().collection('churches').doc(targetChurchId).get();
+          const churchSnap = await firestore().collection('Rhema Church').doc(targetChurchId).get();
           if (churchSnap.exists()) {
             churchToValidate = { id: churchSnap.id, ...churchSnap.data() };
           }

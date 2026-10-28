@@ -92,7 +92,7 @@ export class QuizService {
       if (targetChurchId && targetChurchId !== 'global') {
         try {
           const churchSnaps = await firestore()
-            .collection('churches')
+            .collection('Rhema Church')
             .doc(targetChurchId)
             .collection(this.QUIZZES_COLLECTION)
             .get();
@@ -116,7 +116,7 @@ export class QuizService {
 
             try {
               const dailySnaps = await firestore()
-                .collection('churches')
+                .collection('Rhema Church')
                 .doc('global')
                 .collection(this.QUIZZES_COLLECTION)
                 .where('dailyDate', '<=', todayStr)
@@ -134,7 +134,7 @@ export class QuizService {
 
             try {
               const generalSnaps = await firestore()
-                .collection('churches')
+                .collection('Rhema Church')
                 .doc('global')
                 .collection(this.QUIZZES_COLLECTION)
                 .where('isDailyQuiz', '==', false)
@@ -153,7 +153,7 @@ export class QuizService {
             // If targeted queries yielded no docs, fallback safely with limit 60
             if (docsMap.size === 0) {
               const globalSnaps = await firestore()
-                .collection('churches')
+                .collection('Rhema Church')
                 .doc('global')
                 .collection(this.QUIZZES_COLLECTION)
                 .limit(60)
@@ -365,7 +365,7 @@ export class QuizService {
       for (const cId of candidateChurchIds) {
         try {
           const doc = await firestore()
-            .collection('churches')
+            .collection('Rhema Church')
             .doc(cId)
             .collection(this.QUIZZES_COLLECTION)
             .doc(effectiveQuizId)
@@ -384,7 +384,7 @@ export class QuizService {
       if (!foundQuiz) {
         try {
           const doc = await firestore()
-            .collection('churches')
+            .collection('Rhema Church')
             .doc('global')
             .collection(this.QUIZZES_COLLECTION)
             .doc(effectiveQuizId)
@@ -403,7 +403,7 @@ export class QuizService {
         for (const cId of [...candidateChurchIds, 'global']) {
           try {
             const bDoc = await firestore()
-              .collection('churches')
+              .collection('Rhema Church')
               .doc(cId)
               .collection('broadcasts')
               .doc(effectiveQuizId)
@@ -429,7 +429,7 @@ export class QuizService {
         for (const cId of [...candidateChurchIds, 'global']) {
           try {
             const nDoc = await firestore()
-              .collection('churches')
+              .collection('Rhema Church')
               .doc(cId)
               .collection('notifications')
               .doc(effectiveQuizId)
@@ -453,12 +453,12 @@ export class QuizService {
       // 5. Fallback search across churches list if churchId was unspecified or mismatched
       if (!foundQuiz) {
         try {
-          const churchesSnap = await firestore().collection('churches').limit(25).get();
+          const churchesSnap = await firestore().collection('Rhema Church').limit(25).get();
           for (const churchDoc of churchesSnap.docs) {
             if (candidateChurchIds.includes(churchDoc.id) || churchDoc.id === 'global') continue;
             try {
               const doc = await firestore()
-                .collection('churches')
+                .collection('Rhema Church')
                 .doc(churchDoc.id)
                 .collection(this.QUIZZES_COLLECTION)
                 .doc(effectiveQuizId)
@@ -504,7 +504,7 @@ export class QuizService {
         for (const cId of candidateChurchIds) {
           try {
             const recentSnap = await firestore()
-              .collection('churches')
+              .collection('Rhema Church')
               .doc(cId)
               .collection(this.QUIZZES_COLLECTION)
               .orderBy('createdAt', 'desc')
@@ -810,14 +810,14 @@ export class QuizService {
 
       if (targetChurchId && targetChurchId !== 'global') {
         await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(targetChurchId)
           .collection(this.QUIZZES_COLLECTION)
           .doc(quizId)
           .update(updateData);
       } else {
         await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc('global')
           .collection(this.QUIZZES_COLLECTION)
           .doc(quizId)
@@ -976,7 +976,7 @@ export class QuizService {
         questionHash: q.questionHash || this.generateQuestionHash(q.question),
       }));
 
-      const quizId = quizData.id || firestore().collection('churches').doc(targetChurchId).collection(this.QUIZZES_COLLECTION).doc().id;
+      const quizId = quizData.id || firestore().collection('Rhema Church').doc(targetChurchId).collection(this.QUIZZES_COLLECTION).doc().id;
 
       const todayIso = new Date().toISOString().split('T')[0];
       const finalScheduledDate = quizData.scheduledDate || (quizData.status === 'published' ? todayIso : '');
@@ -1022,14 +1022,14 @@ export class QuizService {
       // 1. Save to church-scoped subcollection (primary)
       if (targetChurchId && targetChurchId !== 'global') {
         await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(targetChurchId)
           .collection(this.QUIZZES_COLLECTION)
           .doc(quizId)
           .set(cleanPayload, { merge: true });
       } else {
         await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc('global')
           .collection(this.QUIZZES_COLLECTION)
           .doc(quizId)
@@ -1088,7 +1088,7 @@ export class QuizService {
       // 1. Write to churches/{churchId}/broadcasts to trigger Cloud Function broadcast push
       try {
         const broadcastDocRef = await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(targetChurchId)
           .collection('broadcasts')
           .add({
@@ -1113,7 +1113,7 @@ export class QuizService {
       // 2. Also write in-app notification to churches/{churchId}/notifications
       try {
         const notifDocRef = await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(targetChurchId)
           .collection('notifications')
           .add({
@@ -1160,7 +1160,7 @@ export class QuizService {
       // 1. Write to churches/{churchId}/broadcasts to trigger Cloud Function broadcast push
       if (targetChurchId) {
         await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(targetChurchId)
           .collection('broadcasts')
           .add({
@@ -1180,7 +1180,7 @@ export class QuizService {
       // 2. Also write in-app notification to churches/{churchId}/notifications
       if (targetChurchId) {
         firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(targetChurchId)
           .collection('notifications')
           .add({
@@ -1215,7 +1215,7 @@ export class QuizService {
 
       if (targetChurchId && targetChurchId !== 'global') {
         await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(targetChurchId)
           .collection(this.QUIZZES_COLLECTION)
           .doc(quizId)
@@ -1224,7 +1224,7 @@ export class QuizService {
       }
 
       await firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc('global')
         .collection(this.QUIZZES_COLLECTION)
         .doc(quizId)
@@ -1256,7 +1256,7 @@ export class QuizService {
 
       if (targetChurchId && targetChurchId !== 'global') {
         await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(targetChurchId)
           .collection(this.ATTEMPTS_COLLECTION)
           .doc(attemptId)
@@ -1265,7 +1265,7 @@ export class QuizService {
       }
 
       await firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc('global')
         .collection(this.ATTEMPTS_COLLECTION)
         .doc(attemptId)
@@ -1540,7 +1540,7 @@ export class QuizService {
     if (targetChurchId && targetChurchId !== 'global') {
       try {
         await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(targetChurchId)
           .collection(this.ATTEMPTS_COLLECTION)
           .doc(attemptId)
@@ -1552,7 +1552,7 @@ export class QuizService {
 
     // 2. Also try global church and root collections
     firestore()
-      .collection('churches')
+      .collection('Rhema Church')
       .doc('global')
       .collection(this.ATTEMPTS_COLLECTION)
       .doc(attemptId)
@@ -1582,7 +1582,7 @@ export class QuizService {
       if (targetChurchId && targetChurchId !== 'global') {
         try {
           const snaps = await firestore()
-            .collection('churches')
+            .collection('Rhema Church')
             .doc(targetChurchId)
             .collection(this.ATTEMPTS_COLLECTION)
             .where('userId', '==', userId)
@@ -1633,7 +1633,7 @@ export class QuizService {
       if (targetChurchId && targetChurchId !== 'global') {
         try {
           const snaps = await firestore()
-            .collection('churches')
+            .collection('Rhema Church')
             .doc(targetChurchId)
             .collection(this.ATTEMPTS_COLLECTION)
             .where('userId', '==', userId)
@@ -1650,7 +1650,7 @@ export class QuizService {
       // 2. Global attempts
       try {
         const globalSnaps = await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc('global')
           .collection(this.ATTEMPTS_COLLECTION)
           .where('userId', '==', userId)
@@ -1740,7 +1740,7 @@ export class QuizService {
       if (targetChurchId && targetChurchId !== 'global') {
         try {
           const snaps = await firestore()
-            .collection('churches')
+            .collection('Rhema Church')
             .doc(targetChurchId)
             .collection(this.ATTEMPTS_COLLECTION)
             .where('quizId', '==', quizId)
@@ -1757,7 +1757,7 @@ export class QuizService {
       // Fallback check global/root
       try {
         const globalSnaps = await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc('global')
           .collection(this.ATTEMPTS_COLLECTION)
           .where('quizId', '==', quizId)
@@ -1823,7 +1823,7 @@ export class QuizService {
       if (targetChurchId && targetChurchId !== 'global') {
         try {
           const snaps = await firestore()
-            .collection('churches')
+            .collection('Rhema Church')
             .doc(targetChurchId)
             .collection(this.ATTEMPTS_COLLECTION)
             .limit(200)
@@ -1840,7 +1840,7 @@ export class QuizService {
       // 2. Global attempts subcollection (filtered by churchId if applicable)
       try {
         const globalSnaps = await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc('global')
           .collection(this.ATTEMPTS_COLLECTION)
           .limit(200)
@@ -2013,7 +2013,7 @@ export class QuizService {
       if (targetChurchId && targetChurchId !== 'global') {
         try {
           let q: any = firestore()
-            .collection('churches')
+            .collection('Rhema Church')
             .doc(targetChurchId)
             .collection(this.ATTEMPTS_COLLECTION);
 
@@ -2033,7 +2033,7 @@ export class QuizService {
       // Also global attempts
       try {
         let gq: any = firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc('global')
           .collection(this.ATTEMPTS_COLLECTION);
 

@@ -51,6 +51,15 @@ export default function VerifyOtpScreen({ route, navigation }: VerifyOtpScreenPr
     
     try {
       const result = await confirmation.confirm(code);
+      if (result?.user) {
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        await AsyncStorage.setItem('@cached_user', JSON.stringify({
+          uid: result.user.uid,
+          phoneNumber: result.user.phoneNumber || phoneNumber || '',
+          displayName: result.user.displayName || memberName || formData?.firstName || '',
+          isAnonymous: false,
+        })).catch(() => {});
+      }
       const { firestore, FieldValue } = require('../../services/firebaseConfig');
 
       if (result?.user && isSignUp && formData && activeChurchId) {

@@ -29,7 +29,7 @@ class GalleryService {
   async getAlbums(): Promise<GalleryAlbum[]> {
     const churchId = await this.getChurchId();
     const snapshot = await firestore()
-      .collection('churches')
+      .collection('Rhema Church')
       .doc(churchId)
       .collection('gallery_albums')
       .orderBy('createdAt', 'desc')
@@ -45,13 +45,13 @@ class GalleryService {
     if (coverUri) {
       // Upload cover photo to storage
       const filename = `cover_${Date.now()}.jpg`;
-      const storageRef = storage().ref(`churches/${churchId}/gallery_covers/${filename}`);
+      const storageRef = storage().ref(`Rhema Church/${churchId}/gallery_covers/${filename}`);
       await storageRef.putFile(coverUri);
       coverPhotoUrl = await storageRef.getDownloadURL();
     }
     
     await firestore()
-      .collection('churches')
+      .collection('Rhema Church')
       .doc(churchId)
       .collection('gallery_albums')
       .add({
@@ -65,7 +65,7 @@ class GalleryService {
   async getAlbumPhotos(albumId: string): Promise<GalleryPhoto[]> {
     const churchId = await this.getChurchId();
     const snapshot = await firestore()
-      .collection('churches')
+      .collection('Rhema Church')
       .doc(churchId)
       .collection('gallery_albums')
       .doc(albumId)
@@ -80,7 +80,7 @@ class GalleryService {
     const churchId = await this.getChurchId();
     
     const albumRef = firestore()
-      .collection('churches')
+      .collection('Rhema Church')
       .doc(churchId)
       .collection('gallery_albums')
       .doc(albumId);
@@ -91,7 +91,7 @@ class GalleryService {
     for (const uri of uris) {
       try {
         const filename = `photo_${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
-        const storageRef = storage().ref(`churches/${churchId}/gallery/${albumId}/${filename}`);
+        const storageRef = storage().ref(`Rhema Church/${churchId}/gallery/${albumId}/${filename}`);
         await storageRef.putFile(uri);
         const url = await storageRef.getDownloadURL();
         
@@ -120,7 +120,7 @@ class GalleryService {
     
     // Delete from firestore
     const albumRef = firestore()
-      .collection('churches')
+      .collection('Rhema Church')
       .doc(churchId)
       .collection('gallery_albums')
       .doc(albumId);
@@ -145,7 +145,7 @@ class GalleryService {
     const churchId = await this.getChurchId();
     
     const albumRef = firestore()
-      .collection('churches')
+      .collection('Rhema Church')
       .doc(churchId)
       .collection('gallery_albums')
       .doc(albumId);

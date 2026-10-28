@@ -197,7 +197,7 @@ export default function AdminWeCelebrations({ navigation }: any) {
       if (localImageUri && activeChurch?.id) {
         // Upload to Firebase Storage
         const ext = localImageUri.substring(localImageUri.lastIndexOf('.') + 1) || 'jpg';
-        const storagePath = `churches/${activeChurch.id}/celebrations/${Date.now()}.${ext}`;
+        const storagePath = `Rhema Church/${activeChurch.id}/celebrations/${Date.now()}.${ext}`;
         const reference = storage().ref(storagePath);
         
         await reference.putFile(localImageUri);
@@ -298,7 +298,7 @@ export default function AdminWeCelebrations({ navigation }: any) {
         const fullText = `[Template Sent] ${greetingMessage || ''} ${selectedVerse?.text ? `"${selectedVerse.text}" — ${selectedVerse.ref}` : ''}`.trim();
         
         await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(activeChurch?.id || 'WECHRISTIAN_DEFAULT_CHURCH')
           .collection('whatsappMessages')
           .doc(messageId)
@@ -517,7 +517,7 @@ export default function AdminWeCelebrations({ navigation }: any) {
     if (!activeChurch) return;
     try {
       const newValue = !activeChurch.automatedWhatsappWishesEnabled;
-      await firestore().collection('churches').doc(activeChurch.id).update({ automatedWhatsappWishesEnabled: newValue });
+      await firestore().collection('Rhema Church').doc(activeChurch.id).update({ automatedWhatsappWishesEnabled: newValue });
       setActiveChurch({ ...activeChurch, automatedWhatsappWishesEnabled: newValue });
       setToastMsg(newValue ? 'Automated WhatsApp Wishes Enabled' : 'Automated WhatsApp Wishes Disabled');
     } catch (err) {

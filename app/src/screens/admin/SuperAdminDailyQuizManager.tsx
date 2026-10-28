@@ -170,7 +170,7 @@ export default function SuperAdminDailyQuizManager({ searchQuery = '' }: { searc
         churches.map(async (church) => {
           try {
             const snap = await firestore()
-              .collection('churches')
+              .collection('Rhema Church')
               .doc(church.id)
               .collection('bibleQuizzes')
               .limit(50)
@@ -194,7 +194,7 @@ export default function SuperAdminDailyQuizManager({ searchQuery = '' }: { searc
       // Also fetch global quizzes
       try {
         const globalSnap = await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc('global')
           .collection('bibleQuizzes')
           .limit(50)

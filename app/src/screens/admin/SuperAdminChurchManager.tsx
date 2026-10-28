@@ -77,7 +77,7 @@ export default function SuperAdminChurchManager({ visible, onClose, churchId, on
     if (!churchId) return;
     setLoadingMembers(true);
     try {
-      const snap = await firestore().collection('churches').doc(churchId).collection('members').get();
+      const snap = await firestore().collection('Rhema Church').doc(churchId).collection('members').get();
       const rawMembers = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
       // Deduplicate members by phone or email, preferring the one with app installed
@@ -110,7 +110,7 @@ export default function SuperAdminChurchManager({ visible, onClose, churchId, on
     if (!churchId || !memberEditForm.id) return;
     setSaving(true);
     try {
-      await firestore().collection('churches').doc(churchId).collection('members').doc(memberEditForm.id).update({
+      await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(memberEditForm.id).update({
         name: memberEditForm.name,
         phone: memberEditForm.phone,
         email: memberEditForm.email,
@@ -138,7 +138,7 @@ export default function SuperAdminChurchManager({ visible, onClose, churchId, on
           onPress: async () => {
             if (!churchId) return;
             try {
-              await firestore().collection('churches').doc(churchId).collection('members').doc(mId).delete();
+              await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(mId).delete();
               loadMembers();
               showCustomAlert('Success', 'Member deleted successfully', 'success');
             } catch (e) {

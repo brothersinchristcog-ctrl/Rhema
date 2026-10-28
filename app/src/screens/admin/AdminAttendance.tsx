@@ -354,17 +354,17 @@ export default function AdminAttendance() {
       const [membersRes, eventsSnapRes, reqsSnapRes, churchRecordsRes] = await Promise.allSettled([
         AttendanceService.getChurchMembers(churchId),
         firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(churchId)
           .collection('events')
           .get(),
         firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(churchId)
           .collection('attendanceRequests')
           .get(),
         firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(churchId)
           .collection('attendanceRecords')
           .get(),
@@ -541,7 +541,7 @@ export default function AdminAttendance() {
           eventsNeedingDeepCheck.map(async (ev) => {
             try {
               const attendeesSnap = await firestore()
-                .collection('churches')
+                .collection('Rhema Church')
                 .doc(churchId)
                 .collection('events')
                 .doc(ev.id)

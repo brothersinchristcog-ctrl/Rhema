@@ -103,7 +103,7 @@ class ChurchService {
    */
   async getChurchDetails(churchId: string): Promise<ChurchDetails | null> {
     try {
-      const docSnap = await firestore().collection('churches').doc(churchId).get();
+      const docSnap = await firestore().collection('Rhema Church').doc(churchId).get();
       if (docSnap.exists()) {
         return { id: docSnap.id, ...docSnap.data() } as ChurchDetails;
       }
@@ -119,7 +119,7 @@ class ChurchService {
    */
   async getAllChurches(): Promise<ChurchDetails[]> {
     try {
-      const snapshot = await firestore().collection('churches').orderBy('name').get();
+      const snapshot = await firestore().collection('Rhema Church').orderBy('name').get();
       const churches = snapshot.docs
         .filter(doc => doc.id !== 'global' && !doc.data()?.isGlobalPlatform)
         .map(doc => ({
@@ -130,7 +130,7 @@ class ChurchService {
       // Fetch live member count dynamically for each church
       const churchesWithCounts = await Promise.all(churches.map(async (church) => {
         try {
-          const countSnap = await firestore().collection('churches').doc(church.id).collection('members').count().get();
+          const countSnap = await firestore().collection('Rhema Church').doc(church.id).collection('members').count().get();
           return { ...church, memberCount: countSnap.data().count };
         } catch (e) {
           return church;
@@ -149,7 +149,7 @@ class ChurchService {
    */
   async getAvailableTiers(): Promise<string[]> {
     try {
-      const snapshot = await firestore().collection('churches').get();
+      const snapshot = await firestore().collection('Rhema Church').get();
       const tiers = new Set<string>();
       
       // Default standard tiers
@@ -178,7 +178,7 @@ class ChurchService {
   async getChurchBySubdomain(subdomain: string): Promise<ChurchDetails | null> {
     try {
       const snapshot = await firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .where('subdomain', '==', subdomain)
         .limit(1)
         .get();
@@ -200,7 +200,7 @@ class ChurchService {
     try {
       // Don't accidentally write the ID field into the document
       const { id, ...dataToUpdate } = updates as any;
-      await firestore().collection('churches').doc(churchId).update(dataToUpdate);
+      await firestore().collection('Rhema Church').doc(churchId).update(dataToUpdate);
     } catch (error) {
       console.error('Error updating church details:', error);
       throw error;
@@ -223,7 +223,7 @@ class ChurchService {
         const variants = Array.from(new Set([v1, v2, v3, v4]));
 
         const duplicateQuery = await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .where('contactPhone', 'in', variants)
           .get();
           
@@ -247,7 +247,7 @@ class ChurchService {
         }
       };
       
-      const docRef = await firestore().collection('churches').add(churchData);
+      const docRef = await firestore().collection('Rhema Church').add(churchData);
 
       this.notifySuperAdminsNewChurchRegistration({
         churchId: docRef.id,
@@ -306,8 +306,8 @@ class ChurchService {
       
       for (const adminId of adminIds) {
         const notifRef = firestore()
-          .collection('users')
-          .doc(adminId)
+          .collection('Rhema Church')
+          .doc('rhema')
           .collection('notifications')
           .doc();
 
@@ -352,7 +352,7 @@ class ChurchService {
   async getBranches(parentChurchId: string): Promise<ChurchDetails[]> {
     try {
       const snapshot = await firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .where('parentChurchId', '==', parentChurchId)
         .orderBy('name')
         .get();
@@ -365,7 +365,7 @@ class ChurchService {
       // Fetch member count dynamically for each branch
       const branchesWithCounts = await Promise.all(branches.map(async (branch) => {
         try {
-          const countSnap = await firestore().collection('churches').doc(branch.id).collection('members').count().get();
+          const countSnap = await firestore().collection('Rhema Church').doc(branch.id).collection('members').count().get();
           return { ...branch, memberCount: countSnap.data().count };
         } catch (e) {
           console.error(`Error fetching member count for branch ${branch.id}:`, e);
@@ -385,7 +385,7 @@ class ChurchService {
    */
   async createBranch(parentChurchId: string, data: Omit<ChurchDetails, 'id' | 'parentChurchId'>): Promise<string> {
     try {
-      const docRef = await firestore().collection('churches').add({
+      const docRef = await firestore().collection('Rhema Church').add({
         ...data,
         parentChurchId
       });
@@ -401,7 +401,7 @@ class ChurchService {
    */
   async deleteBranch(churchId: string): Promise<void> {
     try {
-      await firestore().collection('churches').doc(churchId).delete();
+      await firestore().collection('Rhema Church').doc(churchId).delete();
     } catch (error) {
       console.error('Error deleting branch:', error);
       throw error;
@@ -413,7 +413,7 @@ class ChurchService {
    */
   async getChurchSecrets(churchId: string): Promise<{ phonePeMerchantId?: string; phonePeSaltKey?: string; phonePeSaltIndex?: string; whatsappAccessToken?: string; whatsappPhoneId?: string; useWeChristianWhatsApp?: boolean } | null> {
     try {
-      const docSnap = await firestore().collection('churches').doc(churchId).collection('secrets').doc('payment').get();
+      const docSnap = await firestore().collection('Rhema Church').doc(churchId).collection('secrets').doc('payment').get();
       if (docSnap.exists()) {
         return docSnap.data() as any;
       }
@@ -429,7 +429,7 @@ class ChurchService {
    */
   async updateChurchSecrets(churchId: string, secrets: { phonePeMerchantId?: string; phonePeSaltKey?: string; phonePeSaltIndex?: string; whatsappAccessToken?: string; whatsappPhoneId?: string; useWeChristianWhatsApp?: boolean }): Promise<boolean> {
     try {
-      await firestore().collection('churches').doc(churchId).collection('secrets').doc('payment').set(secrets, { merge: true });
+      await firestore().collection('Rhema Church').doc(churchId).collection('secrets').doc('payment').set(secrets, { merge: true });
       return true;
     } catch (error) {
       console.error('Error updating church secrets:', error);
@@ -441,7 +441,7 @@ class ChurchService {
    */
   async updateChurchSettings(churchId: string, data: any): Promise<void> {
     try {
-      await firestore().collection('churches').doc(churchId).update(data);
+      await firestore().collection('Rhema Church').doc(churchId).update(data);
     } catch (error) {
       console.error('Error updating church settings:', error);
       throw error;
@@ -453,7 +453,7 @@ class ChurchService {
    */
   async setSubscriptionExpiry(churchId: string, date: Date): Promise<void> {
     try {
-      await firestore().collection('churches').doc(churchId).update({
+      await firestore().collection('Rhema Church').doc(churchId).update({
         'subscription.validUntil': date.toISOString(),
         'subscription.status': 'active'
       });
@@ -477,7 +477,7 @@ class ChurchService {
       }
       currentExpiry.setFullYear(currentExpiry.getFullYear() + years);
       
-      await firestore().collection('churches').doc(churchId).update({
+      await firestore().collection('Rhema Church').doc(churchId).update({
         'subscription.validUntil': currentExpiry.toISOString(),
         'subscription.status': 'active'
       });

@@ -71,7 +71,7 @@ export default function AdminOnlineMeetingEditor() {
   useEffect(() => {
     if (!activeChurch?.id) return;
     const unsub = firestore()
-      .collection('churches')
+      .collection('Rhema Church')
       .doc(activeChurch.id)
       .collection('settings')
       .doc('youtube_channel')
@@ -452,14 +452,14 @@ export default function AdminOnlineMeetingEditor() {
       }
       
       if (editingData?.id) {
-        await firestore().collection('churches').doc(activeChurch.id).collection('online_meetings').doc(editingData.id).update(payload);
+        await firestore().collection('Rhema Church').doc(activeChurch.id).collection('online_meetings').doc(editingData.id).update(payload);
       } else {
-        const meetingRef = await firestore().collection('churches').doc(activeChurch.id).collection('online_meetings').add(payload);
+        const meetingRef = await firestore().collection('Rhema Church').doc(activeChurch.id).collection('online_meetings').add(payload);
         
         try {
           const timeStr = form.startTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
           const passNotice = form.password ? ` (Passcode: ${form.password})` : '';
-          await firestore().collection('churches').doc(activeChurch.id).collection('broadcasts').add({
+          await firestore().collection('Rhema Church').doc(activeChurch.id).collection('broadcasts').add({
             title: `📅 New Online Meeting`,
             content: `${form.title} has been scheduled for today at ${timeStr}.${passNotice}`,
             type: 'online_meeting',

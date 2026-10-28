@@ -34,7 +34,7 @@ async function getDirectZoomToken(churchId?: string): Promise<string> {
   if (churchId) {
     try {
       const secretSnap = await firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(churchId)
         .collection('secrets')
         .doc('zoom')

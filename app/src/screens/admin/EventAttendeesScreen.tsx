@@ -70,7 +70,7 @@ export default function EventAttendeesScreen({ navigation, route }: any) {
     if (!churchId || !eventId) return;
 
     const unsub = firestore()
-      .collection('churches')
+      .collection('Rhema Church')
       .doc(churchId)
       .collection('events')
       .doc(eventId)
@@ -86,7 +86,8 @@ export default function EventAttendeesScreen({ navigation, route }: any) {
 
   const fetchUserPhotos = async (): Promise<Record<string, string>> => {
     try {
-      const snap = await firestore().collection('users').where('photoURL', '!=', null).limit(150).get();
+      const cId = churchId || 'rhema';
+      const snap = await firestore().collection('Rhema Church').doc(cId).collection('members').limit(150).get();
       const photos: Record<string, string> = {};
       snap.forEach(doc => {
         const data = doc.data();

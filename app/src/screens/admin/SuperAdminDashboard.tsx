@@ -264,7 +264,7 @@ export default function SuperAdminDashboard({ navigation }: any) {
 
   const handleDeleteChurch = async (churchId: string) => {
     try {
-      await firestore().collection('churches').doc(churchId).delete();
+      await firestore().collection('Rhema Church').doc(churchId).delete();
       setSuccessMessage('Church deleted successfully!');
       fetchChurches();
     } catch (e) {

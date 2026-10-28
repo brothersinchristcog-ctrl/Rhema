@@ -55,7 +55,7 @@ export default function OnlineMeetingsScreen({ navigation }: any) {
     if (!activeChurch?.id) return;
     try {
       const snapshot = await firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(activeChurch.id)
         .collection('online_meetings')
         .orderBy('startTime', 'desc')
@@ -147,7 +147,7 @@ export default function OnlineMeetingsScreen({ navigation }: any) {
     const attendeeId = user?.uid || member?.id;
     if (churchId && item.id && attendeeId) {
       firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(churchId)
         .collection('online_meetings')
         .doc(item.id)

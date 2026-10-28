@@ -223,7 +223,7 @@ export default function AdminChurchSettings({ navigation }: any) {
     setUploadingImage(type);
     try {
       const ext = uri.substring(uri.lastIndexOf('.') + 1) || 'jpg';
-      const storagePath = `churches/${churchId}/brand/${type}_${Date.now()}.${ext}`;
+      const storagePath = `Rhema Church/${churchId}/brand/${type}_${Date.now()}.${ext}`;
 
       const reference = storage().ref(storagePath);
       await reference.putFile(uri);

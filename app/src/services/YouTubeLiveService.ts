@@ -87,7 +87,7 @@ export class YouTubeLiveService {
     try {
       // 1. Fast read from Firestore client cache
       const doc = await firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(churchId)
         .collection('settings')
         .doc('youtube_channel')

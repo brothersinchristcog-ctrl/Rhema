@@ -39,7 +39,7 @@ export default function OnlineMeetingDetailScreen({ navigation, route }: any) {
     }
 
     const unsubscribe = firestore()
-      .collection('churches')
+      .collection('Rhema Church')
       .doc(churchId)
       .collection('online_meetings')
       .doc(meeting.id)
@@ -96,7 +96,7 @@ export default function OnlineMeetingDetailScreen({ navigation, route }: any) {
     const attendeeId = user?.uid || member?.id;
     if (churchId && meeting?.id && attendeeId) {
       firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(churchId)
         .collection('online_meetings')
         .doc(meeting.id)
@@ -120,7 +120,7 @@ export default function OnlineMeetingDetailScreen({ navigation, route }: any) {
     if (!churchId || !meeting?.id || !attendeeId) return;
     try {
       await firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(churchId)
         .collection('online_meetings')
         .doc(meeting.id)

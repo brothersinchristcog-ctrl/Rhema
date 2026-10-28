@@ -205,7 +205,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
 
     const db = getFirestore();
     const q = query(
-      collection(db, 'churches', churchToQuery, 'broadcasts'),
+      collection(db, 'Rhema Church', churchToQuery, 'broadcasts'),
       orderBy('createdAt', 'desc'),
       limit(20)
     );
@@ -338,7 +338,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
     );
 
         const qMeetings = query(
-      collection(db, 'churches', churchToQuery, 'online_meetings'),
+      collection(db, 'Rhema Church', churchToQuery, 'online_meetings'),
       orderBy('createdAt', 'desc'),
       limit(10)
     );
@@ -769,7 +769,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
                         const attendeeId = user?.uid || member?.id;
                         if (churchId && selectedUpdate.meetingId && attendeeId) {
                           firestore()
-                            .collection('churches')
+                            .collection('Rhema Church')
                             .doc(churchId)
                             .collection('online_meetings')
                             .doc(selectedUpdate.meetingId)

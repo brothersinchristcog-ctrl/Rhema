@@ -106,7 +106,7 @@ export class SubscriptionGuard {
   static async incrementMemberCount(churchId: string): Promise<void> {
     try {
       const { firestore, FieldValue } = require('./firebaseConfig');
-      await firestore().collection('churches').doc(churchId).update({
+      await firestore().collection('Rhema Church').doc(churchId).update({
         memberCount: FieldValue.increment(1),
       });
     } catch (e) {
@@ -120,7 +120,7 @@ export class SubscriptionGuard {
   static async decrementMemberCount(churchId: string): Promise<void> {
     try {
       const { firestore, FieldValue } = require('./firebaseConfig');
-      await firestore().collection('churches').doc(churchId).update({
+      await firestore().collection('Rhema Church').doc(churchId).update({
         memberCount: FieldValue.increment(-1),
       });
     } catch (e) {

@@ -142,7 +142,7 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
     if (!activeChurch?.id || !member) return;
     try {
       const typingRef = firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(activeChurch.id)
         .collection('live_celebrations')
         .doc(todayStr)
@@ -241,7 +241,7 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
     if (!activeChurch?.id) return;
 
     const unsubscribe = firestore()
-      .collection('churches')
+      .collection('Rhema Church')
       .doc(activeChurch.id)
       .collection('live_celebrations')
       .doc(todayStr)
@@ -259,7 +259,7 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
       });
 
     const typingUnsubscribe = firestore()
-      .collection('churches')
+      .collection('Rhema Church')
       .doc(activeChurch.id)
       .collection('live_celebrations')
       .doc(todayStr)
@@ -296,7 +296,7 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
     try {
       if (editingMsgId) {
         await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(activeChurch.id)
           .collection('live_celebrations')
           .doc(todayStr)
@@ -310,7 +310,7 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
       } else {
         const batch = firestore().batch();
         const msgRef = firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(activeChurch.id)
           .collection('live_celebrations')
           .doc(todayStr)
@@ -329,7 +329,7 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
 
         if (selectedCelebrantId) {
           const celebRef = firestore()
-            .collection('churches')
+            .collection('Rhema Church')
             .doc(activeChurch.id)
             .collection('live_celebrations')
             .doc(todayStr)
@@ -364,7 +364,7 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
   const deleteMessage = async (item: any) => {
     try {
       await firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(activeChurch?.id)
         .collection('live_celebrations')
         .doc(todayStr)
@@ -444,13 +444,13 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
       }
 
       const fileName = `audio_${Date.now()}.m4a`;
-      const ref = storage().ref(`churches/${activeChurch.id}/live_celebrations/${todayStr}/${fileName}`);
+      const ref = storage().ref(`Rhema Church/${activeChurch.id}/live_celebrations/${todayStr}/${fileName}`);
       await ref.putFile(uri);
       const audioUrl = await ref.getDownloadURL();
 
       const batch = firestore().batch();
       const msgRef = firestore()
-        .collection('churches')
+        .collection('Rhema Church')
         .doc(activeChurch.id)
         .collection('live_celebrations')
         .doc(todayStr)
@@ -469,7 +469,7 @@ export default function LiveCelebrationsChat({ navigation, route }: any) {
 
       if (selectedCelebrantId) {
         const celebRef = firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(activeChurch.id)
           .collection('live_celebrations')
           .doc(todayStr)

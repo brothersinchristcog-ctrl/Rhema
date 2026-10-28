@@ -45,7 +45,7 @@ export default function AdminOnlineMeetings() {
   useEffect(() => {
     if (!activeChurch?.id) return;
     const unsub = firestore()
-      .collection('churches')
+      .collection('Rhema Church')
       .doc(activeChurch.id)
       .collection('settings')
       .doc('youtube_channel')
@@ -163,7 +163,7 @@ export default function AdminOnlineMeetings() {
       { text: 'Delete', style: 'destructive', onPress: async () => {
           if (!activeChurch?.id || !selectedMeeting?.id) return;
           try {
-            await firestore().collection('churches').doc(activeChurch.id).collection('online_meetings').doc(selectedMeeting.id).delete();
+            await firestore().collection('Rhema Church').doc(activeChurch.id).collection('online_meetings').doc(selectedMeeting.id).delete();
             setSelectedMeeting(null);
           } catch (e) {
             console.error(e);
@@ -178,7 +178,7 @@ export default function AdminOnlineMeetings() {
       { text: 'Yes', onPress: async () => {
           if (!activeChurch?.id || !selectedMeeting?.id) return;
           try {
-            await firestore().collection('churches').doc(activeChurch.id).collection('online_meetings').doc(selectedMeeting.id).update({ status: 'cancelled' });
+            await firestore().collection('Rhema Church').doc(activeChurch.id).collection('online_meetings').doc(selectedMeeting.id).update({ status: 'cancelled' });
             setSelectedMeeting(null);
           } catch (e) {
             console.error(e);
@@ -194,7 +194,7 @@ export default function AdminOnlineMeetings() {
       return;
     }
     const unsubscribe = firestore()
-      .collection('churches')
+      .collection('Rhema Church')
       .doc(activeChurch.id)
       .collection('online_meetings')
       .doc(selectedMeeting.id)
@@ -223,7 +223,7 @@ export default function AdminOnlineMeetings() {
     if (!activeChurch?.id) return;
 
     const unsubscribe = firestore()
-      .collection('churches')
+      .collection('Rhema Church')
       .doc(activeChurch.id)
       .collection('online_meetings')
       .onSnapshot(snapshot => {
@@ -406,7 +406,7 @@ export default function AdminOnlineMeetings() {
                   onPress={async () => {
                     if (selectedMeeting.meetingLink) {
                       try {
-                        await firestore().collection('churches').doc(activeChurch!.id).collection('broadcasts').add({
+                        await firestore().collection('Rhema Church').doc(activeChurch!.id).collection('broadcasts').add({
                           title: `🔴 Live Now: ${selectedMeeting.title}`,
                           content: `The online meeting has started. Tap to join!`,
                           type: 'online_meeting',

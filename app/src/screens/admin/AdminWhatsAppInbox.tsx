@@ -52,7 +52,7 @@ export default function AdminWhatsAppInbox() {
     const fetchMembers = async () => {
       try {
         const snap = await firestore()
-          .collection('churches')
+          .collection('Rhema Church')
           .doc(activeChurch.id)
           .collection('members')
           .get();
@@ -134,7 +134,7 @@ export default function AdminWhatsAppInbox() {
     };
 
     const unsubscribe = firestore()
-      .collection('churches')
+      .collection('Rhema Church')
       .doc(activeChurch.id)
       .collection('whatsappMessages')
       .orderBy('timestamp', 'desc')

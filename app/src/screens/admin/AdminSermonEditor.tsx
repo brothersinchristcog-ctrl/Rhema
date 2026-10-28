@@ -201,7 +201,7 @@ export default function AdminSermonEditor() {
       const storage = require('@react-native-firebase/storage').default;
       const churchId = await FirestoreService.getChurchId();
       const ext = localUri.substring(localUri.lastIndexOf('.') + 1) || 'jpg';
-      const storagePath = `churches/${churchId || 'common'}/sermons/thumbnails/thumb_${Date.now()}.${ext}`;
+      const storagePath = `Rhema Church/${churchId || 'common'}/sermons/thumbnails/thumb_${Date.now()}.${ext}`;
       
       const reference = storage().ref(storagePath);
       await reference.putFile(localUri);
