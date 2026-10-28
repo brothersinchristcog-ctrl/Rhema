@@ -107,6 +107,7 @@
   "devDependencies": {
     "@types/react-native-razorpay": "^2.2.6",
     "jimp": "^1.6.1",
-    "typescript": "~5.9.2"
+    "typescript": "~5.9.2",
+    "react-refresh": "~0.14.2"
   }
 }

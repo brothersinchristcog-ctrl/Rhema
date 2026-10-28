@@ -91,7 +91,8 @@ const req = https.request({
         stdio: 'inherit',
         env: {
           ...process.env,
-          GOOGLE_APPLICATION_CREDENTIALS: keyFile
+          GOOGLE_APPLICATION_CREDENTIALS: keyFile,
+          FUNCTIONS_DISCOVERY_TIMEOUT: '60000'
         }
       });
     } catch (e) {

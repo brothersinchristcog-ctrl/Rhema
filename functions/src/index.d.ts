@@ -64,10 +64,21 @@ export declare const triggerAutomatedAnniversaries: import("firebase-functions/v
  */
 export declare const triggerAutomatedBaptisms: import("firebase-functions/v2/https").HttpsFunction;
 /**
- * 📣 ON BROADCAST CREATED TRIGGER (Gen 2)
- * Automatically sends push notifications when a new broadcast is added to Firestore (e.g. Emergency Meeting or custom admin updates)
+ * 📣 ON BROADCAST CREATED TRIGGER (Rhema Church collection)
+ * Catches all broadcasts created in 'Rhema Church/{churchId}/broadcasts/{messageId}'
+ */
+export declare const sendRhemaBroadcastPush: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+    churchId: string;
+    messageId: string;
+}>>;
+/**
+ * 📣 ON BROADCAST CREATED TRIGGER (Legacy churches collection)
  */
 export declare const processBroadcastPushNotifications: functionsCompat.CloudFunction<functionsCompat.firestore.QueryDocumentSnapshot>;
+/**
+ * 🧪 Test HTTP endpoint to trigger today's Daily Promise push notification on-demand
+ */
+export declare const triggerDailyPromisePushHttp: import("firebase-functions/v2/https").HttpsFunction;
 /**
  * 📤 UPLOAD EVENT IMAGE
  */
