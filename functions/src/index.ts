@@ -41,7 +41,8 @@ export {
 initializeApp();
 
 // TODO: When Salesforce integration becomes multi-tenant, remove this and loop over churches.
-const DEFAULT_CHURCH_ID = 'KhmBeNWxlrxwS1hGhuw';
+// Single-church configuration for Rhema Global Ministries
+const DEFAULT_CHURCH_ID = 'rhema';
 
 // Lazy initialization helpers
 let _db: any;
@@ -182,78 +183,92 @@ export const notifyMembersV2 = onRequest(async (request, response) => {
  * ⏰ AUTOMATED DAILY PROMISE SCHEDULER
  * Scheduled to run every day at 07:00 AM IST (01:30 AM UTC)
  */
-export const automatedDailyPromise = onSchedule({ schedule: '0 7 * * *', timeZone: 'Asia/Kolkata' }, async (event) => {
+export const automatedDailyPromise = onSchedule({ schedule: '0 7 * * *', timeZone: 'Asia/Kolkata', region: 'asia-south1' }, async (event) => {
   try {
     console.log('⏰ Running automatedDailyPromise scheduler for all churches...');
     const db = getDb();
     
     // Get date in IST
-    const today = new Date(new Date().toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+    const today = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
     const dStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    const dateStr = today.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+
+    const rootCollections = ['Rhema Church', 'churches'];
     
-    // Fetch all churches
-    const churchesSnap = await db.collection('churches').get();
-    
-    for (const churchDoc of churchesSnap.docs) {
-      const churchId = churchDoc.id;
-      
-      // Check if disabled for this specific church
-      const settingsDoc = await db.collection('churches').doc(churchId).collection('settings').doc('notifications').get();
-      const settings = settingsDoc.data();
-      if (settings && settings.dailyPromise && settings.dailyPromise.enabled === false) {
-        console.log(`🛑 Daily Promise automation is disabled for church: ${churchId}`);
+    for (const rootCol of rootCollections) {
+      let churchesSnap: any;
+      try {
+        churchesSnap = await db.collection(rootCol).get();
+      } catch (e) {
         continue;
       }
 
-      // Check if there's a promise for today for this church
-      const promiseSnap = await db.collection('churches').doc(churchId).collection('promises').where('date', '==', dStr).limit(1).get();
-      
-      if (promiseSnap.empty) {
-        console.log(`⚠️ No daily promise found in Firestore for today (${dStr}) for church: ${churchId}`);
-        continue;
-      }
-
-      const promise = promiseSnap.docs[0].data();
-      
-      // Fallbacks for content based on app schema
-      const content = promise.verse || promise.textEn || promise.text || promise.Promises__c || promise.Promise_text_telugu__c || 'Grace and Peace be multiplied to you today.';
-      const title = promise.verseReferenceEn ? `📖 Daily Promise: ${promise.verseReferenceEn}` : '📖 Today\'s Promise · ఈ రోజు వాగ్దానం';
-
-      // Push to broadcasts collection for this church
-      await db.collection('churches').doc(churchId).collection('broadcasts').add({
-        title: title,
-        content: content,
-        date: dateStr,
-        type: 'announcement',
-        silent: true,
-        createdAt: FieldValue.serverTimestamp()
-      });
-
-      // Send push notification to the specific church topic
-      const message = {
-        notification: {
-          title: title,
-          body: stripHtml(content).slice(0, 100) + '...'
-        },
-        data: { type: 'general', churchId: churchId },
-        android: {
-          priority: 'high' as const,
-          notification: {
-            sound: 'default',
-            priority: 'max' as const,
-            channelId: 'church_alerts'
+      for (const churchDoc of churchesSnap.docs) {
+        const churchId = churchDoc.id;
+        
+        // Check if disabled for this specific church
+        try {
+          const settingsDoc = await db.collection(rootCol).doc(churchId).collection('settings').doc('notifications').get();
+          const settings = settingsDoc.data();
+          if (settings && settings.dailyPromise && settings.dailyPromise.enabled === false) {
+            console.log(`🛑 Daily Promise automation is disabled for church: ${churchId} in ${rootCol}`);
+            continue;
           }
-        },
-        apns: {
-          headers: { 'apns-priority': '10' },
-          payload: { aps: { sound: 'default', badge: 1 } }
-        },
-        topic: `church_${churchId}`
-      };
-      
-      await getMsg().send(message);
-      console.log(`✅ Automated Daily Promise sent to topic church_${churchId}`);
+        } catch (_) {}
+
+        // Check if there's a promise for today for this church
+        const promiseSnap = await db.collection(rootCol).doc(churchId).collection('promises').where('date', '==', dStr).limit(1).get();
+        
+        if (promiseSnap.empty) {
+          console.log(`⚠️ No daily promise found in Firestore for today (${dStr}) for church: ${churchId} in ${rootCol}`);
+          continue;
+        }
+
+        const promiseDoc = promiseSnap.docs[0];
+        const promise = promiseDoc.data();
+
+        // Skip drafts
+        if (promise.status === 'Draft') {
+          console.log(`⚠️ Today's promise is marked as Draft, skipping automated publish: ${churchId}`);
+          continue;
+        }
+
+        // Check if a broadcast was ALREADY created for today's promise (in-memory check to prevent composite index requirement)
+        const bcastsForToday = await db.collection(rootCol).doc(churchId).collection('broadcasts')
+          .where('date', '==', dStr)
+          .get();
+        const alreadyBroadcast = bcastsForToday.docs.some((d: any) => d.data().type === 'promise');
+
+        if (alreadyBroadcast) {
+          console.log(`ℹ️ Daily promise broadcast already exists for ${dStr} (${churchId}), skipping to prevent duplicate push.`);
+          if (promise.status === 'Scheduled') {
+            await promiseDoc.ref.update({ status: 'Published', autoPublishedAt: FieldValue.serverTimestamp() });
+          }
+          continue;
+        }
+
+        // If status was Scheduled, update to Published
+        if (promise.status === 'Scheduled') {
+          await promiseDoc.ref.update({ status: 'Published', autoPublishedAt: FieldValue.serverTimestamp() });
+          console.log(`✅ Updated Scheduled promise to Published for ${dStr} (${churchId})`);
+        }
+        
+        // Fallbacks for content based on app schema
+        const content = promise.verse || promise.textEn || promise.text || promise.Promises__c || promise.Promise_text_telugu__c || 'Grace and Peace be multiplied to you today.';
+        const title = promise.verseReferenceEn ? `📖 Daily Promise: ${promise.verseReferenceEn}` : '📖 Today\'s Promise · ఈ రోజు వాగ్దానం';
+
+        // Push to broadcasts collection for this church - this automatically triggers processRhemaBroadcastPushNotifications!
+        await db.collection(rootCol).doc(churchId).collection('broadcasts').add({
+          title: title,
+          content: content,
+          date: dStr,
+          type: 'promise',
+          silent: false,
+          targetChurchId: churchId,
+          createdAt: FieldValue.serverTimestamp()
+        });
+
+        console.log(`✅ Automated Daily Promise broadcast added for ${churchId} on date ${dStr}`);
+      }
     }
   } catch (error) {
     console.error('Error in automatedDailyPromise scheduler:', error);
@@ -951,131 +966,109 @@ import { onDocumentCreated } from 'firebase-functions/v2/firestore';
  * 📣 ON BROADCAST CREATED TRIGGER (Gen 2)
  * Automatically sends push notifications when a new broadcast is added to Firestore (e.g. Emergency Meeting or custom admin updates)
  */
-export const processBroadcastPushNotifications = functionsCompat
-  .region('us-central1')
-  .firestore
-  .document('churches/{churchId}/broadcasts/{messageId}')
-  .onCreate(async (snapshot, context) => {
-    if (!snapshot) {
-      console.log('No data associated with the event');
-      return;
-    }
-    
-    const data = snapshot.data();
-    if (!data) return;
+/**
+ * Common logic to handle broadcast push notification dispatch
+ */
+async function handleBroadcastPushDispatch(data: any, churchIdParam?: string, messageIdParam?: string) {
+  if (!data) return;
 
-    // Skip if silent/already handled by scheduler
-    if (data.silent === true) {
-      console.log(`🛑 Skipping broadcast push for silent document: ${context.params.messageId}`);
-      return;
-    }
+  // Skip if silent/already handled by scheduler
+  if (data.silent === true) {
+    console.log(`🛑 Skipping broadcast push for silent document: ${messageIdParam}`);
+    return;
+  }
 
-    const title = data.title || 'Church Update';
-    const body = data.content || '';
-    const type = data.type || 'general';
+  const title = data.title || 'Church Update';
+  const body = data.content || '';
+  const type = data.type || 'general';
+  const churchId = churchIdParam || data.targetChurchId || DEFAULT_CHURCH_ID;
 
-    console.log(`🔔 onBroadcastCreatedV2 fired for: [${title}] type: [${type}]`);
+  console.log(`🔔 handleBroadcastPushDispatch fired for: [${title}] type: [${type}] church: [${churchId}]`);
 
+  try {
+    const db = getDb();
+    const tokenSet = new Set<string>();
+
+    // 1. Gather tokens from 'Rhema Church'/{churchId}/members (Primary single-church collection)
     try {
-      const db = getDb();
+      const rhemaMemSnap = await db.collection('Rhema Church').doc(churchId).collection('members').get();
+      rhemaMemSnap.forEach((doc: any) => {
+        const mData = doc.data();
+        if (data.targetPhone && mData.phone) {
+          const rawDigits = data.targetPhone.replace(/\D/g, '');
+          const last10 = rawDigits.slice(-10);
+          if (!mData.phone.includes(last10)) return;
+        }
+        if (mData.fcmToken && typeof mData.fcmToken === 'string' && mData.fcmToken.trim().length > 0) {
+          tokenSet.add(mData.fcmToken.trim());
+        }
+      });
+    } catch (err) {
+      console.warn(`Could not read 'Rhema Church'/${churchId}/members for tokens:`, err);
+    }
+
+    // 2. Also gather tokens from legacy 'churches'/{churchId}/members if any
+    try {
+      const memSnap = await db.collection('churches').doc(churchId).collection('members').get();
+      memSnap.forEach((doc: any) => {
+        const mData = doc.data();
+        if (data.targetPhone && mData.phone) {
+          const rawDigits = data.targetPhone.replace(/\D/g, '');
+          const last10 = rawDigits.slice(-10);
+          if (!mData.phone.includes(last10)) return;
+        }
+        if (mData.fcmToken && typeof mData.fcmToken === 'string' && mData.fcmToken.trim().length > 0) {
+          tokenSet.add(mData.fcmToken.trim());
+        }
+      });
+    } catch (_) {}
+
+    // 3. Also check root 'users' collection where primaryChurchId == churchId
+    try {
       let query: any = db.collection('users');
-      
-      const churchId = context.params.churchId;
       if (churchId) {
         query = query.where('primaryChurchId', '==', churchId);
       }
-
-      // Filter by target phone number if provided (for individual greetings)
-      if (data.targetPhone) {
-        // We do NOT use query.where() here because if the DB stores +91... it will fail the lexicographical >= check
-        // We will rely on the in-memory .includes() check below instead.
-      }
-
       const snapshotUsers = await query.get();
-      const tokenSet = new Set<string>();
-      
       snapshotUsers.forEach((doc: any) => {
         const uData = doc.data();
-        
-        // If targetPhone is provided, we do a stricter match since Firestore where clauses on strings can be imprecise
         if (data.targetPhone && uData.phone) {
           const rawDigits = data.targetPhone.replace(/\D/g, '');
           const last10 = rawDigits.slice(-10);
           if (!uData.phone.includes(last10)) return;
         }
-
-        if (uData.fcmToken) tokenSet.add(uData.fcmToken);
+        if (uData.fcmToken && typeof uData.fcmToken === 'string' && uData.fcmToken.trim().length > 0) {
+          tokenSet.add(uData.fcmToken.trim());
+        }
       });
+    } catch (_) {}
 
-      // Also gather tokens from churches/{churchId}/members if not phone-targeted
-      if (!data.targetPhone && churchId) {
-        try {
-          const memSnap = await db.collection('churches').doc(churchId).collection('members').get();
-          memSnap.forEach((doc: any) => {
-            const mData = doc.data();
-            if (mData.fcmToken) tokenSet.add(mData.fcmToken);
-          });
-        } catch (memErr) {
-          console.warn('Could not read church members for broadcast tokens:', memErr);
-        }
-      }
+    const plainBody = stripHtml(body);
+    const targetQuizId = data.quizId || data.relatedId || (data.type === 'quiz' ? data.id : undefined);
+    const notificationData: Record<string, string> = {
+      type,
+      id: String(targetQuizId || messageIdParam || ''),
+      ...(targetQuizId ? { quizId: String(targetQuizId) } : {}),
+      ...(data.screen ? { screen: String(data.screen) } : {}),
+      ...(churchId ? { churchId: String(churchId) } : {}),
+      ...(data.date ? { date: String(data.date) } : {}),
+      click_action: 'FLUTTER_NOTIFICATION_CLICK',
+    };
 
-      const plainBody = stripHtml(body);
-      const targetQuizId = data.quizId || data.relatedId || (data.type === 'quiz' ? data.id : undefined);
-      const notificationData: Record<string, string> = {
-        type,
-        id: String(targetQuizId || context.params.messageId),
-        ...(targetQuizId ? { quizId: String(targetQuizId) } : {}),
-        ...(data.screen ? { screen: String(data.screen) } : {}),
-        ...(churchId ? { churchId: String(churchId) } : {}),
-        click_action: 'FLUTTER_NOTIFICATION_CLICK',
-      };
+    const isPromise = type === 'promise' || type === 'daily_verse';
+    const channelId = isPromise ? 'daily_verse' : 'church_alerts';
 
-      // 1. Broadcast to church topic church_{churchId} if churchId is present and not phone-targeted
-      let topicDelivered = false;
-      if (churchId && !data.targetPhone) {
-        try {
-          await getMsg().send({
-            notification: {
-              title,
-              body: plainBody.length > 200 ? plainBody.substring(0, 197) + '...' : plainBody,
-            },
-            data: notificationData,
-            topic: `church_${churchId}`,
-            android: {
-              priority: 'high' as const,
-              notification: {
-                sound: 'default',
-                priority: 'max' as const,
-                channelId: 'church_alerts',
-              },
-            },
-            apns: {
-              headers: {
-                'apns-priority': '10',
-              },
-              payload: {
-                aps: {
-                  sound: 'default',
-                  badge: 1,
-                },
-              },
-            },
-          });
-          topicDelivered = true;
-          console.log(`✅ Broadcast push delivered to topic church_${churchId}`);
-        } catch (topicErr) {
-          console.warn(`⚠️ Topic broadcast push warning:`, topicErr);
-        }
-      }
+    const tokens = Array.from(tokenSet);
+    console.log(`📱 Found ${tokens.length} eligible registered device tokens for church: ${churchId}`);
 
-      // 2. Multicast to individual registered devices ONLY IF phone-targeted OR topic send was not used
-      const tokens = Array.from(tokenSet);
-      if (tokens.length > 0 && (!topicDelivered || data.targetPhone)) {
+    // Direct multicast delivery to registered member devices
+    if (tokens.length > 0) {
+      for (let i = 0; i < tokens.length; i += 500) {
+        const batch = tokens.slice(i, i + 500);
         const message = {
           notification: {
             title,
-            body: plainBody.length > 200 ? plainBody.substring(0, 197) + '...' : plainBody
+            body: plainBody.length > 200 ? plainBody.substring(0, 197) + '...' : plainBody,
           },
           data: notificationData,
           android: {
@@ -1083,30 +1076,129 @@ export const processBroadcastPushNotifications = functionsCompat
             notification: {
               sound: 'default',
               priority: 'max' as const,
-              channelId: 'church_alerts'
-            }
+              channelId: channelId,
+            },
           },
           apns: {
             headers: {
-              'apns-priority': '10'
+              'apns-priority': '10',
             },
             payload: {
               aps: {
                 sound: 'default',
-                badge: 1
-              }
-            }
+                badge: 1,
+              },
+            },
           },
-          tokens: tokens
+          tokens: batch,
         };
 
         const response = await getMsg().sendEachForMulticast(message);
-        console.log(`✅ Broadcast push delivered: ${response.successCount} success, ${response.failureCount} failed.`);
+        console.log(`✅ Broadcast push delivered to tokens: ${response.successCount} success, ${response.failureCount} failed.`);
       }
-    } catch (error) {
-      console.error('Error sending broadcast push:', error);
+    } else if (churchId && !data.targetPhone) {
+      // Fallback: If no device tokens exist in DB, send to church topic so subscribers still receive it
+      console.log(`⚠️ No individual device tokens found in DB, falling back to topic church_${churchId}`);
+      await getMsg().send({
+        notification: {
+          title,
+          body: plainBody.length > 200 ? plainBody.substring(0, 197) + '...' : plainBody,
+        },
+        data: notificationData,
+        topic: `church_${churchId}`,
+        android: {
+          priority: 'high' as const,
+          notification: {
+            sound: 'default',
+            priority: 'max' as const,
+            channelId: channelId,
+          },
+        },
+        apns: {
+          headers: {
+            'apns-priority': '10',
+          },
+          payload: {
+            aps: {
+              sound: 'default',
+              badge: 1,
+            },
+          },
+        },
+      });
+      console.log(`✅ Fallback broadcast push delivered to topic church_${churchId}`);
     }
+  } catch (error) {
+    console.error('Error sending broadcast push:', error);
+  }
+}
+
+/**
+ * 📣 ON BROADCAST CREATED TRIGGER (Rhema Church collection)
+ * Catches all broadcasts created in 'Rhema Church/{churchId}/broadcasts/{messageId}'
+ */
+export const sendRhemaBroadcastPush = onDocumentCreated(
+  { document: 'Rhema Church/{churchId}/broadcasts/{messageId}', region: 'asia-south1' },
+  async (event) => {
+    const snapshot = event.data;
+    if (!snapshot) return;
+    await handleBroadcastPushDispatch(snapshot.data(), event.params.churchId, event.params.messageId);
+  }
+);
+
+/**
+ * 📣 ON BROADCAST CREATED TRIGGER (Legacy churches collection)
+ */
+export const processBroadcastPushNotifications = functionsCompat
+  .region('asia-south1')
+  .firestore
+  .document('churches/{churchId}/broadcasts/{messageId}')
+  .onCreate(async (snapshot, context) => {
+    if (!snapshot) return;
+    await handleBroadcastPushDispatch(snapshot.data(), context.params.churchId, context.params.messageId);
   });
+
+/**
+ * 🧪 Test HTTP endpoint to trigger today's Daily Promise push notification on-demand
+ */
+export const triggerDailyPromisePushHttp = onRequest({ cors: true }, async (req, res) => {
+  try {
+    const churchId = (req.query.churchId as string) || DEFAULT_CHURCH_ID;
+    const db = getDb();
+    
+    const today = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+    const dStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    
+    let promiseSnap = await db.collection('Rhema Church').doc(churchId).collection('promises').where('date', '==', dStr).limit(1).get();
+    if (promiseSnap.empty) {
+      promiseSnap = await db.collection('churches').doc(churchId).collection('promises').where('date', '==', dStr).limit(1).get();
+    }
+    
+    if (promiseSnap.empty) {
+      res.status(404).json({ error: `No promise found for date ${dStr} in church ${churchId}` });
+      return;
+    }
+    
+    const promise = promiseSnap.docs[0].data();
+    const title = promise.verseReferenceEn ? `📖 Daily Promise: ${promise.verseReferenceEn}` : '📖 Today\'s Promise · ఈ రోజు వాగ్దానం';
+    const content = promise.verse || promise.textEn || promise.text || 'Grace and Peace be multiplied to you today.';
+
+    // Create broadcast in Rhema Church/{churchId}/broadcasts
+    const docRef = await db.collection('Rhema Church').doc(churchId).collection('broadcasts').add({
+      title: title,
+      content: content,
+      date: dStr,
+      type: 'promise',
+      silent: false,
+      targetChurchId: churchId,
+      createdAt: FieldValue.serverTimestamp()
+    });
+
+    res.json({ success: true, broadcastId: docRef.id, title, content, churchId });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 /**
  * 📤 UPLOAD EVENT IMAGE

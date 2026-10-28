@@ -37,5 +37,8 @@
     "react-dom": "19.1.0",
     "react-native": "^0.81.5",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "react-refresh": "~0.14.2"
   }
 }
