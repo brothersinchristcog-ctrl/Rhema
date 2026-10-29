@@ -29,7 +29,7 @@ import { AdminTabContext } from '../../context/AdminTabContext';
 
 import FirestoreService, { Sermon } from '../../services/FirestoreService';
 import { Linking } from 'react-native';
-import { formatSermonDuration, formatDateDisplay } from '../../utils/DateUtils';
+import { formatSermonDuration, formatDateDisplay, formatDateTimeDisplay } from '../../utils/DateUtils';
 
 const { width } = Dimensions.get('window');
 
@@ -137,6 +137,34 @@ export default function AdminSermonList() {
     );
   }
 
+  const getPublishedDateTime = (sermon: any): string => {
+    // 1. Explicit publishedAt timestamp/string
+    if (sermon.publishedAt) {
+      const formatted = formatDateTimeDisplay(sermon.publishedAt);
+      if (formatted) return formatted;
+    }
+
+    // 2. Scheduled publish target time
+    if (sermon.scheduledPublishAt && sermon.status === 'Published') {
+      const formatted = formatDateTimeDisplay(sermon.scheduledPublishAt);
+      if (formatted) return formatted;
+    }
+
+    // 3. Transition timestamp when status was updated to Published
+    if (sermon.updatedAt && sermon.status === 'Published') {
+      const formatted = formatDateTimeDisplay(sermon.updatedAt);
+      if (formatted) return formatted;
+    }
+
+    // 4. Creation timestamp for immediately published sermons
+    if (sermon.createdAt) {
+      const formatted = formatDateTimeDisplay(sermon.createdAt);
+      if (formatted) return formatted;
+    }
+
+    return '';
+  };
+
   const renderSermonItem = (sermon: any, idx: number, isFeatured: boolean) => {
     const cleanYId = extractYoutubeId(sermon.youtubeId || '');
     const thumbUri = sermon.thumbnailUrl || sermon.imageUrl || (cleanYId && cleanYId.length === 11 ? `https://img.youtube.com/vi/${cleanYId}/hqdefault.jpg` : null);
@@ -169,7 +197,15 @@ export default function AdminSermonList() {
           <Text style={styles.siSchedMeta}>
             ⏰ Auto-publishes: {formatDateDisplay(sermon.scheduledDate)} {sermon.scheduledTime ? `at ${sermon.scheduledTime}` : ''}
           </Text>
-        ) : null}
+        ) : (sermon.status === 'Published' || !sermon.status) ? (
+          <Text style={styles.siPublishedMeta}>
+            📢 Published: {getPublishedDateTime(sermon) || formatDateDisplay(sermon.date)}
+          </Text>
+        ) : (
+          <Text style={styles.siDraftMeta}>
+            📝 Draft (Unpublished)
+          </Text>
+        )}
         
         <View style={styles.siFoot}>
           {sermon.categories ? (
@@ -453,6 +489,8 @@ const styles = StyleSheet.create({
   siTe: { fontSize: 12, color: '#1a2d5a', fontStyle: 'italic', marginTop: 2, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif' },
   siMeta: { fontSize: 10, color: '#6B7280', marginTop: 6, fontWeight: '600' },
   siSchedMeta: { fontSize: 10, color: '#B45309', marginTop: 3, fontWeight: '700' },
+  siPublishedMeta: { fontSize: 10, color: '#15803D', marginTop: 3, fontWeight: '600' },
+  siDraftMeta: { fontSize: 10, color: '#64748B', marginTop: 3, fontWeight: '600' },
   siFoot: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10, alignItems: 'center' },
   
   badgeSeries: { backgroundColor: '#F9F6F0', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#E2DDD5' },

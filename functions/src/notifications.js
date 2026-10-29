@@ -346,6 +346,7 @@ export async function checkAndPublishScheduledSermons(sermonsRef, churchId, chur
                 await doc.ref.update({
                     status: 'Published',
                     notificationSent: true,
+                    publishedAt: FieldValue.serverTimestamp(),
                     updatedAt: FieldValue.serverTimestamp(),
                 }).catch(() => { });
                 console.log(`✅ Auto-published scheduled sermon: ${doc.id} (${sermonTitle}) for church ${churchId}`);

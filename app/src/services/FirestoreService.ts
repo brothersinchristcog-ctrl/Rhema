@@ -1233,6 +1233,7 @@ class FirestoreService {
           await doc.ref.update({
             status: 'Published',
             notificationSent: true,
+            publishedAt: FieldValue.serverTimestamp(),
             updatedAt: FieldValue.serverTimestamp(),
           });
 

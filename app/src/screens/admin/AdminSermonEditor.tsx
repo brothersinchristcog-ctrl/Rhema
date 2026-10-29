@@ -499,6 +499,7 @@ export default function AdminSermonEditor() {
         scheduledTime: finalStatus === 'Scheduled' ? form.scheduledTime : null,
         scheduledPublishAt: finalScheduledPublishAt || null,
         notificationSent: finalStatus === 'Published',
+        publishedAt: finalStatus === 'Published' ? (editingData?.publishedAt || new Date().toISOString()) : null,
         scripture: form.ref,
         categories: selectedCategories.join(';'),
         thumbnailUrl: form.thumbnailUrl || '',
