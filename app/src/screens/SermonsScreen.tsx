@@ -28,7 +28,7 @@ import {
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import FirestoreService, { Sermon } from '../services/FirestoreService';
-import { formatSermonDuration, isSermonVisibleToMembers } from '../utils/DateUtils';
+import { formatSermonDuration, isSermonVisibleToMembers, formatDateDisplay } from '../utils/DateUtils';
 
 const { width } = Dimensions.get('window');
 
@@ -246,7 +246,7 @@ export default function SermonsScreen({ navigation }: any) {
           {item.title}{item.titleTelugu ? ` · ${item.titleTelugu}` : ''}
         </Text>
         <Text style={[styles.scMeta, { color: isDark ? '#94a3b8' : '#64748b' }]}>
-          {item.pastor || t('sermons.pastor')} · {item.date || 'N/A'}{formatSermonDuration(item.duration) ? ` · ${formatSermonDuration(item.duration)}` : ''}
+          {item.pastor || t('sermons.pastor')} · {formatDateDisplay(item.date) || 'N/A'}{formatSermonDuration(item.duration) ? ` · ${formatSermonDuration(item.duration)}` : ''}
         </Text>
         {item.scripture ? (
           <View style={styles.scriptureTag}>

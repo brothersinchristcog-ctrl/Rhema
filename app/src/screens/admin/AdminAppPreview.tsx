@@ -26,6 +26,7 @@ import {
 import { AdminTabContext } from '../../context/AdminTabContext';
 
 import FirestoreService, { DailyPromise } from '../../services/FirestoreService';
+import { formatDateDisplay } from '../../utils/DateUtils';
 
 const { width } = Dimensions.get('window');
 
@@ -218,7 +219,7 @@ export default function AdminAppPreview() {
                 <View style={{ flex: 1, marginLeft: 15 }}>
                   <Text style={item.title === 'No Recent Sermon' ? {color: '#94a3b8'} : styles.itemTitleEn}>{item.title}</Text>
                   <Text style={styles.itemTitleTe}>{item.titleTelugu}</Text>
-                  <Text style={styles.itemMeta}>{item.pastor} · {item.date} · {item.duration}</Text>
+                  <Text style={styles.itemMeta}>{item.pastor} · {formatDateDisplay(item.date)} · {item.duration}</Text>
                   <View style={styles.tagRow}>
                     <View style={styles.tag}><Text style={styles.tagTxt}>Sermon</Text></View>
                     <View style={styles.tag}><Text style={[styles.tagTxt, { color: '#15803D' }]}>▶️ {item.youtubeId ? 'YouTube' : 'Audio'}</Text></View>
