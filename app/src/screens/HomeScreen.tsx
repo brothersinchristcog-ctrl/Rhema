@@ -62,7 +62,9 @@ import {
   Download,
   Image as LucideImage,
   Clock,
-  CalendarCheck
+  CalendarCheck,
+  ArrowUpRight,
+  ArrowRight
 } from 'lucide-react-native';
 import ViewShot from 'react-native-view-shot';
 import * as MediaLibrary from 'expo-media-library';
@@ -84,7 +86,7 @@ import VerseNotificationService, { DailyVerse } from '../services/VerseNotificat
 import { BibleService } from '../services/BibleService';
 import { SupportedLanguage } from '../locales';
 import { CustomAlert } from '../components/CustomAlert';
-import Svg, { Path, Circle, Rect, Polygon, Defs, LinearGradient as SvgLinearGradient, Stop, Text as SvgText, Mask } from 'react-native-svg';
+import Svg, { Path, Circle, Ellipse, Rect, Polygon, Defs, LinearGradient as SvgLinearGradient, RadialGradient as SvgRadialGradient, Stop, Text as SvgText, Mask, G } from 'react-native-svg';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
@@ -995,6 +997,46 @@ export default function HomeScreen() {
   const [isSavingCard, setIsSavingCard] = useState(false);
   const [isSharingCard, setIsSharingCard] = useState(false);
 
+  // Sermons Card Swipeable & Auto-Scroll Carousel State
+  const [sermonSlide, setSermonSlide] = useState(0);
+  const [sermonCardWidth, setSermonCardWidth] = useState(0);
+  const sermonScrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    if (sermonCardWidth <= 0) return;
+    const timer = setInterval(() => {
+      setSermonSlide(prev => {
+        const next = (prev + 1) % 3;
+        sermonScrollRef.current?.scrollTo({ x: next * sermonCardWidth, animated: true });
+        return next;
+      });
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [sermonCardWidth]);
+
+  const sermonSlideRef = useRef(0);
+  const sermonCardWidthRef = useRef(0);
+  sermonSlideRef.current = sermonSlide;
+  sermonCardWidthRef.current = sermonCardWidth;
+
+  const sermonPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > Math.abs(g.dy) && Math.abs(g.dx) > 8,
+      onMoveShouldSetPanResponderCapture: (_, g) => Math.abs(g.dx) > Math.abs(g.dy) && Math.abs(g.dx) > 8,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderRelease: (_, g) => {
+        const width = sermonCardWidthRef.current || 140;
+        const cur = sermonSlideRef.current;
+        if (g.dx < -20 || g.dx > 20) {
+          const next = g.dx < 0 ? (cur + 1) % 3 : (cur + 2) % 3;
+          setSermonSlide(next);
+          sermonScrollRef.current?.scrollTo({ x: next * width, animated: true });
+        }
+      },
+    })
+  ).current;
+
   // Automatically localize the 4 Daily Verses when language changes or when verses are fetched
   useEffect(() => {
     if (!todayFourVerses || todayFourVerses.length === 0) return;
@@ -1825,7 +1867,10 @@ export default function HomeScreen() {
 
       <Animated.ScrollView 
         style={styles.scroll} 
-        contentContainerStyle={{ paddingTop: dynamicHeaderHeight > 0 ? dynamicHeaderHeight + 4 : headerPadding + 74 }}
+        contentContainerStyle={{ 
+          paddingTop: dynamicHeaderHeight > 0 ? dynamicHeaderHeight + 4 : headerPadding + 74,
+          paddingBottom: 180
+        }}
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
         onScroll={Animated.event(
@@ -2144,29 +2189,258 @@ export default function HomeScreen() {
             })()}
           </View>
 
-          <Text style={[styles.secLbl, isDark && { color: '#e2e8f0' }]}>{t('home.quickAccess')}</Text>
-          <View style={styles.iconGrid}>
-            <GridItem isDark={isDark} icon={<Mic size={26} color="#fff" />} label={t('home.quickSermons')} color="#1a2d5a" onPress={() => navigation.navigate('Sermons')} />
-            <GridItem isDark={isDark} icon={<Heart size={26} color="#fff" />} label={t('home.quickPrayer')} color="#c0392b" onPress={() => handleGuestProtectedNavigation('Prayer')} />
-            <GridItem isDark={isDark} icon={<Calendar size={26} color="#fff" />} label={t('home.quickEvents')} color="#0F766E" onPress={() => navigation.navigate('Events')} />
-            {!useWeChristianDailyPromise && (
-              <GridItem
-                isDark={isDark}
-                icon={<Sparkles size={26} color="#f97316" />}
-                label={t('home.quickDailyVerse')}
-                color="#1e1b4b"
-                onPress={() => {
-                  if (todayVerse) {
-                    navigation.navigate('VerseOfTheDay', { verseId: todayVerse.id, period: todayPeriod });
-                  }
-                }}
-              />
-            )}
-            <GridItem 
-              isDark={isDark} 
-              icon={<DollarSign size={26} color="#fff" />} 
-              label={t('home.quickGiving')} 
-              color="#f0a500" 
+          {/* ── Editorial Bento-Grid Quick Access Section ── */}
+          <View style={styles.bentoSectionWrapper}>
+            {/* Header Row: "Quick Access" styled with church title typography */}
+            <View style={styles.bentoHeaderRow}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text 
+                  style={[styles.bentoHeaderTitle, isDark && { color: '#e2e8f0' }]}
+                  numberOfLines={1}
+                >
+                  {t('home.quickAccess')}
+                </Text>
+              </View>
+              <Text style={styles.bentoHeaderSubtitle}>Tap to explore</Text>
+            </View>
+
+            {/* ── ROW 1: Sermons (Tall Card) + Stacked Daily Verse & Events (Right Column) ── */}
+            <View style={styles.bentoRow1}>
+              {/* Left Column: Sermons Card - PanResponder Swipeable & Auto-Scroll */}
+              <View 
+                {...sermonPanResponder.panHandlers}
+                style={styles.claySermonsTouch}
+              >
+                <LinearGradient
+                  colors={['#0D3D34', '#072620']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.claySermonsCard}
+                >
+                  {/* Mint Claymorphic Squircle Icon */}
+                  <TouchableOpacity 
+                    activeOpacity={0.8}
+                    onPress={() => navigation.navigate('Sermons')}
+                  >
+                    <LinearGradient
+                      colors={['#C9EAE1', '#A6DAD0']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.clayIconBoxLg}
+                    >
+                      <View style={styles.clayIconShine} pointerEvents="none" />
+                      <Mic size={18} color="#0C3830" strokeWidth={2.4} />
+                    </LinearGradient>
+                  </TouchableOpacity>
+
+                  {/* Bottom Text + Swipeable Slides & Indicator */}
+                  <View 
+                    style={styles.claySermonsBottom}
+                    onLayout={(e) => {
+                      const w = e.nativeEvent.layout.width;
+                      if (w > 0 && Math.abs(w - sermonCardWidth) > 1) {
+                        setSermonCardWidth(w);
+                      }
+                    }}
+                  >
+                    {/* Swipeable Carousel */}
+                    <ScrollView
+                      ref={sermonScrollRef}
+                      horizontal
+                      pagingEnabled
+                      scrollEnabled={false}
+                      showsHorizontalScrollIndicator={false}
+                      style={{ width: sermonCardWidth > 0 ? sermonCardWidth : '100%' }}
+                    >
+                      {/* Slide 1 */}
+                      <View style={{ width: sermonCardWidth > 0 ? sermonCardWidth : 140, paddingRight: 4 }}>
+                        <Text
+                          style={styles.claySermonsTitle}
+                          numberOfLines={1}
+                          adjustsFontSizeToFit
+                          minimumFontScale={0.8}
+                        >
+                          {t('home.quickSermons')}
+                        </Text>
+                        <Text style={styles.claySermonsSub} numberOfLines={2}>
+                          Watch & listen to transformative messages
+                        </Text>
+                      </View>
+
+                      {/* Slide 2 */}
+                      <View style={{ width: sermonCardWidth > 0 ? sermonCardWidth : 140, paddingRight: 4 }}>
+                        <Text
+                          style={styles.claySermonsTitle}
+                          numberOfLines={1}
+                          adjustsFontSizeToFit
+                          minimumFontScale={0.8}
+                        >
+                          Sermon Videos
+                        </Text>
+                        <Text style={styles.claySermonsSub} numberOfLines={2}>
+                          Rhema Global Ministries sermon videos
+                        </Text>
+                      </View>
+
+                      {/* Slide 3 */}
+                      <View style={{ width: sermonCardWidth > 0 ? sermonCardWidth : 140, paddingRight: 4 }}>
+                        <Text
+                          style={styles.claySermonsTitle}
+                          numberOfLines={1}
+                          adjustsFontSizeToFit
+                          minimumFontScale={0.8}
+                        >
+                          Watch Online
+                        </Text>
+                        <Text style={styles.claySermonsSub} numberOfLines={2}>
+                          Stream life-changing sermons anytime
+                        </Text>
+                      </View>
+                    </ScrollView>
+
+                    <View style={styles.claySermonsFooterRow}>
+                      {/* Pill Dashes in Bottom Left (Active indicator corresponds to slide) */}
+                      <View style={styles.claySermonsDashRow}>
+                        <TouchableOpacity 
+                          activeOpacity={0.7} 
+                          hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                          onPress={() => { setSermonSlide(0); sermonScrollRef.current?.scrollTo({ x: 0, animated: true }); }}
+                        >
+                          <View style={sermonSlide === 0 ? styles.claySermonsDashActive : styles.claySermonsDashInactive} />
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                          activeOpacity={0.7} 
+                          hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                          onPress={() => { setSermonSlide(1); sermonScrollRef.current?.scrollTo({ x: sermonCardWidth, animated: true }); }}
+                        >
+                          <View style={sermonSlide === 1 ? styles.claySermonsDashActive : styles.claySermonsDashInactive} />
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                          activeOpacity={0.7} 
+                          hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                          onPress={() => { setSermonSlide(2); sermonScrollRef.current?.scrollTo({ x: sermonCardWidth * 2, animated: true }); }}
+                        >
+                          <View style={sermonSlide === 2 ? styles.claySermonsDashActive : styles.claySermonsDashInactive} />
+                        </TouchableOpacity>
+                      </View>
+
+                      {/* White Circular Action Button */}
+                      <TouchableOpacity 
+                        activeOpacity={0.8}
+                        onPress={() => navigation.navigate('Sermons')}
+                        style={styles.clayArrowCircleLg}
+                      >
+                        <ArrowRight size={13} color="#0C3830" strokeWidth={2.4} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </LinearGradient>
+              </View>
+
+              {/* Right Column: Daily Verse + Events - Clean, visible borders */}
+              <View style={styles.bentoRow1RightCol}>
+                {/* Daily Verse Card: #24324A Navy Slate */}
+                <TouchableOpacity
+                  style={styles.clayDailyVerseTouch}
+                  activeOpacity={0.88}
+                  onPress={() => {
+                    if (todayVerse) {
+                      navigation.navigate('VerseOfTheDay', { verseId: todayVerse.id, period: todayPeriod });
+                    } else if (visibleVerses && visibleVerses.length > 0) {
+                      navigation.navigate('VerseOfTheDay', { verseId: visibleVerses[0].id, period: VERSE_PERIODS[0] || 'Morning' });
+                    } else {
+                      handleGuestProtectedNavigation('Promise');
+                    }
+                  }}
+                >
+                  <LinearGradient
+                    colors={['#2B3C58', '#24324A', '#1E2A3E']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.clayDailyVerseCard}
+                  >
+                    {/* Warm Champagne Claymorphic Squircle with 4-Pointed Star */}
+                    <LinearGradient
+                      colors={['#FEF3C7', '#FDE68A']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.clayIconBoxMd}
+                    >
+                      <View style={styles.clayIconShine} pointerEvents="none" />
+                      <Svg width={14} height={14} viewBox="0 0 24 24" fill="#78350F">
+                        <Path d="M12 0 C12 6.6 6.6 12 0 12 C6.6 12 12 17.4 12 24 C12 17.4 17.4 12 24 12 C17.4 12 12 6.6 12 0 Z" />
+                      </Svg>
+                    </LinearGradient>
+
+                    <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 4 }}>
+                      <Text
+                        style={[styles.clayCardTitle, { color: '#FFFFFF', fontSize: 13 }]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.8}
+                      >
+                        {t('home.quickDailyVerse')}
+                      </Text>
+                      <Text style={[styles.clayCardSub, { color: '#CBD5E1', fontSize: 10 }]} numberOfLines={1}>
+                        Today's word
+                      </Text>
+                    </View>
+
+                    <View style={styles.clayArrowCircleMd}>
+                      <ArrowRight size={11} color="#1E2A3E" strokeWidth={2.4} />
+                    </View>
+                  </LinearGradient>
+                </TouchableOpacity>
+
+                {/* Events Card: #43372D Rich Mocha */}
+                <TouchableOpacity
+                  style={styles.clayEventsTouch}
+                  activeOpacity={0.88}
+                  onPress={() => navigation.navigate('Events')}
+                >
+                  <LinearGradient
+                    colors={['#4F4136', '#43372D', '#362B23']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.clayEventsCard}
+                  >
+                    {/* Soft Warm Cream Claymorphic Squircle */}
+                    <LinearGradient
+                      colors={['#F7EFE6', '#EAD9C8']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.clayIconBoxMd}
+                    >
+                      <View style={styles.clayIconShine} pointerEvents="none" />
+                      <Calendar size={15} color="#43372D" strokeWidth={2.4} />
+                    </LinearGradient>
+
+                    <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 4 }}>
+                      <Text
+                        style={[styles.clayCardTitle, { color: '#FFFFFF', fontSize: 13 }]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.8}
+                      >
+                        {t('home.quickEvents')}
+                      </Text>
+                      <Text style={[styles.clayCardSub, { color: '#D7CCC8', fontSize: 10 }]} numberOfLines={1}>
+                        Service...
+                      </Text>
+                    </View>
+
+                    <View style={styles.clayArrowCircleMd}>
+                      <ArrowRight size={11} color="#43372D" strokeWidth={2.4} />
+                    </View>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* ── ROW 2: Give / Tithe Banner (Clean, Exact Medallion + Hand with Heart) ── */}
+            <TouchableOpacity
+              style={styles.clayGiveTouch}
+              activeOpacity={0.88}
               onPress={() => {
                 if (!activeChurch?.features?.hasGiving) {
                   setAlertConfig({
@@ -2178,214 +2452,544 @@ export default function HomeScreen() {
                 } else {
                   handleGuestProtectedNavigation('Give');
                 }
-              }} 
-            />
-            
-            <GridItem isDark={isDark} icon={<BookOpen size={26} color="#fff" />} label={t('home.quickBible')} color="#7C3AED" onPress={() => handleGuestProtectedNavigation('Bible')} />
-            <GridItem isDark={isDark} icon={<Music size={26} color="#fff" />} label={t('home.quickSongs')} color="#0369a1" onPress={() => handleGuestProtectedNavigation('Songs')} />
-            <GridItem isDark={isDark} icon={<FileText size={26} color="#fff" />} label={t('home.quickSermonNotes')} color="#854D0E" onPress={() => handleGuestProtectedNavigation('MemberNotes')} />
-            <GridItem isDark={isDark} icon={<Award size={26} color="#fff" />} label={t('home.quickBiblePlans')} color="#374151" onPress={() => handleGuestProtectedNavigation('BiblePlans')} />
-            <GridItem isDark={isDark} icon={<Trophy size={26} color="#fff" />} label={t('home.quickBibleQuiz') || 'Bible Quiz'} color="#6366F1" onPress={() => navigation.navigate('BibleQuizHome')} />
+              }}
+            >
+              <LinearGradient
+                colors={['#0B0A08', '#1C1507', '#5B4413', '#B98F2E', '#E8C766']}
+                start={{ x: 0, y: 0.25 }}
+                end={{ x: 1, y: 0.75 }}
+                style={styles.clayGiveCard}
+              >
+                {/* 3D Gold Coins behind the Give badge */}
+                <GiveCoins />
 
-            <GridItem isDark={isDark} icon={<Bell size={26} color="#fff" />} label={t('home.quickUpdates')} color="#0284c7" onPress={() => navigation.navigate('Updates')} />
-            <GridItem 
-              isDark={isDark}
-              icon={<YoutubeIcon size={26} color="#fff" />} 
-              label={t('home.quickYoutubeLive')} 
-              color="#ef4444" 
-              onPress={() => {
-                const yUrl = activeChurch?.socialLinks?.youtube?.trim();
-                if (yUrl) {
-                  Linking.openURL(yUrl);
-                } else {
-                  setAlertConfig({
-                    visible: true,
-                    title: 'Link Not Configured',
-                    message: 'No YouTube Live link has been configured for this church. Please go to Church Settings and set the YouTube Live link.',
-                    type: 'info'
-                  });
-                }
-              }} 
-            />
-            {useWeChristianDailyPromise && (
-              <GridItem isDark={isDark} icon={<Users size={26} color="#fff" />} label={t('home.quickMembers')} color="#db2777" onPress={handleOpenMembers} />
-            )}
-          </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                  {/* Circular Embossed Gold Medallion with Exact Hand + Heart */}
+                  <LinearGradient
+                    colors={['#FFF0B8', '#DDAE3A']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.clayGiveIconCircle}
+                  >
+                    <View style={styles.clayIconShine} pointerEvents="none" />
+                    <Image source={require('../../assets/give_hand_heart.png')} style={{ width: 28, height: 28 }} resizeMode="contain" />
+                  </LinearGradient>
 
-          {/* ── Separate Member View Navigation: Members, Online Meetings & Attendance ── */}
-          <View 
-            style={{ 
-              flexDirection: 'row', 
-              alignItems: 'center', 
-              justifyContent: 'space-between', 
-              gap: useWeChristianDailyPromise ? 12 : 6, 
-              marginTop: 18, 
-              marginBottom: 10, 
-              paddingHorizontal: useWeChristianDailyPromise ? 20 : 12 
-            }}
-            onLayout={(e) => setOnlineMeetingsY(e.nativeEvent.layout.y)}
-          >
-            {/* Separate Button 1: Members (when Daily Promise is NO, balances grid so Members, Online Meetings & Attendance are in one line) */}
-            {!useWeChristianDailyPromise && (
-              <TouchableOpacity 
-                style={{
-                  flex: 1,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: '#db2777',
-                  paddingVertical: 12,
-                  paddingHorizontal: 4,
-                  borderRadius: 20,
-                  elevation: 4,
-                  shadowColor: '#db2777',
-                  shadowOpacity: 0.35,
-                  shadowRadius: 6,
-                  shadowOffset: { width: 0, height: 3 },
-                  gap: 4,
+                  <View style={{ flex: 1, justifyContent: 'center', marginLeft: 10, marginRight: 96 }}>
+                    <Text
+                      style={[styles.clayCardTitle, { color: '#FFE7A0', fontSize: 16 }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.8}
+                    >
+                      {language === 'en' ? 'Give / Tithe' : t('home.quickGiving')}
+                    </Text>
+                    <Text style={[styles.clayCardSub, { color: '#D8C48A', fontSize: 11, marginTop: 1 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+                      Sow a seed · Online giving
+                    </Text>
+                  </View>
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            {/* ── ROW 3: YouTube Live + Songs ── */}
+            <View style={styles.bentoRow3}>
+              {/* Left: YouTube Live */}
+              <TouchableOpacity
+                style={styles.clayYoutubeTouch}
+                activeOpacity={0.9}
+                onPress={() => {
+                  const yUrl = activeChurch?.socialLinks?.youtube?.trim();
+                  if (yUrl) {
+                    Linking.openURL(yUrl);
+                  } else {
+                    setAlertConfig({
+                      visible: true,
+                      title: 'Link Not Configured',
+                      message: 'No YouTube Live link has been configured for this church. Please go to Church Settings and set the YouTube Live link.',
+                      type: 'info'
+                    });
+                  }
                 }}
-                onPress={handleOpenMembers}
-                activeOpacity={0.8}
               >
-                <Users size={16} color="#fff" />
-                <Text 
-                  style={{ color: '#fff', fontSize: 11.5, fontWeight: '700', letterSpacing: 0 }} 
-                  numberOfLines={1} 
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.75}
+                <LinearGradient
+                  colors={['#4E141C', '#28080A']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.clayYoutubeCard}
                 >
-                  {t('home.quickMembers')}
-                </Text>
+                  {/* Subtle Equalizer Soundwave Bars */}
+                  <Svg width="100%" height="100%" viewBox="0 0 175 84" style={StyleSheet.absoluteFillObject} pointerEvents="none" preserveAspectRatio="none">
+                    <Rect x="105" y="36" width="3" height="26" rx="1.5" fill="#AF4951" opacity="0.4" />
+                    <Rect x="112" y="26" width="3" height="38" rx="1.5" fill="#AF4951" opacity="0.6" />
+                    <Rect x="119" y="16" width="3" height="50" rx="1.5" fill="#AF4951" opacity="0.8" />
+                    <Rect x="126" y="28" width="3" height="36" rx="1.5" fill="#AF4951" opacity="0.6" />
+                    <Rect x="133" y="38" width="3" height="24" rx="1.5" fill="#AF4951" opacity="0.4" />
+                  </Svg>
+
+                  {/* Terracotta/Dusty Rose Claymorphic Squircle */}
+                  <LinearGradient
+                    colors={['#CA8580', '#A85C57']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.clayIconBoxMd}
+                  >
+                    <View style={styles.clayIconShine} pointerEvents="none" />
+                    <Svg width={14} height={14} viewBox="0 0 24 24" fill="#320A0E" style={{ marginLeft: 2 }}>
+                      <Polygon points="6,4 20,12 6,20" />
+                    </Svg>
+                  </LinearGradient>
+
+                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 4 }}>
+                    <View style={styles.bentoLiveBadgeWrap}>
+                      <View style={styles.bentoLiveDot} />
+                      <Text style={styles.bentoLiveTag}>LIVE</Text>
+                    </View>
+                    <Text
+                      style={[styles.clayCardSub, { color: '#F7D2D5', fontSize: 10.5, marginTop: 1 }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.8}
+                    >
+                      {t('home.quickYoutubeLive')}
+                    </Text>
+                  </View>
+
+                  <View style={[styles.clayArrowCircleMd, { backgroundColor: 'rgba(255, 255, 255, 0.22)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.35)' }]}>
+                    <ArrowRight size={12} color="#FFFDF9" strokeWidth={2.4} />
+                  </View>
+                </LinearGradient>
               </TouchableOpacity>
-            )}
 
-            {/* Separate Button 2: Online Meetings */}
-            <TouchableOpacity 
-              style={{
-                flex: 1,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: '#3B82F6',
-                paddingVertical: useWeChristianDailyPromise ? 13 : 12,
-                paddingHorizontal: useWeChristianDailyPromise ? 14 : 4,
-                borderRadius: 20,
-                elevation: 4,
-                shadowColor: '#3B82F6',
-                shadowOpacity: 0.35,
-                shadowRadius: 6,
-                shadowOffset: { width: 0, height: 3 },
-                gap: useWeChristianDailyPromise ? 7 : 4,
-              }}
-              onPress={() => navigation.navigate('OnlineMeetings')}
-              activeOpacity={0.8}
-            >
-              <AnimatedCameraIcon size={useWeChristianDailyPromise ? 18 : 16} color="#fff" scrollY={scrollY} triggerY={onlineMeetingsY} />
-              <Text 
-                style={{ 
-                  color: '#fff', 
-                  fontSize: useWeChristianDailyPromise ? 12.8 : 11.5, 
-                  fontWeight: '700', 
-                  letterSpacing: useWeChristianDailyPromise ? 0.2 : 0 
-                }} 
-                numberOfLines={1} 
-                adjustsFontSizeToFit
-                minimumFontScale={0.7}
+              {/* Right: Songs */}
+              <TouchableOpacity
+                style={styles.claySongsTouch}
+                activeOpacity={0.88}
+                onPress={() => handleGuestProtectedNavigation('Songs')}
               >
-                {t('home.quickMeetings')}
-              </Text>
-            </TouchableOpacity>
+                <LinearGradient
+                  colors={['#F3ECFA', '#E5D7F5']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.claySongsCard}
+                >
+                  {/* Subtle 3D Organ Pipes */}
+                  <Svg width="100%" height="100%" viewBox="0 0 175 84" style={StyleSheet.absoluteFillObject} pointerEvents="none" preserveAspectRatio="none">
+                    <Rect x="106" y="38" width="3" height="38" rx="1.5" fill="#9D74DC" opacity="0.4" />
+                    <Rect x="113" y="28" width="3" height="50" rx="1.5" fill="#9D74DC" opacity="0.55" />
+                    <Rect x="120" y="18" width="3.5" height="62" rx="1.75" fill="#8B5FD3" opacity="0.75" />
+                    <Rect x="127" y="26" width="3" height="52" rx="1.5" fill="#9D74DC" opacity="0.6" />
+                    <Rect x="134" y="36" width="3" height="40" rx="1.5" fill="#9D74DC" opacity="0.45" />
+                  </Svg>
 
-            {/* Separate Button 3: Attendance */}
-            <TouchableOpacity 
-              style={{
-                flex: 1,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: '#059669',
-                paddingVertical: useWeChristianDailyPromise ? 13 : 12,
-                paddingHorizontal: useWeChristianDailyPromise ? 14 : 4,
-                borderRadius: 20,
-                elevation: 4,
-                shadowColor: '#059669',
-                shadowOpacity: 0.35,
-                shadowRadius: 6,
-                shadowOffset: { width: 0, height: 3 },
-                gap: useWeChristianDailyPromise ? 7 : 4,
-              }}
-              onPress={() => navigation.navigate('Attendance')}
-              activeOpacity={0.8}
-            >
-              <CalendarCheck size={useWeChristianDailyPromise ? 18 : 16} color="#fff" strokeWidth={2.2} />
-              <Text 
-                style={{ 
-                  color: '#fff', 
-                  fontSize: useWeChristianDailyPromise ? 12.8 : 11.5, 
-                  fontWeight: '700', 
-                  letterSpacing: useWeChristianDailyPromise ? 0.2 : 0 
-                }} 
-                numberOfLines={1} 
-                adjustsFontSizeToFit
-                minimumFontScale={0.75}
+                  {/* Vivid Purple Claymorphic Squircle */}
+                  <LinearGradient
+                    colors={['#C4B0ED', '#9B72DC']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.clayIconBoxMd}
+                  >
+                    <View style={styles.clayIconShine} pointerEvents="none" />
+                    {/* Retro vintage microphone */}
+                    <Svg width={19} height={19} viewBox="0 0 24 24" fill="none" stroke="#250E43" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                      <Rect x="8" y="2" width="8" height="12" rx="4" fill="#250E43" fillOpacity={0.18} />
+                      <Path d="M8 6h8M8 10h8" />
+                      <Path d="M5 11a7 7 0 0 0 14 0" />
+                      <Path d="M12 18v3M8.5 21h7" />
+                    </Svg>
+                  </LinearGradient>
+
+                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 4 }}>
+                    <Text
+                      style={[styles.clayCardTitle, { color: '#250E43', fontSize: 13.5 }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.8}
+                    >
+                      {t('home.quickSongs')}
+                    </Text>
+                    <Text style={[styles.clayCardSub, { color: '#6B4F8B', fontSize: 10.5 }]} numberOfLines={1}>
+                      Worship songs
+                    </Text>
+                  </View>
+
+                  <View style={styles.clayArrowCircleMd}>
+                    <ArrowRight size={12} color="#250E43" strokeWidth={2.4} />
+                  </View>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+
+            {/* ── ROW 4: 3-Column Cards (Sermon Notes, Bible Quiz, Updates) ── */}
+            <View style={styles.bentoRow4}>
+              {/* Sermon Notes */}
+              <TouchableOpacity
+                style={styles.clayQuarterTouch}
+                activeOpacity={0.85}
+                onPress={() => handleGuestProtectedNavigation('MemberNotes')}
               >
-                {t('nav.attendance')}
-              </Text>
-            </TouchableOpacity>
-          </View>
+                <LinearGradient
+                  colors={['#EDF5FC', '#DFEEF9']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[styles.clayQuarterCard, { borderColor: '#D6E8F6' }]}
+                >
+                  {/* Subtle Ruled Paper Sheet in Background */}
+                  <Svg width="100%" height="100%" viewBox="0 0 110 114" style={StyleSheet.absoluteFillObject} pointerEvents="none" preserveAspectRatio="none">
+                    <G transform="rotate(8 78 40)">
+                      <Rect x="54" y="16" width="38" height="48" rx="4" fill="#FFFFFF" opacity="0.65" />
+                      <Rect x="60" y="24" width="22" height="2" rx="1" fill="#A5C7E6" opacity="0.7" />
+                      <Rect x="60" y="30" width="26" height="2" rx="1" fill="#A5C7E6" opacity="0.7" />
+                      <Rect x="60" y="36" width="20" height="2" rx="1" fill="#A5C7E6" opacity="0.7" />
+                      <Rect x="60" y="42" width="24" height="2" rx="1" fill="#A5C7E6" opacity="0.7" />
+                    </G>
+                  </Svg>
+
+                  {/* Top: Squircle Icon */}
+                  <LinearGradient
+                    colors={['#A5D3F8', '#7FB9EA']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.clayIconBoxRow4}
+                  >
+                    <View style={styles.clayIconShine} pointerEvents="none" />
+                    <FileText size={16} color="#0F3250" strokeWidth={2.4} />
+                  </LinearGradient>
+
+                  {/* Middle: Title & Accent Bar */}
+                  <View style={{ zIndex: 2, marginTop: 4 }}>
+                    <Text
+                      style={[styles.clayCardTitle, { color: '#0F2E4A', fontSize: 11.5, letterSpacing: -0.2 }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.8}
+                    >
+                      {t('home.quickSermonNotes')}
+                    </Text>
+                    <View style={[styles.clayAccentBar, { backgroundColor: '#2B6B9B' }]} />
+                  </View>
+
+                  {/* Bottom: Arrow */}
+                  <View style={styles.clayQuarterBottomRow}>
+                    <View style={styles.clayArrowCircleSm}>
+                      <ArrowRight size={11} color="#0F2E4A" strokeWidth={2.4} />
+                    </View>
+                  </View>
+                </LinearGradient>
+              </TouchableOpacity>
+
+              {/* Bible Quiz */}
+              <TouchableOpacity
+                style={styles.clayQuarterTouch}
+                activeOpacity={0.85}
+                onPress={() => navigation.navigate('BibleQuizHome')}
+              >
+                <LinearGradient
+                  colors={['#F0F7F3', '#DFEFE5']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[styles.clayQuarterCard, { borderColor: '#DAECE1' }]}
+                >
+                  {/* Subtle Layered Green Ribbon Arches */}
+                  <Svg width="100%" height="100%" viewBox="0 0 110 114" style={StyleSheet.absoluteFillObject} pointerEvents="none" preserveAspectRatio="none">
+                    <Path d="M 68 0 C 68 28, 86 46, 110 46 L 110 0 Z" fill="#9DD1B0" opacity="0.3" />
+                    <Path d="M 82 0 C 82 18, 94 30, 110 30 L 110 0 Z" fill="#75BA8E" opacity="0.35" />
+                    <Path d="M 96 114 C 96 86, 78 68, 54 68 L 110 68 L 110 114 Z" fill="#AEE0C0" opacity="0.25" />
+                  </Svg>
+
+                  {/* Top: Squircle Icon */}
+                  <LinearGradient
+                    colors={['#A7DCBD', '#7DC397']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.clayIconBoxRow4}
+                  >
+                    <View style={styles.clayIconShine} pointerEvents="none" />
+                    <Trophy size={16} color="#0E3820" strokeWidth={2.4} />
+                  </LinearGradient>
+
+                  {/* Middle: Title & Accent Bar */}
+                  <View style={{ zIndex: 2, marginTop: 4 }}>
+                    <Text
+                      style={[styles.clayCardTitle, { color: '#0E3820', fontSize: 11.5, letterSpacing: -0.2 }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.8}
+                    >
+                      {t('home.quickBibleQuiz') || 'Bible Quiz'}
+                    </Text>
+                    <View style={[styles.clayAccentBar, { backgroundColor: '#2C7A4A' }]} />
+                  </View>
+
+                  {/* Bottom: Arrow */}
+                  <View style={styles.clayQuarterBottomRow}>
+                    <View style={styles.clayArrowCircleSm}>
+                      <ArrowRight size={11} color="#0E3820" strokeWidth={2.4} />
+                    </View>
+                  </View>
+                </LinearGradient>
+              </TouchableOpacity>
+
+              {/* Updates */}
+              <TouchableOpacity
+                style={styles.clayQuarterTouch}
+                activeOpacity={0.85}
+                onPress={() => navigation.navigate('Updates')}
+              >
+                <LinearGradient
+                  colors={['#FAF4EB', '#F2E6D4']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[styles.clayQuarterCard, { borderColor: '#EFE2D2' }]}
+                >
+                  {/* Subtle Fluted Arch Pillars */}
+                  <Svg width="100%" height="100%" viewBox="0 0 110 114" style={StyleSheet.absoluteFillObject} pointerEvents="none" preserveAspectRatio="none">
+                    <Path d="M 72 0 C 72 32, 88 48, 110 48 L 110 0 Z" fill="#DDB686" opacity="0.3" />
+                    <Rect x="86" y="10" width="2.5" height="50" rx="1.25" fill="#C89D66" opacity="0.35" />
+                    <Rect x="93" y="10" width="2.5" height="50" rx="1.25" fill="#C89D66" opacity="0.35" />
+                    <Rect x="100" y="10" width="2.5" height="50" rx="1.25" fill="#C89D66" opacity="0.35" />
+                  </Svg>
+
+                  {/* Top: Squircle Icon */}
+                  <LinearGradient
+                    colors={['#E7BE8D', '#CF9857']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.clayIconBoxRow4}
+                  >
+                    <View style={styles.clayIconShine} pointerEvents="none" />
+                    <Bell size={16} color="#311B08" strokeWidth={2.4} />
+                  </LinearGradient>
+
+                  {/* Middle: Title & Accent Bar */}
+                  <View style={{ zIndex: 2, marginTop: 4 }}>
+                    <Text
+                      style={[styles.clayCardTitle, { color: '#311B08', fontSize: 11.5, letterSpacing: -0.2 }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.8}
+                    >
+                      {t('home.quickUpdates')}
+                    </Text>
+                    <View style={[styles.clayAccentBar, { backgroundColor: '#8E5A27' }]} />
+                  </View>
+
+                  {/* Bottom: Arrow */}
+                  <View style={styles.clayQuarterBottomRow}>
+                    <View style={styles.clayArrowCircleSm}>
+                      <ArrowRight size={11} color="#311B08" strokeWidth={2.4} />
+                    </View>
+                  </View>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+
+            {/* ── ROW 5: 3 Capsule Pills (Members, Online Meetings, Attendance) ── */}
+            <View
+              style={styles.bentoBottomPillsRow}
+              onLayout={(e) => setOnlineMeetingsY(e.nativeEvent.layout.y)}
+            >
+              {/* Members Pill */}
+              <TouchableOpacity
+                style={styles.clayBottomTouch}
+                onPress={handleOpenMembers}
+                activeOpacity={0.85}
+              >
+                <LinearGradient
+                  colors={['#FCF0F3', '#F8DEE4']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[styles.clayBottomPill, { borderColor: '#F6D0D8' }]}
+                >
+                  {/* Subtle Wave in Bottom Corner */}
+                  <Svg width="100%" height="100%" viewBox="0 0 110 62" style={StyleSheet.absoluteFillObject} pointerEvents="none" preserveAspectRatio="none">
+                    <Path d="M 55 62 C 72 52, 88 44, 110 40 L 110 62 Z" fill="#F1B9C6" opacity="0.35" />
+                  </Svg>
+
+                  <LinearGradient
+                    colors={['#F5B7BF', '#EA909E']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.clayIconBoxSm}
+                  >
+                    <View style={styles.clayIconShine} pointerEvents="none" />
+                    <Users size={13} color="#4A121C" strokeWidth={2.4} />
+                  </LinearGradient>
+
+                  <View style={{ flex: 1, zIndex: 2, marginHorizontal: 4, justifyContent: 'center' }}>
+                    <Text
+                      style={[styles.clayCardTitle, { color: '#4A121C', fontSize: 11, letterSpacing: -0.2 }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.8}
+                    >
+                      {t('home.quickMembers')}
+                    </Text>
+                  </View>
+
+                  <View style={styles.clayArrowCircleXs}>
+                    <ArrowRight size={10} color="#4A121C" strokeWidth={2.4} />
+                  </View>
+                </LinearGradient>
+              </TouchableOpacity>
+
+              {/* Online Meetings Pill */}
+              <TouchableOpacity
+                style={styles.clayBottomTouch}
+                onPress={() => navigation.navigate('OnlineMeetings')}
+                activeOpacity={0.85}
+              >
+                <LinearGradient
+                  colors={['#EFF6FD', '#DDEBFA']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[styles.clayBottomPill, { borderColor: '#D4E5F8' }]}
+                >
+                  {/* Subtle Wave in Bottom Corner */}
+                  <Svg width="100%" height="100%" viewBox="0 0 110 62" style={StyleSheet.absoluteFillObject} pointerEvents="none" preserveAspectRatio="none">
+                    <Path d="M 55 62 C 72 52, 88 44, 110 40 L 110 62 Z" fill="#A5C7F2" opacity="0.35" />
+                  </Svg>
+
+                  <LinearGradient
+                    colors={['#A5CDF9', '#7FAFF2']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.clayIconBoxSm}
+                  >
+                    <View style={styles.clayIconShine} pointerEvents="none" />
+                    <AnimatedCameraIcon size={13} color="#0C294A" scrollY={scrollY} triggerY={onlineMeetingsY} />
+                  </LinearGradient>
+
+                  <View style={{ flex: 1, zIndex: 2, marginHorizontal: 4, justifyContent: 'center' }}>
+                    <Text
+                      style={[styles.clayCardTitle, { color: '#0C294A', fontSize: 9.5, lineHeight: 11.5, letterSpacing: -0.2 }]}
+                      numberOfLines={2}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.75}
+                    >
+                      Online{'\n'}Meetings
+                    </Text>
+                  </View>
+
+                  <View style={styles.clayArrowCircleXs}>
+                    <ArrowRight size={10} color="#0C294A" strokeWidth={2.4} />
+                  </View>
+                </LinearGradient>
+              </TouchableOpacity>
+
+              {/* Attendance Pill */}
+              <TouchableOpacity
+                style={styles.clayBottomTouch}
+                onPress={() => navigation.navigate('Attendance')}
+                activeOpacity={0.85}
+              >
+                <LinearGradient
+                  colors={['#FAF5EE', '#F2E7D7']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[styles.clayBottomPill, { borderColor: '#EBDCC9' }]}
+                >
+                  {/* Subtle Fluted Arch in Bottom Corner */}
+                  <Svg width="100%" height="100%" viewBox="0 0 110 62" style={StyleSheet.absoluteFillObject} pointerEvents="none" preserveAspectRatio="none">
+                    <Path d="M 55 62 C 72 52, 88 44, 110 40 L 110 62 Z" fill="#DDBB95" opacity="0.35" />
+                  </Svg>
+
+                  <LinearGradient
+                    colors={['#EBD0B3', '#D3AB7E']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.clayIconBoxSm}
+                  >
+                    <View style={styles.clayIconShine} pointerEvents="none" />
+                    <CalendarCheck size={13} color="#331C08" strokeWidth={2.4} />
+                  </LinearGradient>
+
+                  <View style={{ flex: 1, zIndex: 2, marginHorizontal: 4, justifyContent: 'center' }}>
+                    <Text
+                      style={[styles.clayCardTitle, { color: '#331C08', fontSize: 10, letterSpacing: -0.2 }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.75}
+                    >
+                      {t('nav.attendance') || 'Attendance'}
+                    </Text>
+                  </View>
+
+                  <View style={styles.clayArrowCircleXs}>
+                    <ArrowRight size={10} color="#331C08" strokeWidth={2.4} />
+                  </View>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+        </View>
 
           {/* ── Arched Navigation Section ── */}
-          <View style={{ marginTop: 0, marginBottom: 30, width: '100%', height: 160, alignItems: 'center' }}>
-            <View style={{ position: 'absolute', top: 30, left: 0, right: 0, height: 100 }}>
+          <View style={{ marginTop: 4, marginBottom: 30, width: '100%', height: 165, alignItems: 'center' }}>
+            <View style={{ position: 'absolute', top: 32, left: 0, right: 0, height: 100 }}>
               <Svg width={width} height={100}>
                 <Path
                   d={`M -20 70 Q ${width/2} -60 ${width + 20} 70`}
-                  stroke={isDark ? '#3b82f6' : '#60a5fa'}
+                  stroke={isDark ? '#3b82f6' : 'rgba(82, 124, 120, 0.45)'}
                   strokeWidth={2}
-                  strokeDasharray="8, 6"
+                  strokeDasharray="7, 6"
                   fill="none"
                 />
               </Svg>
             </View>
 
-            <View style={{ flexDirection: 'row', width: '100%', justifyContent: 'space-between', paddingHorizontal: 35, alignItems: 'flex-start', paddingTop: 10 }}>
+            <View style={{ flexDirection: 'row', width: '100%', justifyContent: 'space-between', paddingHorizontal: 32, alignItems: 'flex-start', paddingTop: 10 }}>
               {/* About Us */}
               <TouchableOpacity 
-                style={{ alignItems: 'center', marginTop: 25, width: 80 }}
+                style={{ alignItems: 'center', marginTop: 25, width: 86 }}
                 onPress={() => navigation.navigate('AboutUs')}
-                activeOpacity={0.8}
+                activeOpacity={0.82}
               >
-                <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: isDark ? '#1e293b' : '#FAF7F2', borderWidth: 4, borderColor: isDark ? '#334155' : '#e2e8f0', justifyContent: 'center', alignItems: 'center', marginBottom: 12 }}>
-                  <Users size={26} color="#ef4444" />
+                <View style={[styles.archMedallionOuter, { shadowColor: '#E11D48' }]}>
+                  <LinearGradient
+                    colors={['#FFF1F2', '#FFE4E6']}
+                    style={styles.archMedallionInner}
+                  >
+                    <Users size={25} color="#E11D48" strokeWidth={2.2} />
+                  </LinearGradient>
                 </View>
-                <Text style={{ color: isDark ? '#f8fafc' : '#0f172a', fontWeight: 'bold', fontSize: 13, textAlign: 'center' }}>{t('home.aboutUs')}</Text>
-                <Text style={{ color: '#94a3b8', fontSize: 11, marginTop: 2, textAlign: 'center' }}>{t('home.aboutUsSub')}</Text>
+                <Text style={{ color: isDark ? '#f8fafc' : '#0B1938', fontWeight: '800', fontSize: 13, textAlign: 'center' }}>{t('home.aboutUs')}</Text>
+                <Text style={{ color: '#64748B', fontSize: 11, fontWeight: '600', marginTop: 2, textAlign: 'center' }}>{t('home.aboutUsSub')}</Text>
               </TouchableOpacity>
 
               {/* Contact Us */}
               <TouchableOpacity 
-                style={{ alignItems: 'center', marginTop: -5, width: 80 }}
+                style={{ alignItems: 'center', marginTop: -5, width: 86 }}
                 onPress={() => navigation.navigate('ContactUs')}
-                activeOpacity={0.8}
+                activeOpacity={0.82}
               >
-                <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: isDark ? '#1e293b' : '#FAF7F2', borderWidth: 4, borderColor: isDark ? '#334155' : '#e2e8f0', justifyContent: 'center', alignItems: 'center', marginBottom: 12 }}>
-                  <MessageSquare size={26} color="#a855f7" />
+                <View style={[styles.archMedallionOuter, { shadowColor: '#7C3AED' }]}>
+                  <LinearGradient
+                    colors={['#F5F3FF', '#EDE9FE']}
+                    style={styles.archMedallionInner}
+                  >
+                    <MessageSquare size={25} color="#7C3AED" strokeWidth={2.2} />
+                  </LinearGradient>
                 </View>
-                <Text style={{ color: isDark ? '#f8fafc' : '#0f172a', fontWeight: 'bold', fontSize: 13, textAlign: 'center' }}>{t('home.contactUs')}</Text>
-                <Text style={{ color: '#94a3b8', fontSize: 11, marginTop: 2, textAlign: 'center' }}>{t('home.contactUsSub')}</Text>
+                <Text style={{ color: isDark ? '#f8fafc' : '#0B1938', fontWeight: '800', fontSize: 13, textAlign: 'center' }}>{t('home.contactUs')}</Text>
+                <Text style={{ color: '#64748B', fontSize: 11, fontWeight: '600', marginTop: 2, textAlign: 'center' }}>{t('home.contactUsSub')}</Text>
               </TouchableOpacity>
 
               {/* Gallery */}
               <TouchableOpacity 
-                style={{ alignItems: 'center', marginTop: 25, width: 80 }}
+                style={{ alignItems: 'center', marginTop: 25, width: 86 }}
                 onPress={() => navigation.navigate('Gallery')}
-                activeOpacity={0.8}
+                activeOpacity={0.82}
               >
-                <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: isDark ? '#1e293b' : '#FAF7F2', borderWidth: 4, borderColor: isDark ? '#334155' : '#e2e8f0', justifyContent: 'center', alignItems: 'center', marginBottom: 12 }}>
-                  <LucideImage size={26} color="#10b981" />
+                <View style={[styles.archMedallionOuter, { shadowColor: '#355B56' }]}>
+                  <LinearGradient
+                    colors={['#E4EEEA', '#D1E5DF']}
+                    style={styles.archMedallionInner}
+                  >
+                    <LucideImage size={25} color="#355B56" strokeWidth={2.2} />
+                  </LinearGradient>
                 </View>
-                <Text style={{ color: isDark ? '#f8fafc' : '#0f172a', fontWeight: 'bold', fontSize: 13, textAlign: 'center' }}>{t('home.gallery')}</Text>
-                <Text style={{ color: '#94a3b8', fontSize: 11, marginTop: 2, textAlign: 'center' }}>{t('home.gallerySub')}</Text>
+                <Text style={{ color: isDark ? '#f8fafc' : '#0B1938', fontWeight: '800', fontSize: 13, textAlign: 'center' }}>{t('home.gallery')}</Text>
+                <Text style={{ color: '#64748B', fontSize: 11, fontWeight: '600', marginTop: 2, textAlign: 'center' }}>{t('home.gallerySub')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -2709,20 +3313,422 @@ export default function HomeScreen() {
   );
 }
 
-function GridItem({ icon, label, color, onPress, isDark }: { icon: any; label: string; color: string; onPress: () => void; isDark: boolean }) {
+function GridItem({
+  icon,
+  label,
+  color,
+  gradient,
+  onPress,
+  isDark,
+}: {
+  icon: any;
+  label: string;
+  color: string;
+  gradient?: readonly [string, string];
+  onPress: () => void;
+  isDark: boolean;
+}) {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 0.91,
+      useNativeDriver: true,
+      speed: 35,
+      bounciness: 6,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 25,
+      bounciness: 8,
+    }).start();
+  };
+
+  const gradColors: readonly [string, string] = gradient || [color, color];
+
   return (
-    <Pressable 
-      style={({ pressed }) => [styles.iconItem, { opacity: pressed ? 0.7 : 1 }]} 
+    <Pressable
+      style={styles.iconItem}
       onPress={onPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
     >
-      <View style={[styles.iconBox, { backgroundColor: color }]}>
-        {icon}
-      </View>
-      <Text style={[styles.iconLbl, { color: isDark ? '#e2e8f0' : '#475569' }]} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{label}</Text>
+      <Animated.View
+        style={[
+          styles.iconCardFrame,
+          {
+            shadowColor: color,
+            transform: [{ scale: scaleAnim }],
+          },
+        ]}
+      >
+        <LinearGradient
+          colors={gradColors}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.iconBox}
+        >
+          {/* Specular Glass Highlight Circles */}
+          <View style={styles.iconShineTop} pointerEvents="none" />
+          <View style={styles.iconShineBottom} pointerEvents="none" />
+          <View style={styles.iconInnerRing} pointerEvents="none" />
+          {icon}
+        </LinearGradient>
+      </Animated.View>
+      <Text
+        style={[styles.iconLbl, { color: isDark ? '#e2e8f0' : '#1E293B' }]}
+        numberOfLines={2}
+        adjustsFontSizeToFit
+        minimumFontScale={0.8}
+        maxFontSizeMultiplier={1.15}
+      >
+        {label}
+      </Text>
     </Pressable>
   );
 }
 
+// Brown Treasure Pot with Brown Handles, Gold Color Lines:
+// Coins fall one-by-one from the top and visibly fill the pot across the edge of the pot mouth!
+// Once the pot mouth is filled, the remaining coins hit the edge, overflow, and fall onto the ground.
+const GoldCoinFace = ({ size = 15 }: { size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 30 30">
+    <Defs>
+      <SvgRadialGradient id="brownPotCoinGrad" cx="35%" cy="30%" rx="80%" ry="80%" fx="35%" fy="30%">
+        <Stop offset="0" stopColor="#FFF9C7" />
+        <Stop offset="0.35" stopColor="#FFD700" />
+        <Stop offset="0.75" stopColor="#F5B800" />
+        <Stop offset="1" stopColor="#A86E06" />
+      </SvgRadialGradient>
+    </Defs>
+    {/* 3D Dark Gold Base Rim */}
+    <Circle cx={15} cy={16.5} r={13} fill="#6E4403" />
+    {/* Shiny Gold Coin Face */}
+    <Circle cx={15} cy={14} r={13} fill="url(#brownPotCoinGrad)" stroke="#7D4E03" strokeWidth={1.2} />
+    {/* Inner Decorative Milled Ring */}
+    <Circle cx={15} cy={14} r={9.5} fill="none" stroke="#9A690B" strokeWidth={1} strokeDasharray="2.5,2" opacity={0.8} />
+    {/* Currency Symbol ₹ */}
+    <SvgText x={15} y={18.5} fontSize={12} fontWeight="bold" fill="#6B4102" textAnchor="middle">₹</SvgText>
+    {/* Specular Glint */}
+    <Ellipse cx={10} cy={8.5} rx={4.5} ry={2.2} fill="#FFFFFF" opacity={0.7} />
+  </Svg>
+);
+
+const GiveCoins = () => {
+  const t = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(t, {
+        toValue: 1,
+        duration: 9600,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, []);
+
+  const seg = (pts: [number, number][]) =>
+    t.interpolate({
+      inputRange: pts.map(q => q[0]),
+      outputRange: pts.map(q => q[1]),
+    });
+
+  // Stage 1: 3 coins fall one by one from top into the pot mouth and go inside (NOT visible inside the pot)
+  const insideCoins = [
+    { start: 0.02, enterT: 0.09, startX: 44.5 },
+    { start: 0.11, enterT: 0.18, startX: 44.5 },
+    { start: 0.20, enterT: 0.27, startX: 44.5 },
+  ].map((c, i) => (
+    <Animated.View
+      key={'ic' + i}
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        left: 0,
+        top: 0,
+        width: 15,
+        height: 15,
+        zIndex: 5 + i,
+        // Visible as it falls, but disappears completely as soon as it goes inside the pot mouth!
+        opacity: seg([
+          [0, 0],
+          [c.start, 0],
+          [c.start + 0.01, 1],
+          [c.enterT - 0.015, 1],
+          [c.enterT, 0],
+          [1, 0],
+        ]),
+        transform: [
+          {
+            translateX: c.startX,
+          },
+          // Falls from top (-18) straight into the pot mouth opening (y=26)
+          {
+            translateY: seg([
+              [0, -18],
+              [c.start, -18],
+              [c.start + 0.03, 6],
+              [c.enterT, 26],
+              [1, 26],
+            ]),
+          },
+          // 3D spin wobble while falling
+          {
+            scaleX: seg([
+              [0, 1],
+              [c.start, 1],
+              [c.start + 0.02, 0.4],
+              [c.enterT, 1],
+              [1, 1],
+            ]),
+          },
+          // Flattens into perspective as it enters the pot mouth
+          {
+            scaleY: seg([
+              [0, 1],
+              [c.enterT - 0.02, 1],
+              [c.enterT, 0.6],
+              [1, 0.6],
+            ]),
+          },
+        ],
+      }}
+    >
+      <GoldCoinFace size={15} />
+    </Animated.View>
+  ));
+
+  // Stage 2: Once full, display ONLY that last coin (4th coin), resting neatly INSIDE the pot mouth!
+  const mouthCoin = (
+    <Animated.View
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        left: 0,
+        top: 0,
+        width: 15,
+        height: 15,
+        zIndex: 15,
+        // Drops in from top, lands inside pot mouth, and stays visible showing the pot is full!
+        opacity: seg([
+          [0, 0],
+          [0.29, 0],
+          [0.30, 1],
+          [0.94, 1],
+          [0.98, 0],
+          [1, 0],
+        ]),
+        transform: [
+          {
+            translateX: 44.5,
+          },
+          // Falls from top (-18) and lands flush inside the pot mouth opening (y=21.5, visual center=29)
+          {
+            translateY: seg([
+              [0, -18],
+              [0.29, -18],
+              [0.33, 10],
+              [0.35, 18],
+              [0.36, 21.5],
+              [0.37, 20],
+              [0.38, 21.5],
+              [1, 21.5],
+            ]),
+          },
+          // 3D spin wobble while falling
+          {
+            scaleX: seg([
+              [0, 1],
+              [0.29, 1],
+              [0.32, 0.35],
+              [0.34, 1],
+              [1, 1],
+            ]),
+          },
+          // Flattens to rest in perspective inside the elliptical mouth opening
+          {
+            scaleY: seg([
+              [0, 1],
+              [0.35, 1],
+              [0.36, 0.55],
+              [1, 0.55],
+            ]),
+          },
+        ],
+      }}
+    >
+      <GoldCoinFace size={15} />
+    </Animated.View>
+  );
+
+  // Stage 3: Once the pot is full, the REMAINING coins fall from top,
+  // hit the filled pot mouth, bounce outward, and FALL ONTO THE GROUND!
+  const groundCoins = [
+    // Overflow left side to ground (past left brown handle)
+    { start: 0.42, hitT: 0.49, landT: 0.57, startX: 44.5, bounceX: 18, groundX: 4, groundY: 57, rot: '-16deg' },
+    // Overflow right side to ground (past right brown handle)
+    { start: 0.52, hitT: 0.59, landT: 0.67, startX: 44.5, bounceX: 74, groundX: 84, groundY: 57, rot: '18deg' },
+    // Overflow front-left to ground
+    { start: 0.62, hitT: 0.69, landT: 0.77, startX: 44.5, bounceX: 28, groundX: 20, groundY: 59, rot: '6deg' },
+    // Overflow front-right to ground
+    { start: 0.72, hitT: 0.79, landT: 0.87, startX: 44.5, bounceX: 62, groundX: 68, groundY: 59, rot: '-8deg' },
+  ].map((c, i) => (
+    <Animated.View
+      key={'gc' + i}
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        left: 0,
+        top: 0,
+        width: 15,
+        height: 15,
+        zIndex: 25 + i,
+        opacity: seg([
+          [0, 0],
+          [c.start, 0],
+          [c.start + 0.01, 1],
+          [0.94, 1],
+          [0.98, 0],
+          [1, 0],
+        ]),
+        transform: [
+          // Horizontal path: drops in center -> hits filled mouth -> spills outward -> lands on ground
+          {
+            translateX: seg([
+              [0, c.startX],
+              [c.start, c.startX],
+              [c.hitT, c.bounceX],
+              [c.landT, c.groundX],
+              [1, c.groundX],
+            ]),
+          },
+          // Vertical path: falls from top -> hits mouth (y=22) -> drops outside pot -> bounces -> lands on ground
+          {
+            translateY: seg([
+              [0, -18],
+              [c.start, -18],
+              [c.hitT, 22],
+              [c.hitT + 0.03, 34],
+              [c.landT - 0.02, c.groundY - 5],
+              [c.landT, c.groundY],
+              [1, c.groundY],
+            ]),
+          },
+          // 3D spin wobble
+          {
+            scaleX: seg([
+              [0, 1],
+              [c.start, 1],
+              [c.hitT, 0.4],
+              [c.hitT + 0.04, 1],
+              [c.landT, 0.9],
+              [1, 0.9],
+            ]),
+          },
+          // Lies flat on ground
+          {
+            scaleY: seg([
+              [0, 1],
+              [c.landT - 0.01, 1],
+              [c.landT, 0.55],
+              [1, 0.55],
+            ]),
+          },
+          {
+            rotate: c.rot,
+          },
+        ],
+      }}
+    >
+      <GoldCoinFace size={15} />
+    </Animated.View>
+  ));
+
+  return (
+    <View pointerEvents="none" style={{ position: 'absolute', right: 4, bottom: 2, width: 104, height: 76 }}>
+      {/* 1. Ground Shadow under the treasure pot and ground coins */}
+      <Svg width={104} height={16} viewBox="0 0 104 16" style={{ position: 'absolute', left: 0, bottom: 0 }}>
+        <Ellipse cx={51} cy={10} rx={40} ry={4.5} fill="#000000" opacity={0.52} />
+      </Svg>
+
+      {/* 2. Pot Opening Cavity (Dark inside mouth behind coins) */}
+      <Svg width={80} height={56} viewBox="0 0 80 56" style={{ position: 'absolute', left: 11, bottom: 0 }}>
+        <Ellipse cx={40} cy={8} rx={16} ry={4} fill="#120A02" />
+      </Svg>
+
+      {/* 3. 3 Coins falling inside the pot and disappearing (not visible inside pot) */}
+      {insideCoins}
+
+      {/* 4. BROWN TREASURE POT WITH BROWN HANDLES & GOLD COLOR LINES */}
+      <Svg width={80} height={56} viewBox="0 0 80 56" style={{ position: 'absolute', left: 11, bottom: 0 }}>
+        <Defs>
+          {/* Rich Dark Brown Treasure Pot Gradient */}
+          <SvgLinearGradient id="treasurePotBodyGrad" x1="0" y1="0" x2="1" y2="0">
+            <Stop offset="0" stopColor="#1C1107" />
+            <Stop offset="0.35" stopColor="#5C3F14" />
+            <Stop offset="0.6" stopColor="#3C270A" />
+            <Stop offset="1" stopColor="#140B03" />
+          </SvgLinearGradient>
+          {/* Rich Brown Gradient for Pot Handles */}
+          <SvgLinearGradient id="handleBrownGrad" x1="0" y1="0" x2="1" y2="0">
+            <Stop offset="0" stopColor="#2E1706" />
+            <Stop offset="0.5" stopColor="#5C3B14" />
+            <Stop offset="1" stopColor="#261203" />
+          </SvgLinearGradient>
+          {/* Gleaming Gold Color Lines Gradient */}
+          <SvgLinearGradient id="treasurePotGoldLinesGrad" x1="0" y1="0" x2="1" y2="0">
+            <Stop offset="0" stopColor="#B07A10" />
+            <Stop offset="0.45" stopColor="#FFE680" />
+            <Stop offset="1" stopColor="#B07A10" />
+          </SvgLinearGradient>
+        </Defs>
+
+        {/* Brown Side Handles on Bulbous Pot Belly */}
+        <Circle cx={8} cy={28} r={4.5} fill="none" stroke="url(#handleBrownGrad)" strokeWidth={2.6} />
+        <Circle cx={72} cy={28} r={4.5} fill="none" stroke="url(#handleBrownGrad)" strokeWidth={2.6} />
+
+        {/* Pot Body Silhouette (Flared mouth, slender neck, bulbous round pot belly, flat base) */}
+        <Path
+          d="M25 8 C25 12 28 14 28 16 C28 18 12 24 12 34 C12 46 24 52 40 52 C56 52 68 46 68 34 C68 24 52 18 52 16 C52 14 55 12 55 8 Z"
+          fill="url(#treasurePotBodyGrad)"
+          stroke="#E0B040"
+          strokeWidth={0.8}
+        />
+
+        {/* Gold Color Lines: Horizontal Bands Across the Bulbous Pot Belly */}
+        <Path d="M14 26 C24 31 56 31 66 26" fill="none" stroke="url(#treasurePotGoldLinesGrad)" strokeWidth={2.2} />
+        <Path d="M14 40 C24 45 56 45 66 40" fill="none" stroke="url(#treasurePotGoldLinesGrad)" strokeWidth={1.6} />
+
+        {/* Gold Color Line Around the Slender Pot Neck */}
+        <Path d="M28 16 C34 19 46 19 52 16" fill="none" stroke="url(#treasurePotGoldLinesGrad)" strokeWidth={1.8} />
+
+        {/* Flared Gold Top Mouth Rim */}
+        <Ellipse cx={40} cy={8} rx={16} ry={4} fill="none" stroke="url(#treasurePotGoldLinesGrad)" strokeWidth={2.6} />
+        <Path d="M24 8 C24 13 56 13 56 8" fill="none" stroke="url(#treasurePotGoldLinesGrad)" strokeWidth={2.2} strokeLinecap="round" />
+
+        {/* Pot Surface Highlights */}
+        <Path d="M18 24 C15 30 16 38 20 44" fill="none" stroke="#FFFFFF" strokeWidth={1.8} strokeLinecap="round" opacity={0.42} />
+
+        {/* Gold Pedestal Feet */}
+        <Ellipse cx={28} cy={52} rx={6} ry={1.8} fill="#E0B040" />
+        <Ellipse cx={52} cy={52} rx={6} ry={1.8} fill="#E0B040" />
+      </Svg>
+
+      {/* 5. The single final coin sitting right inside the pot mouth to display the pot is full */}
+      {mouthCoin}
+
+      {/* 6. Remaining Coins: Overflow out of filled pot and fall onto the ground */}
+      {groundCoins}
+    </View>
+  );
+};
 const styles = StyleSheet.create({
 
   floatingBtnContainer: {
@@ -3512,11 +4518,695 @@ const styles = StyleSheet.create({
   emptyEventsTxt: { color: '#1a2d5a', fontSize: 13, fontWeight: '700', marginTop: 12 },
   emptyEventsSub: { color: '#94a3b8', fontSize: 11, marginTop: 4 },
 
-  secLbl: { fontSize: 13, fontWeight: '800', color: '#1a2d5a', letterSpacing: 0.5, marginHorizontal: 24, marginBottom: 18, marginTop: 15 },
-  iconGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 15, justifyContent: 'space-between' },
-  iconItem: { width: '24%', alignItems: 'center', marginBottom: 20 },
-  iconBox: { width: 62, height: 62, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginBottom: 8, elevation: 2, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4 },
-  iconLbl: { fontSize: 11, color: '#475569', fontWeight: '600', textAlign: 'center' },
+    // ── Editorial Bento-Grid Quick Access Styles ──
+  bentoSectionWrapper: {
+    paddingHorizontal: 12,
+    marginTop: 14,
+    marginBottom: 16,
+  },
+  bentoHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    paddingHorizontal: 3,
+  },
+  bentoHeaderTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0B1938',
+    letterSpacing: 0,
+  },
+  bentoHeaderSubtitle: {
+    fontSize: 12.5,
+    color: '#5A708E',
+    fontWeight: '500',
+  },
+  bentoRow1: {
+    flexDirection: 'row',
+    gap: 9,
+    alignItems: 'stretch',
+  },
+  bentoSermonsTouch: {
+    flex: 0.94,
+    borderRadius: 24,
+    elevation: 4,
+    shadowColor: '#092B26',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.16,
+    shadowRadius: 8,
+  },
+  bentoSermonsCard: {
+    flex: 1,
+    minHeight: 173,
+    borderRadius: 24,
+    padding: 12,
+    justifyContent: 'space-between',
+    overflow: 'hidden',
+  },
+  bentoDarkInnerRim: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(248, 217, 139, 0.22)',
+  },
+  bentoGoldInnerRim: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 252, 240, 0.6)',
+  },
+  bento3DIconDark: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderTopWidth: 1.2,
+    borderTopColor: 'rgba(247, 220, 148, 0.45)',
+    borderBottomWidth: 1.2,
+    borderBottomColor: 'rgba(0, 0, 0, 0.55)',
+    borderLeftWidth: 1,
+    borderLeftColor: 'rgba(247, 220, 148, 0.2)',
+    borderRightWidth: 1,
+    borderRightColor: 'rgba(0, 0, 0, 0.35)',
+    elevation: 4,
+    shadowColor: '#200D02',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    overflow: 'hidden',
+  },
+  bento3DIconGold: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderTopWidth: 1.2,
+    borderTopColor: 'rgba(255, 255, 255, 0.85)',
+    borderBottomWidth: 1.2,
+    borderBottomColor: 'rgba(163, 107, 26, 0.55)',
+    borderLeftWidth: 1,
+    borderLeftColor: 'rgba(255, 255, 255, 0.45)',
+    borderRightWidth: 1,
+    borderRightColor: 'rgba(163, 107, 26, 0.35)',
+    elevation: 4,
+    shadowColor: '#3A1A06',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    overflow: 'hidden',
+  },
+  // Claymorphic & Glassmorphic Quick Access Card Styles
+  clayIconBoxLg: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.55)',
+    borderBottomWidth: 3,
+    borderBottomColor: 'rgba(0, 0, 0, 0.24)',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    overflow: 'hidden',
+  },
+  clayIconBoxMd: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.55)',
+    borderBottomWidth: 3,
+    borderBottomColor: 'rgba(0, 0, 0, 0.24)',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3.5 },
+    shadowOpacity: 0.28,
+    shadowRadius: 4.5,
+    overflow: 'hidden',
+  },
+  clayIconBoxSm: {
+    width: 27,
+    height: 27,
+    borderRadius: 8.5,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.55)',
+    borderBottomWidth: 3,
+    borderBottomColor: 'rgba(0, 0, 0, 0.24)',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.26,
+    shadowRadius: 3.5,
+    overflow: 'hidden',
+  },
+  clayIconBoxRow4: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.55)',
+    borderBottomWidth: 3,
+    borderBottomColor: 'rgba(0, 0, 0, 0.24)',
+    elevation: 4.5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.27,
+    shadowRadius: 4,
+    overflow: 'hidden',
+  },
+  clayIconShine: {
+    position: 'absolute',
+    top: 3,
+    left: 4,
+    width: '46%',
+    height: '30%',
+    backgroundColor: 'rgba(255, 255, 255, 0.28)',
+    borderRadius: 20,
+    transform: [{ rotate: '-18deg' }],
+  },
+  clayArrowCircleLg: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 4,
+  },
+  clayArrowCircleMd: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1.5 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2.5,
+  },
+  clayArrowCircleSm: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 1.5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  clayArrowCircleXs: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 1.5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  claySermonsTouch: {
+    flex: 0.94,
+    borderRadius: 24,
+    elevation: 4,
+    shadowColor: '#092B26',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.16,
+    shadowRadius: 8,
+  },
+  claySermonsCard: {
+    flex: 1,
+    minHeight: 130,
+    borderRadius: 22,
+    backgroundColor: '#0D3D34',
+    padding: 10,
+    justifyContent: 'space-between',
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: '#527C78',
+  },
+  claySermonsBottom: {
+    marginTop: 2,
+  },
+  claySermonsTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#FFFDF9',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    marginBottom: 1,
+  },
+  claySermonsSub: {
+    fontSize: 9.5,
+    lineHeight: 12.5,
+    color: 'rgba(255, 255, 255, 0.75)',
+    fontWeight: '500',
+    marginBottom: 3,
+  },
+  claySermonsFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  claySermonsDashRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3.5,
+  },
+  claySermonsDashActive: {
+    width: 18,
+    height: 2.5,
+    borderRadius: 1.5,
+    backgroundColor: '#FFFDF9',
+  },
+  claySermonsDashInactive: {
+    width: 9,
+    height: 2.5,
+    borderRadius: 1.5,
+    backgroundColor: 'rgba(255, 255, 255, 0.35)',
+  },
+  bentoRow1RightCol: {
+    flex: 1.06,
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  clayDailyVerseTouch: {
+    borderRadius: 20,
+    elevation: 3,
+    shadowColor: '#0E1726',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
+  },
+  clayDailyVerseCard: {
+    minHeight: 70,
+    borderRadius: 20,
+    backgroundColor: '#24324A',
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: '#54729C',
+  },
+  clayEventsTouch: {
+    borderRadius: 20,
+    elevation: 3,
+    shadowColor: '#1F1710',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
+  },
+  clayEventsCard: {
+    minHeight: 70,
+    borderRadius: 20,
+    backgroundColor: '#43372D',
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: '#7F6754',
+  },
+  clayCardTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+  },
+  clayCardSub: {
+    fontSize: 10,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  clayGiveTouch: {
+    marginTop: 9,
+    borderRadius: 22,
+    elevation: 3,
+    shadowColor: '#4A1D16',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 7,
+  },
+  clayGiveCard: {
+    minHeight: 82,
+    borderRadius: 22,
+    backgroundColor: '#F6DFD3',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    overflow: 'hidden',
+    borderWidth: 1.2,
+    borderColor: '#B8902C',
+  },
+  clayGiveIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.2,
+    borderColor: 'rgba(255, 245, 200, 0.85)',
+    borderBottomWidth: 3,
+    borderBottomColor: 'rgba(90, 60, 5, 0.55)',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 3,
+    overflow: 'hidden',
+  },
+  clayGiveDivider: {
+    width: 1,
+    height: 26,
+    backgroundColor: 'rgba(70, 35, 10, 0.16)',
+    marginHorizontal: 8,
+  },
+  clayGiveActionPill: {
+    borderWidth: 1.3,
+    borderColor: '#E8C25A',
+    paddingHorizontal: 16,
+    paddingVertical: 7.5,
+    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+  },
+  clayGiveActionTxt: {
+    color: '#F6D56E',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  bentoRow3: {
+    flexDirection: 'row',
+    gap: 9,
+    marginTop: 9,
+    alignItems: 'stretch',
+  },
+  clayYoutubeTouch: {
+    flex: 1,
+    borderRadius: 22,
+    elevation: 4,
+    shadowColor: '#420F12',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+  },
+  clayYoutubeCard: {
+    minHeight: 84,
+    borderRadius: 22,
+    backgroundColor: '#4E141C',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  bentoLiveBadgeWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 2,
+  },
+  bentoLiveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#EF4444',
+  },
+  bentoLiveTag: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFDF9',
+    letterSpacing: 0.8,
+  },
+  claySongsTouch: {
+    flex: 1,
+    borderRadius: 22,
+    elevation: 3,
+    shadowColor: '#3A1A54',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 7,
+  },
+  claySongsCard: {
+    minHeight: 84,
+    borderRadius: 22,
+    backgroundColor: '#F3ECFA',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E8DCF8',
+  },
+  bentoRow4: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 9,
+  },
+  clayQuarterTouch: {
+    flex: 1,
+    borderRadius: 20,
+  },
+  clayQuarterCard: {
+    minHeight: 114,
+    borderRadius: 20,
+    padding: 10,
+    justifyContent: 'space-between',
+    overflow: 'hidden',
+    elevation: 2.5,
+    shadowColor: '#2A1A0B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.07,
+    shadowRadius: 4,
+    borderWidth: 1,
+  },
+  clayAccentBar: {
+    width: 20,
+    height: 2.5,
+    borderRadius: 1.25,
+    marginTop: 3,
+  },
+  clayQuarterBottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  bentoBottomPillsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+    marginTop: 9,
+  },
+  clayBottomTouch: {
+    flex: 1,
+    borderRadius: 18,
+  },
+  clayBottomPill: {
+    minHeight: 62,
+    borderRadius: 18,
+    paddingHorizontal: 6,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    overflow: 'hidden',
+    elevation: 2.5,
+    shadowColor: '#2A1A0B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    borderWidth: 1,
+  },
+
+  quickAccessHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: 18,
+    marginTop: 18,
+    marginBottom: 16,
+    gap: 12,
+  },
+  quickAccessTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  quickAccessAccentBar: {
+    width: 4,
+    height: 18,
+    borderRadius: 2,
+    backgroundColor: '#355B56',
+  },
+  quickAccessHeaderLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(53, 91, 86, 0.14)',
+  },
+  secLbl: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0B1938',
+    letterSpacing: 0.4,
+  },
+  iconGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 12,
+    justifyContent: 'space-between',
+  },
+  iconItem: {
+    width: '24%',
+    alignItems: 'center',
+    marginBottom: 18,
+  },
+  iconCardFrame: {
+    padding: 3.5,
+    borderRadius: 23,
+    backgroundColor: '#FFFFFF',
+    marginBottom: 8,
+    elevation: 6,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.95)',
+  },
+  iconBox: {
+    width: 58,
+    height: 58,
+    borderRadius: 19,
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  iconShineTop: {
+    position: 'absolute',
+    top: -16,
+    right: -16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+  },
+  iconShineBottom: {
+    position: 'absolute',
+    bottom: -14,
+    left: -14,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  iconInnerRing: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.24)',
+  },
+  iconLbl: {
+    fontSize: 11.5,
+    color: '#1E293B',
+    fontWeight: '700',
+    textAlign: 'center',
+    letterSpacing: 0.1,
+    lineHeight: 15,
+    paddingHorizontal: 2,
+  },
+  quickActionPillWrapper: {
+    flex: 1,
+    borderRadius: 22,
+    padding: 2.5,
+    backgroundColor: '#FFFFFF',
+    elevation: 5,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+  },
+  quickActionPillGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 19.5,
+    overflow: 'hidden',
+  },
+  quickActionPillGlow: {
+    position: 'absolute',
+    top: -20,
+    right: -15,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+  },
+  quickActionPillIconBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  archMedallionOuter: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    padding: 4,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 10,
+    elevation: 6,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.18,
+    shadowRadius: 9,
+    borderWidth: 1,
+    borderColor: 'rgba(226, 232, 240, 0.9)',
+  },
+  archMedallionInner: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 
   // Sermon Card (clean card, no header band)
   sermonCard: { marginHorizontal: 16, marginBottom: 4, backgroundColor: '#fff', borderRadius: 18, overflow: 'hidden', elevation: 4, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 6, borderWidth: 1, borderColor: '#f1f5f9' },
