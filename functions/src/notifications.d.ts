@@ -110,4 +110,42 @@ export declare const triggerDailyQuizNotificationHttp: import("firebase-function
  * 🧪 HTTP endpoint to manually check and publish scheduled sermons
  */
 export declare const triggerPublishScheduledSermonsHttp: import("firebase-functions/v2/https").HttpsFunction;
+/**
+ * 📖 AUTOMATED DAILY VERSE MULTICAST PUSH (English & Telugu)
+ * Determines the current slot (Morning, Afternoon, Evening, Night) or uses slotOverride.
+ * Queries today's verse from 'daily_verses' and sends two simultaneous FCM push notifications:
+ * 1. English notification ('✝️ Good Morning' + verseEn + referenceEn)
+ * 2. Telugu notification ('✝️ శుభోదయం' + verseTe + referenceTe)
+ */
+export declare function sendDailyVersePushInternal(slotOverride?: string): Promise<{
+    success: boolean;
+    error: string;
+    slot?: never;
+    targetIndex?: never;
+    verseReferenceEn?: never;
+    verseReferenceTe?: never;
+    totalTokens?: never;
+    sentEnCount?: never;
+    sentTeCount?: never;
+} | {
+    success: boolean;
+    slot: string;
+    targetIndex: number;
+    verseReferenceEn: any;
+    verseReferenceTe: any;
+    totalTokens: number;
+    sentEnCount: number;
+    sentTeCount: number;
+    error?: never;
+}>;
+/**
+ * ⏰ AUTOMATED DAILY VERSE PUSH SCHEDULER
+ * Runs 4 times a day at 8:00 AM, 1:00 PM, 6:00 PM, 9:00 PM IST (Asia/Kolkata).
+ */
+export declare const automatedDailyVersePush: import("firebase-functions/v2/scheduler").ScheduleFunction;
+/**
+ * 🧪 HTTP endpoint to manually trigger the Daily Verse push (can specify ?slot=Morning/Afternoon/Evening/Night)
+ * Also used by external Cloud Schedulers (Google Cloud Console or cron-job.org).
+ */
+export declare const triggerDailyVersePushHttp: import("firebase-functions/v2/https").HttpsFunction;
 //# sourceMappingURL=notifications.d.ts.map

@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList, TextInput, Alert, ActivityIndicator, Platform } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
-import { UploadCloud, Trash2, Eye, Pencil, X, RefreshCw } from 'lucide-react-native';
+import { UploadCloud, Trash2, Eye, Pencil, X, RefreshCw, Database, Image as ImageIcon, Bell } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
+import VerseNotificationService from '../../services/VerseNotificationService';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const PERIOD_NAMES = ['Morning', 'Afternoon', 'Evening', 'Night'];
@@ -91,9 +92,16 @@ export default function SuperAdminVersesManager({ searchQuery = '' }: { searchQu
       // 1. Fetch metadata total
       const metaDoc = await firestore().collection('daily_verses_meta').doc('metadata').get();
       const metaExists = typeof metaDoc.exists === 'function' ? metaDoc.exists() : metaDoc.exists;
-      const total = metaExists ? (metaDoc.data()?.totalVerses || 5863) : 5863;
+      const total = metaExists ? (metaDoc.data()?.totalVerses || 0) : 0;
       setTotalVerses(total);
       cachedTotalVerses = total;
+
+      if (total === 0) {
+        setUpcomingVerses([]);
+        cachedUpcomingVerses = [];
+        setLoading(false);
+        return;
+      }
 
       const baseIdx = (todayDaysSinceEpoch * 4) % total;
       const COUNT = 120; // 30 upcoming days (4 per day)
@@ -363,6 +371,86 @@ export default function SuperAdminVersesManager({ searchQuery = '' }: { searchQu
     }
   };
 
+  const handleLoadBundledVerses = () => {
+    Alert.alert(
+      'Import Bundled Verses',
+      'Import all 5,863 bundled Scripture verses into Firestore? This will populate the entire daily verse database.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Import (5,863)',
+          onPress: async () => {
+            try {
+              const bundled = require('../../assets/bulk_verses.json');
+              await handleBulkUpload(bundled);
+            } catch (e: any) {
+              Alert.alert('Error', e?.message || 'Failed to load bundled verses');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleFetchUnsplashBackgrounds = async () => {
+    try {
+      setIsUpdating(true);
+      const UNSPLASH_KEY = 'ppd4mBIqu8573rS42D9fobzAipdPsYdKkfOD0A5yiQc';
+      const THEMES = [
+        'christian cross', 'jesus light', 'nature sunrise', 'mountains sunset',
+        'bible prayer', 'heavenly clouds', 'hope light', 'peaceful water'
+      ];
+      const missing = upcomingVerses.filter(v => !v.backgroundUrl).slice(0, 8);
+      if (missing.length === 0) {
+        Alert.alert('Up to Date', 'Upcoming verses already have high-resolution backgrounds.');
+        setIsUpdating(false);
+        return;
+      }
+      let updated = 0;
+      for (const verse of missing) {
+        const theme = THEMES[Math.floor(Math.random() * THEMES.length)];
+        try {
+          const res = await fetch(`https://api.unsplash.com/photos/random?query=${encodeURIComponent(theme)}&orientation=portrait&content_filter=high`, {
+            headers: { Authorization: `Client-ID ${UNSPLASH_KEY}` }
+          });
+          const data = await res.json();
+          const imageUrl = data?.urls?.regular;
+          if (imageUrl) {
+            await firestore().collection('daily_verses').doc(verse.id).update({
+              backgroundUrl: imageUrl,
+              unsplashPhotographer: data?.user?.name || 'Unsplash',
+              backgroundTheme: theme
+            });
+            updated++;
+          }
+        } catch (err) {
+          console.warn('Unsplash fetch error:', err);
+        }
+      }
+      Alert.alert('Success', `Updated ${updated} verses with Unsplash backgrounds.`);
+      cachedUpcomingVerses = null;
+      fetchUpcomingVerses(true);
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to fetch backgrounds');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleTestNotifications = async () => {
+    try {
+      const firstVerse = upcomingVerses[0] || allVerses[0];
+      const success = await VerseNotificationService.triggerTestPair(firstVerse);
+      if (success) {
+        Alert.alert('Notifications Sent', 'Sent 2 test notifications simultaneously:\n• 1 in English (✝️ Good Morning)\n• 1 in Telugu (✝️ శుభోదయం)\n\nCheck your notification drawer!');
+      } else {
+        Alert.alert('Error', 'Failed to trigger test notifications.');
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to trigger test notifications');
+    }
+  };
+
   const renderVerseItem = useCallback(({ item }: { item: any }) => {
     const schedule = getFastSchedule(item.index);
     return (
@@ -470,20 +558,50 @@ export default function SuperAdminVersesManager({ searchQuery = '' }: { searchQu
 
       {/* Action Buttons */}
       <View style={styles.actions}>
-        <TouchableOpacity
-          style={[styles.btn, { backgroundColor: '#10b981', width: '100%', justifyContent: 'center', marginBottom: 10 }]}
-          onPress={() => {
-            const firstVerse = upcomingVerses[0] || allVerses[0];
-            if (firstVerse) {
-              navigation.navigate('VerseOfTheDay', { verseId: firstVerse.id, period: 'Morning' });
-            } else {
-              Alert.alert('No verses', 'Upload verses first to test the UI');
-            }
-          }}
-        >
-          <Eye size={16} color="#fff" />
-          <Text style={styles.btnText}>Test Verse UI Screen</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 10, width: '100%', marginBottom: 10 }}>
+          <TouchableOpacity
+            style={[styles.btn, { backgroundColor: '#10b981', flex: 1, justifyContent: 'center' }]}
+            onPress={() => {
+              const firstVerse = upcomingVerses[0] || allVerses[0];
+              if (firstVerse) {
+                navigation.navigate('VerseOfTheDay', { verseId: firstVerse.id, period: 'Morning' });
+              } else {
+                Alert.alert('No verses', 'Upload verses first to test the UI');
+              }
+            }}
+          >
+            <Eye size={16} color="#fff" />
+            <Text style={styles.btnText}>Test Verse UI</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.btn, { backgroundColor: '#0284c7', flex: 1, justifyContent: 'center' }]}
+            onPress={handleTestNotifications}
+          >
+            <Bell size={16} color="#fff" />
+            <Text style={styles.btnText}>Test Dual Push</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={{ flexDirection: 'row', gap: 10, width: '100%', marginBottom: 10 }}>
+          <TouchableOpacity
+            style={[styles.btn, { backgroundColor: '#6366f1', flex: 1, justifyContent: 'center' }]}
+            onPress={handleLoadBundledVerses}
+            disabled={isUploading}
+          >
+            <Database size={16} color="#fff" />
+            <Text style={styles.btnText}>Seed 5,863 Verses</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.btn, { backgroundColor: '#8b5cf6', flex: 1, justifyContent: 'center' }]}
+            onPress={handleFetchUnsplashBackgrounds}
+            disabled={isUpdating}
+          >
+            <ImageIcon size={16} color="#fff" />
+            <Text style={styles.btnText}>Fetch Images</Text>
+          </TouchableOpacity>
+        </View>
 
         <View style={{ flexDirection: 'row', gap: 10, width: '100%' }}>
           <TouchableOpacity

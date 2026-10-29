@@ -110,21 +110,22 @@ class VerseNotificationService {
   }
 
   /**
-   * Builds a stable, unique notification identifier for a given date + period slot.
+   * Builds a stable, unique notification identifier for a given date + period slot + language.
    * This ensures that even if syncAndSchedule is called multiple times, the same
    * slot is never duplicated — the OS simply overwrites/ignores the same identifier.
-   * Format: daily_verse_YYYY-MM-DD_Morning (e.g. daily_verse_2024-09-23_Morning)
+   * Format: daily_verse_YYYY-MM-DD_Morning_en or daily_verse_YYYY-MM-DD_Morning_te
    */
-  private getNotifId(date: Date, periodLabel: string): string {
+  private getNotifId(date: Date, periodLabel: string, lang: 'en' | 'te' = 'en'): string {
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, '0');
     const d = String(date.getDate()).padStart(2, '0');
-    return `${NOTIF_ID_PREFIX}${y}-${m}-${d}_${periodLabel}`;
+    return `${NOTIF_ID_PREFIX}${y}-${m}-${d}_${periodLabel}_${lang}`;
   }
 
   /**
    * Combined function to fetch missing verses and schedule them perfectly.
    * Protected by an isSyncing mutex to prevent double-execution on auth re-renders.
+   * Schedules two distinct notifications simultaneously for each time-slot: English and Telugu.
    */
   async syncAndSchedule() {
     // ── Mutex guard: skip if already running ──────────────────────────────────
@@ -136,10 +137,10 @@ class VerseNotificationService {
 
     try {
       const times = [
-        { hour: 8,  title: '✝️ Good Morning',   label: 'Morning'   },
-        { hour: 13, title: '✝️ Good Afternoon',  label: 'Afternoon' },
-        { hour: 18, title: '✝️ Good Evening',    label: 'Evening'   },
-        { hour: 21, title: '✝️ Good Night',      label: 'Night'     },
+        { hour: 8,  label: 'Morning',   titleEn: '✝️ Good Morning',   titleTe: '✝️ శుభోదయం'     },
+        { hour: 13, label: 'Afternoon', titleEn: '✝️ Good Afternoon', titleTe: '✝️ శుభ మధ్యాహ్నం' },
+        { hour: 18, label: 'Evening',   titleEn: '✝️ Good Evening',   titleTe: '✝️ శుభ సాయంత్రం' },
+        { hour: 21, label: 'Night',     titleEn: '✝️ Good Night',     titleTe: '✝️ శుభరాత్రి'     },
       ];
 
       // 1. Calculate the next 7 days we need to cover
@@ -151,7 +152,7 @@ class VerseNotificationService {
         targetDates.push(d);
       }
 
-      // 2. Build the full set of stable IDs we expect to have scheduled
+      // 2. Build the full set of stable IDs we expect to have scheduled (both EN and TE)
       const now = new Date();
       const expectedIds = new Set<string>();
       for (const d of targetDates) {
@@ -159,7 +160,8 @@ class VerseNotificationService {
           const scheduleDate = new Date(d);
           scheduleDate.setHours(time.hour, 0, 0, 0);
           if (scheduleDate > now) {
-            expectedIds.add(this.getNotifId(d, time.label));
+            expectedIds.add(this.getNotifId(d, time.label, 'en'));
+            expectedIds.add(this.getNotifId(d, time.label, 'te'));
           }
         }
       }
@@ -167,10 +169,8 @@ class VerseNotificationService {
       // 3. Cancel ALL legacy, duplicate, or stale scheduled verse notifications.
       // Cancels:
       //  - Old notifications with random UUIDs (not in expectedIds)
-      //  - Stale notifications from past days or old schedules
+      //  - Stale notifications from past days or old single-language schedules
       //  - Any duplicate notification entries for the same slot
-      // NOTE: We cancel based on identifier prefix (daily_verse_) and expectedIds set,
-      // rather than title emoji — more robust against title format changes.
       const allScheduled = await Notifications.getAllScheduledNotificationsAsync();
       const seenIds = new Set<string>();
       for (const n of allScheduled) {
@@ -218,11 +218,11 @@ class VerseNotificationService {
         this.getIndicesForDate(d, totalVerses).forEach(idx => requiredIndices.add(idx));
       }
 
-      // 8. Load cache and fetch any missing verse data
+      // 8. Load cache and fetch any missing verse data or verses missing backgroundUrl
       const cacheStr = await AsyncStorage.getItem(VERSES_CACHE_KEY);
       const cache: Record<number, DailyVerse> = cacheStr ? JSON.parse(cacheStr) : {};
 
-      const missingIndices = Array.from(requiredIndices).filter(idx => !cache[idx]);
+      const missingIndices = Array.from(requiredIndices).filter(idx => !cache[idx] || !cache[idx].backgroundUrl);
       if (missingIndices.length > 0) {
         console.log(`[VerseNotificationService] Fetching ${missingIndices.length} missing verses from Firestore...`);
         for (let i = 0; i < missingIndices.length; i += 10) {
@@ -238,7 +238,7 @@ class VerseNotificationService {
         await AsyncStorage.setItem(VERSES_CACHE_KEY, JSON.stringify(cache));
       }
 
-      // 9. Schedule only the missing notification slots using stable identifiers
+      // 9. Schedule only the missing notification slots using stable identifiers (both EN and TE)
       let scheduledCount = 0;
 
       for (const d of targetDates) {
@@ -246,10 +246,8 @@ class VerseNotificationService {
 
         for (let i = 0; i < 4; i++) {
           const time = times[i];
-          const notifId = this.getNotifId(d, time.label);
-
-          // Skip if this slot is already scheduled
-          if (!missingIds.includes(notifId)) continue;
+          const notifIdEn = this.getNotifId(d, time.label, 'en');
+          const notifIdTe = this.getNotifId(d, time.label, 'te');
 
           const verseIndex = dailyIndices[i];
           const verse = cache[verseIndex];
@@ -263,25 +261,56 @@ class VerseNotificationService {
             continue;
           }
 
-          await Notifications.scheduleNotificationAsync({
-            identifier: notifId, // ← stable ID prevents duplicates
-            content: {
-              title: time.title,
-              body: `"${verse.verseEn}"\n${verse.referenceEn}`,
-              sound: true,
-              data: {
-                type: 'daily_verse',
-                verseId: verse.id,
-                period: time.label,
+          // 1. Schedule English Notification
+          if (missingIds.includes(notifIdEn)) {
+            await Notifications.scheduleNotificationAsync({
+              identifier: notifIdEn,
+              content: {
+                title: time.titleEn,
+                body: `"${verse.verseEn}"\n— ${verse.referenceEn}`,
+                sound: true,
+                data: {
+                  type: 'daily_verse',
+                  verseId: verse.id,
+                  period: time.label,
+                  lang: 'en',
+                },
               },
-            },
-            trigger: {
-              type: Notifications.SchedulableTriggerInputTypes.DATE,
-              date: scheduleDate,
-              channelId: 'daily_verse', // dedicated channel — independent of other app notifications
-            },
-          });
-          scheduledCount++;
+              trigger: {
+                type: Notifications.SchedulableTriggerInputTypes.DATE,
+                date: scheduleDate,
+                channelId: 'daily_verse',
+              },
+            });
+            scheduledCount++;
+          }
+
+          // 2. Schedule Telugu Notification (At the same scheduled time)
+          if (missingIds.includes(notifIdTe)) {
+            const teVerseText = verse.verseTe || verse.verseEn;
+            const teRefText = verse.referenceTe || verse.referenceEn;
+
+            await Notifications.scheduleNotificationAsync({
+              identifier: notifIdTe,
+              content: {
+                title: time.titleTe,
+                body: `"${teVerseText}"\n— ${teRefText}`,
+                sound: true,
+                data: {
+                  type: 'daily_verse',
+                  verseId: verse.id,
+                  period: time.label,
+                  lang: 'te',
+                },
+              },
+              trigger: {
+                type: Notifications.SchedulableTriggerInputTypes.DATE,
+                date: scheduleDate,
+                channelId: 'daily_verse',
+              },
+            });
+            scheduledCount++;
+          }
         }
       }
 
@@ -341,14 +370,22 @@ class VerseNotificationService {
 
       if (cacheStr) {
         const cache: Record<number, DailyVerse> = JSON.parse(cacheStr);
-        if (cache[targetIndex]) return cache[targetIndex];
+        if (cache[targetIndex] && cache[targetIndex].backgroundUrl) return cache[targetIndex];
       }
 
       // 2. Fallback: fetch from Firestore by index
       const snapshot = await firestore().collection('daily_verses').where('index', '==', targetIndex).limit(1).get();
       if (!snapshot.empty) {
         const doc = snapshot.docs[0];
-        return { ...doc.data(), id: doc.id } as DailyVerse;
+        const vData = { ...doc.data(), id: doc.id } as DailyVerse;
+        if (cacheStr) {
+          try {
+            const cache = JSON.parse(cacheStr);
+            cache[targetIndex] = vData;
+            await AsyncStorage.setItem(VERSES_CACHE_KEY, JSON.stringify(cache));
+          } catch (_) {}
+        }
+        return vData;
       }
     } catch (e) {
       console.log('[VerseNotificationService] Error in getVerseForDate:', e);
@@ -405,7 +442,7 @@ class VerseNotificationService {
       
       const missingIndices = forceRefresh 
         ? Array.from(requiredIndices) 
-        : Array.from(requiredIndices).filter(idx => !cache[idx]);
+        : Array.from(requiredIndices).filter(idx => !cache[idx] || !cache[idx].backgroundUrl);
 
       if (missingIndices.length > 0) {
         const batchPromises = [];
@@ -458,6 +495,76 @@ class VerseNotificationService {
     } catch (e) {
       console.error('[VerseNotificationService] Error in getTodayVerses:', e);
       return [];
+    }
+  }
+
+  /**
+   * Immediately fires a pair of test push notifications (1 in English, 1 in Telugu)
+   * so admins and developers can verify simultaneous bilingual notification delivery.
+   */
+  async triggerTestPair(verse?: DailyVerse): Promise<boolean> {
+    try {
+      let targetVerse = verse;
+      if (!targetVerse) {
+        const todayVerses = await this.getTodayVerses(false);
+        targetVerse = todayVerses[0];
+      }
+      if (!targetVerse) {
+        // Fallback verse if database is initializing
+        targetVerse = {
+          id: 'test_verse',
+          verseEn: 'The Lord is my shepherd; I shall not want.',
+          referenceEn: 'Psalms 23:1',
+          verseTe: 'యెహోవా నా కాపరి నాకు లేమి కలుగదు.',
+          referenceTe: 'కీర్తనలు 23:1',
+        };
+      }
+
+      const period = 'Morning';
+      const titleEn = '✝️ Good Morning';
+      const titleTe = '✝️ శుభోదయం';
+
+      // 1. Immediate English Notification
+      await Notifications.scheduleNotificationAsync({
+        identifier: `${NOTIF_ID_PREFIX}test_${Date.now()}_en`,
+        content: {
+          title: titleEn,
+          body: `"${targetVerse.verseEn}"\n— ${targetVerse.referenceEn}`,
+          sound: true,
+          data: {
+            type: 'daily_verse',
+            verseId: targetVerse.id,
+            period,
+            lang: 'en',
+          },
+        },
+        trigger: null,
+      });
+
+      // 2. Immediate Telugu Notification (Fired at the same time)
+      const teVerse = targetVerse.verseTe || targetVerse.verseEn;
+      const teRef = targetVerse.referenceTe || targetVerse.referenceEn;
+
+      await Notifications.scheduleNotificationAsync({
+        identifier: `${NOTIF_ID_PREFIX}test_${Date.now()}_te`,
+        content: {
+          title: titleTe,
+          body: `"${teVerse}"\n— ${teRef}`,
+          sound: true,
+          data: {
+            type: 'daily_verse',
+            verseId: targetVerse.id,
+            period,
+            lang: 'te',
+          },
+        },
+        trigger: null,
+      });
+
+      return true;
+    } catch (e) {
+      console.error('[VerseNotificationService] Error triggering test notification pair:', e);
+      return false;
     }
   }
 

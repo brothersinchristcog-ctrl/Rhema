@@ -516,10 +516,12 @@ export default function AdminSermonEditor() {
       if (payload.status === 'Published') {
         try {
           const churchId = await FirestoreService.getChurchId();
+          const todayIsoStr = toStandardDateString(new Date());
           await FirestoreService.createNotificationBroadcast({
             title: `🎧 New Sermon: ${form.titleEn}`,
             content: `New sermon "${form.titleEn}" preached on ${formatDateDisplay(form.date)} by ${form.pastor || 'Pastor'} is now available. Watch/listen now!`,
-            date: form.date,
+            date: todayIsoStr,
+            sermonDate: form.date,
             type: 'sermon',
             targetChurchId: churchId,
             sermonId: savedSermonId,

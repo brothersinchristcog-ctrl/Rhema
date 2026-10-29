@@ -935,8 +935,9 @@ async function handleBroadcastPushDispatch(data, churchIdParam, messageIdParam) 
         const targetQuizId = data.quizId || data.relatedId || (data.type === 'quiz' ? data.id : undefined);
         const notificationData = {
             type,
-            id: String(targetQuizId || messageIdParam || ''),
+            id: String(targetQuizId || data.sermonId || messageIdParam || ''),
             ...(targetQuizId ? { quizId: String(targetQuizId) } : {}),
+            ...(data.sermonId ? { sermonId: String(data.sermonId) } : {}),
             ...(data.screen ? { screen: String(data.screen) } : {}),
             ...(churchId ? { churchId: String(churchId) } : {}),
             ...(data.date ? { date: String(data.date) } : {}),

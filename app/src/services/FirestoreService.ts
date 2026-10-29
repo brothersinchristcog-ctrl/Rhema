@@ -1244,7 +1244,7 @@ class FirestoreService {
 
           const title = sermon.titleEn || sermon.title || 'New Sermon';
           const pastor = sermon.pastor || 'Pastor';
-          const preachedDate = sermon.date ? formatDateDisplay(sermon.date) : 'recently';
+          const preachedDate = sermon.date ? formatDateDisplay(sermon.date) : formatDateDisplay(todayStr);
 
           // 2. Broadcast with deterministic doc ID (sermon_${doc.id}) so it can NEVER duplicate
           const bcastCol = await this.getCollection('broadcasts');
@@ -1254,7 +1254,8 @@ class FirestoreService {
             await bcastRef.set({
               title: `🎧 New Sermon: ${title}`,
               content: `New sermon "${title}" preached on ${preachedDate} by ${pastor} is now available. Watch/listen now!`,
-              date: sermon.date || todayStr,
+              date: todayStr,
+              sermonDate: sermon.date || todayStr,
               type: 'sermon',
               targetChurchId: churchId,
               sermonId: doc.id,
@@ -1308,6 +1309,23 @@ class FirestoreService {
     } catch (error) {
       console.error('Error in getSermons:', error);
       return [];
+    }
+  }
+
+  async getSermonById(id: string): Promise<Sermon | null> {
+    if (!id) return null;
+    const cleanId = String(id).replace(/^sermon_/, '').trim();
+    if (!cleanId) return null;
+    try {
+      const col = await this.getCollection('sermons');
+      const docSnap = await col.doc(cleanId).get();
+      if (docSnap && docSnap.exists) {
+        return { id: docSnap.id, ...docSnap.data() } as Sermon;
+      }
+      return null;
+    } catch (err) {
+      console.warn('[FirestoreService] getSermonById error:', err);
+      return null;
     }
   }
 

@@ -9,25 +9,23 @@
 export const formatDateDisplay = (dateString: string | null | undefined): string => {
   if (!dateString) return '';
   
-  // Handle cases where time is appended (e.g. "YYYY-MM-DD • 10:00 AM" or "YYYY-MM-DD   10:00 AM")
+  // Handle cases where time is appended (e.g. "YYYY-MM-DD • 10:00 AM" or "DD-MM-YYYY • 10:00 AM")
   let separator = '';
   if (dateString.includes(' • ')) separator = ' • ';
   else if (dateString.includes('   ')) separator = '   ';
   else if (dateString.includes(' ? ')) separator = ' ? ';
 
   const dateParts = separator ? dateString.split(separator) : [dateString];
-  const actualDate = dateParts[0].split('T')[0].trim();
+  const actualDate = dateParts[0]?.split('T')[0]?.trim() || '';
+  const timeSuffix = dateParts.length > 1 ? ` • ${dateParts.slice(1).join(separator).trim()}` : '';
   
   const parts = actualDate.split('-');
-  if (parts.length === 3 && parts[0].length === 4) {
+  if (parts.length === 3 && parts[0]?.length === 4) {
     const formattedDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
-    if (dateParts.length > 1) {
-      return `${formattedDate} • ${dateParts.slice(1).join(separator)}`;
-    }
-    return formattedDate;
+    return `${formattedDate}${timeSuffix}`;
   }
   
-  return actualDate;
+  return `${actualDate}${timeSuffix}`;
 };
 
 /**

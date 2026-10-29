@@ -580,6 +580,13 @@ function Navigation() {
               verseId: data.verseId, 
               period: data.period 
             });
+          } else if (type === 'sermon' || data.screen === 'SermonVideo') {
+            const sId = data.sermonId || data.relatedId || (data.id ? String(data.id).replace(/^sermon_/, '') : null);
+            if (sId) {
+              navigationRef.navigate('SermonVideo', { sermonId: sId });
+            } else {
+              navigationRef.navigate('Sermons');
+            }
           } else if (type === 'quiz' || type === 'quiz_scheduled' || type === 'bible_quiz' || data.quizId || data.screen === 'BibleQuizDetail') {
             if (quizTargetId) {
               navigationRef.navigate('BibleQuizDetail', {

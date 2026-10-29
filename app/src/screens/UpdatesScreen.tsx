@@ -299,19 +299,33 @@ export default function UpdatesScreen({ navigation, route }: any) {
               color = '#6366f1';
               resolvedType = 'sermon';
             }
-            let dateStr = data.date || new Date().toISOString().split('T')[0];
+            let dateStr = '';
             
-            // Try to extract exact time if available
+            // Extract and format exact publication date & time from createdAt
             if (data.createdAt && typeof data.createdAt.toDate === 'function') {
               const dt = data.createdAt.toDate();
+              const y = dt.getFullYear();
+              const m = String(dt.getMonth() + 1).padStart(2, '0');
+              const d = String(dt.getDate()).padStart(2, '0');
+              const dFormatted = `${d}-${m}-${y}`;
               const timeStr = dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-              dateStr = `${dateStr} • ${timeStr}`;
+              dateStr = `${dFormatted} • ${timeStr}`;
             } else if (typeof data.createdAt === 'number' || typeof data.createdAt === 'string') {
               const dt = new Date(data.createdAt);
               if (!isNaN(dt.getTime())) {
+                const y = dt.getFullYear();
+                const m = String(dt.getMonth() + 1).padStart(2, '0');
+                const d = String(dt.getDate()).padStart(2, '0');
+                const dFormatted = `${d}-${m}-${y}`;
                 const timeStr = dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-                dateStr = `${dateStr} • ${timeStr}`;
+                dateStr = `${dFormatted} • ${timeStr}`;
               }
+            }
+
+            // Fallback if createdAt timestamp is not present: format raw date
+            if (!dateStr) {
+              const rawDate = data.date || new Date().toISOString().split('T')[0];
+              dateStr = formatDateDisplay(rawDate);
             }
 
             return {
@@ -324,6 +338,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
               color: color,
               url: data.url || '',
               imageUrl: data.imageUrl || null,
+              sermonId: data.sermonId || data.relatedId || (resolvedType === 'sermon' ? (data.id?.replace(/^sermon_/, '') || doc.id.replace(/^sermon_/, '')) : null),
               relatedId: data.quizId || data.relatedId || null,
               churchId: data.churchId || null,
               rawDate: data.createdAt?.toMillis?.() || (typeof data.createdAt === 'number' ? data.createdAt : 0)
@@ -511,7 +526,8 @@ export default function UpdatesScreen({ navigation, route }: any) {
                   } else if (update.type === 'promise') {
                     navigation.navigate('Tabs', { screen: 'Promise' });
                   } else if (update.type === 'sermon') {
-                    navigation.navigate('Sermons');
+                    const sId = update.sermonId || update.relatedId || update.id?.replace(/^sermon_/, '');
+                    navigation.navigate('SermonVideo', { sermonId: sId });
                   } else if (
                     update.type === 'quiz' ||
                     update.type === 'quiz_scheduled' ||
@@ -727,6 +743,19 @@ export default function UpdatesScreen({ navigation, route }: any) {
                     }}
                   >
                     <Text style={styles.joinLiveBtnTxt}>📺 {t('updates.joinLiveStream')}</Text>
+                  </TouchableOpacity>
+                )}
+
+                {selectedUpdate?.type === 'sermon' && (
+                  <TouchableOpacity
+                    style={[styles.joinLiveBtn, { backgroundColor: '#6366f1' }]}
+                    onPress={() => {
+                      const sId = selectedUpdate?.sermonId || selectedUpdate?.relatedId || selectedUpdate?.id?.replace(/^sermon_/, '');
+                      setSelectedUpdate(null);
+                      navigation.navigate('SermonVideo', { sermonId: sId });
+                    }}
+                  >
+                    <Text style={styles.joinLiveBtnTxt}>🎧 Watch Sermon Video</Text>
                   </TouchableOpacity>
                 )}
 
