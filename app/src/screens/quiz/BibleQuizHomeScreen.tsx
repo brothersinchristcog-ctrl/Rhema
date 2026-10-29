@@ -31,6 +31,7 @@ import {
 import { useQuizLanguage } from '../../context/QuizLanguageContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useChurch } from '../../context/ChurchContext';
+import { RHEMA_CHURCH_ID } from '../../constants/ChurchConfig';
 import { useAuth } from '../../context/AuthContext';
 import { getQuizStrings } from '../../constants/BibleQuizTranslations';
 import { QuizService } from '../../services/QuizService';
@@ -50,7 +51,7 @@ export default function BibleQuizHomeScreen() {
   const [refreshing, setRefreshing] = useState<boolean>(false);
 
   const ui = getQuizStrings(quizLanguage);
-  const churchId = activeChurch?.id || 'global';
+  const churchId = activeChurch?.id || RHEMA_CHURCH_ID;
 
   useFocusEffect(
     useCallback(() => {

@@ -1,6 +1,8 @@
 import { firestore, FieldValue } from './firebaseConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RHEMA_CHURCH_ID } from '../constants/ChurchConfig';
+import * as Notifications from 'expo-notifications';
+import { isSermonVisibleToMembers, formatDateDisplay } from '../utils/DateUtils';
 
 // ─── Data Interfaces ─────────────────────────────────────────────────────────
 
@@ -172,6 +174,17 @@ export interface Sermon {
   audioUrl?: string;
   thumbnailUrl?: string;
   imageUrl?: string;
+  notesUrl?: string;
+  notesFileName?: string;
+  notesFileType?: string;
+  notesText?: string;
+  notesFileSize?: number;
+  titleEn?: string;
+  scheduledDate?: string;
+  scheduledTime?: string;
+  scheduledPublishAt?: string;
+  notificationSent?: boolean;
+  notifyMembers?: boolean;
 }
 
 export interface ChurchExpense {
@@ -732,34 +745,100 @@ class FirestoreService {
 
   async getGlobalUser(uid: string): Promise<GlobalUser | null> {
     try {
-      const targetChurchId = await this.getChurchId() || RHEMA_CHURCH_ID;
-      // 1. Direct check in Rhema Global Ministries member profile (instant, zero index latency)
-      const directDoc = await firestore().collection('Rhema Church').doc(targetChurchId).collection('members').doc(uid).get();
-      if (directDoc.exists()) {
-        const data = directDoc.data();
-        if (!data?.status || data?.status === 'Active') {
-          return { uid: directDoc.id, primaryChurchId: targetChurchId, ...data } as GlobalUser;
+      const targetChurchId = (await this.getChurchId()) || RHEMA_CHURCH_ID;
+
+      // 1. Direct check in target church member profile (instant, zero index required)
+      try {
+        const directDoc = await firestore()
+          .collection('Rhema Church')
+          .doc(targetChurchId)
+          .collection('members')
+          .doc(uid)
+          .get();
+        if (directDoc.exists()) {
+          const data = directDoc.data();
+          if (!data?.status || data?.status === 'Active') {
+            return { uid: directDoc.id, primaryChurchId: targetChurchId, ...data } as GlobalUser;
+          }
+        }
+      } catch (err) {
+        // Continue to fallback checks
+      }
+
+      // 2. Direct check in default church if target was different
+      if (targetChurchId !== RHEMA_CHURCH_ID) {
+        try {
+          const defaultDoc = await firestore()
+            .collection('Rhema Church')
+            .doc(RHEMA_CHURCH_ID)
+            .collection('members')
+            .doc(uid)
+            .get();
+          if (defaultDoc.exists()) {
+            const data = defaultDoc.data();
+            if (!data?.status || data?.status === 'Active') {
+              return { uid: defaultDoc.id, primaryChurchId: RHEMA_CHURCH_ID, ...data } as GlobalUser;
+            }
+          }
+        } catch (err) {
+          // Continue
         }
       }
 
-      // 2. Fallback across all memberships
-      const snap = await firestore().collectionGroup('members').where('id', '==', uid).get();
-      if (!snap.empty) {
-        let activeDoc = snap.docs.find(d => {
-          const data = d.data();
-          return !data.status || data.status === 'Active';
-        });
-
-        if (!activeDoc) {
-          return null;
+      // 3. Direct check across all churches in 'Rhema Church' collection (no composite/collectionGroup index required)
+      try {
+        const churchesSnap = await firestore().collection('Rhema Church').get();
+        for (const cDoc of churchesSnap.docs) {
+          if (cDoc.id === targetChurchId || cDoc.id === RHEMA_CHURCH_ID) continue;
+          const mDoc = await firestore()
+            .collection('Rhema Church')
+            .doc(cDoc.id)
+            .collection('members')
+            .doc(uid)
+            .get();
+          if (mDoc.exists()) {
+            const data = mDoc.data();
+            if (!data?.status || data?.status === 'Active') {
+              return { uid: mDoc.id, primaryChurchId: cDoc.id, ...data } as GlobalUser;
+            }
+          }
         }
-
-        const churchId = activeDoc.ref.parent.parent?.id || targetChurchId;
-        return { uid: activeDoc.id, primaryChurchId: churchId, ...activeDoc.data() } as GlobalUser;
+      } catch (err) {
+        // Continue
       }
+
+      // 4. Check root 'users' collection directly if present
+      try {
+        const userDoc = await firestore().collection('users').doc(uid).get();
+        if (userDoc.exists()) {
+          const data = userDoc.data();
+          return { uid: userDoc.id, primaryChurchId: data?.primaryChurchId || targetChurchId, ...data } as GlobalUser;
+        }
+      } catch (err) {
+        // Continue
+      }
+
+      // 5. Fallback across all memberships via collectionGroup (gracefully handled without triggering red LogBox error)
+      try {
+        const snap = await firestore().collectionGroup('members').where('id', '==', uid).get();
+        if (!snap.empty) {
+          let activeDoc = snap.docs.find(d => {
+            const data = d.data();
+            return !data.status || data.status === 'Active';
+          });
+
+          if (activeDoc) {
+            const churchId = activeDoc.ref.parent.parent?.id || targetChurchId;
+            return { uid: activeDoc.id, primaryChurchId: churchId, ...activeDoc.data() } as GlobalUser;
+          }
+        }
+      } catch (cgError) {
+        console.warn('ℹ️ [FirestoreService] collectionGroup("members") search skipped or index pending:', cgError && cgError.message ? cgError.message : cgError);
+      }
+
       return null;
     } catch (error) {
-      console.error('Error fetching global user from collectionGroup:', error);
+      console.warn('⚠️ [FirestoreService] Error fetching global user:', error && error.message ? error.message : error);
       return null;
     }
   }
@@ -1121,7 +1200,94 @@ class FirestoreService {
     }
   }
 
+  /**
+   * 🎙️ Auto-Publishes any sermons with status 'Scheduled' whose publish date & time has arrived.
+   * 
+   * When due:
+   * 1. Updates sermon status to 'Published' and sets notificationSent: true in Firestore.
+   * 2. Adds an entry to 'broadcasts' collection so all church members receive push notifications
+   *    and see the update in the Announcements/Updates tab.
+   * 3. Fires a local notification on device if expo-notifications is available.
+   * 
+   * Returns the count of sermons published.
+   */
+  async autoPublishDueScheduledSermons(): Promise<number> {
+    try {
+      const col = await this.getCollection('sermons');
+      const snap = await col.where('status', '==', 'Scheduled').get();
+      if (!snap || snap.empty) return 0;
+
+      const churchId = await this.getChurchId();
+      let publishedCount = 0;
+      const now = new Date();
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+      for (const doc of snap.docs) {
+        const sermon = doc.data() as Sermon;
+        // Check if sermon is due for publishing using our standard visibility helper
+        const isDue = isSermonVisibleToMembers({ ...sermon, status: 'Scheduled' });
+        if (!isDue) continue;
+
+        try {
+          // 1. Atomically update sermon to Published and notificationSent: true
+          await doc.ref.update({
+            status: 'Published',
+            notificationSent: true,
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+
+          const title = sermon.titleEn || sermon.title || 'New Sermon';
+          const pastor = sermon.pastor || 'Pastor';
+          const preachedDate = sermon.date ? formatDateDisplay(sermon.date) : 'recently';
+
+          // 2. Broadcast to church members (this triggers FCM push via sendRhemaBroadcastPush Cloud Function)
+          await this.createNotificationBroadcast({
+            title: `🎧 New Sermon: ${title}`,
+            content: `New sermon "${title}" preached on ${preachedDate} by ${pastor} is now available. Watch/listen now!`,
+            date: sermon.date || todayStr,
+            type: 'sermon',
+            targetChurchId: churchId,
+            sermonId: doc.id,
+            imageUrl: sermon.imageUrl || sermon.thumbnailUrl || '',
+            screen: 'SermonVideo',
+          });
+
+          // 3. Local notification trigger for current device
+          try {
+            await Notifications.scheduleNotificationAsync({
+              identifier: `sermon_pub_${doc.id}`,
+              content: {
+                title: `🎧 New Sermon: ${title}`,
+                body: `New sermon "${title}" preached by ${pastor} is now available. Tap to watch!`,
+                sound: true,
+                data: {
+                  type: 'sermon',
+                  sermonId: doc.id,
+                  screen: 'SermonVideo',
+                },
+              },
+              trigger: null,
+            });
+          } catch (localNotifErr) {
+            console.warn('[FirestoreService] Local notification trigger error:', localNotifErr);
+          }
+
+          publishedCount++;
+          console.log(`[FirestoreService] ✅ Auto-published scheduled sermon: ${doc.id} ("${title}")`);
+        } catch (updateErr) {
+          console.warn(`[FirestoreService] Failed to auto-publish sermon ${doc.id}:`, updateErr);
+        }
+      }
+
+      return publishedCount;
+    } catch (err) {
+      console.warn('[FirestoreService] autoPublishDueScheduledSermons error:', err);
+      return 0;
+    }
+  }
+
   async getSermons(limit = 50): Promise<Sermon[]> {
+    this.autoPublishDueScheduledSermons().catch(() => {});
     try {
       const col = await this.getCollection('sermons');
       let snapshot;
@@ -1154,6 +1320,7 @@ class FirestoreService {
   }
 
   async getLatestSermon(): Promise<Sermon | null> {
+    this.autoPublishDueScheduledSermons().catch(() => {});
     try {
       const col = await this.getCollection('sermons');
       let snapshot;
@@ -1172,11 +1339,7 @@ class FirestoreService {
       const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
       const sermons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Sermon));
-      const visible = sermons.filter(s => {
-        if (s.status === 'Draft') return false;
-        if (s.status === 'Scheduled' && s.date && s.date > todayStr) return false;
-        return true;
-      });
+      const visible = sermons.filter(s => isSermonVisibleToMembers(s));
 
       if (visible.length === 0) return null;
 
@@ -1214,11 +1377,7 @@ class FirestoreService {
           const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
           const sermons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Sermon));
-          const visible = sermons.filter(s => {
-            if (s.status === 'Draft') return false;
-            if (s.status === 'Scheduled' && s.date && s.date > todayStr) return false;
-            return true;
-          });
+          const visible = sermons.filter(s => isSermonVisibleToMembers(s));
 
           if (visible.length === 0) {
             callback(null);

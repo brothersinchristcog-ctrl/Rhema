@@ -29,6 +29,7 @@ import { AdminTabContext } from '../../context/AdminTabContext';
 
 import FirestoreService, { Sermon } from '../../services/FirestoreService';
 import { Linking } from 'react-native';
+import { formatSermonDuration, formatDateDisplay } from '../../utils/DateUtils';
 
 const { width } = Dimensions.get('window');
 
@@ -163,7 +164,12 @@ export default function AdminSermonList() {
         {sermon.titleTelugu ? (
           <Text style={styles.siTe} numberOfLines={1}>{sermon.titleTelugu}</Text>
         ) : null}
-        <Text style={styles.siMeta}>{sermon.pastor} · {sermon.date} {sermon.duration ? `· ${sermon.duration}` : ''}</Text>
+        <Text style={styles.siMeta}>{sermon.pastor} · {formatDateDisplay(sermon.date)} {sermon.duration && formatSermonDuration(sermon.duration) ? `· ${formatSermonDuration(sermon.duration)}` : ''}</Text>
+        {sermon.status === 'Scheduled' && sermon.scheduledDate ? (
+          <Text style={styles.siSchedMeta}>
+            ⏰ Auto-publishes: {formatDateDisplay(sermon.scheduledDate)} {sermon.scheduledTime ? `at ${sermon.scheduledTime}` : ''}
+          </Text>
+        ) : null}
         
         <View style={styles.siFoot}>
           {sermon.categories ? (
@@ -446,6 +452,7 @@ const styles = StyleSheet.create({
   siTitle: { fontSize: 13, fontWeight: '800', color: '#1a2d5a' },
   siTe: { fontSize: 12, color: '#1a2d5a', fontStyle: 'italic', marginTop: 2, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif' },
   siMeta: { fontSize: 10, color: '#6B7280', marginTop: 6, fontWeight: '600' },
+  siSchedMeta: { fontSize: 10, color: '#B45309', marginTop: 3, fontWeight: '700' },
   siFoot: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10, alignItems: 'center' },
   
   badgeSeries: { backgroundColor: '#F9F6F0', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#E2DDD5' },

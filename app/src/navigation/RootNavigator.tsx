@@ -750,7 +750,7 @@ function Navigation() {
       {user ? (
         showAdminView ? (
           <>
-            <Stack.Screen name="AdminRoot" component={AdminNavigator} />
+            <Stack.Screen name="AdminRoot" component={AdminNavigator} options={{ gestureEnabled: false, headerBackButtonMenuEnabled: false }} />
             <Stack.Screen name="Subscription" component={SubscriptionScreen} />
             <Stack.Screen name="LockedFeature" component={LockedFeatureScreen} />
             <Stack.Screen name="EventDetail" component={renderPremium(PastorEventDetail)} />
@@ -780,7 +780,7 @@ function Navigation() {
           </>
         ) : onboardingComplete ? (
           <>
-            <Stack.Screen name="Tabs" component={TabNavigator} />
+            <Stack.Screen name="Tabs" component={TabNavigator} options={{ gestureEnabled: false, headerBackButtonMenuEnabled: false }} />
             <Stack.Screen name="LockedFeature" component={LockedFeatureScreen} />
             <Stack.Screen name="Celebration" component={renderPremium(CelebrationScreen)} />
             <Stack.Screen name="Attendance" component={renderPremium(AttendanceScreen)} />

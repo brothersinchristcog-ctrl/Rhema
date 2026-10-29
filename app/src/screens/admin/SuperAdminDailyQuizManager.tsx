@@ -45,6 +45,7 @@ import {
   getLocalizedDailyQuizTitle,
 } from '../../constants/DailyQuizTranslations';
 import { DailyBibleQuizBank } from '../../services/DailyBibleQuizBank';
+import { RHEMA_CHURCH_ID } from '../../constants/ChurchConfig';
 import { QuizService } from '../../services/QuizService';
 import { BibleQuiz } from '../../types/Quiz';
 
@@ -148,7 +149,7 @@ export default function SuperAdminDailyQuizManager({ searchQuery = '' }: { searc
         const d = new Date(today);
         d.setDate(today.getDate() + i);
         const dateStr = d.toISOString().split('T')[0];
-        const quiz = DailyBibleQuizBank.createDailyQuizEntity(dateStr, 'global');
+        const quiz = DailyBibleQuizBank.createDailyQuizEntity(dateStr, RHEMA_CHURCH_ID);
         list.push({ dateStr, quiz });
       }
 
@@ -195,7 +196,7 @@ export default function SuperAdminDailyQuizManager({ searchQuery = '' }: { searc
       try {
         const globalSnap = await firestore()
           .collection('Rhema Church')
-          .doc('global')
+          .doc(RHEMA_CHURCH_ID)
           .collection('bibleQuizzes')
           .limit(50)
           .get();
@@ -205,7 +206,7 @@ export default function SuperAdminDailyQuizManager({ searchQuery = '' }: { searc
           allQuizzes.push({
             ...data,
             id: doc.id,
-            churchId: 'global',
+            churchId: RHEMA_CHURCH_ID,
             churchName: 'Global Platform',
           });
         });

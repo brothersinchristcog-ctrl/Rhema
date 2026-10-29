@@ -37,6 +37,7 @@ import { QuizService } from '../../services/QuizService';
 import { BibleQuizBank } from '../../services/BibleQuizBank';
 import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
+import { RHEMA_CHURCH_ID } from '../../constants/ChurchConfig';
 import { useQuizLanguage } from '../../context/QuizLanguageContext';
 import { useTheme } from '../../context/ThemeContext';
 import {
@@ -361,7 +362,7 @@ export default function BibleQuizPlayerScreen() {
             user?.phoneNumber ||
             '',
           avatar: (member as any)?.avatar || '',
-          churchId: activeChurch?.id || quizMeta?.churchId || 'global',
+          churchId: activeChurch?.id || quizMeta?.churchId || RHEMA_CHURCH_ID,
         };
 
         const result = await QuizService.submitQuizAttempt(
@@ -461,7 +462,7 @@ export default function BibleQuizPlayerScreen() {
           id: `att_${Date.now()}`,
           quizId: `${category}_${difficulty}_L${level}`,
           quizTitle: quizMeta?.title || `${categoryDisplayName} - ${ui.level} ${level}`,
-          churchId: activeChurch?.id || 'global',
+          churchId: activeChurch?.id || RHEMA_CHURCH_ID,
           userId: user?.uid || 'guest_user',
           memberName:
             (member as any)?.name ||

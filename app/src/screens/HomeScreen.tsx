@@ -25,7 +25,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { formatDateDisplay } from '../utils/DateUtils';
+import { formatDateDisplay, formatSermonDuration } from '../utils/DateUtils';
 import { 
   Bell, 
   Hexagon,
@@ -2077,7 +2077,7 @@ export default function HomeScreen() {
                           onPress={() => {
                             handleGuestProtectedNavigation('DailyVideo', { 
                               youtubeId: promise?.youtubeId,
-                              videoTitle: promise?.videoTitle,
+                              videoTitle: promise?.videoTitle || (promise?.verseReferenceEn ? `${promise.verseReferenceEn} Devotional` : undefined),
                               pastor: promise?.pastor
                             });
                           }}
@@ -2495,7 +2495,7 @@ export default function HomeScreen() {
                 <Text style={styles.scMeta} numberOfLines={1}>
                   {latestSermon?.pastor || t('sermons.pastor')}
                   {latestSermon?.date ? ` • ${formatDateDisplay(latestSermon.date)}` : ''}
-                  {latestSermon?.duration ? ` • ${latestSermon.duration}` : ''}
+                  {latestSermon?.duration && formatSermonDuration(latestSermon.duration) ? ` • ${formatSermonDuration(latestSermon.duration)}` : ''}
                 </Text>
               </View>
               <View style={styles.playBtnCircle}>

@@ -1,5 +1,6 @@
 import { firestore } from './firebaseConfig';
 import { BibleQuiz, QuizDifficulty, QuizQuestion } from '../types/Quiz';
+import { RHEMA_CHURCH_ID } from '../constants/ChurchConfig';
 
 export interface DailyQuizDayItem {
   dateStr: string; // 'YYYY-MM-DD'
@@ -328,7 +329,7 @@ export class DailyBibleQuizBank {
   /**
    * Build complete BibleQuiz entity for a given date.
    */
-  static createDailyQuizEntity(dateStr: string, churchId: string = 'global'): BibleQuiz {
+  static createDailyQuizEntity(dateStr: string, churchId: string = RHEMA_CHURCH_ID): BibleQuiz {
     const questions = this.getQuestionsForDate(dateStr);
     const dateParts = dateStr.split('-');
     const formattedDate = dateParts.length === 3 ? `${dateParts[0]}-${dateParts[1]}-${dateParts[2]}` : dateStr;
@@ -385,11 +386,11 @@ export class DailyBibleQuizBank {
       const dateStr = current.toISOString().split('T')[0];
       lastDateStr = dateStr;
 
-      const entity = this.createDailyQuizEntity(dateStr, 'global');
+      const entity = this.createDailyQuizEntity(dateStr, RHEMA_CHURCH_ID);
 
       const globalDocRef = firestore()
         .collection('Rhema Church')
-        .doc('global')
+        .doc(RHEMA_CHURCH_ID)
         .collection(this.QUIZZES_COLLECTION)
         .doc(entity.id);
 
@@ -454,7 +455,7 @@ export class DailyBibleQuizBank {
       if (!snapshot || snapshot.empty) {
         snapshot = await firestore()
           .collection('Rhema Church')
-          .doc('global')
+          .doc(RHEMA_CHURCH_ID)
           .collection(this.QUIZZES_COLLECTION)
           .where('isDailyQuiz', '==', true)
           .get()
