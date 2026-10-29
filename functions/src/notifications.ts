@@ -283,10 +283,142 @@ export const pushPrayerRequestApproved = onDocumentUpdated('churches/{churchId}/
 });
 
 /**
+ * 🎙️ CHECK & AUTO-PUBLISH SCHEDULED SERMONS
+ * Checks if any sermon with status 'Scheduled' has reached its scheduledPublishAt
+ * or scheduledDate + scheduledTime. Automatically publishes the sermon, updates Firestore,
+ * and sends an FCM push notification to church members.
+ */
+export async function checkAndPublishScheduledSermons(sermonsRef: any, churchId: string, churchDocRef?: any) {
+  try {
+    const snap = await sermonsRef.where('status', '==', 'Scheduled').get();
+    if (!snap || snap.empty) return;
+
+    const nowIst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    const nowStr = `${nowIst.getFullYear()}-${String(nowIst.getMonth() + 1).padStart(2, '0')}-${String(nowIst.getDate()).padStart(2, '0')}`;
+    const nowTime = `${String(nowIst.getHours()).padStart(2, '0')}:${String(nowIst.getMinutes()).padStart(2, '0')}`;
+    const nowMillis = Date.now();
+
+    for (const doc of snap.docs) {
+      const sermon = doc.data();
+      if (sermon.notificationSent === true) continue;
+
+      let shouldPublish = false;
+
+      if (sermon.scheduledPublishAt) {
+        const pubTime = new Date(sermon.scheduledPublishAt).getTime();
+        if (!isNaN(pubTime) && pubTime <= nowMillis) {
+          shouldPublish = true;
+        }
+      } else if (sermon.scheduledDate) {
+        const sDate = sermon.scheduledDate;
+        let sTime24 = '00:00';
+        if (sermon.scheduledTime) {
+          const match = String(sermon.scheduledTime).match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+          if (match && match[1] && match[2]) {
+            let h = parseInt(match[1], 10);
+            const m = match[2];
+            const ampm = match[3]?.toUpperCase();
+            if (ampm === 'PM' && h < 12) h += 12;
+            if (ampm === 'AM' && h === 12) h = 0;
+            sTime24 = `${String(h).padStart(2, '0')}:${m}`;
+          }
+        }
+        if (sDate < nowStr || (sDate === nowStr && sTime24 <= nowTime)) {
+          shouldPublish = true;
+        }
+      } else if (sermon.date && sermon.date <= nowStr) {
+        shouldPublish = true;
+      }
+
+      if (shouldPublish) {
+        const sermonTitle = sermon.titleEn || sermon.title || 'New Sermon';
+        const pastorName = sermon.pastor || 'Pastor';
+        const pushTitle = `🎧 New Sermon: ${sermonTitle}`;
+        const pushBody = `New sermon "${sermonTitle}" preached on ${sermon.date || nowStr} by ${pastorName} is now available. Watch/listen now!`;
+
+        const payload = {
+          notification: { title: pushTitle, body: pushBody },
+          data: {
+            type: 'sermon',
+            sermonId: doc.id,
+            id: doc.id,
+            churchId: churchId,
+          },
+          topic: `church_${churchId}`,
+        };
+
+        const messaging = getMessaging();
+        await messaging.send(payload).catch((e: any) => console.error('Error sending Sermon Live notification', e));
+
+        const targetRef = churchDocRef || doc.ref.parent.parent;
+        if (targetRef) {
+          await targetRef.collection('broadcasts').add({
+            title: pushTitle,
+            content: pushBody,
+            type: 'sermon',
+            id: doc.id,
+            date: sermon.date || nowStr,
+            targetChurchId: churchId,
+            createdAt: FieldValue.serverTimestamp(),
+          }).catch(() => {});
+
+          await targetRef.collection('notifications').add({
+            title: pushTitle,
+            body: pushBody,
+            type: 'sermon',
+            id: doc.id,
+            churchId: churchId,
+            read: false,
+            createdAt: FieldValue.serverTimestamp(),
+          }).catch(() => {});
+        }
+
+        await doc.ref.update({
+          status: 'Published',
+          notificationSent: true,
+          updatedAt: FieldValue.serverTimestamp(),
+        }).catch(() => {});
+
+        console.log(`✅ Auto-published scheduled sermon: ${doc.id} (${sermonTitle}) for church ${churchId}`);
+      }
+    }
+  } catch (err) {
+    console.error(`Error in checkAndPublishScheduledSermons for church ${churchId}:`, err);
+  }
+}
+
+/**
  * ⏱ CHECK ONLINE MEETINGS (CRON JOB)
  * Cron Job: Runs every minute to check if any online meeting is starting now (or within 5 minutes)
  */
-export const monitorMeetingLive = onSchedule('* * * * *', async (event) => {
+/**
+ * 🎙️ AUTOMATED SCHEDULED SERMONS PUBLISHER & NOTIFIER (CRON JOB)
+ * Cloud Scheduler runs this every minute (Asia/Kolkata, region: asia-south1).
+ * Matches the architecture and region of automatedDailyPromise.
+ */
+export const publishScheduledSermons = onSchedule(
+  { schedule: '* * * * *', timeZone: 'Asia/Kolkata', region: 'asia-south1' },
+  async (event) => {
+    try {
+      const db = getFirestore();
+      console.log('⏰ [publishScheduledSermons] Checking for due scheduled sermons...');
+      
+      // 1. Check active Rhema Church collection
+      const rhemaChurchRef = db.collection('Rhema Church').doc('rhema');
+      await checkAndPublishScheduledSermons(rhemaChurchRef.collection('sermons'), 'rhema', rhemaChurchRef);
+
+      // 2. Check legacy churches collection
+      const churchesSnapshot = await db.collection('churches').get();
+      for (const churchDoc of churchesSnapshot.docs) {
+        await checkAndPublishScheduledSermons(churchDoc.ref.collection('sermons'), churchDoc.id, churchDoc.ref);
+      }
+    } catch (err) {
+      console.error('Error in publishScheduledSermons cron job:', err);
+    }
+  }
+);
+
+export const monitorMeetingLive = onSchedule({ schedule: '* * * * *', timeZone: 'Asia/Kolkata', region: 'asia-south1' }, async (event) => {
   const db = getFirestore();
   const now = new Date();
   const fiveMinsAgo = new Date(now.getTime() - 5 * 60 * 1000);
@@ -358,6 +490,13 @@ export const monitorMeetingLive = onSchedule('* * * * *', async (event) => {
         if (Object.keys(updates).length > 0) {
           await meetingDoc.ref.update(updates);
         }
+      }
+
+      // ─── 2.5 Check Scheduled Sermons for this church ───
+      try {
+        await checkAndPublishScheduledSermons(churchDoc.ref.collection('sermons'), churchId, churchDoc.ref);
+      } catch (sermonErr) {
+        console.error('Error checking scheduled sermons for church ' + churchId + ':', sermonErr);
       }
 
       // ─── 3. Check Scheduled Bible Quizzes (Release & Broadcast at exact scheduled time) ───
@@ -438,6 +577,14 @@ export const monitorMeetingLive = onSchedule('* * * * *', async (event) => {
           console.error(`Error checking scheduled quizzes for church ${churchId}:`, quizErr);
         }
       }
+    }
+
+    // ─── Check Scheduled Sermons for active Rhema Church collection ───
+    try {
+      const rhemaChurchRef = db.collection('Rhema Church').doc('rhema');
+      await checkAndPublishScheduledSermons(rhemaChurchRef.collection('sermons'), 'rhema', rhemaChurchRef);
+    } catch (schedSermonErr) {
+      console.warn('Error checking scheduled sermons for Rhema Church in monitorMeetingLive:', schedSermonErr);
     }
 
     // ─── 4. Check Super Admin Daily Bible Quiz Scheduled Notification ───
@@ -738,7 +885,7 @@ export async function sendDailyQuizNotificationInternal(force: boolean = false):
   let scheduleDocRef: any = null;
 
   try {
-    const globalDoc = await db.collection('churches').doc('global').collection('settings').doc('daily_quiz_schedule').get();
+    const globalDoc = await db.collection('Rhema Church').doc('rhema').collection('settings').doc('daily_quiz_schedule').get();
     if (globalDoc.exists) {
       dailyConfig = globalDoc.data();
       scheduleDocRef = globalDoc.ref;
@@ -781,7 +928,7 @@ export async function sendDailyQuizNotificationInternal(force: boolean = false):
     if (scheduleDocRef) {
       await scheduleDocRef.set(earlyLockPayload, { merge: true });
     } else {
-      await db.collection('churches').doc('global').collection('settings').doc('daily_quiz_schedule').set(earlyLockPayload, { merge: true });
+      await db.collection('Rhema Church').doc('rhema').collection('settings').doc('daily_quiz_schedule').set(earlyLockPayload, { merge: true });
     }
     await db.collection('settings').doc('daily_quiz_schedule').set(earlyLockPayload, { merge: true });
     console.log(`🔒 [DailyQuiz] Idempotency lock acquired for ${dStr}. Proceeding with delivery...`);
@@ -919,7 +1066,7 @@ export async function sendDailyQuizNotificationInternal(force: boolean = false):
     if (scheduleDocRef) {
       await scheduleDocRef.set(updatePayload, { merge: true });
     } else {
-      await db.collection('churches').doc('global').collection('settings').doc('daily_quiz_schedule').set(updatePayload, { merge: true });
+      await db.collection('Rhema Church').doc('rhema').collection('settings').doc('daily_quiz_schedule').set(updatePayload, { merge: true });
     }
     await db.collection('settings').doc('daily_quiz_schedule').set(updatePayload, { merge: true });
   } catch (recordErr) {
@@ -964,3 +1111,14 @@ export const triggerDailyQuizNotificationHttp = onRequest({ cors: true }, async 
   }
 });
 
+
+
+/**
+ * 🧪 HTTP endpoint to manually check and publish scheduled sermons
+ */
+export const triggerPublishScheduledSermonsHttp = onRequest({ cors: true }, async (req, res) => {
+  const db = getFirestore();
+  const rhemaChurchRef = db.collection('Rhema Church').doc('rhema');
+  await checkAndPublishScheduledSermons(rhemaChurchRef.collection('sermons'), 'rhema', rhemaChurchRef);
+  res.json({ success: true, message: 'Scheduled sermons check completed.' });
+});

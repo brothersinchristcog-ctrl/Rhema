@@ -181,9 +181,9 @@ export const notifyMembersV2 = onRequest(async (request, response) => {
 
 /**
  * ⏰ AUTOMATED DAILY PROMISE SCHEDULER
- * Scheduled to run every day at 07:00 AM IST (01:30 AM UTC)
+ * Scheduled to run every day at 05:00 AM IST (01:30 AM UTC)
  */
-export const automatedDailyPromise = onSchedule({ schedule: '0 7 * * *', timeZone: 'Asia/Kolkata', region: 'asia-south1' }, async (event) => {
+export const automatedDailyPromise = onSchedule({ schedule: '0 5 * * *', timeZone: 'Asia/Kolkata', region: 'asia-south1' }, async (event) => {
   try {
     console.log('⏰ Running automatedDailyPromise scheduler for all churches...');
     const db = getDb();
