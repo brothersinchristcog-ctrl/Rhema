@@ -52,6 +52,7 @@ import {
   Trash2
 } from 'lucide-react-native';
 import { CameraView, useCameraPermissions, type BarcodeScanningResult, type BarcodeType } from 'expo-camera';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import QRCode from 'react-native-qrcode-svg';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -2607,28 +2608,41 @@ export default function AttendanceScreen({ navigation, route }: any) {
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
 
       {/* ── Top Header ── */}
-      <View style={styles.header}>
-        <View style={styles.headerRow}>
-          <View style={{ flex: 1 }}>
-            {activeTab === 'Home' ? (
-              <>
-                <Text style={styles.greetingSub}>{greeting}</Text>
-                <Text style={styles.screenMainTitle} numberOfLines={1}>{memberName}</Text>
-              </>
-            ) : activeTab === 'My attendance' ? (
-              <Text style={styles.screenMainTitle}>My attendance</Text>
-            ) : (
-              <Text style={styles.screenMainTitle}>Events</Text>
-            )}
-          </View>
+      <View
+        style={[
+          styles.headerCardWrapper,
+          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 6 }
+        ]}
+      >
+        <LinearGradient 
+          colors={['#527C78', '#355B56']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.header}
+        >
+          <View style={styles.headerDecoCircle1} pointerEvents="none" />
+          <View style={styles.headerDecoCircle2} pointerEvents="none" />
+
           <TouchableOpacity 
             style={styles.backCircleBtn} 
             onPress={() => navigation.goBack()}
-            activeOpacity={0.7}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            activeOpacity={0.8}
           >
-            <ArrowLeft size={20} color="#0f172a" />
+            <ArrowLeft size={20} color="#355B56" />
           </TouchableOpacity>
-        </View>
+
+          <View style={styles.headerCenterTitleWrap} pointerEvents="none">
+            <Text style={styles.headerTitle} numberOfLines={1} maxFontSizeMultiplier={1.15}>
+              {activeTab === 'My attendance' ? 'My Attendance' : activeTab === 'Events' ? 'Events' : 'Attendance'}
+            </Text>
+            <View style={styles.headerTitleAccentBar} />
+          </View>
+
+          <View style={styles.headerRightIconBadge}>
+            <CheckCircle2 size={18} color="#355B56" />
+          </View>
+        </LinearGradient>
       </View>
 
       {/* ── Segmented Navigation Pill Bar: Home | My attendance | Events ── */}
@@ -4095,10 +4109,69 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FAF7F2',
   },
+  headerCardWrapper: {
+    paddingHorizontal: 16,
+    paddingBottom: 4,
+  },
   header: {
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 8 : 48,
-    paddingBottom: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderRadius: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    overflow: 'hidden',
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: 'rgba(228, 238, 234, 0.25)',
+  },
+  headerDecoCircle1: {
+    position: 'absolute',
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    backgroundColor: 'rgba(228, 238, 234, 0.10)',
+    top: -50,
+    right: -25,
+  },
+  headerDecoCircle2: {
+    position: 'absolute',
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: 'rgba(228, 238, 234, 0.08)',
+    bottom: -40,
+    left: 35,
+  },
+  headerCenterTitleWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  headerTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    textAlign: 'center',
+  },
+  headerTitleAccentBar: {
+    width: 28,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: '#E4EEEA',
+    marginTop: 5,
+    opacity: 0.85,
+  },
+  headerRightIconBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: '#E4EEEA',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
   },
   headerRow: {
     flexDirection: 'row',
@@ -4118,12 +4191,13 @@ const styles = StyleSheet.create({
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
   },
   backCircleBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#EEF2F6',
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: '#E4EEEA',
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 10,
   },
 
   // Segmented Pill Track: Home | My attendance | Events

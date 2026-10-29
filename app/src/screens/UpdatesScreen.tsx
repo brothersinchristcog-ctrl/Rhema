@@ -4,6 +4,7 @@ import { ChevronLeft, ArrowLeft, Bell, Calendar, Info, MessageCircle, AlertTrian
 import { openZoomMeeting } from '../utils/ZoomLauncher';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import firestore, { 
   getFirestore, 
   collection, 
@@ -117,6 +118,7 @@ function stripHtml(html: string): string {
 }
 
 export default function UpdatesScreen({ navigation, route }: any) {
+  const insets = useSafeAreaInsets();
   const { highlightId, highlightType } = route?.params || {};
   const { t } = useLanguage();
 
@@ -439,35 +441,50 @@ export default function UpdatesScreen({ navigation, route }: any) {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#1a2d5a" />
+      <StatusBar barStyle="dark-content" backgroundColor="#FAF7F2" />
       
       {/* ── Page Header Hero Card ── */}
-      <LinearGradient 
-        colors={['#2b52a1', '#1a3673']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.header}
+      <View
+        style={[
+          styles.headerCardWrapper,
+          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 6 }
+        ]}
       >
-        <TouchableOpacity style={styles.backBtn} onPress={handleBack} hitSlop={{top:10, bottom:10, left:10, right:10}}>
-          <ArrowLeft size={24} color="#fff" />
-        </TouchableOpacity>
-        
-        <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
-          <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>{t('updates.title')}</Text>
-            <Text style={styles.headerSub}>{t('updates.subtitle')}</Text>
-          </View>
-        </View>
+        <LinearGradient 
+          colors={['#527C78', '#355B56']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.header}
+        >
+          <View style={styles.headerDecoCircle1} pointerEvents="none" />
+          <View style={styles.headerDecoCircle2} pointerEvents="none" />
 
-        {visibleUpdates.length > 0 ? (
-          <View style={styles.headerBadge}>
-            <Bell size={18} color="#fff" />
-            <View style={styles.badgeCircle}>
-              <Text style={styles.headerBadgeTxt}>{visibleUpdates.length}</Text>
-            </View>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={handleBack}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            activeOpacity={0.8}
+          >
+            <ArrowLeft size={20} color="#355B56" />
+          </TouchableOpacity>
+          
+          <View style={styles.headerCenterTitleWrap} pointerEvents="none">
+            <Text style={styles.headerTitle} numberOfLines={1} maxFontSizeMultiplier={1.15}>
+              {t('updates.title')}
+            </Text>
+            <View style={styles.headerTitleAccentBar} />
           </View>
-        ) : <View style={{ width: 40 }} />}
-      </LinearGradient>
+
+          <View style={styles.headerBadge}>
+            <Bell size={18} color="#355B56" />
+            {visibleUpdates.length > 0 && (
+              <View style={styles.badgeCircle}>
+                <Text style={styles.headerBadgeTxt}>{visibleUpdates.length}</Text>
+              </View>
+            )}
+          </View>
+        </LinearGradient>
+      </View>
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
@@ -821,30 +838,58 @@ export default function UpdatesScreen({ navigation, route }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FAF7F2' },
-  header: {
-    paddingTop: Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight ?? 24) + 12,
-    paddingHorizontal: 20,
-    paddingBottom: 30,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    minHeight: Platform.OS === 'ios' ? 140 : 120,
+  headerCardWrapper: {
+    paddingHorizontal: 16,
+    paddingBottom: 4,
   },
-  headerCenter: { flex: 1, justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 24 },
+  header: {
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderRadius: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    overflow: 'hidden',
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: 'rgba(228, 238, 234, 0.25)',
+  },
+  headerDecoCircle1: {
+    position: 'absolute',
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    backgroundColor: 'rgba(228, 238, 234, 0.10)',
+    top: -50,
+    right: -25,
+  },
+  headerDecoCircle2: {
+    position: 'absolute',
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: 'rgba(228, 238, 234, 0.08)',
+    bottom: -40,
+    left: 35,
+  },
+  headerCenterTitleWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
   headerBadge: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: '#E4EEEA',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    zIndex: 10,
   },
   badgeCircle: {
     position: 'absolute',
-    top: -2,
+    top: -4,
     right: -4,
     backgroundColor: '#ef4444',
     minWidth: 18,
@@ -854,15 +899,37 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 4,
     borderWidth: 1.5,
-    borderColor: '#1a3673',
+    borderColor: '#355B56',
   },
   headerBadgeTxt: {
     color: '#fff',
     fontSize: 10,
     fontWeight: '900',
   },
-  backBtn: { zIndex: 10, padding: 5, marginLeft: -8, marginBottom: 8 },
-  headerTitle: { color: '#fff', fontSize: 20, fontWeight: '800', marginBottom: 2 },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: '#E4EEEA',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  headerTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    textAlign: 'center',
+  },
+  headerTitleAccentBar: {
+    width: 28,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: '#E4EEEA',
+    marginTop: 5,
+    opacity: 0.85,
+  },
   headerSub: { color: 'rgba(255,255,255,0.65)', fontSize: 11, fontWeight: '500' },
   
   scroll: { flex: 1 },

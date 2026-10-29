@@ -22,6 +22,7 @@ import {
   Play,
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { QUIZ_CATEGORIES } from '../../constants/BibleQuizCategories';
 import {
@@ -38,6 +39,7 @@ import { BibleQuiz, QuizAttempt } from '../../types/Quiz';
 import QuizLanguageModal from './QuizLanguageModal';
 
 export default function BibleQuizHomeScreen() {
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const { user } = useAuth();
   const { quizLanguage, quizLanguageOption } = useQuizLanguage();
@@ -95,42 +97,53 @@ export default function BibleQuizHomeScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#0b1120' : '#FAF7F2' }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#1a3673" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#0b1120' : '#FAF7F2'} />
 
       {/* Clean Hero Header */}
-      <LinearGradient
-        colors={['#2b52a1', '#1a3673']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.headerHero}
+      <View
+        style={[
+          styles.headerCardWrapper,
+          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 6 }
+        ]}
       >
-        <View style={styles.headerTopRow}>
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => navigation.goBack()}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            activeOpacity={0.7}
-          >
-            <ArrowLeft size={22} color="#ffffff" />
-          </TouchableOpacity>
+        <LinearGradient
+          colors={['#527C78', '#355B56']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.headerHero}
+        >
+          <View style={styles.headerDecoCircle1} pointerEvents="none" />
+          <View style={styles.headerDecoCircle2} pointerEvents="none" />
 
-          <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>
-              {ui.quizTitle}
-            </Text>
+          <View style={styles.headerTopRow}>
+            <TouchableOpacity
+              style={styles.backBtn}
+              onPress={() => navigation.goBack()}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              activeOpacity={0.8}
+            >
+              <ArrowLeft size={20} color="#355B56" />
+            </TouchableOpacity>
+
+            <View style={styles.headerCenter} pointerEvents="none">
+              <Text style={styles.headerTitle} numberOfLines={1} maxFontSizeMultiplier={1.15}>
+                {ui.quizTitle}
+              </Text>
+              <View style={styles.headerTitleAccentBar} />
+            </View>
+
+            {/* Quiz Language Selector Pill */}
+            <TouchableOpacity
+              style={styles.langPill}
+              onPress={() => setLangModalVisible(true)}
+              activeOpacity={0.8}
+            >
+              <Globe size={13} color="#355B56" />
+              <Text style={styles.langPillTxt}>{quizLanguageOption.nativeName}</Text>
+            </TouchableOpacity>
           </View>
-
-          {/* Quiz Language Selector Pill */}
-          <TouchableOpacity
-            style={styles.langPill}
-            onPress={() => setLangModalVisible(true)}
-            activeOpacity={0.8}
-          >
-            <Globe size={13} color="#ffffff" />
-            <Text style={styles.langPillTxt}>{quizLanguageOption.nativeName}</Text>
-          </TouchableOpacity>
-        </View>
-      </LinearGradient>
+        </LinearGradient>
+      </View>
 
       {/* Main Content Area */}
       <ScrollView
@@ -242,17 +255,36 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  headerCardWrapper: {
+    paddingHorizontal: 16,
+    paddingBottom: 4,
+  },
   headerHero: {
-    paddingTop: Platform.OS === 'ios' ? 54 : (StatusBar.currentHeight ?? 24) + 12,
-    paddingHorizontal: 18,
-    paddingBottom: 16,
-    borderBottomLeftRadius: 26,
-    borderBottomRightRadius: 26,
-    shadowColor: '#1a3673',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderRadius: 24,
+    overflow: 'hidden',
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: 'rgba(228, 238, 234, 0.25)',
+  },
+  headerDecoCircle1: {
+    position: 'absolute',
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    backgroundColor: 'rgba(228, 238, 234, 0.10)',
+    top: -50,
+    right: -25,
+  },
+  headerDecoCircle2: {
+    position: 'absolute',
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: 'rgba(228, 238, 234, 0.08)',
+    bottom: -40,
+    left: 35,
   },
   headerTopRow: {
     flexDirection: 'row',
@@ -260,31 +292,47 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   backBtn: {
-    padding: 4,
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: '#E4EEEA',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
   },
   headerCenter: {
     flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
   },
   headerTitle: {
-    color: '#ffffff',
-    fontSize: 19,
+    color: '#FFFFFF',
+    fontSize: 20,
     fontWeight: '800',
-    letterSpacing: 0.2,
+    letterSpacing: 0.5,
+    textAlign: 'center',
+  },
+  headerTitleAccentBar: {
+    width: 28,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: '#E4EEEA',
+    marginTop: 5,
+    opacity: 0.85,
   },
   langPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    backgroundColor: '#E4EEEA',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    zIndex: 10,
   },
   langPillTxt: {
-    color: '#ffffff',
+    color: '#355B56',
     fontSize: 12,
     fontWeight: '700',
   },

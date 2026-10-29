@@ -10,7 +10,8 @@ import {
   Platform 
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, CheckCircle2 } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ArrowLeft, CheckCircle2, BookOpen } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
@@ -20,6 +21,7 @@ import { BibleService } from '../services/BibleService';
 const { width } = Dimensions.get('window');
 
 export default function BibleChaptersScreen({ route, navigation }: any) {
+  const insets = useSafeAreaInsets();
   const { bookName, lang: paramLang, bookIndex: paramBookIndex } = route.params || {};
   const { isDark } = useTheme();
   const { language, t } = useLanguage();
@@ -60,30 +62,45 @@ export default function BibleChaptersScreen({ route, navigation }: any) {
 
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2' }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#1a2d5a" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#0f172a' : '#FAF7F2'} />
       
       {/* Header */}
-      <LinearGradient 
-        colors={['#2b52a1', '#1a3673']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.header}
+      <View
+        style={[
+          styles.headerCardWrapper,
+          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 6 }
+        ]}
       >
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} hitSlop={{top:10, bottom:10, left:10, right:10}}>
-          <ArrowLeft color="#fff" size={24} />
-        </TouchableOpacity>
-        
-        <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
-          <View style={{ flex: 1, justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 24 }}>
-            <Text style={styles.headerTitle}>{displayBookName}</Text>
-            <Text style={styles.headerSub}>
-              {t('bible.completedChapters', { completed: readChapters.size, total: count })}
-            </Text>
-          </View>
-        </View>
+        <LinearGradient 
+          colors={['#527C78', '#355B56']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.header}
+        >
+          <View style={styles.headerDecoCircle1} pointerEvents="none" />
+          <View style={styles.headerDecoCircle2} pointerEvents="none" />
 
-        <View style={{ width: 24 }} />
-      </LinearGradient>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => navigation.goBack()}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            activeOpacity={0.8}
+          >
+            <ArrowLeft color="#355B56" size={20} />
+          </TouchableOpacity>
+          
+          <View style={styles.headerCenterTitleWrap} pointerEvents="none">
+            <Text style={styles.headerTitle} numberOfLines={1} maxFontSizeMultiplier={1.15}>
+              {displayBookName}
+            </Text>
+            <View style={styles.headerTitleAccentBar} />
+          </View>
+
+          <View style={styles.headerRightIconBadge}>
+            <BookOpen size={18} color="#355B56" />
+          </View>
+        </LinearGradient>
+      </View>
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
         <Text style={[styles.secTitle, { color: isDark ? '#fff' : '#1a2d5a' }]}>
@@ -127,19 +144,79 @@ export default function BibleChaptersScreen({ route, navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: {
-    paddingTop: Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight ?? 24) + 12,
+  headerCardWrapper: {
     paddingHorizontal: 16,
-    paddingBottom: 30,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    minHeight: Platform.OS === 'ios' ? 140 : 120,
+    paddingBottom: 4,
   },
-  backBtn: { zIndex: 10, padding: 5 },
-  headerTitle: { color: '#fff', fontSize: 20, fontWeight: '800' },
+  header: {
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderRadius: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    overflow: 'hidden',
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: 'rgba(228, 238, 234, 0.25)',
+  },
+  headerDecoCircle1: {
+    position: 'absolute',
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    backgroundColor: 'rgba(228, 238, 234, 0.10)',
+    top: -50,
+    right: -25,
+  },
+  headerDecoCircle2: {
+    position: 'absolute',
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: 'rgba(228, 238, 234, 0.08)',
+    bottom: -40,
+    left: 35,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: '#E4EEEA',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  headerCenterTitleWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  headerTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    textAlign: 'center',
+  },
+  headerTitleAccentBar: {
+    width: 28,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: '#E4EEEA',
+    marginTop: 5,
+    opacity: 0.85,
+  },
+  headerRightIconBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: '#E4EEEA',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
   headerSub: { color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: '600', marginTop: 2 },
 
   scroll: { flex: 1, padding: 20 },

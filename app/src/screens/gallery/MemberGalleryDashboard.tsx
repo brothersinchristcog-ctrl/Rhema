@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, ActivityIndicator, Dimensions, Animated } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, ActivityIndicator, Dimensions, Animated, Platform, StatusBar } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Sparkles, Globe, Calendar, Image as ImageIcon, ChevronLeft, CheckCircle } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Sparkles, Globe, Calendar, Image as ImageIcon, ChevronLeft, ArrowLeft, CheckCircle } from 'lucide-react-native';
 import { MemberGalleryStackParamList } from './MemberGalleryNavigator';
 import GalleryService, { GalleryAlbum } from '../../services/GalleryService';
 import { useTheme } from '../../context/ThemeContext';
@@ -57,22 +58,44 @@ export default function MemberGalleryDashboard() {
 
   const renderHeader = () => (
     <View style={styles.headerWrapper}>
-      <View style={[styles.topCard, { backgroundColor: isDark ? '#1a2d5a' : '#0F4C5C', paddingTop: Math.max(insets.top, 20) + 10 }]}>
-        <View style={styles.headerTopRow}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-            <ChevronLeft color="#fff" size={26} />
-          </TouchableOpacity>
-          <View style={[styles.badgeContainer, { marginBottom: 0, alignSelf: 'center' }]}>
-            <Sparkles size={16} color="#FCD34D" />
-            <Text style={styles.badgeText}>{t('gallery.momentsOfFaith')}</Text>
-          </View>
-        </View>
-        
-        <Text style={styles.mainTitle}>{t('gallery.church')} <Text style={styles.titleHighlight}>{t('gallery.title')}</Text></Text>
-        <Text style={styles.mainDesc}>
-          {t('gallery.subtitle')}
-        </Text>
+      <View
+        style={[
+          styles.headerCardWrapper,
+          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 6 }
+        ]}
+      >
+        <LinearGradient 
+          colors={['#527C78', '#355B56']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.topHeaderCard}
+        >
+          <View style={styles.headerDecoCircle1} pointerEvents="none" />
+          <View style={styles.headerDecoCircle2} pointerEvents="none" />
 
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={styles.backBtn}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            activeOpacity={0.8}
+          >
+            <ArrowLeft color="#355B56" size={20} />
+          </TouchableOpacity>
+
+          <View style={styles.headerCenterTitleWrap} pointerEvents="none">
+            <Text style={styles.headerTitle} numberOfLines={1} maxFontSizeMultiplier={1.15}>
+              {t('gallery.title') || 'Gallery'}
+            </Text>
+            <View style={styles.headerTitleAccentBar} />
+          </View>
+
+          <View style={styles.headerRightIconBadge}>
+            <ImageIcon size={18} color="#355B56" />
+          </View>
+        </LinearGradient>
+      </View>
+
+      <View style={[styles.topCard, { backgroundColor: isDark ? '#1e293b' : '#527C78', marginHorizontal: 16, borderRadius: 22, marginTop: 10 }]}>
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
             <Text style={styles.statValue}>{albums.length}</Text>
@@ -191,13 +214,83 @@ const styles = StyleSheet.create({
   headerWrapper: {
     marginBottom: 10,
   },
+  headerCardWrapper: {
+    paddingHorizontal: 16,
+    paddingBottom: 4,
+  },
+  topHeaderCard: {
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderRadius: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    overflow: 'hidden',
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: 'rgba(228, 238, 234, 0.25)',
+  },
+  headerDecoCircle1: {
+    position: 'absolute',
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    backgroundColor: 'rgba(228, 238, 234, 0.10)',
+    top: -50,
+    right: -25,
+  },
+  headerDecoCircle2: {
+    position: 'absolute',
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: 'rgba(228, 238, 234, 0.08)',
+    bottom: -40,
+    left: 35,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: '#E4EEEA',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  headerCenterTitleWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  headerTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    textAlign: 'center',
+  },
+  headerTitleAccentBar: {
+    width: 28,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: '#E4EEEA',
+    marginTop: 5,
+    opacity: 0.85,
+  },
+  headerRightIconBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: '#E4EEEA',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
   topCard: {
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    paddingTop: 10,
-    paddingHorizontal: 20,
-    paddingBottom: 35,
-    marginBottom: 25,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    marginBottom: 20,
   },
   headerTopRow: {
     flexDirection: 'row',

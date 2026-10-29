@@ -16,7 +16,7 @@ import {
   Alert
 } from 'react-native';
 import ViewShot from 'react-native-view-shot';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ChevronLeft, ArrowLeft, ChevronRight, Download, Share2, Calendar, Play, BookOpen } from 'lucide-react-native';
 import * as MediaLibrary from 'expo-media-library';
@@ -34,6 +34,7 @@ const stripHtml = (html: string | undefined): string => {
 };
 
 export default function PromiseArchiveScreen({ navigation }: { navigation: any }) {
+  const insets = useSafeAreaInsets();
   const [promises, setPromises] = useState<DailyPromise[]>([]);
   const [selectedPromise, setSelectedPromise] = useState<DailyPromise | null>(null);
   const [loading, setLoading] = useState(true);
@@ -141,26 +142,45 @@ export default function PromiseArchiveScreen({ navigation }: { navigation: any }
 
   return (
     <View style={[styles.container, { backgroundColor: '#FAF7F2' }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#1a2d5a" />
+      <StatusBar barStyle="dark-content" backgroundColor="#FAF7F2" />
 
       {/* ── Page Header ── */}
-      <LinearGradient 
-        colors={['#2b52a1', '#1a3673']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.pageHeader}
+      <View
+        style={[
+          styles.headerCardWrapper,
+          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 6 }
+        ]}
       >
-        <TouchableOpacity style={styles.backBtn} onPress={handleBack} hitSlop={{top:10, bottom:10, left:10, right:10}}>
-          <ArrowLeft size={24} color="#fff" />
-        </TouchableOpacity>
-        
-        <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
-          <View style={styles.headerCenter}>
-            <Text style={styles.pageTitle}>{t('nav.promise')}</Text>
-            <Text style={styles.pageSub}>{t('home.todaysPromiseSub')}</Text>
+        <LinearGradient 
+          colors={['#527C78', '#355B56']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.pageHeader}
+        >
+          <View style={styles.headerDecoCircle1} pointerEvents="none" />
+          <View style={styles.headerDecoCircle2} pointerEvents="none" />
+
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={handleBack}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            activeOpacity={0.8}
+          >
+            <ArrowLeft size={20} color="#355B56" />
+          </TouchableOpacity>
+          
+          <View style={styles.headerCenterTitleWrap} pointerEvents="none">
+            <Text style={styles.pageTitle} numberOfLines={1} maxFontSizeMultiplier={1.15}>
+              {t('nav.promise')}
+            </Text>
+            <View style={styles.headerTitleAccentBar} />
           </View>
-        </View>
-      </LinearGradient>
+
+          <View style={styles.headerRightIconBadge}>
+            <BookOpen size={18} color="#355B56" />
+          </View>
+        </LinearGradient>
+      </View>
 
       <ScrollView 
         ref={scrollViewRef}
@@ -305,20 +325,79 @@ const styles = StyleSheet.create({
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
   // Header
-  pageHeader: {
-    paddingTop: Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight ?? 24) + 12,
-    paddingHorizontal: 20,
-    paddingBottom: 30,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    minHeight: Platform.OS === 'ios' ? 140 : 120,
+  headerCardWrapper: {
+    paddingHorizontal: 16,
+    paddingBottom: 4,
   },
-  headerCenter: { flex: 1, justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 24 },
-  backBtn: { zIndex: 10, padding: 5, marginLeft: -8, marginBottom: 8 },
-  pageTitle: { color: '#fff', fontSize: 20, fontWeight: '800', marginBottom: 2 },
+  pageHeader: {
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderRadius: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    overflow: 'hidden',
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: 'rgba(228, 238, 234, 0.25)',
+  },
+  headerDecoCircle1: {
+    position: 'absolute',
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    backgroundColor: 'rgba(228, 238, 234, 0.10)',
+    top: -50,
+    right: -25,
+  },
+  headerDecoCircle2: {
+    position: 'absolute',
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: 'rgba(228, 238, 234, 0.08)',
+    bottom: -40,
+    left: 35,
+  },
+  headerCenterTitleWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: '#E4EEEA',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  pageTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    textAlign: 'center',
+  },
+  headerTitleAccentBar: {
+    width: 28,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: '#E4EEEA',
+    marginTop: 5,
+    opacity: 0.85,
+  },
+  headerRightIconBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: '#E4EEEA',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
   pageSub: { color: 'rgba(255,255,255,0.65)', fontSize: 11, fontWeight: '500' },
   scroll: { paddingBottom: 140 },
   mainContent: { padding: 16 },

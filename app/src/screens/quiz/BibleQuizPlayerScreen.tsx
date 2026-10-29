@@ -783,59 +783,70 @@ export default function BibleQuizPlayerScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#0b1120' : '#FAF7F2' }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#1a3673" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#0b1120' : '#FAF7F2'} />
 
-      {/* 3 & 4. Clean, Distraction-Free Header (No "Bible Quiz", No "Question 1/5") */}
-      <LinearGradient
-        colors={['#2b52a1', '#1a3673']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[styles.header, { paddingTop: Math.max(insets.top, 14) + 6 }]}
+      {/* Top Floating Header Card */}
+      <View
+        style={[
+          styles.headerCardWrapper,
+          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 6 }
+        ]}
       >
-        <TouchableOpacity
-          onPress={handleExitAttempt}
-          style={styles.closeBtn}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          activeOpacity={0.7}
+        <LinearGradient
+          colors={['#527C78', '#355B56']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.header}
         >
-          <X size={20} color="#ffffff" />
-        </TouchableOpacity>
+          <View style={styles.headerDecoCircle1} pointerEvents="none" />
+          <View style={styles.headerDecoCircle2} pointerEvents="none" />
 
-        <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {(() => {
-              const isDaily = Boolean(quizMeta?.isDailyQuiz || (quizMeta as any)?.id?.startsWith?.('daily_') || quizMeta?.category?.toLowerCase() === 'daily quiz');
-              const dStr = (quizMeta as any)?.dailyDate || (quizMeta as any)?.scheduledDate || ((quizMeta as any)?.id?.startsWith?.('daily_quiz_') ? (quizMeta as any).id.replace('daily_quiz_', '') : '') || ((quizMeta as any)?.id?.startsWith?.('daily_') ? (quizMeta as any).id.replace('daily_', '') : '');
-              if (isDaily && dStr) {
-                return getLocalizedDailyQuizTitle(dStr, quizLanguage);
-              }
-              if (quizMeta?.title) {
-                return quizMeta.translations?.[quizLanguage]?.title || quizMeta.title;
-              }
-              return `${categoryDisplayName} · ${difficulty.toUpperCase()} · L${level}`;
-            })()}
-          </Text>
-        </View>
-
-        {/* Right Header: Member View Language Selector Pill + Timer */}
-        <View style={styles.headerRightCol}>
           <TouchableOpacity
-            style={styles.langPill}
-            onPress={() => setLangModalVisible(true)}
+            onPress={handleExitAttempt}
+            style={styles.closeBtn}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             activeOpacity={0.8}
           >
-            <Globe size={11} color="#ffffff" />
-            <Text style={styles.langPillTxt}>{quizLanguageOption.nativeName}</Text>
+            <X size={20} color="#355B56" />
           </TouchableOpacity>
 
-          {secondsRemaining !== null && (
-            <View style={styles.timerPill}>
-              <Clock size={11} color="#ffffff" />
-              <Text style={styles.timerTxt}>{formatTimeRemaining()}</Text>
-            </View>
-          )}
-        </View>
-      </LinearGradient>
+          <View style={styles.headerCenter} pointerEvents="none">
+            <Text style={styles.headerTitle} numberOfLines={1} maxFontSizeMultiplier={1.15}>
+              {(() => {
+                const isDaily = Boolean(quizMeta?.isDailyQuiz || (quizMeta as any)?.id?.startsWith?.('daily_') || quizMeta?.category?.toLowerCase() === 'daily quiz');
+                const dStr = (quizMeta as any)?.dailyDate || (quizMeta as any)?.scheduledDate || ((quizMeta as any)?.id?.startsWith?.('daily_quiz_') ? (quizMeta as any).id.replace('daily_quiz_', '') : '') || ((quizMeta as any)?.id?.startsWith?.('daily_') ? (quizMeta as any).id.replace('daily_', '') : '');
+                if (isDaily && dStr) {
+                  return getLocalizedDailyQuizTitle(dStr, quizLanguage);
+                }
+                if (quizMeta?.title) {
+                  return quizMeta.translations?.[quizLanguage]?.title || quizMeta.title;
+                }
+                return `${categoryDisplayName} · ${difficulty.toUpperCase()} · L${level}`;
+              })()}
+            </Text>
+            <View style={styles.headerTitleAccentBar} />
+          </View>
+
+          {/* Right Header: Member View Language Selector Pill + Timer */}
+          <View style={styles.headerRightCol}>
+            <TouchableOpacity
+              style={styles.langPill}
+              onPress={() => setLangModalVisible(true)}
+              activeOpacity={0.8}
+            >
+              <Globe size={11} color="#355B56" />
+              <Text style={styles.langPillTxt}>{quizLanguageOption.nativeName}</Text>
+            </TouchableOpacity>
+
+            {secondsRemaining !== null && (
+              <View style={styles.timerPill}>
+                <Clock size={11} color="#355B56" />
+                <Text style={styles.timerTxt}>{formatTimeRemaining()}</Text>
+              </View>
+            )}
+          </View>
+        </LinearGradient>
+      </View>
 
       {/* Progress Bar Track */}
       <View
@@ -913,71 +924,102 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  headerCardWrapper: {
+    paddingHorizontal: 16,
+    paddingBottom: 4,
+  },
   header: {
     paddingHorizontal: 16,
-    paddingBottom: 20,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
+    paddingVertical: 16,
+    borderRadius: 24,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    shadowColor: '#1a3673',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 6,
+    overflow: 'hidden',
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: 'rgba(228, 238, 234, 0.25)',
+  },
+  headerDecoCircle1: {
+    position: 'absolute',
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    backgroundColor: 'rgba(228, 238, 234, 0.10)',
+    top: -50,
+    right: -25,
+  },
+  headerDecoCircle2: {
+    position: 'absolute',
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: 'rgba(228, 238, 234, 0.08)',
+    bottom: -40,
+    left: 35,
   },
   closeBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: '#E4EEEA',
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 10,
   },
   headerCenter: {
     flex: 1,
     alignItems: 'center',
-    marginHorizontal: 10,
+    justifyContent: 'center',
+    marginHorizontal: 8,
   },
   headerTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '800',
-    color: '#ffffff',
+    color: '#FFFFFF',
+    letterSpacing: 0.4,
+    textAlign: 'center',
+  },
+  headerTitleAccentBar: {
+    width: 28,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: '#E4EEEA',
+    marginTop: 5,
+    opacity: 0.85,
   },
   headerRightCol: {
     alignItems: 'flex-end',
     gap: 4,
+    zIndex: 10,
   },
   langPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(0, 0, 0, 0.35)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    backgroundColor: '#E4EEEA',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.25)',
   },
   langPillTxt: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
-    color: '#ffffff',
+    color: '#355B56',
   },
   timerPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 8,
+    backgroundColor: '#E4EEEA',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
     gap: 3,
   },
   timerTxt: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#ffffff',
+    color: '#355B56',
   },
   progressBarTrack: {
     height: 6,

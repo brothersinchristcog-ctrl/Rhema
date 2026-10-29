@@ -11,7 +11,7 @@ import {
   Platform,
   StatusBar
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ChevronLeft, ArrowLeft, ChevronRight, MapPin, Phone, Mail } from 'lucide-react-native';
@@ -77,6 +77,7 @@ const WhatsappIcon = ({ size = 26 }: { size?: number }) => (
 );
 
 export default function ContactUsScreen() {
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const { t } = useLanguage();
   const [data, setData] = useState<ContactData>(DEFAULT);
@@ -146,25 +147,44 @@ export default function ContactUsScreen() {
 
   return (
     <View style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#2b52a1" />
+      <StatusBar barStyle="dark-content" backgroundColor="#FAF7F2" />
       {/* Hero Header Card */}
-      <LinearGradient 
-        colors={['#2b52a1', '#1a3673']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.header}
+      <View
+        style={[
+          styles.headerCardWrapper,
+          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 6 }
+        ]}
       >
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} hitSlop={{top:10, bottom:10, left:10, right:10}}>
-          <ArrowLeft size={24} color="#fff" />
-        </TouchableOpacity>
-        
-        <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
-          <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>{t('contactUs.title')}</Text>
-            <Text style={styles.headerSub}>{t('contactUs.subtitle')}</Text>
+        <LinearGradient 
+          colors={['#527C78', '#355B56']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.header}
+        >
+          <View style={styles.headerDecoCircle1} pointerEvents="none" />
+          <View style={styles.headerDecoCircle2} pointerEvents="none" />
+
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => navigation.goBack()}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            activeOpacity={0.8}
+          >
+            <ArrowLeft size={20} color="#355B56" />
+          </TouchableOpacity>
+          
+          <View style={styles.headerCenterTitleWrap} pointerEvents="none">
+            <Text style={styles.headerTitle} numberOfLines={1} maxFontSizeMultiplier={1.15}>
+              {t('contactUs.title')}
+            </Text>
+            <View style={styles.headerTitleAccentBar} />
           </View>
-        </View>
-      </LinearGradient>
+
+          <View style={styles.headerRightIconBadge}>
+            <Phone size={18} color="#355B56" />
+          </View>
+        </LinearGradient>
+      </View>
 
       {loading ? (
         <View style={styles.loadingContainer}>
@@ -294,20 +314,79 @@ export default function ContactUsScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#FAF7F2' },
-  header: {
-    paddingTop: Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight ?? 24) + 12,
-    paddingHorizontal: 20,
-    paddingBottom: 30,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    minHeight: Platform.OS === 'ios' ? 140 : 120,
+  headerCardWrapper: {
+    paddingHorizontal: 16,
+    paddingBottom: 4,
   },
-  headerCenter: { flex: 1, justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 24 },
-  backBtn: { zIndex: 10, padding: 5, marginLeft: -8, marginBottom: 8 },
-  headerTitle: { color: '#fff', fontSize: 20, fontWeight: '800', marginBottom: 2 },
+  header: {
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderRadius: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    overflow: 'hidden',
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: 'rgba(228, 238, 234, 0.25)',
+  },
+  headerDecoCircle1: {
+    position: 'absolute',
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    backgroundColor: 'rgba(228, 238, 234, 0.10)',
+    top: -50,
+    right: -25,
+  },
+  headerDecoCircle2: {
+    position: 'absolute',
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: 'rgba(228, 238, 234, 0.08)',
+    bottom: -40,
+    left: 35,
+  },
+  headerCenterTitleWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: '#E4EEEA',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  headerTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    textAlign: 'center',
+  },
+  headerTitleAccentBar: {
+    width: 28,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: '#E4EEEA',
+    marginTop: 5,
+    opacity: 0.85,
+  },
+  headerRightIconBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: '#E4EEEA',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
   headerSub: { color: 'rgba(255,255,255,0.65)', fontSize: 11, fontWeight: '500' },
 
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAF7F2' },
