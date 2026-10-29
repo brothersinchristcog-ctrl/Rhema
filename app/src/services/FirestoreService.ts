@@ -1252,25 +1252,7 @@ class FirestoreService {
             screen: 'SermonVideo',
           });
 
-          // 3. Local notification trigger for current device
-          try {
-            await Notifications.scheduleNotificationAsync({
-              identifier: `sermon_pub_${doc.id}`,
-              content: {
-                title: `🎧 New Sermon: ${title}`,
-                body: `New sermon "${title}" preached by ${pastor} is now available. Tap to watch!`,
-                sound: true,
-                data: {
-                  type: 'sermon',
-                  sermonId: doc.id,
-                  screen: 'SermonVideo',
-                },
-              },
-              trigger: null,
-            });
-          } catch (localNotifErr) {
-            console.warn('[FirestoreService] Local notification trigger error:', localNotifErr);
-          }
+
 
           publishedCount++;
           console.log(`[FirestoreService] ✅ Auto-published scheduled sermon: ${doc.id} ("${title}")`);

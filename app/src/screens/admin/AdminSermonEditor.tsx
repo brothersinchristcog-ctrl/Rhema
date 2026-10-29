@@ -538,25 +538,6 @@ export default function AdminSermonEditor() {
             // Already due: immediately auto-publish and broadcast
             await FirestoreService.autoPublishDueScheduledSermons();
           } else {
-            // Schedule device notification with expo-notifications
-            await Notifications.scheduleNotificationAsync({
-              identifier: `sermon_sched_${savedSermonId}`,
-              content: {
-                title: `🎧 New Sermon: ${form.titleEn}`,
-                body: `New sermon "${form.titleEn}" preached by ${form.pastor || 'Pastor'} is now available. Tap to watch!`,
-                sound: true,
-                data: {
-                  type: 'sermon',
-                  sermonId: savedSermonId,
-                  screen: 'SermonVideo',
-                },
-              },
-              trigger: {
-                type: Notifications.SchedulableTriggerInputTypes.DATE,
-                date: targetDate,
-              },
-            });
-            console.log(`🔔 Local device notification scheduled for: ${targetDate.toLocaleString()}`);
 
             // Also set in-app timer if due within 24 hours
             if (diffMs <= 24 * 60 * 60 * 1000) {

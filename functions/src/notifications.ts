@@ -336,20 +336,6 @@ export async function checkAndPublishScheduledSermons(sermonsRef: any, churchId:
         const pushTitle = `🎧 New Sermon: ${sermonTitle}`;
         const pushBody = `New sermon "${sermonTitle}" preached on ${sermon.date || nowStr} by ${pastorName} is now available. Watch/listen now!`;
 
-        const payload = {
-          notification: { title: pushTitle, body: pushBody },
-          data: {
-            type: 'sermon',
-            sermonId: doc.id,
-            id: doc.id,
-            churchId: churchId,
-          },
-          topic: `church_${churchId}`,
-        };
-
-        const messaging = getMessaging();
-        await messaging.send(payload).catch((e: any) => console.error('Error sending Sermon Live notification', e));
-
         const targetRef = churchDocRef || doc.ref.parent.parent;
         if (targetRef) {
           await targetRef.collection('broadcasts').add({
