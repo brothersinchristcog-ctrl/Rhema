@@ -614,7 +614,7 @@ const PERIOD_COLORS: Record<string, string[]> = {
 };
 
 /**
- * Progressive time-based unlock for WeChristian Daily Verses:
+ * Progressive time-based unlock for Daily Verses:
  * - 12:00 AM – 11:59 AM (hour < 12) : 1 card  (Good Morning)
  * - 12:00 PM –  4:59 PM (hour < 17) : 2 cards (Good Morning + Good Afternoon)
  * -  5:00 PM –  7:59 PM (hour < 20) : 3 cards (Good Morning + Good Afternoon + Good Evening)
@@ -971,8 +971,15 @@ export default function HomeScreen() {
   const [carouselSlide, setCarouselSlide] = useState(0); // 0 = text, 1 = image
   const carouselScrollRef = useRef<ScrollView>(null);
   
-  // WeChristian Daily Promise 4-verse Carousel State
-  const useWeChristianDailyPromise = activeChurch?.useWeChristianDailyPromise !== false;
+  // Daily Verses & Custom Promise Carousel State
+  // Unified slide count for both Custom Promise and 4 Daily Verses
+  const getUnifiedSlideCount = () => {
+    const customSlides = (promise ? 1 : 0) + (promise && promiseThumbnail ? 1 : 0);
+    const versesCount = visibleVerses.length;
+    const timingsCount = hasServiceTimings ? 1 : 0;
+    return customSlides + (versesCount > 0 ? versesCount : (customSlides > 0 ? 0 : 1)) + timingsCount;
+  };
+  const useWeChristianDailyPromise = true;
   const hasServiceTimings = !!(activeChurch?.serviceTimings && activeChurch.serviceTimings.length > 0);
   const [todayFourVerses, setTodayFourVerses] = useState<DailyVerse[]>(cachedTodayFourVerses);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -1281,9 +1288,8 @@ export default function HomeScreen() {
 
   // Helper to restart verse carousel auto-scroll after touch or slide change
   const restartVerseTimer = (startIndex: number) => {
-    if (!useWeChristianDailyPromise || visibleVerses.length === 0) return;
     clearInterval(verseAutoScrollTimer.current);
-    const count = visibleVerses.length + (hasServiceTimings ? 1 : 0);
+    const count = getUnifiedSlideCount();
     if (count <= 1) return;
     verseAutoScrollTimer.current = setInterval(() => {
       setCarouselSlide(prev => {
@@ -1347,7 +1353,7 @@ export default function HomeScreen() {
       }, 300);
 
       // Start auto-scroll for unlocked verses + service timings
-      const totalOnSlides = visibleVerses.length + (hasServiceTimings ? 1 : 0);
+      const totalOnSlides = getUnifiedSlideCount();
       clearInterval(verseAutoScrollTimer.current);
       if (totalOnSlides > 1) {
         verseAutoScrollTimer.current = setInterval(() => {
@@ -1911,9 +1917,7 @@ export default function HomeScreen() {
               showsHorizontalScrollIndicator={false}
               scrollEventThrottle={16}
               onMomentumScrollEnd={(e) => {
-                const maxSlides = useWeChristianDailyPromise
-                  ? (visibleVerses.length || 1) + (hasServiceTimings ? 1 : 0)
-                  : 1 + (promiseThumbnail ? 1 : 0) + (hasServiceTimings ? 1 : 0);
+                const maxSlides = getUnifiedSlideCount();
                 const slide = Math.min(Math.max(0, Math.round(e.nativeEvent.contentOffset.x / screenWidth)), maxSlides - 1);
                 setCarouselSlide(slide);
                 if (useWeChristianDailyPromise) {
@@ -1921,9 +1925,101 @@ export default function HomeScreen() {
                 }
               }}
             >
-              {useWeChristianDailyPromise ? (
-                // ── When Toggle is ON: Daily Verse Card Carousel (+ Service Timings Slide) ──
-                <>
+              <>
+              {/* ── Slide: Church Custom Promise Card (if published) ── */}
+              {promise && (
+                <TouchableOpacity 
+                  activeOpacity={0.9}
+                  style={[styles.phSlide, { width: screenWidth }]} 
+                  onPress={() => handleGuestProtectedNavigation('Promise')}
+                >
+                  <View style={styles.vdCleanWhiteCard}>
+                    <View style={styles.vdWatermarkCircle} pointerEvents="none" />
+                    <View style={styles.vdWatermarkBook} pointerEvents="none">
+                      <BookOpen size={64} color="rgba(255, 255, 255, 0.14)" strokeWidth={1.5} />
+                    </View>
+
+                    <Text style={styles.phLabel} maxFontSizeMultiplier={1.15}>
+                      {t('home.todaysPromise') || "Today's Promise"}
+                    </Text>
+
+                    <View style={styles.vdVerseBlock}>
+                      <View style={styles.vdVerticalLine} />
+                      <View style={styles.vdVerseTextContainer}>
+                        <Text style={styles.vdTopRightQuote} pointerEvents="none">”</Text>
+                        {promise?.verseTelugu ? (
+                          <Text style={styles.vdVerseTe} numberOfLines={5} maxFontSizeMultiplier={1.15}>
+                            {stripHtml(promise.verseTelugu)}
+                          </Text>
+                        ) : null}
+                        <Text style={styles.vdVerseEn} numberOfLines={4} maxFontSizeMultiplier={1.15}>
+                          {promise ? stripHtml(promise.verse) : ''}
+                        </Text>
+                        <View style={styles.vdReferenceRow}>
+                          {promise?.verseReferenceTe ? (
+                            <>
+                              <Text style={styles.vdRefPrimary} maxFontSizeMultiplier={1.15}>{promise.verseReferenceTe}</Text>
+                              <Text style={styles.vdRefDivider} maxFontSizeMultiplier={1.15}>|</Text>
+                            </>
+                          ) : null}
+                          <Text style={styles.vdRefSecondary} maxFontSizeMultiplier={1.15}>
+                            {promise ? (promise.verseReferenceEn || promise.verseReference) : ''}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+
+                    <View style={styles.vdActions}>
+                      <TouchableOpacity style={styles.vdShareBtn} onPress={handleSharePromise}>
+                        <Share2 size={17} color="#355B56" />
+                        <Text style={styles.vdShareBtnTxt} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{t('common.share')}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={styles.vdSaveBtn} 
+                        onPress={() => {
+                          handleGuestProtectedNavigation('DailyVideo', { 
+                            youtubeId: promise?.youtubeId,
+                            videoTitle: promise?.videoTitle || (promise?.verseReferenceEn ? `${promise.verseReferenceEn} Devotional` : undefined),
+                            pastor: promise?.pastor
+                          });
+                        }}
+                      >
+                        <Play size={17} color="#355B56" fill="#355B56" />
+                        <Text style={styles.vdSaveBtnTxt} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{t('common.watchVideo')}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              )}
+
+              {/* ── Slide: Church Custom Promise Thumbnail (if available) ── */}
+              {promise && promiseThumbnail && (
+                <View style={[styles.phSlide, styles.phThumbnailSlide, { width: screenWidth }]}>
+                  <LinearGradient
+                    colors={['#527C78', '#527C78']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={{ flex: 1, paddingTop: 16, borderRadius: 24, overflow: 'hidden' }}
+                  >
+                    <View style={{ position: 'absolute', top: -40, right: -40, width: 160, height: 160, borderRadius: 80, borderWidth: 1.5, borderColor: 'rgba(203, 213, 225, 0.15)' }} />
+                    <View style={{ position: 'absolute', top: -10, right: -10, width: 100, height: 100, borderRadius: 50, borderWidth: 1.5, borderColor: 'rgba(203, 213, 225, 0.1)' }} />
+                    <View style={{ position: 'absolute', bottom: -50, left: -20, width: 140, height: 140, borderRadius: 70, borderWidth: 1.5, borderColor: 'rgba(203, 213, 225, 0.1)' }} />
+                    <Text style={styles.phLabel} maxFontSizeMultiplier={1.15}>{t('home.todaysPromise') || "Today's Promise"}</Text>
+                    <Image
+                      source={{ uri: promiseThumbnail }}
+                      style={[styles.phThumbnailImg, { flex: 1 }]}
+                      resizeMode="contain"
+                    />
+                    <View style={[styles.phActions, { paddingHorizontal: 16, paddingBottom: 14 }]}>
+                      <TouchableOpacity style={styles.phShareBtn} onPress={handleSharePromise}>
+                        <Share2 size={18} color="#355B56" />
+                        <Text style={styles.phBtnTxt} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{t('common.share')}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </LinearGradient>
+                </View>
+              )}
+
                   {visibleVerses.length > 0 ? (
                     visibleVerses.map((verse, idx) => {
                       const period = VERSE_PERIODS[idx] || 'Daily';
@@ -2022,113 +2118,11 @@ export default function HomeScreen() {
                   {/* Slide: Church Service Timings */}
                   {hasServiceTimings && renderServiceTimingsSlide()}
                 </>
-              ) : (
-                // ── When Toggle is OFF: Custom Promise Card ──
-                <>
-                  {/* Slide 1 — Promise Text Card */}
-                  <TouchableOpacity 
-                    activeOpacity={0.9}
-                    style={[styles.phSlide, { width: screenWidth }]} 
-                    onPress={() => handleGuestProtectedNavigation('Promise')}
-                  >
-                    <View style={styles.vdCleanWhiteCard}>
-                      <View style={styles.vdWatermarkCircle} pointerEvents="none" />
-                      <View style={styles.vdWatermarkBook} pointerEvents="none">
-                        <BookOpen size={64} color="rgba(255, 255, 255, 0.14)" strokeWidth={1.5} />
-                      </View>
-
-                      <Text style={styles.phLabel} maxFontSizeMultiplier={1.15}>
-                        {t('home.todaysPromise') || "Today's Promise"}
-                      </Text>
-
-                      <View style={styles.vdVerseBlock}>
-                        <View style={styles.vdVerticalLine} />
-                        <View style={styles.vdVerseTextContainer}>
-                          <Text style={styles.vdTopRightQuote} pointerEvents="none">”</Text>
-                          {promise?.verseTelugu ? (
-                            <Text style={styles.vdVerseTe} numberOfLines={5} maxFontSizeMultiplier={1.15}>
-                              {stripHtml(promise.verseTelugu)}
-                            </Text>
-                          ) : null}
-                          <Text style={styles.vdVerseEn} numberOfLines={4} maxFontSizeMultiplier={1.15}>
-                            {promise ? stripHtml(promise.verse) : ''}
-                          </Text>
-                          <View style={styles.vdReferenceRow}>
-                            {promise?.verseReferenceTe ? (
-                              <>
-                                <Text style={styles.vdRefPrimary} maxFontSizeMultiplier={1.15}>{promise.verseReferenceTe}</Text>
-                                <Text style={styles.vdRefDivider} maxFontSizeMultiplier={1.15}>|</Text>
-                              </>
-                            ) : null}
-                            <Text style={styles.vdRefSecondary} maxFontSizeMultiplier={1.15}>
-                              {promise ? (promise.verseReferenceEn || promise.verseReference) : ''}
-                            </Text>
-                          </View>
-                        </View>
-                      </View>
-
-                      <View style={styles.vdActions}>
-                        <TouchableOpacity style={styles.vdShareBtn} onPress={handleSharePromise}>
-                          <Share2 size={17} color="#355B56" />
-                          <Text style={styles.vdShareBtnTxt} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{t('common.share')}</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                          style={styles.vdSaveBtn} 
-                          onPress={() => {
-                            handleGuestProtectedNavigation('DailyVideo', { 
-                              youtubeId: promise?.youtubeId,
-                              videoTitle: promise?.videoTitle || (promise?.verseReferenceEn ? `${promise.verseReferenceEn} Devotional` : undefined),
-                              pastor: promise?.pastor
-                            });
-                          }}
-                        >
-                          <Play size={17} color="#355B56" fill="#355B56" />
-                          <Text style={styles.vdSaveBtnTxt} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{t('common.watchVideo')}</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-
-                  {/* Slide 2 — Thumbnail (only if image exists) */}
-                  {promiseThumbnail && (
-                    <View style={[styles.phSlide, styles.phThumbnailSlide, { width: screenWidth }]}>
-                      <LinearGradient
-                        colors={['#527C78', '#527C78']}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={{ flex: 1, paddingTop: 16, borderRadius: 24, overflow: 'hidden' }}
-                      >
-                        {/* Decorative Ash Colored Circle Lines */}
-                        <View style={{ position: 'absolute', top: -40, right: -40, width: 160, height: 160, borderRadius: 80, borderWidth: 1.5, borderColor: 'rgba(203, 213, 225, 0.15)' }} />
-                        <View style={{ position: 'absolute', top: -10, right: -10, width: 100, height: 100, borderRadius: 50, borderWidth: 1.5, borderColor: 'rgba(203, 213, 225, 0.1)' }} />
-                        <View style={{ position: 'absolute', bottom: -50, left: -20, width: 140, height: 140, borderRadius: 70, borderWidth: 1.5, borderColor: 'rgba(203, 213, 225, 0.1)' }} />
-                        <Text style={styles.phLabel} maxFontSizeMultiplier={1.15}>{t('home.todaysPromise') || "Today's Promise"}</Text>
-                        <Image
-                          source={{ uri: promiseThumbnail }}
-                          style={[styles.phThumbnailImg, { flex: 1 }]}
-                          resizeMode="contain"
-                        />
-                        <View style={[styles.phActions, { paddingHorizontal: 16, paddingBottom: 14 }]}>
-                          <TouchableOpacity style={styles.phShareBtn} onPress={handleSharePromise}>
-                            <Share2 size={18} color="#355B56" />
-                            <Text style={styles.phBtnTxt} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{t('common.share')}</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </LinearGradient>
-                    </View>
-                  )}
-
-                  {/* Slide 3 — Church Service Timings Slide */}
-                  {hasServiceTimings && renderServiceTimingsSlide()}
-                </>
-              )}
             </ScrollView>
 
             {/* Dot Indicators (Dynamically adapts to visible verse count, thumbnail, and service timings) */}
             {(() => {
-              const totalDots = useWeChristianDailyPromise
-                ? (visibleVerses.length > 0 ? visibleVerses.length : 1) + (hasServiceTimings ? 1 : 0)
-                : 1 + (promiseThumbnail ? 1 : 0) + (hasServiceTimings ? 1 : 0);
+              const totalDots = getUnifiedSlideCount();
 
               if (totalDots <= 1) return null;
 
@@ -2149,8 +2143,7 @@ export default function HomeScreen() {
             <GridItem isDark={isDark} icon={<Mic size={26} color="#fff" />} label={t('home.quickSermons')} color="#1a2d5a" onPress={() => navigation.navigate('Sermons')} />
             <GridItem isDark={isDark} icon={<Heart size={26} color="#fff" />} label={t('home.quickPrayer')} color="#c0392b" onPress={() => handleGuestProtectedNavigation('Prayer')} />
             <GridItem isDark={isDark} icon={<Calendar size={26} color="#fff" />} label={t('home.quickEvents')} color="#0F766E" onPress={() => navigation.navigate('Events')} />
-            {!useWeChristianDailyPromise && (
-              <GridItem
+            <GridItem
                 isDark={isDark}
                 icon={<Sparkles size={26} color="#f97316" />}
                 label={t('home.quickDailyVerse')}
@@ -2161,7 +2154,6 @@ export default function HomeScreen() {
                   }
                 }}
               />
-            )}
             <GridItem 
               isDark={isDark} 
               icon={<DollarSign size={26} color="#fff" />} 
@@ -2207,9 +2199,6 @@ export default function HomeScreen() {
                 }
               }} 
             />
-            {useWeChristianDailyPromise && (
-              <GridItem isDark={isDark} icon={<Users size={26} color="#fff" />} label={t('home.quickMembers')} color="#db2777" onPress={handleOpenMembers} />
-            )}
           </View>
 
           {/* ── Separate Member View Navigation: Members, Online Meetings & Attendance ── */}
@@ -2218,16 +2207,15 @@ export default function HomeScreen() {
               flexDirection: 'row', 
               alignItems: 'center', 
               justifyContent: 'space-between', 
-              gap: useWeChristianDailyPromise ? 12 : 6, 
+              gap: 6, 
               marginTop: 18, 
               marginBottom: 10, 
-              paddingHorizontal: useWeChristianDailyPromise ? 20 : 12 
+              paddingHorizontal: 12 
             }}
             onLayout={(e) => setOnlineMeetingsY(e.nativeEvent.layout.y)}
           >
             {/* Separate Button 1: Members (when Daily Promise is NO, balances grid so Members, Online Meetings & Attendance are in one line) */}
-            {!useWeChristianDailyPromise && (
-              <TouchableOpacity 
+            <TouchableOpacity 
                 style={{
                   flex: 1,
                   flexDirection: 'row',
@@ -2257,7 +2245,6 @@ export default function HomeScreen() {
                   {t('home.quickMembers')}
                 </Text>
               </TouchableOpacity>
-            )}
 
             {/* Separate Button 2: Online Meetings */}
             <TouchableOpacity 
@@ -2267,26 +2254,26 @@ export default function HomeScreen() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 backgroundColor: '#3B82F6',
-                paddingVertical: useWeChristianDailyPromise ? 13 : 12,
-                paddingHorizontal: useWeChristianDailyPromise ? 14 : 4,
+                paddingVertical: 12,
+                paddingHorizontal: 4,
                 borderRadius: 20,
                 elevation: 4,
                 shadowColor: '#3B82F6',
                 shadowOpacity: 0.35,
                 shadowRadius: 6,
                 shadowOffset: { width: 0, height: 3 },
-                gap: useWeChristianDailyPromise ? 7 : 4,
+                gap: 4,
               }}
               onPress={() => navigation.navigate('OnlineMeetings')}
               activeOpacity={0.8}
             >
-              <AnimatedCameraIcon size={useWeChristianDailyPromise ? 18 : 16} color="#fff" scrollY={scrollY} triggerY={onlineMeetingsY} />
+              <AnimatedCameraIcon size={16} color="#fff" scrollY={scrollY} triggerY={onlineMeetingsY} />
               <Text 
                 style={{ 
                   color: '#fff', 
-                  fontSize: useWeChristianDailyPromise ? 12.8 : 11.5, 
+                  fontSize: 11.5, 
                   fontWeight: '700', 
-                  letterSpacing: useWeChristianDailyPromise ? 0.2 : 0 
+                  letterSpacing: 0 
                 }} 
                 numberOfLines={1} 
                 adjustsFontSizeToFit
@@ -2304,26 +2291,26 @@ export default function HomeScreen() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 backgroundColor: '#059669',
-                paddingVertical: useWeChristianDailyPromise ? 13 : 12,
-                paddingHorizontal: useWeChristianDailyPromise ? 14 : 4,
+                paddingVertical: 12,
+                paddingHorizontal: 4,
                 borderRadius: 20,
                 elevation: 4,
                 shadowColor: '#059669',
                 shadowOpacity: 0.35,
                 shadowRadius: 6,
                 shadowOffset: { width: 0, height: 3 },
-                gap: useWeChristianDailyPromise ? 7 : 4,
+                gap: 4,
               }}
               onPress={() => navigation.navigate('Attendance')}
               activeOpacity={0.8}
             >
-              <CalendarCheck size={useWeChristianDailyPromise ? 18 : 16} color="#fff" strokeWidth={2.2} />
+              <CalendarCheck size={16} color="#fff" strokeWidth={2.2} />
               <Text 
                 style={{ 
                   color: '#fff', 
-                  fontSize: useWeChristianDailyPromise ? 12.8 : 11.5, 
+                  fontSize: 11.5, 
                   fontWeight: '700', 
-                  letterSpacing: useWeChristianDailyPromise ? 0.2 : 0 
+                  letterSpacing: 0 
                 }} 
                 numberOfLines={1} 
                 adjustsFontSizeToFit

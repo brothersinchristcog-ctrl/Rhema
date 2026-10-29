@@ -18,7 +18,7 @@ import {
 import ViewShot from 'react-native-view-shot';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ChevronLeft, ArrowLeft, ChevronRight, Download, Share2, Calendar, Play, BookOpen } from 'lucide-react-native';
+import { ChevronLeft, ArrowLeft, ChevronRight, Download, Share2, Calendar, Play, BookOpen, Sparkles } from 'lucide-react-native';
 import * as MediaLibrary from 'expo-media-library';
 import FirestoreService, { DailyPromise } from '../services/FirestoreService';
 import { useChurch } from '../context/ChurchContext';
@@ -176,6 +176,24 @@ export default function PromiseArchiveScreen({ navigation }: { navigation: any }
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1a2d5a" />
         }
       >
+        {/* Quick Link to 4 Time-Slot Daily Verses */}
+        <TouchableOpacity
+          style={styles.dailyVersesBanner}
+          onPress={() => navigation.navigate('VerseOfTheDay')}
+          activeOpacity={0.85}
+        >
+          <View style={styles.dailyVersesBannerLeft}>
+            <View style={styles.dailyVersesBannerIcon}>
+              <Sparkles size={16} color="#fbbf24" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.dailyVersesBannerTitle}>Today's 4 Daily Verses</Text>
+              <Text style={styles.dailyVersesBannerSub}>Morning · Afternoon · Evening · Night</Text>
+            </View>
+          </View>
+          <ChevronRight size={18} color="#A67C3D" />
+        </TouchableOpacity>
+
         {selectedPromise ? (
           <View style={styles.mainContent}>
             <Text style={styles.topDate}>{formatDisplayDate(selectedPromise.date)}</Text>
@@ -349,6 +367,47 @@ const styles = StyleSheet.create({
   pageTitle: { color: '#fff', fontSize: 20, fontWeight: '800', marginBottom: 2 },
   pageSub: { color: 'rgba(255,255,255,0.65)', fontSize: 11, fontWeight: '500' },
   scroll: { paddingBottom: 140 },
+  dailyVersesBanner: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 4,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+  },
+  dailyVersesBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  dailyVersesBannerIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#1e1b4b',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dailyVersesBannerTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1a2d5a',
+  },
+  dailyVersesBannerSub: {
+    fontSize: 11,
+    color: '#64748b',
+    marginTop: 1,
+  },
   mainContent: { padding: 16 },
   topDate: { fontSize: 11, fontWeight: '700', color: '#94a3b8', textAlign: 'center', marginBottom: 15, letterSpacing: 0.5 },
 

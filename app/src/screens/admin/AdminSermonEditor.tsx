@@ -533,24 +533,12 @@ export default function AdminSermonEditor() {
       } else if (payload.status === 'Scheduled' && finalScheduledPublishAt) {
         try {
           const targetDate = new Date(finalScheduledPublishAt);
-          const diffMs = targetDate.getTime() - Date.now();
-
-          if (diffMs <= 0) {
-            // Already due: immediately auto-publish and broadcast
+          if (targetDate.getTime() <= Date.now()) {
+            // Already due: immediately auto-publish
             await FirestoreService.autoPublishDueScheduledSermons();
-          } else {
-
-            // Also set in-app timer if due within 24 hours
-            if (diffMs <= 24 * 60 * 60 * 1000) {
-              setTimeout(() => {
-                FirestoreService.autoPublishDueScheduledSermons().catch(err => {
-                  console.warn('[AdminSermonEditor] Scheduled auto-publish timeout failed:', err);
-                });
-              }, diffMs);
-            }
           }
         } catch (schedErr) {
-          console.warn('⚠️ Could not schedule notification for sermon:', schedErr);
+          console.warn('⚠️ Could not check scheduled sermon:', schedErr);
         }
       }
 

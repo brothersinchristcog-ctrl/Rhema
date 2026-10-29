@@ -117,11 +117,11 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
     { key: 'Profile',    navKey: 'nav.profile',    defaultLabel: 'Profile',    Icon: UserIcon,      bg: '#27272A', fg: '#27272A' },
   ] as const;
 
-  const getTabConfig = (routeName: string, useDailyVerse: boolean = false, t?: (k: string) => string) => {
+  const getTabConfig = (routeName: string, t?: (k: string) => string) => {
     if (routeName === 'Promise') {
       return {
         key: 'Promise',
-        label: t ? (useDailyVerse ? t('nav.dailyVerse') : t('nav.promise')) : (useDailyVerse ? 'Daily Verse' : 'Promise'),
+        label: t ? t('nav.promise') : 'Promise',
         Icon: BookOpen,
         bg: '#0F766E',
         fg: '#0F766E',
@@ -136,9 +136,9 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
   function CustomTabBar({ state, descriptors, navigation }: any) {
     const { activeChurch } = useChurch();
     const { language, t } = useLanguage();
-    const useWeChristianDailyPromise = activeChurch?.useWeChristianDailyPromise !== false;
+  
     const currentRoute = state.routes[state.index];
-    const activeConfig = getTabConfig(currentRoute.name, useWeChristianDailyPromise, t);
+    const activeConfig = getTabConfig(currentRoute.name, t);
 
     const [publicPrayerCount, setPublicPrayerCount] = useState(0);
     const [lastSeenPrayerCount, setLastSeenPrayerCount] = useState(0);
@@ -192,7 +192,7 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
         {state.routes.map((route: any, index: number) => {
           const { options } = descriptors[route.key];
           const isFocused = state.index === index;
-          const config = getTabConfig(route.name, useWeChristianDailyPromise, t);
+          const config = getTabConfig(route.name, t);
           const IconComponent = config.Icon;
 
           const onPress = () => {
@@ -434,7 +434,7 @@ function TabNavigator() {
   const { user, signOut, member, viewMode, setViewMode } = useAuth();
   const { activeChurch } = useChurch();
   const { language, t } = useLanguage();
-  const useWeChristianDailyPromise = activeChurch?.useWeChristianDailyPromise !== false;
+
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
 
@@ -477,7 +477,7 @@ function TabNavigator() {
       />
       <Tab.Screen 
         name="Promise" 
-        component={useWeChristianDailyPromise ? VerseOfTheDayScreen : PromiseArchiveScreen} 
+        component={PromiseArchiveScreen} 
         listeners={{ tabPress: handleFeatureInteraction }}
       /> 
       <Tab.Screen 

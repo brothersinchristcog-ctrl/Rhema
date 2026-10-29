@@ -39,6 +39,7 @@ import { useAuth } from '../../context/AuthContext';
 
 const CARD_BACKGROUNDS: Record<string, any> = {
   'Promises': require('../../../assets/admin_cards/promise.png'),
+  'Daily Verses': require('../../../assets/admin_cards/daily_verses.jpg'),
   'New Promise': require('../../../assets/admin_cards/new_promise.jpg'),
   'Sermons': require('../../../assets/admin_cards/sermons.png'),
   'New Sermon': require('../../../assets/admin_cards/new_sermon.png'),
@@ -122,7 +123,7 @@ const CATEGORIES = [
     title: 'Administration',
     icon: Settings,
     color: '#1E3A8A', // Deep Navy for maximum contrast
-    keywords: ['Church Setting', 'Church Branch', 'App Admin', 'About', 'Contact', 'Schedule', 'Quiz', 'Bible Quiz']
+    keywords: ['Daily Verses', 'Verse', 'Church Setting', 'Church Branch', 'App Admin', 'About', 'Contact', 'Schedule', 'Quiz', 'Bible Quiz']
   },
   {
     title: 'Support',

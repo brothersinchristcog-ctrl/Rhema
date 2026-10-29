@@ -1229,7 +1229,12 @@ class FirestoreService {
         if (!isDue) continue;
 
         try {
-          // 1. Atomically update sermon to Published and notificationSent: true
+          // 1. Check if already claimed/sent
+          const freshSnap = await doc.ref.get();
+          if (freshSnap.data()?.notificationSent === true) {
+            continue;
+          }
+
           await doc.ref.update({
             status: 'Published',
             notificationSent: true,
@@ -1241,19 +1246,23 @@ class FirestoreService {
           const pastor = sermon.pastor || 'Pastor';
           const preachedDate = sermon.date ? formatDateDisplay(sermon.date) : 'recently';
 
-          // 2. Broadcast to church members (this triggers FCM push via sendRhemaBroadcastPush Cloud Function)
-          await this.createNotificationBroadcast({
-            title: `🎧 New Sermon: ${title}`,
-            content: `New sermon "${title}" preached on ${preachedDate} by ${pastor} is now available. Watch/listen now!`,
-            date: sermon.date || todayStr,
-            type: 'sermon',
-            targetChurchId: churchId,
-            sermonId: doc.id,
-            imageUrl: sermon.imageUrl || sermon.thumbnailUrl || '',
-            screen: 'SermonVideo',
-          });
-
-
+          // 2. Broadcast with deterministic doc ID (sermon_${doc.id}) so it can NEVER duplicate
+          const bcastCol = await this.getCollection('broadcasts');
+          const bcastRef = bcastCol.doc(`sermon_${doc.id}`);
+          const bcastSnap = await bcastRef.get();
+          if (!bcastSnap.exists) {
+            await bcastRef.set({
+              title: `🎧 New Sermon: ${title}`,
+              content: `New sermon "${title}" preached on ${preachedDate} by ${pastor} is now available. Watch/listen now!`,
+              date: sermon.date || todayStr,
+              type: 'sermon',
+              targetChurchId: churchId,
+              sermonId: doc.id,
+              imageUrl: sermon.imageUrl || sermon.thumbnailUrl || '',
+              screen: 'SermonVideo',
+              createdAt: FieldValue.serverTimestamp(),
+            });
+          }
 
           publishedCount++;
           console.log(`[FirestoreService] ✅ Auto-published scheduled sermon: ${doc.id} ("${title}")`);
