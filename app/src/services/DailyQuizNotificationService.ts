@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { firestore } from './firebaseConfig';
+import { RHEMA_CHURCH_ID } from '../constants/ChurchConfig';
 import { getLocalizedDailyQuizTitle } from '../constants/DailyQuizTranslations';
 import { formatDateDisplay } from '../utils/DateUtils';
 import { SupportedLanguage } from '../locales';
@@ -43,7 +44,7 @@ class DailyQuizNotificationService {
     try {
       const snap = await firestore()
         .collection('Rhema Church')
-        .doc('global')
+        .doc(RHEMA_CHURCH_ID)
         .collection('settings')
         .doc('daily_quiz_schedule')
         .get();
@@ -113,7 +114,7 @@ class DailyQuizNotificationService {
       // 1. Write to Firestore global settings
       await firestore()
         .collection('Rhema Church')
-        .doc('global')
+        .doc(RHEMA_CHURCH_ID)
         .collection('settings')
         .doc('daily_quiz_schedule')
         .set(cleanConfig, { merge: true });
@@ -283,7 +284,7 @@ class DailyQuizNotificationService {
               quizId: `daily_quiz_${dateStr}`,
               id: `daily_quiz_${dateStr}`,
               relatedId: `daily_quiz_${dateStr}`,
-              churchId: 'global',
+              churchId: RHEMA_CHURCH_ID,
               scheduledDate: dateStr,
               screen: 'BibleQuizDetail',
             },
@@ -333,7 +334,7 @@ class DailyQuizNotificationService {
       const churchesSnap = await firestore().collection('Rhema Church').get();
       const targetChurches: string[] = [];
       churchesSnap.docs.forEach((doc: any) => {
-        if (doc.id !== 'global') {
+        if (doc.id !== 'global' && doc.id !== RHEMA_CHURCH_ID) {
           targetChurches.push(doc.id);
         }
       });
@@ -379,7 +380,7 @@ class DailyQuizNotificationService {
       // 3. Mark lastBroadcastDate in Firestore
       await firestore()
         .collection('Rhema Church')
-        .doc('global')
+        .doc(RHEMA_CHURCH_ID)
         .collection('settings')
         .doc('daily_quiz_schedule')
         .set({

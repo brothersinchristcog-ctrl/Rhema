@@ -31,6 +31,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useQuizLanguage } from '../../context/QuizLanguageContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useChurch } from '../../context/ChurchContext';
+import { RHEMA_CHURCH_ID } from '../../constants/ChurchConfig';
 import { useAuth } from '../../context/AuthContext';
 import { getQuizStrings } from '../../constants/BibleQuizTranslations';
 import {
@@ -105,7 +106,7 @@ export default function ChurchQuizzesScreen() {
   }, []);
 
   const ui = getQuizStrings(quizLanguage);
-  const churchId = activeChurch?.id || 'global';
+  const churchId = activeChurch?.id || RHEMA_CHURCH_ID;
 
   useFocusEffect(
     useCallback(() => {

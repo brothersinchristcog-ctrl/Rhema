@@ -44,6 +44,11 @@ export default function PromiseArchiveScreen({ navigation }: { navigation: any }
   const scrollViewRef = useRef<ScrollView>(null);
   const viewShotRef = useRef<ViewShot>(null);
 
+  const getTodayStr = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
   const fetchPromises = async () => {
     try {
       const data = await FirestoreService.getDailyPromisesArchive();
@@ -51,7 +56,7 @@ export default function PromiseArchiveScreen({ navigation }: { navigation: any }
       const sortedData = data.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       setPromises(sortedData);
 
-      const today = new Date().toISOString().split('T')[0];
+      const today = getTodayStr();
       const todayPromise = sortedData.find(p => p.date === today);
 
       if (todayPromise) {
@@ -74,7 +79,7 @@ export default function PromiseArchiveScreen({ navigation }: { navigation: any }
   // Reset to Today's promise when focusing the tab
   useFocusEffect(
     React.useCallback(() => {
-      const today = new Date().toISOString().split('T')[0];
+      const today = getTodayStr();
       const todayPromise = promises.find(p => p.date === today);
       if (todayPromise) {
         setSelectedPromise(todayPromise);
@@ -264,34 +269,57 @@ export default function PromiseArchiveScreen({ navigation }: { navigation: any }
         <View style={styles.historySection}>
           <Text style={[styles.historyLabel, { color: isDark ? '#e0e7ff' : '#1a2d5a' }]}>Past promises</Text>
           <View style={[styles.historyCard, { backgroundColor: isDark ? '#14234b' : '#fff', borderColor: isDark ? '#1d3266' : '#FAF7F2' }]}>
-            {promises.filter(p => p.date !== new Date().toISOString().split('T')[0]).slice(0, 10).map((item, index) => {
-              const refString = `${item.verseReferenceEn || ''}${item.verseReferenceEn && item.verseReferenceTe ? ' - ' : ''}${item.verseReferenceTe || ''}` || stripHtml(item.verse).substring(0, 25) + '...';
+            {(() => {
+              const now = new Date();
+              const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+              const sevenDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+              const sevenDaysAgoStr = `${sevenDaysAgo.getFullYear()}-${String(sevenDaysAgo.getMonth() + 1).padStart(2, '0')}-${String(sevenDaysAgo.getDate()).padStart(2, '0')}`;
 
-              return (
-                <TouchableOpacity
-                  key={item.id}
-                  onPress={() => {
-                    setSelectedPromise(item);
-                    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
-                  }}
-                  style={[
-                    styles.historyItem,
-                    { borderBottomColor: isDark ? '#1d3266' : '#FAF7F2' },
-                    selectedPromise?.id === item.id && { backgroundColor: isDark ? '#1c3166' : '#FAF7F2' },
-                    index === Math.min(promises.length - 1, 9) && { borderBottomWidth: 0 }
-                  ]}
-                >
-                  <View style={styles.historyItemContent}>
-                    <Text style={[styles.historyItemRef, { color: isDark ? '#f8fafc' : '#111827' }]}>{refString}</Text>
-                    <Text style={[styles.historyItemVakyam, { color: isDark ? '#94a3b8' : '#475569' }]} numberOfLines={1}>{stripHtml(item.verseTelugu) || 'వాగ్దానము'}</Text>
-                    <Text style={styles.historyItemDate}>
-                      {new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · {new Date(item.date).toLocaleDateString('en-US', { weekday: 'short' })}
+              const pastPromises = promises.filter(p => {
+                if (!p.date) return false;
+                if (p.status === 'Draft') return false;
+                return p.date < todayStr && p.date >= sevenDaysAgoStr;
+              });
+
+              if (pastPromises.length === 0) {
+                return (
+                  <View style={{ padding: 20, alignItems: 'center' }}>
+                    <Text style={{ color: isDark ? '#94a3b8' : '#9CA3AF', fontSize: 13, fontStyle: 'italic' }}>
+                      No past promises available.
                     </Text>
                   </View>
-                  <ChevronRight size={16} color="#D1D5DB" />
-                </TouchableOpacity>
-              );
-            })}
+                );
+              }
+
+              return pastPromises.map((item, index) => {
+                const refString = `${item.verseReferenceEn || ''}${item.verseReferenceEn && item.verseReferenceTe ? ' - ' : ''}${item.verseReferenceTe || ''}` || stripHtml(item.verse).substring(0, 25) + '...';
+
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    onPress={() => {
+                      setSelectedPromise(item);
+                      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+                    }}
+                    style={[
+                      styles.historyItem,
+                      { borderBottomColor: isDark ? '#1d3266' : '#FAF7F2' },
+                      selectedPromise?.id === item.id && { backgroundColor: isDark ? '#1c3166' : '#FAF7F2' },
+                      index === pastPromises.length - 1 && { borderBottomWidth: 0 }
+                    ]}
+                  >
+                    <View style={styles.historyItemContent}>
+                      <Text style={[styles.historyItemRef, { color: isDark ? '#f8fafc' : '#111827' }]}>{refString}</Text>
+                      <Text style={[styles.historyItemVakyam, { color: isDark ? '#94a3b8' : '#475569' }]} numberOfLines={1}>{stripHtml(item.verseTelugu) || 'వాగ్దానము'}</Text>
+                      <Text style={styles.historyItemDate}>
+                        {new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · {new Date(item.date).toLocaleDateString('en-US', { weekday: 'short' })}
+                      </Text>
+                    </View>
+                    <ChevronRight size={16} color="#D1D5DB" />
+                  </TouchableOpacity>
+                );
+              });
+            })()}
           </View>
         </View>
         <View style={{ height: 120 }} />

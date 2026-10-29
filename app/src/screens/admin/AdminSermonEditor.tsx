@@ -17,7 +17,8 @@ import {
   Image
 } from 'react-native';
 import DateTimePickerModal from "react-native-modal-datetime-picker";
-import { formatDateDisplay } from '../../utils/DateUtils';
+import * as Notifications from 'expo-notifications';
+import { formatDateDisplay, parseLocalDate, toStandardDateString } from '../../utils/DateUtils';
 import { LinearGradient } from 'expo-linear-gradient';
 import { 
   Plus, 
@@ -47,7 +48,11 @@ import {
   Save,
   Send,
   Check,
-  User
+  User,
+  Trash2,
+  Upload,
+  BookOpen,
+  Paperclip
 } from 'lucide-react-native';
 import { AdminTabContext } from '../../context/AdminTabContext';
 
@@ -85,20 +90,38 @@ export default function AdminSermonEditor() {
   const [lastSavedStatus, setLastSavedStatus] = useState<string>('Published');
   const [savingActionText, setSavingActionText] = useState('Saving Sermon…');
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showScheduledDatePicker, setShowScheduledDatePicker] = useState(false);
+  const [showScheduledTimePicker, setShowScheduledTimePicker] = useState(false);
   const [audioFile, setAudioFile] = useState<any>(null);
   const [thumbnailFile, setThumbnailFile] = useState<any>(null);
+  const [notesFile, setNotesFile] = useState<any>(null);
+  const [notesUrl, setNotesUrl] = useState<string>('');
+  const [notesFileName, setNotesFileName] = useState<string>('');
+  const [notesFileType, setNotesFileType] = useState<string>('');
+  const [notesText, setNotesText] = useState<string>('');
+  const [notesFileSize, setNotesFileSize] = useState<number | undefined>(undefined);
   
   const [form, setForm] = useState({
     titleEn: '',
     titleTe: '',
     pastor: '',
-    date: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })(),
+    date: toStandardDateString(new Date()),
     ref: '',
     duration: '',
     youtubeId: '',
     description: '',
     thumbnailUrl: '',
     status: 'Published',
+    scheduledDate: (() => {
+      const now = new Date();
+      if (now.getHours() >= 20) now.setDate(now.getDate() + 1);
+      return toStandardDateString(now);
+    })(),
+    scheduledTime: (() => {
+      const now = new Date();
+      return now.getHours() >= 20 ? '09:00 AM' : '08:00 PM';
+    })(),
+    scheduledPublishAt: '',
     notifyMembers: true,
     autoSend: false
   });
@@ -160,14 +183,25 @@ export default function AdminSermonEditor() {
         titleEn: editingData.title || '',
         titleTe: editingData.titleTelugu || '',
         pastor: editingData.pastor || '',
-        date: editingData.date || (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })(),
+        date: editingData.date ? toStandardDateString(editingData.date) : toStandardDateString(new Date()),
         ref: editingData.scripture || '',
         duration: editingData.duration || '45 mins',
         youtubeId: editingData.youtubeId || '',
         description: editingData.description || '',
         thumbnailUrl: editingData.thumbnailUrl || editingData.imageUrl || '',
-        status: editingData.status || 'Published'
+        status: editingData.status || 'Published',
+        scheduledDate: editingData.scheduledDate 
+          ? toStandardDateString(editingData.scheduledDate) 
+          : (editingData.status === 'Scheduled' && editingData.date ? toStandardDateString(editingData.date) : toStandardDateString(new Date())),
+        scheduledTime: editingData.scheduledTime || '08:00 PM',
+        scheduledPublishAt: editingData.scheduledPublishAt || '',
       }));
+      setNotesUrl(editingData.notesUrl || '');
+      setNotesFileName(editingData.notesFileName || '');
+      setNotesFileType(editingData.notesFileType || '');
+      setNotesText(editingData.notesText || '');
+      setNotesFileSize(editingData.notesFileSize);
+      setNotesFile(null);
       // Load existing categories
       if (editingData.categories) {
         const loaded = typeof editingData.categories === 'string'
@@ -182,6 +216,13 @@ export default function AdminSermonEditor() {
           return merged;
         });
       }
+    } else {
+      setNotesUrl('');
+      setNotesFileName('');
+      setNotesFileType('');
+      setNotesText('');
+      setNotesFileSize(undefined);
+      setNotesFile(null);
     }
   }, [editingData]);
 
@@ -236,15 +277,186 @@ export default function AdminSermonEditor() {
     }
   };
 
-  const handleConfirm = (date: Date) => {
-    // Avoid toISOString() as it shifts the date to UTC, causing it to display the previous day in some timezones.
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const formattedDate = `${year}-${month}-${day}`;
-    
-    setForm({ ...form, date: formattedDate });
+  const uploadNotesToCloud = async (localUri: string, fileName: string): Promise<string> => {
+    try {
+      const storage = require('@react-native-firebase/storage').default;
+      const churchId = await FirestoreService.getChurchId();
+      const cleanName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const storagePath = `Rhema Church/${churchId || 'common'}/sermons/notes/${Date.now()}_${cleanName}`;
+      
+      const reference = storage().ref(storagePath);
+      try {
+        await reference.putFile(localUri);
+      } catch (putErr) {
+        const res = await fetch(localUri);
+        const blob = await res.blob();
+        await reference.put(blob);
+      }
+      const downloadURL = await reference.getDownloadURL();
+      return downloadURL;
+    } catch (error) {
+      console.error('Notes upload failed:', error);
+      throw new Error('Cloud notes upload failed');
+    }
+  };
+
+  const handlePickNotesDocument = async () => {
+    try {
+      const DocumentPicker = require('expo-document-picker');
+      const res = await DocumentPicker.getDocumentAsync({
+        type: [
+          'application/pdf',
+          'application/msword',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'text/plain',
+          '*/*'
+        ],
+        copyToCacheDirectory: true,
+      });
+
+      if (!res.canceled && res.assets && res.assets.length > 0) {
+        const asset = res.assets[0];
+        const name = asset.name || 'sermon_notes';
+        const ext = name.split('.').pop()?.toLowerCase() || '';
+
+        if (!['pdf', 'doc', 'docx', 'txt'].includes(ext)) {
+          Alert.alert(
+            'Unsupported File Format',
+            'Please select a PDF (.pdf), Word document (.doc, .docx), or Text document (.txt).'
+          );
+          return;
+        }
+
+        // Max file size limit: 20 MB
+        const MAX_DOC_SIZE_BYTES = 20 * 1024 * 1024;
+        if (asset.size && asset.size > MAX_DOC_SIZE_BYTES) {
+          Alert.alert(
+            'Document Limit Exceeded',
+            `The selected file is ${(asset.size / (1024 * 1024)).toFixed(1)} MB. The maximum allowed file size for sermon notes is 20 MB. Please upload a file within 20 MB.`
+          );
+          return;
+        }
+
+        let fType = 'pdf';
+        if (ext === 'doc' || ext === 'docx') fType = ext;
+        else if (ext === 'txt') fType = 'txt';
+
+        setNotesFile(asset);
+        setNotesFileName(name);
+        setNotesFileType(fType);
+        setNotesFileSize(asset.size);
+
+        if (ext === 'txt') {
+          try {
+            let text = '';
+            try {
+              const { readAsStringAsync } = require('expo-file-system/legacy');
+              text = await readAsStringAsync(asset.uri);
+            } catch (e1) {
+              const resp = await fetch(asset.uri);
+              text = await resp.text();
+            }
+            if (text) {
+              setNotesText(text);
+            }
+          } catch (textErr) {
+            console.warn('Could not read txt file content:', textErr);
+          }
+        } else {
+          setNotesText('');
+        }
+      }
+    } catch (err: any) {
+      console.error('Pick Document Error:', err);
+      Alert.alert('Error', 'Unable to pick document. Please try again.');
+    }
+  };
+
+  const handleRemoveNotes = () => {
+    setNotesFile(null);
+    setNotesUrl('');
+    setNotesFileName('');
+    setNotesFileType('');
+    setNotesText('');
+    setNotesFileSize(undefined);
+  };
+
+  const handleConfirmSermonDate = (date: Date) => {
+    const formattedDate = toStandardDateString(date);
+    setForm(prev => ({ ...prev, date: formattedDate }));
     setShowDatePicker(false);
+  };
+
+  const handleConfirmScheduledDate = (date: Date) => {
+    const formattedDate = toStandardDateString(date);
+    setForm(prev => ({ ...prev, scheduledDate: formattedDate }));
+    setShowScheduledDatePicker(false);
+  };
+
+  const handleConfirmScheduledTime = (date: Date) => {
+    let hours = date.getHours();
+    const minutes = date.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const strTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')} ${ampm}`;
+    setForm(prev => ({ ...prev, scheduledTime: strTime }));
+    setShowScheduledTimePicker(false);
+  };
+
+  const setPresetTonight = () => {
+    setForm(prev => ({
+      ...prev,
+      scheduledDate: toStandardDateString(new Date()),
+      scheduledTime: '08:00 PM'
+    }));
+  };
+
+  const setPresetTomorrowMorning = () => {
+    const tmrw = new Date();
+    tmrw.setDate(tmrw.getDate() + 1);
+    setForm(prev => ({
+      ...prev,
+      scheduledDate: toStandardDateString(tmrw),
+      scheduledTime: '09:00 AM'
+    }));
+  };
+
+  const setPresetTomorrowNight = () => {
+    const tmrw = new Date();
+    tmrw.setDate(tmrw.getDate() + 1);
+    setForm(prev => ({
+      ...prev,
+      scheduledDate: toStandardDateString(tmrw),
+      scheduledTime: '08:00 PM'
+    }));
+  };
+
+  const isTomorrow = (dateStr: string) => {
+    const tmrw = new Date();
+    tmrw.setDate(tmrw.getDate() + 1);
+    return toStandardDateString(dateStr) === toStandardDateString(tmrw);
+  };
+
+  const isToday = (dateStr: string) => {
+    return toStandardDateString(dateStr) === toStandardDateString(new Date());
+  };
+
+  const computeScheduledPublishAt = (schedDateStr: string, schedTimeStr: string): string => {
+    const cleanDate = toStandardDateString(schedDateStr) || toStandardDateString(new Date());
+    const timeMatch = String(schedTimeStr || '').match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+    let hours = 20;
+    let mins = 0;
+    if (timeMatch) {
+      hours = parseInt(timeMatch[1], 10);
+      mins = parseInt(timeMatch[2], 10);
+      const ampm = timeMatch[3]?.toUpperCase();
+      if (ampm === 'PM' && hours < 12) hours += 12;
+      if (ampm === 'AM' && hours === 12) hours = 0;
+    }
+    const [y, m, d] = cleanDate.split('-').map(Number);
+    const dt = new Date(y, m - 1, d, hours, mins, 0);
+    return dt.toISOString();
   };
 
   const handleSave = async (status: string) => {
@@ -258,34 +470,105 @@ export default function AdminSermonEditor() {
         : 'Saving Sermon Draft…'
     );
     setLoading(true);
+    let finalNotesUrl = notesUrl;
+    if (notesFile) {
+      setSavingActionText('Uploading Sermon Notes…');
+      try {
+        finalNotesUrl = await uploadNotesToCloud(notesFile.uri, notesFileName || notesFile.name);
+        setNotesUrl(finalNotesUrl);
+      } catch (notesErr) {
+        console.warn('Could not upload sermon notes document:', notesErr);
+        Alert.alert('Notes Upload Warning', 'Failed to upload sermon notes document to cloud storage. Saving sermon without notes.');
+        finalNotesUrl = '';
+      }
+    }
+
     try {
-      const payload = {
+      const finalScheduledPublishAt = finalStatus === 'Scheduled' 
+        ? computeScheduledPublishAt(form.scheduledDate, form.scheduledTime)
+        : '';
+
+      const payload: any = {
         id: editingData?.id,
         ...form,
         title: form.titleEn,
         titleTelugu: form.titleTe,
         status: finalStatus,
+        date: form.date, // Actual preaching/service date (e.g. 2026-10-25)
+        scheduledDate: finalStatus === 'Scheduled' ? form.scheduledDate : null,
+        scheduledTime: finalStatus === 'Scheduled' ? form.scheduledTime : null,
+        scheduledPublishAt: finalScheduledPublishAt || null,
+        notificationSent: finalStatus === 'Published',
         scripture: form.ref,
         categories: selectedCategories.join(';'),
         thumbnailUrl: form.thumbnailUrl || '',
         imageUrl: form.thumbnailUrl || '',
+        notesUrl: finalNotesUrl || '',
+        notesFileName: notesFileName || '',
+        notesFileType: notesFileType || '',
+        notesText: notesText || '',
+        notesFileSize: notesFileSize || 0,
       };
-      await FirestoreService.createSermon(payload);
+      const savedSermonId = await FirestoreService.createSermon(payload);
 
-      // 🔔 Push notification to all members when publishing
+      // 🔔 Push notification handling
       if (payload.status === 'Published') {
         try {
           const churchId = await FirestoreService.getChurchId();
           await FirestoreService.createNotificationBroadcast({
             title: `🎧 New Sermon: ${form.titleEn}`,
-            content: `New sermon "${form.titleEn}" by ${form.pastor || 'Pastor'} is now available. Watch/listen now!`,
+            content: `New sermon "${form.titleEn}" preached on ${formatDateDisplay(form.date)} by ${form.pastor || 'Pastor'} is now available. Watch/listen now!`,
             date: form.date,
             type: 'sermon',
             targetChurchId: churchId,
+            sermonId: savedSermonId,
+            imageUrl: payload.thumbnailUrl || payload.imageUrl || '',
+            screen: 'SermonVideo',
           });
           console.log('🔔 Sermon push notification queued.');
         } catch (notifErr) {
           console.warn('⚠️ Sermon push notification failed:', notifErr);
+        }
+      } else if (payload.status === 'Scheduled' && finalScheduledPublishAt) {
+        try {
+          const targetDate = new Date(finalScheduledPublishAt);
+          const diffMs = targetDate.getTime() - Date.now();
+
+          if (diffMs <= 0) {
+            // Already due: immediately auto-publish and broadcast
+            await FirestoreService.autoPublishDueScheduledSermons();
+          } else {
+            // Schedule device notification with expo-notifications
+            await Notifications.scheduleNotificationAsync({
+              identifier: `sermon_sched_${savedSermonId}`,
+              content: {
+                title: `🎧 New Sermon: ${form.titleEn}`,
+                body: `New sermon "${form.titleEn}" preached by ${form.pastor || 'Pastor'} is now available. Tap to watch!`,
+                sound: true,
+                data: {
+                  type: 'sermon',
+                  sermonId: savedSermonId,
+                  screen: 'SermonVideo',
+                },
+              },
+              trigger: {
+                type: Notifications.SchedulableTriggerInputTypes.DATE,
+                date: targetDate,
+              },
+            });
+            console.log(`🔔 Local device notification scheduled for: ${targetDate.toLocaleString()}`);
+
+            // Also set in-app timer if due within 24 hours
+            if (diffMs <= 24 * 60 * 60 * 1000) {
+              setTimeout(() => {
+                FirestoreService.autoPublishDueScheduledSermons().catch(err => {
+                  console.warn('[AdminSermonEditor] Scheduled auto-publish timeout failed:', err);
+                });
+              }, diffMs);
+            }
+          }
+        } catch (schedErr) {
+          console.warn('⚠️ Could not schedule notification for sermon:', schedErr);
         }
       }
 
@@ -352,27 +635,46 @@ export default function AdminSermonEditor() {
           </View>
 
           <View style={styles.row}>
-            <View style={[styles.fGroup, {flex: 2}]}>
-              <Text style={styles.fLabel}>Sermon Date</Text>
-              <TouchableOpacity style={styles.inputWithIcon} onPress={() => setShowDatePicker(true)}>
-                <Text style={[styles.inputTxt, { flex: 1 }]}>
+            <View style={[styles.fGroup, { flex: 1.8 }]}>
+              <Text style={styles.fLabel}>
+                Sermon Date (Service Date) <Text style={{ color: '#c0392b' }}>*</Text>
+              </Text>
+              <TouchableOpacity 
+                style={styles.inputWithIcon} 
+                onPress={() => setShowDatePicker(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.inputTxt, { flex: 1, fontWeight: '600' }]}>
                   {formatDateDisplay(form.date)}
                 </Text>
                 <CalendarIcon size={16} color="#1a2d5a" style={{ marginLeft: 8 }} />
               </TouchableOpacity>
+              <Text style={styles.fHelper}>
+                Actual date the service or sermon took place (e.g. 25-10-2026). Displayed to members on the sermon card.
+              </Text>
             </View>
-            <View style={[styles.fGroup, {flex: 1.2}]}>
+
+            <View style={[styles.fGroup, { flex: 1.2 }]}>
               <Text style={styles.fLabel}>Duration</Text>
-              <TextInput style={styles.input} value={form.duration} onChangeText={(v) => setForm({...form, duration: v})} placeholder="e.g. 42 min" />
+              <TextInput 
+                style={styles.input} 
+                value={form.duration} 
+                onChangeText={(v) => setForm({ ...form, duration: v })} 
+                placeholder="e.g. 42 min" 
+                placeholderTextColor="#94A3B8"
+              />
+              <Text style={styles.fHelper}>
+                Length in minutes or hours (e.g. 120 min).
+              </Text>
             </View>
           </View>
 
           <DateTimePickerModal
             isVisible={showDatePicker}
             mode="date"
-            onConfirm={handleConfirm}
+            onConfirm={handleConfirmSermonDate}
             onCancel={() => setShowDatePicker(false)}
-            date={new Date(form.date)}
+            date={parseLocalDate(form.date)}
           />
 
           <View style={styles.fGroup}>
@@ -513,37 +815,113 @@ export default function AdminSermonEditor() {
           </View>
         </View>
 
-        {/* 4. Notifications */}
+        {/* 3. Sermon Notes Document */}
         <View style={styles.modBox}>
-          <View style={[styles.modHd, styles.hdYellow]}>
-            <Bell size={14} color="#D97706" />
-            <Text style={[styles.modHdTxt, {color: '#D97706'}]}>Push Notification</Text>
-          </View>
-          <View style={styles.toggleRow}>
-            <Text style={styles.toggleTxt}>Notify members when published</Text>
-            <TouchableOpacity style={[styles.switch, styles.switchOn]} onPress={() => {}}>
-              <View style={[styles.switchDot, styles.switchDotOn]} />
-            </TouchableOpacity>
-          </View>
-          <View style={styles.toggleRow}>
-            <Text style={styles.toggleTxt}>Auto-send immediately on publish</Text>
-            <TouchableOpacity style={styles.switch} onPress={() => {}}>
-              <View style={styles.switchDot} />
-            </TouchableOpacity>
+          <View style={[styles.modHd, styles.hdBlue]}>
+            <BookOpen size={14} color="#1a2d5a" />
+            <Text style={styles.modHdTxt}>Sermon Notes Document</Text>
+            <View style={styles.optionalBadge}>
+              <Text style={styles.optionalBadgeTxt}>Optional</Text>
+            </View>
           </View>
 
-          {/* Notification Preview */}
-          <View style={styles.notifPreview}>
-            <View style={styles.notifHeader}>
-              <View style={styles.notifLogo}><Text style={{fontSize: 6, color: '#fff', fontWeight: '800'}}>CG</Text></View>
-              <Text style={styles.notifHeaderTxt}>Your Church · Now</Text>
+          <Text style={styles.notesSectionSubtitle}>
+            Attach sermon notes or study outline in PDF, Word, or Text format (Max 20 MB). Members can read these notes directly inside the app while watching.
+          </Text>
+
+          {/* Format pills */}
+          <View style={styles.formatPillsRow}>
+            <View style={[styles.formatPill, { borderColor: '#FCA5A5', backgroundColor: '#FEF2F2' }]}>
+              <Text style={[styles.formatPillTxt, { color: '#DC2626' }]}>PDF</Text>
+              <Text style={styles.formatPillExt}>.pdf</Text>
             </View>
-            <Text style={styles.notifTitle}>New Sermon 🎙️</Text>
-            <Text style={styles.notifBody}>Sermon title will appear here for members</Text>
+            <View style={[styles.formatPill, { borderColor: '#93C5FD', backgroundColor: '#EFF6FF' }]}>
+              <Text style={[styles.formatPillTxt, { color: '#2563EB' }]}>Word</Text>
+              <Text style={styles.formatPillExt}>.doc, .docx</Text>
+            </View>
+            <View style={[styles.formatPill, { borderColor: '#86EFAC', backgroundColor: '#F0FDF4' }]}>
+              <Text style={[styles.formatPillTxt, { color: '#16A34A' }]}>Text</Text>
+              <Text style={styles.formatPillExt}>.txt</Text>
+            </View>
           </View>
+
+          {notesFileName || notesUrl || notesFile ? (
+            <View style={styles.notesDocCard}>
+              <View style={styles.notesDocHeader}>
+                <View style={[
+                  styles.notesDocTypeBadge,
+                  notesFileType === 'pdf' ? { backgroundColor: '#FEE2E2', borderColor: '#FCA5A5' } :
+                  (notesFileType === 'doc' || notesFileType === 'docx') ? { backgroundColor: '#DBEAFE', borderColor: '#93C5FD' } :
+                  { backgroundColor: '#DCFCE7', borderColor: '#86EFAC' }
+                ]}>
+                  <Text style={[
+                    styles.notesDocTypeTxt,
+                    notesFileType === 'pdf' ? { color: '#DC2626' } :
+                    (notesFileType === 'doc' || notesFileType === 'docx') ? { color: '#2563EB' } :
+                    { color: '#16A34A' }
+                  ]}>
+                    {(notesFileType || 'DOC').toUpperCase()}
+                  </Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.notesDocName} numberOfLines={1}>{notesFileName || 'Sermon_Notes'}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                    {notesFileSize ? (
+                      <Text style={styles.notesDocMeta}>{(notesFileSize / 1024).toFixed(0)} KB · </Text>
+                    ) : null}
+                    <Text style={styles.notesDocMeta}>
+                      {notesFile ? 'Ready to upload on save' : 'Uploaded to Cloud'}
+                    </Text>
+                    <CheckCircle2 size={11} color="#059669" />
+                  </View>
+                </View>
+              </View>
+
+              {notesText ? (
+                <View style={styles.notesTextPreviewBox}>
+                  <Text style={styles.notesTextPreviewLabel}>Text Content Preview:</Text>
+                  <Text style={styles.notesTextPreviewContent} numberOfLines={3}>
+                    {notesText}
+                  </Text>
+                </View>
+              ) : null}
+
+              <View style={styles.notesDocActions}>
+                <TouchableOpacity 
+                  style={styles.notesDocChangeBtn} 
+                  onPress={handlePickNotesDocument}
+                >
+                  <Paperclip size={13} color="#1a2d5a" />
+                  <Text style={styles.notesDocChangeBtnTxt}>Replace Document</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={styles.notesDocRemoveBtn} 
+                  onPress={handleRemoveNotes}
+                >
+                  <Trash2 size={13} color="#DC2626" />
+                  <Text style={styles.notesDocRemoveBtnTxt}>Remove</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.notesUploadDashedBox} onPress={handlePickNotesDocument}>
+              <View style={styles.notesUploadIconCircle}>
+                <Upload size={20} color="#1a2d5a" />
+              </View>
+              <Text style={styles.notesUploadTitle}>Choose Sermon Notes Document</Text>
+              <Text style={styles.notesUploadSubtitle}>
+                Tap to select PDF, Word (.doc, .docx), or Text (.txt) file · Up to 20 MB
+              </Text>
+              <View style={styles.notesUploadButton}>
+                <Paperclip size={13} color="#1a2d5a" />
+                <Text style={styles.notesUploadButtonTxt}>Browse Files (Max 20 MB)</Text>
+              </View>
+            </TouchableOpacity>
+          )}
         </View>
 
-        {/* 5. Publish Status */}
+        {/* 4. Publish Status */}
         <View style={styles.modBox}>
           <View style={[styles.modHd, styles.hdBlue]}>
             <Radio size={14} color="#1a2d5a" />
@@ -615,7 +993,7 @@ export default function AdminSermonEditor() {
                   )}
                 </View>
                 <Text style={styles.statusOptionSub}>
-                  Auto-publishes on {formatDateDisplay(form.date)}
+                  Auto-publishes on {formatDateDisplay(form.scheduledDate)} at {form.scheduledTime}
                 </Text>
               </View>
               <View style={[
@@ -663,6 +1041,127 @@ export default function AdminSermonEditor() {
               </View>
             </TouchableOpacity>
           </View>
+
+          {/* Dedicated Future Scheduling Box */}
+          {form.status === 'Scheduled' && (
+            <View style={styles.schedBox}>
+              <View style={styles.schedHeader}>
+                <Clock size={16} color="#B45309" />
+                <Text style={styles.schedHeaderTitle}>Schedule Future Publish Date & Time</Text>
+              </View>
+              
+              <Text style={styles.schedNotice}>
+                Sermon Date: <Text style={{ fontWeight: '700', color: '#1a2d5a' }}>{formatDateDisplay(form.date)}</Text> (when service took place).
+                {`\n`}Choose when this video should be published and announced to members:
+              </Text>
+
+              {/* Quick Presets */}
+              <View style={styles.presetChipsRow}>
+                <TouchableOpacity 
+                  style={[
+                    styles.presetChip,
+                    isToday(form.scheduledDate) && form.scheduledTime === '08:00 PM' && styles.presetChipActive
+                  ]}
+                  onPress={setPresetTonight}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[
+                    styles.presetChipTxt,
+                    isToday(form.scheduledDate) && form.scheduledTime === '08:00 PM' && styles.presetChipTxtActive
+                  ]}>
+                    🌙 Tonight (8:00 PM)
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={[
+                    styles.presetChip,
+                    isTomorrow(form.scheduledDate) && form.scheduledTime === '09:00 AM' && styles.presetChipActive
+                  ]}
+                  onPress={setPresetTomorrowMorning}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[
+                    styles.presetChipTxt,
+                    isTomorrow(form.scheduledDate) && form.scheduledTime === '09:00 AM' && styles.presetChipTxtActive
+                  ]}>
+                    🌅 Tomorrow (9:00 AM)
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={[
+                    styles.presetChip,
+                    isTomorrow(form.scheduledDate) && form.scheduledTime === '08:00 PM' && styles.presetChipActive
+                  ]}
+                  onPress={setPresetTomorrowNight}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[
+                    styles.presetChipTxt,
+                    isTomorrow(form.scheduledDate) && form.scheduledTime === '08:00 PM' && styles.presetChipTxtActive
+                  ]}>
+                    ☀️ Tomorrow (8:00 PM)
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Independent Date & Time Inputs */}
+              <View style={styles.schedInputsRow}>
+                <View style={{ flex: 1.2 }}>
+                  <Text style={styles.schedFieldLabel}>Scheduled Publish Date</Text>
+                  <TouchableOpacity 
+                    style={styles.schedInputBtn} 
+                    onPress={() => setShowScheduledDatePicker(true)}
+                    activeOpacity={0.75}
+                  >
+                    <CalendarIcon size={15} color="#1a2d5a" />
+                    <Text style={styles.schedInputBtnTxt}>
+                      {formatDateDisplay(form.scheduledDate)}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.schedFieldLabel}>Scheduled Publish Time</Text>
+                  <TouchableOpacity 
+                    style={styles.schedInputBtn} 
+                    onPress={() => setShowScheduledTimePicker(true)}
+                    activeOpacity={0.75}
+                  >
+                    <Clock size={15} color="#1a2d5a" />
+                    <Text style={styles.schedInputBtnTxt}>
+                      {form.scheduledTime}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.schedStatusCallout}>
+                <CheckCircle2 size={14} color="#059669" />
+                <Text style={styles.schedStatusCalloutTxt}>
+                  Auto-publishes on {formatDateDisplay(form.scheduledDate)} at {form.scheduledTime}. Members will receive push notifications then.
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* Scheduled Publish Date & Time Pickers */}
+          <DateTimePickerModal
+            isVisible={showScheduledDatePicker}
+            mode="date"
+            onConfirm={handleConfirmScheduledDate}
+            onCancel={() => setShowScheduledDatePicker(false)}
+            date={parseLocalDate(form.scheduledDate)}
+          />
+
+          <DateTimePickerModal
+            isVisible={showScheduledTimePicker}
+            mode="time"
+            onConfirm={handleConfirmScheduledTime}
+            onCancel={() => setShowScheduledTimePicker(false)}
+            date={parseLocalDate(form.scheduledDate)}
+          />
         </View>
 
         {/* Footer Action Buttons exactly like New Promise */}
@@ -896,7 +1395,7 @@ export default function AdminSermonEditor() {
                   {lastSavedStatus === 'Published' 
                     ? 'LIVE ON MEMBER APP' 
                     : lastSavedStatus === 'Scheduled'
-                    ? `SCHEDULED • ${formatDateDisplay(form.date)}`
+                    ? `SCHEDULED • ${formatDateDisplay(form.scheduledDate)} at ${form.scheduledTime}`
                     : 'SAVED AS PRIVATE DRAFT'}
                 </Text>
               </View>
@@ -914,7 +1413,7 @@ export default function AdminSermonEditor() {
                 {lastSavedStatus === 'Published'
                   ? 'Your sermon is live and visible immediately to church members on the Sermons screen.'
                   : lastSavedStatus === 'Scheduled'
-                  ? `Your sermon is scheduled and will automatically go live on ${formatDateDisplay(form.date)}.`
+                  ? `Your sermon from ${formatDateDisplay(form.date)} is scheduled and will automatically go live on ${formatDateDisplay(form.scheduledDate)} at ${form.scheduledTime}.`
                   : 'Your sermon draft is safely saved. It remains private and hidden from members until published.'}
               </Text>
 
@@ -929,9 +1428,18 @@ export default function AdminSermonEditor() {
                 </View>
                 <View style={styles.successDetailRow}>
                   <CalendarIcon size={14} color="#1a2d5a" />
-                  <Text style={styles.successDetailLabel}>Date:</Text>
+                  <Text style={styles.successDetailLabel}>Sermon Date:</Text>
                   <Text style={styles.successDetailVal}>{formatDateDisplay(form.date)}</Text>
                 </View>
+                {lastSavedStatus === 'Scheduled' && (
+                  <View style={styles.successDetailRow}>
+                    <Clock size={14} color="#D97706" />
+                    <Text style={styles.successDetailLabel}>Publishes:</Text>
+                    <Text style={[styles.successDetailVal, { color: '#B45309', fontWeight: '700' }]}>
+                      {formatDateDisplay(form.scheduledDate)} at {form.scheduledTime}
+                    </Text>
+                  </View>
+                )}
                 {!!form.pastor?.trim() && (
                   <View style={styles.successDetailRow}>
                     <User size={14} color="#1a2d5a" />
@@ -1061,6 +1569,7 @@ const styles = StyleSheet.create({
   fGroup: { marginBottom: 16 },
   fLabel: { fontSize: 12, fontWeight: '700', color: '#1a2d5a', marginBottom: 6 },
   fHint: { fontSize: 9, color: '#9CA3AF', fontWeight: '500', marginTop: 4 },
+  fHelper: { fontSize: 10.5, color: '#64748B', lineHeight: 14, marginTop: 4 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
 
   input: { backgroundColor: '#FDFDFD', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, padding: 12, fontSize: 13, color: '#1a2d5a' },
@@ -1561,5 +2070,298 @@ const styles = StyleSheet.create({
   newCatBtnCancelTxt: { fontSize: 13, fontWeight: '600', color: '#64748b' },
   newCatBtnSave: { backgroundColor: '#1a2d5a', paddingVertical: 10, paddingHorizontal: 18, borderRadius: 8, minWidth: 110, alignItems: 'center', justifyContent: 'center' },
   newCatBtnSaveTxt: { fontSize: 13, fontWeight: '700', color: '#fff' },
+
+  // ─── Scheduled Publish Box Styles ──────────────────────────────────────────
+  schedBox: {
+    marginTop: 14,
+    backgroundColor: '#FFFBEB',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#FDE68A',
+    padding: 14,
+  },
+  schedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginBottom: 6,
+  },
+  schedHeaderTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#92400E',
+    letterSpacing: 0.3,
+  },
+  schedNotice: {
+    fontSize: 11.5,
+    color: '#78350F',
+    lineHeight: 16,
+    marginBottom: 12,
+  },
+  presetChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  presetChip: {
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+  },
+  presetChipActive: {
+    backgroundColor: '#F59E0B',
+    borderColor: '#D97706',
+  },
+  presetChipTxt: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+  presetChipTxtActive: {
+    color: '#FFFFFF',
+  },
+  schedInputsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 12,
+  },
+  schedFieldLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1a2d5a',
+    marginBottom: 5,
+  },
+  schedInputBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 44,
+  },
+  schedInputBtnTxt: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#1a2d5a',
+  },
+  schedStatusCallout: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 8,
+    padding: 10,
+  },
+  schedStatusCalloutTxt: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#166534',
+    flex: 1,
+    lineHeight: 15,
+  },
+
+  // ─── Sermon Notes Document Styles ──────────────────────────────────
+  optionalBadge: {
+    marginLeft: 'auto',
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  optionalBadgeTxt: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#64748B',
+    textTransform: 'uppercase',
+  },
+  notesSectionSubtitle: {
+    fontSize: 11.5,
+    color: '#64748B',
+    lineHeight: 17,
+    marginBottom: 12,
+  },
+  formatPillsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 14,
+  },
+  formatPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  formatPillTxt: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  formatPillExt: {
+    fontSize: 9.5,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  notesUploadDashedBox: {
+    borderStyle: 'dashed',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    borderRadius: 14,
+    paddingVertical: 24,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+  },
+  notesUploadIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#EEF2FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  notesUploadTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1a2d5a',
+    marginBottom: 4,
+  },
+  notesUploadSubtitle: {
+    fontSize: 11,
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  notesUploadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#1a2d5a',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  notesUploadButtonTxt: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#1a2d5a',
+  },
+  notesDocCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    padding: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  notesDocHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  notesDocTypeBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  notesDocTypeTxt: {
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
+  notesDocName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  notesDocMeta: {
+    fontSize: 10.5,
+    color: '#64748B',
+  },
+  notesTextPreviewBox: {
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  notesTextPreviewLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748B',
+    marginBottom: 4,
+  },
+  notesTextPreviewContent: {
+    fontSize: 11,
+    color: '#334155',
+    lineHeight: 16,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  notesDocActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  notesDocChangeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: '#F0F4FF',
+  },
+  notesDocChangeBtnTxt: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1a2d5a',
+  },
+  notesDocRemoveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: '#FEF2F2',
+  },
+  notesDocRemoveBtnTxt: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
 });
 

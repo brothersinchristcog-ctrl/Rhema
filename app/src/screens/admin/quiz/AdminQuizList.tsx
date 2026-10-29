@@ -44,6 +44,7 @@ import { useNavigation } from '@react-navigation/native';
 import { BibleQuiz, QuizStatus, QuizAttempt } from '../../../types/Quiz';
 import { QuizService } from '../../../services/QuizService';
 import { useChurch } from '../../../context/ChurchContext';
+import { RHEMA_CHURCH_ID } from '../../../constants/ChurchConfig';
 import { AdminTabContext } from '../../../context/AdminTabContext';
 import AdminQuizEditor from './AdminQuizEditor';
 import AdminQuizReports from './AdminQuizReports';
@@ -53,7 +54,7 @@ export default function AdminQuizList() {
   const navigation = useNavigation<any>();
   const adminTabCtx = useContext(AdminTabContext);
   const { activeChurch } = useChurch();
-  const churchId = activeChurch?.id || 'global';
+  const churchId = activeChurch?.id || RHEMA_CHURCH_ID;
   const churchName = activeChurch?.name || 'WeChristian Church';
 
   const [quizzes, setQuizzes] = useState<BibleQuiz[]>([]);

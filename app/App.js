@@ -63,21 +63,26 @@ export default function App() {
 
   useEffect(() => {
     const onBackPress = () => {
-      // 1. If screen stack can go back, let standard navigation happen
-      if (navigationRef.isReady() && navigationRef.canGoBack()) {
+      if (!navigationRef.isReady()) {
         return false;
       }
 
-      // 2. If inside member tabs but not on Home, navigate to Home first
-      if (navigationRef.isReady()) {
-        const currentRoute = navigationRef.getCurrentRoute()?.name;
-        if (currentRoute && currentRoute !== 'Home' && ['Promise', 'Sermons', 'Prayer', 'Profile'].includes(currentRoute)) {
-          navigationRef.navigate('Home');
-          return true;
-        }
+      // 1. If the root stack has pushed child screens (e.g. SermonVideo, EventDetails, etc.),
+      // pop cleanly in JS navigation and return true so the native OS does NOT natively dismiss the root container.
+      const rootState = navigationRef.getRootState();
+      if (rootState && rootState.routes && rootState.routes.length > 1) {
+        navigationRef.goBack();
+        return true;
       }
 
-      // 3. User is on main root screen: Check double-press within 2 seconds
+      // 2. If inside member tabs but not on Home, navigate to Home tab first
+      const currentRoute = navigationRef.getCurrentRoute()?.name;
+      if (currentRoute && currentRoute !== 'Home' && ['Promise', 'Sermons', 'Prayer', 'Profile'].includes(currentRoute)) {
+        navigationRef.navigate('Home');
+        return true;
+      }
+
+      // 3. User is on main root screen (Home tab or Admin dashboard): Double-press within 2 seconds exits app
       const now = Date.now();
       if (now - lastBackPressRef.current < 2000) {
         BackHandler.exitApp();

@@ -28,6 +28,7 @@ import {
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import FirestoreService, { Sermon } from '../services/FirestoreService';
+import { formatSermonDuration, isSermonVisibleToMembers } from '../utils/DateUtils';
 
 const { width } = Dimensions.get('window');
 
@@ -131,13 +132,7 @@ export default function SermonsScreen({ navigation }: any) {
         FirestoreService.getSermonCategories().catch(() => [])
       ]);
       
-      const today = new Date();
-      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-      const visibleSermons = (data || []).filter((s: any) => {
-        if (s.status === 'Draft') return false;
-        if (s.status === 'Scheduled' && s.date && s.date > todayStr) return false;
-        return true;
-      });
+      const visibleSermons = (data || []).filter((s: any) => isSermonVisibleToMembers(s));
       setSermons(visibleSermons);
 
       // Extract categories from loaded sermons
@@ -251,7 +246,7 @@ export default function SermonsScreen({ navigation }: any) {
           {item.title}{item.titleTelugu ? ` · ${item.titleTelugu}` : ''}
         </Text>
         <Text style={[styles.scMeta, { color: isDark ? '#94a3b8' : '#64748b' }]}>
-          {item.pastor || t('sermons.pastor')} · {item.date || 'N/A'}{item.duration && item.duration !== 'N/A' ? ` · ${item.duration}` : ''}
+          {item.pastor || t('sermons.pastor')} · {item.date || 'N/A'}{formatSermonDuration(item.duration) ? ` · ${formatSermonDuration(item.duration)}` : ''}
         </Text>
         {item.scripture ? (
           <View style={styles.scriptureTag}>

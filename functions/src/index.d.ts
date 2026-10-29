@@ -48,7 +48,7 @@ export declare const checkContactExists: import("firebase-functions/v2/https").C
 export declare const notifyMembersV2: import("firebase-functions/v2/https").HttpsFunction;
 /**
  * ⏰ AUTOMATED DAILY PROMISE SCHEDULER
- * Scheduled to run every day at 07:00 AM IST (01:30 AM UTC)
+ * Scheduled to run every day at 05:00 AM IST (01:30 AM UTC)
  */
 export declare const automatedDailyPromise: import("firebase-functions/v2/scheduler").ScheduleFunction;
 /**

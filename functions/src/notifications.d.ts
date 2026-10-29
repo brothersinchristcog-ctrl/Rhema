@@ -42,9 +42,22 @@ export declare const pushPrayerRequestApproved: import("firebase-functions/core"
     prayerId: string;
 }>>;
 /**
+ * 🎙️ CHECK & AUTO-PUBLISH SCHEDULED SERMONS
+ * Checks if any sermon with status 'Scheduled' has reached its scheduledPublishAt
+ * or scheduledDate + scheduledTime. Automatically publishes the sermon, updates Firestore,
+ * and sends an FCM push notification to church members.
+ */
+export declare function checkAndPublishScheduledSermons(sermonsRef: any, churchId: string, churchDocRef?: any): Promise<void>;
+/**
  * ⏱ CHECK ONLINE MEETINGS (CRON JOB)
  * Cron Job: Runs every minute to check if any online meeting is starting now (or within 5 minutes)
  */
+/**
+ * 🎙️ AUTOMATED SCHEDULED SERMONS PUBLISHER & NOTIFIER (CRON JOB)
+ * Cloud Scheduler runs this every minute (Asia/Kolkata, region: asia-south1).
+ * Matches the architecture and region of automatedDailyPromise.
+ */
+export declare const publishScheduledSermons: import("firebase-functions/v2/scheduler").ScheduleFunction;
 export declare const monitorMeetingLive: import("firebase-functions/v2/scheduler").ScheduleFunction;
 /**
  * 🏛️ NOTIFY SUPER ADMINS OF NEW CHURCH REGISTRATION
@@ -93,4 +106,8 @@ export declare const periodicDailyQuizSafetyNet: import("firebase-functions/v2/s
  * Invokable endpoint for Super Admin to manually trigger or test the daily quiz push immediately.
  */
 export declare const triggerDailyQuizNotificationHttp: import("firebase-functions/v2/https").HttpsFunction;
+/**
+ * 🧪 HTTP endpoint to manually check and publish scheduled sermons
+ */
+export declare const triggerPublishScheduledSermonsHttp: import("firebase-functions/v2/https").HttpsFunction;
 //# sourceMappingURL=notifications.d.ts.map
