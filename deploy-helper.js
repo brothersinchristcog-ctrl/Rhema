@@ -83,7 +83,11 @@ const req = https.request({
     const rawTarget = process.argv[2];
     let target = 'functions';
     if (rawTarget) {
-      target = rawTarget.split(',').map(f => f.trim().startsWith('functions:') ? f.trim() : `functions:${f.trim()}`).join(',');
+      if (rawTarget === 'storage' || rawTarget === 'firestore' || rawTarget.startsWith('storage:') || rawTarget.startsWith('firestore:')) {
+        target = rawTarget;
+      } else {
+        target = rawTarget.split(',').map(f => f.trim().startsWith('functions:') ? f.trim() : `functions:${f.trim()}`).join(',');
+      }
     }
     console.log(`\nDeploying Firebase target: ${target}...`);
     try {
