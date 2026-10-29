@@ -112,7 +112,7 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
   const TABS = [
     { key: 'Home',       navKey: 'nav.home',       defaultLabel: 'Home',       Icon: Home,          bg: '#1a2d5a', fg: '#1a2d5a' },
     { key: 'Promise',    navKey: 'nav.promise',    defaultLabel: 'Promise',    Icon: BookOpen,      bg: '#0F766E', fg: '#0F766E' },
-    { key: 'Sermons',    navKey: 'nav.sermons',    defaultLabel: 'Sermons',    Icon: Mic,           bg: '#D8632E', fg: '#D8632E' },
+    { key: 'Bible',      navKey: 'nav.bible',      defaultLabel: 'Bible',      Icon: Book,          bg: '#B45309', fg: '#B45309' },
     { key: 'Prayer',     navKey: 'nav.prayer',     defaultLabel: 'Prayer',     Icon: Heart,         bg: '#0284C7', fg: '#0284C7' },
     { key: 'Profile',    navKey: 'nav.profile',    defaultLabel: 'Profile',    Icon: UserIcon,      bg: '#27272A', fg: '#27272A' },
   ] as const;
@@ -481,8 +481,8 @@ function TabNavigator() {
         listeners={{ tabPress: handleFeatureInteraction }}
       /> 
       <Tab.Screen 
-        name="Sermons" 
-        component={SermonsScreen} 
+        name="Bible" 
+        component={BibleScreen} 
         listeners={{ tabPress: handleFeatureInteraction }}
       />
       <Tab.Screen 

@@ -16,6 +16,7 @@ import {
   ChevronRight,
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { QuizDifficulty } from '../../types/Quiz';
 import { QUIZ_CATEGORIES } from '../../constants/BibleQuizCategories';
@@ -25,6 +26,7 @@ import { getQuizStrings } from '../../constants/BibleQuizTranslations';
 import QuizLanguageModal from './QuizLanguageModal';
 
 export default function BibleQuizLevelsScreen() {
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const { quizLanguage, quizLanguageOption } = useQuizLanguage();
@@ -61,40 +63,51 @@ export default function BibleQuizLevelsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#0b1120' : '#FAF7F2' }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#1a3673" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#0b1120' : '#FAF7F2'} />
 
-      {/* Signature WeChristian Gradient Header */}
-      <LinearGradient
-        colors={['#2b52a1', '#1a3673']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.header}
+      {/* Header */}
+      <View
+        style={[
+          styles.headerCardWrapper,
+          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 6 }
+        ]}
       >
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => navigation.goBack()}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          activeOpacity={0.7}
+        <LinearGradient
+          colors={['#527C78', '#355B56']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.header}
         >
-          <ArrowLeft size={24} color="#ffffff" />
-        </TouchableOpacity>
+          <View style={styles.headerDecoCircle1} pointerEvents="none" />
+          <View style={styles.headerDecoCircle2} pointerEvents="none" />
 
-        <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {categoryDisplayName}
-          </Text>
-        </View>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => navigation.goBack()}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            activeOpacity={0.8}
+          >
+            <ArrowLeft size={20} color="#355B56" />
+          </TouchableOpacity>
 
-        {/* Language Selector Pill */}
-        <TouchableOpacity
-          style={styles.langPill}
-          onPress={() => setLangModalVisible(true)}
-          activeOpacity={0.8}
-        >
-          <Globe size={13} color="#ffffff" />
-          <Text style={styles.langPillTxt}>{quizLanguageOption.nativeName}</Text>
-        </TouchableOpacity>
-      </LinearGradient>
+          <View style={styles.headerCenter} pointerEvents="none">
+            <Text style={styles.headerTitle} numberOfLines={1} maxFontSizeMultiplier={1.15}>
+              {categoryDisplayName}
+            </Text>
+            <View style={styles.headerTitleAccentBar} />
+          </View>
+
+          {/* Language Selector Pill */}
+          <TouchableOpacity
+            style={styles.langPill}
+            onPress={() => setLangModalVisible(true)}
+            activeOpacity={0.8}
+          >
+            <Globe size={13} color="#355B56" />
+            <Text style={styles.langPillTxt}>{quizLanguageOption.nativeName}</Text>
+          </TouchableOpacity>
+        </LinearGradient>
+      </View>
 
       <ScrollView
         style={styles.scrollArea}
@@ -205,52 +218,84 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  headerCardWrapper: {
+    paddingHorizontal: 16,
+    paddingBottom: 4,
+  },
   header: {
     paddingHorizontal: 16,
-    paddingBottom: 18,
+    paddingVertical: 16,
+    borderRadius: 24,
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    minHeight: Platform.OS === 'ios' ? 116 : 96,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
-    shadowColor: '#1a3673',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 8,
+    overflow: 'hidden',
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: 'rgba(228, 238, 234, 0.25)',
+  },
+  headerDecoCircle1: {
+    position: 'absolute',
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    backgroundColor: 'rgba(228, 238, 234, 0.10)',
+    top: -50,
+    right: -25,
+  },
+  headerDecoCircle2: {
+    position: 'absolute',
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: 'rgba(228, 238, 234, 0.08)',
+    bottom: -40,
+    left: 35,
   },
   backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: '#E4EEEA',
+    justifyContent: 'center',
+    alignItems: 'center',
     zIndex: 10,
-    padding: 4,
   },
   headerCenter: {
     flex: 1,
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingBottom: 4,
-    marginHorizontal: 8,
+    paddingHorizontal: 8,
   },
   headerTitle: {
-    color: '#ffffff',
-    fontSize: 18,
+    color: '#FFFFFF',
+    fontSize: 20,
     fontWeight: '800',
+    letterSpacing: 0.5,
+    textAlign: 'center',
+  },
+  headerTitleAccentBar: {
+    width: 28,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: '#E4EEEA',
+    marginTop: 5,
+    opacity: 0.85,
   },
   langPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: 'rgba(0, 0, 0, 0.35)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    backgroundColor: '#E4EEEA',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.25)',
+    zIndex: 10,
   },
   langPillTxt: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
-    color: '#ffffff',
+    color: '#355B56',
   },
   scrollArea: {
     flex: 1,

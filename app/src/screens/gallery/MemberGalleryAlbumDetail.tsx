@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, Image, Dimensions, ActivityIndicator, Alert, Modal, SafeAreaView, Animated, TouchableWithoutFeedback } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, Image, Dimensions, ActivityIndicator, Alert, Modal, SafeAreaView, Animated, TouchableWithoutFeedback, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ArrowLeft, Share2, Download, X, ChevronLeft, ChevronRight, CheckCircle } from 'lucide-react-native';
+import { ArrowLeft, Share2, Download, X, ChevronLeft, ChevronRight, CheckCircle, Image as ImageIcon } from 'lucide-react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as MediaLibrary from 'expo-media-library';
@@ -21,6 +22,7 @@ type NavigationProp = NativeStackNavigationProp<MemberGalleryStackParamList, 'Me
 type RouteProps = RouteProp<MemberGalleryStackParamList, 'MemberGalleryAlbumDetail'>;
 
 export default function MemberGalleryAlbumDetail() {
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RouteProps>();
   const { albumId, albumName, albumDescription } = route.params;
@@ -126,11 +128,41 @@ export default function MemberGalleryAlbumDetail() {
   };
 
   const renderHeader = () => (
-    <View style={styles.header}>
-      <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.goBack()}>
-        <ArrowLeft size={20} color={colors.text} />
-        <Text style={[styles.backText, { color: colors.text }]}>{t('common.back')}</Text>
-      </TouchableOpacity>
+    <View
+      style={[
+        styles.headerCardWrapper,
+        { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 6 }
+      ]}
+    >
+      <LinearGradient
+        colors={['#527C78', '#355B56']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.header}
+      >
+        <View style={styles.headerDecoCircle1} pointerEvents="none" />
+        <View style={styles.headerDecoCircle2} pointerEvents="none" />
+
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          activeOpacity={0.8}
+        >
+          <ArrowLeft size={20} color="#355B56" />
+        </TouchableOpacity>
+
+        <View style={styles.headerCenterTitleWrap} pointerEvents="none">
+          <Text style={styles.headerTitle} numberOfLines={1} maxFontSizeMultiplier={1.15}>
+            {albumName}
+          </Text>
+          <View style={styles.headerTitleAccentBar} />
+        </View>
+
+        <View style={styles.headerRightIconBadge}>
+          <ImageIcon size={18} color="#355B56" />
+        </View>
+      </LinearGradient>
     </View>
   );
 
@@ -347,27 +379,78 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 15,
-    paddingTop: 50,
-    paddingBottom: 15,
+  headerCardWrapper: {
+    paddingHorizontal: 16,
+    paddingBottom: 10,
   },
-  iconBtn: {
+  header: {
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderRadius: 24,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(150,150,150,0.1)',
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 20,
+    justifyContent: 'space-between',
+    overflow: 'hidden',
+    position: 'relative',
     borderWidth: 1,
-    borderColor: 'rgba(150,150,150,0.2)',
+    borderColor: 'rgba(228, 238, 234, 0.25)',
   },
-  backText: {
-    marginLeft: 6,
-    fontSize: 14,
-    fontWeight: '600',
+  headerDecoCircle1: {
+    position: 'absolute',
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    backgroundColor: 'rgba(228, 238, 234, 0.10)',
+    top: -50,
+    right: -25,
+  },
+  headerDecoCircle2: {
+    position: 'absolute',
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: 'rgba(228, 238, 234, 0.08)',
+    bottom: -40,
+    left: 35,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: '#E4EEEA',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  headerCenterTitleWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  headerTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    textAlign: 'center',
+  },
+  headerTitleAccentBar: {
+    width: 28,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: '#E4EEEA',
+    marginTop: 5,
+    opacity: 0.85,
+  },
+  headerRightIconBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: '#E4EEEA',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
   },
   titleArea: {
     paddingHorizontal: 15,

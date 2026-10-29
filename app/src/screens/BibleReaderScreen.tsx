@@ -13,6 +13,7 @@ import {
   Image
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import { ArrowLeft, ChevronLeft, Share2, BookMarked, Settings, Search, CheckCircle2, Copy, Play, Square, Volume2 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -24,6 +25,7 @@ import { BibleService } from '../services/BibleService';
 const { width } = Dimensions.get('window');
 
 export default function BibleReaderScreen({ route, navigation }: any) {
+  const insets = useSafeAreaInsets();
   const { bookName, chapter, lang: paramLang, bookIndex: paramBookIndex, targetVerse } = route.params || {};
   const { isDark } = useTheme();
   const { language, t } = useLanguage();
@@ -340,35 +342,51 @@ export default function BibleReaderScreen({ route, navigation }: any) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#fff' }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#1a2d5a" />
+    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2' }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#0f172a' : '#FAF7F2'} />
       
-      {/* Navy Blue Header */}
-      <LinearGradient 
-        colors={['#2b52a1', '#1a3673']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.header}
+      {/* Header */}
+      <View
+        style={[
+          styles.headerCardWrapper,
+          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 6 }
+        ]}
       >
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} hitSlop={{top:10, bottom:10, left:10, right:10}}>
-          <ArrowLeft color="#fff" size={24} />
-        </TouchableOpacity>
-        
-        <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
-          <View style={{ flex: 1, justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 12 }}>
-            <Text style={styles.headerTitle}>
-              {activeLang === 'en' ? englishBookName : `${englishBookName} · ${localizedBookName}`}
-            </Text>
-            <Text style={styles.headerSub}>
-              {t('bible.chapters')} {chapter}
-            </Text>
-          </View>
-        </View>
+        <LinearGradient 
+          colors={['#527C78', '#355B56']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.header}
+        >
+          <View style={styles.headerDecoCircle1} pointerEvents="none" />
+          <View style={styles.headerDecoCircle2} pointerEvents="none" />
 
-        <TouchableOpacity onPress={() => setShowVoiceModal(true)} style={{ zIndex: 10, padding: 5 }}>
-          <Volume2 color="#fff" size={24} />
-        </TouchableOpacity>
-      </LinearGradient>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => navigation.goBack()}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            activeOpacity={0.8}
+          >
+            <ArrowLeft color="#355B56" size={20} />
+          </TouchableOpacity>
+          
+          <View style={styles.headerCenterTitleWrap} pointerEvents="none">
+            <Text style={styles.headerTitle} numberOfLines={1} maxFontSizeMultiplier={1.15}>
+              {activeLang === 'en' ? `${englishBookName} ${chapter}` : `${localizedBookName} ${chapter}`}
+            </Text>
+            <View style={styles.headerTitleAccentBar} />
+          </View>
+
+          <TouchableOpacity
+            onPress={() => setShowVoiceModal(true)}
+            style={styles.headerRightIconBadge}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            activeOpacity={0.8}
+          >
+            <Volume2 color="#355B56" size={18} />
+          </TouchableOpacity>
+        </LinearGradient>
+      </View>
 
       <ScrollView 
         ref={scrollViewRef}
@@ -774,21 +792,81 @@ export default function BibleReaderScreen({ route, navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: {
-    paddingTop: Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight ?? 24) + 12,
+  headerCardWrapper: {
     paddingHorizontal: 16,
-    paddingBottom: 20,
+    paddingBottom: 4,
+  },
+  header: {
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderRadius: 24,
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    minHeight: Platform.OS === 'ios' ? 140 : 120,
+    overflow: 'hidden',
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: 'rgba(228, 238, 234, 0.25)',
+  },
+  headerDecoCircle1: {
+    position: 'absolute',
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    backgroundColor: 'rgba(228, 238, 234, 0.10)',
+    top: -50,
+    right: -25,
+  },
+  headerDecoCircle2: {
+    position: 'absolute',
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: 'rgba(228, 238, 234, 0.08)',
+    bottom: -40,
+    left: 35,
   },
   headerLeft: { flexDirection: 'row', alignItems: 'center' },
-  backBtn: { zIndex: 10, padding: 5 },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: '#E4EEEA',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  headerCenterTitleWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
   titleInfo: { alignItems: 'center' },
-  headerTitle: { color: '#fff', fontSize: 20, fontWeight: '800' },
+  headerTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    textAlign: 'center',
+  },
+  headerTitleAccentBar: {
+    width: 28,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: '#E4EEEA',
+    marginTop: 5,
+    opacity: 0.85,
+  },
+  headerRightIconBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: '#E4EEEA',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
   headerSub: { color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: '600', marginTop: 2 },
   headerRight: { flexDirection: 'row', flexWrap: 'wrap', gap: 15 },
   headerIcon: { padding: 4 },

@@ -495,23 +495,53 @@ export default function GivingScreen({ navigation }: any) {
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2' }]}>
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor="transparent" translucent={true} />
+
+      {/* ── Top Floating Header Card ── */}
+      <View
+        style={[
+          styles.headerCardWrapper,
+          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 6 }
+        ]}
+      >
+        <LinearGradient 
+          colors={['#527C78', '#355B56']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.topHeaderCard}
+        >
+          <View style={styles.headerDecoCircle1} pointerEvents="none" />
+          <View style={styles.headerDecoCircle2} pointerEvents="none" />
+
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => navigation.goBack()}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            activeOpacity={0.8}
+          >
+            <ArrowLeft size={20} color="#355B56" />
+          </TouchableOpacity>
+
+          <View style={styles.headerCenterTitleWrap} pointerEvents="none">
+            <Text style={styles.topHeaderTitle} numberOfLines={1} maxFontSizeMultiplier={1.15}>
+              {t('nav.give') || 'Give'}
+            </Text>
+            <View style={styles.headerTitleAccentBar} />
+          </View>
+
+          <TouchableOpacity 
+            style={styles.backBtn} 
+            onPress={() => navigation.navigate('GivingHistory')}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            activeOpacity={0.8}
+          >
+            <Clock size={18} color="#355B56" />
+          </TouchableOpacity>
+        </LinearGradient>
+      </View>
       
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* ── Page Header ── */}
-        <View style={[styles.header, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2', paddingTop: insets.top + 10, marginHorizontal: -16 }]}>
-          <View style={styles.headerTop}>
-            <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} hitSlop={{top:10, bottom:10, left:10, right:10}}>
-              <ArrowLeft size={24} color={isDark ? "#FCD34D" : "#1a2d5a"} />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.backBtn} 
-              onPress={() => navigation.navigate('GivingHistory')}
-              hitSlop={{top:10, bottom:10, left:10, right:10}}
-            >
-              <Clock size={22} color={isDark ? "#FCD34D" : "#1a2d5a"} />
-            </TouchableOpacity>
-          </View>
-          
+        {/* ── Page Quote Banner ── */}
+        <View style={[styles.header, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2', paddingTop: 4, marginHorizontal: -16 }]}>
           <View style={styles.headerContent}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 12, marginTop: 10 }}>
               <Text style={[styles.headerTitle, { color: isDark ? '#fff' : '#1e293b' }]}>{t('giving.giveWith')}</Text>
@@ -892,6 +922,61 @@ export default function GivingScreen({ navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  headerCardWrapper: {
+    paddingHorizontal: 16,
+    paddingBottom: 4,
+  },
+  topHeaderCard: {
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderRadius: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    overflow: 'hidden',
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: 'rgba(228, 238, 234, 0.25)',
+  },
+  headerDecoCircle1: {
+    position: 'absolute',
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    backgroundColor: 'rgba(228, 238, 234, 0.10)',
+    top: -50,
+    right: -25,
+  },
+  headerDecoCircle2: {
+    position: 'absolute',
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: 'rgba(228, 238, 234, 0.08)',
+    bottom: -40,
+    left: 35,
+  },
+  headerCenterTitleWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  topHeaderTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    textAlign: 'center',
+  },
+  headerTitleAccentBar: {
+    width: 28,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: '#E4EEEA',
+    marginTop: 5,
+    opacity: 0.85,
+  },
   header: { 
     paddingBottom: 20,
     borderBottomLeftRadius: 24,
@@ -899,7 +984,15 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   headerTop: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20, alignItems: 'center' },
-  backBtn: { paddingVertical: 10 },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: '#E4EEEA',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
   backBtnTxt: { color: '#FCD34D', fontSize: 16, fontWeight: '700' },
   themeToggle: { backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
   themeToggleText: { color: '#fff', fontSize: 10, fontWeight: '800' },
