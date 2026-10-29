@@ -318,48 +318,54 @@ export async function checkAndPublishScheduledSermons(sermonsRef, churchId, chur
                 shouldPublish = true;
             }
             if (shouldPublish) {
+                // 1. Atomic check: ensure notification hasn't been claimed/sent already
+                const freshSnap = await doc.ref.get();
+                if (freshSnap.data()?.notificationSent === true) {
+                    continue;
+                }
+                // 2. Mark published & claimed first to prevent any race condition
+                await doc.ref.update({
+                    status: 'Published',
+                    notificationSent: true,
+                    publishedAt: FieldValue.serverTimestamp(),
+                    updatedAt: FieldValue.serverTimestamp(),
+                });
                 const sermonTitle = sermon.titleEn || sermon.title || 'New Sermon';
                 const pastorName = sermon.pastor || 'Pastor';
                 const pushTitle = `🎧 New Sermon: ${sermonTitle}`;
                 const pushBody = `New sermon "${sermonTitle}" preached on ${sermon.date || nowStr} by ${pastorName} is now available. Watch/listen now!`;
-                const payload = {
-                    notification: { title: pushTitle, body: pushBody },
-                    data: {
-                        type: 'sermon',
-                        sermonId: doc.id,
-                        id: doc.id,
-                        churchId: churchId,
-                    },
-                    topic: `church_${churchId}`,
-                };
-                const messaging = getMessaging();
-                await messaging.send(payload).catch((e) => console.error('Error sending Sermon Live notification', e));
+                // 3. Create broadcast with deterministic ID (sermon_${doc.id}) so onDocumentCreated NEVER fires twice!
                 const targetRef = churchDocRef || doc.ref.parent.parent;
                 if (targetRef) {
-                    await targetRef.collection('broadcasts').add({
-                        title: pushTitle,
-                        content: pushBody,
-                        type: 'sermon',
-                        id: doc.id,
-                        date: sermon.date || nowStr,
-                        targetChurchId: churchId,
-                        createdAt: FieldValue.serverTimestamp(),
-                    }).catch(() => { });
-                    await targetRef.collection('notifications').add({
-                        title: pushTitle,
-                        body: pushBody,
-                        type: 'sermon',
-                        id: doc.id,
-                        churchId: churchId,
-                        read: false,
-                        createdAt: FieldValue.serverTimestamp(),
-                    }).catch(() => { });
+                    const bcastDocRef = targetRef.collection('broadcasts').doc(`sermon_${doc.id}`);
+                    const bcastSnap = await bcastDocRef.get();
+                    if (!bcastSnap.exists) {
+                        await bcastDocRef.set({
+                            title: pushTitle,
+                            content: pushBody,
+                            type: 'sermon',
+                            id: doc.id,
+                            sermonId: doc.id,
+                            date: sermon.date || nowStr,
+                            targetChurchId: churchId,
+                            createdAt: FieldValue.serverTimestamp(),
+                        }).catch(() => { });
+                    }
+                    const notifDocRef = targetRef.collection('notifications').doc(`sermon_${doc.id}`);
+                    const notifSnap = await notifDocRef.get();
+                    if (!notifSnap.exists) {
+                        await notifDocRef.set({
+                            title: pushTitle,
+                            body: pushBody,
+                            type: 'sermon',
+                            id: doc.id,
+                            sermonId: doc.id,
+                            churchId: churchId,
+                            read: false,
+                            createdAt: FieldValue.serverTimestamp(),
+                        }).catch(() => { });
+                    }
                 }
-                await doc.ref.update({
-                    status: 'Published',
-                    notificationSent: true,
-                    updatedAt: FieldValue.serverTimestamp(),
-                }).catch(() => { });
                 console.log(`✅ Auto-published scheduled sermon: ${doc.id} (${sermonTitle}) for church ${churchId}`);
             }
         }

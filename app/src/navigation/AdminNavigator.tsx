@@ -86,6 +86,7 @@ import AIContentCreator from '../screens/admin/AIContentCreator';
 import AdminQuizList from '../screens/admin/quiz/AdminQuizList';
 import ChurchService from '../services/ChurchService';
 import AdminServicePlanner from '../screens/admin/AdminServicePlanner';
+import AdminDailyVersesManager from '../screens/admin/AdminDailyVersesManager';
 
 const { width } = Dimensions.get('window');
 
@@ -144,14 +145,14 @@ export default function AdminNavigator({ navigation, route }: any) {
         setAlertConfig({
           visible: true,
           title: 'WhatsApp Integration Not Enabled',
-          message: 'WhatsApp Integration is not enabled for your church. Please contact the We Christian team to activate this feature. Once enabled, you will be able to use WhatsApp Integration from the We Celebration module and Church Settings.',
+          message: 'WhatsApp Integration is not enabled for your church. Please contact the Rhema support team to activate this feature. Once enabled, you will be able to use WhatsApp Integration from the Celebrations module and Church Settings.',
           type: 'info'
         });
         return;
       }
       
       const premiumTabs = [
-        'Promises', 'New Promise', 'Schedule', 'Promise Calendar', 'Add Promise',
+        'Promises', 'New Promise', 'Schedule', 'Promise Calendar', 'Add Promise', 'Daily Verses',
         'Sermons', 'New Sermon', 'Songs', 'Events', 'New Event', 'Pastor Event',
         'Prayers', 'Celebrations', 'Gallery', 'Expense', 'Donations', 
         'Online Meetings', 'New Online Meeting', 'AI Sermon Assistant', 'AI Thumbnail Creation', 'AI Content Creator',
@@ -170,7 +171,7 @@ export default function AdminNavigator({ navigation, route }: any) {
         setTabHistory(prev => [...prev, activeTab]);
         const targetTabName = tabs[index]?.name || '';
         const safeTabNames = [
-          'Promises', 'New Promise', 'Schedule', 'Promise Calendar', 'Add Promise',
+          'Promises', 'New Promise', 'Schedule', 'Promise Calendar', 'Add Promise', 'Daily Verses',
           'Sermons', 'New Sermon', 
           'Events', 'New Event',
           'Online Meetings', 'New Online Meeting'
@@ -222,6 +223,7 @@ export default function AdminNavigator({ navigation, route }: any) {
     { name: 'Promises', icon: BookOpen, component: AdminPromiseList },
     { name: 'New Promise', icon: BookPlus, component: AdminPromiseEditor },
     { name: 'Schedule', icon: CalendarClock, component: AdminPromiseCalendar },
+    { name: 'Daily Verses', icon: Sparkles, component: AdminDailyVersesManager },
     { name: 'Sermons', icon: Mic, component: AdminSermonList },
     { name: 'New Sermon', icon: Video, component: AdminSermonEditor },
     { name: 'Songs', icon: Music, component: AdminSongEditor },

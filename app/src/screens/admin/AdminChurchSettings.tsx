@@ -385,7 +385,7 @@ export default function AdminChurchSettings({ navigation }: any) {
                 setAlertConfig({
                   visible: true,
                   title: 'WhatsApp Integration Not Enabled',
-                  message: 'WhatsApp Integration is not enabled for your church. Please contact the We Christian team to activate this feature. Once enabled, you will be able to use WhatsApp Integration from the We Celebration module and Church Settings.',
+                  message: 'WhatsApp Integration is not enabled for your church. Please contact the Rhema support team to activate this feature. Once enabled, you will be able to use WhatsApp Integration from the We Celebration module and Church Settings.',
                   type: 'info'
                 });
               }
@@ -656,63 +656,13 @@ export default function AdminChurchSettings({ navigation }: any) {
                 ))
               )}
 
-              <Text style={[styles.sectionLabel, { marginTop: 24 }]}>Daily Promise Settings</Text>
-              <View style={[styles.switchRow, !isEditing && styles.inputDisabled]}>
-                <View style={{ flex: 1, paddingRight: 10 }}>
-                  <Text style={styles.switchLabel}>Use WeChristian Daily Promise</Text>
-                  <Text style={styles.switchHint}>
-                    When enabled (YES), displays WeChristian 4 Daily Verses (Morning, Afternoon, Evening, Night) as an auto-scrolling carousel inside Today's Promise. Turn off (NO) to use your church's custom Promise and Thumbnails.
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  activeOpacity={isEditing ? 0.7 : 1}
-                  onPress={() => {
-                    if (isEditing) {
-                      setForm(prev => ({ ...prev, useWeChristianDailyPromise: prev.useWeChristianDailyPromise === false }));
-                    }
-                  }}
-                  style={{ alignItems: 'center', justifyContent: 'center', gap: 6, minWidth: 56 }}
-                >
-                  <View
-                    style={{
-                      paddingHorizontal: 10,
-                      paddingVertical: 3,
-                      borderRadius: 12,
-                      backgroundColor: form.useWeChristianDailyPromise !== false ? '#dcfce7' : '#fee2e2',
-                      borderWidth: 1,
-                      borderColor: form.useWeChristianDailyPromise !== false ? '#86efac' : '#fca5a5',
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        fontWeight: '900',
-                        color: form.useWeChristianDailyPromise !== false ? '#15803d' : '#b91c1c',
-                        letterSpacing: 0.5,
-                      }}
-                    >
-                      {form.useWeChristianDailyPromise !== false ? 'YES' : 'NO'}
-                    </Text>
-                  </View>
-                  <Switch
-                    value={form.useWeChristianDailyPromise !== false}
-                    onValueChange={v => {
-                      setForm(prev => ({ ...prev, useWeChristianDailyPromise: v }));
-                    }}
-                    disabled={!isEditing}
-                    trackColor={{ false: '#cbd5e1', true: primaryColor }}
-                    thumbColor={Platform.OS === 'android' ? '#ffffff' : undefined}
-                  />
-                </TouchableOpacity>
-              </View>
-
               {member?.userType === 'super_admin' && (
                 <>
                   <Text style={[styles.sectionLabel, { marginTop: 24 }]}>Advanced Features</Text>
                   <View style={[styles.switchRow, !isEditing && styles.inputDisabled]}>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.switchLabel}>Enable WhatsApp Automation</Text>
-                      <Text style={styles.switchHint}>Unlock the We Celebrations tab and WhatsApp integration settings.</Text>
+                      <Text style={styles.switchHint}>Unlock the Celebrations tab and WhatsApp integration settings.</Text>
                     </View>
                     <Switch
                       value={form.features?.hasWhatsAppAutomation || false}
@@ -950,7 +900,7 @@ export default function AdminChurchSettings({ navigation }: any) {
 
               <View style={styles.switchRow}>
                 <View style={{ flex: 1, paddingRight: 12 }}>
-                  <Text style={styles.switchLabel}>Use We Christian WhatsApp Account</Text>
+                  <Text style={styles.switchLabel}>Use Rhema Official WhatsApp Service</Text>
                   <Text style={styles.switchHint}>If enabled, messages will be sent from the official platform number. If disabled, you must provide your own Meta credentials below.</Text>
                 </View>
                 <Switch
@@ -967,7 +917,7 @@ export default function AdminChurchSettings({ navigation }: any) {
                     <Info size={20} color="#2563eb" style={{ marginTop: 2, marginRight: 12 }} />
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 14, fontWeight: '700', color: '#1e3a8a', marginBottom: 6 }}>Using your own WhatsApp Business Account?</Text>
-                      <Text style={{ fontSize: 13, color: '#1e40af', lineHeight: 20 }}>Please contact the We Christian team. We'll assist you in setting up and verifying your Meta API credentials correctly.</Text>
+                      <Text style={{ fontSize: 13, color: '#1e40af', lineHeight: 20 }}>Please contact the Rhema support team. We'll assist you in setting up and verifying your Meta API credentials correctly.</Text>
                     </View>
                   </View>
                   

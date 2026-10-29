@@ -499,6 +499,7 @@ export default function AdminSermonEditor() {
         scheduledTime: finalStatus === 'Scheduled' ? form.scheduledTime : null,
         scheduledPublishAt: finalScheduledPublishAt || null,
         notificationSent: finalStatus === 'Published',
+        publishedAt: finalStatus === 'Published' ? (editingData?.publishedAt || new Date().toISOString()) : null,
         scripture: form.ref,
         categories: selectedCategories.join(';'),
         thumbnailUrl: form.thumbnailUrl || '',
@@ -532,43 +533,12 @@ export default function AdminSermonEditor() {
       } else if (payload.status === 'Scheduled' && finalScheduledPublishAt) {
         try {
           const targetDate = new Date(finalScheduledPublishAt);
-          const diffMs = targetDate.getTime() - Date.now();
-
-          if (diffMs <= 0) {
-            // Already due: immediately auto-publish and broadcast
+          if (targetDate.getTime() <= Date.now()) {
+            // Already due: immediately auto-publish
             await FirestoreService.autoPublishDueScheduledSermons();
-          } else {
-            // Schedule device notification with expo-notifications
-            await Notifications.scheduleNotificationAsync({
-              identifier: `sermon_sched_${savedSermonId}`,
-              content: {
-                title: `🎧 New Sermon: ${form.titleEn}`,
-                body: `New sermon "${form.titleEn}" preached by ${form.pastor || 'Pastor'} is now available. Tap to watch!`,
-                sound: true,
-                data: {
-                  type: 'sermon',
-                  sermonId: savedSermonId,
-                  screen: 'SermonVideo',
-                },
-              },
-              trigger: {
-                type: Notifications.SchedulableTriggerInputTypes.DATE,
-                date: targetDate,
-              },
-            });
-            console.log(`🔔 Local device notification scheduled for: ${targetDate.toLocaleString()}`);
-
-            // Also set in-app timer if due within 24 hours
-            if (diffMs <= 24 * 60 * 60 * 1000) {
-              setTimeout(() => {
-                FirestoreService.autoPublishDueScheduledSermons().catch(err => {
-                  console.warn('[AdminSermonEditor] Scheduled auto-publish timeout failed:', err);
-                });
-              }, diffMs);
-            }
           }
         } catch (schedErr) {
-          console.warn('⚠️ Could not schedule notification for sermon:', schedErr);
+          console.warn('⚠️ Could not check scheduled sermon:', schedErr);
         }
       }
 

@@ -223,3 +223,45 @@ export const isSermonVisibleToMembers = (s: any): boolean => {
   }
   return true;
 };
+
+/**
+ * Formats any date, ISO timestamp, Firestore Timestamp, or epoch milliseconds
+ * to user-friendly "DD-MM-YYYY at hh:mm AM/PM" format.
+ * 
+ * @param val Raw date object, timestamp, ISO string or number
+ * @returns Formatted string (e.g. "29-10-2026 at 05:47 PM"), or empty string if invalid
+ */
+export const formatDateTimeDisplay = (val: any): string => {
+  if (!val) return '';
+  let d = null;
+  if (typeof val.toDate === 'function') {
+    d = val.toDate();
+  } else if (val._seconds) {
+    d = new Date(val._seconds * 1000);
+  } else if (val.seconds) {
+    d = new Date(val.seconds * 1000);
+  } else if (typeof val === 'number') {
+    d = new Date(val > 1e11 ? val : val * 1000);
+  } else if (val instanceof Date) {
+    d = val;
+  } else if (typeof val === 'string') {
+    const parsed = new Date(val);
+    if (!isNaN(parsed.getTime())) {
+      d = parsed;
+    }
+  }
+
+  if (!d || isNaN(d.getTime())) return '';
+
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  
+  let hours = d.getHours();
+  const mins = String(d.getMinutes()).padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12 || 12;
+  const hourStr = String(hours).padStart(2, '0');
+
+  return day + '-' + month + '-' + year + ' at ' + hourStr + ':' + mins + ' ' + ampm;
+};
