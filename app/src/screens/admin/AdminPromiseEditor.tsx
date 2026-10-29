@@ -697,8 +697,8 @@ export default function AdminPromiseEditor() {
       const downloadURL = await reference.getDownloadURL();
       return downloadURL;
     } catch (error) {
-      console.warn('Storage upload error, using local/source URI:', error);
-      return localUri;
+      console.error('Storage upload error:', error);
+      throw error;
     }
   };
 
@@ -759,6 +759,17 @@ export default function AdminPromiseEditor() {
           }
         } catch (capErr) {
           console.warn('ViewShot composite capture skipped, using visualUrl:', capErr);
+        }
+      }
+
+      if (finalImageUrl && (finalImageUrl.startsWith('file://') || finalImageUrl.startsWith('content://'))) {
+        try {
+          const uploadedUrl = await uploadImageToCloud(finalImageUrl);
+          if (uploadedUrl) {
+            finalImageUrl = uploadedUrl;
+          }
+        } catch (saveUploadErr) {
+          console.warn('Could not upload image during save:', saveUploadErr);
         }
       }
 
