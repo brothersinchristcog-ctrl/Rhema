@@ -1,3 +1,4 @@
+import bundledBulkVerses from '../../../assets/bulk_verses.json';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
@@ -30,6 +31,7 @@ import {
   CheckCircle2,
   Clock,
   BookOpen,
+  Plus,
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import VerseNotificationService from '../../services/VerseNotificationService';
@@ -67,6 +69,16 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
   const [selectedPeriod, setSelectedPeriod] = useState('All');
   const [localSearchQuery, setLocalSearchQuery] = useState(externalQuery);
   const [editingVerse, setEditingVerse] = useState<any | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [newVerse, setNewVerse] = useState({
+    verseEn: '',
+    referenceEn: '',
+    verseTe: '',
+    referenceTe: '',
+    period: 'Morning',
+    autoFetchImage: true,
+  });
 
   const PERIOD_OPTIONS = [
     { label: 'All', period: 'All', count: totalVerses },
@@ -135,7 +147,7 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
 
       if (total === 0) {
         try {
-          const bundled = require('../../assets/bulk_verses.json');
+          const bundled = bundledBulkVerses;
           total = bundled.length || 5863;
         } catch (_) {
           total = 5863;
@@ -160,7 +172,7 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
       // Offline / fallback if Firestore returned nothing: populate from bundled verses
       if (fetched.length === 0) {
         try {
-          const bundled = require('../../assets/bulk_verses.json');
+          const bundled = bundledBulkVerses;
           for (let idx = 0; idx < COUNT && idx < bundled.length; idx++) {
             const bv = bundled[idx];
             if (bv) {
@@ -207,7 +219,7 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
 
       if (docs.length === 0) {
         try {
-          const bundled = require('../../assets/bulk_verses.json');
+          const bundled = bundledBulkVerses;
           docs = bundled.slice(0, 50).map((bv: any, idx: number) => ({
             id: `verse_${idx}`,
             index: idx,
@@ -226,7 +238,7 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
     } catch (e) {
       console.error('Error fetching all verses:', e);
       try {
-        const bundled = require('../../assets/bulk_verses.json');
+        const bundled = bundledBulkVerses;
         const docs = bundled.slice(0, 50).map((bv: any, idx: number) => ({
           id: `verse_${idx}`,
           index: idx,
@@ -354,6 +366,79 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
     );
   };
 
+  const handleCreateVerse = async () => {
+    if (!newVerse.verseEn?.trim() || !newVerse.referenceEn?.trim()) {
+      Alert.alert('Required Fields', 'Please enter at least the English Verse text and Scripture Reference.');
+      return;
+    }
+    try {
+      setIsCreating(true);
+      let imageUrl: string | null = null;
+      let photographer = '';
+      let theme = 'nature sunrise';
+
+      if (newVerse.autoFetchImage) {
+        try {
+          const UNSPLASH_KEY = 'ppd4mBIqu8573rS42D9fobzAipdPsYdKkfOD0A5yiQc';
+          const THEMES = ['christian cross', 'jesus light', 'nature sunrise', 'mountains sunset', 'bible prayer', 'heavenly clouds', 'hope light', 'peaceful water'];
+          theme = THEMES[Math.floor(Math.random() * THEMES.length)];
+          const res = await fetch('https://api.unsplash.com/photos/random?query=' + encodeURIComponent(theme) + '&orientation=portrait&content_filter=high', {
+            headers: { Authorization: 'Client-ID ' + UNSPLASH_KEY },
+          });
+          const data = await res.json();
+          imageUrl = data?.urls?.regular || null;
+          photographer = data?.user?.name || 'Unsplash';
+        } catch (imgErr) {
+          console.warn('Auto fetch Unsplash image error:', imgErr);
+        }
+      }
+
+      const periodIdx = PERIOD_NAMES.indexOf(newVerse.period);
+      const targetIndex = (periodIdx >= 0 ? periodIdx : 0);
+
+      const docRef = firestore().collection('daily_verses').doc();
+      const versePayload: any = {
+        id: docRef.id,
+        index: targetIndex,
+        verseEn: newVerse.verseEn.trim(),
+        referenceEn: newVerse.referenceEn.trim(),
+        verseTe: (newVerse.verseTe?.trim() || newVerse.verseEn.trim()),
+        referenceTe: (newVerse.referenceTe?.trim() || newVerse.referenceEn.trim()),
+        createdAt: firestore.FieldValue.serverTimestamp(),
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+      };
+
+      if (imageUrl) {
+        versePayload.backgroundUrl = imageUrl;
+        versePayload.unsplashPhotographer = photographer;
+        versePayload.backgroundTheme = theme;
+      }
+
+      await docRef.set(versePayload);
+
+      const prependList = (list: any[]) => [versePayload, ...list.filter(v => v.id !== docRef.id)];
+      setUpcomingVerses(prev => prependList(prev));
+      setAllVerses(prev => prependList(prev));
+      if (cachedUpcomingVerses) cachedUpcomingVerses = prependList(cachedUpcomingVerses);
+      if (cachedAllVerses) cachedAllVerses = prependList(cachedAllVerses);
+
+      Alert.alert('Success', 'New Daily Verse created and scheduled successfully!');
+      setShowCreateModal(false);
+      setNewVerse({
+        verseEn: '',
+        referenceEn: '',
+        verseTe: '',
+        referenceTe: '',
+        period: 'Morning',
+        autoFetchImage: true,
+      });
+    } catch (e: any) {
+      console.error(e);
+      Alert.alert('Error', e?.message || 'Failed to create verse.');
+    } finally {
+      setIsCreating(false);
+    }
+  };
   const handleUpdateVerse = async () => {
     if (!editingVerse || !editingVerse.id) return;
     setIsUpdating(true);
@@ -506,7 +591,7 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
           text: 'Import (5,863)',
           onPress: async () => {
             try {
-              const bundled = require('../../assets/bulk_verses.json');
+              const bundled = bundledBulkVerses;
               await handleBulkUpload(bundled);
             } catch (e: any) {
               Alert.alert('Error', e?.message || 'Failed to load bundled verses');
@@ -541,11 +626,14 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
           const data = await res.json();
           const imageUrl = data?.urls?.regular;
           if (imageUrl) {
-            await firestore().collection('daily_verses').doc(verse.id).update({
+            await firestore().collection('daily_verses').doc(verse.id).set({
+              ...verse,
               backgroundUrl: imageUrl,
               unsplashPhotographer: data?.user?.name || 'Unsplash',
               backgroundTheme: theme,
-            });
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            }, { merge: true });
+            verse.backgroundUrl = imageUrl;
             updated++;
           }
         } catch (err) {
@@ -668,6 +756,10 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
             <Text style={styles.statsHeading}>Daily Verses Master Schedule</Text>
             <Text style={styles.statsSubheading}>Deterministic 4-Slot Multi-Year Rotation</Text>
           </View>
+          <TouchableOpacity style={styles.addVerseHeaderBtn} onPress={() => setShowCreateModal(true)} activeOpacity={0.85}>
+            <Plus size={16} color='#0F172A' strokeWidth={2.5} />
+            <Text style={styles.addVerseHeaderBtnText}>Add Verse</Text>
+          </TouchableOpacity>
           <View style={styles.activeBadge}>
             <View style={styles.activeDot} />
             <Text style={styles.activeBadgeText}>Active</Text>
@@ -983,6 +1075,60 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
             </View>
           }
         />
+      )}
+
+      {/* ── Create New Verse Modal ── */}
+      {showCreateModal && (
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Plus size={18} color='#10B981' strokeWidth={2.5} />
+                <Text style={styles.modalTitle}>Create New Daily Verse</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowCreateModal(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <X size={20} color='#94A3B8' />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.inputLabel}>Time Slot</Text>
+            <View style={styles.createPeriodRow}>
+              {PERIOD_NAMES.map(p => (
+                <TouchableOpacity key={p} style={[styles.createPeriodChip, newVerse.period === p && styles.createPeriodChipActive]} onPress={() => setNewVerse({ ...newVerse, period: p })}>
+                  <Text style={[styles.createPeriodChipText, newVerse.period === p && styles.createPeriodChipTextActive]}>{p}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.inputLabel}>Verse Text (English) *</Text>
+            <TextInput style={[styles.modalInput, { height: 68 }]} multiline placeholder='For God so loved the world...' value={newVerse.verseEn} onChangeText={t => setNewVerse({ ...newVerse, verseEn: t })} placeholderTextColor='#64748B' />
+
+            <Text style={styles.inputLabel}>Reference (English) *</Text>
+            <TextInput style={[styles.modalInput, { height: 40 }]} placeholder='John 3:16' value={newVerse.referenceEn} onChangeText={t => setNewVerse({ ...newVerse, referenceEn: t })} placeholderTextColor='#64748B' />
+
+            <Text style={styles.inputLabel}>Verse Text (Telugu - Optional)</Text>
+            <TextInput style={[styles.modalInput, { height: 68 }]} multiline placeholder='దేవుడు లోకమును ఎంతో ప్రేమించెను...' value={newVerse.verseTe} onChangeText={t => setNewVerse({ ...newVerse, verseTe: t })} placeholderTextColor='#64748B' />
+
+            <Text style={styles.inputLabel}>Reference (Telugu - Optional)</Text>
+            <TextInput style={[styles.modalInput, { height: 40 }]} placeholder='యోహాను 3:16' value={newVerse.referenceTe} onChangeText={t => setNewVerse({ ...newVerse, referenceTe: t })} placeholderTextColor='#64748B' />
+
+            <TouchableOpacity style={styles.autoImageToggleRow} onPress={() => setNewVerse({ ...newVerse, autoFetchImage: !newVerse.autoFetchImage })} activeOpacity={0.8}>
+              <View style={[styles.checkboxBox, newVerse.autoFetchImage && styles.checkboxBoxActive]}>
+                {newVerse.autoFetchImage && <CheckCircle2 size={14} color='#FFF' />}
+              </View>
+              <Text style={styles.autoImageToggleText}>Auto-fetch spiritual Unsplash background image</Text>
+            </TouchableOpacity>
+
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowCreateModal(false)}>
+                <Text style={styles.modalCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalSaveBtn, { backgroundColor: '#10B981' }]} onPress={handleCreateVerse} disabled={isCreating}>
+                {isCreating ? <ActivityIndicator color='#0F172A' size='small' /> : <Text style={styles.modalSaveBtnText}>Create & Schedule</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       )}
 
       {/* ── Edit Modal ── */}
@@ -1562,6 +1708,72 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
+  addVerseHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#10B981',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 12,
+  },
+  addVerseHeaderBtnText: {
+    color: '#0F172A',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  createPeriodRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  createPeriodChip: {
+    flex: 1,
+    paddingVertical: 6,
+    backgroundColor: '#1E293B',
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  createPeriodChipActive: {
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    borderColor: '#10B981',
+  },
+  createPeriodChipText: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  createPeriodChipTextActive: {
+    color: '#10B981',
+    fontWeight: '700',
+  },
+  autoImageToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 6,
+    marginBottom: 16,
+  },
+  checkboxBox: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: '#64748B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxBoxActive: {
+    backgroundColor: '#10B981',
+    borderColor: '#10B981',
+  },
+  autoImageToggleText: {
+    color: '#E2E8F0',
+    fontSize: 12,
+    fontWeight: '500',
+  },
   // Edit Modal
   modalOverlay: {
     ...StyleSheet.absoluteFillObject,
