@@ -338,7 +338,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
               color: color,
               url: data.url || '',
               imageUrl: data.imageUrl || null,
-              sermonId: data.sermonId || data.relatedId || (resolvedType === 'sermon' ? (data.id?.replace(/^sermon_/, '') || doc.id.replace(/^sermon_/, '')) : null),
+              sermonId: data.sermonId || (resolvedType === 'sermon' && data.id && !String(data.id).startsWith('sermon_') ? data.id : null) || data.relatedId || (resolvedType === 'sermon' ? doc.id.replace(/^sermon_/, '') : null),
               relatedId: data.quizId || data.relatedId || null,
               churchId: data.churchId || null,
               rawDate: data.createdAt?.toMillis?.() || (typeof data.createdAt === 'number' ? data.createdAt : 0)
@@ -526,8 +526,12 @@ export default function UpdatesScreen({ navigation, route }: any) {
                   } else if (update.type === 'promise') {
                     navigation.navigate('Tabs', { screen: 'Promise' });
                   } else if (update.type === 'sermon') {
-                    const sId = update.sermonId || update.relatedId || update.id?.replace(/^sermon_/, '');
-                    navigation.navigate('SermonVideo', { sermonId: sId });
+                    const sId = update.sermonId || update.relatedId || (update.id && !update.id.startsWith('sermon_') ? update.id : null);
+                    navigation.navigate('SermonVideo', { 
+                      sermonId: sId,
+                      sermonTitle: update.title,
+                      title: update.title
+                    });
                   } else if (
                     update.type === 'quiz' ||
                     update.type === 'quiz_scheduled' ||
@@ -704,7 +708,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
                     ]}>
                       {getTypeName(selectedUpdate?.type || 'announcement')}
                     </Text>
-                    <Text style={styles.stdDateTxt}>{formatDateDisplay(selectedUpdate?.date)}</Text>
+                    <Text style={styles.stdDateTxt}>{selectedUpdate?.date}</Text>
                   </View>
                 </View>
 
@@ -750,9 +754,13 @@ export default function UpdatesScreen({ navigation, route }: any) {
                   <TouchableOpacity
                     style={[styles.joinLiveBtn, { backgroundColor: '#6366f1' }]}
                     onPress={() => {
-                      const sId = selectedUpdate?.sermonId || selectedUpdate?.relatedId || selectedUpdate?.id?.replace(/^sermon_/, '');
+                      const sId = selectedUpdate?.sermonId || selectedUpdate?.relatedId || (selectedUpdate?.id && !selectedUpdate?.id.startsWith('sermon_') ? selectedUpdate?.id : null);
                       setSelectedUpdate(null);
-                      navigation.navigate('SermonVideo', { sermonId: sId });
+                      navigation.navigate('SermonVideo', { 
+                        sermonId: sId,
+                        sermonTitle: selectedUpdate?.title,
+                        title: selectedUpdate?.title
+                      });
                     }}
                   >
                     <Text style={styles.joinLiveBtnTxt}>🎧 Watch Sermon Video</Text>

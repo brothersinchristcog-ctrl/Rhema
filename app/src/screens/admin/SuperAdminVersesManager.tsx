@@ -90,36 +90,69 @@ export default function SuperAdminVersesManager({ searchQuery = '' }: { searchQu
       setLoading(true);
 
       // 1. Fetch metadata total
-      const metaDoc = await firestore().collection('daily_verses_meta').doc('metadata').get();
-      const metaExists = typeof metaDoc.exists === 'function' ? metaDoc.exists() : metaDoc.exists;
-      const total = metaExists ? (metaDoc.data()?.totalVerses || 0) : 0;
-      setTotalVerses(total);
-      cachedTotalVerses = total;
+      let total = 0;
+      try {
+        const metaDoc = await firestore().collection('daily_verses_meta').doc('metadata').get();
+        const metaExists = typeof metaDoc.exists === 'function' ? metaDoc.exists() : metaDoc.exists;
+        total = metaExists ? (metaDoc.data()?.totalVerses || 0) : 0;
+      } catch (err) {
+        console.warn('Could not read daily_verses_meta:', err);
+      }
 
       if (total === 0) {
-        setUpcomingVerses([]);
-        cachedUpcomingVerses = [];
-        setLoading(false);
-        return;
+        try {
+          const bundled = require('../../assets/bulk_verses.json');
+          total = bundled.length || 5863;
+        } catch (_) {
+          total = 5863;
+        }
       }
+
+      setTotalVerses(total);
+      cachedTotalVerses = total;
 
       const baseIdx = (todayDaysSinceEpoch * 4) % total;
       const COUNT = 120; // 30 upcoming days (4 per day)
 
       let fetched: any[] = [];
-      if (baseIdx + COUNT <= total) {
-        const snap = await firestore().collection('daily_verses')
-          .where('index', '>=', baseIdx)
-          .where('index', '<', baseIdx + COUNT)
-          .get();
-        fetched = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      } else {
-        // Wrapped around cycle
-        const [snap1, snap2] = await Promise.all([
-          firestore().collection('daily_verses').where('index', '>=', baseIdx).get(),
-          firestore().collection('daily_verses').where('index', '<', (baseIdx + COUNT) % total).get(),
-        ]);
-        fetched = [...snap1.docs, ...snap2.docs].map(doc => ({ id: doc.id, ...doc.data() }));
+      try {
+        if (baseIdx + COUNT <= total) {
+          const snap = await firestore().collection('daily_verses')
+            .where('index', '>=', baseIdx)
+            .where('index', '<', baseIdx + COUNT)
+            .get();
+          fetched = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        } else {
+          // Wrapped around cycle
+          const [snap1, snap2] = await Promise.all([
+            firestore().collection('daily_verses').where('index', '>=', baseIdx).get(),
+            firestore().collection('daily_verses').where('index', '<', (baseIdx + COUNT) % total).get(),
+          ]);
+          fetched = [...snap1.docs, ...snap2.docs].map(doc => ({ id: doc.id, ...doc.data() }));
+        }
+      } catch (fErr) {
+        console.warn('Firestore range query failed, falling back to bundled verses:', fErr);
+      }
+
+      // Offline / fallback if Firestore returned nothing: populate from bundled verses
+      if (fetched.length === 0) {
+        try {
+          const bundled = require('../../assets/bulk_verses.json');
+          for (let offset = 0; offset < COUNT; offset++) {
+            const idx = (baseIdx + offset) % total;
+            const bv = bundled[idx];
+            if (bv) {
+              fetched.push({
+                id: `verse_${idx}`,
+                index: idx,
+                verseEn: bv.verseEn,
+                verseTe: bv.verseTe,
+                referenceEn: bv.referenceEn,
+                referenceTe: bv.referenceTe,
+              });
+            }
+          }
+        } catch (_) {}
       }
 
       // Sort starting chronologically from Today
@@ -151,13 +184,41 @@ export default function SuperAdminVersesManager({ searchQuery = '' }: { searchQu
         .limit(50)
         .get();
 
-      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      if (docs.length === 0) {
+        try {
+          const bundled = require('../../assets/bulk_verses.json');
+          docs = bundled.slice(0, 50).map((bv: any, idx: number) => ({
+            id: `verse_${idx}`,
+            index: idx,
+            verseEn: bv.verseEn,
+            verseTe: bv.verseTe,
+            referenceEn: bv.referenceEn,
+            referenceTe: bv.referenceTe,
+          }));
+        } catch (_) {}
+      }
+
       cachedAllVerses = docs;
-      allVersesLastDoc = snap.docs[snap.docs.length - 1];
+      allVersesLastDoc = snap.docs[snap.docs.length - 1] || null;
       allVersesHasMore = snap.docs.length === 50;
       setAllVerses(docs);
     } catch (e) {
       console.error('Error fetching all verses:', e);
+      try {
+        const bundled = require('../../assets/bulk_verses.json');
+        const docs = bundled.slice(0, 50).map((bv: any, idx: number) => ({
+          id: `verse_${idx}`,
+          index: idx,
+          verseEn: bv.verseEn,
+          verseTe: bv.verseTe,
+          referenceEn: bv.referenceEn,
+          referenceTe: bv.referenceTe,
+        }));
+        cachedAllVerses = docs;
+        setAllVerses(docs);
+      } catch (_) {}
     } finally {
       setLoading(false);
     }

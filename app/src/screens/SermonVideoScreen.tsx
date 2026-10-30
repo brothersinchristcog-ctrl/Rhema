@@ -185,6 +185,28 @@ export default function SermonVideoScreen({ navigation, route }: any) {
         }
       }
 
+      // 3. Match by Sermon Title if ID lookup didn't match
+      const targetTitle = route?.params?.title || route?.params?.sermonTitle;
+      if (targetTitle) {
+        const cleanTitle = String(targetTitle)
+          .replace(/^[^\w\s]+/, '')
+          .replace(/^New Sermon:\s*/i, '')
+          .trim()
+          .toLowerCase();
+        if (cleanTitle.length > 2) {
+          const match = data.find(v => {
+            const vt = (v.title || v.titleEn || '').toLowerCase();
+            return vt.includes(cleanTitle) || cleanTitle.includes(vt);
+          });
+          if (match) {
+            setActiveVideo(match);
+            setPlaying(true);
+            setLoading(false);
+            return;
+          }
+        }
+      }
+
       if (sermonData) {
         setActiveVideo({
           ...sermonData,

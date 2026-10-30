@@ -409,15 +409,22 @@ class VerseNotificationService {
       }
       
       if (totalVerses === 0 || forceRefresh) {
-        const metaDoc = await firestore().collection('daily_verses_meta').doc('metadata').get();
-        const metaExists = typeof metaDoc.exists === 'function' ? metaDoc.exists() : metaDoc.exists;
-        if (metaExists) {
-          totalVerses = metaDoc.data()?.totalVerses || 0;
-          await AsyncStorage.setItem('@wechristian_verses_meta', totalVerses.toString());
+        try {
+          const metaDoc = await firestore().collection('daily_verses_meta').doc('metadata').get();
+          const metaExists = typeof metaDoc.exists === 'function' ? metaDoc.exists() : metaDoc.exists;
+          if (metaExists) {
+            totalVerses = metaDoc.data()?.totalVerses || 0;
+            await AsyncStorage.setItem('@wechristian_verses_meta', totalVerses.toString());
+          }
+        } catch (mErr) {
+          console.warn('[VerseNotificationService] Could not fetch metadata from Firestore:', mErr);
         }
       }
       
-      if (totalVerses === 0) return [];
+      // Fallback: If metadata not available yet or offline, default to 5,863 bundled verses
+      if (totalVerses === 0) {
+        totalVerses = 5863;
+      }
 
       const today = new Date();
       const targetDates: Date[] = [];
@@ -467,6 +474,29 @@ class VerseNotificationService {
         await AsyncStorage.setItem(VERSES_CACHE_KEY, JSON.stringify(cache));
       }
 
+      // Offline / missing fallback: Ensure all required indices are populated from bundled JSON
+      let bundledVerses: any[] | null = null;
+      for (const idx of requiredIndices) {
+        if (!cache[idx]) {
+          if (!bundledVerses) {
+            try {
+              bundledVerses = require('../../assets/bulk_verses.json');
+            } catch (_) {}
+          }
+          if (bundledVerses && bundledVerses[idx]) {
+            const bv = bundledVerses[idx];
+            cache[idx] = {
+              id: `verse_${idx}`,
+              index: idx,
+              verseEn: bv.verseEn,
+              verseTe: bv.verseTe,
+              referenceEn: bv.referenceEn,
+              referenceTe: bv.referenceTe,
+            };
+          }
+        }
+      }
+
       const results = [];
       for (const d of targetDates) {
         const dailyIndices = this.getIndicesForDate(d, totalVerses);
@@ -481,7 +511,26 @@ class VerseNotificationService {
       return results;
     } catch (e) {
       console.error('[VerseNotificationService] Error in getRecentVerses:', e);
-      return [];
+      // Failsafe: Return at least today's verses from bundled JSON
+      try {
+        const bundledVerses = require('../../assets/bulk_verses.json');
+        const today = new Date();
+        const indices = this.getIndicesForDate(today, bundledVerses.length || 5863);
+        const todayVerses = indices.map((idx) => {
+          const bv = bundledVerses[idx] || {};
+          return {
+            id: `verse_${idx}`,
+            index: idx,
+            verseEn: bv.verseEn || '',
+            verseTe: bv.verseTe || '',
+            referenceEn: bv.referenceEn || '',
+            referenceTe: bv.referenceTe || '',
+          };
+        });
+        return [{ date: today, verses: todayVerses }];
+      } catch (_) {
+        return [];
+      }
     }
   }
 
