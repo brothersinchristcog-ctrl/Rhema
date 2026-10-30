@@ -1386,7 +1386,7 @@ export const automatedDailyVersePush = onSchedule({
  * 🧪 HTTP endpoint to manually trigger the Daily Verse push (can specify ?slot=Morning/Afternoon/Evening/Night)
  * Also used by external Cloud Schedulers (Google Cloud Console or cron-job.org).
  */
-export const triggerDailyVersePushHttp = onRequest({ cors: true, timeoutSeconds: 120 }, async (req, res) => {
+export const triggerDailyVersePushHttp = onRequest({ cors: true, timeoutSeconds: 120, region: 'asia-south1' }, async (req, res) => {
   try {
     const slot = (req.query.slot as string) || req.body?.slot;
     const result = await sendDailyVersePushInternal(slot);
