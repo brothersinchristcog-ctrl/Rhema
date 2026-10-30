@@ -607,6 +607,17 @@ export const monitorMeetingLive = onSchedule({ schedule: '* * * * *', timeZone: 
         catch (schedSermonErr) {
             console.warn('Error checking scheduled sermons for Rhema Church in monitorMeetingLive:', schedSermonErr);
         }
+        // ─── Check YouTube Live for active Rhema Church collection (Single Church) ───
+        try {
+            const rhemaChurchRef = db.collection('Rhema Church').doc('rhema');
+            const rhemaDoc = await rhemaChurchRef.get();
+            if (rhemaDoc.exists) {
+                await checkChurchYouTubeLive(rhemaDoc, 'rhema', db);
+            }
+        }
+        catch (rhemaYtErr) {
+            console.warn('Error checking YouTube Live for Rhema Church in monitorMeetingLive:', rhemaYtErr);
+        }
         // ─── 4. Check Super Admin Daily Bible Quiz Scheduled Notification ───
         try {
             await sendDailyQuizNotificationInternal(false);

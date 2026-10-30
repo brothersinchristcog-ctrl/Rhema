@@ -116,10 +116,11 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
   useEffect(() => {
     if (!churchId) return;
 
-    // 1. Listen to settings/youtube_live
+    const targetChurchId = churchId || 'rhema';
+    // 1. Listen to settings/youtube_live in Rhema Church
     const unsubscribeSettings = firestore()
-      .collection('churches')
-      .doc(churchId)
+      .collection('Rhema Church')
+      .doc(targetChurchId)
       .collection('settings')
       .doc('youtube_live')
       .onSnapshot(
@@ -145,8 +146,8 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
 
     // 2. Also check if there's an active online_meeting streaming to YouTube Live
     const unsubscribeMeetings = firestore()
-      .collection('churches')
-      .doc(churchId)
+      .collection('Rhema Church')
+      .doc(targetChurchId)
       .collection('online_meetings')
       .where('status', '==', 'live')
       .limit(1)
@@ -194,13 +195,23 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
           return;
         }
 
-        // Step 2: Check Firestore settings/youtube_live directly
-        const liveDoc = await firestore()
-          .collection('churches')
-          .doc(churchId)
+        const targetChurchId = churchId || 'rhema';
+        // Step 2: Check Firestore settings/youtube_live directly in Rhema Church
+        let liveDoc = await firestore()
+          .collection('Rhema Church')
+          .doc(targetChurchId)
           .collection('settings')
           .doc('youtube_live')
           .get();
+
+        if (!liveDoc.exists) {
+          liveDoc = await firestore()
+            .collection('churches')
+            .doc(targetChurchId)
+            .collection('settings')
+            .doc('youtube_live')
+            .get();
+        }
 
         if (liveDoc.exists) {
           const lData = liveDoc.data();
@@ -859,3 +870,4 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
 });
+
