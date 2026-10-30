@@ -65,6 +65,7 @@ import PastorEventMap from '../screens/admin/pastor_events/PastorEventMap';
 import AIAssistantModal from '../screens/admin/pastor_events/AIAssistantModal';
 import OnlineMeetingsScreen from '../screens/OnlineMeetingsScreen';
 import OnlineMeetingDetailScreen from '../screens/OnlineMeetingDetailScreen';
+import YouTubeLiveScreen from '../screens/YouTubeLiveScreen';
 import MemberGalleryNavigator from '../screens/gallery/MemberGalleryNavigator';
 
 // Bible Quiz Screens
@@ -800,6 +801,7 @@ function Navigation() {
             <Stack.Screen name="BibleQuizReview" component={BibleQuizReviewScreen} />
             <Stack.Screen name="OnlineMeetings" component={renderPremium(OnlineMeetingsScreen)} />
             <Stack.Screen name="OnlineMeetingDetail" component={renderPremium(OnlineMeetingDetailScreen)} />
+            <Stack.Screen name="YouTubeLive" component={renderPremium(YouTubeLiveScreen)} />
           </>
         ) : onboardingComplete ? (
           <>
@@ -830,6 +832,7 @@ function Navigation() {
             <Stack.Screen name="Subscription" component={SubscriptionScreen} />
             <Stack.Screen name="OnlineMeetings" component={renderPremium(OnlineMeetingsScreen)} />
             <Stack.Screen name="OnlineMeetingDetail" component={renderPremium(OnlineMeetingDetailScreen)} />
+            <Stack.Screen name="YouTubeLive" component={renderPremium(YouTubeLiveScreen)} />
             <Stack.Screen name="LiveCelebrationsChat" component={renderPremium(LiveCelebrationsChat)} />
             <Stack.Screen name="Gallery" component={renderPremium(MemberGalleryNavigator)} />
             <Stack.Screen name="VerseOfTheDay" component={renderPremium(VerseOfTheDayScreen)} />

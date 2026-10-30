@@ -15,5 +15,26 @@ export declare const sendRhemaBroadcastPush: import("firebase-functions/core").C
  * 🧪 Test HTTP endpoint to trigger today's Daily Promise push notification on-demand
  */
 export declare const triggerDailyPromisePushHttp: import("firebase-functions/v2/https").HttpsFunction;
-export { publishScheduledSermons, triggerPublishScheduledSermonsHttp, triggerDailyVersePushHttp } from './notifications.js';
+/**
+ * ⏰ YOUTUBE LIVE CHECK SCHEDULER
+ * Runs every 5 minutes to check if YouTube channel is live
+ */
+export declare const checkYouTubeLive: import("firebase-functions/v2/scheduler").ScheduleFunction;
+/**
+ * 📢 TRIGGER TEST YOUTUBE LIVE NOTIFICATION
+ */
+export declare const triggerTestYouTubeLive: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
+    success: boolean;
+    message: string;
+    sent?: never;
+    failed?: never;
+    broadcastId?: never;
+} | {
+    success: boolean;
+    sent: any;
+    failed: any;
+    broadcastId: any;
+    message?: never;
+}>, unknown>;
+export { publishScheduledSermons, triggerPublishScheduledSermonsHttp, triggerDailyVersePushHttp, monitorMeetingLive, pushMeetingLive } from './notifications.js';
 //# sourceMappingURL=index.d.ts.map

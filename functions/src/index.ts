@@ -1225,7 +1225,7 @@ async function fetchPage(url: string): Promise<string> {
  * ⏰ YOUTUBE LIVE CHECK SCHEDULER
  * Runs every 5 minutes to check if YouTube channel is live
  */
-const checkYouTubeLive = onSchedule('*/5 * * * *', async (event) => {
+export const checkYouTubeLive = onSchedule('*/5 * * * *', async (event) => {
   try {
     console.log('⏰ Checking YouTube Live status...');
     const url = 'https://www.youtube.com/@Brothersinchristfellowship/live';
@@ -1273,6 +1273,35 @@ const checkYouTubeLive = onSchedule('*/5 * * * *', async (event) => {
         createdAt: FieldValue.serverTimestamp()
       });
       
+      // 1.5 Send topic push to all church members
+      await getMsg().send({
+        notification: {
+          title: '🔴 We are Live on YouTube!',
+          body: 'Brothers in Christ Fellowship is now live! Tap to watch inside the app. 🎥🙏'
+        },
+        data: {
+          type: 'youtube_live',
+          url: liveUrl,
+          videoId: videoId || '',
+          churchId: DEFAULT_CHURCH_ID,
+          title: 'Brothers in Christ Fellowship Live Stream',
+          id: docRef.id
+        },
+        topic: `church_${DEFAULT_CHURCH_ID}`,
+        android: {
+          priority: 'high',
+          notification: {
+            sound: 'default',
+            priority: 'max',
+            channelId: 'church_alerts'
+          }
+        },
+        apns: {
+          headers: { 'apns-priority': '10' },
+          payload: { aps: { sound: 'default', badge: 1 } }
+        }
+      }).catch((e: any) => console.error('Error sending topic push:', e));
+
       // 2. Fetch all user tokens
       const snapshotUsers = await db.collection('users').get();
       const tokenSet = new Set<string>();
@@ -1291,6 +1320,9 @@ const checkYouTubeLive = onSchedule('*/5 * * * *', async (event) => {
           data: {
             type: 'youtube_live',
             url: liveUrl,
+            videoId: videoId || '',
+            churchId: DEFAULT_CHURCH_ID,
+            title: 'Brothers in Christ Fellowship Live Stream',
             id: docRef.id
           },
           android: {
@@ -1327,7 +1359,7 @@ const checkYouTubeLive = onSchedule('*/5 * * * *', async (event) => {
 /**
  * 📢 TRIGGER TEST YOUTUBE LIVE NOTIFICATION
  */
-const triggerTestYouTubeLive = onCall({ invoker: 'public' }, async (request) => {
+export const triggerTestYouTubeLive = onCall({ invoker: 'public' }, async (request) => {
   try {
     const liveUrl = request.data?.url || 'https://www.youtube.com/@Brothersinchristfellowship/live';
     const db = getDb();
@@ -1344,6 +1376,35 @@ const triggerTestYouTubeLive = onCall({ invoker: 'public' }, async (request) => 
       createdAt: FieldValue.serverTimestamp()
     });
     
+    // Send topic push to all church members
+    await getMsg().send({
+      notification: {
+        title: '🔴 We are Live on YouTube!',
+        body: 'Brothers in Christ Fellowship is now live! Tap to watch inside the app. 🎥🙏'
+      },
+      data: {
+        type: 'youtube_live',
+        url: liveUrl,
+        videoId: '',
+        churchId: DEFAULT_CHURCH_ID,
+        title: 'Brothers in Christ Fellowship Live Stream',
+        id: docRef.id
+      },
+      topic: `church_${DEFAULT_CHURCH_ID}`,
+      android: {
+        priority: 'high',
+        notification: {
+          sound: 'default',
+          priority: 'max',
+          channelId: 'church_alerts'
+        }
+      },
+      apns: {
+        headers: { 'apns-priority': '10' },
+        payload: { aps: { sound: 'default', badge: 1 } }
+      }
+    }).catch((e: any) => console.error('Error sending test topic push:', e));
+
     const snapshotUsers = await db.collection('users').get();
     const tokenSet = new Set<string>();
     snapshotUsers.forEach((doc: any) => {
@@ -1364,6 +1425,9 @@ const triggerTestYouTubeLive = onCall({ invoker: 'public' }, async (request) => 
       data: {
         type: 'youtube_live',
         url: liveUrl,
+        videoId: '',
+        churchId: DEFAULT_CHURCH_ID,
+        title: 'Brothers in Christ Fellowship Live Stream',
         id: docRef.id
       },
       android: {
@@ -1638,5 +1702,7 @@ const testBaptismsV1 = functionsCompat.https.onRequest(async (req, res) => {
 export {
   publishScheduledSermons,
   triggerPublishScheduledSermonsHttp,
-  triggerDailyVersePushHttp
+  triggerDailyVersePushHttp,
+  monitorMeetingLive,
+  pushMeetingLive
 } from './notifications.js';

@@ -740,7 +740,12 @@ export default function UpdatesScreen({ navigation, route }: any) {
                       if (base.includes('@') && !base.includes('/live') && !base.includes('/streams')) {
                         base = base.endsWith('/') ? `${base}live` : `${base}/live`;
                       }
-                      Linking.openURL(base).catch(err => console.error(err));
+                      setShowModal(false);
+                      navigation.navigate('YouTubeLive', {
+                        url: base,
+                        videoId: selectedUpdate?.videoId,
+                        title: selectedUpdate?.title,
+                      });
                     } else {
                       Alert.alert(t('updates.alerts.notConfiguredTitle'), t('updates.alerts.notConfiguredMsg'));
                     }

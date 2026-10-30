@@ -1,5 +1,5 @@
 // YouTubeService.ts
-// Automatically finds the recording of a past church event from YouTube
+// Automatically finds the recording of a past church event from YouTube or active live streams
 
 const YOUTUBE_API_KEY = 'AIzaSyBKLbyuINc04XXgrUPyoSCZYtKdBbv-6ic';
 
@@ -10,7 +10,7 @@ const channelIdCache: Record<string, string> = {};
  * Resolves the YouTube channel ID from the channel handle.
  * Result is cached in memory for the app session.
  */
-async function getChannelId(channelHandle: string): Promise<string | null> {
+export async function getChannelId(channelHandle: string): Promise<string | null> {
   if (!channelHandle) return null;
   if (channelIdCache[channelHandle]) return channelIdCache[channelHandle];
 
@@ -196,6 +196,63 @@ export async function findEventVideo(
     return null;
   } catch (error) {
     console.error('❌ [YouTubeService] findEventVideo error:', error);
+    return null;
+  }
+}
+
+/**
+ * Searches the church's YouTube channel for an active live broadcast.
+ * Returns { videoId, title } if live, or null if no stream is currently live.
+ */
+export async function findActiveLiveStream(
+  channelHandleOrUrl?: string
+): Promise<{ videoId: string; title: string } | null> {
+  if (!channelHandleOrUrl) return null;
+  try {
+    let channelId: string | null = null;
+    const clean = channelHandleOrUrl.trim();
+
+    if (clean.includes('/channel/')) {
+      const parts = clean.split('/channel/')[1].split('/')[0].split('?')[0];
+      channelId = parts;
+    } else if (clean.includes('@')) {
+      const handle = clean.startsWith('@') ? clean : '@' + clean.split('@')[1].split('/')[0].split('?')[0];
+      channelId = await getChannelId(handle);
+    } else if (clean.startsWith('UC') && clean.length > 20) {
+      channelId = clean;
+    } else {
+      channelId = await getChannelId(clean);
+    }
+
+    if (!channelId) {
+      console.warn('⚠️ [YouTubeService] Could not resolve channelId for live search:', channelHandleOrUrl);
+      return null;
+    }
+
+    const searchUrl =
+      `https://www.googleapis.com/youtube/v3/search` +
+      `?part=snippet` +
+      `&channelId=${channelId}` +
+      `&eventType=live` +
+      `&type=video` +
+      `&maxResults=1` +
+      `&key=${YOUTUBE_API_KEY}`;
+
+    const res = await fetch(searchUrl);
+    const data = await res.json();
+
+    if (data.items && data.items.length > 0) {
+      const item = data.items[0];
+      const videoId = item?.id?.videoId;
+      const title = item?.snippet?.title || 'Church Live Stream';
+      if (videoId) {
+        console.log(`🔴 [YouTubeService] Active live stream found: ${videoId} ("${title}")`);
+        return { videoId, title };
+      }
+    }
+    return null;
+  } catch (err) {
+    console.error('❌ [YouTubeService] findActiveLiveStream error:', err);
     return null;
   }
 }
