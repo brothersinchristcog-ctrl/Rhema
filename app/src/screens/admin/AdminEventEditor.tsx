@@ -390,13 +390,21 @@ export default function AdminEventEditor() {
     }));
   };
 
-  const openSongPickerForService = (serviceId: string) => {
+  const openSongPickerForService = async (serviceId: string) => {
     setTargetServiceIdForPicker(serviceId);
     const srv = eventServices.find(s => s.id === serviceId);
     setTempSelectedSongs(srv?.songs ? [...srv.songs] : []);
     setSongPickerSearch('');
     setSongPickerCategory('All');
     setShowSongPicker(true);
+    if (!allAvailableSongs || allAvailableSongs.length === 0) {
+      try {
+        const songs = await FirestoreService.getWorshipSongs();
+        if (Array.isArray(songs)) setAllAvailableSongs(songs);
+      } catch (e) {
+        console.warn('Failed to load songs on modal open:', e);
+      }
+    }
   };
 
   const handleSavePickedSongs = () => {
@@ -1345,7 +1353,7 @@ export default function AdminEventEditor() {
                   >
                     <Plus size={13} color="#1D4ED8" />
                     <Text style={{ fontSize: 11, fontWeight: '800', color: '#1D4ED8' }}>
-                      {service.songs?.length ? 'Manage / Add Songs' : '+ Add Songs'}
+                      {service.songs?.length ? 'Manage / Add Songs' : 'Add Songs'}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -1436,7 +1444,7 @@ export default function AdminEventEditor() {
           >
             <Plus size={16} color={eventServices.length === 0 ? '#FFFFFF' : '#047857'} />
             <Text style={{ fontSize: 13, fontWeight: '800', color: eventServices.length === 0 ? '#FFFFFF' : '#047857' }}>
-              {eventServices.length === 0 ? '+ Add Worship Service / Setlist' : '+ Add Another Service'}
+              {eventServices.length === 0 ? 'Add Worship Service / Setlist' : 'Add Another Service'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -1635,6 +1643,184 @@ export default function AdminEventEditor() {
                 onPress={handleAddNewEventType}
               >
                 <Text style={styles.newTypeSubmitTxt}>Add & Select</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Multi-Select Song Picker Modal ── */}
+      <Modal visible={showSongPicker} transparent animationType="slide">
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' }}>
+          <View style={{
+            backgroundColor: '#FFFFFF',
+            borderTopLeftRadius: 24,
+            borderTopRightRadius: 24,
+            height: '85%',
+            paddingTop: 16,
+            paddingHorizontal: 16,
+            paddingBottom: 24
+          }}>
+            {/* Header */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center' }}>
+                  <Music size={20} color="#2563EB" />
+                </View>
+                <View>
+                  <Text style={{ fontSize: 16, fontWeight: '800', color: '#1a2d5a' }}>
+                    Select Service Songs
+                  </Text>
+                  <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600' }}>
+                    {tempSelectedSongs.length} {tempSelectedSongs.length === 1 ? 'song selected' : 'songs selected'}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowSongPicker(false)}
+                style={{ padding: 6, borderRadius: 8, backgroundColor: '#F1F5F9' }}
+              >
+                <X size={18} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Search Input */}
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: '#F8FAFC',
+              borderWidth: 1,
+              borderColor: '#E2E8F0',
+              borderRadius: 12,
+              paddingHorizontal: 12,
+              paddingVertical: 8,
+              marginBottom: 10,
+              gap: 8
+            }}>
+              <Search size={16} color="#94A3B8" />
+              <TextInput
+                style={{ flex: 1, fontSize: 13, color: '#1a2d5a' }}
+                placeholder="Search songs by English or Telugu title..."
+                placeholderTextColor="#94A3B8"
+                value={songPickerSearch}
+                onChangeText={setSongPickerSearch}
+                autoCorrect={false}
+              />
+              {songPickerSearch ? (
+                <TouchableOpacity onPress={() => setSongPickerSearch('')}>
+                  <X size={16} color="#94A3B8" />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+
+            {/* Songs List */}
+            {(() => {
+              const q = songPickerSearch.trim().toLowerCase();
+              const filtered = allAvailableSongs.filter(s => {
+                if (!s) return false;
+                if (!q) return true;
+                const matchEn = (s.title || '').toLowerCase().includes(q);
+                const matchTe = (s.titleTe || '').toLowerCase().includes(q);
+                return matchEn || matchTe;
+              });
+
+              if (filtered.length === 0) {
+                return (
+                  <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+                    <Music size={36} color="#CBD5E1" />
+                    <Text style={{ fontSize: 14, fontWeight: '700', color: '#64748B', marginTop: 8 }}>
+                      No songs found
+                    </Text>
+                    <Text style={{ fontSize: 12, color: '#94A3B8', marginTop: 4 }}>
+                      Try typing a different song title or keyword
+                    </Text>
+                  </View>
+                );
+              }
+
+              return (
+                <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+                  {filtered.map((song, idx) => {
+                    const isSelected = tempSelectedSongs.some(ts => ts.id === song.id || ts.title.trim().toLowerCase() === song.title.trim().toLowerCase());
+                    return (
+                      <TouchableOpacity
+                        key={song.id || idx}
+                        activeOpacity={0.7}
+                        onPress={() => {
+                          if (isSelected) {
+                            setTempSelectedSongs(prev => prev.filter(ts => ts.id !== song.id && ts.title.trim().toLowerCase() !== song.title.trim().toLowerCase()));
+                          } else {
+                            setTempSelectedSongs(prev => [...prev, song]);
+                          }
+                        }}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          paddingVertical: 10,
+                          paddingHorizontal: 12,
+                          backgroundColor: isSelected ? '#EFF6FF' : '#FFFFFF',
+                          borderWidth: 1,
+                          borderColor: isSelected ? '#93C5FD' : '#E2E8F0',
+                          borderRadius: 12,
+                          marginBottom: 6
+                        }}
+                      >
+                        <View style={{ flex: 1, marginRight: 10 }}>
+                          <Text style={{ fontSize: 14, fontWeight: '700', color: isSelected ? '#1D4ED8' : '#1a2d5a' }} numberOfLines={1}>
+                            {song.title}
+                          </Text>
+                          {song.titleTe ? (
+                            <Text style={{ fontSize: 12, color: '#64748B', marginTop: 2 }} numberOfLines={1}>
+                              {song.titleTe}
+                            </Text>
+                          ) : null}
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                            {song.key ? (
+                              <View style={{ backgroundColor: '#F1F5F9', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 }}>
+                                <Text style={{ fontSize: 10, fontWeight: '700', color: '#475569' }}>Key: {song.key}</Text>
+                              </View>
+                            ) : null}
+                            {song.category ? (
+                              <Text style={{ fontSize: 10, color: '#94A3B8' }}>{song.category}</Text>
+                            ) : null}
+                          </View>
+                        </View>
+
+                        <View style={{
+                          width: 24,
+                          height: 24,
+                          borderRadius: 12,
+                          borderWidth: 1.5,
+                          borderColor: isSelected ? '#2563EB' : '#CBD5E1',
+                          backgroundColor: isSelected ? '#2563EB' : '#FFFFFF',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          {isSelected && <Check size={14} color="#FFFFFF" />}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              );
+            })()}
+
+            {/* Bottom Actions */}
+            <View style={{ flexDirection: 'row', gap: 10, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#E2E8F0' }}>
+              <TouchableOpacity
+                onPress={() => setShowSongPicker(false)}
+                style={{ flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: '#F1F5F9', alignItems: 'center' }}
+              >
+                <Text style={{ fontSize: 14, fontWeight: '700', color: '#475569' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleSavePickedSongs}
+                style={{ flex: 2, paddingVertical: 12, borderRadius: 12, backgroundColor: '#1a2d5a', alignItems: 'center' }}
+              >
+                <Text style={{ fontSize: 14, fontWeight: '800', color: '#FFFFFF' }}>
+                  Done ({tempSelectedSongs.length})
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
