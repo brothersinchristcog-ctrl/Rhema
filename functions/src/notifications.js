@@ -1292,18 +1292,6 @@ export async function sendDailyVersePushInternal(slotOverride) {
     };
 }
 /**
- * ⏰ AUTOMATED DAILY VERSE PUSH SCHEDULER
- * Runs 4 times a day at 8:00 AM, 1:00 PM, 6:00 PM, 9:00 PM IST (Asia/Kolkata).
- */
-export const automatedDailyVersePush = onSchedule({
-    schedule: '0 8,13,18,21 * * *',
-    timeZone: 'Asia/Kolkata',
-    region: 'asia-south1',
-}, async (event) => {
-    console.log('⏰ Running automatedDailyVersePush scheduler...');
-    await sendDailyVersePushInternal();
-});
-/**
  * 🧪 HTTP endpoint to manually trigger the Daily Verse push (can specify ?slot=Morning/Afternoon/Evening/Night)
  * Also used by external Cloud Schedulers (Google Cloud Console or cron-job.org).
  */
