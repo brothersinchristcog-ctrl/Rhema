@@ -1635,11 +1635,31 @@ export default function AdminSongEditor() {
           <View style={{ flex: 1 }}>
             <Text style={styles.colHeaderLabel} numberOfLines={1}>KEY</Text>
             <TouchableOpacity
-              style={styles.colInputBox}
+              style={[
+                styles.colInputBox,
+                {
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 4,
+                  backgroundColor: songKey ? '#EFF6FF' : '#F8FAFC',
+                  borderColor: songKey ? '#2563EB' : '#CBD5E1',
+                }
+              ]}
               onPress={() => setShowKeyPicker(true)}
             >
-              <Text style={{ color: songKey ? '#1a2d5a' : '#94A3B8', fontWeight: songKey ? '900' : '600', fontSize: 13 }}>{songKey || 'Select Key'}</Text>
-              <ChevronDown size={14} color="#64748B" />
+              <Text
+                style={{
+                  fontSize: songKey ? 13 : 12,
+                  fontWeight: songKey ? '900' : '700',
+                  color: songKey ? '#1D4ED8' : '#94A3B8',
+                  textAlign: 'center'
+                }}
+                numberOfLines={1}
+              >
+                {songKey || 'Select'}
+              </Text>
+              <ChevronDown size={12} color={songKey ? '#1D4ED8' : '#94A3B8'} />
             </TouchableOpacity>
           </View>
 
@@ -5144,7 +5164,7 @@ export default function AdminSongEditor() {
               <ScrollView>
                 <TouchableOpacity style={styles.pickerModalItem}
                   onPress={() => { setSongKey(''); setShowKeyPicker(false); }}>
-                  <Text style={[styles.pickerModalTxt, !songKey && { color: '#1a2d5a', fontWeight: '800' }]}>None / Not Set</Text>
+                  <Text style={[styles.pickerModalTxt, !songKey && { color: '#1a2d5a', fontWeight: '800' }]}>Select / None (Clear Key)</Text>
                   {!songKey && <CheckCircle size={16} color="#1a2d5a" />}
                 </TouchableOpacity>
 
@@ -5554,11 +5574,31 @@ export default function AdminSongEditor() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.colHeaderLabel} numberOfLines={1}>KEY</Text>
                     <TouchableOpacity
-                      style={styles.colInputBox}
+                      style={[
+                        styles.colInputBox,
+                        {
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 4,
+                          backgroundColor: editKey ? '#FEF2F2' : '#F8FAFC',
+                          borderColor: editKey ? '#DC2626' : '#CBD5E1',
+                        }
+                      ]}
                       onPress={() => setShowEditKeyPicker(true)}
                     >
-                      <Text style={{ color: editKey ? '#1a2d5a' : '#94A3B8', fontWeight: editKey ? '900' : '600', fontSize: 13 }}>{editKey || 'Select Key'}</Text>
-                      <ChevronDown size={14} color="#64748B" />
+                      <Text
+                        style={{
+                          fontSize: editKey ? 13 : 12,
+                          fontWeight: editKey ? '900' : '700',
+                          color: editKey ? '#DC2626' : '#94A3B8',
+                          textAlign: 'center'
+                        }}
+                        numberOfLines={1}
+                      >
+                        {editKey || 'Select'}
+                      </Text>
+                      <ChevronDown size={12} color={editKey ? '#DC2626' : '#94A3B8'} />
                     </TouchableOpacity>
                   </View>
 
@@ -5896,6 +5936,12 @@ export default function AdminSongEditor() {
                 <View style={styles.pickerModalBox}>
                   <Text style={styles.pickerModalTitle}>Select Key</Text>
                   <ScrollView>
+                <TouchableOpacity style={styles.pickerModalItem}
+                  onPress={() => { setEditKey(''); setShowEditKeyPicker(false); }}>
+                  <Text style={[styles.pickerModalTxt, !editKey && { color: '#c0392b', fontWeight: '800' }]}>Select / None (Clear Key)</Text>
+                  {!editKey && <CheckCircle size={16} color="#c0392b" />}
+                </TouchableOpacity>
+
                     {KEYS.map(k => (
                       <TouchableOpacity key={k} style={styles.pickerModalItem}
                         onPress={() => { setEditKey(k); setShowEditKeyPicker(false); }}>
