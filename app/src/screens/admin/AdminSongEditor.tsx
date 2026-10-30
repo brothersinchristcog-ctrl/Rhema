@@ -136,10 +136,10 @@ export default function AdminSongEditor() {
   const [status, setStatus] = useState('Published');
   const [categories, setCategories] = useState<string[]>(['Stuthi Songs']);
   const [youtubeId, setYoutubeId] = useState('');
-  const [songKey, setSongKey] = useState('F');
-  const [timeSignature, setTimeSignature] = useState('4/4');
-  const [tempo, setTempo] = useState('100');
-  const [verses, setVerses] = useState('4V');
+  const [songKey, setSongKey] = useState('');
+  const [timeSignature, setTimeSignature] = useState('');
+  const [tempo, setTempo] = useState('');
+  const [verses, setVerses] = useState('');
   const [prelude, setPrelude] = useState('');
   const [interlude, setInterlude] = useState('');
   const [notes, setNotes] = useState('');
@@ -1041,7 +1041,7 @@ export default function AdminSongEditor() {
   const resetForm = () => {
     setTitleEn(''); setTitleTe(''); setLyrics(''); setYoutubeId('');
     setArtist(''); setCategories(['Stuthi Songs']); setStatus('Published');
-    setSongKey('F'); setTimeSignature('4/4'); setTempo('100'); setVerses('4V');
+    setSongKey(''); setTimeSignature(''); setTempo(''); setVerses('');
     setPrelude(''); setInterlude(''); setNotes(''); setPostLedBy('');
     setPostLeaderSearch('');
   };
@@ -1638,7 +1638,7 @@ export default function AdminSongEditor() {
               style={styles.colInputBox}
               onPress={() => setShowKeyPicker(true)}
             >
-              <Text style={{ color: '#1a2d5a', fontWeight: '900', fontSize: 14 }}>{songKey || 'F'}</Text>
+              <Text style={{ color: songKey ? '#1a2d5a' : '#94A3B8', fontWeight: songKey ? '900' : '600', fontSize: 13 }}>{songKey || 'Select Key'}</Text>
               <ChevronDown size={14} color="#64748B" />
             </TouchableOpacity>
           </View>
@@ -5096,8 +5096,7 @@ export default function AdminSongEditor() {
       </View>
 
       {/* Category Filter Ribbon (Only shown for song library views, not for setlist flow) */}
-      true && (
-        <View style={{ marginBottom: 12 }}>
+      <View style={{ marginBottom: 12 }}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}>
             {['All', ...CATEGORIES.filter(c => c !== 'Theme Songs')].map((cat) => (
               <TouchableOpacity
@@ -5122,7 +5121,6 @@ export default function AdminSongEditor() {
             Note: If you are not interested in the Global Songs, please contact the WeChristian app team to disable them for your church.
           </Text>
         </View>
-      )}
 
       {/* Content */}
       {renderPostedList()}
@@ -5144,6 +5142,12 @@ export default function AdminSongEditor() {
             <View style={styles.pickerModalBox}>
               <Text style={styles.pickerModalTitle}>Select Key</Text>
               <ScrollView>
+                <TouchableOpacity style={styles.pickerModalItem}
+                  onPress={() => { setSongKey(''); setShowKeyPicker(false); }}>
+                  <Text style={[styles.pickerModalTxt, !songKey && { color: '#1a2d5a', fontWeight: '800' }]}>None / Not Set</Text>
+                  {!songKey && <CheckCircle size={16} color="#1a2d5a" />}
+                </TouchableOpacity>
+
                 {KEYS.map(k => (
                   <TouchableOpacity key={k} style={styles.pickerModalItem}
                     onPress={() => { setSongKey(k); setShowKeyPicker(false); }}>
@@ -5553,7 +5557,7 @@ export default function AdminSongEditor() {
                       style={styles.colInputBox}
                       onPress={() => setShowEditKeyPicker(true)}
                     >
-                      <Text style={{ color: '#1a2d5a', fontWeight: '900', fontSize: 14 }}>{editKey || 'C'}</Text>
+                      <Text style={{ color: editKey ? '#1a2d5a' : '#94A3B8', fontWeight: editKey ? '900' : '600', fontSize: 13 }}>{editKey || 'Select Key'}</Text>
                       <ChevronDown size={14} color="#64748B" />
                     </TouchableOpacity>
                   </View>
