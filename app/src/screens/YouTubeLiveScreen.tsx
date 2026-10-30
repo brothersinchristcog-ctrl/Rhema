@@ -114,40 +114,31 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
    * Listen to real-time live status in Firestore for this church
    */
   useEffect(() => {
-    if (!churchId) return;
-
-    const targetChurchId = churchId || 'rhema';
-    // 1. Listen to settings/youtube_live in Rhema Church
-    const unsubscribeSettings = firestore()
+    // Listen directly to Rhema Church/rhema document for live status
+    const unsubscribeChurch = firestore()
       .collection('Rhema Church')
-      .doc(targetChurchId)
-      .collection('settings')
-      .doc('youtube_live')
+      .doc(churchId || 'rhema')
       .onSnapshot(
         (doc) => {
           if (doc.exists) {
             const data = doc.data();
-            if (data?.isLive) {
+            const liveState = data?.youtubeLiveState;
+            if (liveState?.isLive) {
               setIsLive(true);
-              if (data.videoId) {
-                setActiveVideoId(data.videoId);
-              }
-              if (data.title) {
-                setStreamTitle(data.title);
-              }
+              if (liveState.videoId) setActiveVideoId(liveState.videoId);
+              if (liveState.title) setStreamTitle(liveState.title);
             } else if (!paramVideoId) {
-              // If not live and we don't have an explicit route videoId
               setIsLive(false);
             }
           }
         },
-        (err) => console.warn('[YouTubeLiveScreen] settings snapshot error:', err)
+        (err) => console.warn('[YouTubeLiveScreen] church snapshot notice:', err)
       );
 
-    // 2. Also check if there's an active online_meeting streaming to YouTube Live
+    // Also check if there's an active online_meeting
     const unsubscribeMeetings = firestore()
       .collection('Rhema Church')
-      .doc(targetChurchId)
+      .doc(churchId || 'rhema')
       .collection('online_meetings')
       .where('status', '==', 'live')
       .limit(1)
@@ -167,18 +158,15 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
             }
           }
         },
-        (err) => console.warn('[YouTubeLiveScreen] meetings snapshot error:', err)
+        (err) => console.warn('[YouTubeLiveScreen] meetings snapshot notice:', err)
       );
 
     return () => {
-      unsubscribeSettings();
+      unsubscribeChurch();
       unsubscribeMeetings();
     };
   }, [churchId, paramVideoId]);
 
-  /**
-   * Resolve stream details on initial load or manual refresh
-   */
   const resolveLiveStream = useCallback(
     async (isManualRefresh = false) => {
       if (isManualRefresh) setRefreshing(true);
@@ -196,25 +184,15 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
         }
 
         const targetChurchId = churchId || 'rhema';
-        // Step 2: Check Firestore settings/youtube_live directly in Rhema Church
-        let liveDoc = await firestore()
+        // Step 2: Check live state directly from Rhema Church/rhema document
+        const churchDoc = await firestore()
           .collection('Rhema Church')
           .doc(targetChurchId)
-          .collection('settings')
-          .doc('youtube_live')
           .get();
 
-        if (!liveDoc.exists) {
-          liveDoc = await firestore()
-            .collection('churches')
-            .doc(targetChurchId)
-            .collection('settings')
-            .doc('youtube_live')
-            .get();
-        }
-
-        if (liveDoc.exists) {
-          const lData = liveDoc.data();
+        if (churchDoc.exists) {
+          const cData = churchDoc.data();
+          const lData = cData?.youtubeLiveState;
           if (lData?.isLive && lData?.videoId) {
             setActiveVideoId(lData.videoId);
             setIsLive(true);

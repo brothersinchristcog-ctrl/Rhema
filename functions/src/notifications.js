@@ -631,25 +631,16 @@ export const monitorMeetingLive = onSchedule({ schedule: '* * * * *', timeZone: 
     }
 });
 /**
- * 🔴 Check if church's YouTube channel is currently streaming live.
+ * 🔴 Automatically check if church's YouTube channel is currently streaming live.
  * When a stream starts, immediately dispatches push notification to topic church_{churchId}
- * and adds to broadcasts, with atomic deduplication to prevent repeated alerts.
+ * and adds to broadcasts, saving live state directly on the church document (NO extra documents or subcollections).
  */
 async function checkChurchYouTubeLive(churchDoc, churchId, db) {
     if (!churchId || churchId === 'global')
         return;
     const cData = churchDoc.data() || {};
     let rawYtUrl = cData.socialLinks?.youtube?.trim();
-    // If not in socialLinks, check settings/youtube_live or default
-    if (!rawYtUrl) {
-        try {
-            const ytLiveDoc = await churchDoc.ref.collection('settings').doc('youtube_live').get();
-            if (ytLiveDoc.exists) {
-                rawYtUrl = ytLiveDoc.data()?.url;
-            }
-        }
-        catch (_) { }
-    }
+    // Single-church default fallback
     if (!rawYtUrl && churchId === 'rhema') {
         rawYtUrl = 'https://www.youtube.com/@Brothersinchristfellowship/live';
     }
@@ -700,27 +691,27 @@ async function checkChurchYouTubeLive(churchDoc, churchId, db) {
         if (titleMatch && titleMatch[1]) {
             streamTitle = titleMatch[1];
         }
-        const liveRef = churchDoc.ref.collection('settings').doc('youtube_live');
-        const liveSnap = await liveRef.get();
-        const prevState = liveSnap.exists ? liveSnap.data() : { isLive: false };
+        const prevState = cData.youtubeLiveState || { isLive: false };
         const liveWatchUrl = videoId ? `https://www.youtube.com/watch?v=${videoId}` : liveCheckUrl;
         if (isLive) {
             // Check if we already notified for this stream
             const alreadyNotified = prevState?.isLive &&
                 (prevState?.lastNotifiedVideoId === videoId || (!videoId && prevState?.lastNotifiedAt));
-            // Update state in Firestore
-            await liveRef.set({
-                isLive: true,
-                url: liveWatchUrl,
-                videoId: videoId || '',
-                title: streamTitle || '',
-                lastChecked: FieldValue.serverTimestamp(),
-            }, { merge: true });
+            // Save live state directly as a field on the church document (NO extra documents)
+            await churchDoc.ref.set({
+                youtubeLiveState: {
+                    isLive: true,
+                    url: liveWatchUrl,
+                    videoId: videoId || '',
+                    title: streamTitle || '',
+                    lastChecked: FieldValue.serverTimestamp(),
+                },
+            }, { merge: true }).catch(() => { });
             if (!alreadyNotified) {
                 const churchName = cData.name || 'Rhema Church';
                 const pushTitle = `🔴 ${churchName} is LIVE on YouTube!`;
                 const pushBody = `${streamTitle || 'Join the live worship service now! 🎥🙏'} Tap to watch inside the app.`;
-                console.log(`🚨 Dispatching YouTube Live push for church ${churchId} (${churchName})`);
+                console.log(`🚨 Auto YouTube Live detected for church ${churchId} (${churchName})! Sending push...`);
                 // 1. Send push to topic church_{churchId}
                 const topicMessage = {
                     notification: {
@@ -756,7 +747,7 @@ async function checkChurchYouTubeLive(churchDoc, churchId, db) {
                 await getMessaging()
                     .send(topicMessage)
                     .catch((e) => console.error('Error sending YouTube Live topic push:', e));
-                // 2. Add to broadcasts so it appears on UpdatesScreen
+                // 2. Add to existing broadcasts subcollection
                 const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
                 await churchDoc.ref.collection('broadcasts').add({
                     title: pushTitle,
@@ -768,20 +759,24 @@ async function checkChurchYouTubeLive(churchDoc, churchId, db) {
                     silent: true,
                     createdAt: FieldValue.serverTimestamp(),
                 }).catch(() => { });
-                // 3. Mark lastNotified in settings
-                await liveRef.update({
-                    lastNotifiedVideoId: videoId || 'live_active',
-                    lastNotifiedAt: FieldValue.serverTimestamp(),
-                }).catch(() => { });
+                // 3. Mark lastNotifiedVideoId in youtubeLiveState
+                await churchDoc.ref.set({
+                    youtubeLiveState: {
+                        lastNotifiedVideoId: videoId || 'live_active',
+                        lastNotifiedAt: FieldValue.serverTimestamp(),
+                    },
+                }, { merge: true }).catch(() => { });
             }
         }
         else {
-            // Offline: reset isLive if previously live
+            // Offline: reset isLive on church document if previously live
             if (prevState?.isLive) {
-                await liveRef.set({
-                    isLive: false,
-                    lastChecked: FieldValue.serverTimestamp(),
-                }, { merge: true });
+                await churchDoc.ref.set({
+                    youtubeLiveState: {
+                        isLive: false,
+                        lastChecked: FieldValue.serverTimestamp(),
+                    },
+                }, { merge: true }).catch(() => { });
             }
         }
     }

@@ -20,9 +20,6 @@ export declare const triggerDailyPromisePushHttp: import("firebase-functions/v2/
  * Runs every 5 minutes to check if YouTube channel is live
  */
 export declare const checkYouTubeLive: import("firebase-functions/v2/scheduler").ScheduleFunction;
-/**
- * 📢 TRIGGER TEST YOUTUBE LIVE NOTIFICATION
- */
 export declare const triggerTestYouTubeLive: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
     success: boolean;
     message: string;
