@@ -11,6 +11,10 @@ import {
   ActivityIndicator,
   Platform,
   RefreshControl,
+  ScrollView,
+  KeyboardAvoidingView,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
 import {
@@ -756,10 +760,6 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
             <Text style={styles.statsHeading}>Daily Verses Master Schedule</Text>
             <Text style={styles.statsSubheading}>Deterministic 4-Slot Multi-Year Rotation</Text>
           </View>
-          <TouchableOpacity style={styles.addVerseHeaderBtn} onPress={() => setShowCreateModal(true)} activeOpacity={0.85}>
-            <Plus size={16} color='#0F172A' strokeWidth={2.5} />
-            <Text style={styles.addVerseHeaderBtnText}>Add Verse</Text>
-          </TouchableOpacity>
           <View style={styles.activeBadge}>
             <View style={styles.activeDot} />
             <Text style={styles.activeBadgeText}>Active</Text>
@@ -1075,60 +1075,6 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
             </View>
           }
         />
-      )}
-
-      {/* ── Create New Verse Modal ── */}
-      {showCreateModal && (
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Plus size={18} color='#10B981' strokeWidth={2.5} />
-                <Text style={styles.modalTitle}>Create New Daily Verse</Text>
-              </View>
-              <TouchableOpacity onPress={() => setShowCreateModal(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <X size={20} color='#94A3B8' />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.inputLabel}>Time Slot</Text>
-            <View style={styles.createPeriodRow}>
-              {PERIOD_NAMES.map(p => (
-                <TouchableOpacity key={p} style={[styles.createPeriodChip, newVerse.period === p && styles.createPeriodChipActive]} onPress={() => setNewVerse({ ...newVerse, period: p })}>
-                  <Text style={[styles.createPeriodChipText, newVerse.period === p && styles.createPeriodChipTextActive]}>{p}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <Text style={styles.inputLabel}>Verse Text (English) *</Text>
-            <TextInput style={[styles.modalInput, { height: 68 }]} multiline placeholder='For God so loved the world...' value={newVerse.verseEn} onChangeText={t => setNewVerse({ ...newVerse, verseEn: t })} placeholderTextColor='#64748B' />
-
-            <Text style={styles.inputLabel}>Reference (English) *</Text>
-            <TextInput style={[styles.modalInput, { height: 40 }]} placeholder='John 3:16' value={newVerse.referenceEn} onChangeText={t => setNewVerse({ ...newVerse, referenceEn: t })} placeholderTextColor='#64748B' />
-
-            <Text style={styles.inputLabel}>Verse Text (Telugu - Optional)</Text>
-            <TextInput style={[styles.modalInput, { height: 68 }]} multiline placeholder='దేవుడు లోకమును ఎంతో ప్రేమించెను...' value={newVerse.verseTe} onChangeText={t => setNewVerse({ ...newVerse, verseTe: t })} placeholderTextColor='#64748B' />
-
-            <Text style={styles.inputLabel}>Reference (Telugu - Optional)</Text>
-            <TextInput style={[styles.modalInput, { height: 40 }]} placeholder='యోహాను 3:16' value={newVerse.referenceTe} onChangeText={t => setNewVerse({ ...newVerse, referenceTe: t })} placeholderTextColor='#64748B' />
-
-            <TouchableOpacity style={styles.autoImageToggleRow} onPress={() => setNewVerse({ ...newVerse, autoFetchImage: !newVerse.autoFetchImage })} activeOpacity={0.8}>
-              <View style={[styles.checkboxBox, newVerse.autoFetchImage && styles.checkboxBoxActive]}>
-                {newVerse.autoFetchImage && <CheckCircle2 size={14} color='#FFF' />}
-              </View>
-              <Text style={styles.autoImageToggleText}>Auto-fetch spiritual Unsplash background image</Text>
-            </TouchableOpacity>
-
-            <View style={styles.modalBtnRow}>
-              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowCreateModal(false)}>
-                <Text style={styles.modalCancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalSaveBtn, { backgroundColor: '#10B981' }]} onPress={handleCreateVerse} disabled={isCreating}>
-                {isCreating ? <ActivityIndicator color='#0F172A' size='small' /> : <Text style={styles.modalSaveBtnText}>Create & Schedule</Text>}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
       )}
 
       {/* ── Edit Modal ── */}
@@ -1782,7 +1728,17 @@ const styles = StyleSheet.create({
     padding: 16,
     zIndex: 100,
   },
+  keyboardAvoidingWrap: {
+    width: '100%',
+    maxHeight: '92%',
+    justifyContent: 'center',
+  },
+  modalScrollContent: {
+    paddingBottom: 24,
+    flexGrow: 1,
+  },
   modalCard: {
+    maxHeight: '100%',
     backgroundColor: '#1E293B',
     borderRadius: 18,
     padding: 18,

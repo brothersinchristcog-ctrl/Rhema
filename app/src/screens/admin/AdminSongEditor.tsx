@@ -1,3 +1,13 @@
+
+const extractYoutubeId = (url: string) => {
+  if (!url || typeof url !== 'string') return '';
+  const cleanUrl = url.trim();
+  const match = cleanUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/|live\/))([\w-]{11})/);
+  if (match) return match[1];
+  if (/^[a-zA-Z0-9_-]{11}$/.test(cleanUrl)) return cleanUrl;
+  return cleanUrl;
+};
+import YoutubePlayer from 'react-native-youtube-iframe';
 import React, { useState, useEffect, useContext, useMemo } from 'react';
 import {
   StyleSheet,
@@ -120,6 +130,8 @@ export default function AdminSongEditor() {
   const [titleTe, setTitleTe] = useState('');
   const [artist, setArtist] = useState('');
   const [lyrics, setLyrics] = useState('');
+  const [lyricsTe, setLyricsTe] = useState('');
+  const [lyricsEn, setLyricsEn] = useState('');
   const [status, setStatus] = useState('Published');
   const [categories, setCategories] = useState<string[]>(['Stuthi Songs']);
   const [youtubeId, setYoutubeId] = useState('');
@@ -161,6 +173,8 @@ export default function AdminSongEditor() {
   const [editArtist, setEditArtist] = useState('');
   const [editKey, setEditKey] = useState('C');
   const [editLyrics, setEditLyrics] = useState('');
+  const [editLyricsTe, setEditLyricsTe] = useState('');
+  const [editLyricsEn, setEditLyricsEn] = useState('');
   const [editCategories, setEditCategories] = useState<string[]>(['Stuthi Songs']);
   const [editYoutubeId, setEditYoutubeId] = useState('');
   const [editStatus, setEditStatus] = useState('Published');
@@ -970,18 +984,21 @@ export default function AdminSongEditor() {
       Alert.alert('Required', 'Please enter a Song Title (English).');
       return;
     }
-    if (!lyrics.trim()) {
-      Alert.alert('Required', 'Please enter the Song Lyrics.');
+    if (!lyrics.trim() && !lyricsTe.trim() && !lyricsEn.trim()) {
+      Alert.alert('Required', 'Please enter song lyrics in Telugu or English.');
       return;
     }
     setSubmitting(true);
     try {
       const primaryCategory = categories.join(';') || 'Other';
+      const finalLyrics = lyricsTe.trim() || lyricsEn.trim() || lyrics.trim();
       const receipt = await FirestoreService.createWorshipSong({
         title: titleEn.trim(),
         titleTe: titleTe.trim(),
         artist: artist.trim(),
-        lyrics: lyrics.trim(),
+        lyrics: finalLyrics,
+        lyricsTe: lyricsTe.trim(),
+        lyricsEn: lyricsEn.trim(),
         ledBy: postLedBy.trim(),
         key: songKey,
         timeSignature,
@@ -1072,6 +1089,8 @@ export default function AdminSongEditor() {
     setEditTitleTe(song.titleTe || '');
     setEditArtist(song.artist || '');
     setEditLyrics(song.lyrics || '');
+    setEditLyricsTe((song as any).lyricsTe || '');
+    setEditLyricsEn((song as any).lyricsEn || '');
     setEditLedBy(song.ledBy || '');
     setEditLeaderSearch('');
     setEditKey(song.key || 'C');
@@ -1099,7 +1118,9 @@ export default function AdminSongEditor() {
         title: editTitle.trim(),
         titleTe: editTitleTe.trim(),
         artist: editArtist.trim(),
-        lyrics: editLyrics.trim(),
+        lyrics: editLyricsTe.trim() || editLyricsEn.trim() || editLyrics.trim(),
+        lyricsTe: editLyricsTe.trim(),
+        lyricsEn: editLyricsEn.trim(),
         ledBy: editLedBy.trim(),
         key: editKey,
         timeSignature: editTimeSignature,
@@ -4976,11 +4997,26 @@ export default function AdminSongEditor() {
               churchMembers
                 .filter(m => {
                   if (!m) return false;
+                  // Filter strictly for people with song/keys/music related skills
+                  const mSkills = ((m.primarySkill || '') + ' ' + (m.secondarySkill || '')).toLowerCase();
+                  const isMusicRelated = (
+                    mSkills.includes('song') ||
+                    mSkills.includes('key') ||
+                    mSkills.includes('piano') ||
+                    mSkills.includes('worship') ||
+                    mSkills.includes('vocal') ||
+                    mSkills.includes('sing') ||
+                    mSkills.includes('guitar') ||
+                    mSkills.includes('music') ||
+                    mSkills.includes('choir')
+                  );
+                  if (!isMusicRelated) return false;
+
                   const q = memberSearchQuery.toLowerCase().trim();
                   if (!q) return true;
                   const name = (m.name || m.firstName || '').toLowerCase();
                   const phone = (m.phone || '').toLowerCase();
-                  return name.includes(q) || phone.includes(q);
+                  return name.includes(q) || phone.includes(q) || mSkills.includes(q);
                 })
                 .map(m => {
                   const name = m?.name || m?.firstName || 'Member';
@@ -5007,7 +5043,19 @@ export default function AdminSongEditor() {
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={{ fontSize: 14, fontWeight: '700', color: '#1a2d5a' }}>{name}</Text>
-                        {m.phone && <Text style={{ fontSize: 11, color: '#64748B' }}>{m.phone}</Text>}
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
+                          {m.primarySkill ? (
+                            <View style={{ backgroundColor: '#EEF2FF', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 }}>
+                              <Text style={{ fontSize: 10, color: '#1D4ED8', fontWeight: '700' }}>{m.primarySkill}</Text>
+                            </View>
+                          ) : null}
+                          {m.secondarySkill ? (
+                            <View style={{ backgroundColor: '#F5F3FF', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 }}>
+                              <Text style={{ fontSize: 10, color: '#4338CA', fontWeight: '700' }}>{m.secondarySkill}</Text>
+                            </View>
+                          ) : null}
+                          {m.phone && <Text style={{ fontSize: 11, color: '#64748B' }}>{m.phone}</Text>}
+                        </View>
                       </View>
                       <ChevronRight size={16} color="#CBD5E1" />
                     </TouchableOpacity>
