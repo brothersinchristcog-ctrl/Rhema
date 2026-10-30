@@ -3191,7 +3191,7 @@ export default function HomeScreen() {
                 onPress={() => {
                   const yUrl = activeChurch?.socialLinks?.youtube?.trim();
                   if (yUrl) {
-                    Linking.openURL(yUrl);
+                    navigation.navigate('YouTubeLive', { channelUrl: yUrl });
                   } else {
                     setAlertConfig({
                       visible: true,
@@ -3227,7 +3227,7 @@ export default function HomeScreen() {
                       adjustsFontSizeToFit
                       minimumFontScale={0.8}
                     >
-                      YouTube
+                      {t('home.quickYoutubeLive') || 'YouTube Live'}
                     </Text>
                   </View>
 

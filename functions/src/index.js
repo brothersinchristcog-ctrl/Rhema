@@ -1116,99 +1116,87 @@ async function fetchPage(url) {
  * ⏰ YOUTUBE LIVE CHECK SCHEDULER
  * Runs every 5 minutes to check if YouTube channel is live
  */
-const checkYouTubeLive = onSchedule('*/5 * * * *', async (event) => {
+export const checkYouTubeLive = onSchedule('*/5 * * * *', async (event) => {
     try {
         console.log('⏰ Checking YouTube Live status...');
-        const url = 'https://www.youtube.com/@Brothersinchristfellowship/live';
+        const db = getDb();
+        const churchRef = db.collection('Rhema Church').doc('rhema');
+        const churchSnap = await churchRef.get();
+        const cData = churchSnap.exists ? churchSnap.data() : {};
+        const url = cData?.socialLinks?.youtube?.trim() || 'https://www.youtube.com/@Brothersinchristfellowship/live';
         const html = await fetchPage(url).catch(() => '');
         // Check if the stream is live
         const isLive = html.includes('"isLive":true') || html.includes('LIVE_STREAM') || html.includes('"style":"LIVE"');
         // Try to find the videoId
-        let videoId;
+        let videoId = '';
         const match = html.match(/"liveStreamability".*?"videoId":"([^"]+)"/) || html.match(/"videoRenderer".*?"videoId":"([^"]+)"/);
         if (match && match[1]) {
             videoId = match[1];
         }
         const liveUrl = videoId ? `https://www.youtube.com/watch?v=${videoId}` : url;
-        const db = getDb();
-        const liveRef = db.collection('churches').doc(DEFAULT_CHURCH_ID).collection('settings').doc('youtube_live');
-        const liveSnap = await liveRef.get();
-        const prevState = liveSnap.exists ? liveSnap.data() : { isLive: false };
-        // Save new state
-        await liveRef.set({
-            isLive,
-            url: liveUrl,
-            videoId: videoId || '',
-            lastChecked: FieldValue.serverTimestamp()
+        const prevState = cData?.youtubeLiveState || { isLive: false };
+        // Save new state directly on Rhema Church/rhema (NO extra documents)
+        await churchRef.set({
+            youtubeLiveState: {
+                isLive,
+                url: liveUrl,
+                videoId: videoId || '',
+                lastChecked: FieldValue.serverTimestamp()
+            }
         }, { merge: true });
         // State transition: was offline, now live!
         if (isLive && !prevState?.isLive) {
             console.log('🚨 YouTube Live Stream detected! Sending notifications...');
-            // 1. Add to broadcasts
+            const churchName = cData?.name || 'Rhema Church';
+            const pushTitle = `🔴 ${churchName} is LIVE on YouTube!`;
+            const pushBody = 'Join our live worship service now! Tap to watch inside the app. 🎥🙏';
             const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
-            const docRef = await db.collection('churches').doc(DEFAULT_CHURCH_ID).collection('broadcasts').add({
-                title: '🎥 YouTube Live Stream Started!',
-                content: 'Brothers in Christ Fellowship is now LIVE on YouTube. Click to join the stream and worship with us! 🎥🙏',
+            // 1. Add to existing broadcasts collection
+            const docRef = await churchRef.collection('broadcasts').add({
+                title: pushTitle,
+                content: pushBody,
                 date: dateStr,
                 type: 'youtube_live',
                 url: liveUrl,
-                silent: true, // skip standard Gen1 trigger so we can send customized push
+                videoId: videoId || '',
+                silent: true,
                 createdAt: FieldValue.serverTimestamp()
             });
-            // 2. Fetch all user tokens
-            const snapshotUsers = await db.collection('users').get();
-            const tokenSet = new Set();
-            snapshotUsers.forEach((doc) => {
-                const uData = doc.data();
-                if (uData.fcmToken)
-                    tokenSet.add(uData.fcmToken);
-            });
-            const tokens = Array.from(tokenSet);
-            if (tokens.length > 0) {
-                const message = {
+            // 2. Send topic push to all church members
+            await getMsg().send({
+                notification: {
+                    title: pushTitle,
+                    body: pushBody
+                },
+                data: {
+                    type: 'youtube_live',
+                    url: liveUrl,
+                    videoId: videoId || '',
+                    churchId: 'rhema',
+                    title: pushTitle,
+                    id: docRef.id
+                },
+                topic: 'church_rhema',
+                android: {
+                    priority: 'high',
                     notification: {
-                        title: '🚨 We are Live on YouTube!',
-                        body: 'Join the Brothers in Christ Fellowship live stream now! 🎥🙏'
-                    },
-                    data: {
-                        type: 'youtube_live',
-                        url: liveUrl,
-                        id: docRef.id
-                    },
-                    android: {
-                        priority: 'high',
-                        notification: {
-                            sound: 'default',
-                            priority: 'max',
-                            channelId: 'church_alerts'
-                        }
-                    },
-                    apns: {
-                        headers: {
-                            'apns-priority': '10'
-                        },
-                        payload: {
-                            aps: {
-                                sound: 'default',
-                                badge: 1
-                            }
-                        }
-                    },
-                    tokens: tokens
-                };
-                const response = await getMsg().sendEachForMulticast(message);
-                console.log(`✅ YouTube Live push delivered: ${response.successCount} success, ${response.failureCount} failed.`);
-            }
+                        sound: 'default',
+                        priority: 'max',
+                        channelId: 'church_alerts'
+                    }
+                },
+                apns: {
+                    headers: { 'apns-priority': '10' },
+                    payload: { aps: { sound: 'default', badge: 1 } }
+                }
+            }).catch((e) => console.error('Error sending topic push:', e));
         }
     }
     catch (error) {
         console.error('Error in checkYouTubeLive scheduler:', error);
     }
 });
-/**
- * 📢 TRIGGER TEST YOUTUBE LIVE NOTIFICATION
- */
-const triggerTestYouTubeLive = onCall({ invoker: 'public' }, async (request) => {
+export const triggerTestYouTubeLive = onCall({ invoker: 'public' }, async (request) => {
     try {
         const liveUrl = request.data?.url || 'https://www.youtube.com/@Brothersinchristfellowship/live';
         const db = getDb();
@@ -1223,6 +1211,34 @@ const triggerTestYouTubeLive = onCall({ invoker: 'public' }, async (request) => 
             silent: true,
             createdAt: FieldValue.serverTimestamp()
         });
+        // Send topic push to all church members
+        await getMsg().send({
+            notification: {
+                title: '🔴 We are Live on YouTube!',
+                body: 'Brothers in Christ Fellowship is now live! Tap to watch inside the app. 🎥🙏'
+            },
+            data: {
+                type: 'youtube_live',
+                url: liveUrl,
+                videoId: '',
+                churchId: DEFAULT_CHURCH_ID,
+                title: 'Brothers in Christ Fellowship Live Stream',
+                id: docRef.id
+            },
+            topic: `church_${DEFAULT_CHURCH_ID}`,
+            android: {
+                priority: 'high',
+                notification: {
+                    sound: 'default',
+                    priority: 'max',
+                    channelId: 'church_alerts'
+                }
+            },
+            apns: {
+                headers: { 'apns-priority': '10' },
+                payload: { aps: { sound: 'default', badge: 1 } }
+            }
+        }).catch((e) => console.error('Error sending test topic push:', e));
         const snapshotUsers = await db.collection('users').get();
         const tokenSet = new Set();
         snapshotUsers.forEach((doc) => {
@@ -1242,6 +1258,9 @@ const triggerTestYouTubeLive = onCall({ invoker: 'public' }, async (request) => 
             data: {
                 type: 'youtube_live',
                 url: liveUrl,
+                videoId: '',
+                churchId: DEFAULT_CHURCH_ID,
+                title: 'Brothers in Christ Fellowship Live Stream',
                 id: docRef.id
             },
             android: {
@@ -1506,5 +1525,5 @@ const testBaptismsV1 = functionsCompat.https.onRequest(async (req, res) => {
         res.status(500).send(error.message);
     }
 });
-export { publishScheduledSermons, triggerPublishScheduledSermonsHttp, triggerDailyVersePushHttp } from './notifications.js';
+export { publishScheduledSermons, triggerPublishScheduledSermonsHttp, triggerDailyVersePushHttp, monitorMeetingLive, pushMeetingLive } from './notifications.js';
 //# sourceMappingURL=index.js.map

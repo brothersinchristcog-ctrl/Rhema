@@ -317,7 +317,13 @@ export default function OnlineMeetingsScreen({ navigation }: any) {
                     borderColor: '#DC2626',
                   }
                 ]}
-                onPress={() => Linking.openURL(item.youtubeLive.watchUrl)}
+                onPress={() => {
+                  navigation.navigate('YouTubeLive', {
+                    url: item.youtubeLive.watchUrl,
+                    videoId: item.youtubeLive.broadcastId,
+                    title: item.title,
+                  });
+                }}
               >
                 <Radio size={14} color="#FFFFFF" />
                 <Text style={[styles.gradJoinText, { color: '#FFFFFF', marginLeft: 4 }]}>
