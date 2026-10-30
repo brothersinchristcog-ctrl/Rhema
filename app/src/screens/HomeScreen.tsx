@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -234,144 +234,490 @@ const stripHtml = (html: string | undefined): string => {
   return html.replace(/<[^>]+>/g, '').trim();
 };
 
-const EventMarquee = ({ events, onEventPress }: { events: any[], onEventPress: (event: any) => void }) => {
-  const [contentWidth, setContentWidth] = useState(0);
-  const scrollAnim = React.useRef(new Animated.Value(0)).current;
-  const { t } = useLanguage();
+/* ───────────── Premium Top Section: Theme & Icons ───────────── */
+const C = {
+  navy: '#1b2a5e', teal: '#527a73', tealD: '#1c3834', ink: '#17302c',
+  gold: '#e8c46e', goldD: '#a47c28', ivory: '#fffaf0', bg: '#faf7f2', muted: '#5d6c93',
+  foil: ['#fff6d6', '#f0d58a', '#c99a3a', '#f4e0a0', '#d9b255'] as const,
+};
+const SERIF = Platform.select({ ios: 'Georgia', android: 'serif', default: 'serif' });
+
+const HeaderSun = ({ size = 21, color = C.gold }: { size?: number, color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round">
+    <Circle cx="12" cy="12" r="4" />
+    <Path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+  </Svg>
+);
+const HeaderSunset = ({ size = 21, color = C.gold }: { size?: number, color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round">
+    <Path d="M5 18a7 7 0 0 1 14 0M12 5v3M4.9 9.9l1.4 1.4M19.1 9.9l-1.4 1.4M2 18h20" />
+  </Svg>
+);
+const HeaderMoon = ({ size = 21, color = C.gold }: { size?: number, color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round">
+    <Path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" />
+  </Svg>
+);
+const Cross = ({ w = 9, h = 12, color = C.gold }: { w?: number, h?: number, color?: string }) => (
+  <Svg width={w} height={h} viewBox="0 0 24 28">
+    <Path d="M9.5 0h5v8H22v5h-7.5v15h-5V13H2V8h7.5z" fill={color} />
+  </Svg>
+);
+const BellFilled = ({ size = 20, color = C.tealD }: { size?: number, color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path
+      d="M12 2a1.5 1.5 0 0 1 1.5 1.5v.6A6.5 6.5 0 0 1 18.5 10.5c0 4.5 2 5.5 2.5 6.5H3c.5-1 2.5-2 2.5-6.5A6.5 6.5 0 0 1 10.5 4.1V3.5A1.5 1.5 0 0 1 12 2zM9.5 19h5a2.5 2.5 0 0 1-5 0z"
+      fill={color}
+    />
+  </Svg>
+);
+const Corner = ({ style }: { style?: any }) => (
+  <Svg width={22} height={22} viewBox="0 0 22 22" style={[{ position: 'absolute' }, style]}>
+    <Path d="M1 21V9Q1 1 9 1H21" stroke={C.gold} strokeWidth={1.3} fill="none" />
+    <Path d="M6 6l2.5 2.5L6 11 3.5 8.5z" fill={C.gold} />
+  </Svg>
+);
+const ArchWindow = () => (
+  <Svg width={136} height={232} viewBox="0 -14 120 214" style={gStyles.arch} fill="none" stroke={C.gold} strokeWidth={1}>
+    <Path d="M6 200V84Q6 22 60 6Q114 22 114 84V200" />
+    <Path d="M20 200V88Q20 32 60 18Q100 32 100 88V200" />
+    <Path d="M34 200V92Q34 44 60 32Q86 44 86 92V200" />
+    <Circle cx="60" cy="78" r="12" />
+    <Path d="M60 66v24M48 78h24" />
+    <Path d="M60 -12V2M54 -6h12" strokeWidth={1.6} />
+  </Svg>
+);
+
+const DAYS_LIST = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONS_LIST = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+const getGreetingData = (d: Date) => {
+  const h = d.getHours();
+  if (h < 12) return { text: 'Good Morning,', Icon: HeaderSun };
+  if (h < 17) return { text: 'Good Afternoon,', Icon: HeaderSun };
+  if (h < 21) return { text: 'Good Evening,', Icon: HeaderSunset };
+  return { text: 'Good Night,', Icon: HeaderMoon };
+};
+
+const formatEventTime = (timeStr?: string, lang: 'en' | 'te' = 'en') => {
+  if (!timeStr) return '';
+  try {
+    const timePart = timeStr.includes('T') ? timeStr.split('T')[1].split('.')[0] : timeStr;
+    const [hours, minutes] = timePart.split(':');
+    const h = parseInt(hours, 10);
+    if (isNaN(h)) return timeStr;
+    const ampmEn = h >= 12 ? 'PM' : 'AM';
+
+    let ampmTe = '';
+    if (h < 12) ampmTe = 'ఉదయం'; // Morning
+    else if (h < 16) ampmTe = 'మధ్యాహ్నం'; // Afternoon
+    else if (h < 20) ampmTe = 'సాయంత్రం'; // Evening
+    else ampmTe = 'రాత్రి'; // Night
+
+    const formattedHours = h % 12 || 12;
+    if (lang === 'te') {
+      return `${ampmTe} ${formattedHours}:${minutes}`;
+    }
+    return `${formattedHours}:${minutes} ${ampmEn}`;
+  } catch {
+    return timeStr;
+  }
+};
+
+/* ───────────── floating gold dust ───────────── */
+const Dust = () => {
+  const specks = useMemo(
+    () => Array.from({ length: 12 }, (_, k) => ({
+      left: `${6 + k * 8}%`, dur: 7000 + (k % 5) * 1600, delay: k * 900, drift: (k % 2 ? 1 : -1) * (8 + (k % 4) * 6),
+      v: new Animated.Value(0),
+    })), []);
+  useEffect(() => {
+    const loops = specks.map((s) => Animated.loop(Animated.sequence([
+      Animated.delay(s.delay),
+      Animated.timing(s.v, { toValue: 1, duration: s.dur, easing: Easing.linear, useNativeDriver: true }),
+    ])));
+    loops.forEach((l) => l.start());
+    return () => loops.forEach((l) => l.stop());
+  }, [specks]);
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      {specks.map((s, i) => (
+        <Animated.View
+          key={i}
+          style={[gStyles.speck, {
+            left: s.left as any,
+            opacity: s.v.interpolate({ inputRange: [0, 0.15, 1], outputRange: [0, 0.9, 0] }),
+            transform: [
+              { translateY: s.v.interpolate({ inputRange: [0, 1], outputRange: [0, -230] }) },
+              { translateX: s.v.interpolate({ inputRange: [0, 1], outputRange: [0, s.drift] }) },
+            ],
+          }]}
+        />
+      ))}
+    </View>
+  );
+};
+
+/* ───────────── greeting card ───────────── */
+export const GreetingCard = ({ userName = 'Prabhakar Yeddula' }: { userName?: string }) => {
+  const now = useMemo(() => new Date(), []);
+  const { text: greet, Icon } = getGreetingData(now);
+  const [first, ...rest] = (userName || 'Beloved').trim().split(/\s+/);
+  const last = rest.join(' ');
+
+  // entrance, tilt, glare, sheen
+  const enter = useRef(new Animated.Value(0)).current;
+  const tiltX = useRef(new Animated.Value(0)).current;
+  const tiltY = useRef(new Animated.Value(0)).current;
+  const glareX = useRef(new Animated.Value(0)).current;
+  const glareY = useRef(new Animated.Value(0)).current;
+  const glareO = useRef(new Animated.Value(0)).current;
+  const sheen = useRef(new Animated.Value(0)).current;
+  const size = useRef({ w: 360, h: 204 });
 
   useEffect(() => {
-    if (contentWidth > 0) {
-      scrollAnim.setValue(width);
-      Animated.loop(
-        Animated.timing(scrollAnim, {
-          toValue: -contentWidth,
-          duration: (contentWidth + width) * 35, // Faster scroll speed
-          easing: Easing.linear,
-          useNativeDriver: true,
-        })
-      ).start();
-    }
-  }, [contentWidth]);
+    Animated.timing(enter, { toValue: 1, duration: 800, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    const loop = Animated.loop(Animated.sequence([
+      Animated.delay(3500),
+      Animated.timing(sheen, { toValue: 1, duration: 1700, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [enter, sheen]);
 
-  if (!events || events.length === 0) return null;
-
-  const formatTimeStr = (timeStr: string, lang: 'en' | 'te' = 'en') => {
-    if (!timeStr) return '';
-    try {
-      const timePart = timeStr.includes('T') ? timeStr.split('T')[1].split('.')[0] : timeStr;
-      const [hours, minutes] = timePart.split(':');
-      const h = parseInt(hours);
-      if (isNaN(h)) return 'Time TBD';
-      const ampmEn = h >= 12 ? 'PM' : 'AM';
-      
-      let ampmTe = '';
-      if (h < 12) ampmTe = 'ఉదయం'; // Morning
-      else if (h < 16) ampmTe = 'మధ్యాహ్నం'; // Afternoon
-      else if (h < 20) ampmTe = 'సాయంత్రం'; // Evening
-      else ampmTe = 'రాత్రి'; // Night
-
-      const formattedHours = h % 12 || 12;
-      
-      if (lang === 'te') {
-        return `${ampmTe} ${formattedHours}:${minutes}`;
-      }
-      return `${formattedHours}:${minutes} ${ampmEn}`;
-    } catch (e) {
-      return timeStr;
-    }
+  const spring = (v: Animated.Value, to: number) => Animated.spring(v, { toValue: to, friction: 7, tension: 80, useNativeDriver: true }).start();
+  const onTouch = (e: any) => {
+    const { locationX: x, locationY: y } = e.nativeEvent;
+    const { w, h } = size.current;
+    const nx = Math.min(Math.max(x / w, 0), 1), ny = Math.min(Math.max(y / h, 0), 1);
+    spring(tiltY, (nx - 0.5) * 2);   // -1..1
+    spring(tiltX, (0.5 - ny) * 2);
+    glareX.setValue(nx * w - 110); glareY.setValue(ny * h - 110);
+    spring(glareO, 1);
   };
-
-  const getEventStatus = (event: ScheduleEvent) => {
-    const today = new Date();
-    const dateParts = (event.date || '').split('-');
-    const eventYear = parseInt(dateParts[0]) || today.getFullYear();
-    const eventMonth = parseInt(dateParts[1]) - 1 || 0;
-    const eventDay = parseInt(dateParts[2]) || today.getDate();
-
-    const parseTime = (timeStr: string) => {
-      if (!timeStr) return null;
-      const timePart = timeStr.includes('T') ? timeStr.split('T')[1] : timeStr;
-      const [h, m, s] = timePart.split(':').map(Number);
-      return new Date(eventYear, eventMonth, eventDay, h || 0, m || 0, s || 0);
-    };
-
-    const startDt = parseTime(event.startTime);
-    const endDt = parseTime(event.endTime);
-
-    if (!startDt) {
-      const eventDate = new Date(eventYear, eventMonth, eventDay, 23, 59, 59);
-      return today > eventDate ? 'completed' : 'upcoming';
-    }
-
-    if (today < startDt) return 'upcoming';
-    if (endDt && today > endDt) return 'completed';
-    return 'live';
-  };
-
-  const hasLiveEvents = events.some(ev => getEventStatus(ev) === 'live');
+  const onRelease = () => { spring(tiltX, 0); spring(tiltY, 0); spring(glareO, 0); };
 
   return (
-    <View style={styles.marqueeWrapper}>
-      {/* Header row */}
-      <View style={styles.marqueeTitleRow}>
-        <Text style={styles.marqueeTitleEmoji}>🎉</Text>
-        <Text style={styles.marqueeTitleText}>{t('home.upcomingEvents').toUpperCase()}</Text>
-      </View>
-      {/* Scrolling ticker */}
-      <View style={styles.marqueeTicker}>
-        <View style={[styles.marqueeTickerBadge, hasLiveEvents && { backgroundColor: '#dc2626' }]}>
-          <Text style={styles.marqueeTickerBadgeTxt}>{hasLiveEvents ? 'LIVE' : 'TODAY'}</Text>
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} scrollEnabled={false} style={styles.marqueeContent}>
+    <Animated.View
+      onLayout={(e) => { size.current = { w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height }; }}
+      onTouchStart={onTouch} onTouchMove={onTouch} onTouchEnd={onRelease} onTouchCancel={onRelease}
+      style={[gStyles.cardWrap, {
+        opacity: enter,
+        transform: [
+          { perspective: 900 },
+          { translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }) },
+          { rotateX: tiltX.interpolate({ inputRange: [-1, 1], outputRange: ['-6deg', '6deg'] }) },
+          { rotateY: tiltY.interpolate({ inputRange: [-1, 1], outputRange: ['-8deg', '8deg'] }) },
+        ],
+      }]}
+    >
+      {/* gold foil border */}
+      <LinearGradient colors={C.foil} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={gStyles.foilBorder}>
+        <View style={gStyles.cardInner}>
+          <LinearGradient colors={['#4f8076', '#2d5750', '#15302c']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+          {/* warm light top-left */}
+          <View style={[gStyles.glow, { width: 300, height: 300, top: -170, left: -150, backgroundColor: 'rgba(255,232,160,0.10)' }]} />
+          <View style={[gStyles.glow, { width: 190, height: 190, top: -100, left: -90, backgroundColor: 'rgba(255,232,160,0.12)' }]} />
+          <ArchWindow />
+          <Dust />
+
+          {/* sheen sweep */}
           <Animated.View
-            style={{ flexDirection: 'row', alignItems: 'center', paddingRight: width, transform: [{ translateX: scrollAnim }] }}
-            onLayout={(e) => setContentWidth(e.nativeEvent.layout.width)}
+            pointerEvents="none"
+            style={[gStyles.sheen, { transform: [{ translateX: sheen.interpolate({ inputRange: [0, 1], outputRange: [-120, 480] }) }, { rotate: '18deg' }] }]}
           >
-            {events.map((ev, index) => {
-              const status = getEventStatus(ev);
-              const isLive = status === 'live';
-              return (
-              <TouchableOpacity
-                key={`${ev.id || 'event'}-${index}`}
-                style={styles.marqueeItem}
-                onPress={() => {
-                  if (isLive && ev.liveUrl) {
-                    Linking.openURL(ev.liveUrl);
-                  } else {
-                    onEventPress(ev);
-                  }
-                }}
-                activeOpacity={0.8}
-              >
-                {/* English block */}
-                <View style={[styles.marqueeEventDot, isLive && { backgroundColor: '#dc2626' }]} />
-                <Text style={styles.marqueeItemTitle}>{ev.title}</Text>
-                <View style={styles.marqueeTimePill}>
-                  <Text style={styles.marqueeItemTime}>
-                    ⏰ {formatTimeStr(ev.startTime, 'en')}{ev.endTime ? ` - ${formatTimeStr(ev.endTime, 'en')}` : ''}
-                  </Text>
-                </View>
-
-                {/* Telugu block — always shown, with fallbacks */}
-                <Text style={styles.marqueeLangDivider}>  |  </Text>
-                <View style={[styles.marqueeEventDotTe, isLive && { backgroundColor: '#dc2626' }]} />
-                <Text style={styles.marqueeItemTitleTe}>{ev.titleTelugu || ev.title}</Text>
-                <View style={styles.marqueeTimePillTe}>
-                  <Text style={styles.marqueeItemTimeTe}>
-                    ⏰ {formatTimeStr(ev.startTime, 'te')}{ev.endTime ? ` - ${formatTimeStr(ev.endTime, 'te')}` : ''}
-                  </Text>
-                </View>
-
-                <Text style={styles.marqueeSeparator}>    ✦    </Text>
-              </TouchableOpacity>
-              );
-            })}
+            <LinearGradient colors={['transparent', 'rgba(255,240,190,0.22)', 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flex: 1 }} />
           </Animated.View>
-        </ScrollView>
+
+          {/* inner frame + corner ornaments */}
+          <View pointerEvents="none" style={gStyles.innerFrame} />
+          <Corner style={{ left: 10, top: 10 }} />
+          <Corner style={{ right: 10, top: 10, transform: [{ scaleX: -1 }] }} />
+          <Corner style={{ left: 10, bottom: 10, transform: [{ scaleY: -1 }] }} />
+          <Corner style={{ right: 10, bottom: 10, transform: [{ scaleX: -1 }, { scaleY: -1 }] }} />
+
+          {/* content */}
+          <View style={gStyles.cardRow}>
+            <View style={{ flex: 1 }}>
+              <View style={gStyles.eyeRow}>
+                <LinearGradient colors={['rgba(232,196,110,0)', C.gold]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={gStyles.eyeLine} />
+                <Text style={gStyles.eye}>BELOVED IN CHRIST</Text>
+              </View>
+              <View style={gStyles.greetRow}>
+                <Icon />
+                <Text style={gStyles.greet}>{greet}</Text>
+              </View>
+              <Text style={gStyles.name}>{first}</Text>
+              {!!last && <Text style={gStyles.name}>{last}</Text>}
+
+              <View style={gStyles.rule}>
+                <LinearGradient colors={['rgba(232,196,110,0)', C.gold]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={gStyles.ruleLine} />
+                <View style={gStyles.diamond} />
+                <LinearGradient colors={[C.gold, 'rgba(232,196,110,0)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={gStyles.ruleLine} />
+              </View>
+
+              <View style={gStyles.blessed}>
+                <LinearGradient colors={C.foil} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={gStyles.blessedCoin}>
+                  <Cross w={8} h={11} color="#3a2a06" />
+                </LinearGradient>
+                <Text style={gStyles.blessedText}>Blessed {DAYS_LIST[now.getDay()]}</Text>
+              </View>
+            </View>
+
+            {/* calendar card */}
+            <View style={gStyles.cal}>
+              <LinearGradient colors={['#ffe5cd', '#ffd9b8']} style={gStyles.calMonthBox}>
+                <Text style={gStyles.calMonth}>{MONS_LIST[now.getMonth()]}</Text>
+              </LinearGradient>
+              <Text style={gStyles.calDay}>{now.getDate()}</Text>
+              <Text style={gStyles.calWeek}>{DAYS_LIST[now.getDay()]}</Text>
+            </View>
+          </View>
+
+          {/* glare that follows the finger */}
+          <Animated.View
+            pointerEvents="none"
+            style={[gStyles.glare, { opacity: glareO, transform: [{ translateX: glareX }, { translateY: glareY }] }]}
+          />
+        </View>
+      </LinearGradient>
+    </Animated.View>
+  );
+};
+
+/* ───────────── events ticker ───────────── */
+const TICKER_SPEED = 38; // px per second
+
+const TodayBadge = () => {
+  const ring = useRef(new Animated.Value(0)).current;
+  const pulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const r = Animated.loop(Animated.sequence([
+      Animated.delay(2000),
+      Animated.timing(ring, { toValue: 1, duration: 800, easing: Easing.linear, useNativeDriver: true }),
+      Animated.timing(ring, { toValue: 0, duration: 0, useNativeDriver: true }),
+    ]));
+    const p = Animated.loop(Animated.sequence([
+      Animated.timing(pulse, { toValue: 0.3, duration: 600, useNativeDriver: true }),
+      Animated.timing(pulse, { toValue: 1, duration: 600, useNativeDriver: true }),
+    ]));
+    r.start(); p.start();
+    return () => { r.stop(); p.stop(); };
+  }, [ring, pulse]);
+  const rotate = ring.interpolate({
+    inputRange: [0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1],
+    outputRange: ['0deg', '16deg', '-14deg', '10deg', '-6deg', '3deg', '-1deg', '0deg'],
+  });
+  return (
+    <View style={gStyles.fix}>
+      <View style={gStyles.badgeRow}>
+        <LinearGradient colors={C.foil} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={gStyles.medal}>
+          <Animated.View style={{ transform: [{ rotate }] }}>
+            <BellFilled size={14} color={C.tealD} />
+          </Animated.View>
+        </LinearGradient>
+        <View style={gStyles.ribbon}>
+          <Svg width={86} height={30} viewBox="0 0 112 38" style={StyleSheet.absoluteFill}>
+            <Defs>
+              <SvgLinearGradient id="todayGoldGrad" x1="0" y1="0" x2="0" y2="1">
+                <Stop offset="0%" stopColor="#fff0bc" /><Stop offset="50%" stopColor="#e5be64" /><Stop offset="100%" stopColor="#a37624" />
+              </SvgLinearGradient>
+              <SvgLinearGradient id="todayGreenGrad" x1="0" y1="0" x2="0" y2="1">
+                <Stop offset="0%" stopColor="#41736a" /><Stop offset="100%" stopColor="#142c28" />
+              </SvgLinearGradient>
+            </Defs>
+            {/* Ultra-sharp chevron arrow point with crisp metallic gold rim */}
+            <Path d="M0 0H94L112 19L94 38H0Z" fill="url(#todayGoldGrad)" />
+            <Path d="M1.6 1.6H93.2L109.2 19L93.2 36.4H1.6Z" fill="url(#todayGreenGrad)" />
+          </Svg>
+          <Animated.View style={[gStyles.liveDot, { opacity: pulse }]} />
+          <Text style={gStyles.todayText}>TODAY</Text>
+        </View>
       </View>
     </View>
   );
 };
+
+export const EventsTicker = ({
+  events = [],
+  onSeeAll,
+  onEventPress,
+}: {
+  events?: any[];
+  onSeeAll?: () => void;
+  onEventPress?: (event: any) => void;
+}) => {
+  const x = useRef(new Animated.Value(0)).current;
+  const shimmer = useRef(new Animated.Value(0)).current;
+  const [setW, setSetW] = useState(0);
+  const animRef = useRef<Animated.CompositeAnimation | null>(null);
+
+  useEffect(() => {
+    if (setW > 0) {
+      animRef.current?.stop();
+      x.setValue(0);
+      const duration = (setW / TICKER_SPEED) * 1000;
+      animRef.current = Animated.loop(
+        Animated.timing(x, {
+          toValue: -setW,
+          duration: Math.max(3000, duration),
+          easing: Easing.linear,
+          useNativeDriver: true,
+        })
+      );
+      animRef.current.start();
+    }
+    return () => {
+      animRef.current?.stop();
+    };
+  }, [setW]);
+
+  useEffect(() => {
+    const l = Animated.loop(Animated.timing(shimmer, { toValue: 1, duration: 5000, easing: Easing.linear, useNativeDriver: true }));
+    l.start();
+    return () => l.stop();
+  }, [shimmer]);
+
+  const renderSet = (key: string, measure?: boolean) => (
+    <View key={key} style={gStyles.set} onLayout={measure ? (e) => setSetW(e.nativeEvent.layout.width) : undefined}>
+      {events.map((ev: any, i: number) => (
+        <TouchableOpacity
+          key={`${key}-${i}`}
+          style={gStyles.item}
+          onPress={() => onEventPress ? onEventPress(ev) : onSeeAll?.()}
+          activeOpacity={0.75}
+        >
+          {/* English block */}
+          <Text style={gStyles.itemTitle}>{ev.title}</Text>
+          <View style={gStyles.timeCap}>
+            <Text style={gStyles.timeText}>⏰ {ev.time}</Text>
+          </View>
+
+          {/* Telugu block — always shown */}
+          {ev.titleTelugu ? (
+            <>
+              <Text style={gStyles.langDivider}>|</Text>
+              <Text style={gStyles.itemTitleTe}>{ev.titleTelugu}</Text>
+              <View style={[gStyles.timeCap, { borderColor: 'rgba(74, 122, 113, 0.45)', backgroundColor: 'rgba(255,255,255,0.7)' }]}>
+                <Text style={[gStyles.timeText, { color: C.tealD }]}>⏰ {ev.timeTelugu || ev.time}</Text>
+              </View>
+            </>
+          ) : null}
+
+          <View style={gStyles.sep} />
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
+  return (
+    <View style={gStyles.mq}>
+      {/* top gold rule with travelling glint */}
+      <LinearGradient colors={['#fff7dc', '#f1dc9b']} style={[gStyles.rule5, { top: 0 }]}>
+        <Animated.View style={{ width: 120, height: 5, transform: [{ translateX: shimmer.interpolate({ inputRange: [0, 1], outputRange: [-120, 440] }) }] }}>
+          <LinearGradient colors={['transparent', 'rgba(255,255,255,0.95)', 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flex: 1 }} />
+        </Animated.View>
+      </LinearGradient>
+
+      <View style={gStyles.mqHead}>
+        <Text style={{ fontSize: 16 }}>🎉</Text>
+        <Text style={gStyles.mqTitle}>UPCOMING EVENTS</Text>
+        <LinearGradient colors={['#c9a24a', 'rgba(201,162,74,0)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={gStyles.mqLine} />
+        <Pressable onPress={onSeeAll} style={gStyles.seeAll} hitSlop={8}>
+          <Text style={gStyles.seeAllText}>See all</Text>
+          <ArrowRight size={13} color={C.teal} />
+        </Pressable>
+      </View>
+
+      <View style={gStyles.row}>
+        {/* Ticker viewport: text scrolls strictly next to the sharp badge */}
+        <View style={gStyles.tickerViewport}>
+          <Animated.View style={[gStyles.track, { transform: [{ translateX: x }] }]}>
+            {renderSet('a', true)}
+            {renderSet('b', false)}
+          </Animated.View>
+          <LinearGradient colors={['rgba(251,243,221,0)', '#fbf3dd']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={gStyles.fadeRight} pointerEvents="none" />
+          <LinearGradient colors={['#fbf3dd', 'rgba(251,243,221,0)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={gStyles.fadeLeft} pointerEvents="none" />
+        </View>
+
+        {/* Clean, sharp Today badge only — NO card or rectangle behind it */}
+        <TodayBadge />
+      </View>
+
+      <LinearGradient colors={['#f1dc9b', '#fff7dc']} style={[gStyles.rule5, { bottom: 0 }]} />
+    </View>
+  );
+};
+
+/* ───────────── styles for greeting card & ticker ───────────── */
+const gStyles = StyleSheet.create({
+  cardWrap: { borderRadius: 30, backgroundColor: '#2d5750', elevation: 14, shadowColor: '#15302c', shadowOpacity: 0.42, shadowRadius: 20, shadowOffset: { width: 0, height: 14 } },
+  foilBorder: { borderRadius: 30, padding: 1.5 },
+  cardInner: { borderRadius: 28.5, overflow: 'hidden', minHeight: 204 },
+  glow: { position: 'absolute', borderRadius: 999 },
+  arch: { position: 'absolute', right: 2, top: -6, opacity: 0.34 },
+  speck: { position: 'absolute', bottom: -8, width: 3, height: 3, borderRadius: 2, backgroundColor: '#ffe9a8', shadowColor: '#ffe28c', shadowOpacity: 0.9, shadowRadius: 4, shadowOffset: { width: 0, height: 0 } },
+  sheen: { position: 'absolute', top: -40, bottom: -40, width: 90 },
+  innerFrame: { position: 'absolute', top: 8, left: 8, right: 8, bottom: 8, borderRadius: 22, borderWidth: 1, borderColor: 'rgba(232,196,110,0.28)' },
+  glare: { position: 'absolute', left: 0, top: 0, width: 220, height: 220, borderRadius: 110, backgroundColor: 'rgba(255,244,200,0.14)' },
+  cardRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 26, paddingLeft: 26, paddingRight: 18, gap: 12 },
+  eyeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  eyeLine: { width: 22, height: 1 },
+  eye: { color: C.gold, fontSize: 9.5, fontWeight: '600', letterSpacing: 3 },
+  greetRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  greet: { color: '#f3e3b4', fontFamily: SERIF, fontStyle: 'italic', fontSize: 17.5 },
+  name: { color: '#fbe9b4', fontFamily: SERIF, fontWeight: '700', fontSize: 30, lineHeight: 34, letterSpacing: -0.2, textShadowColor: 'rgba(0,0,0,0.35)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 5 },
+  rule: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 15, marginBottom: 14, width: 90 },
+  ruleLine: { flex: 1, height: 1 },
+  diamond: { width: 6, height: 6, backgroundColor: '#f0d58a', transform: [{ rotate: '45deg' }] },
+  blessed: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 6, paddingLeft: 7, paddingRight: 16, borderRadius: 99, borderWidth: 1, borderColor: 'rgba(232,196,110,0.65)', backgroundColor: 'rgba(255,255,255,0.08)' },
+  blessedCoin: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  blessedText: { color: '#fff3cf', fontSize: 12, fontWeight: '500', letterSpacing: 0.8 },
+
+  cal: { width: 92, borderRadius: 22, overflow: 'hidden', backgroundColor: '#fff', alignItems: 'center', elevation: 10, shadowColor: '#000', shadowOpacity: 0.38, shadowRadius: 12, shadowOffset: { width: 0, height: 10 }, borderWidth: 3, borderColor: 'rgba(232,196,110,0.45)' },
+  calMonthBox: { alignSelf: 'stretch', alignItems: 'center', paddingTop: 8, paddingBottom: 7 },
+  calMonth: { color: '#e8590c', fontSize: 13, fontWeight: '700', letterSpacing: 2.5 },
+  calDay: { color: C.navy, fontSize: 35, fontWeight: '800', lineHeight: 40, paddingTop: 5 },
+  calWeek: { color: '#2c3b6b', fontSize: 13, fontWeight: '500', paddingTop: 2, paddingBottom: 12 },
+
+  mq: {
+    backgroundColor: '#fbf3dd',
+    borderRadius: 20,
+    overflow: 'hidden',
+    elevation: 6,
+    shadowColor: '#5a3c0a',
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    borderWidth: 1.5,
+    borderColor: 'rgba(201,162,74,0.45)',
+  },
+  rule5: { position: 'absolute', left: 0, right: 0, height: 4, overflow: 'hidden', borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#c9a24a', zIndex: 5 },
+  mqHead: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingTop: 7, paddingBottom: 6 },
+  mqTitle: { color: C.goldD, fontSize: 10.5, fontWeight: '700', letterSpacing: 2.2 },
+  mqLine: { flex: 1, height: 1 },
+  seeAll: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  seeAllText: { color: C.teal, fontSize: 11, fontWeight: '600' },
+  row: { height: 44, overflow: 'hidden', borderTopWidth: 1, borderTopColor: 'rgba(201,162,74,0.5)', justifyContent: 'center' },
+  tickerViewport: { position: 'absolute', left: 102, right: 0, top: 0, bottom: 0, overflow: 'hidden', justifyContent: 'center' },
+  track: { flexDirection: 'row', alignItems: 'center' },
+  set: { flexDirection: 'row', alignItems: 'center' },
+  item: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  itemTitle: { color: '#0B1938', fontWeight: '800', fontSize: 14.5, letterSpacing: -0.2 },
+  itemTitleTe: { color: '#1c3834', fontWeight: '700', fontSize: 13.5, letterSpacing: -0.1 },
+  langDivider: { color: 'rgba(164, 124, 40, 0.45)', fontSize: 13, marginHorizontal: 3, fontWeight: '300' },
+  timeCap: { paddingVertical: 2, paddingHorizontal: 9, borderRadius: 99, borderWidth: 1, borderColor: 'rgba(164,124,40,0.5)', backgroundColor: 'rgba(255,255,255,0.6)' },
+  timeText: { color: C.goldD, fontFamily: SERIF, fontStyle: 'italic', fontSize: 12 },
+  sep: { width: 6, height: 6, marginLeft: 12, marginRight: 24, backgroundColor: '#e0bb62', transform: [{ rotate: '45deg' }] },
+  fadeRight: { position: 'absolute', right: 0, top: 0, bottom: 0, width: 32, zIndex: 5 },
+  fadeLeft: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 22, zIndex: 5 },
+  fix: { position: 'absolute', left: 6, top: 0, bottom: 0, justifyContent: 'center', zIndex: 20 },
+  badgeRow: { flexDirection: 'row', alignItems: 'center' },
+  medal: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', zIndex: 2, borderWidth: 1.5, borderColor: '#fff6d6', elevation: 4, shadowColor: '#15302c', shadowOpacity: 0.3, shadowRadius: 4, shadowOffset: { width: 0, height: 3 } },
+  ribbon: { width: 86, height: 30, marginLeft: -13, flexDirection: 'row', alignItems: 'center', paddingLeft: 18 },
+  liveDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#ff6a5c', marginRight: 5, shadowColor: '#ff6a5c', shadowOpacity: 0.9, shadowRadius: 3, shadowOffset: { width: 0, height: 0 } },
+  todayText: { color: '#f4e0a0', fontSize: 10, fontWeight: '800', letterSpacing: 1.8 },
+});
+
 
 // --- Memory Cache for Instant Navigation ---
 let cachedPromise: DailyPromise | null = null;
@@ -772,6 +1118,33 @@ export default function HomeScreen() {
   const waveAnim = useRef(new Animated.Value(0)).current;
   const curveLineAnim = useRef(new Animated.Value(0)).current;
   const [currentEmojiIdx, setCurrentEmojiIdx] = useState(0);
+  const bellRingAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.delay(2600),
+        Animated.timing(bellRingAnim, {
+          toValue: 1,
+          duration: 850,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        }),
+        Animated.timing(bellRingAnim, {
+          toValue: 0,
+          duration: 0,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [bellRingAnim]);
+
+  const bellRotate = bellRingAnim.interpolate({
+    inputRange: [0, 0.12, 0.25, 0.38, 0.52, 0.66, 0.8, 1],
+    outputRange: ['0deg', '-18deg', '16deg', '-12deg', '8deg', '-4deg', '2deg', '0deg'],
+  });
 
   // Load today's daily verse
   useEffect(() => {
@@ -1103,6 +1476,7 @@ export default function HomeScreen() {
   
   // -- Sticky Header Animation --
   const [onlineMeetingsY, setOnlineMeetingsY] = useState(0);
+  const [quickAccessY, setQuickAccessY] = useState(0);
 
   const scrollY = useRef(new Animated.Value(0)).current;
   const headerPadding = Math.max(insets.top + 8, Platform.OS === 'ios' ? 50 : (StatusBar.currentHeight ? StatusBar.currentHeight + 12 : 36));
@@ -1823,6 +2197,59 @@ export default function HomeScreen() {
     .map(word => word[0]?.toUpperCase() || '')
     .join('') || 'RG';
 
+  const currentUserName = isImpersonating
+    ? 'Branch Admin'
+    : ((`${member?.firstName || ''} ${member?.lastName || ''}`.trim()) || member?.name || user?.displayName || 'Beloved');
+
+  const tickerEvents = useMemo(() => {
+    const list = (todayEvents && todayEvents.length > 0) ? todayEvents : (events || []);
+    if (list.length === 0) {
+      const timings = activeChurch?.serviceTimings || [];
+      if (timings.length > 0) {
+        return timings.map((st: any) => {
+          const sEn = st.startTime ? formatEventTime(st.startTime, 'en') : '';
+          const eEn = st.endTime ? formatEventTime(st.endTime, 'en') : '';
+          const timeEn = sEn ? (eEn ? `${sEn} - ${eEn}` : sEn) : '10:00 AM';
+
+          const sTe = st.startTime ? formatEventTime(st.startTime, 'te') : '';
+          const eTe = st.endTime ? formatEventTime(st.endTime, 'te') : '';
+          const timeTe = sTe ? (eTe ? `${sTe} - ${eTe}` : sTe) : timeEn;
+
+          return {
+            title: st.name || 'Church Service',
+            titleTelugu: st.nameTelugu || st.name || 'చర్చి సర్వీస్',
+            time: timeEn,
+            timeTelugu: timeTe,
+            raw: st,
+          };
+        });
+      }
+      return [
+        { title: 'Morning Prayer', titleTelugu: 'ఉదయ కాల ప్రార్థన', time: '6:00 AM - 7:30 AM', timeTelugu: 'ఉదయం 6:00 - 7:30' },
+        { title: 'Worship Service', titleTelugu: 'ఆరాధన కూడిక', time: '10:00 AM - 12:30 PM', timeTelugu: 'ఉదయం 10:00 - మధ్యాహ్నం 12:30' },
+        { title: 'Evening Fellowship', titleTelugu: 'సాయంకాల సహవాసం', time: '6:30 PM - 8:30 PM', timeTelugu: 'సాయంత్రం 6:30 - రాత్రి 8:30' },
+      ];
+    }
+    return list.map((ev: any) => {
+      const sEn = ev.startTime ? formatEventTime(ev.startTime, 'en') : '';
+      const eEn = ev.endTime ? formatEventTime(ev.endTime, 'en') : '';
+      const timeEn = sEn ? (eEn ? `${sEn} - ${eEn}` : sEn) : (ev.date ? formatDateDisplay(ev.date) : 'Today');
+
+      const sTe = ev.startTime ? formatEventTime(ev.startTime, 'te') : '';
+      const eTe = ev.endTime ? formatEventTime(ev.endTime, 'te') : '';
+      const timeTe = sTe ? (eTe ? `${sTe} - ${eTe}` : sTe) : timeEn;
+
+      return {
+        title: ev.title || 'Church Event',
+        titleTelugu: ev.titleTelugu || ev.title,
+        time: timeEn,
+        timeTelugu: timeTe,
+        raw: ev,
+      };
+    });
+  }, [todayEvents, events, activeChurch]);
+
+
   return (
     <View style={[styles.mainContainer, { backgroundColor: '#FAF7F2' }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#FAF7F2" />
@@ -1898,7 +2325,9 @@ export default function HomeScreen() {
               onPress={() => navigation.navigate('Updates')}
               activeOpacity={0.75}
             >
-              <Bell color="#0B1938" size={21} strokeWidth={2.2} />
+              <Animated.View style={{ transform: [{ rotate: bellRotate }] }}>
+                <Bell color="#0B1938" size={21} strokeWidth={2.2} />
+              </Animated.View>
               <View style={styles.rhemaBellDot} />
             </TouchableOpacity>
           </View>
@@ -1921,68 +2350,25 @@ export default function HomeScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#0055D4" progressViewOffset={dynamicHeaderHeight > 0 ? dynamicHeaderHeight + 4 : headerPadding + 74} />
         }
       >
-        {/* SECTION 2: Light-Blue Greeting Card (Scrolls Behind Fixed Top Church Header) */}
-        <View style={{ paddingHorizontal: 14, marginBottom: 4 }}>
-          <LinearGradient
-            colors={['#CBE5FF', '#E1F1FF', '#F9E8D9']}
-            locations={[0, 0.62, 1]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.rhemaGreetingCard}
-          >
-            {/* Subtle Abstract Shapes inside the Greeting Card */}
-            <View style={styles.greetingShapeMidCyan} pointerEvents="none" />
-            <View style={styles.greetingShapeRightSoftBlue} pointerEvents="none" />
-            <View style={styles.greetingShapeBottomBlueArc} pointerEvents="none" />
-            <View style={styles.greetingShapeBottomLeftPeach} pointerEvents="none" />
-
-            <View style={styles.rhemaGreetingLeft}>
-              <Text 
-                style={styles.rhemaGreetingRegular} 
-                numberOfLines={1} 
-                adjustsFontSizeToFit 
-                minimumFontScale={0.75}
-                maxFontSizeMultiplier={1.1}
-              >
-                {getGreeting()},
-              </Text>
-
-              <Text 
-                style={styles.rhemaMemberName} 
-                numberOfLines={1} 
-                adjustsFontSizeToFit 
-                minimumFontScale={0.6}
-                maxFontSizeMultiplier={1.1}
-              >
-                {isImpersonating
-                  ? 'Branch Admin'
-                  : ((`${member?.firstName || ''} ${member?.lastName || ''}`.trim()) || member?.name || user?.displayName || 'Guest')}
-              </Text>
-
-              <View style={styles.rhemaBlessedPill}>
-                <Text style={styles.rhemaBlessedStar} maxFontSizeMultiplier={1.1}>✦</Text>
-                <Text style={styles.rhemaBlessedText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} maxFontSizeMultiplier={1.1}>
-                  Blessed {todayWeekdayFull}
-                </Text>
-              </View>
-            </View>
-
-            {/* White Date Widget with Soft Peach Top Strip & Orange Month */}
-            <View style={styles.rhemaWhiteDateCard}>
-              <View style={styles.rhemaWhiteDateHeader}>
-                <Text style={styles.rhemaDateMonth} maxFontSizeMultiplier={1.1}>{todayMonthShort}</Text>
-              </View>
-              <View style={styles.rhemaWhiteDateBody}>
-                <Text style={styles.rhemaDateNumber} maxFontSizeMultiplier={1.1}>{todayDateNum}</Text>
-                <Text style={styles.rhemaDateWeekday} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} maxFontSizeMultiplier={1.1}>
-                  {todayWeekdayFull}
-                </Text>
-              </View>
-            </View>
-          </LinearGradient>
+        {/* SECTION 2: Premium Greeting Card (Beloved In Christ with Interactive 3D Tilt) */}
+        <View style={{ paddingHorizontal: 14, marginTop: 4, marginBottom: 16 }}>
+          <GreetingCard userName={currentUserName} />
         </View>
 
-        <EventMarquee events={todayEvents} onEventPress={(event) => navigation.navigate('EventDetails', { event })} />
+        {/* Upcoming Events Marquee Ticker (Padded with matching card shape) */}
+        <View style={{ paddingHorizontal: 14, marginBottom: 16 }}>
+          <EventsTicker 
+            events={tickerEvents} 
+            onSeeAll={() => navigation.navigate('Events')} 
+            onEventPress={(evItem) => {
+              if (evItem?.raw) {
+                navigation.navigate('EventDetails', { event: evItem.raw });
+              } else {
+                navigation.navigate('Events');
+              }
+            }} 
+          />
+        </View>
         <View style={styles.contentPad}>
           {/* ── Daily Promise / Daily Verse Carousel ── */}
           <View style={styles.promiseHero}>
@@ -2239,7 +2625,13 @@ export default function HomeScreen() {
           </View>
 
           {/* ── Editorial Bento-Grid Quick Access Section ── */}
-          <View style={styles.bentoSectionWrapper}>
+          <View
+            style={styles.bentoSectionWrapper}
+            onLayout={(e) => {
+              const y = Math.round(e.nativeEvent.layout.y);
+              setQuickAccessY(prev => Math.abs(prev - y) > 10 ? y : prev);
+            }}
+          >
             {/* Header Row: "Quick Access" styled with church title typography */}
             <View style={styles.bentoHeaderRow}>
               <View style={{ flex: 1, marginRight: 8 }}>
@@ -2266,20 +2658,17 @@ export default function HomeScreen() {
                   end={{ x: 1, y: 1 }}
                   style={styles.claySermonsCard}
                 >
-                  {/* Mint Claymorphic Squircle Icon */}
+                  {/* 3D Retro Vintage Microphone for Sermons */}
                   <TouchableOpacity 
                     activeOpacity={0.8}
                     onPress={() => navigation.navigate('Sermons')}
+                    style={{ width: 44, height: 48, alignItems: 'center', justifyContent: 'center' }}
                   >
-                    <LinearGradient
-                      colors={['#C9EAE1', '#A6DAD0']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.clayIconBoxLg}
-                    >
-                      <View style={styles.clayIconShine} pointerEvents="none" />
-                      <Mic size={18} color="#0C3830" strokeWidth={2.4} />
-                    </LinearGradient>
+                    <Image
+                      source={require('../../assets/retro_mic_3d.png')}
+                      style={{ width: 26, height: 46 }}
+                      resizeMode="contain"
+                    />
                   </TouchableOpacity>
 
                   {/* Bottom Text + Swipeable Slides & Indicator */}
@@ -2373,13 +2762,13 @@ export default function HomeScreen() {
                         </TouchableOpacity>
                       </View>
 
-                      {/* White Circular Action Button */}
+                      {/* White Circular Action Button with Upward Cross Arrow */}
                       <TouchableOpacity 
                         activeOpacity={0.8}
                         onPress={() => navigation.navigate('Sermons')}
-                        style={styles.clayArrowCircleLg}
+                        style={styles.clayArrowCircleMd}
                       >
-                        <ArrowRight size={13} color="#0C3830" strokeWidth={2.4} />
+                        <ArrowUpRight size={12} color="#0C3830" strokeWidth={2.4} />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -2388,98 +2777,94 @@ export default function HomeScreen() {
 
               {/* Right Column: Daily Verse + Events - Clean, visible borders */}
               <View style={styles.bentoRow1RightCol}>
-                {/* Daily Verse Card: #24324A Navy Slate */}
+                {/* Songs Card: Rich Royal Purple Gradient */}
                 <TouchableOpacity
                   style={styles.clayDailyVerseTouch}
                   activeOpacity={0.88}
-                  onPress={() => {
-                    if (todayVerse) {
-                      navigation.navigate('VerseOfTheDay', { verseId: todayVerse.id, period: todayPeriod });
-                    } else if (visibleVerses && visibleVerses.length > 0) {
-                      navigation.navigate('VerseOfTheDay', { verseId: visibleVerses[0].id, period: VERSE_PERIODS[0] || 'Morning' });
-                    } else {
-                      handleGuestProtectedNavigation('Promise');
-                    }
-                  }}
+                  onPress={() => handleGuestProtectedNavigation('Songs')}
                 >
                   <LinearGradient
-                    colors={['#2B3C58', '#24324A', '#1E2A3E']}
+                    colors={['#582B8A', '#3C1665', '#240842']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
-                    style={styles.clayDailyVerseCard}
+                    style={[styles.clayDailyVerseCard, { borderColor: '#7E43BA' }]}
                   >
-                    {/* Warm Champagne Claymorphic Squircle with 4-Pointed Star */}
-                    <LinearGradient
-                      colors={['#FEF3C7', '#FDE68A']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.clayIconBoxMd}
-                    >
-                      <View style={styles.clayIconShine} pointerEvents="none" />
-                      <Svg width={14} height={14} viewBox="0 0 24 24" fill="#78350F">
-                        <Path d="M12 0 C12 6.6 6.6 12 0 12 C6.6 12 12 17.4 12 24 C12 17.4 17.4 12 24 12 C17.4 12 12 6.6 12 0 Z" />
-                      </Svg>
-                    </LinearGradient>
+                    {/* 3D Microphone with Music Notes */}
+                    <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+                      <Image
+                        source={require('../../assets/3d_sermons.png')}
+                        style={{ width: 38, height: 38 }}
+                        resizeMode="contain"
+                      />
+                    </View>
 
-                    <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 4 }}>
+                    <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 24 }}>
                       <Text
-                        style={[styles.clayCardTitle, { color: '#FFFFFF', fontSize: 13 }]}
+                        style={[styles.clayCardTitle, { color: '#FFFFFF', fontSize: 14 }]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.85}
+                      >
+                        {t('home.quickSongs')}
+                      </Text>
+                      <Text
+                        style={[styles.clayCardSub, { color: '#E8D4FC', fontSize: 11, marginTop: 2 }]}
                         numberOfLines={1}
                         adjustsFontSizeToFit
                         minimumFontScale={0.8}
                       >
-                        {t('home.quickDailyVerse')}
-                      </Text>
-                      <Text style={[styles.clayCardSub, { color: '#CBD5E1', fontSize: 10 }]} numberOfLines={1}>
-                        Today's word
+                        Worship songs
                       </Text>
                     </View>
 
-                    <View style={styles.clayArrowCircleMd}>
-                      <ArrowRight size={11} color="#1E2A3E" strokeWidth={2.4} />
+                    <View style={[styles.clayArrowCircleMd, { position: 'absolute', right: 8, bottom: 8 }]}>
+                      <ArrowUpRight size={11} color="#3C1665" strokeWidth={2.4} />
                     </View>
                   </LinearGradient>
                 </TouchableOpacity>
 
-                {/* Events Card: #43372D Rich Mocha */}
+                {/* Events Card: Bright Warm Amber Mocha Gradient */}
                 <TouchableOpacity
                   style={styles.clayEventsTouch}
                   activeOpacity={0.88}
                   onPress={() => navigation.navigate('Events')}
                 >
                   <LinearGradient
-                    colors={['#4F4136', '#43372D', '#362B23']}
+                    colors={['#A86E42', '#865128', '#633714']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
-                    style={styles.clayEventsCard}
+                    style={[styles.clayEventsCard, { borderColor: '#BF875D' }]}
                   >
-                    {/* Soft Warm Cream Claymorphic Squircle */}
-                    <LinearGradient
-                      colors={['#F7EFE6', '#EAD9C8']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.clayIconBoxMd}
-                    >
-                      <View style={styles.clayIconShine} pointerEvents="none" />
-                      <Calendar size={15} color="#43372D" strokeWidth={2.4} />
-                    </LinearGradient>
+                    {/* 3D Spiral Calendar Icon */}
+                    <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+                      <Image
+                        source={require('../../assets/3d_events.png')}
+                        style={{ width: 38, height: 38 }}
+                        resizeMode="contain"
+                      />
+                    </View>
 
-                    <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 4 }}>
+                    <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 24 }}>
                       <Text
-                        style={[styles.clayCardTitle, { color: '#FFFFFF', fontSize: 13 }]}
+                        style={[styles.clayCardTitle, { color: '#FFFFFF', fontSize: 14 }]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.85}
+                      >
+                        {t('home.quickEvents')}
+                      </Text>
+                      <Text
+                        style={[styles.clayCardSub, { color: '#F9E9DC', fontSize: 11, marginTop: 2 }]}
                         numberOfLines={1}
                         adjustsFontSizeToFit
                         minimumFontScale={0.8}
                       >
-                        {t('home.quickEvents')}
-                      </Text>
-                      <Text style={[styles.clayCardSub, { color: '#D7CCC8', fontSize: 10 }]} numberOfLines={1}>
-                        Service...
+                        Church services
                       </Text>
                     </View>
 
-                    <View style={styles.clayArrowCircleMd}>
-                      <ArrowRight size={11} color="#43372D" strokeWidth={2.4} />
+                    <View style={[styles.clayArrowCircleMd, { position: 'absolute', right: 8, bottom: 8 }]}>
+                      <ArrowUpRight size={11} color="#633714" strokeWidth={2.4} />
                     </View>
                   </LinearGradient>
                 </TouchableOpacity>
@@ -2510,7 +2895,7 @@ export default function HomeScreen() {
                 style={styles.clayGiveCard}
               >
                 {/* 3D Gold Coins behind the Give badge */}
-                <GiveCoins />
+                <GiveCoins scrollY={scrollY} triggerY={quickAccessY} />
 
                 <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
                   {/* Circular Embossed Gold Medallion with Exact Hand + Heart */}
@@ -2541,135 +2926,98 @@ export default function HomeScreen() {
               </LinearGradient>
             </TouchableOpacity>
 
-            {/* ── ROW 3: YouTube Live + Songs ── */}
+            {/* ── ROW 3: Daily Verse + Attendance ── */}
             <View style={styles.bentoRow3}>
-              {/* Left: YouTube Live */}
+              {/* Left: Daily Verse */}
               <TouchableOpacity
-                style={styles.clayYoutubeTouch}
-                activeOpacity={0.9}
+                style={styles.claySongsTouch}
+                activeOpacity={0.88}
                 onPress={() => {
-                  const yUrl = activeChurch?.socialLinks?.youtube?.trim();
-                  if (yUrl) {
-                    Linking.openURL(yUrl);
+                  if (todayVerse) {
+                    navigation.navigate('VerseOfTheDay', { verseId: todayVerse.id, period: todayPeriod });
+                  } else if (visibleVerses && visibleVerses.length > 0) {
+                    navigation.navigate('VerseOfTheDay', { verseId: visibleVerses[0].id, period: VERSE_PERIODS[0] || 'Morning' });
                   } else {
-                    setAlertConfig({
-                      visible: true,
-                      title: 'Link Not Configured',
-                      message: 'No YouTube Live link has been configured for this church. Please go to Church Settings and set the YouTube Live link.',
-                      type: 'info'
-                    });
+                    handleGuestProtectedNavigation('Promise');
                   }
                 }}
               >
                 <LinearGradient
-                  colors={['#4E141C', '#28080A']}
+                  colors={['#3B78C2', '#22559C', '#123972']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={styles.clayYoutubeCard}
+                  style={[styles.claySongsCard, { borderColor: '#5B92DA' }]}
                 >
-                  {/* Subtle Equalizer Soundwave Bars */}
-                  <Svg width="100%" height="100%" viewBox="0 0 175 84" style={StyleSheet.absoluteFillObject} pointerEvents="none" preserveAspectRatio="none">
-                    <Rect x="105" y="36" width="3" height="26" rx="1.5" fill="#AF4951" opacity="0.4" />
-                    <Rect x="112" y="26" width="3" height="38" rx="1.5" fill="#AF4951" opacity="0.6" />
-                    <Rect x="119" y="16" width="3" height="50" rx="1.5" fill="#AF4951" opacity="0.8" />
-                    <Rect x="126" y="28" width="3" height="36" rx="1.5" fill="#AF4951" opacity="0.6" />
-                    <Rect x="133" y="38" width="3" height="24" rx="1.5" fill="#AF4951" opacity="0.4" />
-                  </Svg>
-
-                  {/* Terracotta/Dusty Rose Claymorphic Squircle */}
+                  {/* Warm Champagne Claymorphic Squircle with 4-Pointed Star */}
                   <LinearGradient
-                    colors={['#CA8580', '#A85C57']}
+                    colors={['#FEF3C7', '#FDE68A']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
-                    style={styles.clayIconBoxMd}
+                    style={styles.clayIconBoxLg}
                   >
                     <View style={styles.clayIconShine} pointerEvents="none" />
-                    <Svg width={14} height={14} viewBox="0 0 24 24" fill="#320A0E" style={{ marginLeft: 2 }}>
-                      <Polygon points="6,4 20,12 6,20" />
+                    <Svg width={18} height={18} viewBox="0 0 24 24" fill="#78350F">
+                      <Path d="M12 0 C12 6.6 6.6 12 0 12 C6.6 12 12 17.4 12 24 C12 17.4 17.4 12 24 12 C17.4 12 12 6.6 12 0 Z" />
                     </Svg>
                   </LinearGradient>
 
-                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 4 }}>
-                    <View style={styles.bentoLiveBadgeWrap}>
-                      <View style={styles.bentoLiveDot} />
-                      <Text style={styles.bentoLiveTag}>LIVE</Text>
-                    </View>
+                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 24 }}>
                     <Text
-                      style={[styles.clayCardSub, { color: '#F7D2D5', fontSize: 10.5, marginTop: 1 }]}
+                      style={[styles.clayCardTitle, { color: '#FFFFFF', fontSize: 16, fontWeight: '800' }]}
                       numberOfLines={1}
                       adjustsFontSizeToFit
-                      minimumFontScale={0.8}
+                      minimumFontScale={0.85}
                     >
-                      {t('home.quickYoutubeLive')}
+                      {t('home.quickDailyVerse')}
                     </Text>
                   </View>
 
-                  <View style={[styles.clayArrowCircleMd, { backgroundColor: 'rgba(255, 255, 255, 0.22)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.35)' }]}>
-                    <ArrowRight size={12} color="#FFFDF9" strokeWidth={2.4} />
+                  <View style={[styles.clayArrowCircleMd, { position: 'absolute', right: 8, bottom: 8, backgroundColor: 'rgba(255, 255, 255, 0.16)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.28)' }]}>
+                    <ArrowUpRight size={12} color="#FFFFFF" strokeWidth={2.4} />
                   </View>
                 </LinearGradient>
               </TouchableOpacity>
 
-              {/* Right: Songs */}
+              {/* Right: Attendance - Soft Charcoal #343A3A Gradient with Genuinely Large Text */}
               <TouchableOpacity
-                style={styles.claySongsTouch}
+                style={styles.clayAttendanceTouch}
                 activeOpacity={0.88}
-                onPress={() => handleGuestProtectedNavigation('Songs')}
+                onPress={() => navigation.navigate('Attendance')}
               >
                 <LinearGradient
-                  colors={['#F3ECFA', '#E5D7F5']}
+                  colors={['#424A4A', '#343A3A', '#262B2B']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={styles.claySongsCard}
+                  style={[styles.clayAttendanceCard, { borderColor: '#4F5959' }]}
                 >
-                  {/* Subtle 3D Organ Pipes */}
-                  <Svg width="100%" height="100%" viewBox="0 0 175 84" style={StyleSheet.absoluteFillObject} pointerEvents="none" preserveAspectRatio="none">
-                    <Rect x="106" y="38" width="3" height="38" rx="1.5" fill="#9D74DC" opacity="0.4" />
-                    <Rect x="113" y="28" width="3" height="50" rx="1.5" fill="#9D74DC" opacity="0.55" />
-                    <Rect x="120" y="18" width="3.5" height="62" rx="1.75" fill="#8B5FD3" opacity="0.75" />
-                    <Rect x="127" y="26" width="3" height="52" rx="1.5" fill="#9D74DC" opacity="0.6" />
-                    <Rect x="134" y="36" width="3" height="40" rx="1.5" fill="#9D74DC" opacity="0.45" />
-                  </Svg>
+                  {/* 3D Attendance Checklist Clipboard Icon */}
+                  <View style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginLeft: 0, marginRight: 2 }}>
+                    <Image
+                      source={require('../../assets/3d_attendance.png')}
+                      style={{ width: 42, height: 42 }}
+                      resizeMode="contain"
+                    />
+                  </View>
 
-                  {/* Vivid Purple Claymorphic Squircle */}
-                  <LinearGradient
-                    colors={['#C4B0ED', '#9B72DC']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.clayIconBoxMd}
-                  >
-                    <View style={styles.clayIconShine} pointerEvents="none" />
-                    {/* Retro vintage microphone */}
-                    <Svg width={19} height={19} viewBox="0 0 24 24" fill="none" stroke="#250E43" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                      <Rect x="8" y="2" width="8" height="12" rx="4" fill="#250E43" fillOpacity={0.18} />
-                      <Path d="M8 6h8M8 10h8" />
-                      <Path d="M5 11a7 7 0 0 0 14 0" />
-                      <Path d="M12 18v3M8.5 21h7" />
-                    </Svg>
-                  </LinearGradient>
-
-                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 4 }}>
+                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 4, marginRight: 20 }}>
                     <Text
-                      style={[styles.clayCardTitle, { color: '#250E43', fontSize: 13.5 }]}
+                      style={[styles.clayCardTitle, { color: '#FFFFFF', fontSize: 18.5, fontWeight: '900', letterSpacing: -0.3 }]}
                       numberOfLines={1}
                       adjustsFontSizeToFit
-                      minimumFontScale={0.8}
+                      minimumFontScale={0.88}
                     >
-                      {t('home.quickSongs')}
-                    </Text>
-                    <Text style={[styles.clayCardSub, { color: '#6B4F8B', fontSize: 10.5 }]} numberOfLines={1}>
-                      Worship songs
+                      {t('nav.attendance') || 'Attendance'}
                     </Text>
                   </View>
 
-                  <View style={styles.clayArrowCircleMd}>
-                    <ArrowRight size={12} color="#250E43" strokeWidth={2.4} />
+                  <View style={[styles.clayArrowCircleMd, { position: 'absolute', right: 8, bottom: 8, backgroundColor: 'rgba(255, 255, 255, 0.16)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.28)' }]}>
+                    <ArrowUpRight size={12} color="#FFFFFF" strokeWidth={2.4} />
                   </View>
                 </LinearGradient>
               </TouchableOpacity>
             </View>
 
-            {/* ── ROW 4: 3-Column Cards (Sermon Notes, Bible Quiz, Updates) ── */}
+            {/* ── ROW 4: 2-Column Cards (Sermon Notes & Bible Quiz) - Text Next to Icon ── */}
             <View style={styles.bentoRow4}>
               {/* Sermon Notes */}
               <TouchableOpacity
@@ -2678,51 +3026,35 @@ export default function HomeScreen() {
                 onPress={() => handleGuestProtectedNavigation('MemberNotes')}
               >
                 <LinearGradient
-                  colors={['#EDF5FC', '#DFEEF9']}
+                  colors={['#2E72A6', '#1A537D', '#0E3756']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={[styles.clayQuarterCard, { borderColor: '#D6E8F6' }]}
+                  style={[styles.clayQuarterCard, { borderColor: '#4C91C9' }]}
                 >
-                  {/* Subtle Ruled Paper Sheet in Background */}
-                  <Svg width="100%" height="100%" viewBox="0 0 110 114" style={StyleSheet.absoluteFillObject} pointerEvents="none" preserveAspectRatio="none">
-                    <G transform="rotate(8 78 40)">
-                      <Rect x="54" y="16" width="38" height="48" rx="4" fill="#FFFFFF" opacity="0.65" />
-                      <Rect x="60" y="24" width="22" height="2" rx="1" fill="#A5C7E6" opacity="0.7" />
-                      <Rect x="60" y="30" width="26" height="2" rx="1" fill="#A5C7E6" opacity="0.7" />
-                      <Rect x="60" y="36" width="20" height="2" rx="1" fill="#A5C7E6" opacity="0.7" />
-                      <Rect x="60" y="42" width="24" height="2" rx="1" fill="#A5C7E6" opacity="0.7" />
-                    </G>
-                  </Svg>
+                  {/* 3D Notepad with Writing Pen Icon */}
+                  <View style={{ width: 42, height: 42, alignItems: 'center', justifyContent: 'center', marginLeft: 2, marginRight: 4 }}>
+                    <Image
+                      source={require('../../assets/3d_sermon_notes.png')}
+                      style={{ width: 36, height: 36 }}
+                      resizeMode="contain"
+                    />
+                  </View>
 
-                  {/* Top: Squircle Icon */}
-                  <LinearGradient
-                    colors={['#A5D3F8', '#7FB9EA']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.clayIconBoxRow4}
-                  >
-                    <View style={styles.clayIconShine} pointerEvents="none" />
-                    <FileText size={16} color="#0F3250" strokeWidth={2.4} />
-                  </LinearGradient>
-
-                  {/* Middle: Title & Accent Bar */}
-                  <View style={{ zIndex: 2, marginTop: 4 }}>
+                  {/* Text Next to Icon */}
+                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 6, marginRight: 22 }}>
                     <Text
-                      style={[styles.clayCardTitle, { color: '#0F2E4A', fontSize: 11.5, letterSpacing: -0.2 }]}
-                      numberOfLines={1}
+                      style={[styles.clayCardTitle, { color: '#FFFFFF', fontSize: 14.5, fontWeight: '800' }]}
+                      numberOfLines={2}
                       adjustsFontSizeToFit
                       minimumFontScale={0.8}
                     >
                       {t('home.quickSermonNotes')}
                     </Text>
-                    <View style={[styles.clayAccentBar, { backgroundColor: '#2B6B9B' }]} />
                   </View>
 
-                  {/* Bottom: Arrow */}
-                  <View style={styles.clayQuarterBottomRow}>
-                    <View style={styles.clayArrowCircleSm}>
-                      <ArrowRight size={11} color="#0F2E4A" strokeWidth={2.4} />
-                    </View>
+                  {/* Bottom-right: Arrow */}
+                  <View style={[styles.clayArrowCircleMd, { position: 'absolute', right: 8, bottom: 8, backgroundColor: 'rgba(255, 255, 255, 0.16)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.28)' }]}>
+                    <ArrowUpRight size={12} color="#FFFFFF" strokeWidth={2.4} />
                   </View>
                 </LinearGradient>
               </TouchableOpacity>
@@ -2734,100 +3066,35 @@ export default function HomeScreen() {
                 onPress={() => navigation.navigate('BibleQuizHome')}
               >
                 <LinearGradient
-                  colors={['#F0F7F3', '#DFEFE5']}
+                  colors={['#248A54', '#15653B', '#0B3F23']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={[styles.clayQuarterCard, { borderColor: '#DAECE1' }]}
+                  style={[styles.clayQuarterCard, { borderColor: '#3EAA70' }]}
                 >
-                  {/* Subtle Layered Green Ribbon Arches */}
-                  <Svg width="100%" height="100%" viewBox="0 0 110 114" style={StyleSheet.absoluteFillObject} pointerEvents="none" preserveAspectRatio="none">
-                    <Path d="M 68 0 C 68 28, 86 46, 110 46 L 110 0 Z" fill="#9DD1B0" opacity="0.3" />
-                    <Path d="M 82 0 C 82 18, 94 30, 110 30 L 110 0 Z" fill="#75BA8E" opacity="0.35" />
-                    <Path d="M 96 114 C 96 86, 78 68, 54 68 L 110 68 L 110 114 Z" fill="#AEE0C0" opacity="0.25" />
-                  </Svg>
+                  {/* 3D Golden Trophy Icon */}
+                  <View style={{ width: 42, height: 42, alignItems: 'center', justifyContent: 'center', marginLeft: 2, marginRight: 4 }}>
+                    <Image
+                      source={require('../../assets/3d_bible_quiz.png')}
+                      style={{ width: 30, height: 38 }}
+                      resizeMode="contain"
+                    />
+                  </View>
 
-                  {/* Top: Squircle Icon */}
-                  <LinearGradient
-                    colors={['#A7DCBD', '#7DC397']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.clayIconBoxRow4}
-                  >
-                    <View style={styles.clayIconShine} pointerEvents="none" />
-                    <Trophy size={16} color="#0E3820" strokeWidth={2.4} />
-                  </LinearGradient>
-
-                  {/* Middle: Title & Accent Bar */}
-                  <View style={{ zIndex: 2, marginTop: 4 }}>
+                  {/* Text Next to Icon */}
+                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 6, marginRight: 22 }}>
                     <Text
-                      style={[styles.clayCardTitle, { color: '#0E3820', fontSize: 11.5, letterSpacing: -0.2 }]}
-                      numberOfLines={1}
+                      style={[styles.clayCardTitle, { color: '#FFFFFF', fontSize: 14.5, fontWeight: '800' }]}
+                      numberOfLines={2}
                       adjustsFontSizeToFit
                       minimumFontScale={0.8}
                     >
                       {t('home.quickBibleQuiz') || 'Bible Quiz'}
                     </Text>
-                    <View style={[styles.clayAccentBar, { backgroundColor: '#2C7A4A' }]} />
                   </View>
 
-                  {/* Bottom: Arrow */}
-                  <View style={styles.clayQuarterBottomRow}>
-                    <View style={styles.clayArrowCircleSm}>
-                      <ArrowRight size={11} color="#0E3820" strokeWidth={2.4} />
-                    </View>
-                  </View>
-                </LinearGradient>
-              </TouchableOpacity>
-
-              {/* Updates */}
-              <TouchableOpacity
-                style={styles.clayQuarterTouch}
-                activeOpacity={0.85}
-                onPress={() => navigation.navigate('Updates')}
-              >
-                <LinearGradient
-                  colors={['#FAF4EB', '#F2E6D4']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={[styles.clayQuarterCard, { borderColor: '#EFE2D2' }]}
-                >
-                  {/* Subtle Fluted Arch Pillars */}
-                  <Svg width="100%" height="100%" viewBox="0 0 110 114" style={StyleSheet.absoluteFillObject} pointerEvents="none" preserveAspectRatio="none">
-                    <Path d="M 72 0 C 72 32, 88 48, 110 48 L 110 0 Z" fill="#DDB686" opacity="0.3" />
-                    <Rect x="86" y="10" width="2.5" height="50" rx="1.25" fill="#C89D66" opacity="0.35" />
-                    <Rect x="93" y="10" width="2.5" height="50" rx="1.25" fill="#C89D66" opacity="0.35" />
-                    <Rect x="100" y="10" width="2.5" height="50" rx="1.25" fill="#C89D66" opacity="0.35" />
-                  </Svg>
-
-                  {/* Top: Squircle Icon */}
-                  <LinearGradient
-                    colors={['#E7BE8D', '#CF9857']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.clayIconBoxRow4}
-                  >
-                    <View style={styles.clayIconShine} pointerEvents="none" />
-                    <Bell size={16} color="#311B08" strokeWidth={2.4} />
-                  </LinearGradient>
-
-                  {/* Middle: Title & Accent Bar */}
-                  <View style={{ zIndex: 2, marginTop: 4 }}>
-                    <Text
-                      style={[styles.clayCardTitle, { color: '#311B08', fontSize: 11.5, letterSpacing: -0.2 }]}
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.8}
-                    >
-                      {t('home.quickUpdates')}
-                    </Text>
-                    <View style={[styles.clayAccentBar, { backgroundColor: '#8E5A27' }]} />
-                  </View>
-
-                  {/* Bottom: Arrow */}
-                  <View style={styles.clayQuarterBottomRow}>
-                    <View style={styles.clayArrowCircleSm}>
-                      <ArrowRight size={11} color="#311B08" strokeWidth={2.4} />
-                    </View>
+                  {/* Bottom-right: Arrow */}
+                  <View style={[styles.clayArrowCircleMd, { position: 'absolute', right: 8, bottom: 8, backgroundColor: 'rgba(255, 255, 255, 0.16)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.28)' }]}>
+                    <ArrowUpRight size={12} color="#FFFFFF" strokeWidth={2.4} />
                   </View>
                 </LinearGradient>
               </TouchableOpacity>
@@ -2845,29 +3112,25 @@ export default function HomeScreen() {
                 activeOpacity={0.85}
               >
                 <LinearGradient
-                  colors={['#FCF0F3', '#F8DEE4']}
+                  colors={['#A32E52', '#7D1C3A', '#560D24']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={[styles.clayBottomPill, { borderColor: '#F6D0D8' }]}
+                  style={[styles.clayBottomPill, { borderColor: '#BD456C' }]}
                 >
-                  {/* Subtle Wave in Bottom Corner */}
-                  <Svg width="100%" height="100%" viewBox="0 0 110 62" style={StyleSheet.absoluteFillObject} pointerEvents="none" preserveAspectRatio="none">
-                    <Path d="M 55 62 C 72 52, 88 44, 110 40 L 110 62 Z" fill="#F1B9C6" opacity="0.35" />
-                  </Svg>
 
-                  <LinearGradient
-                    colors={['#F5B7BF', '#EA909E']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.clayIconBoxSm}
-                  >
-                    <View style={styles.clayIconShine} pointerEvents="none" />
-                    <Users size={13} color="#4A121C" strokeWidth={2.4} />
-                  </LinearGradient>
 
-                  <View style={{ flex: 1, zIndex: 2, marginHorizontal: 4, justifyContent: 'center' }}>
+                  {/* 3D Members Group Icon */}
+                  <View style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}>
+                    <Image
+                      source={require('../../assets/3d_members.png')}
+                      style={{ width: 30, height: 26 }}
+                      resizeMode="contain"
+                    />
+                  </View>
+
+                  <View style={{ flex: 1, zIndex: 2, marginHorizontal: 3, justifyContent: 'center', paddingRight: 16 }}>
                     <Text
-                      style={[styles.clayCardTitle, { color: '#4A121C', fontSize: 11, letterSpacing: -0.2 }]}
+                      style={[styles.clayCardTitle, { color: '#FFFFFF', fontSize: 12.5, fontWeight: '800', letterSpacing: -0.2 }]}
                       numberOfLines={1}
                       adjustsFontSizeToFit
                       minimumFontScale={0.8}
@@ -2876,8 +3139,8 @@ export default function HomeScreen() {
                     </Text>
                   </View>
 
-                  <View style={styles.clayArrowCircleXs}>
-                    <ArrowRight size={10} color="#4A121C" strokeWidth={2.4} />
+                  <View style={[styles.clayArrowCircleXs, { position: 'absolute', right: 5, bottom: 5 }]}>
+                    <ArrowUpRight size={9.5} color="#7D1C3A" strokeWidth={2.4} />
                   </View>
                 </LinearGradient>
               </TouchableOpacity>
@@ -2889,29 +3152,25 @@ export default function HomeScreen() {
                 activeOpacity={0.85}
               >
                 <LinearGradient
-                  colors={['#EFF6FD', '#DDEBFA']}
+                  colors={['#2563EB', '#1D4ED8', '#143896']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={[styles.clayBottomPill, { borderColor: '#D4E5F8' }]}
+                  style={[styles.clayBottomPill, { borderColor: '#5C91FA' }]}
                 >
-                  {/* Subtle Wave in Bottom Corner */}
-                  <Svg width="100%" height="100%" viewBox="0 0 110 62" style={StyleSheet.absoluteFillObject} pointerEvents="none" preserveAspectRatio="none">
-                    <Path d="M 55 62 C 72 52, 88 44, 110 40 L 110 62 Z" fill="#A5C7F2" opacity="0.35" />
-                  </Svg>
 
-                  <LinearGradient
-                    colors={['#A5CDF9', '#7FAFF2']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.clayIconBoxSm}
-                  >
-                    <View style={styles.clayIconShine} pointerEvents="none" />
-                    <AnimatedCameraIcon size={13} color="#0C294A" scrollY={scrollY} triggerY={onlineMeetingsY} />
-                  </LinearGradient>
 
-                  <View style={{ flex: 1, zIndex: 2, marginHorizontal: 4, justifyContent: 'center' }}>
+                  {/* 3D Online Meetings Laptop Icon */}
+                  <View style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}>
+                    <Image
+                      source={require('../../assets/3d_online_meetings.png')}
+                      style={{ width: 30, height: 30 }}
+                      resizeMode="contain"
+                    />
+                  </View>
+
+                  <View style={{ flex: 1, zIndex: 2, marginHorizontal: 3, justifyContent: 'center', paddingRight: 16 }}>
                     <Text
-                      style={[styles.clayCardTitle, { color: '#0C294A', fontSize: 9.5, lineHeight: 11.5, letterSpacing: -0.2 }]}
+                      style={[styles.clayCardTitle, { color: '#FFFFFF', fontSize: 11.5, lineHeight: 13.5, fontWeight: '800', letterSpacing: -0.2 }]}
                       numberOfLines={2}
                       adjustsFontSizeToFit
                       minimumFontScale={0.75}
@@ -2920,52 +3179,60 @@ export default function HomeScreen() {
                     </Text>
                   </View>
 
-                  <View style={styles.clayArrowCircleXs}>
-                    <ArrowRight size={10} color="#0C294A" strokeWidth={2.4} />
+                  <View style={[styles.clayArrowCircleXs, { position: 'absolute', right: 5, bottom: 5 }]}>
+                    <ArrowUpRight size={9.5} color="#1D4ED8" strokeWidth={2.4} />
                   </View>
                 </LinearGradient>
               </TouchableOpacity>
 
-              {/* Attendance Pill */}
+              {/* YouTube Pill */}
               <TouchableOpacity
                 style={styles.clayBottomTouch}
-                onPress={() => navigation.navigate('Attendance')}
+                onPress={() => {
+                  const yUrl = activeChurch?.socialLinks?.youtube?.trim();
+                  if (yUrl) {
+                    Linking.openURL(yUrl);
+                  } else {
+                    setAlertConfig({
+                      visible: true,
+                      title: 'Link Not Configured',
+                      message: 'No YouTube Live link has been configured for this church. Please go to Church Settings and set the YouTube Live link.',
+                      type: 'info'
+                    });
+                  }
+                }}
                 activeOpacity={0.85}
               >
                 <LinearGradient
-                  colors={['#FAF5EE', '#F2E7D7']}
+                  colors={['#182624', '#101817', '#0A100F']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={[styles.clayBottomPill, { borderColor: '#EBDCC9' }]}
+                  style={[styles.clayBottomPill, { borderColor: '#243835' }]}
                 >
-                  {/* Subtle Fluted Arch in Bottom Corner */}
-                  <Svg width="100%" height="100%" viewBox="0 0 110 62" style={StyleSheet.absoluteFillObject} pointerEvents="none" preserveAspectRatio="none">
-                    <Path d="M 55 62 C 72 52, 88 44, 110 40 L 110 62 Z" fill="#DDBB95" opacity="0.35" />
-                  </Svg>
 
-                  <LinearGradient
-                    colors={['#EBD0B3', '#D3AB7E']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.clayIconBoxSm}
-                  >
-                    <View style={styles.clayIconShine} pointerEvents="none" />
-                    <CalendarCheck size={13} color="#331C08" strokeWidth={2.4} />
-                  </LinearGradient>
 
-                  <View style={{ flex: 1, zIndex: 2, marginHorizontal: 4, justifyContent: 'center' }}>
+                  {/* 3D YouTube Icon */}
+                  <View style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}>
+                    <Image
+                      source={require('../../assets/3d_youtube.png')}
+                      style={{ width: 30, height: 30 }}
+                      resizeMode="contain"
+                    />
+                  </View>
+
+                  <View style={{ flex: 1, zIndex: 2, marginHorizontal: 3, justifyContent: 'center', paddingRight: 16 }}>
                     <Text
-                      style={[styles.clayCardTitle, { color: '#331C08', fontSize: 10, letterSpacing: -0.2 }]}
+                      style={[styles.clayCardTitle, { color: '#FFFFFF', fontSize: 12.5, fontWeight: '800', letterSpacing: -0.2 }]}
                       numberOfLines={1}
                       adjustsFontSizeToFit
-                      minimumFontScale={0.75}
+                      minimumFontScale={0.8}
                     >
-                      {t('nav.attendance') || 'Attendance'}
+                      YouTube
                     </Text>
                   </View>
 
-                  <View style={styles.clayArrowCircleXs}>
-                    <ArrowRight size={10} color="#331C08" strokeWidth={2.4} />
+                  <View style={[styles.clayArrowCircleXs, { position: 'absolute', right: 5, bottom: 5 }]}>
+                    <ArrowUpRight size={9.5} color="#FFFFFF" strokeWidth={2.4} />
                   </View>
                 </LinearGradient>
               </TouchableOpacity>
@@ -3468,177 +3735,229 @@ const GoldCoinFace = ({ size = 15 }: { size?: number }) => (
   </Svg>
 );
 
-const GiveCoins = () => {
+const GiveCoins = ({ scrollY, triggerY }: { scrollY?: Animated.Value; triggerY?: number }) => {
   const t = useRef(new Animated.Value(0)).current;
+  const loopRef = useRef<Animated.CompositeAnimation | null>(null);
+  const isPlaying = useRef(false);
 
   useEffect(() => {
-    const loop = Animated.loop(
-      Animated.timing(t, {
-        toValue: 1,
-        duration: 9600,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      })
-    );
-    loop.start();
-    return () => loop.stop();
-  }, []);
+    const startLoop = () => {
+      if (isPlaying.current) return;
+      isPlaying.current = true;
+      t.setValue(0);
+      loopRef.current = Animated.loop(
+        Animated.timing(t, {
+          toValue: 1,
+          duration: 10800,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        })
+      );
+      loopRef.current.start();
+    };
 
-  const seg = (pts: [number, number][]) =>
-    t.interpolate({
-      inputRange: pts.map(q => q[0]),
-      outputRange: pts.map(q => q[1]),
+    const stopLoop = () => {
+      if (!isPlaying.current) return;
+      isPlaying.current = false;
+      loopRef.current?.stop();
+      t.setValue(0);
+    };
+
+    if (!scrollY || triggerY === undefined || triggerY <= 0) {
+      // Fallback: start loop if no scroll trigger provided
+      startLoop();
+      return () => stopLoop();
+    }
+
+    const windowHeight = Dimensions.get('window').height;
+    // Account for header & scroll offsets so it triggers when user scrolls to Quick Access
+    const absoluteY = triggerY + 140;
+
+    // Start loop if already in view
+    startLoop();
+
+    const listenerId = scrollY.addListener(({ value }) => {
+      // It becomes visible when Quick Access scrolls into view
+      const isVisible = (value + windowHeight >= absoluteY + 50) && (value <= absoluteY + 750);
+      if (isVisible) {
+        startLoop();
+      } else {
+        stopLoop();
+      }
     });
 
-  // Stage 1: 3 coins fall one by one from top into the pot mouth and go inside (NOT visible inside the pot)
-  const insideCoins = [
-    { start: 0.02, enterT: 0.09, startX: 44.5 },
-    { start: 0.11, enterT: 0.18, startX: 44.5 },
-    { start: 0.20, enterT: 0.27, startX: 44.5 },
+    return () => {
+      if (scrollY && listenerId) {
+        try {
+          scrollY.removeListener(listenerId);
+        } catch (_) {}
+      }
+      stopLoop();
+    };
+  }, [scrollY, triggerY]);
+
+  const seg = (pts: [number, number][]) => {
+    // Ensure inputRange is strictly monotonically non-decreasing (prevents Invariant Violation from float precision)
+    const input: number[] = [];
+    const output: number[] = [];
+    for (let i = 0; i < pts.length; i++) {
+      let x = pts[i][0];
+      const y = pts[i][1];
+      if (input.length > 0 && x <= input[input.length - 1]) {
+        x = input[input.length - 1] + 0.0001;
+      }
+      input.push(x);
+      output.push(y);
+    }
+    return t.interpolate({
+      inputRange: input,
+      outputRange: output,
+    });
+  };
+
+  // Stage 1: Initial 4 coins slowly fall straight into the pot mouth and go inside to fill the belly
+  const fillingCoins = [
+    { start: 0.02, landT: 0.10, startX: 50, landX: 47, landY: 23 },
+    { start: 0.11, landT: 0.19, startX: 54, landX: 52, landY: 21 },
+    { start: 0.20, landT: 0.28, startX: 48, landX: 46, landY: 22 },
+    { start: 0.29, landT: 0.37, startX: 52, landX: 50, landY: 20 },
   ].map((c, i) => (
     <Animated.View
-      key={'ic' + i}
+      key={'fc' + i}
       pointerEvents="none"
       style={{
         position: 'absolute',
         left: 0,
         top: 0,
-        width: 15,
-        height: 15,
-        zIndex: 5 + i,
-        // Visible as it falls, but disappears completely as soon as it goes inside the pot mouth!
+        width: 14,
+        height: 14,
+        zIndex: 10 + i,
         opacity: seg([
           [0, 0],
           [c.start, 0],
           [c.start + 0.01, 1],
-          [c.enterT - 0.015, 1],
-          [c.enterT, 0],
+          [c.landT - 0.015, 1],
+          [c.landT + 0.005, 0],
           [1, 0],
         ]),
         transform: [
           {
-            translateX: c.startX,
+            translateX: seg([
+              [0, c.startX],
+              [c.start, c.startX],
+              [c.landT, c.landX],
+              [1, c.landX],
+            ]),
           },
-          // Falls from top (-18) straight into the pot mouth opening (y=26)
           {
             translateY: seg([
               [0, -18],
               [c.start, -18],
               [c.start + 0.03, 6],
-              [c.enterT, 26],
-              [1, 26],
+              [c.landT, c.landY],
+              [1, c.landY],
             ]),
           },
-          // 3D spin wobble while falling
           {
             scaleX: seg([
               [0, 1],
               [c.start, 1],
               [c.start + 0.02, 0.4],
-              [c.enterT, 1],
+              [c.landT, 1],
               [1, 1],
             ]),
           },
-          // Flattens into perspective as it enters the pot mouth
           {
             scaleY: seg([
               [0, 1],
-              [c.enterT - 0.02, 1],
-              [c.enterT, 0.6],
+              [c.landT - 0.02, 1],
+              [c.landT, 0.6],
               [1, 0.6],
             ]),
           },
         ],
       }}
     >
-      <GoldCoinFace size={15} />
+      <GoldCoinFace size={14} />
     </Animated.View>
   ));
 
-  // Stage 2: Once full, display ONLY that last coin (4th coin), resting neatly INSIDE the pot mouth!
-  const mouthCoin = (
+  // Summit Coin: Drops and settles with a realistic bounce on top of the crest heap!
+  const summitCoin = (
     <Animated.View
       pointerEvents="none"
       style={{
         position: 'absolute',
         left: 0,
         top: 0,
-        width: 15,
-        height: 15,
-        zIndex: 15,
-        // Drops in from top, lands inside pot mouth, and stays visible showing the pot is full!
+        width: 14,
+        height: 14,
+        zIndex: 22,
         opacity: seg([
           [0, 0],
-          [0.29, 0],
-          [0.30, 1],
+          [0.60, 0],
+          [0.61, 1],
           [0.94, 1],
           [0.98, 0],
           [1, 0],
         ]),
         transform: [
-          {
-            translateX: 44.5,
-          },
-          // Falls from top (-18) and lands flush inside the pot mouth opening (y=21.5, visual center=29)
+          { translateX: 47 },
           {
             translateY: seg([
               [0, -18],
-              [0.29, -18],
-              [0.33, 10],
-              [0.35, 18],
-              [0.36, 21.5],
-              [0.37, 20],
-              [0.38, 21.5],
-              [1, 21.5],
+              [0.60, -18],
+              [0.63, 4],
+              [0.65, 12],
+              [0.66, 10.5],
+              [0.67, 12],
+              [1, 12],
             ]),
           },
-          // 3D spin wobble while falling
           {
             scaleX: seg([
               [0, 1],
-              [0.29, 1],
-              [0.32, 0.35],
-              [0.34, 1],
+              [0.60, 1],
+              [0.63, 0.35],
+              [0.66, 1],
               [1, 1],
             ]),
           },
-          // Flattens to rest in perspective inside the elliptical mouth opening
           {
             scaleY: seg([
               [0, 1],
-              [0.35, 1],
-              [0.36, 0.55],
-              [1, 0.55],
+              [0.65, 1],
+              [0.66, 0.65],
+              [1, 0.65],
             ]),
           },
         ],
       }}
     >
-      <GoldCoinFace size={15} />
+      <GoldCoinFace size={14} />
     </Animated.View>
   );
 
-  // Stage 3: Once the pot is full, the REMAINING coins fall from top,
-  // hit the filled pot mouth, bounce outward, and FALL ONTO THE GROUND!
-  const groundCoins = [
-    // Overflow left side to ground (past left brown handle)
-    { start: 0.42, hitT: 0.49, landT: 0.57, startX: 44.5, bounceX: 18, groundX: 4, groundY: 57, rot: '-16deg' },
-    // Overflow right side to ground (past right brown handle)
-    { start: 0.52, hitT: 0.59, landT: 0.67, startX: 44.5, bounceX: 74, groundX: 84, groundY: 57, rot: '18deg' },
-    // Overflow front-left to ground
-    { start: 0.62, hitT: 0.69, landT: 0.77, startX: 44.5, bounceX: 28, groundX: 20, groundY: 59, rot: '6deg' },
-    // Overflow front-right to ground
-    { start: 0.72, hitT: 0.79, landT: 0.87, startX: 44.5, bounceX: 62, groundX: 68, groundY: 59, rot: '-8deg' },
+  // Stage 2: Once the pot mouth is overflowing, subsequent coins tumble over the mouth heap and brown handles onto the ground!
+  const overflowingGroundCoins = [
+    // Bounces left past left brown handle into left ground pile
+    { start: 0.68, hitT: 0.73, landT: 0.79, startX: 52, bounceX: 22, groundX: 12, groundY: 60, rot: '-22deg' },
+    // Bounces right past right brown handle into right ground pile
+    { start: 0.74, hitT: 0.79, landT: 0.85, startX: 52, bounceX: 82, groundX: 88, groundY: 60, rot: '24deg' },
+    // Tumbles down center-front into front ground pile
+    { start: 0.80, hitT: 0.85, landT: 0.91, startX: 52, bounceX: 42, groundX: 38, groundY: 65, rot: '-14deg' },
+    // Tumbles down front-right into front ground scatter
+    { start: 0.86, hitT: 0.91, landT: 0.96, startX: 52, bounceX: 64, groundX: 62, groundY: 66, rot: '12deg' },
   ].map((c, i) => (
     <Animated.View
-      key={'gc' + i}
+      key={'ogc' + i}
       pointerEvents="none"
       style={{
         position: 'absolute',
         left: 0,
         top: 0,
-        width: 15,
-        height: 15,
+        width: 14,
+        height: 14,
         zIndex: 25 + i,
         opacity: seg([
           [0, 0],
@@ -3649,7 +3968,6 @@ const GiveCoins = () => {
           [1, 0],
         ]),
         transform: [
-          // Horizontal path: drops in center -> hits filled mouth -> spills outward -> lands on ground
           {
             translateX: seg([
               [0, c.startX],
@@ -3659,30 +3977,26 @@ const GiveCoins = () => {
               [1, c.groundX],
             ]),
           },
-          // Vertical path: falls from top -> hits mouth (y=22) -> drops outside pot -> bounces -> lands on ground
           {
             translateY: seg([
               [0, -18],
               [c.start, -18],
-              [c.hitT, 22],
-              [c.hitT + 0.03, 34],
-              [c.landT - 0.02, c.groundY - 5],
+              [c.hitT, 16],
+              [c.hitT + 0.02, 30],
+              [c.landT - 0.01, c.groundY - 5],
               [c.landT, c.groundY],
-              [1, c.groundY],
             ]),
           },
-          // 3D spin wobble
           {
             scaleX: seg([
               [0, 1],
               [c.start, 1],
               [c.hitT, 0.4],
-              [c.hitT + 0.04, 1],
+              [c.hitT + 0.02, 1],
               [c.landT, 0.9],
               [1, 0.9],
             ]),
           },
-          // Lies flat on ground
           {
             scaleY: seg([
               [0, 1],
@@ -3697,42 +4011,71 @@ const GiveCoins = () => {
         ],
       }}
     >
-      <GoldCoinFace size={15} />
+      <GoldCoinFace size={14} />
     </Animated.View>
   ));
 
+  // Stage 3: REAL GOLD COINS BED ON THE GROUND!
+  const groundCoinsList = [
+    // Left Ground Pile (stacked coin edges & tilted coins)
+    { x: 10, y: 62, size: 14, scaleY: 0.48, rot: '0deg', z: 1 },
+    { x: 10, y: 60.5, size: 14, scaleY: 0.48, rot: '0deg', z: 2 },
+    { x: 10, y: 59, size: 14, scaleY: 0.48, rot: '0deg', z: 3 },
+    { x: 14, y: 56, size: 14, scaleY: 0.55, rot: '-20deg', z: 5 },
+    { x: 2, y: 64, size: 13, scaleY: 0.48, rot: '10deg', z: 2 },
+    { x: 2, y: 62.5, size: 13, scaleY: 0.48, rot: '10deg', z: 3 },
+    { x: 6, y: 69, size: 13, scaleY: 0.45, rot: '15deg', z: 4 },
+    { x: 18, y: 70, size: 13, scaleY: 0.45, rot: '-12deg', z: 4 },
+    { x: 26, y: 71, size: 13, scaleY: 0.45, rot: '6deg', z: 4 },
+
+    // Right Ground Pile (stacked coin edges & tilted coins)
+    { x: 80, y: 62, size: 14, scaleY: 0.48, rot: '0deg', z: 1 },
+    { x: 80, y: 60.5, size: 14, scaleY: 0.48, rot: '0deg', z: 2 },
+    { x: 80, y: 59, size: 14, scaleY: 0.48, rot: '0deg', z: 3 },
+    { x: 76, y: 56, size: 14, scaleY: 0.55, rot: '22deg', z: 5 },
+    { x: 90, y: 64, size: 13, scaleY: 0.48, rot: '-8deg', z: 2 },
+    { x: 90, y: 62.5, size: 13, scaleY: 0.48, rot: '-8deg', z: 3 },
+    { x: 94, y: 69, size: 13, scaleY: 0.45, rot: '-16deg', z: 4 },
+    { x: 84, y: 70, size: 13, scaleY: 0.45, rot: '10deg', z: 4 },
+    { x: 72, y: 71, size: 13, scaleY: 0.45, rot: '-5deg', z: 4 },
+
+    // Front Center Overlapping Coins (exact match to reference image: large prominent tilted coins!)
+    { x: 38, y: 63, size: 16, scaleY: 0.65, rot: '-26deg', z: 8 },
+    { x: 52, y: 63, size: 16, scaleY: 0.65, rot: '28deg', z: 9 },
+    { x: 45, y: 68, size: 15, scaleY: 0.50, rot: '-4deg', z: 10 },
+    { x: 32, y: 72, size: 12, scaleY: 0.45, rot: '12deg', z: 6 },
+    { x: 62, y: 72, size: 12, scaleY: 0.45, rot: '-10deg', z: 6 },
+  ];
+
   return (
-    <View pointerEvents="none" style={{ position: 'absolute', right: 4, bottom: 2, width: 104, height: 76 }}>
-      {/* 1. Ground Shadow under the treasure pot and ground coins */}
-      <Svg width={104} height={16} viewBox="0 0 104 16" style={{ position: 'absolute', left: 0, bottom: 0 }}>
-        <Ellipse cx={51} cy={10} rx={40} ry={4.5} fill="#000000" opacity={0.52} />
+    <View pointerEvents="none" style={{ position: 'absolute', right: 2, bottom: 2, width: 108, height: 78 }}>
+      {/* 1. Ground Shadow under pot and surrounding coins */}
+      <Svg width={108} height={20} viewBox="0 0 108 20" style={{ position: 'absolute', left: 0, bottom: 0 }}>
+        <Ellipse cx={54} cy={12} rx={50} ry={6} fill="#000000" opacity={0.6} />
       </Svg>
 
       {/* 2. Pot Opening Cavity (Dark inside mouth behind coins) */}
-      <Svg width={80} height={56} viewBox="0 0 80 56" style={{ position: 'absolute', left: 11, bottom: 0 }}>
+      <Svg width={80} height={56} viewBox="0 0 80 56" style={{ position: 'absolute', left: 14, bottom: 6 }}>
         <Ellipse cx={40} cy={8} rx={16} ry={4} fill="#120A02" />
       </Svg>
 
-      {/* 3. 3 Coins falling inside the pot and disappearing (not visible inside pot) */}
-      {insideCoins}
+      {/* 3. Coins falling straight into the pot to fill the belly */}
+      {fillingCoins}
 
       {/* 4. BROWN TREASURE POT WITH BROWN HANDLES & GOLD COLOR LINES */}
-      <Svg width={80} height={56} viewBox="0 0 80 56" style={{ position: 'absolute', left: 11, bottom: 0 }}>
+      <Svg width={80} height={56} viewBox="0 0 80 56" style={{ position: 'absolute', left: 14, bottom: 6 }}>
         <Defs>
-          {/* Rich Dark Brown Treasure Pot Gradient */}
           <SvgLinearGradient id="treasurePotBodyGrad" x1="0" y1="0" x2="1" y2="0">
             <Stop offset="0" stopColor="#1C1107" />
             <Stop offset="0.35" stopColor="#5C3F14" />
             <Stop offset="0.6" stopColor="#3C270A" />
             <Stop offset="1" stopColor="#140B03" />
           </SvgLinearGradient>
-          {/* Rich Brown Gradient for Pot Handles */}
           <SvgLinearGradient id="handleBrownGrad" x1="0" y1="0" x2="1" y2="0">
             <Stop offset="0" stopColor="#2E1706" />
             <Stop offset="0.5" stopColor="#5C3B14" />
             <Stop offset="1" stopColor="#261203" />
           </SvgLinearGradient>
-          {/* Gleaming Gold Color Lines Gradient */}
           <SvgLinearGradient id="treasurePotGoldLinesGrad" x1="0" y1="0" x2="1" y2="0">
             <Stop offset="0" stopColor="#B07A10" />
             <Stop offset="0.45" stopColor="#FFE680" />
@@ -3771,11 +4114,160 @@ const GiveCoins = () => {
         <Ellipse cx={52} cy={52} rx={6} ry={1.8} fill="#E0B040" />
       </Svg>
 
-      {/* 5. The single final coin sitting right inside the pot mouth to display the pot is full */}
-      {mouthCoin}
+      {/* 5. OVERFLOWING COIN HEAP AT POT MOUTH (Blooms and rises from pot mouth naturally as coins fill it!) */}
+      <Animated.View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          width: 108,
+          height: 78,
+          zIndex: 18,
+          opacity: seg([
+            [0, 0],
+            [0.37, 0],
+            [0.42, 0.25],
+            [0.48, 0.55],
+            [0.54, 0.80],
+            [0.60, 1.0],
+            [0.94, 1],
+            [0.98, 0],
+            [1, 0],
+          ]),
+          transform: [
+            {
+              scale: seg([
+                [0, 0.25],
+                [0.37, 0.25],
+                [0.42, 0.45],
+                [0.48, 0.70],
+                [0.54, 0.88],
+                [0.60, 1.0],
+                [1, 1.0],
+              ]),
+            },
+            {
+              translateY: seg([
+                [0, 10],
+                [0.37, 10],
+                [0.42, 7.5],
+                [0.48, 4.5],
+                [0.54, 2],
+                [0.60, 0],
+                [1, 0],
+              ]),
+            },
+          ],
+        }}
+      >
+        <Svg width={108} height={78} viewBox="0 0 108 78">
+          <Defs>
+            <SvgRadialGradient id="moundCoinGold" cx="35%" cy="30%" rx="80%" ry="80%">
+              <Stop offset="0" stopColor="#FFFAD2" />
+              <Stop offset="0.3" stopColor="#FFD700" />
+              <Stop offset="0.75" stopColor="#E6A800" />
+              <Stop offset="1" stopColor="#8C5803" />
+            </SvgRadialGradient>
+          </Defs>
 
-      {/* 6. Remaining Coins: Overflow out of filled pot and fall onto the ground */}
-      {groundCoins}
+          {/* Layer 1: Base coins nestled across the mouth rim opening */}
+          <Ellipse cx={54} cy={24} rx={14} ry={3.8} fill="url(#moundCoinGold)" stroke="#6E3F02" strokeWidth={0.8} />
+
+          {/* Layer 2: Tilted coins forming the middle mound */}
+          <G transform="rotate(-20, 46, 20)">
+            <Ellipse cx={46} cy={20} rx={6.2} ry={4.2} fill="url(#moundCoinGold)" stroke="#6E3F02" strokeWidth={0.8} />
+            <Ellipse cx={46} cy={20} rx={4.5} ry={2.8} fill="none" stroke="#9A690B" strokeWidth={0.5} strokeDasharray="1.5,1.2" opacity={0.7} />
+            <Ellipse cx={44} cy={18.5} rx={2} ry={1.2} fill="#FFFFFF" opacity={0.75} />
+          </G>
+
+          <G transform="rotate(22, 62, 20)">
+            <Ellipse cx={62} cy={20} rx={6.2} ry={4.2} fill="url(#moundCoinGold)" stroke="#6E3F02" strokeWidth={0.8} />
+            <Ellipse cx={62} cy={20} rx={4.5} ry={2.8} fill="none" stroke="#9A690B" strokeWidth={0.5} strokeDasharray="1.5,1.2" opacity={0.7} />
+            <Ellipse cx={60} cy={18.5} rx={2} ry={1.2} fill="#FFFFFF" opacity={0.75} />
+          </G>
+
+          <G transform="rotate(32, 49, 17)">
+            <Ellipse cx={49} cy={17} rx={5.8} ry={3.8} fill="url(#moundCoinGold)" stroke="#6E3F02" strokeWidth={0.8} />
+            <Ellipse cx={47.5} cy={15.5} rx={2} ry={1.2} fill="#FFFFFF" opacity={0.75} />
+          </G>
+
+          <G transform="rotate(-16, 59, 17)">
+            <Ellipse cx={59} cy={17} rx={5.8} ry={3.8} fill="url(#moundCoinGold)" stroke="#6E3F02" strokeWidth={0.8} />
+            <Ellipse cx={57.5} cy={15.5} rx={2} ry={1.2} fill="#FFFFFF" opacity={0.75} />
+          </G>
+
+          {/* Layer 3: Top crest/summit coins crowning the mound */}
+          <G transform="rotate(6, 54, 15)">
+            <Ellipse cx={54} cy={15} rx={6.2} ry={4.0} fill="url(#moundCoinGold)" stroke="#6E3F02" strokeWidth={0.8} />
+            <Ellipse cx={54} cy={15} rx={4.4} ry={2.6} fill="none" stroke="#9A690B" strokeWidth={0.5} strokeDasharray="1.5,1.2" opacity={0.7} />
+            <Ellipse cx={52} cy={13.5} rx={2.2} ry={1.2} fill="#FFFFFF" opacity={0.8} />
+          </G>
+
+          {/* Front lip overlapping coins (flowing over the front rim lip) */}
+          <G transform="rotate(-8, 54, 23.5)">
+            <Ellipse cx={54} cy={23.5} rx={6.8} ry={4.2} fill="url(#moundCoinGold)" stroke="#6E3F02" strokeWidth={0.8} />
+            <Ellipse cx={54} cy={23.5} rx={4.8} ry={2.8} fill="none" stroke="#9A690B" strokeWidth={0.5} strokeDasharray="1.5,1.2" opacity={0.7} />
+            <Ellipse cx={52} cy={22} rx={2.2} ry={1.2} fill="#FFFFFF" opacity={0.8} />
+          </G>
+        </Svg>
+      </Animated.View>
+
+      {/* 6. Summit Coin (Perched at top of heap, just like the reference image!) */}
+      {summitCoin}
+
+      {/* 7. REAL GOLD COINS BED ON GROUND (Visible when overflow begins, matching reference image!) */}
+      <Animated.View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          width: 108,
+          height: 78,
+          zIndex: 20,
+          opacity: seg([
+            [0, 0],
+            [0.72, 0],
+            [0.78, 0.45],
+            [0.84, 0.75],
+            [0.90, 0.95],
+            [0.94, 1],
+            [0.98, 0],
+            [1, 0],
+          ]),
+          transform: [
+            {
+              scale: seg([
+                [0, 0.75],
+                [0.72, 0.75],
+                [0.78, 0.88],
+                [0.86, 0.96],
+                [0.92, 1.0],
+                [1, 1.0],
+              ]),
+            },
+          ],
+        }}
+      >
+        {groundCoinsList.map((gc, idx) => (
+          <View
+            key={'gr-coin-' + idx}
+            style={{
+              position: 'absolute',
+              left: gc.x,
+              top: gc.y,
+              zIndex: gc.z,
+              transform: [{ scaleY: gc.scaleY }, { rotate: gc.rot }],
+            }}
+          >
+            <GoldCoinFace size={gc.size} />
+          </View>
+        ))}
+      </Animated.View>
+
+      {/* 8. Dynamic overflowing coins splashing into ground piles */}
+      {overflowingGroundCoins}
     </View>
   );
 };
@@ -4810,7 +5302,7 @@ const styles = StyleSheet.create({
   },
   claySermonsCard: {
     flex: 1,
-    minHeight: 130,
+    minHeight: 144,
     borderRadius: 22,
     backgroundColor: '#0D3D34',
     padding: 10,
@@ -4820,21 +5312,21 @@ const styles = StyleSheet.create({
     borderColor: '#527C78',
   },
   claySermonsBottom: {
-    marginTop: 2,
+    marginTop: 4,
   },
   claySermonsTitle: {
-    fontSize: 17,
+    fontSize: 16.5,
     fontWeight: '700',
     color: '#FFFDF9',
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
-    marginBottom: 1,
+    marginBottom: 2,
   },
   claySermonsSub: {
-    fontSize: 9.5,
-    lineHeight: 12.5,
-    color: 'rgba(255, 255, 255, 0.75)',
+    fontSize: 10,
+    lineHeight: 13.5,
+    color: 'rgba(255, 255, 255, 0.8)',
     fontWeight: '500',
-    marginBottom: 3,
+    marginBottom: 4,
   },
   claySermonsFooterRow: {
     flexDirection: 'row',
@@ -4861,29 +5353,32 @@ const styles = StyleSheet.create({
   bentoRow1RightCol: {
     flex: 1.06,
     justifyContent: 'space-between',
-    gap: 8,
+    gap: 9,
   },
   clayDailyVerseTouch: {
+    flex: 1,
     borderRadius: 20,
     elevation: 3,
-    shadowColor: '#0E1726',
+    shadowColor: '#240842',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.14,
     shadowRadius: 6,
   },
   clayDailyVerseCard: {
-    minHeight: 70,
+    flex: 1,
+    minHeight: 80,
     borderRadius: 20,
-    backgroundColor: '#24324A',
-    paddingHorizontal: 9,
-    paddingVertical: 6,
+    backgroundColor: 'transparent',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
     overflow: 'hidden',
     borderWidth: 1.5,
-    borderColor: '#54729C',
+    borderColor: '#7E43BA',
   },
   clayEventsTouch: {
+    flex: 1,
     borderRadius: 20,
     elevation: 3,
     shadowColor: '#1F1710',
@@ -4892,11 +5387,12 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
   },
   clayEventsCard: {
-    minHeight: 70,
+    flex: 1,
+    minHeight: 80,
     borderRadius: 20,
-    backgroundColor: '#43372D',
-    paddingHorizontal: 9,
-    paddingVertical: 6,
+    backgroundColor: 'transparent',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
     overflow: 'hidden',
@@ -4984,6 +5480,27 @@ const styles = StyleSheet.create({
     marginTop: 9,
     alignItems: 'stretch',
   },
+  clayAttendanceTouch: {
+    flex: 1,
+    borderRadius: 22,
+    elevation: 4,
+    shadowColor: '#1A1D1D',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+  },
+  clayAttendanceCard: {
+    minHeight: 84,
+    borderRadius: 22,
+    backgroundColor: '#343A3A',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: '#4F5959',
+  },
   clayYoutubeTouch: {
     flex: 1,
     borderRadius: 22,
@@ -4996,14 +5513,14 @@ const styles = StyleSheet.create({
   clayYoutubeCard: {
     minHeight: 84,
     borderRadius: 22,
-    backgroundColor: '#4E141C',
+    backgroundColor: '#101817',
     paddingHorizontal: 10,
     paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderColor: '#243835',
   },
   bentoLiveBadgeWrap: {
     flexDirection: 'row',
@@ -5054,17 +5571,19 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   clayQuarterCard: {
-    minHeight: 114,
-    borderRadius: 20,
-    padding: 10,
-    justifyContent: 'space-between',
+    minHeight: 84,
+    borderRadius: 22,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
     overflow: 'hidden',
     elevation: 2.5,
     shadowColor: '#2A1A0B',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.07,
     shadowRadius: 4,
-    borderWidth: 1,
+    borderWidth: 1.5,
   },
   clayAccentBar: {
     width: 20,
