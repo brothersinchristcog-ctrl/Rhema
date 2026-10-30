@@ -40,7 +40,13 @@ import {
   Plus,
   Sparkles,
   QrCode,
-  Repeat
+  Repeat,
+  Music,
+  ArrowUp,
+  ArrowDown,
+  Search,
+  Check,
+  Sliders
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AdminTabContext } from '../../context/AdminTabContext';
