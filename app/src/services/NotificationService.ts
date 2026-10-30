@@ -97,9 +97,15 @@ class NotificationService {
 
     try {
       switch (type) {
-        case 'sermon':
-          nav.navigate('Sermons');
+        case 'sermon': {
+          const sermonId = rawData.sermonId || rawData.relatedId || (id ? String(id).replace(/^sermon_/, '') : null);
+          if (sermonId) {
+            nav.navigate('SermonVideo', { sermonId });
+          } else {
+            nav.navigate('Sermons');
+          }
           break;
+        }
         case 'event':
           nav.navigate('Events');
           break;

@@ -668,51 +668,75 @@ const DailyVerseCard = ({ verse, period, onPress }: { verse: DailyVerse | null; 
   const greeting = getPeriodGreeting(period, t);
   const cardTitle = `🕊️  ${greeting.toUpperCase()} · ${t('home.quickDailyVerse').toUpperCase()}`;
 
+  const cardContent = (
+    <>
+      {/* Decorative circles */}
+      <View style={{ position: 'absolute', top: -30, right: -30, width: 130, height: 130, borderRadius: 65, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.2)' }} />
+      <View style={{ position: 'absolute', bottom: -20, left: -20, width: 100, height: 100, borderRadius: 50, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.15)' }} />
+
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 11, fontWeight: '800', letterSpacing: 1.5 }}>
+          {cardTitle}
+        </Text>
+        <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 11, fontWeight: '700' }}>
+          {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+        </Text>
+      </View>
+      <Text numberOfLines={3} style={{
+        color: '#fff', fontSize: 16, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+        fontWeight: '700', lineHeight: 24, marginBottom: loc.secondaryVerse && loc.secondaryVerse !== loc.primaryVerse ? 6 : 10,
+      }}>
+        “{loc.primaryVerse}”
+      </Text>
+      {loc.secondaryVerse && loc.secondaryVerse !== loc.primaryVerse ? (
+        <Text numberOfLines={3} style={{
+          color: 'rgba(255,255,255,0.92)', fontSize: 15, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+          fontStyle: 'italic', lineHeight: 22, fontWeight: '500', marginBottom: 10,
+        }}>
+          “{loc.secondaryVerse}”
+        </Text>
+      ) : null}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 13, fontWeight: '700' }}>
+          — {loc.secondaryReference && loc.secondaryReference !== loc.primaryReference ? `${loc.primaryReference}   —   ${loc.secondaryReference}` : loc.primaryReference}
+        </Text>
+        <View style={{
+          flexDirection: 'row', alignItems: 'center', gap: 4,
+          backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
+        }}>
+          <BookOpen size={14} color="#fff" />
+          <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>{t('home.readFullVerse')}</Text>
+        </View>
+      </View>
+    </>
+  );
+
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={{ marginHorizontal: 0, marginBottom: 20 }}>
-      <LinearGradient colors={colors as [string, string]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{
-        borderRadius: 20, padding: 20, overflow: 'hidden',
-        shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 8,
-      }}>
-        {/* Decorative circles */}
-        <View style={{ position: 'absolute', top: -30, right: -30, width: 130, height: 130, borderRadius: 65, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.2)' }} />
-        <View style={{ position: 'absolute', bottom: -20, left: -20, width: 100, height: 100, borderRadius: 50, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.15)' }} />
-
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 11, fontWeight: '800', letterSpacing: 1.5 }}>
-            {cardTitle}
-          </Text>
-          <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 11, fontWeight: '700' }}>
-            {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-          </Text>
-        </View>
-        <Text numberOfLines={3} style={{
-          color: '#fff', fontSize: 16, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
-          fontWeight: '700', lineHeight: 24, marginBottom: loc.secondaryVerse && loc.secondaryVerse !== loc.primaryVerse ? 6 : 10,
+      {verse.backgroundUrl ? (
+        <ImageBackground
+          source={{ uri: verse.backgroundUrl }}
+          style={{
+            borderRadius: 20, padding: 20, overflow: 'hidden',
+            shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 8,
+          }}
+          imageStyle={{ borderRadius: 20 }}
+          resizeMode="cover"
+        >
+          <LinearGradient
+            colors={['rgba(0,0,0,0.3)', 'rgba(0,0,0,0.85)']}
+            style={StyleSheet.absoluteFillObject}
+          />
+          {cardContent}
+        </ImageBackground>
+      ) : (
+        <LinearGradient colors={colors as [string, string]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{
+          borderRadius: 20, padding: 20, overflow: 'hidden',
+          shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 8,
         }}>
-          “{loc.primaryVerse}”
-        </Text>
-        {loc.secondaryVerse && loc.secondaryVerse !== loc.primaryVerse ? (
-          <Text numberOfLines={3} style={{
-            color: 'rgba(255,255,255,0.92)', fontSize: 15, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
-            fontStyle: 'italic', lineHeight: 22, fontWeight: '500', marginBottom: 10,
-          }}>
-            “{loc.secondaryVerse}”
-          </Text>
-        ) : null}
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 13, fontWeight: '700' }}>
-            — {loc.secondaryReference && loc.secondaryReference !== loc.primaryReference ? `${loc.primaryReference}   —   ${loc.secondaryReference}` : loc.primaryReference}
-          </Text>
-          <View style={{
-            flexDirection: 'row', alignItems: 'center', gap: 4,
-            backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
-          }}>
-            <BookOpen size={14} color="#fff" />
-            <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>{t('home.readFullVerse')}</Text>
-          </View>
-        </View>
-      </LinearGradient>
+          {cardContent}
+        </LinearGradient>
+      )}
     </TouchableOpacity>
   );
 };
@@ -2077,12 +2101,30 @@ export default function HomeScreen() {
                           style={[styles.vdSlide, { width: screenWidth }]}
                           onPress={() => navigation.navigate('VerseOfTheDay', { verseId: verse.id, period })}
                         >
-                          <View style={styles.vdCleanWhiteCard}>
-                            {/* Subtle bottom-right open book & soft circle watermark */}
-                            <View style={styles.vdWatermarkCircle} pointerEvents="none" />
-                            <View style={styles.vdWatermarkBook} pointerEvents="none">
-                              <BookOpen size={64} color="rgba(255, 255, 255, 0.14)" strokeWidth={1.5} />
-                            </View>
+                          <View style={[styles.vdCleanWhiteCard, verse.backgroundUrl ? { backgroundColor: '#1A2E2B' } : undefined]}>
+                            {verse.backgroundUrl ? (
+                              <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+                                <ImageBackground
+                                  source={{ uri: verse.backgroundUrl }}
+                                  style={StyleSheet.absoluteFillObject}
+                                  imageStyle={{ borderRadius: 24 }}
+                                  resizeMode="cover"
+                                >
+                                  <LinearGradient
+                                    colors={['rgba(24, 46, 42, 0.45)', 'rgba(15, 23, 42, 0.88)']}
+                                    style={StyleSheet.absoluteFillObject}
+                                  />
+                                </ImageBackground>
+                              </View>
+                            ) : (
+                              <>
+                                {/* Subtle bottom-right open book & soft circle watermark */}
+                                <View style={styles.vdWatermarkCircle} pointerEvents="none" />
+                                <View style={styles.vdWatermarkBook} pointerEvents="none">
+                                  <BookOpen size={64} color="rgba(255, 255, 255, 0.14)" strokeWidth={1.5} />
+                                </View>
+                              </>
+                            )}
 
                             <Text style={styles.phLabel} maxFontSizeMultiplier={1.15}>
                               {t('home.todaysPromise') || "Today's Promise"}

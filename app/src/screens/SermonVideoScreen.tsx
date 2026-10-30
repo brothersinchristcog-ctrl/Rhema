@@ -125,7 +125,9 @@ export default function SermonVideoScreen({ navigation, route }: any) {
 
   // Initial load from params or fetch
   useEffect(() => {
+    let isCancelled = false;
     const init = async () => {
+      setLoading(true);
       const promiseData = await FirestoreService.getSermons(50);
       const data: any[] = promiseData
         .filter(p => p.youtubeId && p.youtubeId.trim() !== '' && p.youtubeId !== 'mock')
@@ -143,9 +145,45 @@ export default function SermonVideoScreen({ navigation, route }: any) {
           notesFileType: p.notesFileType || '',
           notesText: p.notesText || '',
         }));
+      if (isCancelled) return;
       setVideos(data);
       
       const sermonData = route?.params?.sermonData;
+      const targetSermonId = route?.params?.sermonId || sermonData?.id;
+
+      if (targetSermonId) {
+        const cleanTargetId = String(targetSermonId).replace(/^sermon_/, '').trim();
+        // 1. Check in fetched data
+        const match = data.find(v => v.id === cleanTargetId || v.id === targetSermonId);
+        if (match) {
+          setActiveVideo(match);
+          setPlaying(true);
+          setLoading(false);
+          return;
+        }
+        // 2. Direct fetch from Firestore if not in the first 50
+        const directSermon = await FirestoreService.getSermonById(cleanTargetId);
+        if (!isCancelled && directSermon) {
+          const formattedDirect = {
+            ...directSermon,
+            id: directSermon.id,
+            title: directSermon.title || 'Sermon',
+            youtubeId: directSermon.youtubeId || '',
+            date: directSermon.date || 'Today',
+            duration: directSermon.duration || '',
+            pastor: directSermon.pastor || 'Pastor',
+            thumbnailUrl: directSermon.thumbnailUrl || directSermon.imageUrl || '',
+            notesUrl: directSermon.notesUrl || '',
+            notesFileName: directSermon.notesFileName || '',
+            notesFileType: directSermon.notesFileType || '',
+            notesText: directSermon.notesText || '',
+          };
+          setActiveVideo(formattedDirect);
+          setPlaying(true);
+          setLoading(false);
+          return;
+        }
+      }
 
       if (sermonData) {
         setActiveVideo({
@@ -161,13 +199,15 @@ export default function SermonVideoScreen({ navigation, route }: any) {
           notesFileType: sermonData.notesFileType || '',
           notesText: sermonData.notesText || '',
         });
+        setPlaying(true);
       } else if (data.length > 0) {
         setActiveVideo(data[0]);
       }
       setLoading(false);
     };
     init();
-  }, [route?.params?.youtubeId]);
+    return () => { isCancelled = true; };
+  }, [route?.params?.sermonId, route?.params?.sermonData, route?.params?.youtubeId]);
 
   // Load text notes if needed
   useEffect(() => {

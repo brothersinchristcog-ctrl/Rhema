@@ -1,6 +1,7 @@
 import { onDocumentCreated, onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { onRequest } from 'firebase-functions/v2/https';
+import { getApps, initializeApp } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 /**
@@ -268,6 +269,38 @@ export const pushPrayerRequestApproved = onDocumentUpdated('churches/{churchId}/
         }
     }
 });
+function formatSermonDateDisplay(dateStr) {
+    if (!dateStr)
+        return '';
+    const clean = String(dateStr).trim().split(' ')[0]?.split('T')[0] || '';
+    const parts = clean.split('-');
+    const p0 = parts[0];
+    const p1 = parts[1];
+    const p2 = parts[2];
+    if (parts.length === 3 && p0 && p1 && p2) {
+        if (p0.length === 4)
+            return `${p2}-${p1}-${p0}`; // YYYY-MM-DD -> DD-MM-YYYY
+        if (p2.length === 4)
+            return clean; // already DD-MM-YYYY
+    }
+    return clean;
+}
+function toStandardDateStr(dateStr) {
+    if (!dateStr)
+        return '';
+    const clean = String(dateStr).trim().split(' ')[0]?.split('T')[0] || '';
+    const parts = clean.split('-');
+    const p0 = parts[0];
+    const p1 = parts[1];
+    const p2 = parts[2];
+    if (parts.length === 3 && p0 && p1 && p2) {
+        if (p0.length === 4)
+            return clean; // YYYY-MM-DD
+        if (p2.length === 4)
+            return `${p2}-${p1.padStart(2, '0')}-${p0.padStart(2, '0')}`; // DD-MM-YYYY -> YYYY-MM-DD
+    }
+    return clean;
+}
 /**
  * 🎙️ CHECK & AUTO-PUBLISH SCHEDULED SERMONS
  * Checks if any sermon with status 'Scheduled' has reached its scheduledPublishAt
@@ -289,13 +322,25 @@ export async function checkAndPublishScheduledSermons(sermonsRef, churchId, chur
                 continue;
             let shouldPublish = false;
             if (sermon.scheduledPublishAt) {
-                const pubTime = new Date(sermon.scheduledPublishAt).getTime();
+                let pubTime = NaN;
+                if (typeof sermon.scheduledPublishAt === 'number') {
+                    pubTime = sermon.scheduledPublishAt;
+                }
+                else if (typeof sermon.scheduledPublishAt.toMillis === 'function') {
+                    pubTime = sermon.scheduledPublishAt.toMillis();
+                }
+                else if (sermon.scheduledPublishAt.seconds) {
+                    pubTime = sermon.scheduledPublishAt.seconds * 1000;
+                }
+                else if (typeof sermon.scheduledPublishAt === 'string') {
+                    pubTime = new Date(sermon.scheduledPublishAt).getTime();
+                }
                 if (!isNaN(pubTime) && pubTime <= nowMillis) {
                     shouldPublish = true;
                 }
             }
             else if (sermon.scheduledDate) {
-                const sDate = sermon.scheduledDate;
+                const sDate = toStandardDateStr(sermon.scheduledDate);
                 let sTime24 = '00:00';
                 if (sermon.scheduledTime) {
                     const match = String(sermon.scheduledTime).match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
@@ -314,8 +359,11 @@ export async function checkAndPublishScheduledSermons(sermonsRef, churchId, chur
                     shouldPublish = true;
                 }
             }
-            else if (sermon.date && sermon.date <= nowStr) {
-                shouldPublish = true;
+            else if (sermon.date) {
+                const sDate = toStandardDateStr(sermon.date);
+                if (sDate && sDate <= nowStr) {
+                    shouldPublish = true;
+                }
             }
             if (shouldPublish) {
                 // 1. Atomic check: ensure notification hasn't been claimed/sent already
@@ -333,7 +381,8 @@ export async function checkAndPublishScheduledSermons(sermonsRef, churchId, chur
                 const sermonTitle = sermon.titleEn || sermon.title || 'New Sermon';
                 const pastorName = sermon.pastor || 'Pastor';
                 const pushTitle = `🎧 New Sermon: ${sermonTitle}`;
-                const pushBody = `New sermon "${sermonTitle}" preached on ${sermon.date || nowStr} by ${pastorName} is now available. Watch/listen now!`;
+                const formattedPreachedDate = formatSermonDateDisplay(sermon.date) || formatSermonDateDisplay(nowStr);
+                const pushBody = `New sermon "${sermonTitle}" preached on ${formattedPreachedDate} by ${pastorName} is now available. Watch/listen now!`;
                 // 3. Create broadcast with deterministic ID (sermon_${doc.id}) so onDocumentCreated NEVER fires twice!
                 const targetRef = churchDocRef || doc.ref.parent.parent;
                 if (targetRef) {
@@ -346,7 +395,8 @@ export async function checkAndPublishScheduledSermons(sermonsRef, churchId, chur
                             type: 'sermon',
                             id: doc.id,
                             sermonId: doc.id,
-                            date: sermon.date || nowStr,
+                            date: nowStr,
+                            sermonDate: sermon.date || nowStr,
                             targetChurchId: churchId,
                             createdAt: FieldValue.serverTimestamp(),
                         }).catch(() => { });
@@ -1058,5 +1108,214 @@ export const triggerPublishScheduledSermonsHttp = onRequest({ cors: true }, asyn
     const rhemaChurchRef = db.collection('Rhema Church').doc('rhema');
     await checkAndPublishScheduledSermons(rhemaChurchRef.collection('sermons'), 'rhema', rhemaChurchRef);
     res.json({ success: true, message: 'Scheduled sermons check completed.' });
+});
+/**
+ * 📖 AUTOMATED DAILY VERSE MULTICAST PUSH (English & Telugu)
+ * Determines the current slot (Morning, Afternoon, Evening, Night) or uses slotOverride.
+ * Queries today's verse from 'daily_verses' and sends two simultaneous FCM push notifications:
+ * 1. English notification ('✝️ Good Morning' + verseEn + referenceEn)
+ * 2. Telugu notification ('✝️ శుభోదయం' + verseTe + referenceTe)
+ */
+export async function sendDailyVersePushInternal(slotOverride) {
+    if (getApps().length === 0) {
+        initializeApp();
+    }
+    const db = getFirestore();
+    const messaging = getMessaging();
+    // 1. Determine period slot
+    const PERIOD_SLOTS = {
+        Morning: { index: 0, titleEn: '✝️ Good Morning', titleTe: '✝️ శుభోదయం' },
+        Afternoon: { index: 1, titleEn: '✝️ Good Afternoon', titleTe: '✝️ శుభ మధ్యాహ్నం' },
+        Evening: { index: 2, titleEn: '✝️ Good Evening', titleTe: '✝️ శుభ సాయంత్రం' },
+        Night: { index: 3, titleEn: '✝️ Good Night', titleTe: '✝️ శుభరాత్రి' },
+    };
+    let slot = slotOverride;
+    if (!slot || !PERIOD_SLOTS[slot]) {
+        // Current hour in IST (Asia/Kolkata)
+        const nowIst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+        const hour = nowIst.getHours();
+        if (hour >= 5 && hour < 12) {
+            slot = 'Morning';
+        }
+        else if (hour >= 12 && hour < 17) {
+            slot = 'Afternoon';
+        }
+        else if (hour >= 17 && hour < 21) {
+            slot = 'Evening';
+        }
+        else {
+            slot = 'Night';
+        }
+    }
+    const slotInfo = PERIOD_SLOTS[slot] || PERIOD_SLOTS.Morning;
+    console.log(`[sendDailyVersePushInternal] Running for slot: ${slot} (slot index: ${slotInfo.index})`);
+    // 2. Compute today's verse index
+    const metaDoc = await db.collection('daily_verses_meta').doc('metadata').get();
+    const totalVerses = metaDoc.exists ? (metaDoc.data()?.totalVerses || 5863) : 5863;
+    const EPOCH = new Date('2024-01-01T00:00:00Z');
+    const nowIst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    const todayLocal = new Date(nowIst.getFullYear(), nowIst.getMonth(), nowIst.getDate());
+    const epochDate = new Date(EPOCH.getFullYear(), EPOCH.getMonth(), EPOCH.getDate());
+    const daysSinceEpoch = Math.floor((todayLocal.getTime() - epochDate.getTime()) / (1000 * 60 * 60 * 24));
+    const targetIndex = (daysSinceEpoch * 4 + slotInfo.index) % totalVerses;
+    console.log(`[sendDailyVersePushInternal] Target verse index: ${targetIndex} (total: ${totalVerses})`);
+    // 3. Query verse document from Firestore
+    const snap = await db.collection('daily_verses').where('index', '==', targetIndex).limit(1).get();
+    if (snap.empty) {
+        console.warn(`[sendDailyVersePushInternal] No verse document found for index ${targetIndex}`);
+        return { success: false, error: `Verse not found for index ${targetIndex}` };
+    }
+    const verseDoc = snap.docs[0];
+    const verse = verseDoc.data();
+    const verseId = verseDoc.id;
+    const verseEnText = verse.verseEn || '';
+    const refEnText = verse.referenceEn || '';
+    const verseTeText = verse.verseTe || verseEnText;
+    const refTeText = verse.referenceTe || refEnText;
+    // 4. Collect member device FCM tokens
+    const tokenSet = new Set();
+    const usersSnap = await db.collection('users').get();
+    usersSnap.forEach((d) => {
+        const data = d.data();
+        if (data.fcmToken && typeof data.fcmToken === 'string' && data.fcmToken.length > 10) {
+            tokenSet.add(data.fcmToken);
+        }
+    });
+    const membersSnap = await db.collection('Rhema Church').doc('rhema').collection('members').get();
+    membersSnap.forEach((d) => {
+        const data = d.data();
+        if (data.fcmToken && typeof data.fcmToken === 'string' && data.fcmToken.length > 10) {
+            tokenSet.add(data.fcmToken);
+        }
+    });
+    const tokens = Array.from(tokenSet);
+    console.log(`[sendDailyVersePushInternal] Collected ${tokens.length} FCM tokens for dispatch.`);
+    let enSuccess = 0;
+    let teSuccess = 0;
+    if (tokens.length > 0) {
+        // Send in chunks of 500 (FCM multicast limit)
+        for (let i = 0; i < tokens.length; i += 500) {
+            const batchTokens = tokens.slice(i, i + 500);
+            // Notification 1: English
+            const enMessage = {
+                notification: {
+                    title: slotInfo.titleEn,
+                    body: `"${verseEnText}"\n— ${refEnText}`,
+                },
+                data: {
+                    type: 'daily_verse',
+                    verseId: verseId,
+                    period: slot,
+                    lang: 'en',
+                },
+                android: {
+                    priority: 'high',
+                    notification: {
+                        sound: 'default',
+                        priority: 'max',
+                        channelId: 'daily_verse',
+                    },
+                },
+                apns: {
+                    headers: { 'apns-priority': '10' },
+                    payload: { aps: { sound: 'default', badge: 1 } },
+                },
+                tokens: batchTokens,
+            };
+            // Notification 2: Telugu (simultaneously)
+            const teMessage = {
+                notification: {
+                    title: slotInfo.titleTe,
+                    body: `"${verseTeText}"\n— ${refTeText}`,
+                },
+                data: {
+                    type: 'daily_verse',
+                    verseId: verseId,
+                    period: slot,
+                    lang: 'te',
+                },
+                android: {
+                    priority: 'high',
+                    notification: {
+                        sound: 'default',
+                        priority: 'max',
+                        channelId: 'daily_verse',
+                    },
+                },
+                apns: {
+                    headers: { 'apns-priority': '10' },
+                    payload: { aps: { sound: 'default', badge: 1 } },
+                },
+                tokens: batchTokens,
+            };
+            try {
+                const [enRes, teRes] = await Promise.all([
+                    messaging.sendEachForMulticast(enMessage),
+                    messaging.sendEachForMulticast(teMessage),
+                ]);
+                enSuccess += enRes.successCount;
+                teSuccess += teRes.successCount;
+                console.log(`[sendDailyVersePushInternal] Batch ${i / 500 + 1}: EN success ${enRes.successCount}, TE success ${teRes.successCount}`);
+            }
+            catch (err) {
+                console.error('[sendDailyVersePushInternal] Error in multicast batch:', err);
+            }
+        }
+    }
+    // 5. Log both to broadcasts feed for historical viewing in Updates screen
+    const todayStr = `${nowIst.getFullYear()}-${String(nowIst.getMonth() + 1).padStart(2, '0')}-${String(nowIst.getDate()).padStart(2, '0')}`;
+    try {
+        const rhemaChurchRef = db.collection('Rhema Church').doc('rhema');
+        await rhemaChurchRef.collection('broadcasts').add({
+            title: `${slotInfo.titleEn} · ${slotInfo.titleTe}`,
+            content: `"${verseEnText}" — ${refEnText}\n\n"${verseTeText}" — ${refTeText}`,
+            date: todayStr,
+            type: 'daily_verse',
+            period: slot,
+            verseId: verseId,
+            silent: true, // Prevents secondary duplicate broadcast trigger
+            createdAt: FieldValue.serverTimestamp(),
+        });
+    }
+    catch (bcastErr) {
+        console.warn('[sendDailyVersePushInternal] Could not log to broadcasts:', bcastErr);
+    }
+    return {
+        success: true,
+        slot,
+        targetIndex,
+        verseReferenceEn: refEnText,
+        verseReferenceTe: refTeText,
+        totalTokens: tokens.length,
+        sentEnCount: enSuccess,
+        sentTeCount: teSuccess,
+    };
+}
+/**
+ * ⏰ AUTOMATED DAILY VERSE PUSH SCHEDULER
+ * Runs 4 times a day at 8:00 AM, 1:00 PM, 6:00 PM, 9:00 PM IST (Asia/Kolkata).
+ */
+export const automatedDailyVersePush = onSchedule({
+    schedule: '0 8,13,18,21 * * *',
+    timeZone: 'Asia/Kolkata',
+    region: 'asia-south1',
+}, async (event) => {
+    console.log('⏰ Running automatedDailyVersePush scheduler...');
+    await sendDailyVersePushInternal();
+});
+/**
+ * 🧪 HTTP endpoint to manually trigger the Daily Verse push (can specify ?slot=Morning/Afternoon/Evening/Night)
+ * Also used by external Cloud Schedulers (Google Cloud Console or cron-job.org).
+ */
+export const triggerDailyVersePushHttp = onRequest({ cors: true, timeoutSeconds: 120 }, async (req, res) => {
+    try {
+        const slot = req.query.slot || req.body?.slot;
+        const result = await sendDailyVersePushInternal(slot);
+        res.status(200).json(result);
+    }
+    catch (error) {
+        console.error('triggerDailyVersePushHttp error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
 });
 //# sourceMappingURL=notifications.js.map
