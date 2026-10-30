@@ -36,6 +36,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AdminTabContext } from '../../context/AdminTabContext';
 import { useChurch } from '../../context/ChurchContext';
 import FirestoreService, { WorshipSong } from '../../services/FirestoreService';
+import SongDetailModal from '../../components/SongDetailModal';
 import {
   getFirestore,
   collection,
@@ -120,7 +121,7 @@ export default function AdminSongEditor() {
   const { activeChurch } = useChurch();
 
   // Screen-level tab
-  const [screenTab, setScreenTab] = useState<'list' | 'setlist' | 'theme' | 'churchOwn'>('list');
+  const [screenTab, setScreenTab] = useState<'list' | 'theme'>('list');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [showPostModal, setShowPostModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -1230,43 +1231,36 @@ export default function AdminSongEditor() {
 
   const renderSongPreviewModal = () => {
     if (!adminSelectedSong) return null;
+    const currentIdx = postedSongs.findIndex(s => s.id === adminSelectedSong.id);
     return (
-      <Modal visible animationType="slide" transparent onRequestClose={() => setAdminSelectedSong(null)}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
-          <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 25, borderTopRightRadius: 25, height: '85%', padding: 20 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
-              borderBottomWidth: 0.5, borderColor: '#cbd5e1', paddingBottom: 14, marginBottom: 14 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 17, fontWeight: '900', color: '#0f172a' }} numberOfLines={2}>{adminSelectedSong.title}</Text>
-                <Text style={{ fontSize: 11, color: '#94a3b8', marginTop: 3, fontWeight: '700' }}>{adminSelectedSong.titleTe || ''}</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
-                  <Text style={{ fontSize: 10, color: '#c0392b', fontWeight: '800' }}>{adminSelectedSong.category || 'Other'}</Text>
-                  {adminSelectedSong.ledBy && (
-                    <Text style={{ fontSize: 11, fontWeight: '800', color: '#1D4ED8' }}>🎤 Leading: {adminSelectedSong.ledBy}</Text>
-                  )}
-                  {adminSelectedSong.key && (
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#475569' }}>Key: {adminSelectedSong.key}</Text>
-                  )}
-                </View>
-              </View>
-              <TouchableOpacity
-                style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center' }}
-                onPress={() => setAdminSelectedSong(null)}>
-                <X size={20} color="#475569" />
-              </TouchableOpacity>
-            </View>
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={{ fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10, color: '#1a2d5a' }}>LYRICS & SCRIPTS · సాహిత్యం</Text>
-              <View style={{ borderRadius: 14, padding: 16, borderWidth: 0.5, borderColor: '#e2e8f0', backgroundColor: '#f8fafc' }}>
-                <Text style={{ fontSize: 13, lineHeight: 23, fontWeight: '500', fontStyle: 'italic', color: '#334155' }}>
-                  {adminSelectedSong.lyrics || 'Lyrics are being updated by the administrator.'}
-                </Text>
-              </View>
-              <View style={{ height: 60 }} />
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      <SongDetailModal
+        visible={!!adminSelectedSong}
+        song={adminSelectedSong}
+        onClose={() => setAdminSelectedSong(null)}
+        isDark={false}
+        headerColors={['#1a2d5a', '#0f172a']}
+        bottomBarColors={['#1a2d5a', '#0f172a']}
+        onEdit={(song) => {
+          setAdminSelectedSong(null);
+          openEdit(song);
+        }}
+        onDelete={(song) => {
+          setAdminSelectedSong(null);
+          setSongToDelete({ id: song.id, title: song.title });
+        }}
+        currentSongIndex={currentIdx}
+        totalSongs={postedSongs.length}
+        onNext={() => {
+          if (currentIdx !== -1 && currentIdx < postedSongs.length - 1) {
+            setAdminSelectedSong(postedSongs[currentIdx + 1]);
+          }
+        }}
+        onPrev={() => {
+          if (currentIdx > 0) {
+            setAdminSelectedSong(postedSongs[currentIdx - 1]);
+          }
+        }}
+      />
     );
   };
 
@@ -2030,11 +2024,10 @@ export default function AdminSongEditor() {
         <>
           <View style={{ paddingHorizontal: 16, paddingTop: 16 }}>
             <View style={styles.listHeaderRow}>
-              <Text style={styles.listHeaderTitle}>{screenTab === 'theme' ? 'Theme Songs' : screenTab === 'churchOwn' ? 'Church Songs' : 'All Worship Songs'}</Text>
+              <Text style={styles.listHeaderTitle}>{screenTab === 'theme' ? 'Theme Songs' : 'All Worship Songs'}</Text>
               <View style={styles.countBadge}>
                 <Text style={styles.countTxt}>{postedSongs.filter(s => {
                   if (screenTab === 'theme' && !(s.category || '').includes('Theme Songs')) return false;
-                  if (screenTab === 'churchOwn' && !s.isChurchOwn) return false;
                   return true;
                 }).length} Total</Text>
               </View>
@@ -2076,8 +2069,6 @@ export default function AdminSongEditor() {
               if (screenTab === 'theme' && !cats.includes('Theme Songs')) return false;
               
               // Church Own Songs Tab filter
-              if (screenTab === 'churchOwn' && !s.isChurchOwn) return false;
-
               // Category Ribbon filter
               if (selectedCategory !== 'All' && !cats.includes(selectedCategory)) return false;
 
@@ -5098,24 +5089,14 @@ export default function AdminSongEditor() {
           <Text style={[styles.screenTabTxt, screenTab === 'list' && styles.screenTabTxtActive]}>All Songs</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.screenTab, screenTab === 'setlist' && styles.screenTabActive]}
-          onPress={() => { setScreenTab('setlist'); }}>
-          <Text style={[styles.screenTabTxt, screenTab === 'setlist' && styles.screenTabTxtActive]}>Setlist Flow</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
           style={[styles.screenTab, screenTab === 'theme' && styles.screenTabActive]}
           onPress={() => { setScreenTab('theme'); setSelectedCategory('All'); }}>
           <Text style={[styles.screenTabTxt, screenTab === 'theme' && styles.screenTabTxtActive]}>Theme Songs</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.screenTab, screenTab === 'churchOwn' && styles.screenTabActive]}
-          onPress={() => { setScreenTab('churchOwn'); setSelectedCategory('All'); }}>
-          <Text style={[styles.screenTabTxt, screenTab === 'churchOwn' && styles.screenTabTxtActive]} numberOfLines={1}>Church Songs</Text>
-        </TouchableOpacity>
       </View>
 
       {/* Category Filter Ribbon (Only shown for song library views, not for setlist flow) */}
-      {screenTab !== 'setlist' && (
+      true && (
         <View style={{ marginBottom: 12 }}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}>
             {['All', ...CATEGORIES.filter(c => c !== 'Theme Songs')].map((cat) => (
@@ -5144,7 +5125,7 @@ export default function AdminSongEditor() {
       )}
 
       {/* Content */}
-      {screenTab === 'setlist' ? renderSetlistFlowView() : renderPostedList()}
+      {renderPostedList()}
       {renderPostModal()}
       {renderAddSetlistModal()}
       {renderCreateServiceModal()}

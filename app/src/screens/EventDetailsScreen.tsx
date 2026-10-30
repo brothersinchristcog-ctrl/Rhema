@@ -26,7 +26,9 @@ import {
   Radio, 
   Lock, 
   CheckCircle2,
-  Navigation
+  Navigation,
+  Music,
+  Sliders
 } from 'lucide-react-native';
 import { openZoomMeeting } from '../utils/ZoomLauncher';
 import YoutubePlayer from 'react-native-youtube-iframe';
@@ -39,7 +41,8 @@ import ViewShot from 'react-native-view-shot';
 
 import { findEventVideo } from '../services/YouTubeService';
 import { useChurch } from '../context/ChurchContext';
-import FirestoreService from '../services/FirestoreService';
+import FirestoreService, { WorshipSong, EventServiceItem } from '../services/FirestoreService';
+import SongDetailModal from '../components/SongDetailModal';
 
 const { width, height } = Dimensions.get('window');
 
@@ -496,6 +499,188 @@ export default function EventDetailsScreen({ route, navigation }: any) {
               </Text>
             </View>
           </View>
+
+          {/* ── WORSHIP SERVICES & SONGS SECTION ── */}
+          {Array.isArray(event.services) && event.services.length > 0 && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <View style={[styles.iconCircle, { backgroundColor: '#EEF2FF' }]}>
+                  <Music size={18} color="#4F46E5" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sectionTitle}>WORSHIP SERVICES & SONGS</Text>
+                  <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600', marginTop: 1 }}>
+                    ఆరాధన గీతాలు మరియు సర్వీస్ వివరాలు
+                  </Text>
+                </View>
+              </View>
+
+              {/* Service Tabs if multiple services exist */}
+              {event.services.length > 1 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 8, marginBottom: 12 }}
+                >
+                  {event.services.map((srv: EventServiceItem, idx: number) => {
+                    const isSelected = activeServiceIdx === idx;
+                    return (
+                      <TouchableOpacity
+                        key={srv.id || idx}
+                        onPress={() => setActiveServiceIdx(idx)}
+                        style={{
+                          paddingHorizontal: 12,
+                          paddingVertical: 7,
+                          borderRadius: 10,
+                          backgroundColor: isSelected ? '#1a2d5a' : '#F1F5F9',
+                          borderWidth: 1,
+                          borderColor: isSelected ? '#1a2d5a' : '#E2E8F0',
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 6
+                        }}
+                      >
+                        <Text style={{
+                          fontSize: 12,
+                          fontWeight: '800',
+                          color: isSelected ? '#FFFFFF' : '#475569'
+                        }}>
+                          {srv.name || `Service ${idx + 1}`}
+                        </Text>
+                        <View style={{
+                          backgroundColor: isSelected ? 'rgba(255,255,255,0.2)' : '#CBD5E1',
+                          paddingHorizontal: 5,
+                          paddingVertical: 1,
+                          borderRadius: 6
+                        }}>
+                          <Text style={{
+                            fontSize: 10,
+                            fontWeight: '800',
+                            color: isSelected ? '#FFFFFF' : '#1E293B'
+                          }}>
+                            {srv.songs?.length || 0}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              )}
+
+              {/* Active Service Card */}
+              {(() => {
+                const currentService: EventServiceItem = event.services[activeServiceIdx] || event.services[0];
+                if (!currentService) return null;
+                const serviceSongs = currentService.songs || [];
+
+                return (
+                  <View style={{
+                    backgroundColor: '#F8FAFC',
+                    borderRadius: 14,
+                    padding: 12,
+                    borderWidth: 1,
+                    borderColor: '#E2E8F0'
+                  }}>
+                    {/* Service Header Info */}
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                      <View style={{ flex: 1, marginRight: 8 }}>
+                        <Text style={{ fontSize: 15, fontWeight: '800', color: '#1a2d5a' }}>
+                          {currentService.name}
+                        </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 }}>
+                          {currentService.time ? (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                              <Clock size={11} color="#64748B" />
+                              <Text style={{ fontSize: 11, fontWeight: '600', color: '#64748B' }}>
+                                {currentService.time}
+                              </Text>
+                            </View>
+                          ) : null}
+                          {currentService.songLeader ? (
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: '#047857' }}>
+                              🎤 {currentService.songLeader}
+                            </Text>
+                          ) : null}
+                        </View>
+                      </View>
+
+                      <View style={{
+                        backgroundColor: '#EEF2FF',
+                        paddingHorizontal: 8,
+                        paddingVertical: 3,
+                        borderRadius: 6
+                      }}>
+                        <Text style={{ fontSize: 11, fontWeight: '800', color: '#4338CA' }}>
+                          {serviceSongs.length} {serviceSongs.length === 1 ? 'Song' : 'Songs'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Songs List */}
+                    {serviceSongs.length === 0 ? (
+                      <View style={{ paddingVertical: 18, alignItems: 'center' }}>
+                        <Music size={22} color="#94A3B8" />
+                        <Text style={{ fontSize: 12, color: '#64748B', marginTop: 4 }}>
+                          No songs scheduled for this service.
+                        </Text>
+                      </View>
+                    ) : (
+                      serviceSongs.map((s, songIdx) => (
+                        <TouchableOpacity
+                          key={s.id || songIdx}
+                          activeOpacity={0.8}
+                          onPress={() => setSelectedEventSong(s)}
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            backgroundColor: '#FFFFFF',
+                            borderRadius: 10,
+                            padding: 10,
+                            marginBottom: 6,
+                            borderWidth: 1,
+                            borderColor: '#E2E8F0'
+                          }}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, marginRight: 8 }}>
+                            <View style={{
+                              width: 22,
+                              height: 22,
+                              borderRadius: 11,
+                              backgroundColor: '#EEF2FF',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}>
+                              <Text style={{ fontSize: 11, fontWeight: '800', color: '#4338CA' }}>
+                                {songIdx + 1}
+                              </Text>
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ fontSize: 13, fontWeight: '700', color: '#1a2d5a' }} numberOfLines={1}>
+                                {s.title}
+                              </Text>
+                              {s.titleTe ? (
+                                <Text style={{ fontSize: 11, color: '#64748B' }} numberOfLines={1}>
+                                  {s.titleTe}
+                                </Text>
+                              ) : null}
+                            </View>
+                            {s.key ? (
+                              <View style={{ backgroundColor: '#F1F5F9', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                                <Text style={{ fontSize: 10, fontWeight: '800', color: '#475569' }}>{s.key}</Text>
+                              </View>
+                            ) : null}
+                          </View>
+
+                          <Play size={13} color="#2563EB" fill="#2563EB" />
+                        </TouchableOpacity>
+                      ))
+                    )}
+                  </View>
+                );
+              })()}
+            </View>
+          )}
 
           {/* ── VIDEO SECTION — shown based on status ── */}
           <View style={styles.section}>
