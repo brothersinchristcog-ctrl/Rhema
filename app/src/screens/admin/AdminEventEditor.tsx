@@ -46,7 +46,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AdminTabContext } from '../../context/AdminTabContext';
 import { AppAlert } from '../../components/CustomAlert';
 
-import FirestoreService from '../../services/FirestoreService';
+import FirestoreService, { WorshipSong, EventServiceItem } from '../../services/FirestoreService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -106,6 +106,15 @@ export default function AdminEventEditor() {
   const [loading, setLoading] = useState(false);
   const [isUploadingBanner, setIsUploadingBanner] = useState(false);
   const [requireEventQR, setRequireEventQR] = useState(false);
+
+  // ── Multi-Service & Setlist State ──
+  const [eventServices, setEventServices] = useState<EventServiceItem[]>([]);
+  const [allAvailableSongs, setAllAvailableSongs] = useState<WorshipSong[]>([]);
+  const [showSongPicker, setShowSongPicker] = useState(false);
+  const [targetServiceIdForPicker, setTargetServiceIdForPicker] = useState<string | null>(null);
+  const [songPickerSearch, setSongPickerSearch] = useState('');
+  const [songPickerCategory, setSongPickerCategory] = useState('All');
+  const [tempSelectedSongs, setTempSelectedSongs] = useState<WorshipSong[]>([]);
 
   // Form State
   const [titleEn, setTitleEn] = useState('');
@@ -312,10 +321,87 @@ export default function AdminEventEditor() {
       setRecurring(editingData.recurring || 'One-time event');
       setRecurrenceDuration(editingData.recurrenceDuration || 1);
       setRequireEventQR(editingData.requireEventQR === true || editingData.requireEventQr === true);
+      if (Array.isArray(editingData.services) && editingData.services.length > 0) {
+        setEventServices(editingData.services);
+      } else {
+        setEventServices([]);
+      }
       setBannerUrl(editingData.bannerUrl || '');
       setBannerColor(editingData.bannerColor || '#c0392b');
     }
   }, [editingData]);
+
+
+  // ── Event Services & Song Helpers ──
+  const handleAddService = () => {
+    const nextNum = eventServices.length + 1;
+    const defaultName = nextNum === 1 ? '1st Service' : nextNum === 2 ? '2nd Service' : `${nextNum}th Service`;
+    const newService: EventServiceItem = {
+      id: 'srv_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 6),
+      name: defaultName,
+      time: startTime ? `${startTime} - ${endTime}` : '',
+      songLeader: '',
+      songs: []
+    };
+    setEventServices(prev => [...prev, newService]);
+  };
+
+  const handleRemoveService = (serviceId: string) => {
+    setEventServices(prev => prev.filter(s => s.id !== serviceId));
+  };
+
+  const handleUpdateServiceName = (serviceId: string, name: string) => {
+    setEventServices(prev => prev.map(s => s.id === serviceId ? { ...s, name } : s));
+  };
+
+  const handleUpdateServiceTime = (serviceId: string, time: string) => {
+    setEventServices(prev => prev.map(s => s.id === serviceId ? { ...s, time } : s));
+  };
+
+  const handleUpdateServiceLeader = (serviceId: string, songLeader: string) => {
+    setEventServices(prev => prev.map(s => s.id === serviceId ? { ...s, songLeader } : s));
+  };
+
+  const handleRemoveSongFromService = (serviceId: string, songIdx: number) => {
+    setEventServices(prev => prev.map(s => {
+      if (s.id !== serviceId) return s;
+      const updated = [...s.songs];
+      updated.splice(songIdx, 1);
+      return { ...s, songs: updated };
+    }));
+  };
+
+  const handleMoveSongInService = (serviceId: string, songIdx: number, direction: 'up' | 'down') => {
+    setEventServices(prev => prev.map(s => {
+      if (s.id !== serviceId) return s;
+      const targetIdx = direction === 'up' ? songIdx - 1 : songIdx + 1;
+      if (targetIdx < 0 || targetIdx >= s.songs.length) return s;
+      const updated = [...s.songs];
+      const temp = updated[songIdx];
+      updated[songIdx] = updated[targetIdx];
+      updated[targetIdx] = temp;
+      return { ...s, songs: updated };
+    }));
+  };
+
+  const openSongPickerForService = (serviceId: string) => {
+    setTargetServiceIdForPicker(serviceId);
+    const srv = eventServices.find(s => s.id === serviceId);
+    setTempSelectedSongs(srv?.songs ? [...srv.songs] : []);
+    setSongPickerSearch('');
+    setSongPickerCategory('All');
+    setShowSongPicker(true);
+  };
+
+  const handleSavePickedSongs = () => {
+    if (!targetServiceIdForPicker) return;
+    setEventServices(prev => prev.map(s => {
+      if (s.id !== targetServiceIdForPicker) return s;
+      return { ...s, songs: tempSelectedSongs };
+    }));
+    setShowSongPicker(false);
+    setTargetServiceIdForPicker(null);
+  };
 
   const handleAddNewEventType = async () => {
     const trimmedEn = newTypeNameEn.trim();
@@ -587,7 +673,9 @@ export default function AdminEventEditor() {
       requireEventQR,
       notifyOnPublish, reminder1Day, reminder1Hour,
       rsvpCap: capAttendance ? 100 : 0,
-      updateMode
+      updateMode,
+      hasWorshipServices: eventServices.length > 0,
+      services: eventServices.length > 0 ? eventServices : []
     };
 
     try {
@@ -1149,6 +1237,202 @@ export default function AdminEventEditor() {
             </View>
             <Text style={styles.fHint}>Supports JPG, PNG, WEBP, and direct cloud image URLs.</Text>
           </View>
+        </View>
+
+        {/* ── Worship Services & Setlist Section (Optional) ── */}
+        <View style={[styles.section, { borderLeftColor: '#10B981', backgroundColor: '#FFFFFF' }]}>
+          <View style={[styles.secHd, { justifyContent: 'space-between' }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={[styles.secHdPill, { backgroundColor: '#10B981' }]}>
+                <Music size={13} color="#fff" />
+              </View>
+              <View>
+                <Text style={styles.secHdTXT}>Worship Services & Song Setlists</Text>
+                <Text style={{ fontSize: 11, color: '#64748B', marginTop: 1 }}>
+                  {eventServices.length === 0 ? 'Optional: attach worship services & song setlists to this event' : `${eventServices.length} service${eventServices.length > 1 ? 's' : ''} configured`}
+                </Text>
+              </View>
+            </View>
+            {eventServices.length > 0 && (
+              <View style={{ backgroundColor: '#D1FAE5', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
+                <Text style={{ fontSize: 10, fontWeight: '800', color: '#047857' }}>ENABLED</Text>
+              </View>
+            )}
+          </View>
+
+          {/* List of Configured Services */}
+          {eventServices.map((service, sIndex) => (
+            <View key={service.id} style={{
+              backgroundColor: '#F8FAFC',
+              borderRadius: 14,
+              borderWidth: 1,
+              borderColor: '#E2E8F0',
+              padding: 14,
+              marginBottom: 14
+            }}>
+              {/* Service Card Header */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                  <View style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: '#1a2d5a', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: '#fff', fontSize: 12, fontWeight: '900' }}>{sIndex + 1}</Text>
+                  </View>
+                  <TextInput
+                    style={{ flex: 1, fontSize: 15, fontWeight: '800', color: '#1a2d5a', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}
+                    value={service.name}
+                    onChangeText={(val) => handleUpdateServiceName(service.id, val)}
+                    placeholder="e.g. English Service, Sthuthi Aradhana..."
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+                <TouchableOpacity
+                  onPress={() => handleRemoveService(service.id)}
+                  style={{ marginLeft: 8, padding: 6, borderRadius: 8, backgroundColor: '#FEE2E2' }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Trash2 size={16} color="#DC2626" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Service Timing & Song Leader */}
+              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: '#64748B', marginBottom: 4, letterSpacing: 0.5 }}>SERVICE TIME</Text>
+                  <TextInput
+                    style={{ fontSize: 12, fontWeight: '600', color: '#1a2d5a', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}
+                    value={service.time || ''}
+                    onChangeText={(val) => handleUpdateServiceTime(service.id, val)}
+                    placeholder="e.g. 08:30 AM - 10:30 AM"
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: '#64748B', marginBottom: 4, letterSpacing: 0.5 }}>SONG LEADER (OPTIONAL)</Text>
+                  <TextInput
+                    style={{ fontSize: 12, fontWeight: '600', color: '#1a2d5a', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}
+                    value={service.songLeader || ''}
+                    onChangeText={(val) => handleUpdateServiceLeader(service.id, val)}
+                    placeholder="e.g. Bro. David"
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+              </View>
+
+              {/* Scheduled Songs for this Service */}
+              <View style={{ borderTopWidth: 1, borderTopColor: '#E2E8F0', paddingTop: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: '#1a2d5a' }}>
+                    Scheduled Songs ({service.songs?.length || 0})
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => openSongPickerForService(service.id)}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4,
+                      backgroundColor: '#EFF6FF',
+                      borderWidth: 1,
+                      borderColor: '#BFDBFE',
+                      paddingHorizontal: 10,
+                      paddingVertical: 5,
+                      borderRadius: 8
+                    }}
+                  >
+                    <Plus size={13} color="#1D4ED8" />
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: '#1D4ED8' }}>
+                      {service.songs?.length ? 'Manage / Add Songs' : '+ Add Songs'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {(!service.songs || service.songs.length === 0) ? (
+                  <View style={{ backgroundColor: '#FFFFFF', borderRadius: 10, padding: 14, alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', borderStyle: 'dashed' }}>
+                    <Music size={20} color="#94A3B8" />
+                    <Text style={{ fontSize: 12, color: '#64748B', marginTop: 4 }}>No songs added yet for this service.</Text>
+                  </View>
+                ) : (
+                  service.songs.map((song, songIdx) => (
+                    <View key={song.id || songIdx} style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      backgroundColor: '#FFFFFF',
+                      borderRadius: 10,
+                      padding: 10,
+                      marginBottom: 6,
+                      borderWidth: 1,
+                      borderColor: '#E2E8F0'
+                    }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, marginRight: 8 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '800', color: '#64748B', width: 20 }}>
+                          {songIdx + 1}.
+                        </Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: '#1a2d5a' }} numberOfLines={1}>
+                            {song.title}
+                          </Text>
+                          {song.titleTe ? (
+                            <Text style={{ fontSize: 10, color: '#64748B' }} numberOfLines={1}>
+                              {song.titleTe}
+                            </Text>
+                          ) : null}
+                        </View>
+                        {song.key ? (
+                          <View style={{ backgroundColor: '#EEF2FF', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                            <Text style={{ fontSize: 10, fontWeight: '800', color: '#4338CA' }}>{song.key}</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <TouchableOpacity
+                          disabled={songIdx === 0}
+                          onPress={() => handleMoveSongInService(service.id, songIdx, 'up')}
+                          style={{ padding: 4, opacity: songIdx === 0 ? 0.3 : 1 }}
+                        >
+                          <ArrowUp size={13} color="#475569" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          disabled={songIdx === service.songs.length - 1}
+                          onPress={() => handleMoveSongInService(service.id, songIdx, 'down')}
+                          style={{ padding: 4, opacity: songIdx === service.songs.length - 1 ? 0.3 : 1 }}
+                        >
+                          <ArrowDown size={13} color="#475569" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => handleRemoveSongFromService(service.id, songIdx)}
+                          style={{ padding: 4, marginLeft: 2 }}
+                        >
+                          <Trash2 size={13} color="#DC2626" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))
+                )}
+              </View>
+            </View>
+          ))}
+
+          {/* Action button to add worship service */}
+          <TouchableOpacity
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: eventServices.length === 0 ? '#10B981' : '#F0FDF4',
+              borderWidth: 1.5,
+              borderColor: '#10B981',
+              borderRadius: 12,
+              paddingVertical: 12,
+              paddingHorizontal: 16,
+              gap: 8,
+              marginTop: 4
+            }}
+            onPress={handleAddService}
+          >
+            <Plus size={16} color={eventServices.length === 0 ? '#FFFFFF' : '#047857'} />
+            <Text style={{ fontSize: 13, fontWeight: '800', color: eventServices.length === 0 ? '#FFFFFF' : '#047857' }}>
+              {eventServices.length === 0 ? '+ Add Worship Service / Setlist' : '+ Add Another Service'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* ── Attendance & QR Check-In Settings ── */}

@@ -121,7 +121,7 @@ export default function AdminSongEditor() {
   const { activeChurch } = useChurch();
 
   // Screen-level tab
-  const [screenTab, setScreenTab] = useState<'list' | 'setlist' | 'theme' | 'churchOwn'>('list');
+  const [screenTab, setScreenTab] = useState<'list' | 'theme'>('list');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [showPostModal, setShowPostModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -2024,11 +2024,10 @@ export default function AdminSongEditor() {
         <>
           <View style={{ paddingHorizontal: 16, paddingTop: 16 }}>
             <View style={styles.listHeaderRow}>
-              <Text style={styles.listHeaderTitle}>{screenTab === 'theme' ? 'Theme Songs' : screenTab === 'churchOwn' ? 'Church Songs' : 'All Worship Songs'}</Text>
+              <Text style={styles.listHeaderTitle}>{screenTab === 'theme' ? 'Theme Songs' : 'All Worship Songs'}</Text>
               <View style={styles.countBadge}>
                 <Text style={styles.countTxt}>{postedSongs.filter(s => {
                   if (screenTab === 'theme' && !(s.category || '').includes('Theme Songs')) return false;
-                  if (screenTab === 'churchOwn' && !s.isChurchOwn) return false;
                   return true;
                 }).length} Total</Text>
               </View>
@@ -2070,8 +2069,6 @@ export default function AdminSongEditor() {
               if (screenTab === 'theme' && !cats.includes('Theme Songs')) return false;
               
               // Church Own Songs Tab filter
-              if (screenTab === 'churchOwn' && !s.isChurchOwn) return false;
-
               // Category Ribbon filter
               if (selectedCategory !== 'All' && !cats.includes(selectedCategory)) return false;
 
@@ -5092,24 +5089,14 @@ export default function AdminSongEditor() {
           <Text style={[styles.screenTabTxt, screenTab === 'list' && styles.screenTabTxtActive]}>All Songs</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.screenTab, screenTab === 'setlist' && styles.screenTabActive]}
-          onPress={() => { setScreenTab('setlist'); }}>
-          <Text style={[styles.screenTabTxt, screenTab === 'setlist' && styles.screenTabTxtActive]}>Setlist Flow</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
           style={[styles.screenTab, screenTab === 'theme' && styles.screenTabActive]}
           onPress={() => { setScreenTab('theme'); setSelectedCategory('All'); }}>
           <Text style={[styles.screenTabTxt, screenTab === 'theme' && styles.screenTabTxtActive]}>Theme Songs</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.screenTab, screenTab === 'churchOwn' && styles.screenTabActive]}
-          onPress={() => { setScreenTab('churchOwn'); setSelectedCategory('All'); }}>
-          <Text style={[styles.screenTabTxt, screenTab === 'churchOwn' && styles.screenTabTxtActive]} numberOfLines={1}>Church Songs</Text>
-        </TouchableOpacity>
       </View>
 
       {/* Category Filter Ribbon (Only shown for song library views, not for setlist flow) */}
-      {screenTab !== 'setlist' && (
+      true && (
         <View style={{ marginBottom: 12 }}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}>
             {['All', ...CATEGORIES.filter(c => c !== 'Theme Songs')].map((cat) => (
@@ -5138,7 +5125,7 @@ export default function AdminSongEditor() {
       )}
 
       {/* Content */}
-      {screenTab === 'setlist' ? renderSetlistFlowView() : renderPostedList()}
+      {renderPostedList()}
       {renderPostModal()}
       {renderAddSetlistModal()}
       {renderCreateServiceModal()}

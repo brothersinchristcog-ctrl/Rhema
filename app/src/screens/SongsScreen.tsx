@@ -37,7 +37,7 @@ import {
   Mic
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import FirestoreService, { WorshipSong } from '../services/FirestoreService';
+import FirestoreService, { WorshipSong, EventServiceItem } from '../services/FirestoreService';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useChurch } from '../context/ChurchContext';
@@ -59,11 +59,13 @@ export default function SongsScreen({ navigation, route }: any) {
   const { activeChurch } = useChurch();
 
   // ── Tabs ──────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<'browse' | 'setlist' | 'churchOwn' | 'theme' | 'songbook'>('browse');
+  const [activeTab, setActiveTab] = useState<'browse' | 'eventSongs' | 'theme' | 'songbook'>('browse');
 
   // ── Setlist State ─────────────────────────────────
   const [worshipServices, setWorshipServices] = useState<any[]>([]);
-  const [activeServiceId, setActiveServiceId] = useState<string>('1S');
+  const [activeServiceId, setActiveServiceId] = useState<string>('');
+  const [activeEvent, setActiveEvent] = useState<any | null>(null);
+  const [hasActiveEventSongs, setHasActiveEventSongs] = useState<boolean>(false);
 
   // ── All Songs ─────────────────────────────────────
   const [songs, setSongs] = useState<WorshipSong[]>([]);
@@ -144,62 +146,31 @@ export default function SongsScreen({ navigation, route }: any) {
   // ── Load Setlists / Worship Services ─────────────
   const loadSetlists = async () => {
     try {
-      const remote = await FirestoreService.getWorshipServices();
-      const validRemote = Array.isArray(remote) ? remote.filter(Boolean) : [];
-      const cleanedRemote = validRemote.filter((s: any) => {
-        if (!s) return false;
-        const isOldDummy = ['srv_sun1', 'srv_sun2', 'srv_bible', 'srv_women', 'srv_youth', '1S', '2S'].includes(s.id) && (!s.songs || s.songs.length === 0);
-        return !isOldDummy;
-      });
-      if (cleanedRemote.length > 0) {
-        setWorshipServices(cleanedRemote);
-        if (!cleanedRemote.some((s: any) => s && s.id === activeServiceId)) {
-          setActiveServiceId(cleanedRemote[0].id);
-        }
-        await AsyncStorage.setItem('@cog_worship_services', JSON.stringify(cleanedRemote));
-        return;
-      }
-      const local = await AsyncStorage.getItem('@cog_worship_services');
-      if (local) {
-        const parsed = JSON.parse(local);
-        const validLocal = Array.isArray(parsed) ? parsed.filter(Boolean) : [];
-        const cleanedLocal = validLocal.filter((s: any) => {
-          if (!s) return false;
-          const isOldDummy = ['srv_sun1', 'srv_sun2', 'srv_bible', 'srv_women', 'srv_youth', '1S', '2S'].includes(s.id) && (!s.songs || s.songs.length === 0);
-          return !isOldDummy;
-        });
-        if (cleanedLocal.length > 0) {
-          setWorshipServices(cleanedLocal);
-          if (!cleanedLocal.some((s: any) => s && s.id === activeServiceId)) {
-            setActiveServiceId(cleanedLocal[0].id);
-          }
-          return;
-        }
-      }
+      const upcomingEvents = await FirestoreService.getUpcomingEvents(10);
+      const eventsWithSongs = (upcomingEvents || []).filter(
+        (ev: any) => ev && (ev.hasWorshipServices || (Array.isArray(ev.services) && ev.services.length > 0)) && Array.isArray(ev.services) && ev.services.length > 0
+      );
 
-      // Check legacy setlists only if they contain actual scheduled songs
-      const remote1 = await FirestoreService.getChurchSetlist('1S');
-      const remote2 = await FirestoreService.getChurchSetlist('2S');
-      const s1 = remote1 || [];
-      const s2 = remote2 || [];
-      if (s1.length > 0 || s2.length > 0) {
-        const initial = [
-          ...(s1.length > 0 ? [{ id: '1S', name: 'Sunday Service – 1st Service', date: '', songs: s1 }] : []),
-          ...(s2.length > 0 ? [{ id: '2S', name: 'Sunday Service – 2nd Service', date: '', songs: s2 }] : []),
-        ];
-        if (initial.length > 0) {
-          setWorshipServices(initial);
-          setActiveServiceId(initial[0].id);
-          return;
+      if (eventsWithSongs.length > 0) {
+        const primaryEvent = eventsWithSongs[0];
+        setActiveEvent(primaryEvent);
+        const srvs = primaryEvent.services || [];
+        setWorshipServices(srvs);
+        setHasActiveEventSongs(true);
+        if (srvs.length > 0) {
+          setActiveServiceId(srvs[0].id);
         }
+      } else {
+        setActiveEvent(null);
+        setWorshipServices([]);
+        setActiveServiceId('');
+        setHasActiveEventSongs(false);
+        setActiveTab((currentTab: any) => currentTab === 'eventSongs' ? 'browse' : currentTab);
       }
-
-      // DO NOT inject default dummy services
-      setWorshipServices([]);
-      setActiveServiceId('');
-      await AsyncStorage.setItem('@cog_worship_services', JSON.stringify([]));
     } catch (e) {
-      console.warn('Failed to load setlists:', e);
+      console.warn('Failed to load event songs:', e);
+      setHasActiveEventSongs(false);
+      setWorshipServices([]);
     }
   };
 
@@ -207,7 +178,7 @@ export default function SongsScreen({ navigation, route }: any) {
     const activeService: any = worshipServices.find(s => s.id === activeServiceId) || worshipServices[0];
     const serviceName = activeService?.name || 'Sunday Service';
     const activeList = activeService?.songs || [];
-    const churchTitle = activeChurch?.name || 'Sunday Worship Service';
+    const churchTitle = activeEvent ? (activeEvent.titleEn || activeEvent.title || activeChurch?.name) : (activeChurch?.name || 'Sunday Worship Service');
     const dateStr = (activeService?.startDate && activeService?.endDate && activeService.startDate !== activeService.endDate)
       ? `${activeService.startDate} – ${activeService.endDate}`
       : (activeService?.date || '');
@@ -393,15 +364,7 @@ export default function SongsScreen({ navigation, route }: any) {
     return matchesSearch(s, q);
   });
 
-  const churchOwnBaseList = songs.filter(s => {
-    if (!s.isChurchOwn) return false;
-    const cats = getSongCategories(s);
-    return categoryMatches(cats, selectedChurchCategory);
-  });
-  const filteredChurchOwn = churchOwnBaseList.map((s, idx) => ({ ...s, displayNumber: idx + 1 })).filter(s => {
-    const q = search.toLowerCase().trim();
-    return matchesSearch(s, q);
-  });
+
 
   // ── Song Card ─────────────────────────────────────
   const renderSongCard = ({ item, index }: { item: WorshipSong & { displayNumber?: number }; index: number }) => {
@@ -471,7 +434,7 @@ export default function SongsScreen({ navigation, route }: any) {
   const validServices = Array.isArray(worshipServices) ? worshipServices.filter(Boolean) : [];
   const activeService: any = validServices.find((s: any) => s && s.id === activeServiceId) || (validServices.length > 0 ? validServices[0] : null);
   const activeSetlist: any[] = activeService?.songs || [];
-  const activeList = activeTab === 'browse' ? filteredBrowse : activeTab === 'songbook' ? filteredSongbook : activeTab === 'theme' ? filteredTheme : activeTab === 'churchOwn' ? filteredChurchOwn : activeSetlist;
+  const activeList = activeTab === 'browse' ? filteredBrowse : activeTab === 'songbook' ? filteredSongbook : activeTab === 'theme' ? filteredTheme : activeSetlist;
   const currentSongIndex = selectedSong ? activeList.findIndex(s => s.id === selectedSong.id) : -1;
   const totalSongs = activeList.length;
 
@@ -510,7 +473,7 @@ export default function SongsScreen({ navigation, route }: any) {
       if (activeService?.startDate && activeService?.endDate && activeService.startDate !== activeService.endDate) {
         return `${activeService.startDate} – ${activeService.endDate}`;
       }
-      return activeService?.date || '';
+      return activeService?.date || (activeEvent ? (activeEvent.date || '') : '');
     })();
 
     return (
@@ -987,25 +950,17 @@ export default function SongsScreen({ navigation, route }: any) {
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.tabPill, { backgroundColor: isDark ? '#1e293b' : '#E2E8F0' }, activeTab === 'setlist' && styles.tabPillActive]}
-            onPress={() => { setActiveTab('setlist'); setSearch(''); }}
-          >
-            <Sliders size={13} color={activeTab === 'setlist' ? '#fff' : (isDark ? '#94a3b8' : '#64748b')} />
-            <Text style={[styles.tabPillTxt, activeTab === 'setlist' && styles.tabPillTxtActive]}>
-              Setlist Flow
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabPill, { backgroundColor: isDark ? '#1e293b' : '#E2E8F0' }, activeTab === 'churchOwn' && styles.tabPillActive]}
-            onPress={() => { setActiveTab('churchOwn'); setSearch(''); }}
-          >
-            <Music size={13} color={activeTab === 'churchOwn' ? '#fff' : (isDark ? '#94a3b8' : '#64748b')} />
-            <Text style={[styles.tabPillTxt, activeTab === 'churchOwn' && styles.tabPillTxtActive]}>
-              {t('songs.churchSongs')}
-            </Text>
-          </TouchableOpacity>
+          {hasActiveEventSongs && (
+            <TouchableOpacity
+              style={[styles.tabPill, { backgroundColor: isDark ? '#1e293b' : '#E2E8F0' }, activeTab === 'eventSongs' && styles.tabPillActive]}
+              onPress={() => { setActiveTab('eventSongs'); setSearch(''); }}
+            >
+              <Sliders size={13} color={activeTab === 'eventSongs' ? '#fff' : (isDark ? '#94a3b8' : '#64748b')} />
+              <Text style={[styles.tabPillTxt, activeTab === 'eventSongs' && styles.tabPillTxtActive]}>
+                Event Songs
+              </Text>
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity
             style={[styles.tabPill, { backgroundColor: isDark ? '#1e293b' : '#E2E8F0' }, activeTab === 'theme' && styles.tabPillActive]}
@@ -1030,7 +985,7 @@ export default function SongsScreen({ navigation, route }: any) {
       </View>
 
       {/* ── Category Chips & Search Bar (Non-Setlist Tabs) ── */}
-      {activeTab !== 'setlist' && (
+      {activeTab !== 'eventSongs' && (
         <>
           {/* Category Chips (Browse only) */}
           {activeTab === 'browse' && (
@@ -1050,23 +1005,7 @@ export default function SongsScreen({ navigation, route }: any) {
             </ScrollView>
           )}
 
-          {/* Category Chips (Church Songs only) */}
-          {activeTab === 'churchOwn' && (
-            <ScrollView
-              horizontal showsHorizontalScrollIndicator={false}
-              style={styles.chipScroll} contentContainerStyle={{ paddingHorizontal: 16, gap: 8, alignItems: 'center' }}>
-              {churchCategories.map(cat => (
-                <TouchableOpacity
-                  key={cat}
-                  style={[styles.chip, selectedChurchCategory === cat && styles.chipActive]}
-                  onPress={() => setSelectedChurchCategory(cat)}>
-                  <Text style={[styles.chipTxt, selectedChurchCategory === cat && styles.chipTxtActive]}>
-                    {SongLanguageHelper.getLocalizedCategory(cat, language)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          )}
+
 
           {/* Search Bar */}
           <View style={[styles.searchBar, { backgroundColor: isDark ? '#1e293b' : '#fff' }]}>
@@ -1074,7 +1013,6 @@ export default function SongsScreen({ navigation, route }: any) {
             <TextInput
               placeholder={
                 activeTab === 'browse' ? t('songs.searchSongs') :
-                activeTab === 'churchOwn' ? t('songs.searchChurchSongs') :
                 activeTab === 'theme' ? t('songs.searchThemeSongs') :
                 t('songs.searchSongbook')
               }
@@ -1091,7 +1029,7 @@ export default function SongsScreen({ navigation, route }: any) {
           </View>
 
           {/* Long Press hint */}
-          {(activeTab === 'browse' || activeTab === 'churchOwn') && (
+          {activeTab === 'browse' && (
             <Text style={styles.hint}>{t('songs.longPressSaveHint')}</Text>
           )}
           {activeTab === 'songbook' && (
@@ -1101,7 +1039,7 @@ export default function SongsScreen({ navigation, route }: any) {
       )}
 
       {/* ── Setlist Flow Tab ── */}
-      {activeTab === 'setlist' && renderSetlistFlow()}
+      {activeTab === 'eventSongs' && renderSetlistFlow()}
 
       {/* ── Browse List ── */}
       {activeTab === 'browse' && (
