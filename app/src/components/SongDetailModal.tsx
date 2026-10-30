@@ -1,5 +1,15 @@
+
+const extractYoutubeId = (url: string) => {
+  if (!url || typeof url !== 'string') return '';
+  const cleanUrl = url.trim();
+  const match = cleanUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/|live\/))([\w-]{11})/);
+  if (match) return match[1];
+  if (/^[a-zA-Z0-9_-]{11}$/.test(cleanUrl)) return cleanUrl;
+  return cleanUrl;
+};
+import YoutubePlayer from 'react-native-youtube-iframe';
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, Platform, StatusBar, Linking, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, Platform, StatusBar, Linking, Alert, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft, ChevronLeft, Bookmark, Globe, Sliders, ExternalLink } from 'lucide-react-native';
 import { useLanguage } from '../context/LanguageContext';
@@ -24,6 +34,8 @@ interface SongDetailModalProps {
   onEdit?: (song: WorshipSong) => void;
   onDelete?: (song: WorshipSong) => void;
 }
+
+const { width } = Dimensions.get('window');
 
 export default function SongDetailModal({
   visible,
@@ -124,7 +136,6 @@ export default function SongDetailModal({
             {/* Multiple translations tab switcher */}
             {availableLanguages.length > 1 && (
               <View style={styles.langSelectorRow}>
-                <Globe size={14} color={isDark ? '#94a3b8' : '#64748b'} style={{ marginRight: 4 }} />
                 {availableLanguages.map(item => {
                   const isSelected = (lyricsInfo.langCode === item.code);
                   return (
@@ -170,20 +181,29 @@ export default function SongDetailModal({
               </View>
             ) : null}
 
-            {/* ── YouTube Video Banner Button ── */}
-            {song.youtubeId ? (
-              <TouchableOpacity
-                style={styles.youtubeBtn}
-                onPress={() => openYouTube(song.youtubeId!)}
-                activeOpacity={0.8}
-              >
-                <View style={styles.youtubeIconBadge}>
-                  <Text style={{ color: '#fff', fontSize: 10, fontWeight: '900' }}>▶</Text>
+            {/* ── In-App Embedded YouTube Video Player ── */}
+            {(() => {
+              const yId = song.youtubeId ? extractYoutubeId(song.youtubeId) : '';
+              if (!yId || yId.length !== 11) return null;
+              return (
+                <View style={{
+                  marginBottom: 16,
+                  borderRadius: 16,
+                  overflow: 'hidden',
+                  backgroundColor: '#000',
+                  borderWidth: 1,
+                  borderColor: isDark ? '#334155' : '#E2E8F0',
+                  alignItems: 'center',
+                }}>
+                  <YoutubePlayer
+                    height={210}
+                    width={Math.min(width - 40, 480)}
+                    videoId={yId}
+                    play={false}
+                  />
                 </View>
-                <Text style={styles.youtubeBtnTxt}>Watch & Listen on YouTube</Text>
-                <ExternalLink size={14} color="#DC2626" />
-              </TouchableOpacity>
-            ) : null}
+              );
+            })()}
 
             {/* ── Musical Arrangement Chart ── */}
             {hasArrangement ? (
@@ -308,13 +328,6 @@ export default function SongDetailModal({
               </View>
 
               <View style={{ marginTop: (onToggleSave || onEdit || onDelete) ? 36 : 0, marginBottom: 12 }}>
-                {lyricsInfo.isTransliterated && (
-                  <View style={[styles.transliteratedBadge, { backgroundColor: isDark ? '#1e3a5f' : '#eff6ff', borderColor: isDark ? '#2b52a1' : '#bfdbfe' }]}>
-                    <Text style={[styles.transliteratedBadgeTxt, { color: isDark ? '#93c5fd' : '#1d4ed8' }]}>
-                      ✨ {lyricsInfo.langName} Transliteration
-                    </Text>
-                  </View>
-                )}
 
                 {lyricsInfo.isFallback && (
                   <View style={[styles.fallbackNotice, { backgroundColor: isDark ? '#334155' : '#fef3c7', borderColor: isDark ? '#475569' : '#fde68a' }]}>
