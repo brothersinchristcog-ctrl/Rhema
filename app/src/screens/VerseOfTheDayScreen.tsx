@@ -87,7 +87,7 @@ const NIGHT_SKYBLUE_SHADES = [
 ];
 
 const getDayIndex = (date: Date = new Date()): number => {
-  const epoch = new Date('2025-01-01T00:00:00Z');
+  const epoch = new Date('2026-10-30T00:00:00Z');
   const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   const diffDays = Math.floor((target.getTime() - epoch.getTime()) / (1000 * 60 * 60 * 24));
   return Math.abs(diffDays);
@@ -169,31 +169,11 @@ export default function VerseOfTheDayScreen() {
   const insets = useSafeAreaInsets();
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
-  const [verseData, setVerseData] = useState<{ date: Date, verses: DailyVerse[] }[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [showTelugu, setShowTelugu] = useState(true);
-  
-  const captureRef = useRef<ViewShot>(null);
-  const [captureConfig, setCaptureConfig] = useState<{verse: DailyVerse, period: string, theme: any, periodIndex: number, date: Date} | null>(null);
-  const [isCapturing, setIsCapturing] = useState(false);
-  const [showSuccessToast, setShowSuccessToast] = useState(false);
 
-  const { isDark, colors } = useTheme();
-  const { activeChurch } = useChurch();
-  const { t, language, languages } = useLanguage();
-  
   // verseId & period come from notification tap (via RootNavigator deep-link handler)
   const verseId = route.params?.verseId;
   // 'period' is the card to open: 'Morning' | 'Afternoon' | 'Evening' | 'Night'
   const notificationPeriod: string | undefined = route.params?.period;
-
-  const styles = getStyles(isDark, colors);
-
-  // --- Auto-scroll carousel logic ---
-  const todayCarouselRef = useRef<ScrollView>(null);
-  const currentIndexRef = useRef(0);
-  const timerRef = useRef<any>(null);
 
   // Resolve the target card index:
   // 1. If opened from a notification → use the period encoded in the notification payload.
@@ -209,25 +189,45 @@ export default function VerseOfTheDayScreen() {
     return 0;                              // Morning
   };
 
+  const initialTargetIndex = useRef(getTargetIndex()).current;
+
+  // Synchronously initialize with bundled verses so screen paints in 0ms!
+  const [verseData, setVerseData] = useState<{ date: Date, verses: DailyVerse[] }[]>(() => {
+    return VerseNotificationService.getSynchronousInitialVerses(5);
+  });
+  // Since we already have initial bundled data, loading is false! No blank screen or spinner!
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [showTelugu, setShowTelugu] = useState(true);
+  
+  const captureRef = useRef<ViewShot>(null);
+  const [captureConfig, setCaptureConfig] = useState<{verse: DailyVerse, period: string, theme: any, periodIndex: number, date: Date} | null>(null);
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
+
+  const { isDark, colors } = useTheme();
+  const { activeChurch } = useChurch();
+  const { t, language, languages } = useLanguage();
+
+  const styles = getStyles(isDark, colors);
+
+  // --- Auto-scroll carousel logic ---
+  const todayCarouselRef = useRef<ScrollView>(null);
+  const currentIndexRef = useRef(initialTargetIndex);
+  const timerRef = useRef<any>(null);
+
   useEffect(() => {
-    if (verseData.length > 0) {
-      const initialIndex = getTargetIndex();
-      currentIndexRef.current = initialIndex;
+    currentIndexRef.current = initialTargetIndex;
 
-      // Scroll to the correct card (instantly for notification deep-links, so user sees it immediately)
-      setTimeout(() => {
-        todayCarouselRef.current?.scrollTo({ x: initialIndex * width, animated: false });
-      }, 200);
+    // Start auto-scroll after 8 seconds
+    clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      currentIndexRef.current = (currentIndexRef.current + 1) % 4;
+      todayCarouselRef.current?.scrollTo({ x: currentIndexRef.current * width, animated: true });
+    }, 8000); // 8 seconds
 
-      // Start auto-scroll
-      clearInterval(timerRef.current);
-      timerRef.current = setInterval(() => {
-        currentIndexRef.current = (currentIndexRef.current + 1) % 4;
-        todayCarouselRef.current?.scrollTo({ x: currentIndexRef.current * width, animated: true });
-      }, 8000); // 8 seconds
-    }
     return () => clearInterval(timerRef.current);
-  }, [verseData.length]);
+  }, []);
 
   // When route params change (e.g. another notification tapped while screen is open),
   // immediately jump to the new period card.
@@ -264,11 +264,8 @@ export default function VerseOfTheDayScreen() {
         VerseNotificationService.markVerseAsShown(verseId);
       }
       
-      // Pass 1: Instantly load whatever we have in cache (this will at least have Today's verses)
-      await loadVerses(false);
-      
-      // Pass 2: Silently refresh the past 5 days in the background to ensure data is perfectly synced
-      loadVerses(true, true);
+      // Silently refresh in background (non-blocking, keeps instant initial paint intact)
+      loadVerses(false, true);
     };
     init();
   }, [verseId]);
@@ -505,6 +502,7 @@ export default function VerseOfTheDayScreen() {
                   pagingEnabled 
                   showsHorizontalScrollIndicator={false}
                   bounces={false}
+                  contentOffset={isToday ? { x: initialTargetIndex * width, y: 0 } : undefined}
                   snapToInterval={width}
                   decelerationRate="fast"
                   style={styles.carousel}

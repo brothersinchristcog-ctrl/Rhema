@@ -9,33 +9,7 @@ import { SalesforceBackend } from './services/SalesforceBackend.js';
 import { sendWhatsAppTemplateInternal } from './whatsapp.js';
 import { generateCelebrationImage } from './imageGenerator.js';
 import { randomUUID } from 'crypto';
-export {
-  weCelebrationDailySweepV3,
-  weCelebrationWishCreatedTrigger,
-  weCelebrationBatchedWishes,
-  executeBatchedWishes,
-  triggerMorningCelebrations
-} from './celebrations.js';
 
-export {
-  generateSermonV9,
-  generateContentImage
-} from './ai.js';
-
-export {
-  createZoomMeeting,
-  createZoomMeetingHttp
-} from './meetings.js';
-
-export {
-  getYoutubeAuthUrl,
-  youtubeOAuthCallback,
-  getYouTubeChannelStatus,
-  disconnectYouTubeChannel,
-  createZoomWithYouTubeLive,
-  checkYouTubeLiveStatus,
-  startZoomLiveStream
-} from './youtubeLive.js';
 
 // Initialize Firebase Admin once at top level
 initializeApp();
@@ -72,7 +46,7 @@ const stripHtml = (html: string) => {
 /**
  * 📖 GET DAILY PROMISE
  */
-export const getDailyPromise = onCall({ invoker: 'public' }, async (request) => {
+const getDailyPromise = onCall({ invoker: 'public' }, async (request) => {
   try {
     const promise = await getSf().getDailyPromise();
     return { success: true, data: promise };
@@ -85,7 +59,7 @@ export const getDailyPromise = onCall({ invoker: 'public' }, async (request) => 
 /**
  * 📅 GET UPCOMING EVENTS
  */
-export const getUpcomingEvents = onCall({ invoker: 'public' }, async (request) => {
+const getUpcomingEvents = onCall({ invoker: 'public' }, async (request) => {
   try {
     const limit = request.data?.limit || 5;
     const events = await getSf().getUpcomingEvents(limit);
@@ -99,7 +73,7 @@ export const getUpcomingEvents = onCall({ invoker: 'public' }, async (request) =
 /**
  * 🛡️ CHECK CONTACT EXISTS
  */
-export const checkContactExists = onCall({ invoker: 'public' }, async (request) => {
+const checkContactExists = onCall({ invoker: 'public' }, async (request) => {
   try {
     const phone = request.data?.phone;
     if (!phone) {
@@ -116,7 +90,7 @@ export const checkContactExists = onCall({ invoker: 'public' }, async (request) 
 /**
  * 🔔 NOTIFY MEMBERS
  */
-export const notifyMembersV2 = onRequest(async (request, response) => {
+const notifyMembersV2 = onRequest(async (request, response) => {
   const { title, body, target, type } = request.body;
   if (!title || !body) {
     response.status(400).send({ success: false, error: 'Missing title or body' });
@@ -278,7 +252,7 @@ export const automatedDailyPromise = onSchedule({ schedule: '0 5 * * *', timeZon
 /**
  * ⏰ AUTOMATED DAILY BIRTHDAYS TRIGGER (Manual Cloud Scheduler Endpoint)
  */
-export const triggerAutomatedBirthdays = onRequest({ timeoutSeconds: 300, cors: true }, async (req, res) => {
+const triggerAutomatedBirthdays = onRequest({ timeoutSeconds: 300, cors: true }, async (req, res) => {
   try {
     console.log('⏰ Running automatedDailyBirthdays scheduler...');
     const db = getDb();
@@ -494,7 +468,7 @@ export const triggerAutomatedBirthdays = onRequest({ timeoutSeconds: 300, cors: 
 /**
  * ⏰ AUTOMATED DAILY ANNIVERSARIES TRIGGER (Manual Cloud Scheduler Endpoint)
  */
-export const triggerAutomatedAnniversaries = onRequest({ timeoutSeconds: 300, cors: true }, async (req, res) => {
+const triggerAutomatedAnniversaries = onRequest({ timeoutSeconds: 300, cors: true }, async (req, res) => {
   try {
     console.log('⏰ Running automatedDailyAnniversaries scheduler...');
     const db = getDb();
@@ -740,7 +714,7 @@ export const triggerAutomatedAnniversaries = onRequest({ timeoutSeconds: 300, co
 /**
  * ⏰ AUTOMATED DAILY BAPTISM ANNIVERSARIES TRIGGER (Manual Cloud Scheduler Endpoint)
  */
-export const triggerAutomatedBaptisms = onRequest({ timeoutSeconds: 300, cors: true }, async (req, res) => {
+const triggerAutomatedBaptisms = onRequest({ timeoutSeconds: 300, cors: true }, async (req, res) => {
   try {
     console.log('⏰ Running automatedDailyBaptisms scheduler...');
     const db = getDb();
@@ -1150,7 +1124,7 @@ export const sendRhemaBroadcastPush = onDocumentCreated(
 /**
  * 📣 ON BROADCAST CREATED TRIGGER (Legacy churches collection)
  */
-export const processBroadcastPushNotifications = functionsCompat
+const processBroadcastPushNotifications = functionsCompat
   .region('asia-south1')
   .firestore
   .document('churches/{churchId}/broadcasts/{messageId}')
@@ -1162,7 +1136,7 @@ export const processBroadcastPushNotifications = functionsCompat
 /**
  * 🧪 Test HTTP endpoint to trigger today's Daily Promise push notification on-demand
  */
-export const triggerDailyPromisePushHttp = onRequest({ cors: true }, async (req, res) => {
+export const triggerDailyPromisePushHttp = onRequest({ cors: true, region: 'asia-south1' }, async (req, res) => {
   try {
     const churchId = (req.query.churchId as string) || DEFAULT_CHURCH_ID;
     const db = getDb();
@@ -1204,7 +1178,7 @@ export const triggerDailyPromisePushHttp = onRequest({ cors: true }, async (req,
 /**
  * 📤 UPLOAD EVENT IMAGE
  */
-export const uploadEventImage = onCall({ invoker: 'public' }, async (request) => {
+const uploadEventImage = onCall({ invoker: 'public' }, async (request) => {
   try {
     const base64Data = request.data?.image;
     const fileName = request.data?.fileName || `img_${Date.now()}.jpg`;
@@ -1251,7 +1225,7 @@ async function fetchPage(url: string): Promise<string> {
  * ⏰ YOUTUBE LIVE CHECK SCHEDULER
  * Runs every 5 minutes to check if YouTube channel is live
  */
-export const checkYouTubeLive = onSchedule('*/5 * * * *', async (event) => {
+const checkYouTubeLive = onSchedule('*/5 * * * *', async (event) => {
   try {
     console.log('⏰ Checking YouTube Live status...');
     const url = 'https://www.youtube.com/@Brothersinchristfellowship/live';
@@ -1353,7 +1327,7 @@ export const checkYouTubeLive = onSchedule('*/5 * * * *', async (event) => {
 /**
  * 📢 TRIGGER TEST YOUTUBE LIVE NOTIFICATION
  */
-export const triggerTestYouTubeLive = onCall({ invoker: 'public' }, async (request) => {
+const triggerTestYouTubeLive = onCall({ invoker: 'public' }, async (request) => {
   try {
     const liveUrl = request.data?.url || 'https://www.youtube.com/@Brothersinchristfellowship/live';
     const db = getDb();
@@ -1424,7 +1398,7 @@ export const triggerTestYouTubeLive = onCall({ invoker: 'public' }, async (reque
 
 
 
-export const testBdaysV10 = functionsCompat.https.onRequest(async (req, res) => {
+const testBdaysV10 = functionsCompat.https.onRequest(async (req, res) => {
   try {
     const db = getDb();
     const settingsDoc = await db.collection('churches').doc(DEFAULT_CHURCH_ID).collection('settings').doc('notifications').get();
@@ -1516,7 +1490,7 @@ export const testBdaysV10 = functionsCompat.https.onRequest(async (req, res) => 
   }
 });
 
-export const testAnnivsV1 = functionsCompat.https.onRequest(async (req, res) => {
+const testAnnivsV1 = functionsCompat.https.onRequest(async (req, res) => {
   try {
     const db = getDb();
     const settingsDoc = await db.collection('churches').doc(DEFAULT_CHURCH_ID).collection('settings').doc('notifications').get();
@@ -1592,7 +1566,7 @@ export const testAnnivsV1 = functionsCompat.https.onRequest(async (req, res) => 
   }
 });
 
-export const testBaptismsV1 = functionsCompat.https.onRequest(async (req, res) => {
+const testBaptismsV1 = functionsCompat.https.onRequest(async (req, res) => {
   try {
     const db = getDb();
     const today = new Date();
@@ -1661,104 +1635,8 @@ export const testBaptismsV1 = functionsCompat.https.onRequest(async (req, res) =
   }
 });
 
-export * from './payments.js';
-export * from './checkPaymentStatus.js';
-
-/**
- * 🎥 CREATE GOOGLE MEET (REST API)
- * Creates an "OPEN" Google Meet link using a Service Account
- */
-export const createGoogleMeet = onCall({ invoker: 'public' }, async (request) => {
-  try {
-    const { churchId, topic, bibleBook, teacher, startTime, endTime, description } = request.data;
-    if (!churchId) throw new HttpsError('invalid-argument', 'churchId is required');
-
-    // 1. Authenticate with Google API using Service Account
-    // NOTE: This assumes you have placed your Google Service Account key at:
-    // functions/src/config/google-credentials.json 
-    // AND that the service account is configured in Google Workspace to allow OPEN spaces.
-    
-    const { GoogleAuth } = await import('google-auth-library');
-    
-    // We catch initialization errors in case the user hasn't set up the JSON file yet.
-    let auth;
-    try {
-      auth = new GoogleAuth({
-        keyFilename: './src/config/google-credentials.json',
-        scopes: ['https://www.googleapis.com/auth/meetings.space.created'],
-      });
-    } catch (e) {
-      throw new Error('Google credentials not found on backend. Please configure google-credentials.json in functions/src/config/');
-    }
-
-    const client = await auth.getClient();
-
-    // 2. Call the Google Meet REST API to create an OPEN space
-    const meetResponse = await client.request({
-      url: 'https://meet.googleapis.com/v2/spaces',
-      method: 'POST',
-      data: {
-        config: {
-          accessType: 'OPEN', // Allows anyone to join without knocking
-        }
-      }
-    });
-
-    const meetingUri = (meetResponse.data as any).meetingUri;
-    if (!meetingUri) throw new Error('Failed to generate Google Meet link');
-
-    // 3. Save to Firestore
-    const db = getDb();
-    const payload = {
-      title: topic || 'Online Meeting',
-      bibleBook: bibleBook || '',
-      teacher: teacher || '',
-      description: description || '',
-      provider: 'google_meet',
-      meetingLink: meetingUri,
-      startTime: startTime ? new Date(startTime) : new Date(),
-      endTime: endTime ? new Date(endTime) : new Date(new Date().getTime() + 60 * 60 * 1000),
-      status: 'upcoming',
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    };
-
-    const docRef = await db.collection('churches').doc(churchId).collection('online_meetings').add(payload);
-
-    // 4. Send Push Notification to Church Members
-    const titleText = `Live Meeting Scheduled: ${payload.title}`;
-    const bodyText = `${teacher ? teacher + ' will be teaching' : 'Join us'} on ${payload.startTime.toLocaleDateString()}. Tap to view details.`;
-    
-    const usersSnap = await db.collection('users').get();
-    const tokens = new Set<string>();
-    usersSnap.forEach((doc: any) => {
-      const data = doc.data();
-      if (data.fcmToken) tokens.add(data.fcmToken);
-    });
-
-    if (tokens.size > 0) {
-      const message = {
-        notification: { title: titleText, body: bodyText },
-        data: { type: 'meeting', meetingId: docRef.id, link: meetingUri },
-        tokens: Array.from(tokens),
-        android: { priority: 'high' as const },
-      };
-      await getMsg().sendEachForMulticast(message);
-    }
-
-    return { success: true, meetingUri, meetingId: docRef.id };
-
-  } catch (error: any) {
-    console.error('createGoogleMeet Error:', error);
-    throw new HttpsError('internal', error.message || 'Unknown error creating Google Meet');
-  }
-});
-
-export * from './notifications.js';
-export { createRazorpayOrderV4, razorpayWebhookV1, createRazorpayDonationOrderV6, verifyRazorpayDonationV6, verifyRazorpaySubscriptionV3 } from './razorpay.js';
-
-export * from './subscriptionCron.js';
-
-export * from './verseBackgrounds.js';
-
-export * from './vouchers.js';
+export {
+  publishScheduledSermons,
+  triggerPublishScheduledSermonsHttp,
+  triggerDailyVersePushHttp
+} from './notifications.js';

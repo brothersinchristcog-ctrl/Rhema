@@ -139,11 +139,6 @@ export declare function sendDailyVersePushInternal(slotOverride?: string): Promi
     error?: never;
 }>;
 /**
- * ⏰ AUTOMATED DAILY VERSE PUSH SCHEDULER
- * Runs 4 times a day at 8:00 AM, 1:00 PM, 6:00 PM, 9:00 PM IST (Asia/Kolkata).
- */
-export declare const automatedDailyVersePush: import("firebase-functions/v2/scheduler").ScheduleFunction;
-/**
  * 🧪 HTTP endpoint to manually trigger the Daily Verse push (can specify ?slot=Morning/Afternoon/Evening/Night)
  * Also used by external Cloud Schedulers (Google Cloud Console or cron-job.org).
  */

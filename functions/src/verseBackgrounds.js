@@ -42,7 +42,7 @@ export async function syncVerseBackgroundsInternal(daysAhead = 5) {
         d.setDate(today.getDate() + i);
         targetDates.push(d);
     }
-    const EPOCH = new Date('2024-01-01T00:00:00Z');
+    const EPOCH = new Date('2026-10-30T00:00:00Z');
     const requiredIndices = new Set();
     targetDates.forEach(date => {
         const localDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());

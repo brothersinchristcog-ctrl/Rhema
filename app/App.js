@@ -211,11 +211,11 @@ export default function App() {
         <Animated.View style={[styles.toastContainer, { transform: [{ translateY: slideAnim }] }]}>
           <TouchableOpacity style={styles.toastCard} activeOpacity={0.9} onPress={() => {
             const msg = notification.remoteMessage;
+            if (msg && navigationRef.isReady()) {
+              NotificationService.handleNotificationNavigation(msg, navigationRef);
+            }
             Animated.timing(slideAnim, { toValue: -150, duration: 250, useNativeDriver: true }).start(() => {
               setNotification(null);
-              if (msg && navigationRef.isReady()) {
-                NotificationService.handleNotificationNavigation(msg, navigationRef);
-              }
             });
           }}>
             <View style={styles.toastIconBox}>

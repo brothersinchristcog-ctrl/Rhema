@@ -48,7 +48,7 @@ export async function syncVerseBackgroundsInternal(daysAhead: number = 5): Promi
     targetDates.push(d);
   }
 
-  const EPOCH = new Date('2024-01-01T00:00:00Z');
+  const EPOCH = new Date('2026-10-30T00:00:00Z');
   const requiredIndices = new Set<number>();
   
   targetDates.forEach(date => {

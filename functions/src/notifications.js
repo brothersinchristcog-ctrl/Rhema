@@ -1152,7 +1152,7 @@ export async function sendDailyVersePushInternal(slotOverride) {
     // 2. Compute today's verse index
     const metaDoc = await db.collection('daily_verses_meta').doc('metadata').get();
     const totalVerses = metaDoc.exists ? (metaDoc.data()?.totalVerses || 5863) : 5863;
-    const EPOCH = new Date('2024-01-01T00:00:00Z');
+    const EPOCH = new Date('2026-10-30T00:00:00Z');
     const nowIst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
     const todayLocal = new Date(nowIst.getFullYear(), nowIst.getMonth(), nowIst.getDate());
     const epochDate = new Date(EPOCH.getFullYear(), EPOCH.getMonth(), EPOCH.getDate());
@@ -1292,22 +1292,10 @@ export async function sendDailyVersePushInternal(slotOverride) {
     };
 }
 /**
- * ⏰ AUTOMATED DAILY VERSE PUSH SCHEDULER
- * Runs 4 times a day at 8:00 AM, 1:00 PM, 6:00 PM, 9:00 PM IST (Asia/Kolkata).
- */
-export const automatedDailyVersePush = onSchedule({
-    schedule: '0 8,13,18,21 * * *',
-    timeZone: 'Asia/Kolkata',
-    region: 'asia-south1',
-}, async (event) => {
-    console.log('⏰ Running automatedDailyVersePush scheduler...');
-    await sendDailyVersePushInternal();
-});
-/**
  * 🧪 HTTP endpoint to manually trigger the Daily Verse push (can specify ?slot=Morning/Afternoon/Evening/Night)
  * Also used by external Cloud Schedulers (Google Cloud Console or cron-job.org).
  */
-export const triggerDailyVersePushHttp = onRequest({ cors: true, timeoutSeconds: 120 }, async (req, res) => {
+export const triggerDailyVersePushHttp = onRequest({ cors: true, timeoutSeconds: 120, region: 'asia-south1' }, async (req, res) => {
     try {
         const slot = req.query.slot || req.body?.slot;
         const result = await sendDailyVersePushInternal(slot);

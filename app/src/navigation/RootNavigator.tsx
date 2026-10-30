@@ -575,10 +575,15 @@ function Navigation() {
           const type = data.type || (data.screen === 'BibleQuizDetail' ? 'quiz' : undefined);
           const quizTargetId = data.quizId || data.relatedId || data.id;
 
-          if (type === 'daily_verse' && data.verseId) {
+          if (type === 'daily_verse') {
+            const rawPeriod = data.period || '';
+            const normalizedPeriod = rawPeriod
+              ? rawPeriod.charAt(0).toUpperCase() + rawPeriod.slice(1).toLowerCase()
+              : undefined;
             navigationRef.navigate('VerseOfTheDay', { 
               verseId: data.verseId, 
-              period: data.period 
+              period: normalizedPeriod,
+              lang: data.lang,
             });
           } else if (type === 'sermon' || data.screen === 'SermonVideo') {
             const sId = data.sermonId || data.relatedId || (data.id ? String(data.id).replace(/^sermon_/, '') : null);
@@ -623,13 +628,24 @@ function Navigation() {
 
     // 1. When app is in background and user clicks notification
     const unsubscribeOnOpen = NotificationService.messaging().onNotificationOpenedApp(remoteMessage => {
-      setPendingNotification(remoteMessage);
+      if (!remoteMessage) return;
+      const { navigationRef } = require('../../App');
+      if (navigationRef && navigationRef.isReady()) {
+        NotificationService.handleNotificationNavigation(remoteMessage, navigationRef);
+      } else {
+        setPendingNotification(remoteMessage);
+      }
     });
 
     // 2. When app is closed and user clicks notification
     NotificationService.messaging().getInitialNotification().then(remoteMessage => {
       if (remoteMessage) {
-        setPendingNotification(remoteMessage);
+        const { navigationRef } = require('../../App');
+        if (navigationRef && navigationRef.isReady()) {
+          NotificationService.handleNotificationNavigation(remoteMessage, navigationRef);
+        } else {
+          setPendingNotification(remoteMessage);
+        }
       }
     });
 
@@ -661,7 +677,7 @@ function Navigation() {
           setPendingNotification(null);
         } else if (retryCount < 20) {
           retryCount++;
-          setTimeout(tryNavigate, 200); // Retry every 200ms up to 20 times (4 seconds total)
+          setTimeout(tryNavigate, 50); // Fast check every 50ms (up to 20 times, 1 second total)
         } else {
           console.warn('⚠️ Navigation took too long to become ready, dropping pending notification.');
           setPendingNotification(null);
