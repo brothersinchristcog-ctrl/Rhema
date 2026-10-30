@@ -1,3 +1,4 @@
+import bundledBulkVerses from '../../../assets/bulk_verses.json';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
@@ -135,7 +136,7 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
 
       if (total === 0) {
         try {
-          const bundled = require('../../assets/bulk_verses.json');
+          const bundled = bundledBulkVerses;
           total = bundled.length || 5863;
         } catch (_) {
           total = 5863;
@@ -160,7 +161,7 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
       // Offline / fallback if Firestore returned nothing: populate from bundled verses
       if (fetched.length === 0) {
         try {
-          const bundled = require('../../assets/bulk_verses.json');
+          const bundled = bundledBulkVerses;
           for (let idx = 0; idx < COUNT && idx < bundled.length; idx++) {
             const bv = bundled[idx];
             if (bv) {
@@ -207,7 +208,7 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
 
       if (docs.length === 0) {
         try {
-          const bundled = require('../../assets/bulk_verses.json');
+          const bundled = bundledBulkVerses;
           docs = bundled.slice(0, 50).map((bv: any, idx: number) => ({
             id: `verse_${idx}`,
             index: idx,
@@ -226,7 +227,7 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
     } catch (e) {
       console.error('Error fetching all verses:', e);
       try {
-        const bundled = require('../../assets/bulk_verses.json');
+        const bundled = bundledBulkVerses;
         const docs = bundled.slice(0, 50).map((bv: any, idx: number) => ({
           id: `verse_${idx}`,
           index: idx,
@@ -506,7 +507,7 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
           text: 'Import (5,863)',
           onPress: async () => {
             try {
-              const bundled = require('../../assets/bulk_verses.json');
+              const bundled = bundledBulkVerses;
               await handleBulkUpload(bundled);
             } catch (e: any) {
               Alert.alert('Error', e?.message || 'Failed to load bundled verses');
@@ -541,11 +542,14 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
           const data = await res.json();
           const imageUrl = data?.urls?.regular;
           if (imageUrl) {
-            await firestore().collection('daily_verses').doc(verse.id).update({
+            await firestore().collection('daily_verses').doc(verse.id).set({
+              ...verse,
               backgroundUrl: imageUrl,
               unsplashPhotographer: data?.user?.name || 'Unsplash',
               backgroundTheme: theme,
-            });
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            }, { merge: true });
+            verse.backgroundUrl = imageUrl;
             updated++;
           }
         } catch (err) {
