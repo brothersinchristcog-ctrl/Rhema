@@ -35,7 +35,7 @@ export interface DailyVerse {
 
 // Fixed epoch date for global synchronization across all phones
 // Using UTC midnight to ensure everyone transitions days at roughly the same time (or use local midnight if preferred)
-const EPOCH = new Date('2024-01-01T00:00:00Z');
+const EPOCH = new Date('2026-10-30T00:00:00Z');
 
 class VerseNotificationService {
   // Mutex: prevents concurrent syncAndSchedule calls (e.g. auth state flicker)
@@ -398,6 +398,45 @@ class VerseNotificationService {
   }
 
   /**
+   * Synchronously builds initial verses for today + past N days using bundled bulk_verses.json.
+   * This executes in < 1ms on JS thread with 0 network calls, allowing the screen
+   * to paint instantly without showing any loading spinner or blank page.
+   */
+  getSynchronousInitialVerses(pastDays: number = 5): { date: Date, verses: DailyVerse[] }[] {
+    try {
+      const bundledVerses: any[] = require('../../assets/bulk_verses.json');
+      const totalVerses = bundledVerses.length || 5863;
+      const today = new Date();
+      const results: { date: Date, verses: DailyVerse[] }[] = [];
+
+      for (let i = 0; i <= pastDays; i++) {
+        const d = new Date(today);
+        d.setDate(today.getDate() - i);
+        const dailyIndices = this.getIndicesForDate(d, totalVerses);
+        const versesForDay: DailyVerse[] = [];
+
+        for (let periodIdx = 0; periodIdx < 4; periodIdx++) {
+          const idx = dailyIndices[periodIdx];
+          const bv = bundledVerses[idx] || {};
+          versesForDay.push({
+            id: `verse_${idx}`,
+            index: idx,
+            verseEn: bv.verseEn || '',
+            verseTe: bv.verseTe || '',
+            referenceEn: bv.referenceEn || '',
+            referenceTe: bv.referenceTe || '',
+          });
+        }
+        results.push({ date: d, verses: versesForDay });
+      }
+      return results;
+    } catch (e) {
+      console.warn('[VerseNotificationService] Failed to load synchronous initial verses:', e);
+      return [];
+    }
+  }
+
+  /**
    * Fetches verses for multiple recent days efficiently (combines cache and batch firestore queries).
    */
   async getRecentVerses(pastDays: number, includeToday: boolean = true, forceRefresh: boolean = false): Promise<{ date: Date, verses: DailyVerse[] }[]> {
@@ -449,7 +488,7 @@ class VerseNotificationService {
       
       const missingIndices = forceRefresh 
         ? Array.from(requiredIndices) 
-        : Array.from(requiredIndices).filter(idx => !cache[idx] || !cache[idx].backgroundUrl);
+        : Array.from(requiredIndices).filter(idx => !cache[idx]);
 
       if (missingIndices.length > 0) {
         const batchPromises = [];

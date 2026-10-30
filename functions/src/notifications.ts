@@ -1216,7 +1216,7 @@ export async function sendDailyVersePushInternal(slotOverride?: string) {
   const metaDoc = await db.collection('daily_verses_meta').doc('metadata').get();
   const totalVerses = metaDoc.exists ? (metaDoc.data()?.totalVerses || 5863) : 5863;
 
-  const EPOCH = new Date('2024-01-01T00:00:00Z');
+  const EPOCH = new Date('2026-10-30T00:00:00Z');
   const nowIst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
   const todayLocal = new Date(nowIst.getFullYear(), nowIst.getMonth(), nowIst.getDate());
   const epochDate = new Date(EPOCH.getFullYear(), EPOCH.getMonth(), EPOCH.getDate());

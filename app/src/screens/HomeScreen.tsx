@@ -502,7 +502,7 @@ const NIGHT_SKYBLUE_SHADES = [
 ];
 
 const getDayIndex = (date: Date = new Date()): number => {
-  const epoch = new Date('2025-01-01T00:00:00Z');
+  const epoch = new Date('2026-10-30T00:00:00Z');
   const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   const diffDays = Math.floor((target.getTime() - epoch.getTime()) / (1000 * 60 * 60 * 24));
   return Math.abs(diffDays);
@@ -1007,7 +1007,17 @@ export default function HomeScreen() {
   };
   const useWeChristianDailyPromise = true;
   const hasServiceTimings = !!(activeChurch?.serviceTimings && activeChurch.serviceTimings.length > 0);
-  const [todayFourVerses, setTodayFourVerses] = useState<DailyVerse[]>(cachedTodayFourVerses);
+  const [todayFourVerses, setTodayFourVerses] = useState<DailyVerse[]>(() => {
+    if (cachedTodayFourVerses && cachedTodayFourVerses.length > 0) return cachedTodayFourVerses;
+    try {
+      const initial = VerseNotificationService.getSynchronousInitialVerses(0);
+      const verses = initial[0]?.verses || [];
+      if (verses.length > 0) cachedTodayFourVerses = verses;
+      return verses;
+    } catch (_) {
+      return [];
+    }
+  });
   const [currentTime, setCurrentTime] = useState(new Date());
 
   // Periodically refresh time every 60s so newly unlocked time-based cards appear automatically
@@ -2091,8 +2101,11 @@ export default function HomeScreen() {
 
                   {visibleVerses.length > 0 ? (
                     visibleVerses.map((verse, idx) => {
-                      const period = VERSE_PERIODS[idx] || 'Daily';
+                      const period = visibleVerses.length === 1 
+                        ? getCurrentPeriod(currentTime) 
+                        : (VERSE_PERIODS[idx] || getCurrentPeriod(currentTime));
                       const loc = getLocalizedVerse(verse, language);
+                      const greeting = getPeriodGreeting(period, t);
 
                       return (
                         <TouchableOpacity
@@ -2127,7 +2140,7 @@ export default function HomeScreen() {
                             )}
 
                             <Text style={styles.phLabel} maxFontSizeMultiplier={1.15}>
-                              {t('home.todaysPromise') || "Today's Promise"}
+                              {greeting}
                             </Text>
 
                             {/* Main Verse Block */}

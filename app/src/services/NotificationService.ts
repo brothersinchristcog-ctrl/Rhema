@@ -126,6 +126,18 @@ class NotificationService {
         case 'promise':
           nav.navigate('Updates');
           break;
+        case 'daily_verse': {
+          const rawPeriod = rawData.period || '';
+          const normalizedPeriod = rawPeriod
+            ? rawPeriod.charAt(0).toUpperCase() + rawPeriod.slice(1).toLowerCase()
+            : undefined;
+          nav.navigate('VerseOfTheDay', {
+            verseId: rawData.verseId,
+            period: normalizedPeriod,
+            lang: rawData.lang,
+          });
+          break;
+        }
         case 'attendance':
           nav.navigate('AttendanceScreen');
           break;
