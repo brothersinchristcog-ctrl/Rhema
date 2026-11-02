@@ -2316,11 +2316,12 @@ export default function HomeScreen() {
     return () => clearInterval(timer);
   }, []);
 
-  // Automated 4 time-of-day greeting verses (Morning, Afternoon, Evening, Night)
-  // All 4 cards are available for swipe, scrolling initially to current time-of-day card
-  const visibleVerses = todayFourVerses && todayFourVerses.length >= 4 
+  // Time-based progressive unlocked verses (Morning -> +Afternoon -> +Evening -> +Night)
+  const unlockedCount = getUnlockedVersesCount(currentTime);
+  const allVerses = todayFourVerses && todayFourVerses.length >= 4 
     ? todayFourVerses 
     : getSynchronousVersesForToday(currentTime);
+  const visibleVerses = allVerses.slice(0, Math.min(allVerses.length, unlockedCount));
   const verseAutoScrollTimer = useRef<any>(null);
   const captureVerseRef = useRef<ViewShot>(null);
   const capturePromiseRef = useRef<ViewShot>(null);
