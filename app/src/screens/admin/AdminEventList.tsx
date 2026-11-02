@@ -167,9 +167,13 @@ export default function AdminEventList() {
                 <Text style={[styles.heroSub, { marginTop: 2 }]}>{events.length} total · {upcomingCount} upcoming</Text>
               </View>
             </View>
-            <TouchableOpacity style={styles.newBtn} onPress={() => { setEditingData(null); if (setTabByName) setTabByName('New Event'); else setActiveTab(10); }}>
-              <Plus size={16} color="#1a2d5a" />
-              <Text style={styles.newBtnTxt}>New</Text>
+            <TouchableOpacity 
+              style={[styles.newBtn, { flexShrink: 0 }]} 
+              onPress={() => { setEditingData(null); if (setTabByName) setTabByName('New Event'); else setActiveTab(10); }}
+              activeOpacity={0.8}
+            >
+              <Plus size={15} color="#1a2d5a" strokeWidth={2.5} />
+              <Text style={styles.newBtnTxt} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>New Event</Text>
             </TouchableOpacity>
           </View>
         </View>
