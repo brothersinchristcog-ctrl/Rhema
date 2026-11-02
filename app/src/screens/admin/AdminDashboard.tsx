@@ -66,6 +66,7 @@ const CARD_BACKGROUNDS: Record<string, any> = {
   'Online Meetings': require('../../../assets/admin_cards/online_meetings.jpg'),
   'New Online Meeting': require('../../../assets/admin_cards/new_online_meeting.png'),
   'App Admin': require('../../../assets/admin_cards/app_admin.png'),
+  'Baptism': require('../../../assets/admin_cards/baptism.png'),
   'Bible Quiz': require('../../../assets/admin_cards/bible_quiz.jpg'),
   'Quiz': require('../../../assets/admin_cards/bible_quiz.jpg'),
 };
@@ -93,7 +94,7 @@ const CATEGORIES = [
     title: 'Communication',
     icon: Bell,
     color: '#78350F', // Rich Deep Bronze/Chocolate for excellent warm contrast
-    keywords: ['Notification', 'WhatsApp']
+    keywords: ['Notification', 'WhatsApp', 'Baptism']
   },
   {
     title: 'Church Ledger',
@@ -121,7 +122,7 @@ const CATEGORIES = [
   },
 ];
 
-const FULL_WIDTH_MODULES = ['Songs', 'Members', 'Subscription'];
+const FULL_WIDTH_MODULES = ['Songs', 'Members', 'Subscription', 'Baptism'];
 
 const FONTS = {
   serif: Platform.OS === 'ios' ? 'Georgia' : 'serif',
