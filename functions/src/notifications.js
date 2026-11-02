@@ -1509,83 +1509,16 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
     console.log(`[sendDailyVersePushInternal] Collected ${tokens.length} FCM tokens for dispatch.`);
     let enSuccess = 0;
     let teSuccess = 0;
-    // 4a. Multicast to individual registered tokens
-    if (tokens.length > 0) {
-        for (let i = 0; i < tokens.length; i += 500) {
-            const batchTokens = tokens.slice(i, i + 500);
-            const enMessage = {
-                notification: {
-                    title: slotInfo.titleEn,
-                    body: `"${verseEnText}"\n— ${refEnText}`,
-                },
-                data: {
-                    type: 'daily_verse',
-                    verseId: verseId,
-                    period: slot,
-                    lang: 'en',
-                    churchId: targetChurchId,
-                },
-                android: {
-                    priority: 'high',
-                    notification: {
-                        sound: 'default',
-                        priority: 'max',
-                        channelId: 'daily_verse',
-                    },
-                },
-                apns: {
-                    headers: { 'apns-priority': '10' },
-                    payload: { aps: { sound: 'default', badge: 1 } },
-                },
-                tokens: batchTokens,
-            };
-            const teMessage = {
-                notification: {
-                    title: slotInfo.titleTe,
-                    body: `"${verseTeText}"\n— ${refTeText}`,
-                },
-                data: {
-                    type: 'daily_verse',
-                    verseId: verseId,
-                    period: slot,
-                    lang: 'te',
-                    churchId: targetChurchId,
-                },
-                android: {
-                    priority: 'high',
-                    notification: {
-                        sound: 'default',
-                        priority: 'max',
-                        channelId: 'daily_verse',
-                    },
-                },
-                apns: {
-                    headers: { 'apns-priority': '10' },
-                    payload: { aps: { sound: 'default', badge: 1 } },
-                },
-                tokens: batchTokens,
-            };
-            try {
-                const [enRes, teRes] = await Promise.all([
-                    messaging.sendEachForMulticast(enMessage),
-                    messaging.sendEachForMulticast(teMessage),
-                ]);
-                enSuccess += enRes.successCount;
-                teSuccess += teRes.successCount;
-                console.log(`[sendDailyVersePushInternal] Batch ${i / 500 + 1}: EN success ${enRes.successCount}, TE success ${teRes.successCount}`);
-            }
-            catch (err) {
-                console.error('[sendDailyVersePushInternal] Error in multicast batch:', err);
-            }
-        }
-    }
-    // 4b. Broadcast to Church Topic for 100% Church Member Delivery
+    // 4. Send EXACTLY ONE Unified Notification to the Church Topic (church_rhema)
+    // Using Android 'tag' and 'collapseKey' guarantees that Android OS displays EXACTLY ONE banner.
+    const unifiedTitle = `${slotInfo.titleEn} · ${slotInfo.titleTe}`;
+    const unifiedBody = verseTeText ? `"${verseTeText}"\n— ${refTeText}` : `"${verseEnText}"\n— ${refEnText}`;
     try {
         const topicMessage = {
             topic: `church_${targetChurchId}`,
             notification: {
-                title: `${slotInfo.titleEn} · ${slotInfo.titleTe}`,
-                body: `"${verseTeText}"\n— ${refTeText}`,
+                title: unifiedTitle,
+                body: unifiedBody,
             },
             data: {
                 type: 'daily_verse',
@@ -1595,22 +1528,60 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
             },
             android: {
                 priority: 'high',
+                collapseKey: `daily_verse_${slot}`,
                 notification: {
                     sound: 'default',
                     priority: 'max',
                     channelId: 'daily_verse',
+                    tag: `daily_verse_${slot}`,
                 },
             },
             apns: {
-                headers: { 'apns-priority': '10' },
+                headers: {
+                    'apns-priority': '10',
+                    'apns-collapse-id': `daily_verse_${slot}`,
+                },
                 payload: { aps: { sound: 'default', badge: 1 } },
             },
         };
         await messaging.send(topicMessage);
-        console.log(`[sendDailyVersePushInternal] Dispatched topic broadcast to church_${targetChurchId}`);
+        console.log(`[sendDailyVersePushInternal] Successfully sent single unified notification to topic church_${targetChurchId}`);
     }
     catch (topicErr) {
-        console.warn('[sendDailyVersePushInternal] Topic broadcast notice:', topicErr);
+        console.warn('[sendDailyVersePushInternal] Topic broadcast notice, falling back to member tokens:', topicErr);
+        // Fallback: If topic broadcast fails, send a single unified message to member tokens
+        if (tokens.length > 0) {
+            for (let i = 0; i < tokens.length; i += 500) {
+                const batchTokens = tokens.slice(i, i + 500);
+                const batchMsg = {
+                    notification: {
+                        title: unifiedTitle,
+                        body: unifiedBody,
+                    },
+                    data: {
+                        type: 'daily_verse',
+                        verseId: verseId,
+                        period: slot,
+                        churchId: targetChurchId,
+                    },
+                    android: {
+                        priority: 'high',
+                        collapseKey: `daily_verse_${slot}`,
+                        notification: {
+                            sound: 'default',
+                            priority: 'max',
+                            channelId: 'daily_verse',
+                            tag: `daily_verse_${slot}`,
+                        },
+                    },
+                    tokens: batchTokens,
+                };
+                try {
+                    await messaging.sendEachForMulticast(batchMsg);
+                }
+                catch (_) { }
+            }
+        }
     }
     // 5. Log to broadcasts feed for historical viewing in Updates screen
     const todayStr = `${nowIst.getFullYear()}-${String(nowIst.getMonth() + 1).padStart(2, '0')}-${String(nowIst.getDate()).padStart(2, '0')}`;

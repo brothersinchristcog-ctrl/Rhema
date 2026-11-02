@@ -55,3 +55,4 @@ export function getVerseBackgroundUrl(
 
   return list[idx % list.length] || DEFAULT_VERSE_BACKGROUND;
 }
+
