@@ -41,8 +41,6 @@ import {
   CircleDollarSign as DollarSign,
   BookOpen,
   Sparkles,
-  MessageSquare,
-  Users,
   MoreHorizontal,
   CheckCircle,
   Sun,
@@ -577,6 +575,14 @@ interface ScreenThemeConfig {
   bentoMeetingsGradient: readonly [string, string, ...string[]];
   bentoMeetingsBorder: string;
   bentoMeetingsText: string;
+  bentoGalleryGradient: readonly [string, string, ...string[]];
+  bentoGalleryBorder: string;
+  bentoGalleryText: string;
+  bentoGallerySub: string;
+  bentoYoutubeGradient: readonly [string, string, ...string[]];
+  bentoYoutubeBorder: string;
+  bentoYoutubeText: string;
+  bentoYoutubeSub: string;
 }
 
 const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig => {
@@ -664,24 +670,32 @@ const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig =>
         bentoGiveBorder: '#9E7422',
         bentoGiveText: '#FFEAA8',
         bentoGiveSub: '#E5CB82',
-        bentoVerseGradient: ['#5E3C75', '#3C204F'],
-        bentoVerseBorder: '#7C5399',
+        bentoVerseGradient: ['#1E3A8A', '#0E1E45'],
+        bentoVerseBorder: '#3B82F6',
         bentoVerseText: '#FFFFFF',
         bentoAttendanceGradient: ['#475569', '#334155'],
         bentoAttendanceBorder: '#64748B',
         bentoAttendanceText: '#FFFFFF',
-        bentoNotesGradient: ['#2F5875', '#1B3A52'],
-        bentoNotesBorder: '#457294',
+        bentoNotesGradient: ['#4E2A84', '#2C1354'],
+        bentoNotesBorder: '#7844C4',
         bentoNotesText: '#FFFFFF',
-        bentoQuizGradient: ['#3B6D51', '#214D35'],
-        bentoQuizBorder: '#538A6B',
+        bentoQuizGradient: ['#157347', '#0B4226'],
+        bentoQuizBorder: '#22A85C',
         bentoQuizText: '#FFFFFF',
-        bentoMembersGradient: ['#9E492B', '#702B13'],
-        bentoMembersBorder: '#B85F3E',
+        bentoMembersGradient: ['#D9651A', '#8F3805'],
+        bentoMembersBorder: '#F97316',
         bentoMembersText: '#FFFFFF',
-        bentoMeetingsGradient: ['#243E5E', '#14273E'],
-        bentoMeetingsBorder: '#3B5B84',
+        bentoMeetingsGradient: ['#0E6BA8', '#074269'],
+        bentoMeetingsBorder: '#1A86CC',
         bentoMeetingsText: '#FFFFFF',
+        bentoGalleryGradient: ['#18181B', '#09090B'],
+        bentoGalleryBorder: '#3F3F46',
+        bentoGalleryText: '#FFFFFF',
+        bentoGallerySub: '#A1A1AA',
+        bentoYoutubeGradient: ['#7A1A1A', '#450A0A'],
+        bentoYoutubeBorder: '#991B1B',
+        bentoYoutubeText: '#FFFFFF',
+        bentoYoutubeSub: '#FECACA',
       };
     case 'sage_ecru':
       return {
@@ -756,24 +770,32 @@ const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig =>
         bentoGiveBorder: '#706B36',
         bentoGiveText: '#FFECA6',
         bentoGiveSub: '#DDD49C',
-        bentoVerseGradient: ['#44425C', '#2C2B3E'],
-        bentoVerseBorder: '#5D5B7D',
+        bentoVerseGradient: ['#1E3A8A', '#0E1E45'],
+        bentoVerseBorder: '#3B82F6',
         bentoVerseText: '#FFFFFF',
         bentoAttendanceGradient: ['#3D4A41', '#28332B'],
         bentoAttendanceBorder: '#526357',
         bentoAttendanceText: '#FFFFFF',
-        bentoNotesGradient: ['#304D54', '#1E343A'],
-        bentoNotesBorder: '#446973',
+        bentoNotesGradient: ['#4E2A84', '#2C1354'],
+        bentoNotesBorder: '#7844C4',
         bentoNotesText: '#FFFFFF',
-        bentoQuizGradient: ['#385A42', '#223E2A'],
-        bentoQuizBorder: '#4F7A5D',
+        bentoQuizGradient: ['#157347', '#0B4226'],
+        bentoQuizBorder: '#22A85C',
         bentoQuizText: '#FFFFFF',
-        bentoMembersGradient: ['#7A4833', '#522D1E'],
-        bentoMembersBorder: '#9B5F46',
+        bentoMembersGradient: ['#D9651A', '#8F3805'],
+        bentoMembersBorder: '#F97316',
         bentoMembersText: '#FFFFFF',
-        bentoMeetingsGradient: ['#28424B', '#172B32'],
-        bentoMeetingsBorder: '#3B5E6A',
+        bentoMeetingsGradient: ['#1C4E68', '#103040'],
+        bentoMeetingsBorder: '#2B6D90',
         bentoMeetingsText: '#FFFFFF',
+        bentoGalleryGradient: ['#18181B', '#09090B'],
+        bentoGalleryBorder: '#3F3F46',
+        bentoGalleryText: '#FFFFFF',
+        bentoGallerySub: '#A1A1AA',
+        bentoYoutubeGradient: ['#611818', '#380B0B'],
+        bentoYoutubeBorder: '#7E2222',
+        bentoYoutubeText: '#FFFFFF',
+        bentoYoutubeSub: '#F8D7D7',
       };
     case 'pure_dark':
       return {
@@ -848,24 +870,32 @@ const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig =>
         bentoGiveBorder: '#4A3C1D',
         bentoGiveText: '#FDE68A',
         bentoGiveSub: '#C2AE74',
-        bentoVerseGradient: ['#221A33', '#120D1F'],
-        bentoVerseBorder: '#3D305C',
-        bentoVerseText: '#F8FAFC',
+        bentoVerseGradient: ['#1E3A8A', '#0E1E45'],
+        bentoVerseBorder: '#3B82F6',
+        bentoVerseText: '#FFFFFF',
         bentoAttendanceGradient: ['#1C2333', '#0E131F'],
         bentoAttendanceBorder: '#2D3952',
         bentoAttendanceText: '#F8FAFC',
-        bentoNotesGradient: ['#16283A', '#0C1724'],
-        bentoNotesBorder: '#264361',
+        bentoNotesGradient: ['#281845', '#160C28'],
+        bentoNotesBorder: '#482C75',
         bentoNotesText: '#F8FAFC',
-        bentoQuizGradient: ['#142B24', '#0A1A15'],
-        bentoQuizBorder: '#22483C',
+        bentoQuizGradient: ['#143826', '#0B2016'],
+        bentoQuizBorder: '#235E42',
         bentoQuizText: '#F8FAFC',
-        bentoMembersGradient: ['#2B1B17', '#190E0A'],
-        bentoMembersBorder: '#4A3029',
+        bentoMembersGradient: ['#3D1E0C', '#241005'],
+        bentoMembersBorder: '#6E3816',
         bentoMembersText: '#F8FAFC',
-        bentoMeetingsGradient: ['#152538', '#0A1521'],
-        bentoMeetingsBorder: '#243F5F',
+        bentoMeetingsGradient: ['#0C2538', '#061622'],
+        bentoMeetingsBorder: '#194363',
         bentoMeetingsText: '#F8FAFC',
+        bentoGalleryGradient: ['#18181B', '#09090B'],
+        bentoGalleryBorder: '#3F3F46',
+        bentoGalleryText: '#FFFFFF',
+        bentoGallerySub: '#A1A1AA',
+        bentoYoutubeGradient: ['#331010', '#1C0808'],
+        bentoYoutubeBorder: '#591D1D',
+        bentoYoutubeText: '#F8FAFC',
+        bentoYoutubeSub: '#FCA5A5',
       };
     case 'pure_white':
       return {
@@ -950,24 +980,32 @@ const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig =>
         bentoGiveBorder: '#9E7422',
         bentoGiveText: '#FFEAA8',
         bentoGiveSub: '#E5CB82',
-        bentoVerseGradient: ['#5E3C75', '#3C204F'],
-        bentoVerseBorder: '#7C5399',
+        bentoVerseGradient: ['#1E3A8A', '#0E1E45'],
+        bentoVerseBorder: '#3B82F6',
         bentoVerseText: '#FFFFFF',
         bentoAttendanceGradient: ['#475569', '#334155'],
         bentoAttendanceBorder: '#64748B',
         bentoAttendanceText: '#FFFFFF',
-        bentoNotesGradient: ['#2F5875', '#1B3A52'],
-        bentoNotesBorder: '#457294',
+        bentoNotesGradient: ['#4E2A84', '#2C1354'],
+        bentoNotesBorder: '#7844C4',
         bentoNotesText: '#FFFFFF',
-        bentoQuizGradient: ['#3B6D51', '#214D35'],
-        bentoQuizBorder: '#538A6B',
+        bentoQuizGradient: ['#157347', '#0B4226'],
+        bentoQuizBorder: '#22A85C',
         bentoQuizText: '#FFFFFF',
-        bentoMembersGradient: ['#9E492B', '#702B13'],
-        bentoMembersBorder: '#B85F3E',
+        bentoMembersGradient: ['#D9651A', '#8F3805'],
+        bentoMembersBorder: '#F97316',
         bentoMembersText: '#FFFFFF',
-        bentoMeetingsGradient: ['#243E5E', '#14273E'],
-        bentoMeetingsBorder: '#3B5B84',
+        bentoMeetingsGradient: ['#0E6BA8', '#074269'],
+        bentoMeetingsBorder: '#1A86CC',
         bentoMeetingsText: '#FFFFFF',
+        bentoGalleryGradient: ['#18181B', '#09090B'],
+        bentoGalleryBorder: '#3F3F46',
+        bentoGalleryText: '#FFFFFF',
+        bentoGallerySub: '#A1A1AA',
+        bentoYoutubeGradient: ['#7A1A1A', '#450A0A'],
+        bentoYoutubeBorder: '#991B1B',
+        bentoYoutubeText: '#FFFFFF',
+        bentoYoutubeSub: '#FECACA',
       };
     case 'theme_green':
     default:
@@ -2422,12 +2460,12 @@ export default function HomeScreen() {
     {
       id: 'members',
       title: t('home.quickMembers') || 'Members',
-      icon: require('../../assets/3d_members.png'),
+      icon: require('../../assets/3d_members_family.png'),
       onPress: () => handleOpenMembers(),
     },
     {
       id: 'meetings',
-      title: 'Meetings',
+      title: 'Online Meetings',
       icon: require('../../assets/3d_online_meetings.png'),
       onPress: () => navigation.navigate('OnlineMeetings'),
     },
@@ -2445,19 +2483,6 @@ export default function HomeScreen() {
         const yUrl = activeChurch?.socialLinks?.youtube?.trim() || 'https://www.youtube.com/@RhemaGlobalMinistries';
         Linking.openURL(yUrl).catch(() => {});
       },
-    },
-    // Row 4: Church Info & Contact
-    {
-      id: 'about',
-      title: t('home.aboutUs') || 'About Us',
-      icon: require('../../assets/3d_about_us.png'),
-      onPress: () => navigation.navigate('AboutUs'),
-    },
-    {
-      id: 'contact',
-      title: t('home.contactUs') || 'Contact Us',
-      icon: require('../../assets/3d_contact_us.png'),
-      onPress: () => navigation.navigate('ContactUs'),
     },
   ];
 
@@ -3581,12 +3606,6 @@ export default function HomeScreen() {
                               elevation: screenTheme.isDark ? 4 : 2,
                             }
                           ]}>
-                            {/* Subtle bottom-right open book & soft circle watermark */}
-                            <View style={[styles.vdWatermarkCircle, { backgroundColor: screenTheme.isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.03)' }]} pointerEvents="none" />
-                            <View style={styles.vdWatermarkBook} pointerEvents="none">
-                              <BookOpen size={64} color={screenTheme.isDark ? "rgba(255, 255, 255, 0.14)" : "rgba(0, 0, 0, 0.06)"} strokeWidth={1.5} />
-                            </View>
-
                             <Text style={[styles.phLabel, { color: screenTheme.promiseLabel }]} maxFontSizeMultiplier={1.15}>
                               {greeting}
                             </Text>
@@ -3721,7 +3740,7 @@ export default function HomeScreen() {
             {quickActionsStyle === 'grid' ? (
               /* ── 4-in-a-Row 3D Icon Grid (User Selected Style) ── */
               <View style={styles.grid4Container}>
-                {[0, 1, 2, 3].map((rowIndex) => {
+                {Array.from({ length: Math.ceil(quickActionsGridItems.length / 4) }).map((_, rowIndex) => {
                   const rowItems = quickActionsGridItems.slice(rowIndex * 4, rowIndex * 4 + 4);
                   if (rowItems.length === 0) return null;
                   return (
@@ -3802,9 +3821,11 @@ export default function HomeScreen() {
             {/* ── ROW 1: Sermons (Tall Card) + Stacked Daily Verse & Events (Right Column) ── */}
             <View style={styles.bentoRow1}>
               {/* Left Column: Sermons Card - PanResponder Swipeable & Auto-Scroll */}
-              <View 
+              <TouchableOpacity 
                 {...sermonPanResponder.panHandlers}
                 style={styles.claySermonsTouch}
+                activeOpacity={0.88}
+                onPress={() => navigation.navigate('Sermons')}
               >
                 <LinearGradient
                   colors={screenTheme.bentoSermonsGradient}
@@ -3813,9 +3834,7 @@ export default function HomeScreen() {
                   style={[styles.claySermonsCard, { borderColor: screenTheme.bentoSermonsBorder, borderWidth: 1 }]}
                 >
                   {/* 3D Retro Vintage Microphone for Sermons */}
-                  <TouchableOpacity 
-                    activeOpacity={0.8}
-                    onPress={() => navigation.navigate('Sermons')}
+                  <View 
                     style={{ width: 46, height: 52, alignItems: 'center', justifyContent: 'center' }}
                   >
                     <Image
@@ -3823,7 +3842,7 @@ export default function HomeScreen() {
                       style={{ width: 34, height: 52 }}
                       resizeMode="contain"
                     />
-                  </TouchableOpacity>
+                  </View>
 
                   {/* Bottom Text + Swipeable Slides & Indicator */}
                   <View 
@@ -3841,6 +3860,7 @@ export default function HomeScreen() {
                       horizontal
                       pagingEnabled
                       scrollEnabled={false}
+                      pointerEvents="none"
                       showsHorizontalScrollIndicator={false}
                       style={{ width: sermonCardWidth > 0 ? sermonCardWidth : '100%' }}
                     >
@@ -3920,7 +3940,7 @@ export default function HomeScreen() {
                     </View>
                   </View>
                 </LinearGradient>
-              </View>
+              </TouchableOpacity>
 
               {/* Right Column: Events (Top) + Songs (Bottom) */}
               <View style={styles.bentoRow1RightCol}>
@@ -4085,20 +4105,20 @@ export default function HomeScreen() {
                   colors={screenTheme.bentoVerseGradient}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={[styles.claySongsCard, { borderColor: screenTheme.bentoVerseBorder, borderWidth: 1 }]}
+                  style={[styles.claySongsCard, { borderColor: screenTheme.bentoVerseBorder, borderWidth: 1.2 }]}
                 >
                   {/* 3D Holy Bible Icon for Daily Verse */}
-                  <View style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+                  <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
                     <Image
                       source={require('../../assets/3d_daily_verse.png')}
-                      style={{ width: 40, height: 40 }}
+                      style={{ width: 38, height: 38 }}
                       resizeMode="contain"
                     />
                   </View>
 
                   <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 8 }}>
                     <Text
-                      style={[styles.clayCardTitle, { color: screenTheme.bentoVerseText, fontSize: 16, fontWeight: '800' }]}
+                      style={[styles.clayCardTitle, { color: screenTheme.bentoVerseText, fontSize: 14.5, fontWeight: '800' }]}
                       numberOfLines={1}
                       adjustsFontSizeToFit
                       minimumFontScale={0.85}
@@ -4122,20 +4142,20 @@ export default function HomeScreen() {
                   style={[styles.clayAttendanceCard, { borderColor: screenTheme.bentoAttendanceBorder, borderWidth: 1 }]}
                 >
                   {/* 3D Attendance Checklist Clipboard Icon */}
-                  <View style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginLeft: 0, marginRight: 2 }}>
+                  <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center', marginLeft: 0, marginRight: 2 }}>
                     <Image
                       source={require('../../assets/3d_attendance.png')}
-                      style={{ width: 42, height: 42 }}
+                      style={{ width: 38, height: 38 }}
                       resizeMode="contain"
                     />
                   </View>
 
                   <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 8 }}>
                     <Text
-                      style={[styles.clayCardTitle, { color: screenTheme.bentoAttendanceText, fontSize: 18.5, fontWeight: '900', letterSpacing: -0.3 }]}
+                      style={[styles.clayCardTitle, { color: screenTheme.bentoAttendanceText, fontSize: 16, fontWeight: '900', letterSpacing: -0.3 }]}
                       numberOfLines={1}
                       adjustsFontSizeToFit
-                      minimumFontScale={0.88}
+                      minimumFontScale={0.85}
                     >
                       {t('nav.attendance') || 'Attendance'}
                     </Text>
@@ -4156,10 +4176,10 @@ export default function HomeScreen() {
                   colors={screenTheme.bentoNotesGradient}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={[styles.clayQuarterCard, { borderColor: screenTheme.bentoNotesBorder, borderWidth: 1 }]}
+                  style={[styles.clayQuarterCard, { borderColor: screenTheme.bentoNotesBorder, borderWidth: 1.2 }]}
                 >
                   {/* 3D Notepad with Writing Pen Icon */}
-                  <View style={{ width: 42, height: 42, alignItems: 'center', justifyContent: 'center', marginLeft: 2, marginRight: 4 }}>
+                  <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center', marginLeft: 2, marginRight: 2 }}>
                     <Image
                       source={require('../../assets/3d_sermon_notes.png')}
                       style={{ width: 36, height: 36 }}
@@ -4168,9 +4188,9 @@ export default function HomeScreen() {
                   </View>
 
                   {/* Text Next to Icon */}
-                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 4 }}>
+                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 6, marginRight: 4 }}>
                     <Text
-                      style={[styles.clayCardTitle, { color: screenTheme.bentoNotesText, fontSize: 14.5, fontWeight: '800' }]}
+                      style={[styles.clayCardTitle, { color: screenTheme.bentoNotesText, fontSize: 14, fontWeight: '800' }]}
                       numberOfLines={2}
                       adjustsFontSizeToFit
                       minimumFontScale={0.8}
@@ -4191,10 +4211,10 @@ export default function HomeScreen() {
                   colors={screenTheme.bentoQuizGradient}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={[styles.clayQuarterCard, { borderColor: screenTheme.bentoQuizBorder, borderWidth: 1 }]}
+                  style={[styles.clayQuarterCard, { borderColor: screenTheme.bentoQuizBorder, borderWidth: 1.2 }]}
                 >
                   {/* 3D Golden Trophy Icon */}
-                  <View style={{ width: 42, height: 42, alignItems: 'center', justifyContent: 'center', marginLeft: 2, marginRight: 4 }}>
+                  <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center', marginLeft: 2, marginRight: 2 }}>
                     <Image
                       source={require('../../assets/3d_bible_quiz.png')}
                       style={{ width: 38, height: 38 }}
@@ -4203,9 +4223,9 @@ export default function HomeScreen() {
                   </View>
 
                   {/* Text Next to Icon */}
-                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 4 }}>
+                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 6, marginRight: 4 }}>
                     <Text
-                      style={[styles.clayCardTitle, { color: screenTheme.bentoQuizText, fontSize: 14.5, fontWeight: '800' }]}
+                      style={[styles.clayCardTitle, { color: screenTheme.bentoQuizText, fontSize: 14, fontWeight: '800' }]}
                       numberOfLines={2}
                       adjustsFontSizeToFit
                       minimumFontScale={0.8}
@@ -4217,144 +4237,149 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* ── ROW 5: 2 Capsule Pills (Members, Online Meetings) ── */}
+            {/* ── ROW 5: Church Gallery Banner (Long Card, same height as Give/Tithe card) ── */}
+            <TouchableOpacity
+              style={styles.clayGalleryTouch}
+              activeOpacity={0.88}
+              onPress={() => navigation.navigate('Gallery')}
+            >
+              <LinearGradient
+                colors={screenTheme.bentoGalleryGradient}
+                start={{ x: 0, y: 0.25 }}
+                end={{ x: 1, y: 0.75 }}
+                style={[styles.clayGalleryCard, { borderColor: screenTheme.bentoGalleryBorder, borderWidth: 1.2 }]}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                  {/* 3D Gallery Icon */}
+                  <View style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+                    <Image
+                      source={require('../../assets/3d_gallery.png')}
+                      style={{ width: 40, height: 40 }}
+                      resizeMode="contain"
+                    />
+                  </View>
+
+                  <View style={{ flex: 1, justifyContent: 'center', marginLeft: 10, marginRight: 6 }}>
+                    <Text
+                      style={[styles.clayCardTitle, { color: screenTheme.bentoGalleryText, fontSize: 15.5, fontWeight: '800' }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.8}
+                    >
+                      {language === 'en' ? 'Church Gallery' : (t('home.gallery') || 'Church Gallery')}
+                    </Text>
+                    <Text
+                      style={[styles.clayCardSub, { color: screenTheme.bentoGallerySub || 'rgba(255,255,255,0.85)', fontSize: 11, marginTop: 1.5 }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.8}
+                    >
+                      {language === 'en' ? 'Photos & memories' : (t('home.gallerySub') || 'Church memories')}
+                    </Text>
+                  </View>
+
+                  {/* Right side: 2 columns animated marquee (one goes upwards, one goes downwards) */}
+                  <GalleryMarqueeColumns gradient={screenTheme.bentoGalleryGradient} />
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            {/* ── ROW 6: Left Column (Meetings & Members - Normal Cards, height same as Sermon Notes) + Right Column (Big YouTube Card) ── */}
             <View
-              style={styles.bentoBottomPillsRow}
+              style={styles.bentoRow6}
               onLayout={(e) => setOnlineMeetingsY(e.nativeEvent.layout.y)}
             >
-              {/* Members Pill */}
-              <TouchableOpacity
-                style={styles.clayBottomTouch}
-                onPress={handleOpenMembers}
-                activeOpacity={0.85}
-              >
-                <LinearGradient
-                  colors={screenTheme.bentoMembersGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={[styles.clayBottomPill, { borderColor: screenTheme.bentoMembersBorder, borderWidth: 1 }]}
+              {/* Left Column: Online Meetings & Members (Height 70 each, matching Sermon Notes) */}
+              <View style={styles.bentoRow6LeftCol}>
+                {/* 1. Online Meetings */}
+                <TouchableOpacity
+                  style={styles.clayMeetingsTouch}
+                  activeOpacity={0.85}
+                  onPress={() => navigation.navigate('OnlineMeetings')}
                 >
-                  {/* 3D Members Group Icon */}
-                  <View style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}>
-                    <Image
-                      source={require('../../assets/3d_members.png')}
-                      style={{ width: 30, height: 26 }}
-                      resizeMode="contain"
-                    />
-                  </View>
+                  <LinearGradient
+                    colors={screenTheme.bentoMeetingsGradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={[styles.clayMeetingsCard, { borderColor: screenTheme.bentoMeetingsBorder, borderWidth: 1 }]}
+                  >
+                    {/* 3D Online Meetings Icon */}
+                    <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+                      <Image
+                        source={require('../../assets/3d_online_meetings.png')}
+                        style={{ width: 38, height: 38 }}
+                        resizeMode="contain"
+                      />
+                    </View>
 
-                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 4 }}>
-                    <Text
-                      style={[styles.clayCardTitle, { color: screenTheme.bentoMembersText, fontSize: 13, fontWeight: '800', letterSpacing: -0.2 }]}
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.8}
-                    >
-                      {t('home.quickMembers')}
-                    </Text>
-                  </View>
-                </LinearGradient>
-              </TouchableOpacity>
+                    <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 6 }}>
+                      <Text
+                        style={[styles.clayCardTitle, { color: screenTheme.bentoMeetingsText, fontSize: 13.5, fontWeight: '800' }]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.8}
+                      >
+                        {language === 'en' ? 'Online Meetings' : (t('home.onlineMeetings') || t('home.quickMeetings') || 'Online Meetings')}
+                      </Text>
+                      <Text
+                        style={[styles.clayCardSub, { color: 'rgba(255,255,255,0.85)', fontSize: 11, marginTop: 2 }]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.8}
+                      >
+                        Online calls
+                      </Text>
+                    </View>
+                  </LinearGradient>
+                </TouchableOpacity>
 
-              {/* Online Meetings Pill */}
-              <TouchableOpacity
-                style={styles.clayBottomTouch}
-                onPress={() => navigation.navigate('OnlineMeetings')}
-                activeOpacity={0.85}
-              >
-                <LinearGradient
-                  colors={screenTheme.bentoMeetingsGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={[styles.clayBottomPill, { borderColor: screenTheme.bentoMeetingsBorder, borderWidth: 1 }]}
+                {/* 2. Members */}
+                <TouchableOpacity
+                  style={styles.clayMembersTouch}
+                  activeOpacity={0.85}
+                  onPress={handleOpenMembers}
                 >
-                  {/* 3D Online Meetings Laptop Icon */}
-                  <View style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}>
-                    <Image
-                      source={require('../../assets/3d_online_meetings.png')}
-                      style={{ width: 30, height: 30 }}
-                      resizeMode="contain"
-                    />
-                  </View>
+                  <LinearGradient
+                    colors={screenTheme.bentoMembersGradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={[styles.clayMembersCard, { borderColor: screenTheme.bentoMembersBorder, borderWidth: 1.2 }]}
+                  >
+                    {/* 3D Members Community Icon */}
+                    <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+                      <Image
+                        source={require('../../assets/3d_members_family.png')}
+                        style={{ width: 38, height: 38 }}
+                        resizeMode="contain"
+                      />
+                    </View>
 
-                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 4 }}>
-                    <Text
-                      style={[styles.clayCardTitle, { color: screenTheme.bentoMeetingsText, fontSize: 13, fontWeight: '800', letterSpacing: -0.2 }]}
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.8}
-                    >
-                      Online Meetings
-                    </Text>
-                  </View>
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
+                    <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 6 }}>
+                      <Text
+                        style={[styles.clayCardTitle, { color: screenTheme.bentoMembersText, fontSize: 14, fontWeight: '800' }]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.85}
+                      >
+                        {t('home.quickMembers') || 'Members'}
+                      </Text>
+                      <Text
+                        style={[styles.clayCardSub, { color: 'rgba(255,255,255,0.85)', fontSize: 11, marginTop: 2 }]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.8}
+                      >
+                        Directory
+                      </Text>
+                    </View>
+                  </LinearGradient>
+                </TouchableOpacity>
               </View>
-            )}
-        </View>
 
-          {/* ── Quick Navigation: About Us, Contact Us, Gallery & YouTube in Single Line ── */}
-          {quickActionsStyle !== 'grid' && (
-          <View style={{ marginTop: 14, marginBottom: 24, width: '100%', paddingHorizontal: 16 }}>
-            <View style={{ flexDirection: 'row', width: '100%', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              {/* About Us */}
-              <TouchableOpacity 
-                style={{ alignItems: 'center', width: '23%' }}
-                onPress={() => navigation.navigate('AboutUs')}
-                activeOpacity={0.82}
-              >
-                <View style={[styles.archMedallionOuter, { backgroundColor: screenTheme.cardBg, shadowColor: '#E11D48' }]}>
-                  <LinearGradient
-                    colors={screenTheme.medallionBg}
-                    style={[styles.archMedallionInner, { borderColor: screenTheme.medallionBorder, borderWidth: 1 }]}
-                  >
-                    <Users size={23} color="#E11D48" strokeWidth={2.2} />
-                  </LinearGradient>
-                </View>
-                <Text style={{ color: screenTheme.text, fontWeight: '800', fontSize: 12.5, textAlign: 'center' }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{t('home.aboutUs')}</Text>
-                <Text style={{ color: screenTheme.textMuted, fontSize: 10.5, fontWeight: '600', marginTop: 2, textAlign: 'center' }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{t('home.aboutUsSub')}</Text>
-              </TouchableOpacity>
-
-              {/* Contact Us */}
-              <TouchableOpacity 
-                style={{ alignItems: 'center', width: '23%' }}
-                onPress={() => navigation.navigate('ContactUs')}
-                activeOpacity={0.82}
-              >
-                <View style={[styles.archMedallionOuter, { backgroundColor: screenTheme.cardBg, shadowColor: '#7C3AED' }]}>
-                  <LinearGradient
-                    colors={screenTheme.medallionBg}
-                    style={[styles.archMedallionInner, { borderColor: screenTheme.medallionBorder, borderWidth: 1 }]}
-                  >
-                    <MessageSquare size={23} color="#7C3AED" strokeWidth={2.2} />
-                  </LinearGradient>
-                </View>
-                <Text style={{ color: screenTheme.text, fontWeight: '800', fontSize: 12.5, textAlign: 'center' }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{t('home.contactUs')}</Text>
-                <Text style={{ color: screenTheme.textMuted, fontSize: 10.5, fontWeight: '600', marginTop: 2, textAlign: 'center' }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{t('home.contactUsSub')}</Text>
-              </TouchableOpacity>
-
-              {/* Gallery */}
-              <TouchableOpacity 
-                style={{ alignItems: 'center', width: '23%' }}
-                onPress={() => navigation.navigate('Gallery')}
-                activeOpacity={0.82}
-              >
-                <View style={[styles.archMedallionOuter, { backgroundColor: screenTheme.cardBg, shadowColor: '#355B56' }]}>
-                  <LinearGradient
-                    colors={screenTheme.medallionBg}
-                    style={[styles.archMedallionInner, { borderColor: screenTheme.medallionBorder, borderWidth: 1 }]}
-                  >
-                    <LucideImage size={23} color="#355B56" strokeWidth={2.2} />
-                  </LinearGradient>
-                </View>
-                <Text style={{ color: screenTheme.text, fontWeight: '800', fontSize: 12.5, textAlign: 'center' }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{t('home.gallery')}</Text>
-                <Text style={{ color: screenTheme.textMuted, fontSize: 10.5, fontWeight: '600', marginTop: 2, textAlign: 'center' }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{t('home.gallerySub')}</Text>
-              </TouchableOpacity>
-
-              {/* YouTube */}
-              <TouchableOpacity 
-                style={{ alignItems: 'center', width: '23%' }}
+              {/* Right Column: Big YouTube Card (same height as Sermons Card) */}
+              <TouchableOpacity
+                style={styles.clayYoutubeBigTouch}
+                activeOpacity={0.88}
                 onPress={() => {
                   const yUrl = activeChurch?.socialLinks?.youtube?.trim();
                   if (yUrl) {
@@ -4368,24 +4393,53 @@ export default function HomeScreen() {
                     });
                   }
                 }}
-                activeOpacity={0.82}
               >
-                <View style={[styles.archMedallionOuter, { backgroundColor: screenTheme.cardBg, shadowColor: '#EF4444' }]}>
-                  <LinearGradient
-                    colors={screenTheme.medallionBg}
-                    style={[styles.archMedallionInner, { borderColor: screenTheme.medallionBorder, borderWidth: 1 }]}
-                  >
-                    <Svg width={24} height={24} viewBox="0 0 24 24" fill="#EF4444">
-                      <Path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
-                    </Svg>
-                  </LinearGradient>
-                </View>
-                <Text style={{ color: screenTheme.text, fontWeight: '800', fontSize: 12.5, textAlign: 'center' }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>YouTube</Text>
-                <Text style={{ color: screenTheme.textMuted, fontSize: 10.5, fontWeight: '600', marginTop: 2, textAlign: 'center' }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>Watch live</Text>
+                <LinearGradient
+                  colors={screenTheme.bentoYoutubeGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[styles.clayYoutubeBigCard, { borderColor: screenTheme.bentoYoutubeBorder }]}
+                >
+                  {/* Top: YouTube Icon + Live Badge */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                    <Image
+                      source={require('../../assets/3d_youtube.png')}
+                      style={{ width: 44, height: 38 }}
+                      resizeMode="contain"
+                    />
+                    <View style={styles.bentoLiveBadgeWrap}>
+                      <View style={styles.bentoLiveDot} />
+                      <Text style={styles.bentoLiveTag}>LIVE</Text>
+                    </View>
+                  </View>
+
+                  {/* Bottom: Title & Subtitle */}
+                  <View style={{ marginTop: 'auto', paddingTop: 8 }}>
+                    <Text
+                      style={[styles.claySermonsTitle, { color: screenTheme.bentoYoutubeText }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.85}
+                    >
+                      YouTube
+                    </Text>
+                    <Text
+                      style={[styles.claySermonsSub, { color: screenTheme.bentoYoutubeSub, marginTop: 2 }]}
+                      numberOfLines={2}
+                    >
+                      Watch live broadcasts & sermons
+                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 }}>
+                      <Play size={11} color="#FFFFFF" fill="#FFFFFF" />
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFFFFF' }}>Watch live</Text>
+                    </View>
+                  </View>
+                </LinearGradient>
               </TouchableOpacity>
             </View>
-          </View>
-          )}
+              </View>
+            )}
+        </View>
 
           {/* ─── Upcoming Events ─── */}
           <View style={styles.sectionHeader}>
@@ -5348,6 +5402,90 @@ const GiveCoins = ({ scrollY, triggerY }: { scrollY?: Animated.Value; triggerY?:
     </View>
   );
 };
+
+/* ───────────── church gallery animated 2-column marquee ───────────── */
+const GALLERY_COL1_ICONS = [
+  require('../../assets/gallery_3d_stage.png'),
+  require('../../assets/gallery_3d_lantern.png'),
+  require('../../assets/gallery_3d_fireworks.png'),
+  require('../../assets/gallery_3d_cake.png'),
+  require('../../assets/gallery_3d_church.png'),
+];
+
+const GALLERY_COL2_ICONS = [
+  require('../../assets/gallery_3d_xmas_tree.png'),
+  require('../../assets/gallery_3d_wedding_arch.png'),
+  require('../../assets/gallery_3d_wedding_rings.png'),
+  require('../../assets/gallery_3d_santa.png'),
+  require('../../assets/gallery_3d_family.png'),
+];
+
+const GalleryMarqueeColumns = React.memo(({ gradient }: { gradient: readonly string[] }) => {
+  const animUp = useRef(new Animated.Value(0)).current;
+  const animDown = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loopUp = Animated.loop(
+      Animated.timing(animUp, {
+        toValue: 1,
+        duration: 9000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    const loopDown = Animated.loop(
+      Animated.timing(animDown, {
+        toValue: 1,
+        duration: 10500,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    loopUp.start();
+    loopDown.start();
+    return () => {
+      loopUp.stop();
+      loopDown.stop();
+    };
+  }, [animUp, animDown]);
+
+  const translateYUp = animUp.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -220],
+  });
+
+  const translateYDown = animDown.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-220, 0],
+  });
+
+  return (
+    <View style={styles.galleryMarqueeContainer} pointerEvents="none">
+      {/* Column 1 (Scrolls Upwards - 5 Custom 3D Icons) */}
+      <View style={styles.galleryMarqueeCol}>
+        <Animated.View style={{ transform: [{ translateY: translateYUp }] }}>
+          {[...GALLERY_COL1_ICONS, ...GALLERY_COL1_ICONS].map((src, idx) => (
+            <View key={`g-up-${idx}`} style={styles.galleryThumbWrap}>
+              <Image source={src} style={styles.galleryThumbImg} resizeMode="contain" />
+            </View>
+          ))}
+        </Animated.View>
+      </View>
+
+      {/* Column 2 (Scrolls Downwards - 5 Custom 3D Icons) */}
+      <View style={styles.galleryMarqueeCol}>
+        <Animated.View style={{ transform: [{ translateY: translateYDown }] }}>
+          {[...GALLERY_COL2_ICONS, ...GALLERY_COL2_ICONS].map((src, idx) => (
+            <View key={`g-down-${idx}`} style={styles.galleryThumbWrap}>
+              <Image source={src} style={styles.galleryThumbImg} resizeMode="contain" />
+            </View>
+          ))}
+        </Animated.View>
+      </View>
+    </View>
+  );
+});
+
 const styles = StyleSheet.create({
 
   floatingBtnContainer: {
@@ -6555,19 +6693,19 @@ const styles = StyleSheet.create({
   },
   clayAttendanceTouch: {
     flex: 1,
-    borderRadius: 22,
-    elevation: 4,
+    borderRadius: 20,
+    elevation: 3,
     shadowColor: '#1A1D1D',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
   },
   clayAttendanceCard: {
-    minHeight: 84,
-    borderRadius: 22,
+    minHeight: 70,
+    borderRadius: 20,
     backgroundColor: '#343A3A',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
     flexDirection: 'row',
     alignItems: 'center',
     overflow: 'hidden',
@@ -6576,19 +6714,19 @@ const styles = StyleSheet.create({
   },
   clayYoutubeTouch: {
     flex: 1,
-    borderRadius: 22,
-    elevation: 4,
+    borderRadius: 20,
+    elevation: 3,
     shadowColor: '#420F12',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
   },
   clayYoutubeCard: {
-    minHeight: 84,
-    borderRadius: 22,
+    minHeight: 70,
+    borderRadius: 20,
     backgroundColor: '#101817',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
     flexDirection: 'row',
     alignItems: 'center',
     overflow: 'hidden',
@@ -6615,24 +6753,24 @@ const styles = StyleSheet.create({
   },
   claySongsTouch: {
     flex: 1,
-    borderRadius: 22,
+    borderRadius: 20,
     elevation: 3,
-    shadowColor: '#3A1A54',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 7,
+    shadowColor: '#0E1E45',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
   },
   claySongsCard: {
-    minHeight: 84,
-    borderRadius: 22,
+    minHeight: 70,
+    borderRadius: 20,
     backgroundColor: 'transparent',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
     flexDirection: 'row',
     alignItems: 'center',
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#7E43BA',
+    borderWidth: 1.5,
+    borderColor: '#3B82F6',
   },
   bentoRow4: {
     flexDirection: 'row',
@@ -6642,20 +6780,20 @@ const styles = StyleSheet.create({
   clayQuarterTouch: {
     flex: 1,
     borderRadius: 20,
+    elevation: 3,
+    shadowColor: '#1B1226',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
   },
   clayQuarterCard: {
-    minHeight: 84,
-    borderRadius: 22,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    minHeight: 70,
+    borderRadius: 20,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
     flexDirection: 'row',
     alignItems: 'center',
     overflow: 'hidden',
-    elevation: 2.5,
-    shadowColor: '#2A1A0B',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.07,
-    shadowRadius: 4,
     borderWidth: 1.5,
   },
   clayAccentBar: {
@@ -6675,6 +6813,159 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 6,
     marginTop: 9,
+  },
+  bentoRow5: {
+    flexDirection: 'row',
+    gap: 9,
+    marginTop: 9,
+    alignItems: 'stretch',
+  },
+  bentoRow5LeftCol: {
+    flex: 1.06,
+    justifyContent: 'space-between',
+    gap: 7,
+  },
+  clayGalleryTouch: {
+    marginTop: 9,
+    borderRadius: 22,
+    elevation: 3,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.16,
+    shadowRadius: 7,
+  },
+  clayGalleryCard: {
+    minHeight: 82,
+    borderRadius: 22,
+    paddingLeft: 12,
+    paddingRight: 6,
+    paddingVertical: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    overflow: 'hidden',
+    borderWidth: 1.2,
+  },
+  galleryMarqueeContainer: {
+    width: 84,
+    height: 74,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    overflow: 'hidden',
+    marginRight: 2,
+  },
+  galleryMarqueeCol: {
+    width: 38,
+    height: 74,
+    overflow: 'hidden',
+  },
+  galleryThumbWrap: {
+    width: 38,
+    height: 38,
+    marginBottom: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  galleryThumbImg: {
+    width: 36,
+    height: 36,
+  },
+  bentoRow6: {
+    flexDirection: 'row',
+    gap: 9,
+    marginTop: 9,
+    alignItems: 'stretch',
+  },
+  bentoRow6LeftCol: {
+    flex: 1.06,
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  clayMeetingsTouch: {
+    borderRadius: 20,
+    elevation: 3,
+    shadowColor: '#074269',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
+  },
+  clayMeetingsCard: {
+    minHeight: 70,
+    borderRadius: 20,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    overflow: 'hidden',
+    borderWidth: 1.5,
+  },
+  clayMembersTouch: {
+    borderRadius: 20,
+    elevation: 3,
+    shadowColor: '#8F3805',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
+  },
+  clayMembersCard: {
+    minHeight: 70,
+    borderRadius: 20,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    overflow: 'hidden',
+    borderWidth: 1.5,
+  },
+  claySideTouch: {
+    flex: 1,
+    borderRadius: 18,
+    elevation: 3,
+    shadowColor: '#1F1710',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 5,
+  },
+  claySideCard: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 18,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    overflow: 'hidden',
+    borderWidth: 1.5,
+  },
+  claySideIconWrap: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  claySideContent: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  clayYoutubeBigTouch: {
+    flex: 0.94,
+    borderRadius: 22,
+    elevation: 4,
+    shadowColor: '#380B0B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+  },
+  clayYoutubeBigCard: {
+    flex: 1,
+    minHeight: 148,
+    borderRadius: 22,
+    padding: 12,
+    justifyContent: 'space-between',
+    overflow: 'hidden',
+    borderWidth: 1.5,
   },
   clayBottomTouch: {
     flex: 1,

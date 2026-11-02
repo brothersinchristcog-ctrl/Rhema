@@ -354,6 +354,7 @@ export const kn: TranslationSchema = {
     givingHistorySub: 'ನಿಮ್ಮ ಕಾಣಿಕೆ ದಾಖಲೆಗಳನ್ನು ವೀಕ್ಷಿಸಿ',
     churchSubscription: 'ಚರ್ಚ್ ಚಂದಾದಾರಿಕೆ',
     churchSubscriptionSub: 'ಯೋಜನೆ ಮತ್ತು ಬಿಲ್ಲಿಂಗ್ ನಿರ್ವಹಿಸಿ',
+    churchSection: 'ಚರ್ಚ್',
     settingsSection: 'ಸೆಟ್ಟಿಂಗ್‌ಗಳು',
     notifications: 'ಸೂಚನೆ ಆದ್ಯತೆಗಳು',
     notificationsSub: 'ನಿಮ್ಮ ಆದ್ಯತೆಗಳನ್ನು ನಿರ್ವಹಿಸಿ',

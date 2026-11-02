@@ -354,6 +354,7 @@ export const hi: TranslationSchema = {
     givingHistorySub: 'अपने दान के रिकॉर्ड देखें',
     churchSubscription: 'चर्च सदस्यता',
     churchSubscriptionSub: 'योजना और बिलिंग प्रबंधित करें',
+    churchSection: 'चर्च',
     settingsSection: 'सेटिंग्स',
     notifications: 'सूचनाएं',
     notificationsSub: 'अपनी प्राथमिकताएं प्रबंधित करें',

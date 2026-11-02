@@ -352,6 +352,7 @@ export const en = {
     givingHistorySub: 'View your donation records',
     churchSubscription: 'Church Subscription',
     churchSubscriptionSub: 'Manage church plan and billing',
+    churchSection: 'CHURCH',
     settingsSection: 'SETTINGS',
     notifications: 'Notification Preferences',
     notificationsSub: 'Manage your preferences',
