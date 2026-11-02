@@ -82,14 +82,20 @@ export const installGlobalFontScaling = () => {
 
       // Scale explicit fontSize
       if (flatStyle && typeof flatStyle.fontSize === 'number') {
-        // Protect micro-badges from clipping
-        if (flatStyle.fontSize <= 9) {
+        // Protect micro-badges, tab bar labels, and tiny counter pills (<= 10.5px) from clipping
+        if (flatStyle.fontSize <= 10.5) {
           return React.createElement(OriginalText, mergedProps);
         }
 
-        const scaledFontSize = Math.round(flatStyle.fontSize * currentScale);
+        // Apply smooth dampening for very large titles (>= 28px) so headings fit every mobile screen
+        let effectiveScale = currentScale;
+        if (flatStyle.fontSize >= 28 && currentScale > 1.0) {
+          effectiveScale = 1.0 + (currentScale - 1.0) * 0.55;
+        }
+
+        const scaledFontSize = Math.round(flatStyle.fontSize * effectiveScale);
         const scaledLineHeight = typeof flatStyle.lineHeight === 'number'
-          ? Math.round(flatStyle.lineHeight * currentScale)
+          ? Math.round(flatStyle.lineHeight * effectiveScale)
           : undefined;
 
         const overrideStyle = scaledLineHeight !== undefined

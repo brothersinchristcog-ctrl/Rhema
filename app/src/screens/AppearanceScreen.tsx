@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   ScrollView,
   StatusBar,
-  Dimensions,
+  useWindowDimensions,
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,8 +19,13 @@ export default function AppearanceScreen() {
   const navigation = useNavigation<any>();
   const { appearance, setAppearance, accentColor, setAccentColor, quickActionsStyle, setQuickActionsStyle, navBarStyle, setNavBarStyle, fontSize, setFontSize, colors, isDark } = useTheme();
 
-  const screenWidth = Dimensions.get('window').width;
-  const cardWidth = (screenWidth - 36 - 14) / 2;
+  const ScaledText = Text as any;
+  const { width: screenWidth } = useWindowDimensions();
+  const isSmallDevice = screenWidth < 360;
+  const isMediumDevice = screenWidth >= 360 && screenWidth < 400;
+  const horizPadding = isSmallDevice ? 12 : isMediumDevice ? 15 : 18;
+  const cardGap = isSmallDevice ? 10 : 12;
+  const cardWidth = Math.floor((screenWidth - (horizPadding * 2) - cardGap) / 2);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -44,7 +49,7 @@ export default function AppearanceScreen() {
       </View>
 
       <ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 40 }]}
+        contentContainerStyle={[styles.scrollContent, { paddingHorizontal: horizPadding, paddingBottom: insets.bottom + 40 }]}
         showsVerticalScrollIndicator={false}
       >
         {/* ── Subtitle Description ── */}
@@ -204,7 +209,7 @@ export default function AppearanceScreen() {
                 <View style={[styles.bentoMockWide, { backgroundColor: '#F59E0B' }]} />
               </View>
 
-              <View style={[styles.cardBottomRow, { backgroundColor: isDark ? '#121212' : '#FFFFFF', height: 52 }]}>
+              <View style={[styles.cardBottomRow, { backgroundColor: isDark ? '#121212' : '#FFFFFF', minHeight: isSmallDevice ? 46 : 52, height: undefined, paddingVertical: 4 }]}>
                 <View style={{ flex: 1, marginRight: 4 }}>
                   <Text
                     style={[
@@ -268,7 +273,7 @@ export default function AppearanceScreen() {
                 </View>
               </View>
 
-              <View style={[styles.cardBottomRow, { backgroundColor: isDark ? '#121212' : '#FFFFFF', height: 52 }]}>
+              <View style={[styles.cardBottomRow, { backgroundColor: isDark ? '#121212' : '#FFFFFF', minHeight: isSmallDevice ? 46 : 52, height: undefined, paddingVertical: 4 }]}>
                 <View style={{ flex: 1, marginRight: 4 }}>
                   <Text
                     style={[
@@ -353,7 +358,7 @@ export default function AppearanceScreen() {
                 </View>
               </View>
 
-              <View style={[styles.cardBottomRow, { backgroundColor: isDark ? '#121212' : '#FFFFFF', height: 52 }]}>
+              <View style={[styles.cardBottomRow, { backgroundColor: isDark ? '#121212' : '#FFFFFF', minHeight: isSmallDevice ? 46 : 52, height: undefined, paddingVertical: 4 }]}>
                 <View style={{ flex: 1, marginRight: 4 }}>
                   <Text
                     style={[
@@ -407,7 +412,7 @@ export default function AppearanceScreen() {
                 </View>
               </View>
 
-              <View style={[styles.cardBottomRow, { backgroundColor: isDark ? '#121212' : '#FFFFFF', height: 52 }]}>
+              <View style={[styles.cardBottomRow, { backgroundColor: isDark ? '#121212' : '#FFFFFF', minHeight: isSmallDevice ? 46 : 52, height: undefined, paddingVertical: 4 }]}>
                 <View style={{ flex: 1, marginRight: 4 }}>
                   <Text
                     style={[
@@ -446,7 +451,7 @@ export default function AppearanceScreen() {
           </Text>
 
           {/* 3-Column Font Size Option Cards */}
-          <View style={styles.fontSizeRow}>
+          <View style={[styles.fontSizeRow, { gap: isSmallDevice ? 6 : 8 }]}>
             {FONT_SIZE_OPTIONS.map((item) => {
               const isSelected = fontSize === item.id;
               const activeBorderColor = accentColor || '#881337';
@@ -458,6 +463,8 @@ export default function AppearanceScreen() {
                   style={[
                     styles.fontSizeCard,
                     {
+                      paddingVertical: isSmallDevice ? 10 : 13,
+                      paddingHorizontal: isSmallDevice ? 3 : 6,
                       borderColor: isSelected ? activeBorderColor : isDark ? '#27272A' : '#E2E8F0',
                       borderWidth: isSelected ? 2.5 : 1.5,
                       backgroundColor: isDark ? '#121212' : '#FFFFFF',
@@ -470,56 +477,77 @@ export default function AppearanceScreen() {
                     style={[
                       styles.fontSizeAaBox,
                       {
+                        width: isSmallDevice ? 38 : 46,
+                        height: isSmallDevice ? 38 : 46,
+                        borderRadius: isSmallDevice ? 10 : 13,
                         backgroundColor: isSelected
                           ? (isDark ? 'rgba(56, 189, 248, 0.12)' : 'rgba(37, 99, 235, 0.08)')
                           : isDark ? '#18181B' : '#F8FAFC',
                       },
                     ]}
                   >
-                    {/* @ts-ignore */}
-                    <Text skipFontScaling
+                    <ScaledText
+                      skipFontScaling
                       style={[
                         styles.fontSizeAaTxt,
                         {
-                          fontSize: item.px,
+                          fontSize: isSmallDevice ? Math.min(item.px, 18) : item.px,
                           color: isSelected ? activeBorderColor : isDark ? '#F4F4F5' : '#1E293B',
                           fontWeight: isSelected ? '800' : '600',
                         },
                       ]}
                     >
                       Aa
-                    </Text>
+                    </ScaledText>
                   </View>
 
                   {/* Title & Sub */}
                   <View style={styles.fontSizeCardInfo}>
-                    <Text
+                    <ScaledText
+                      skipFontScaling
                       style={[
                         styles.fontSizeCardTitle,
                         {
                           color: isDark ? '#F4F4F5' : '#1E293B',
                           fontWeight: isSelected ? '800' : '600',
+                          fontSize: isSmallDevice ? 11.5 : 13,
                         },
                       ]}
                       numberOfLines={1}
                     >
                       {item.label}
-                    </Text>
-                    <Text
+                    </ScaledText>
+                    <ScaledText
+                      skipFontScaling
                       style={[
                         styles.fontSizeCardSub,
-                        { color: isDark ? '#A1A1AA' : '#64748B' },
+                        {
+                          color: isDark ? '#A1A1AA' : '#64748B',
+                          fontSize: isSmallDevice ? 9.5 : 11,
+                        },
                       ]}
                       numberOfLines={1}
                     >
                       {item.displaySub}
-                    </Text>
+                    </ScaledText>
                   </View>
 
                   {/* Selection Indicator */}
                   {isSelected && (
-                    <View style={[styles.fontSizeCheckCircle, { backgroundColor: activeBorderColor }]}>
-                      <Check size={11} color="#FFFFFF" strokeWidth={3} />
+                    <View
+                      style={[
+                        styles.fontSizeCheckCircle,
+                        {
+                          backgroundColor: activeBorderColor,
+                          width: isSmallDevice ? 15 : 18,
+                          height: isSmallDevice ? 15 : 18,
+                          borderRadius: 9,
+                          top: isSmallDevice ? 4 : 6,
+                          right: isSmallDevice ? 4 : 6,
+                        },
+                      ]}
+                    >
+                      <Check size={isSmallDevice ? 9 : 11} color="#FFFFFF" strokeWidth={3} />
                     </View>
                   )}
                 </TouchableOpacity>
@@ -532,6 +560,7 @@ export default function AppearanceScreen() {
             style={[
               styles.livePreviewCard,
               {
+                padding: isSmallDevice ? 12 : 16,
                 backgroundColor: isDark ? '#18181B' : '#F1F5F9',
                 borderColor: isDark ? '#27272A' : '#E2E8F0',
               },
@@ -542,14 +571,33 @@ export default function AppearanceScreen() {
                 LIVE PREVIEW ({(FONT_SIZE_CONFIG[fontSize] || FONT_SIZE_CONFIG.medium).px} PX)
               </Text>
             </View>
-            {/* @ts-ignore */}
-            <Text skipFontScaling style={[styles.livePreviewScripture, { color: colors.text, fontSize: (FONT_SIZE_CONFIG[fontSize] || FONT_SIZE_CONFIG.medium).px, lineHeight: Math.round((FONT_SIZE_CONFIG[fontSize] || FONT_SIZE_CONFIG.medium).px * 1.45) }]}>
+            <ScaledText
+              skipFontScaling
+              style={[
+                styles.livePreviewScripture,
+                {
+                  color: colors.text,
+                  fontSize: isSmallDevice
+                    ? Math.max(13, (FONT_SIZE_CONFIG[fontSize] || FONT_SIZE_CONFIG.medium).px - 1)
+                    : (FONT_SIZE_CONFIG[fontSize] || FONT_SIZE_CONFIG.medium).px,
+                  lineHeight: Math.round((FONT_SIZE_CONFIG[fontSize] || FONT_SIZE_CONFIG.medium).px * 1.45),
+                },
+              ]}
+            >
               "Your word is a lamp to my feet and a light to my path."
-            </Text>
-            {/* @ts-ignore */}
-            <Text skipFontScaling style={[styles.livePreviewRef, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+            </ScaledText>
+            <ScaledText
+              skipFontScaling
+              style={[
+                styles.livePreviewRef,
+                {
+                  color: isDark ? '#A1A1AA' : '#64748B',
+                  fontSize: isSmallDevice ? 11 : 12.5,
+                },
+              ]}
+            >
               Psalm 119:105
-            </Text>
+            </ScaledText>
           </View>
         </View>
 
@@ -564,7 +612,7 @@ export default function AppearanceScreen() {
             Your own accent, on this phone. The first dot is your space's color — tap any other to wear it everywhere in the app, instantly.
           </Text>
 
-          <View style={styles.paletteRow}>
+          <View style={[styles.paletteRow, { gap: isSmallDevice ? 10 : 12 }]}>
             {ACCENT_PALETTE.map((item, idx) => {
               const isSelected = accentColor === item.color;
               return (
@@ -573,6 +621,9 @@ export default function AppearanceScreen() {
                   style={[
                     styles.colorDot,
                     {
+                      width: isSmallDevice ? 38 : 44,
+                      height: isSmallDevice ? 38 : 44,
+                      borderRadius: isSmallDevice ? 19 : 22,
                       backgroundColor: item.color,
                       transform: [{ scale: isSelected ? 1.08 : 1 }],
                     },
