@@ -3745,17 +3745,17 @@ export default function HomeScreen() {
                               {
                                 backgroundColor:
                                   appearance === 'pure_white'
-                                    ? '#FAF7F2'
+                                    ? '#F1F5F9'
                                     : appearance === 'warm_white'
                                     ? '#FFFFFF'
                                     : appearance === 'sage_ecru'
                                     ? '#F4F7EE'
                                     : screenTheme.isDark
                                     ? '#121212'
-                                    : '#FFFFFF',
+                                    : '#F1F5F9',
                                 borderColor:
                                   appearance === 'pure_white'
-                                    ? '#E8E3DA'
+                                    ? '#E2E8F0'
                                     : appearance === 'warm_white'
                                     ? '#E2E8F0'
                                     : appearance === 'sage_ecru'
