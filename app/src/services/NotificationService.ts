@@ -180,9 +180,17 @@ class NotificationService {
           break;
         case 'prayer_request_admin':
         case 'prayer_request':
-        case 'prayer':
-          nav.navigate('AdminRoot', { targetTab: 'Prayers' });
+        case 'prayer': {
+          const prayerId = rawData.prayerId || rawData.requestId || id;
+          console.log('🙏 [NotificationService] Direct routing to Admin Prayers tab:', { prayerId });
+          nav.navigate('AdminRoot', {
+            targetTab: 'Prayers',
+            prayerId: prayerId,
+            requestId: prayerId,
+            timestamp: Date.now(),
+          });
           break;
+        }
         case 'prayer_request_public':
           nav.navigate('PrayerWall', { tab: 'public_requests' });
           break;

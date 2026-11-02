@@ -743,6 +743,20 @@ function Navigation() {
             });
           } else if (type === 'baptism_request_member') {
             navigationRef.navigate('BaptismRequest', { requestId: data.requestId || data.id });
+          } else if (type === 'prayer_request_admin' || type === 'prayer_request' || type === 'prayer') {
+            const prayerId = data.prayerId || data.requestId || data.id;
+            console.log('🙏 [RootNavigator] Direct routing to Admin Prayers tab:', { prayerId });
+            if (isAdmin && viewMode !== 'admin') {
+              setViewMode('admin');
+            }
+            navigationRef.navigate('AdminRoot', {
+              targetTab: 'Prayers',
+              prayerId: prayerId,
+              requestId: prayerId,
+              timestamp: Date.now(),
+            });
+          } else if (type === 'prayer_request_public') {
+            navigationRef.navigate('PrayerWall', { tab: 'public_requests' });
           } else {
             NotificationService.handleNotificationNavigation({ data }, navigationRef);
           }
@@ -771,6 +785,19 @@ function Navigation() {
       if (!remoteMessage) return;
       const { navigationRef } = require('../../App');
       if (navigationRef && navigationRef.isReady()) {
+        const type = remoteMessage?.data?.type;
+        const isAdminNotification = 
+          type === 'invoice' || 
+          type === 'baptism_request_admin' || 
+          type === 'baptism_request' || 
+          type === 'baptism' || 
+          type === 'prayer_request_admin' ||
+          type === 'prayer_request' ||
+          type === 'prayer';
+
+        if (isAdminNotification && isAdmin && viewMode !== 'admin') {
+          setViewMode('admin');
+        }
         NotificationService.handleNotificationNavigation(remoteMessage, navigationRef);
       } else {
         setPendingNotification(remoteMessage);
@@ -782,6 +809,19 @@ function Navigation() {
       if (remoteMessage) {
         const { navigationRef } = require('../../App');
         if (navigationRef && navigationRef.isReady()) {
+          const type = remoteMessage?.data?.type;
+          const isAdminNotification = 
+            type === 'invoice' || 
+            type === 'baptism_request_admin' || 
+            type === 'baptism_request' || 
+            type === 'baptism' || 
+            type === 'prayer_request_admin' ||
+            type === 'prayer_request' ||
+            type === 'prayer';
+
+          if (isAdminNotification && isAdmin && viewMode !== 'admin') {
+            setViewMode('admin');
+          }
           NotificationService.handleNotificationNavigation(remoteMessage, navigationRef);
         } else {
           setPendingNotification(remoteMessage);

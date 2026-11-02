@@ -1915,6 +1915,28 @@ class FirestoreService {
     }
   }
 
+  async getPrayerRequestById(id: string) {
+    try {
+      if (!id) return null;
+      const col = await this.getCollection('prayerRequests');
+      const snap = await col.doc(id).get();
+      if (!snap.exists) {
+        const idChurch = await this.getChurchId();
+        if (idChurch) {
+          const fallbackSnap = await firestore().collection('churches').doc(idChurch).collection('prayerRequests').doc(id).get();
+          if (fallbackSnap.exists) {
+            return { id: fallbackSnap.id, ...fallbackSnap.data() };
+          }
+        }
+        return null;
+      }
+      return { id: snap.id, ...snap.data() };
+    } catch (error) {
+      console.error('Error fetching prayer request by id:', error);
+      return null;
+    }
+  }
+
   async submitPrayerRequest(data: any) {
     try {
       const col = await this.getCollection('prayerRequests');
@@ -1942,7 +1964,7 @@ class FirestoreService {
         createdAt: FieldValue.serverTimestamp()
       });
 
-      // Write direct notification to churches/{churchId}/notifications to guarantee Admin notification visibility
+      // Write direct notification to notifications collection to guarantee Admin notification visibility
       try {
         const notifCol = await this.getCollection('notifications');
         const excerpt = textVal.length > 80 ? `${textVal.substring(0, 80)}...` : textVal;
@@ -1952,6 +1974,9 @@ class FirestoreService {
           body: excerpt ? `${memberNameVal} submitted a prayer request: "${excerpt}"` : `${memberNameVal} submitted a new prayer request.`,
           memberName: memberNameVal,
           prayerId: docRef.id,
+          requestId: docRef.id,
+          targetTab: 'Prayers',
+          screen: 'AdminRoot',
           requestExcerpt: excerpt,
           category: data.category || '',
           isPublic: data.isPublic ?? false,
@@ -1962,40 +1987,7 @@ class FirestoreService {
         console.warn('⚠️ Could not write admin notification doc directly:', notifErr);
       }
 
-      // Also deliver immediate push notification to Admins via the live processBroadcastPushNotifications trigger
-      try {
-        const membersCol = await this.getCollection('members');
-        const membersSnap = await membersCol.get();
-        const excerpt = textVal.length > 80 ? `${textVal.substring(0, 80)}...` : textVal;
-        const bcastTitle = `🙏 New Prayer Request: ${memberNameVal}`;
-        const bcastBody = excerpt ? `${memberNameVal} submitted a prayer request: "${excerpt}"` : `${memberNameVal} submitted a new prayer request.`;
-
-        const adminPhones: string[] = [];
-        membersSnap.docs.forEach(doc => {
-          const m = doc.data();
-          const role = String(m.userType || '').toLowerCase();
-          if (role.includes('admin') || role.includes('pastor') || role.includes('super')) {
-            const p = m.phone || m.mobile;
-            if (p) adminPhones.push(p);
-          }
-        });
-
-        // Write a broadcast doc targeted at each admin's phone so processBroadcastPushNotifications delivers instant push
-        const bcastCol = await this.getCollection('broadcasts');
-        const uniqueAdminPhones = Array.from(new Set(adminPhones));
-        for (const phone of uniqueAdminPhones) {
-          await bcastCol.add({
-            title: bcastTitle,
-            content: bcastBody,
-            type: 'prayer_request_admin',
-            prayerId: docRef.id,
-            targetPhone: phone,
-            createdAt: FieldValue.serverTimestamp()
-          });
-        }
-      } catch (bcastErr) {
-        console.warn('⚠️ Could not trigger broadcast push:', bcastErr);
-      }
+      console.log('🙏 [submitPrayerRequest] Successfully submitted prayer request & admin notification:', docRef.id);
 
       return true;
     } catch (error) {
