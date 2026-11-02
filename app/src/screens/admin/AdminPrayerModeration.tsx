@@ -14,7 +14,8 @@ import {
   RefreshControl,
   Modal,
   Animated,
-  KeyboardAvoidingView
+  KeyboardAvoidingView,
+  Linking
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -77,6 +78,8 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
   const adminName = member?.name || 'Administrator';
   const targetPrayerId = routeParams?.prayerId || routeParams?.requestId || route?.params?.prayerId || route?.params?.requestId;
   const scrollViewRef = useRef<ScrollView>(null);
+  const [detailPrayer, setDetailPrayer] = useState<any | null>(null);
+  const [detailModalVisible, setDetailModalVisible] = useState(false);
   const churchName = activeChurch?.name || 'Church';
   const churchLogo = activeChurch?.theme?.logoUrl || null;
 
@@ -180,8 +183,27 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
   }, [fetchPrayers]);
 
   useEffect(() => {
-    if (targetPrayerId && prayers.length > 0) {
-      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+    if (targetPrayerId) {
+      const match = prayers.find(p => p.id === targetPrayerId);
+      if (match) {
+        setDetailPrayer(match);
+        setDetailModalVisible(true);
+        scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+      } else {
+        FirestoreService.getPrayerRequestById(targetPrayerId).then(fetched => {
+          if (fetched) {
+            setDetailPrayer(fetched);
+            setDetailModalVisible(true);
+            setPrayers(prev => {
+              if (prev.some(p => p.id === fetched.id)) return prev;
+              return [fetched, ...prev];
+            });
+            scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+          }
+        }).catch(err => {
+          console.warn('Could not fetch target prayer request directly:', err);
+        });
+      }
     }
   }, [targetPrayerId, prayers.length]);
 
@@ -480,8 +502,13 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
   const renderPrayerCard = (item: any, isAnswered = false) => {
     const isTarget = Boolean(targetPrayerId && item.id === targetPrayerId);
     return (
-    <View 
+    <TouchableOpacity 
       key={item.id} 
+      activeOpacity={0.92}
+      onPress={() => {
+        setDetailPrayer(item);
+        setDetailModalVisible(true);
+      }}
       style={[
         styles.pCard, 
         isAnswered && styles.pCardAnswered,
@@ -626,7 +653,7 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
           </View>
         </View>
       )}
-    </View>
+    </TouchableOpacity>
   );
   };
 
@@ -705,6 +732,196 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
         )}
 
       </ScrollView>
+
+      {/* ── Prayer Request Detail & Action Modal ── */}
+      <Modal
+        visible={detailModalVisible && !!detailPrayer}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setDetailModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.detailModalOverlay}
+        >
+          <View style={styles.detailModalContainer}>
+            {/* Modal Header */}
+            <View style={styles.detailModalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 12 }}>
+                <View style={[styles.pAvatar, { backgroundColor: detailPrayer?.isAnswered ? '#059669' : '#7C3AED', width: 44, height: 44, borderRadius: 22 }]}>
+                  <Text style={[styles.pAvatarTxt, { fontSize: 18 }]}>{(detailPrayer?.name || 'M').charAt(0)}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.ink }}>
+                    {detailPrayer?.name || 'Church Member'}
+                  </Text>
+                  <Text style={{ fontSize: 13, color: COLORS.inkSoft, marginTop: 2 }}>
+                    {getTimeAgo(detailPrayer?.createdAt)}{detailPrayer?.phone ? ` · ${detailPrayer.phone}` : ''}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => setDetailModalVisible(false)}
+                style={styles.detailModalCloseBtn}
+              >
+                <XCircle size={26} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: Dimensions.get('window').height * 0.72, padding: 20 }}>
+              {/* Badges row */}
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+                <View style={[styles.catBadge, { paddingHorizontal: 10, paddingVertical: 4 }]}>
+                  <View style={styles.catDot} />
+                  <Text style={[styles.catTxt, { fontSize: 13 }]}>{detailPrayer?.category || 'General'}</Text>
+                </View>
+                {detailPrayer?.isPublic ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#FEF3C7', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, gap: 4 }}>
+                    <Megaphone size={12} color="#D97706" />
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#D97706' }}>PUBLIC REQUEST</Text>
+                  </View>
+                ) : (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#EFF6FF', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, gap: 4 }}>
+                    <ShieldCheck size={12} color="#2563EB" />
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#2563EB' }}>PRIVATE (CONFIDENTIAL)</Text>
+                  </View>
+                )}
+                {detailPrayer?.isAnswered && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#DCFCE7', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, gap: 4 }}>
+                    <CheckCircle2 size={12} color="#15803D" />
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#15803D' }}>PROCESSED</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Submitter phone call quick link */}
+              {detailPrayer?.phone ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F8FAFC', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 16 }}>
+                  <View>
+                    <Text style={{ fontSize: 12, color: '#64748B', fontWeight: '600' }}>Contact Number</Text>
+                    <Text style={{ fontSize: 15, fontWeight: '800', color: '#1E293B', marginTop: 2 }}>{detailPrayer.phone}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={{ backgroundColor: '#2563EB', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 }}
+                    onPress={() => Linking.openURL(`tel:${detailPrayer.phone}`)}
+                  >
+                    <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>Call Member</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+
+              {/* Prayer Request Full Text */}
+              <View style={{ backgroundColor: '#FFFFFF', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 16 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.inkSoft, textTransform: 'uppercase', marginBottom: 8, letterSpacing: 0.5 }}>
+                  Prayer Request
+                </Text>
+                <Text style={{ fontSize: 16, color: COLORS.ink, lineHeight: 24, fontWeight: '500' }}>
+                  {detailPrayer?.text || detailPrayer?.request || ''}
+                </Text>
+
+                {detailPrayer?.textTe && detailPrayer?.textTe.trim() !== (detailPrayer?.text || '').trim() && (
+                  <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.inkSoft, textTransform: 'uppercase', marginBottom: 6 }}>
+                      Telugu Request
+                    </Text>
+                    <Text style={{ fontSize: 15, color: '#475569', lineHeight: 22, fontStyle: 'italic' }}>
+                      {detailPrayer.textTe}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Comments History */}
+              {detailPrayer?.replies && detailPrayer.replies.length > 0 && (
+                <View style={{ marginBottom: 16 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: COLORS.ink, marginBottom: 8 }}>
+                    Response History ({detailPrayer.replies.length})
+                  </Text>
+                  {detailPrayer.replies.map((reply: any) => (
+                    <View key={reply.id} style={{ backgroundColor: '#F8FAFC', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 8 }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <Text style={{ fontWeight: '700', fontSize: 13, color: '#1E293B' }}>{reply.author}</Text>
+                        <Text style={{ fontSize: 11, color: '#64748B' }}>{getTimeAgo(reply.date)}</Text>
+                      </View>
+                      <Text style={{ fontSize: 14, color: '#334155' }}>{reply.body}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* Admin Reply & Action Section */}
+              {!detailPrayer?.isAnswered && (
+                <View style={{ backgroundColor: '#FAF5FF', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#DDD6FE', marginBottom: 20 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: '#6B21A8', marginBottom: 8 }}>
+                    ✍️ Send Pastoral Prayer Response
+                  </Text>
+                  <TextInput
+                    style={[styles.adminReplyInput, { backgroundColor: '#FFFFFF', minHeight: 80 }]}
+                    placeholder="Write a prayer message or response to this member..."
+                    placeholderTextColor="#94a3b8"
+                    value={adminResponses[detailPrayer.id] || ''}
+                    onChangeText={(txt) => setAdminResponses(prev => ({ ...prev, [detailPrayer.id]: txt }))}
+                    multiline
+                  />
+
+                  <View style={{ marginTop: 14, gap: 10 }}>
+                    {detailPrayer.isPublic ? (
+                      <TouchableOpacity
+                        style={{ backgroundColor: '#15803D', paddingVertical: 14, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
+                        onPress={async () => {
+                          const id = detailPrayer.id;
+                          await handleApprove(id, adminResponses[id]);
+                          setDetailPrayer((prev: any) => ({ ...prev, isAnswered: true, isPublic: true }));
+                          setTimeout(() => setDetailModalVisible(false), 800);
+                        }}
+                      >
+                        <CheckCircle2 size={18} color="#FFFFFF" />
+                        <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 15 }}>Approve & Make Public</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={{ backgroundColor: '#2563EB', paddingVertical: 14, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
+                        onPress={async () => {
+                          const id = detailPrayer.id;
+                          await handleRespondPrivately(id, adminResponses[id]);
+                          setDetailPrayer((prev: any) => ({ ...prev, isAnswered: true }));
+                          setTimeout(() => setDetailModalVisible(false), 800);
+                        }}
+                      >
+                        <CheckCircle2 size={18} color="#FFFFFF" />
+                        <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 15 }}>Send Private Response</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              )}
+
+              {/* Quick Actions (Pray / Close) */}
+              <View style={{ flexDirection: 'row', gap: 12, marginBottom: 30 }}>
+                <TouchableOpacity
+                  style={{ flex: 1, backgroundColor: '#EFF6FF', paddingVertical: 12, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, borderWidth: 1, borderColor: '#BFDBFE' }}
+                  onPress={() => handleAdminPray(detailPrayer.id)}
+                >
+                  <Heart size={16} color="#2563EB" />
+                  <Text style={{ color: '#2563EB', fontWeight: '700', fontSize: 14 }}>
+                    Pray ({detailPrayer.prayCount || 0})
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={{ flex: 1, backgroundColor: '#FEE2E2', paddingVertical: 12, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, borderWidth: 1, borderColor: '#FECACA' }}
+                  onPress={() => {
+                    setDetailModalVisible(false);
+                    handleClose(detailPrayer.id);
+                  }}
+                >
+                  <Text style={{ color: '#EF4444', fontWeight: '700', fontSize: 14 }}>Close Request</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       {/* ── Create Prayer Request Modal ── */}
       {showCreateModal && (
@@ -1103,6 +1320,10 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
 
+  detailModalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.75)', justifyContent: 'flex-end' },
+  detailModalContainer: { backgroundColor: '#F8FAFC', borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: '90%', shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.25, shadowRadius: 16, elevation: 12 },
+  detailModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 18, borderBottomWidth: 1, borderBottomColor: '#E2E8F0', backgroundColor: '#FFFFFF', borderTopLeftRadius: 28, borderTopRightRadius: 28 },
+  detailModalCloseBtn: { padding: 4 },
   createModalOverlay: { flex: 1, backgroundColor: 'rgba(21, 28, 51, 0.75)', justifyContent: 'flex-end' },
   createModalContent: { backgroundColor: COLORS.parchment, borderTopLeftRadius: 30, borderTopRightRadius: 30, height: '85%' },
   createModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, backgroundColor: COLORS.paper, borderTopLeftRadius: 30, borderTopRightRadius: 30, borderBottomWidth: 1, borderBottomColor: COLORS.rule },

@@ -126,6 +126,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
 
   const getTypeName = (type: string) => {
     if (type === 'baptism_request_admin' || type === 'baptism_request') return 'BAPTISM REQUEST';
+    if (type === 'prayer_request_admin' || type === 'prayer_request' || type === 'prayer') return 'PRAYER REQUEST';
     if (type === 'baptism' || type === 'baptism_request_member') return 'BAPTISM';
     if (!type) return (t('updates.types.announcement') || 'ANNOUNCEMENT').toUpperCase();
     const trans = t(`updates.types.${type}`);
@@ -288,6 +289,10 @@ export default function UpdatesScreen({ navigation, route }: any) {
               icon = Droplets;
               color = '#0284c7';
               resolvedType = 'baptism_request_admin';
+            } else if (data.type === 'prayer_request_admin' || data.title?.includes('New Prayer Request')) {
+              icon = Heart;
+              color = '#7C3AED';
+              resolvedType = 'prayer_request_admin';
             } else if (
               data.type === 'baptism_request_member' || 
               data.type === 'baptism_request' || 
@@ -547,6 +552,13 @@ export default function UpdatesScreen({ navigation, route }: any) {
                     navigation.navigate('BibleQuizDetail', { quizId: qId, churchId: update.churchId });
                   } else if (update.type === 'event') {
                     navigation.navigate('Events');
+                  } else if (update.type === 'prayer_request_admin' || update.type === 'prayer_request' || update.type === 'prayer') {
+                    const pId = update.prayerId || update.requestId || update.id;
+                    if (isAdmin) {
+                      navigation.navigate('AdminRoot', { targetTab: 'Prayers', prayerId: pId, requestId: pId, timestamp: Date.now() });
+                    } else {
+                      navigation.navigate('PrayerWall');
+                    }
                   } else if (update.type === 'attendance') {
                     navigation.navigate('AttendanceScreen');
                   } else {
@@ -804,6 +816,23 @@ export default function UpdatesScreen({ navigation, route }: any) {
                     }}
                   >
                     <Text style={styles.joinLiveBtnTxt}>💧 {isAdmin ? 'Review Baptism Request' : 'View My Baptism Request'}</Text>
+                  </TouchableOpacity>
+                )}
+
+                {(selectedUpdate?.type === 'prayer_request_admin' || selectedUpdate?.type === 'prayer_request' || selectedUpdate?.type === 'prayer') && (
+                  <TouchableOpacity
+                    style={[styles.joinLiveBtn, { backgroundColor: '#7C3AED' }]}
+                    onPress={() => {
+                      const pId = selectedUpdate?.prayerId || selectedUpdate?.requestId || selectedUpdate?.id;
+                      setSelectedUpdate(null);
+                      if (isAdmin) {
+                        navigation.navigate('AdminRoot', { targetTab: 'Prayers', prayerId: pId, requestId: pId, timestamp: Date.now() });
+                      } else {
+                        navigation.navigate('PrayerWall');
+                      }
+                    }}
+                  >
+                    <Text style={styles.joinLiveBtnTxt}>🙏 {isAdmin ? 'Open & Review Prayer Request' : 'View Prayer Wall'}</Text>
                   </TouchableOpacity>
                 )}
 

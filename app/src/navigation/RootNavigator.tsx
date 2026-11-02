@@ -785,6 +785,19 @@ function Navigation() {
       if (!remoteMessage) return;
       const { navigationRef } = require('../../App');
       if (navigationRef && navigationRef.isReady()) {
+        const type = remoteMessage?.data?.type;
+        const isAdminNotification = 
+          type === 'invoice' || 
+          type === 'baptism_request_admin' || 
+          type === 'baptism_request' || 
+          type === 'baptism' || 
+          type === 'prayer_request_admin' ||
+          type === 'prayer_request' ||
+          type === 'prayer';
+
+        if (isAdminNotification && isAdmin && viewMode !== 'admin') {
+          setViewMode('admin');
+        }
         NotificationService.handleNotificationNavigation(remoteMessage, navigationRef);
       } else {
         setPendingNotification(remoteMessage);
@@ -796,6 +809,19 @@ function Navigation() {
       if (remoteMessage) {
         const { navigationRef } = require('../../App');
         if (navigationRef && navigationRef.isReady()) {
+          const type = remoteMessage?.data?.type;
+          const isAdminNotification = 
+            type === 'invoice' || 
+            type === 'baptism_request_admin' || 
+            type === 'baptism_request' || 
+            type === 'baptism' || 
+            type === 'prayer_request_admin' ||
+            type === 'prayer_request' ||
+            type === 'prayer';
+
+          if (isAdminNotification && isAdmin && viewMode !== 'admin') {
+            setViewMode('admin');
+          }
           NotificationService.handleNotificationNavigation(remoteMessage, navigationRef);
         } else {
           setPendingNotification(remoteMessage);

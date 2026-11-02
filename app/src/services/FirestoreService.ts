@@ -1915,6 +1915,28 @@ class FirestoreService {
     }
   }
 
+  async getPrayerRequestById(id: string) {
+    try {
+      if (!id) return null;
+      const col = await this.getCollection('prayerRequests');
+      const snap = await col.doc(id).get();
+      if (!snap.exists) {
+        const idChurch = await this.getChurchId();
+        if (idChurch) {
+          const fallbackSnap = await firestore().collection('churches').doc(idChurch).collection('prayerRequests').doc(id).get();
+          if (fallbackSnap.exists) {
+            return { id: fallbackSnap.id, ...fallbackSnap.data() };
+          }
+        }
+        return null;
+      }
+      return { id: snap.id, ...snap.data() };
+    } catch (error) {
+      console.error('Error fetching prayer request by id:', error);
+      return null;
+    }
+  }
+
   async submitPrayerRequest(data: any) {
     try {
       const col = await this.getCollection('prayerRequests');
