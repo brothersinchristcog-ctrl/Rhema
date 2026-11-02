@@ -62,6 +62,15 @@ const MemberAvatar = ({ member, initials, styles }: any) => {
   );
 };
 
+// Helper to parse multiple skills from string or array
+const parseSkillsList = (val: any): string[] => {
+  if (Array.isArray(val)) return val.filter(Boolean);
+  if (typeof val === 'string' && val.trim()) {
+    return val.split(',').map((s: string) => s.trim()).filter(Boolean);
+  }
+  return [];
+};
+
 export default function AdminMembers() {
   const { activeChurch } = useChurch();
   const { setActiveTab } = React.useContext(AdminTabContext);
@@ -669,22 +678,6 @@ May God bless you abundantly! ❤️`;
                           <Text style={styles.statusTxt}>{isActive ? 'Active' : 'Inactive'}</Text>
                         </View>
                       </View>
-                      {(member.primarySkill || member.secondarySkill) ? (
-                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
-                          {member.primarySkill ? (
-                            <View style={styles.primarySkillPill}>
-                              <Award size={10} color="#B45309" style={{ marginRight: 3 }} />
-                              <Text style={styles.primarySkillPillTxt} numberOfLines={1}>{member.primarySkill}</Text>
-                            </View>
-                          ) : null}
-                          {member.secondarySkill ? (
-                            <View style={styles.secondarySkillPill}>
-                              <Sparkles size={10} color="#4338CA" style={{ marginRight: 3 }} />
-                              <Text style={styles.secondarySkillPillTxt} numberOfLines={1}>{member.secondarySkill}</Text>
-                            </View>
-                          ) : null}
-                        </View>
-                      ) : null}
                     </View>
                   </View>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
@@ -799,7 +792,7 @@ May God bless you abundantly! ❤️`;
                       )}
                     </View>
 
-                    {/* Skills & Talents Breakdown */}
+                    {/* Skills & Talents Breakdown (Shown ONLY when expanded) */}
                     <View style={styles.skillsSectionBox}>
                       <View style={styles.skillsSectionHeader}>
                         <Briefcase size={13} color="#1a2d5a" style={{ marginRight: 6 }} />
@@ -807,22 +800,42 @@ May God bless you abundantly! ❤️`;
                       </View>
                       <View style={styles.skillsGrid}>
                         <View style={styles.skillBox}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
                             <Award size={12} color="#B45309" style={{ marginRight: 4 }} />
-                            <Text style={styles.skillBoxTag}>PRIMARY SKILL</Text>
+                            <Text style={styles.skillBoxTag}>PRIMARY SKILLS</Text>
                           </View>
-                          <Text style={[styles.skillBoxValue, !member.primarySkill && { color: '#9CA3AF', fontStyle: 'italic', fontWeight: '500' }]}>
-                            {member.primarySkill || 'Not specified'}
-                          </Text>
+                          {parseSkillsList(member.primarySkill).length > 0 ? (
+                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                              {parseSkillsList(member.primarySkill).map((sk, idx) => (
+                                <View key={idx} style={{ backgroundColor: '#FEF3C7', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#FDE68A' }}>
+                                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#B45309' }}>{sk}</Text>
+                                </View>
+                              ))}
+                            </View>
+                          ) : (
+                            <Text style={[styles.skillBoxValue, { color: '#9CA3AF', fontStyle: 'italic', fontWeight: '500' }]}>
+                              Not specified
+                            </Text>
+                          )}
                         </View>
                         <View style={styles.skillBox}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
                             <Sparkles size={12} color="#4338CA" style={{ marginRight: 4 }} />
-                            <Text style={styles.skillBoxTag}>SECONDARY SKILL</Text>
+                            <Text style={styles.skillBoxTag}>SECONDARY SKILLS</Text>
                           </View>
-                          <Text style={[styles.skillBoxValue, !member.secondarySkill && { color: '#9CA3AF', fontStyle: 'italic', fontWeight: '500' }]}>
-                            {member.secondarySkill || 'Not specified'}
-                          </Text>
+                          {parseSkillsList(member.secondarySkill).length > 0 ? (
+                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                              {parseSkillsList(member.secondarySkill).map((sk, idx) => (
+                                <View key={idx} style={{ backgroundColor: '#EEF2FF', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#C7D2FE' }}>
+                                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#4338CA' }}>{sk}</Text>
+                                </View>
+                              ))}
+                            </View>
+                          ) : (
+                            <Text style={[styles.skillBoxValue, { color: '#9CA3AF', fontStyle: 'italic', fontWeight: '500' }]}>
+                              Not specified
+                            </Text>
+                          )}
                         </View>
                       </View>
                     </View>
@@ -1027,11 +1040,17 @@ May God bless you abundantly! ❤️`;
                   style={{ borderWidth: 1.5, borderColor: newMemberForm.primarySkill ? '#1a2d5a' : 'rgba(26,45,90,0.1)', borderRadius: 12, padding: 14, backgroundColor: newMemberForm.primarySkill ? '#F0F4FF' : '#FFFFFF', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
                   onPress={() => openSkillPicker('primarySkill')}
                 >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
-                    <Award size={16} color={newMemberForm.primarySkill ? '#1a2d5a' : '#9CA3AF'} style={{ marginRight: 8 }} />
-                    <Text style={{ color: newMemberForm.primarySkill ? '#1a2d5a' : '#9CA3AF', fontWeight: '600', fontSize: 14 }} numberOfLines={1}>
-                      {newMemberForm.primarySkill || 'Select Primary Skill'}
-                    </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8, flexWrap: 'wrap', gap: 4 }}>
+                    <Award size={16} color={newMemberForm.primarySkill ? '#1a2d5a' : '#9CA3AF'} style={{ marginRight: 4 }} />
+                    {parseSkillsList(newMemberForm.primarySkill).length > 0 ? (
+                      parseSkillsList(newMemberForm.primarySkill).map((sk, idx) => (
+                        <View key={idx} style={{ backgroundColor: '#EEF2FF', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: '#C7D2FE' }}>
+                          <Text style={{ fontSize: 12, color: '#1a2d5a', fontWeight: '700' }}>{sk}</Text>
+                        </View>
+                      ))
+                    ) : (
+                      <Text style={{ color: '#9CA3AF', fontWeight: '600', fontSize: 14 }}>Select Primary Skills</Text>
+                    )}
                   </View>
                   <ChevronDown size={16} color={newMemberForm.primarySkill ? '#1a2d5a' : '#9CA3AF'} />
                 </TouchableOpacity>
@@ -1051,11 +1070,17 @@ May God bless you abundantly! ❤️`;
                   style={{ borderWidth: 1.5, borderColor: newMemberForm.secondarySkill ? '#4338CA' : 'rgba(26,45,90,0.1)', borderRadius: 12, padding: 14, backgroundColor: newMemberForm.secondarySkill ? '#EEF2FF' : '#FFFFFF', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
                   onPress={() => openSkillPicker('secondarySkill')}
                 >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
-                    <Sparkles size={16} color={newMemberForm.secondarySkill ? '#4338CA' : '#9CA3AF'} style={{ marginRight: 8 }} />
-                    <Text style={{ color: newMemberForm.secondarySkill ? '#4338CA' : '#9CA3AF', fontWeight: '600', fontSize: 14 }} numberOfLines={1}>
-                      {newMemberForm.secondarySkill || 'Select Secondary Skill'}
-                    </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8, flexWrap: 'wrap', gap: 4 }}>
+                    <Sparkles size={16} color={newMemberForm.secondarySkill ? '#4338CA' : '#9CA3AF'} style={{ marginRight: 4 }} />
+                    {parseSkillsList(newMemberForm.secondarySkill).length > 0 ? (
+                      parseSkillsList(newMemberForm.secondarySkill).map((sk, idx) => (
+                        <View key={idx} style={{ backgroundColor: '#F5F3FF', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: '#DDD6FE' }}>
+                          <Text style={{ fontSize: 12, color: '#4338CA', fontWeight: '700' }}>{sk}</Text>
+                        </View>
+                      ))
+                    ) : (
+                      <Text style={{ color: '#9CA3AF', fontWeight: '600', fontSize: 14 }}>Select Secondary Skills</Text>
+                    )}
                   </View>
                   <ChevronDown size={16} color={newMemberForm.secondarySkill ? '#4338CA' : '#9CA3AF'} />
                 </TouchableOpacity>
@@ -1185,8 +1210,8 @@ May God bless you abundantly! ❤️`;
                   {activeSkillPickerField === 'primarySkill' ? 'Select Primary Skill' : 'Select Secondary Skill'}
                 </Text>
               </View>
-              <TouchableOpacity onPress={() => setSkillPickerModalVisible(false)} style={{ backgroundColor: '#F3F4F6', padding: 6, borderRadius: 20 }}>
-                <X size={18} color="#1a2d5a" />
+              <TouchableOpacity onPress={() => setSkillPickerModalVisible(false)} style={{ backgroundColor: '#1a2d5a', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 14 }}>
+                <Text style={{ color: '#fff', fontSize: 13, fontWeight: '800' }}>Done</Text>
               </TouchableOpacity>
             </View>
 
@@ -1239,7 +1264,8 @@ May God bless you abundantly! ❤️`;
             {/* Skills List */}
             <ScrollView style={{ paddingHorizontal: 16, maxHeight: 260 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               {filteredSkillList.map((skill) => {
-                const isSelected = activeSkillPickerField && newMemberForm[activeSkillPickerField] === skill;
+                const currentSelected = activeSkillPickerField ? parseSkillsList(newMemberForm[activeSkillPickerField]) : [];
+                const isSelected = currentSelected.includes(skill);
                 return (
                   <TouchableOpacity
                     key={skill}
@@ -1256,9 +1282,12 @@ May God bless you abundantly! ❤️`;
                     }}
                     onPress={() => {
                       if (activeSkillPickerField) {
-                        setNewMemberForm(prev => ({ ...prev, [activeSkillPickerField]: skill }));
+                        const exists = currentSelected.includes(skill);
+                        const updated = exists
+                          ? currentSelected.filter(s => s !== skill)
+                          : [...currentSelected, skill];
+                        setNewMemberForm(prev => ({ ...prev, [activeSkillPickerField]: updated.join(', ') }));
                       }
-                      setSkillPickerModalVisible(false);
                     }}
                   >
                     <Text style={{ fontSize: 14, fontWeight: isSelected ? '700' : '500', color: isSelected ? '#1a2d5a' : '#374151' }}>
@@ -1287,9 +1316,12 @@ May God bless you abundantly! ❤️`;
                   style={{ backgroundColor: '#1a2d5a', paddingHorizontal: 14, borderRadius: 10, justifyContent: 'center', alignItems: 'center' }}
                   onPress={() => {
                     if (customSkillInput.trim() && activeSkillPickerField) {
-                      setNewMemberForm(prev => ({ ...prev, [activeSkillPickerField]: customSkillInput.trim() }));
+                      const trimmed = customSkillInput.trim();
+                      const current = parseSkillsList(newMemberForm[activeSkillPickerField]);
+                      if (!current.includes(trimmed)) {
+                        setNewMemberForm(prev => ({ ...prev, [activeSkillPickerField]: [...current, trimmed].join(', ') }));
+                      }
                       setCustomSkillInput('');
-                      setSkillPickerModalVisible(false);
                     }
                   }}
                 >

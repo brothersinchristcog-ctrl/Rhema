@@ -193,7 +193,7 @@ export default function VerseOfTheDayScreen() {
 
   // Synchronously initialize with bundled verses so screen paints in 0ms!
   const [verseData, setVerseData] = useState<{ date: Date, verses: DailyVerse[] }[]>(() => {
-    return VerseNotificationService.getSynchronousInitialVerses(5);
+    return VerseNotificationService.getSynchronousInitialVerses(7);
   });
   // Since we already have initial bundled data, loading is false! No blank screen or spinner!
   const [loading, setLoading] = useState(false);
@@ -296,8 +296,8 @@ export default function VerseOfTheDayScreen() {
       if (!silent) setLoading(true);
     }
     
-    // Fetch today + past 5 days = 6 days total
-    const data = await VerseNotificationService.getRecentVerses(5, true, forceRefresh);
+    // Fetch today + past 7 days = last one week total
+    const data = await VerseNotificationService.getRecentVerses(7, true, forceRefresh);
     if (language !== 'en') {
       const localizedData = await Promise.all(
         data.map(async item => ({

@@ -57,6 +57,8 @@ export interface AppMember {
   anniversaryDate?: string;
   primarySkill?: string;
   secondarySkill?: string;
+  primarySkills?: string[];
+  secondarySkills?: string[];
 }
 
 export interface FirestorePromise {
@@ -135,6 +137,14 @@ export interface WorshipSong {
   ledBy?: string;
 }
 
+export interface EventServiceItem {
+  id: string;
+  name: string;
+  time?: string;
+  songLeader?: string;
+  songs: WorshipSong[];
+}
+
 export interface ScheduleEvent {
   id: string;
   name?: string;
@@ -155,6 +165,8 @@ export interface ScheduleEvent {
   youtubeId?: string;
   eventType?: string;
   type?: string;
+  hasWorshipServices?: boolean;
+  services?: EventServiceItem[];
 }
 
 export interface Sermon {

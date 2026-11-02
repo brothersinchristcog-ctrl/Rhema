@@ -1,3 +1,4 @@
+import bundledBulkVerses from '../../../assets/bulk_verses.json';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
@@ -10,6 +11,10 @@ import {
   ActivityIndicator,
   Platform,
   RefreshControl,
+  ScrollView,
+  KeyboardAvoidingView,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
 import {
@@ -30,6 +35,7 @@ import {
   CheckCircle2,
   Clock,
   BookOpen,
+  Plus,
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import VerseNotificationService from '../../services/VerseNotificationService';
@@ -67,6 +73,16 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
   const [selectedPeriod, setSelectedPeriod] = useState('All');
   const [localSearchQuery, setLocalSearchQuery] = useState(externalQuery);
   const [editingVerse, setEditingVerse] = useState<any | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [newVerse, setNewVerse] = useState({
+    verseEn: '',
+    referenceEn: '',
+    verseTe: '',
+    referenceTe: '',
+    period: 'Morning',
+    autoFetchImage: true,
+  });
 
   const PERIOD_OPTIONS = [
     { label: 'All', period: 'All', count: totalVerses },
@@ -135,7 +151,7 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
 
       if (total === 0) {
         try {
-          const bundled = require('../../assets/bulk_verses.json');
+          const bundled = bundledBulkVerses;
           total = bundled.length || 5863;
         } catch (_) {
           total = 5863;
@@ -160,7 +176,7 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
       // Offline / fallback if Firestore returned nothing: populate from bundled verses
       if (fetched.length === 0) {
         try {
-          const bundled = require('../../assets/bulk_verses.json');
+          const bundled = bundledBulkVerses;
           for (let idx = 0; idx < COUNT && idx < bundled.length; idx++) {
             const bv = bundled[idx];
             if (bv) {
@@ -207,7 +223,7 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
 
       if (docs.length === 0) {
         try {
-          const bundled = require('../../assets/bulk_verses.json');
+          const bundled = bundledBulkVerses;
           docs = bundled.slice(0, 50).map((bv: any, idx: number) => ({
             id: `verse_${idx}`,
             index: idx,
@@ -226,7 +242,7 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
     } catch (e) {
       console.error('Error fetching all verses:', e);
       try {
-        const bundled = require('../../assets/bulk_verses.json');
+        const bundled = bundledBulkVerses;
         const docs = bundled.slice(0, 50).map((bv: any, idx: number) => ({
           id: `verse_${idx}`,
           index: idx,
@@ -354,6 +370,79 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
     );
   };
 
+  const handleCreateVerse = async () => {
+    if (!newVerse.verseEn?.trim() || !newVerse.referenceEn?.trim()) {
+      Alert.alert('Required Fields', 'Please enter at least the English Verse text and Scripture Reference.');
+      return;
+    }
+    try {
+      setIsCreating(true);
+      let imageUrl: string | null = null;
+      let photographer = '';
+      let theme = 'nature sunrise';
+
+      if (newVerse.autoFetchImage) {
+        try {
+          const UNSPLASH_KEY = 'ppd4mBIqu8573rS42D9fobzAipdPsYdKkfOD0A5yiQc';
+          const THEMES = ['christian cross', 'jesus light', 'nature sunrise', 'mountains sunset', 'bible prayer', 'heavenly clouds', 'hope light', 'peaceful water'];
+          theme = THEMES[Math.floor(Math.random() * THEMES.length)];
+          const res = await fetch('https://api.unsplash.com/photos/random?query=' + encodeURIComponent(theme) + '&orientation=portrait&content_filter=high', {
+            headers: { Authorization: 'Client-ID ' + UNSPLASH_KEY },
+          });
+          const data = await res.json();
+          imageUrl = data?.urls?.regular || null;
+          photographer = data?.user?.name || 'Unsplash';
+        } catch (imgErr) {
+          console.warn('Auto fetch Unsplash image error:', imgErr);
+        }
+      }
+
+      const periodIdx = PERIOD_NAMES.indexOf(newVerse.period);
+      const targetIndex = (periodIdx >= 0 ? periodIdx : 0);
+
+      const docRef = firestore().collection('daily_verses').doc();
+      const versePayload: any = {
+        id: docRef.id,
+        index: targetIndex,
+        verseEn: newVerse.verseEn.trim(),
+        referenceEn: newVerse.referenceEn.trim(),
+        verseTe: (newVerse.verseTe?.trim() || newVerse.verseEn.trim()),
+        referenceTe: (newVerse.referenceTe?.trim() || newVerse.referenceEn.trim()),
+        createdAt: firestore.FieldValue.serverTimestamp(),
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+      };
+
+      if (imageUrl) {
+        versePayload.backgroundUrl = imageUrl;
+        versePayload.unsplashPhotographer = photographer;
+        versePayload.backgroundTheme = theme;
+      }
+
+      await docRef.set(versePayload);
+
+      const prependList = (list: any[]) => [versePayload, ...list.filter(v => v.id !== docRef.id)];
+      setUpcomingVerses(prev => prependList(prev));
+      setAllVerses(prev => prependList(prev));
+      if (cachedUpcomingVerses) cachedUpcomingVerses = prependList(cachedUpcomingVerses);
+      if (cachedAllVerses) cachedAllVerses = prependList(cachedAllVerses);
+
+      Alert.alert('Success', 'New Daily Verse created and scheduled successfully!');
+      setShowCreateModal(false);
+      setNewVerse({
+        verseEn: '',
+        referenceEn: '',
+        verseTe: '',
+        referenceTe: '',
+        period: 'Morning',
+        autoFetchImage: true,
+      });
+    } catch (e: any) {
+      console.error(e);
+      Alert.alert('Error', e?.message || 'Failed to create verse.');
+    } finally {
+      setIsCreating(false);
+    }
+  };
   const handleUpdateVerse = async () => {
     if (!editingVerse || !editingVerse.id) return;
     setIsUpdating(true);
@@ -506,7 +595,7 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
           text: 'Import (5,863)',
           onPress: async () => {
             try {
-              const bundled = require('../../assets/bulk_verses.json');
+              const bundled = bundledBulkVerses;
               await handleBulkUpload(bundled);
             } catch (e: any) {
               Alert.alert('Error', e?.message || 'Failed to load bundled verses');
@@ -541,11 +630,14 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
           const data = await res.json();
           const imageUrl = data?.urls?.regular;
           if (imageUrl) {
-            await firestore().collection('daily_verses').doc(verse.id).update({
+            await firestore().collection('daily_verses').doc(verse.id).set({
+              ...verse,
               backgroundUrl: imageUrl,
               unsplashPhotographer: data?.user?.name || 'Unsplash',
               backgroundTheme: theme,
-            });
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            }, { merge: true });
+            verse.backgroundUrl = imageUrl;
             updated++;
           }
         } catch (err) {
@@ -1562,6 +1654,72 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
+  addVerseHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#10B981',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 12,
+  },
+  addVerseHeaderBtnText: {
+    color: '#0F172A',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  createPeriodRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  createPeriodChip: {
+    flex: 1,
+    paddingVertical: 6,
+    backgroundColor: '#1E293B',
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  createPeriodChipActive: {
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    borderColor: '#10B981',
+  },
+  createPeriodChipText: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  createPeriodChipTextActive: {
+    color: '#10B981',
+    fontWeight: '700',
+  },
+  autoImageToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 6,
+    marginBottom: 16,
+  },
+  checkboxBox: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: '#64748B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxBoxActive: {
+    backgroundColor: '#10B981',
+    borderColor: '#10B981',
+  },
+  autoImageToggleText: {
+    color: '#E2E8F0',
+    fontSize: 12,
+    fontWeight: '500',
+  },
   // Edit Modal
   modalOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -1570,7 +1728,17 @@ const styles = StyleSheet.create({
     padding: 16,
     zIndex: 100,
   },
+  keyboardAvoidingWrap: {
+    width: '100%',
+    maxHeight: '92%',
+    justifyContent: 'center',
+  },
+  modalScrollContent: {
+    paddingBottom: 24,
+    flexGrow: 1,
+  },
   modalCard: {
+    maxHeight: '100%',
     backgroundColor: '#1E293B',
     borderRadius: 18,
     padding: 18,

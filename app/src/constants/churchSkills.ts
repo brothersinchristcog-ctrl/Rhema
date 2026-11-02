@@ -11,6 +11,7 @@ export const CHURCH_SKILL_CATEGORIES: SkillCategory[] = [
     name: 'Worship & Music',
     iconName: 'Music',
     skills: [
+      'Songs',
       'Worship Leader',
       'Vocalist / Singer',
       'Acoustic Guitar',

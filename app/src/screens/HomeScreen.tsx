@@ -4362,7 +4362,7 @@ export default function HomeScreen() {
                 onPress={() => {
                   const yUrl = activeChurch?.socialLinks?.youtube?.trim();
                   if (yUrl) {
-                    Linking.openURL(yUrl);
+                    navigation.navigate('YouTubeLive', { channelUrl: yUrl });
                   } else {
                     setAlertConfig({
                       visible: true,

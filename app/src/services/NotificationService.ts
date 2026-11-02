@@ -150,9 +150,9 @@ class NotificationService {
           break;
         case 'youtube_live': {
           const liveUrl = remoteMessage.data && remoteMessage.data.url ? remoteMessage.data.url : 'https://www.youtube.com/@Brothersinchristfellowship/live';
-          Linking.openURL(liveUrl).catch(function(err) {
-            console.error("Couldn't open live stream URL", err);
-          });
+          const videoId = rawData.videoId || (remoteMessage?.data && remoteMessage.data.videoId) || '';
+          const title = rawData.title || (remoteMessage?.notification && remoteMessage.notification.title) || '';
+          nav.navigate('YouTubeLive', { url: liveUrl, videoId, title, churchId: rawData.churchId });
           break;
         }
         case 'LIVE_CELEBRATION':

@@ -288,7 +288,7 @@ export default function OnlineMeetingDetailScreen({ navigation, route }: any) {
               }}
               onPress={() => {
                 const targetUrl = meeting.youtubeLive?.watchUrl || 'https://www.youtube.com';
-                Linking.openURL(targetUrl);
+                navigation.navigate('YouTubeLive', { url: targetUrl, videoId: meeting.youtubeLive?.broadcastId, title: meeting.title });
               }}
             >
               <Radio size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
