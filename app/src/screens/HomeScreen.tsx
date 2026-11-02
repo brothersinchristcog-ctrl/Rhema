@@ -3745,24 +3745,24 @@ export default function HomeScreen() {
                               {
                                 backgroundColor:
                                   appearance === 'pure_white'
-                                    ? '#FCFAF7' // Delicate lightish warm white
+                                    ? '#FAFAFA' // Clean neutral lightish white (no warm yellow, no blue)
                                     : appearance === 'warm_white'
                                     ? '#FFFFFF'
                                     : appearance === 'sage_ecru'
                                     ? '#F4F7EE'
                                     : screenTheme.isDark
                                     ? '#121212'
-                                    : '#FCFAF7',
+                                    : '#FAFAFA',
                                 borderColor:
                                   appearance === 'pure_white'
-                                    ? '#EFEBE4' // Subtle light warm border
+                                    ? '#E5E7EB' // Crisp neutral light border
                                     : appearance === 'warm_white'
                                     ? '#E2E8F0'
                                     : appearance === 'sage_ecru'
                                     ? '#CBD1C4'
                                     : screenTheme.isDark
                                     ? '#27272A'
-                                    : '#EFEBE4',
+                                    : '#E5E7EB',
                               },
                             ]}
                           >
