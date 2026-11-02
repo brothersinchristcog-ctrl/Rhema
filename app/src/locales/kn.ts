@@ -378,6 +378,7 @@ export const kn: TranslationSchema = {
     contactUs: 'ಸಂಪರ್ಕಿಸಿ',
     personalInfo: 'ವೈಯಕ್ತಿಕ ಮಾಹಿತಿ',
     editProfile: 'ಪ್ರೊಫೈಲ್ ತಿದ್ದುಪಡಿ',
+    uploadPhoto: 'ಭಾವಚಿತ್ರ ಆಯ್ಕೆಮಾಡಿ',
     changePhoto: 'ಫೋಟೋ ಬದಲಾಯಿಸಿ',
     removePhoto: 'ಫೋಟೋ ತೆಗೆದುಹಾಕಿ',
     firstName: 'ಮೊದಲ ಹೆಸರು',

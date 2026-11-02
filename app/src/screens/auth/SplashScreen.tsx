@@ -1,249 +1,212 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   StyleSheet,
   View,
+  StatusBar,
+  Dimensions,
   Animated,
-  Image,
-  Text,
-  StatusBar
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useChurch } from '../../context/ChurchContext';
-import { Heart } from 'lucide-react-native';
+import Svg, {
+  Path,
+  Circle,
+  Defs,
+  Rect,
+  Mask,
+  G,
+  RadialGradient as SvgRadialGradient,
+  Stop,
+} from 'react-native-svg';
+import { RHEMA_GLYPHS, RHEMA_MASK_STROKES } from './rhemaStrokes';
 
-export default function SplashScreen() {
-  const { activeChurch, loading } = useChurch();
-  
-  const logoDrop = useRef(new Animated.Value(-300)).current;
-  const logoScale = useRef(new Animated.Value(0.75)).current;
-  
-  const textDrop = useRef(new Animated.Value(-40)).current;
-  const textOpacity = useRef(new Animated.Value(0)).current;
-  
-  const lineScale = useRef(new Animated.Value(0)).current;
+export default function SplashScreen({ onFinish }: { onFinish?: () => void }) {
+  // Offsets representing how much of each mask stroke is drawn (strokeDashoffset: len -> 0)
+  const [offsets, setOffsets] = useState<number[]>(RHEMA_MASK_STROKES.map(s => s.len));
+  const [isFinished, setIsFinished] = useState(false);
+  const [penNib, setPenNib] = useState<{ x: number; y: number; visible: boolean }>({
+    x: RHEMA_MASK_STROKES[0].startPoint.x,
+    y: RHEMA_MASK_STROKES[0].startPoint.y,
+    visible: true,
+  });
+
+  const fadeInAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // 1. Logo Drop-in
-    Animated.sequence([
-      Animated.delay(150),
-      Animated.parallel([
-        Animated.spring(logoDrop, { toValue: 0, friction: 6, tension: 40, useNativeDriver: true }),
-        Animated.spring(logoScale, { toValue: 1, friction: 6, tension: 40, useNativeDriver: true })
-      ])
-    ]).start();
+    // Subtle overall stage fade in
+    Animated.timing(fadeInAnim, {
+      toValue: 1,
+      duration: 250,
+      useNativeDriver: true,
+    }).start();
 
-    // 2. Texts Drop-in
-    Animated.sequence([
-      Animated.delay(950),
-      Animated.parallel([
-        Animated.timing(textDrop, { toValue: 0, duration: 700, useNativeDriver: true }),
-        Animated.timing(textOpacity, { toValue: 1, duration: 700, useNativeDriver: true })
-      ])
-    ]).start();
+    const startTime = Date.now();
+    let animFrameId: number;
+    let finishTimer: any = null;
+    let finishedTriggered = false;
 
-    // 3. Line grow
-    Animated.sequence([
-      Animated.delay(1700),
-      Animated.timing(lineScale, { toValue: 1, duration: 800, useNativeDriver: true })
-    ]).start();
+    // Total writing completes at ~2680ms
+    const totalWritingTime = 2680;
 
+    const renderFrame = () => {
+      const elapsed = Date.now() - startTime;
+      const newOffsets: number[] = [];
+      let activeX = RHEMA_MASK_STROKES[0].startPoint.x;
+      let activeY = RHEMA_MASK_STROKES[0].startPoint.y;
+      let isPenVisible = elapsed < totalWritingTime;
+
+      for (let i = 0; i < RHEMA_MASK_STROKES.length; i++) {
+        const s = RHEMA_MASK_STROKES[i];
+        if (elapsed <= s.start) {
+          // Has not started yet
+          newOffsets.push(s.len);
+        } else if (elapsed >= s.start + s.dur) {
+          // Fully drawn
+          newOffsets.push(0);
+          if (i === RHEMA_MASK_STROKES.length - 1) {
+            const last = s.lookup[s.lookup.length - 1];
+            activeX = last.x;
+            activeY = last.y;
+          }
+        } else {
+          // Currently actively being written
+          const linearProgress = (elapsed - s.start) / s.dur;
+          // Smooth handwriting easing
+          const easeProgress = Math.sin((linearProgress * Math.PI) / 2);
+          const currentOffset = s.len * (1 - easeProgress);
+          newOffsets.push(currentOffset);
+
+          // Update fountain pen tip position
+          const idx = Math.min(
+            s.lookup.length - 1,
+            Math.max(0, Math.round(easeProgress * (s.lookup.length - 1)))
+          );
+          activeX = s.lookup[idx].x;
+          activeY = s.lookup[idx].y;
+        }
+      }
+
+      setOffsets(newOffsets);
+      setPenNib({
+        x: activeX,
+        y: activeY,
+        visible: isPenVisible,
+      });
+
+      if (elapsed < totalWritingTime + 50) {
+        animFrameId = requestAnimationFrame(renderFrame);
+      } else if (!finishedTriggered) {
+        finishedTriggered = true;
+        setIsFinished(true);
+
+        // Pause briefly (~400ms) once the bold Ray-Ban styled "Rhema" signature completes
+        finishTimer = setTimeout(() => {
+          onFinish?.();
+        }, 400);
+      }
+    };
+
+    animFrameId = requestAnimationFrame(renderFrame);
+
+    return () => {
+      cancelAnimationFrame(animFrameId);
+      if (finishTimer) clearTimeout(finishTimer);
+    };
   }, []);
 
-  const displayChurch = activeChurch ? activeChurch : null;
+  const screenWidth = Dimensions.get('window').width;
+  const svgWidth = Math.min(screenWidth * 0.90, 480);
+  const svgHeight = svgWidth * (200 / 560);
 
   return (
-    <View style={styles.stage}>
-      <StatusBar barStyle="light-content" backgroundColor="#020b22" />
-      
-      {/* Background */}
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#E5E9DB" />
+
+      {/* Background: Exact mineral sage-ecru gradient sampled from user reference */}
       <LinearGradient
-        colors={['#020b22', '#081d4a']}
+        colors={['#E5E9DB', '#DFE3D6', '#CBD1C4']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
 
-      <View style={styles.entrance}>
-        
-        {(!activeChurch && loading) ? (
-          <View style={{ height: 210, justifyContent: 'center' }} />
-        ) : (
-          <>
-            {/* Emblem Wrap */}
-            <Animated.View style={[
-              styles.emblemWrap, 
-              { 
-                transform: [{ translateY: logoDrop }, { scale: logoScale }] 
-              }
-            ]}>
-              {/* Logo / Emblem */}
-              <View style={styles.emblem}>
-                <Image
-                  source={displayChurch?.theme?.logoUrl ? { uri: displayChurch.theme.logoUrl } : require('../../../assets/logo.png')}
-                  style={styles.logoImage}
-                  resizeMode="cover"
-                />
-              </View>
-            </Animated.View>
+      <Animated.View style={[styles.centerWrapper, { opacity: fadeInAnim }]}>
+        <View style={[styles.canvasBox, { width: svgWidth, height: svgHeight }]}>
+          <Svg viewBox="0 0 560 200" width="100%" height="100%">
+            <Defs>
+              {/* Dynamic mask that progressively reveals the bold Ray-Ban styled letters */}
+              <Mask id="raybanWriteMask" maskUnits="userSpaceOnUse" x="0" y="0" width="560" height="200">
+                <Rect width="560" height="200" fill="black" />
+                {RHEMA_MASK_STROKES.map((stroke, index) => (
+                  <Path
+                    key={stroke.id}
+                    d={stroke.d}
+                    fill="none"
+                    stroke="white"
+                    strokeWidth={28}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeDasharray={`${stroke.len} ${stroke.len}`}
+                    strokeDashoffset={offsets[index]}
+                  />
+                ))}
+              </Mask>
 
-            {/* Texts */}
-            <View style={styles.titles}>
-              <Animated.Text 
-                style={[
-                  styles.titleLine, 
-                  { 
-                    opacity: textOpacity,
-                    transform: [{ translateY: textDrop }]
-                  }
-                ]}
-                numberOfLines={2}
-                adjustsFontSizeToFit
-                minimumFontScale={0.5}
-              >
-                {displayChurch?.name || 'We Christian'}
-              </Animated.Text>
+              {/* Golden Pen Nib Glow */}
+              <SvgRadialGradient id="nibGlow" cx="50%" cy="50%" r="50%">
+                <Stop offset="0%" stopColor="#D4AF37" stopOpacity="0.9" />
+                <Stop offset="40%" stopColor="#8E733B" stopOpacity="0.5" />
+                <Stop offset="100%" stopColor="#8E733B" stopOpacity="0" />
+              </SvgRadialGradient>
+            </Defs>
 
-              <Animated.View style={{ 
-                opacity: textOpacity, 
-                transform: [{ translateY: textDrop }],
-                alignItems: 'center',
-                width: '100%'
-              }}>
-                <Text style={styles.tagline}>
-                  {displayChurch?.tagline || 'Together in Christ'}
-                </Text>
-                {/* Growing Line */}
-                <Animated.View style={[
-                  styles.taglineLine, 
-                  { transform: [{ scaleX: lineScale }] }
-                ]} />
-              </Animated.View>
-              
-            </View>
-          </>
-        )}
-      </View>
+            {/* Rotated group matching iconic upward Ray-Ban logo slant (-9.5 degrees) */}
+            <G transform="rotate(-9.5 270 100)">
+              {/* Bold Ray-Ban script letters */}
+              <G mask={isFinished ? undefined : 'url(#raybanWriteMask)'} fill="#111814">
+                {RHEMA_GLYPHS.map((glyph, i) => (
+                  <Path key={i} d={glyph.d} />
+                ))}
+              </G>
 
-      {/* Footer Text */}
-      <View style={styles.footerContainer}>
-        <Text style={styles.poweredText}>Powered by</Text>
-        <Text style={styles.companyText}>Covenant Synergy Pvt Ltd</Text>
-        <View style={styles.footerLineContainer}>
-          <View style={styles.footerLine} />
-          <View style={styles.footerDot} />
-          <Heart size={16} color="rgba(255, 255, 255, 0.7)" strokeWidth={2} style={styles.footerHeart} />
-          <View style={styles.footerDot} />
-          <View style={styles.footerLine} />
+              {/* Glowing Fountain Pen Tip / Ink Nib while actively drawing */}
+              {penNib.visible && (
+                <>
+                  <Circle
+                    cx={penNib.x}
+                    cy={penNib.y}
+                    r={9}
+                    fill="url(#nibGlow)"
+                  />
+                  <Circle
+                    cx={penNib.x}
+                    cy={penNib.y}
+                    r={3.8}
+                    fill="#8E733B"
+                  />
+                </>
+              )}
+            </G>
+          </Svg>
         </View>
-      </View>
+      </Animated.View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  stage: {
+  container: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#E5E9DB',
   },
-  entrance: {
-    zIndex: 2,
+  centerWrapper: {
     alignItems: 'center',
-    width: '100%',
-    paddingHorizontal: 20,
-  },
-  emblemWrap: {
-    width: 150,
-    height: 150,
-    marginBottom: 26,
     justifyContent: 'center',
-    alignItems: 'center',
-  },
-  emblem: {
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    overflow: 'hidden',
-    borderWidth: 3,
-    borderColor: 'rgba(246,244,236,0.9)',
-    backgroundColor: '#060505',
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
-    shadowRadius: 15,
-  },
-  logoImage: {
-    width: '100%',
-    height: '100%',
-  },
-  titles: {
-    alignItems: 'center',
     width: '100%',
   },
-  titleLine: {
-    fontSize: 40,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-    color: '#f6f4ec',
-    textAlign: 'center',
-    marginBottom: 14,
-    textShadowColor: 'rgba(0, 0, 0, 0.5)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
-  },
-  tagline: {
-    fontSize: 16,
-    fontWeight: '600',
-    letterSpacing: 3,
-    textTransform: 'uppercase',
-    color: '#d4af37',
-    textAlign: 'center',
-    paddingBottom: 8,
-  },
-  taglineLine: {
-    height: 1,
-    width: '100%',
-    maxWidth: 300,
-    backgroundColor: '#f0c14b',
-    position: 'absolute',
-    bottom: 0,
-  },
-  footerContainer: {
-    position: 'absolute',
-    bottom: 50,
+  canvasBox: {
     alignItems: 'center',
-    width: '100%',
-  },
-  poweredText: {
-    fontSize: 12,
-    color: 'rgba(246, 244, 236, 0.7)',
-    marginBottom: 4,
-  },
-  companyText: {
-    fontSize: 14,
-    color: 'rgba(246, 244, 236, 0.7)',
-    fontWeight: '600',
-    letterSpacing: 1,
-  },
-  footerLineContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: '50%',
     justifyContent: 'center',
-    marginTop: 8,
   },
-  footerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.6)',
-  },
-  footerDot: {
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-    marginHorizontal: 4,
-  },
-  footerHeart: {
-    marginHorizontal: 6,
-  }
 });

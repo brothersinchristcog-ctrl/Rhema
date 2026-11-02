@@ -22,7 +22,7 @@ const { width } = Dimensions.get('window');
 
 export default function BibleScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   const { language, setLanguage, t, languages } = useLanguage();
   const [testament, setTestament] = useState<'OT' | 'NT'>('NT');
   const [searchQuery, setSearchQuery] = useState('');
@@ -127,50 +127,36 @@ export default function BibleScreen({ navigation }: any) {
   const filteredBooks = getFilteredBooks();
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2' }]}>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#0f172a' : '#FAF7F2'} />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={colors.barStyle} backgroundColor={colors.background} />
       
       {/* Header */}
+            {/* ── Screen Header (Clean circular back button & title) ── */}
       <View
         style={[
-          styles.headerCardWrapper,
-          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 6 }
+          styles.headerRow,
+          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8 }
         ]}
       >
-        <LinearGradient 
-          colors={['#527C78', '#355B56']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.header}
+        <TouchableOpacity
+          style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          activeOpacity={0.8}
         >
-          <View style={styles.headerDecoCircle1} pointerEvents="none" />
-          <View style={styles.headerDecoCircle2} pointerEvents="none" />
+          <ArrowLeft size={20} color={colors.text} strokeWidth={2.4} />
+        </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => navigation.goBack()}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            activeOpacity={0.8}
-          >
-            <ArrowLeft size={20} color="#355B56" />
-          </TouchableOpacity>
-          
-          <View style={styles.headerCenterTitleWrap} pointerEvents="none">
-            <Text style={styles.headerTitle} numberOfLines={1} maxFontSizeMultiplier={1.15}>
-              {t('bible.bibleTitle')}
-            </Text>
-            <View style={styles.headerTitleAccentBar} />
-          </View>
+        <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
+          {t('bible.bibleTitle')}
+        </Text>
 
-          <View style={styles.headerRightIconBadge}>
-            <BookOpen size={18} color="#355B56" />
-          </View>
-        </LinearGradient>
+        <View style={styles.headerRightSpacer} />
       </View>
 
       {/* Search Input + Dropdown Suggestions Wrapper */}
       <View style={{ marginHorizontal: 20, zIndex: 200 }}>
-        <View style={[styles.searchBarContainer, { backgroundColor: isDark ? '#1e293b' : '#fff', marginHorizontal: 0 }]}>
+        <View style={[styles.searchBarContainer, { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, marginHorizontal: 0 }]}>
           <TouchableOpacity 
             style={{ padding: 4, marginRight: 6 }}
             onPress={() => {
@@ -182,12 +168,12 @@ export default function BibleScreen({ navigation }: any) {
               }
             }}
           >
-            <Search size={20} color={isDark ? '#94a3b8' : '#64748b'} />
+            <Search size={20} color={colors.textSecondary} />
           </TouchableOpacity>
           <TextInput
             placeholder={t('bible.searchPlaceholder')}
-            placeholderTextColor={isDark ? '#64748b' : '#94a3b8'}
-            style={[styles.searchBarInput, { color: isDark ? '#fff' : '#0f172a' }]}
+            placeholderTextColor={colors.textSecondary}
+            style={[styles.searchBarInput, { color: colors.text }]}
             value={searchQuery}
             onChangeText={setSearchQuery}
             autoCorrect={false}
@@ -211,19 +197,19 @@ export default function BibleScreen({ navigation }: any) {
 
         {/* Dropdown Suggestions */}
         {suggestions.length > 0 && (
-          <View style={[styles.suggestionDropdown, { backgroundColor: isDark ? '#1e293b' : '#fff' }]}>
+          <View style={[styles.suggestionDropdown, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             {suggestions.map((sugg, idx) => (
               <TouchableOpacity
                 key={idx}
                 style={[
                   styles.suggestionItem,
-                  { borderBottomColor: isDark ? '#334155' : '#FAF7F2' },
+                  { borderBottomColor: colors.border },
                   idx === suggestions.length - 1 && { borderBottomWidth: 0 }
                 ]}
                 onPress={() => { setSearchQuery(sugg); setSuggestions([]); }}
               >
                 <Search size={14} color={isDark ? '#64748b' : '#94a3b8'} style={{ marginRight: 10 }} />
-                <Text style={[styles.suggestionItemTxt, { color: isDark ? '#f1f5f9' : '#0f172a' }]}>{sugg}</Text>
+                <Text style={[styles.suggestionItemTxt, { color: colors.text }]}>{sugg}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -240,7 +226,7 @@ export default function BibleScreen({ navigation }: any) {
                 key={l.code}
                 style={[
                   styles.langChip, 
-                  { backgroundColor: isSelected ? '#1a2d5a' : (isDark ? '#1e293b' : '#e2e8f0') }
+                  { backgroundColor: isSelected ? colors.accent : colors.surface, borderColor: colors.border, borderWidth: 1 }
                 ]}
                 onPress={() => {
                   setLanguage(l.code);
@@ -248,10 +234,10 @@ export default function BibleScreen({ navigation }: any) {
                   setSuggestions([]);
                 }}
               >
-                <Globe size={14} color={isSelected ? '#fff' : (isDark ? '#94a3b8' : '#64748b')} style={{ marginRight: 6 }} />
+                <Globe size={14} color={isSelected ? '#fff' : colors.textSecondary} style={{ marginRight: 6 }} />
                 <Text style={[
                   styles.langChipText, 
-                  { color: isSelected ? '#fff' : (isDark ? '#94a3b8' : '#475569') },
+                  { color: isSelected ? '#fff' : colors.textSecondary },
                   isSelected && styles.langChipTextActive
                 ]}>
                   {l.nativeName}
@@ -273,14 +259,14 @@ export default function BibleScreen({ navigation }: any) {
                   paddingHorizontal: 16,
                   paddingVertical: 8,
                   borderRadius: 20,
-                  backgroundColor: englishVersion === ver ? '#1a2d5a' : (isDark ? '#1e293b' : '#e2e8f0'),
+                  backgroundColor: englishVersion === ver ? colors.accent : colors.surface,
                   borderWidth: 1,
-                  borderColor: englishVersion === ver ? '#1a2d5a' : (isDark ? '#334155' : '#cbd5e1')
+                  borderColor: englishVersion === ver ? colors.accent : colors.border
                 }}
                 onPress={() => handleVersionSelect(ver)}
               >
                 <Text style={{
-                  color: englishVersion === ver ? '#fff' : (isDark ? '#94a3b8' : '#475569'),
+                  color: englishVersion === ver ? '#fff' : colors.textSecondary,
                   fontWeight: englishVersion === ver ? '700' : '500',
                   fontSize: 13
                 }}>
@@ -329,20 +315,20 @@ export default function BibleScreen({ navigation }: any) {
 
       {/* Testament Tabs */}
       {!searchQuery && (
-        <View style={styles.tabContainer}>
+        <View style={[styles.tabContainer, { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderRadius: 24, padding: 4 }]}>
           <TouchableOpacity 
-            style={[styles.tab, testament === 'OT' && styles.tabActive]}
+            style={[styles.tab, { backgroundColor: testament === 'OT' ? colors.accent : 'transparent' }]}
             onPress={() => setTestament('OT')}
           >
-            <Text style={[styles.tabText, testament === 'OT' && styles.tabTextActive]}>
+            <Text style={[styles.tabText, { color: testament === 'OT' ? '#FFFFFF' : colors.textSecondary, fontWeight: '700' }]}>
               {t('bible.oldTestament')}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity 
-            style={[styles.tab, testament === 'NT' && styles.tabActive]}
+            style={[styles.tab, { backgroundColor: testament === 'NT' ? colors.accent : 'transparent' }]}
             onPress={() => setTestament('NT')}
           >
-            <Text style={[styles.tabText, testament === 'NT' && styles.tabTextActive]}>
+            <Text style={[styles.tabText, { color: testament === 'NT' ? '#FFFFFF' : colors.textSecondary, fontWeight: '700' }]}>
               {t('bible.newTestament')}
             </Text>
           </TouchableOpacity>
@@ -353,7 +339,7 @@ export default function BibleScreen({ navigation }: any) {
         {/* Deep Verse Search Prompt */}
         {searchQuery.length > 2 && !parsedRef?.chapter && (
           <TouchableOpacity 
-            style={[styles.deepSearchCard, { marginTop: 10 }]}
+            style={[styles.deepSearchCard, { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderLeftWidth: 4, borderLeftColor: colors.accent, marginTop: 10 }]}
             onPress={() => {
               navigation.navigate('BibleSearch', {
                 initialQuery: searchQuery,
@@ -362,14 +348,14 @@ export default function BibleScreen({ navigation }: any) {
             }}
           >
             <View style={styles.deepSearchLeft}>
-              <View style={styles.deepSearchIcon}>
+              <View style={[styles.deepSearchIcon, { backgroundColor: colors.accent }]}>
                 <Search size={18} color="#fff" />
               </View>
               <View>
-                <Text style={styles.deepSearchTitle}>
+                <Text style={[styles.deepSearchTitle, { color: colors.textSecondary }]}>
                   {t('bible.searchPlaceholder')}
                 </Text>
-                <Text style={styles.deepSearchQuery}>"{searchQuery}"</Text>
+                <Text style={[styles.deepSearchQuery, { color: colors.text }]}>"{searchQuery}"</Text>
               </View>
             </View>
             <ChevronLeft color="#1a2d5a" size={20} style={{ transform: [{ rotate: '180deg' }] }} />
@@ -390,7 +376,7 @@ export default function BibleScreen({ navigation }: any) {
               return (
                 <TouchableOpacity 
                   key={`${bookIndex}-${index}`} 
-                  style={[styles.bookCard, { backgroundColor: isDark ? '#1e293b' : '#fff' }]}
+                  style={[styles.bookCard, { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 }]}
                   onPress={() => {
                     navigation.navigate('BibleChapters', { 
                       bookIndex,
@@ -406,7 +392,7 @@ export default function BibleScreen({ navigation }: any) {
                   <Text style={[styles.bookName, { color: isDark ? '#fff' : '#1e293b' }]} numberOfLines={1}>
                     {book}
                   </Text>
-                  <Text style={styles.bookSub}>
+                  <Text style={[styles.bookSub, { color: colors.textSecondary }]}>
                     {t('bible.readNow')}
                   </Text>
                 </TouchableOpacity>
@@ -422,6 +408,36 @@ export default function BibleScreen({ navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+    headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+  },
+  circularBackBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  headerTitleText: {
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+    textAlign: 'center',
+  },
+  headerRightSpacer: {
+    width: 44,
+    height: 44,
+  },
   headerCardWrapper: {
     paddingHorizontal: 16,
     paddingBottom: 4,

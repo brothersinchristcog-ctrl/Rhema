@@ -19,6 +19,7 @@ import {
   Clock, 
   MapPin, 
   ChevronLeft, 
+  ArrowLeft, 
   Share2, 
   Info, 
   Play, 
@@ -41,6 +42,8 @@ import ViewShot from 'react-native-view-shot';
 
 import { findEventVideo } from '../services/YouTubeService';
 import { useChurch } from '../context/ChurchContext';
+import { useTheme } from '../context/ThemeContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FirestoreService, { WorshipSong, EventServiceItem } from '../services/FirestoreService';
 import SongDetailModal from '../components/SongDetailModal';
 
@@ -85,6 +88,8 @@ export default function EventDetailsScreen({ route, navigation }: any) {
   const initialEvent = route?.params?.event || {};
   const [eventData, setEventData] = useState<any>(initialEvent);
   const { activeChurch } = useChurch();
+  const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const [imageAspectRatio, setImageAspectRatio] = useState<number>(16 / 9);
   const [isSharing, setIsSharing] = useState(false);
@@ -343,31 +348,43 @@ export default function EventDetailsScreen({ route, navigation }: any) {
   const heroImageUri = event.image || event.bannerUrl || 'https://images.unsplash.com/photo-1438232992991-995b7058bbb3?q=80&w=800';
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={colors.barStyle || (isDark ? 'light-content' : 'dark-content')} backgroundColor={colors.background} />
 
-      {/* Top Floating Action Bar */}
-      <View style={styles.headerActions}>
-        <TouchableOpacity 
-          style={styles.circleBtn}
+      {/* ── Screen Header (Clean circular back button & title & share on right) ── */}
+      <View
+        style={[
+          styles.headerRow,
+          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8 }
+        ]}
+      >
+        <TouchableOpacity
+          style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
           onPress={() => navigation.goBack()}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           activeOpacity={0.8}
         >
-          <ChevronLeft size={24} color="#fff" />
+          <ArrowLeft size={20} color={colors.text} strokeWidth={2.4} />
         </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.circleBtn}
+
+        <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
+          Event Details
+        </Text>
+
+        <TouchableOpacity
+          style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
           onPress={onShare}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           activeOpacity={0.8}
         >
-          <Share2 size={20} color="#fff" />
+          <Share2 size={18} color={colors.text} />
         </TouchableOpacity>
       </View>
       
       <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
         {/* --- Hero Image Section (Full image displayed with dynamic aspect ratio, no cropping) --- */}
-        <View style={styles.heroWrapper}>
-          <View style={[styles.heroContainer, { aspectRatio: imageAspectRatio }]}>
+        <View style={[styles.heroWrapper, { backgroundColor: colors.background }]}>
+          <View style={[styles.heroContainer, { aspectRatio: imageAspectRatio, backgroundColor: colors.background }]}>
             <Image 
               source={{ uri: heroImageUri }}
               style={styles.heroImage}
@@ -377,8 +394,8 @@ export default function EventDetailsScreen({ route, navigation }: any) {
         </View>
 
         {/* --- Content Card --- */}
-        <View style={styles.contentCard}>
-          <View style={styles.indicator} />
+        <View style={[styles.contentCard, { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 }]}>
+          <View style={[styles.indicator, { backgroundColor: colors.border }]} />
           
           {/* Header Badges: Status + Category + Church */}
           <View style={styles.headerBadgeRow}>
@@ -402,24 +419,24 @@ export default function EventDetailsScreen({ route, navigation }: any) {
 
           {/* Title Area */}
           <View style={styles.titleSection}>
-            <Text style={styles.titleEn}>{event.title || event.name}</Text>
+            <Text style={[styles.titleEn, { color: colors.text }]}>{event.title || event.name}</Text>
             {(event.titleTelugu || event.titleTe) ? (
-              <Text style={styles.titleTe}>{event.titleTelugu || event.titleTe}</Text>
+              <Text style={[styles.titleTe, { color: colors.textSecondary }]}>{event.titleTelugu || event.titleTe}</Text>
             ) : null}
           </View>
 
           {/* Schedule Badges: Start Date, End Date, Start Time, and End Time */}
           <View style={styles.badgeRow}>
             {/* Dates Card */}
-            <View style={styles.scheduleCard}>
+            <View style={[styles.scheduleCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <View style={styles.scheduleCardHeader}>
                 <View style={styles.badgeIconCircle}>
                   <Calendar size={18} color="#1a2d5a" />
                 </View>
-                <Text style={styles.scheduleCardTitle}>EVENT DATES · ప్రారంభం & ముగింపు తేదీలు</Text>
+                <Text style={[styles.scheduleCardTitle, { color: colors.text }]}>EVENT DATES · ప్రారంభం & ముగింపు తేదీలు</Text>
               </View>
 
-              <View style={styles.scheduleGrid}>
+              <View style={[styles.scheduleGrid, { backgroundColor: colors.background }]}>
                 <View style={styles.scheduleCol}>
                   <Text style={styles.scheduleLabel}>START DATE · ప్రారంభ తేదీ</Text>
                   <Text style={styles.scheduleValue}>{formatDate(event.date)}</Text>
@@ -451,8 +468,8 @@ export default function EventDetailsScreen({ route, navigation }: any) {
 
               <View style={styles.scheduleGrid}>
                 <View style={styles.scheduleCol}>
-                  <Text style={[styles.scheduleLabel, { color: '#991b1b' }]}>START TIME · ప్రారంభం</Text>
-                  <Text style={[styles.scheduleTimeValue, { color: '#dc2626' }]}>{formatTime(event.startTime)}</Text>
+                  <Text style={[styles.scheduleLabel, { color: colors.accent }]}>START TIME · ప్రారంభం</Text>
+                  <Text style={[styles.scheduleTimeValue, { color: colors.accent }]}>{formatTime(event.startTime)}</Text>
                 </View>
 
                 <View style={[styles.scheduleDivider, { backgroundColor: '#fecaca' }]} />
@@ -471,12 +488,12 @@ export default function EventDetailsScreen({ route, navigation }: any) {
               <View style={styles.iconCircle}>
                 <MapPin size={18} color="#1a2d5a" />
               </View>
-              <Text style={styles.sectionTitle}>LOCATION · స్థలం</Text>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>LOCATION · స్థలం</Text>
             </View>
-            <View style={styles.locCard}>
-              <Text style={styles.locName}>{event.location || event.address || 'Church Main Hall'}</Text>
+            <View style={[styles.locCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={[styles.locName, { color: colors.text }]}>{event.location || event.address || 'Church Main Hall'}</Text>
               {event.location && event.address && event.location !== event.address ? (
-                <Text style={styles.locSub}>{event.address}</Text>
+                <Text style={[styles.locSub, { color: colors.textSecondary }]}>{event.address}</Text>
               ) : null}
               <TouchableOpacity style={styles.mapBtn} onPress={handleOpenMaps} activeOpacity={0.8}>
                 <Navigation size={15} color="#1a2d5a" />
@@ -493,8 +510,8 @@ export default function EventDetailsScreen({ route, navigation }: any) {
               </View>
               <Text style={styles.sectionTitle}>ABOUT EVENT · కార్యక్రమం గురించి</Text>
             </View>
-            <View style={styles.descCard}>
-              <Text style={styles.description}>
+            <View style={[styles.descCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={[styles.description, { color: colors.text }]}>
                 {event.description || event.descEn || "Join us for a powerful time of prayer and fellowship. We invite all members to gather as we seek God's presence together.\n\n'For where two or three gather in my name, there am I with them.' - Matthew 18:20"}
               </Text>
             </View>
@@ -697,15 +714,15 @@ export default function EventDetailsScreen({ route, navigation }: any) {
 
             {/* UPCOMING — not started yet */}
             {status === 'upcoming' && (
-              <View style={styles.lockedCard}>
+              <View style={[styles.lockedCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                 <View style={styles.lockedIconWrap}>
                   <Lock size={32} color="#94a3b8" />
                 </View>
-                <Text style={styles.lockedTitle}>Event Has Not Started Yet</Text>
+                <Text style={[styles.lockedTitle, { color: colors.text }]}>Event Has Not Started Yet</Text>
                 <Text style={styles.lockedTitleTe}>కార్యక్రమం ఇంకా ప్రారంభం కాలేదు</Text>
                 <View style={styles.lockedDateRow}>
                   <Calendar size={14} color="#1a2d5a" />
-                  <Text style={styles.lockedDate}>
+                  <Text style={[styles.lockedDate, { color: colors.text }]}>
                     Scheduled for {formatDate(event.date)}
                   </Text>
                 </View>
@@ -715,7 +732,7 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                     {formatTime(event.startTime)} – {formatTime(event.endTime)}
                   </Text>
                 </View>
-                <Text style={styles.lockedSub}>
+                <Text style={[styles.lockedSub, { color: colors.textSecondary }]}>
                   The recording will be available here after the event ends.
                   {'\n'}కార్యక్రమం ముగిసిన తర్వాత వీడియో ఇక్కడ అందుబాటులో ఉంటుంది.
                 </Text>
@@ -904,22 +921,48 @@ export default function EventDetailsScreen({ route, navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a1945' },
+  container: { flex: 1 },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+  },
+  circularBackBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  headerTitleText: {
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+    textAlign: 'center',
+  },
   heroWrapper: {
     width: '100%',
-    backgroundColor: '#0a1945',
-    paddingTop: Platform.OS === 'ios' ? 44 : (StatusBar.currentHeight || 24),
+    paddingTop: 6,
+    paddingHorizontal: 16,
   },
   heroContainer: { 
-    width: '100%', 
-    backgroundColor: '#0a1945',
+    width: '100%',
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden'
   },
   heroImage: { 
     width: '100%', 
-    height: '100%' 
+    height: '100%', 
+    borderRadius: 20 
   },
   headerActions: {
     position: 'absolute',
@@ -970,7 +1013,7 @@ const styles = StyleSheet.create({
   churchPillText: { fontSize: 11, fontWeight: '700', color: '#1d4ed8' },
 
   titleSection: { marginBottom: 20 },
-  titleEn: { fontSize: 24, fontWeight: '900', color: '#1a2d5a', marginBottom: 6, letterSpacing: -0.5 },
+  titleEn: { fontSize: 24, fontWeight: '900', marginBottom: 6, letterSpacing: -0.5 },
   titleTe: { fontSize: 17, color: '#64748b', fontWeight: '600' },
   
   badgeRow: { gap: 12, marginBottom: 24 },

@@ -1,3 +1,4 @@
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import React, { useEffect, useState, useRef } from 'react';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
@@ -203,6 +204,7 @@ export default function App() {
   };
 
   return (
+    <SafeAreaProvider>
     <NavigationContainer ref={navigationRef} linking={linking}>
       <StatusBar style="light" />
       <RootNavigator />
@@ -311,6 +313,7 @@ export default function App() {
         </Animated.View>
       )}
     </NavigationContainer>
+    </SafeAreaProvider>
   );
 }
 

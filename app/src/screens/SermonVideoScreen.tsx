@@ -41,6 +41,7 @@ import {
 import FirestoreService from '../services/FirestoreService';
 import { useChurch } from '../context/ChurchContext';
 import { useLanguage } from '../context/LanguageContext';
+import { useTheme } from '../context/ThemeContext';
 import { formatSermonDuration, formatDateDisplay } from '../utils/DateUtils';
 
 const { width } = Dimensions.get('window');
@@ -99,10 +100,29 @@ const injectedGviewCSS = `
 `;
 
 export default function SermonVideoScreen({ navigation, route }: any) {
+  const sermonDataParam = route?.params?.sermonData;
   const [videos, setVideos] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!sermonDataParam);
   const [playing, setPlaying] = useState(false);
-  const [activeVideo, setActiveVideo] = useState<any | null>(null);
+  const [activeVideo, setActiveVideo] = useState<any | null>(() => {
+    if (sermonDataParam && (sermonDataParam.youtubeId || sermonDataParam.id)) {
+      return {
+        ...sermonDataParam,
+        id: sermonDataParam.id,
+        title: sermonDataParam.title || 'Sermon',
+        youtubeId: sermonDataParam.youtubeId || '',
+        date: sermonDataParam.date,
+        duration: sermonDataParam.duration || '',
+        pastor: sermonDataParam.pastor || 'Pastor',
+        thumbnailUrl: sermonDataParam.thumbnailUrl || sermonDataParam.imageUrl || '',
+        notesUrl: sermonDataParam.notesUrl || '',
+        notesFileName: sermonDataParam.notesFileName || '',
+        notesFileType: sermonDataParam.notesFileType || '',
+        notesText: sermonDataParam.notesText || '',
+      };
+    }
+    return null;
+  });
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [showUnsubModal, setShowUnsubModal] = useState(false);
   const [inlineNotesText, setInlineNotesText] = useState<string>('');
@@ -113,6 +133,7 @@ export default function SermonVideoScreen({ navigation, route }: any) {
   const { activeChurch } = useChurch();
   const { t } = useLanguage();
   const insets = useSafeAreaInsets();
+  const { colors, isDark } = useTheme();
 
   // Load persistent subscription state
   useEffect(() => {
@@ -291,8 +312,12 @@ export default function SermonVideoScreen({ navigation, route }: any) {
 
   if (loading && !activeVideo) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#fbbf24" />
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <StatusBar barStyle={colors.barStyle || (isDark ? 'light-content' : 'dark-content')} backgroundColor={colors.background} />
+        <ActivityIndicator size="large" color={colors.accent || colors.primary || '#c0392b'} />
+        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+          {t('common.loading') || 'Loading sermon...'}
+        </Text>
       </View>
     );
   }
@@ -329,44 +354,50 @@ export default function SermonVideoScreen({ navigation, route }: any) {
   const finalVideoId = extractYoutubeId(activeVideo?.youtubeId || '');
   const hasValidVideo = finalVideoId.length > 0;
 
+  const playerWidth = Math.min(width - 32, 600);
+  const playerHeight = Math.round(playerWidth * 0.5625);
+
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#1a2d5a" />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={colors.barStyle || (isDark ? 'light-content' : 'dark-content')} backgroundColor={colors.background} />
       
-      {/* ── Page Header ── */}
-      <View style={{ backgroundColor: '#000' }}>
-        <LinearGradient 
-          colors={['#2b52a1', '#1a3673']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.pageHeader}
+      {/* ── Screen Header (Clean circular back button & title) ── */}
+      <View
+        style={[
+          styles.headerRow,
+          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8 }
+        ]}
+      >
+        <TouchableOpacity
+          style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          activeOpacity={0.8}
         >
-          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} hitSlop={{top:10, bottom:10, left:10, right:10}}>
-            <ArrowLeft size={24} color="#fff" />
-          </TouchableOpacity>
-          
-          <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
-            <View style={styles.headerCenter}>
-              <Text style={styles.pageTitle}>{t('sermons.videoTitle')}</Text>
-              <Text style={styles.pageSub}>{t('sermons.title')}</Text>
-            </View>
-          </View>
-        </LinearGradient>
+          <ArrowLeft size={20} color={colors.text} strokeWidth={2.4} />
+        </TouchableOpacity>
+
+        <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
+          {t('sermons.videoTitle') || 'Sermon Video'}
+        </Text>
+
+        <View style={styles.headerRightSpacer} />
       </View>
 
       <ScrollView ref={scrollViewRef} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
         
-        {/* ── Video Player ── */}
+        {/* ── Video Player (Spaced with rounded corners) ── */}
         <View style={styles.playerSection}>
           {hasValidVideo ? (
             <YoutubePlayer
-              height={width * 0.56}
+              width={playerWidth}
+              height={playerHeight}
               play={playing}
               videoId={finalVideoId}
               onChangeState={onStateChange}
             />
           ) : (
-            <View style={{ height: width * 0.56, justifyContent: 'center', alignItems: 'center', backgroundColor: '#111827' }}>
+            <View style={{ height: playerHeight, width: playerWidth, justifyContent: 'center', alignItems: 'center', backgroundColor: '#111827' }}>
               <Video size={40} color="#374151" />
               <Text style={{ color: '#9CA3AF', marginTop: 10, fontSize: 12, fontWeight: '600' }}>{t('sermons.noVideoLink')}</Text>
             </View>
@@ -374,8 +405,8 @@ export default function SermonVideoScreen({ navigation, route }: any) {
         </View>
 
         {/* ── Video Details ── */}
-        <View style={styles.videoDetails}>
-          <Text style={styles.videoTitle}>{activeVideo?.title || t('home.exploreSermons')}</Text>
+        <View style={[styles.videoDetails, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Text style={[styles.videoTitle, { color: colors.text }]}>{activeVideo?.title || t('home.exploreSermons')}</Text>
           <View style={styles.metaRow}>
             {/* 1. Highlighted Category Badge FIRST */}
             {primaryCategory ? (
@@ -412,11 +443,11 @@ export default function SermonVideoScreen({ navigation, route }: any) {
             ) : null}
           </View>
 
-          <View style={styles.pastorCard}>
-            <View style={styles.pastorAv}><Text style={styles.pastorAvTxt}>P</Text></View>
+          <View style={[styles.pastorCard, { backgroundColor: isDark ? '#1e293b' : '#f8fafc', borderColor: colors.border }]}>
+            <View style={[styles.pastorAv, { backgroundColor: colors.accent || '#c0392b' }]}><Text style={styles.pastorAvTxt}>P</Text></View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.pastorName}>{activeVideo?.pastor || t('sermons.pastor')}</Text>
-              <Text style={styles.pastorRole}>{t('sermons.mainSpeaker')}</Text>
+              <Text style={[styles.pastorName, { color: colors.text }]}>{activeVideo?.pastor || t('sermons.pastor')}</Text>
+              <Text style={[styles.pastorRole, { color: colors.textSecondary }]}>{t('sermons.mainSpeaker')}</Text>
             </View>
             <TouchableOpacity 
               style={isSubscribed ? styles.unsubBtn : styles.subBtn} 
@@ -428,7 +459,7 @@ export default function SermonVideoScreen({ navigation, route }: any) {
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity style={styles.shareBtn} onPress={handleShare}>
+          <TouchableOpacity style={[styles.shareBtn, { backgroundColor: colors.accent || '#c0392b' }]} onPress={handleShare}>
             <Share2 size={16} color="#fff" />
             <Text style={styles.shareBtnTxt}>{t('sermons.shareThisMessage')}</Text>
           </TouchableOpacity>
@@ -564,8 +595,8 @@ export default function SermonVideoScreen({ navigation, route }: any) {
         )}
 
                 {/* ── Archive ── */}
-        <Text style={styles.secLbl}>{t('sermons.pastSermons')}</Text>
-        <View style={styles.archiveList}>
+        <Text style={[styles.secLbl, { color: colors.textSecondary }]}>{t('sermons.pastSermons')}</Text>
+        <View style={[styles.archiveList, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           {videos.filter(v => v.id !== activeVideo?.id).length === 0 ? (
             <View style={{ padding: 20, alignItems: 'center' }}>
               <Text style={{ color: '#9CA3AF', fontSize: 12, fontStyle: 'italic' }}>{t('sermons.noPastSermons')}</Text>
@@ -736,30 +767,70 @@ export default function SermonVideoScreen({ navigation, route }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FAF7F2' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#1a2d5a' },
-  
-  // Header
-  pageHeader: {
-    paddingTop: Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight ?? 24) + 12,
-    paddingHorizontal: 20,
-    paddingBottom: 30,
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 14, fontSize: 13, fontWeight: '600' },
+
+  // Screen Header
+  headerRow: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    minHeight: Platform.OS === 'ios' ? 140 : 120,
+    paddingHorizontal: 20,
+    paddingBottom: 14,
   },
-  headerCenter: { flex: 1, justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 24 },
-  backBtn: { zIndex: 10, padding: 5, marginLeft: -8, marginBottom: 8 },
-  pageTitle: { color: '#fff', fontSize: 20, fontWeight: '800', marginBottom: 2 },
-  pageSub: { color: 'rgba(255,255,255,0.65)', fontSize: 11, fontWeight: '500' },
+  circularBackBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  headerTitleText: {
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+    textAlign: 'center',
+  },
+  headerRightSpacer: {
+    width: 44,
+    height: 44,
+  },
 
   scroll: { paddingBottom: 40 },
 
-  playerSection: { backgroundColor: '#000', width: '100%' },
+  playerSection: {
+    marginHorizontal: 16,
+    marginTop: 10,
+    marginBottom: 16,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+    alignSelf: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 4,
+  },
 
-  videoDetails: { padding: 16, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
+  videoDetails: {
+    marginHorizontal: 16,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+  },
   videoTitle: { fontSize: 18, fontWeight: '800', color: '#111827', marginBottom: 8 },
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 15, marginBottom: 20 },
   metaItem: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 },
