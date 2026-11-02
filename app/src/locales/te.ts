@@ -354,6 +354,7 @@ export const te: TranslationSchema = {
     givingHistorySub: 'మీ కానుకల వివరాలు చూడండి',
     churchSubscription: 'చర్చి సబ్‌స్క్రిప్షన్',
     churchSubscriptionSub: 'ప్లాన్ మరియు బిల్లింగ్ నిర్వహణ',
+    churchSection: 'చర్చి',
     settingsSection: 'సెట్టింగ్‌లు',
     notifications: 'నోటిఫికేషన్లు',
     notificationsSub: 'మీ ప్రాధాన్యతలను నిర్వహించండి',

@@ -354,6 +354,7 @@ export const ml: TranslationSchema = {
     givingHistorySub: 'നിങ്ങളുടെ സംഭാവന റെക്കോർഡുകൾ കാണുക',
     churchSubscription: 'സഭാ സബ്‌സ്‌ക്രിപ്ഷൻ',
     churchSubscriptionSub: 'സഭാ പ്ലാനും ബില്ലിംഗും കൈകാര്യം ചെയ്യുക',
+    churchSection: 'സഭ',
     settingsSection: 'ക്രമീകരണങ്ങൾ',
     notifications: 'അറിയിപ്പുകൾ',
     notificationsSub: 'മുൻഗണനകൾ കൈകാര്യം ചെയ്യുക',

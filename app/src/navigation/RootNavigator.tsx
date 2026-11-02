@@ -143,11 +143,11 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
     const { colors, isDark, navBarStyle } = useTheme();
     const insets = useSafeAreaInsets();
 
-    // Clearance for Android 3-button navigation / iOS home indicator
-    const deviceBottomInset = Math.max(
-      insets?.bottom || 0,
-      Platform.OS === 'android' ? 52 : (Platform.OS === 'ios' ? 24 : 0)
-    );
+    // Device-friendly, mobile-responsive bottom clearance:
+    // In 3-button mode, insets.bottom is ~44-56px (clearing the system buttons).
+    // In gesture mode, insets.bottom is small (0-16px), bringing the capsule down to the bottom of the screen.
+    const bottomSafe = insets?.bottom || 0;
+    const deviceBottomInset = bottomSafe > 0 ? bottomSafe : (Platform.OS === 'ios' ? 10 : 4);
   
     const currentRoute = state.routes[state.index];
     const activeConfig = getTabConfig(currentRoute.name, t);
@@ -208,7 +208,7 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
             backgroundColor: isDark ? '#09090B' : '#FFFFFF',
             borderTopColor: isDark ? '#1F242D' : '#E2E8F0',
             paddingBottom: deviceBottomInset,
-            height: 60 + deviceBottomInset,
+            height: 56 + deviceBottomInset,
           }
         ]}>
           <View style={styles.capsuleTabsRow}>
@@ -1058,7 +1058,7 @@ const styles = StyleSheet.create({
   },
   capsuleTabsRow: {
     flexDirection: 'row',
-    height: 60,
+    height: 56,
     alignItems: 'center',
     justifyContent: 'space-around',
     width: '100%',
@@ -1067,24 +1067,24 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    height: 60,
+    height: 56,
   },
   activeCapsulePill: {
-    width: 58,
-    height: 52,
-    borderRadius: 26,
+    minWidth: 56,
+    height: 48,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 4,
-    paddingHorizontal: 2,
+    paddingVertical: 3,
+    paddingHorizontal: 4,
   },
   inactiveCapsuleWrapper: {
-    width: 58,
-    height: 52,
+    minWidth: 56,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 4,
-    paddingHorizontal: 2,
+    paddingVertical: 3,
+    paddingHorizontal: 4,
   },
   activeCapsuleLabel: {
     fontSize: 9.5,
@@ -1095,9 +1095,9 @@ const styles = StyleSheet.create({
     letterSpacing: 0,
   },
   inactiveCapsuleLabel: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '500',
-    marginTop: 2.5,
+    marginTop: 2,
     textAlign: 'center',
     paddingHorizontal: 2,
     letterSpacing: 0,

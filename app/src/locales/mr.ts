@@ -354,6 +354,7 @@ export const mr: TranslationSchema = {
     givingHistorySub: 'आपल्या दानाची नोंद पहा',
     churchSubscription: 'मंडळी वर्गणी',
     churchSubscriptionSub: 'योजना आणि बिलिंग व्यवस्थापित करा',
+    churchSection: 'चर्च',
     settingsSection: 'सेटिंग्ज',
     notifications: 'सूचना प्राधान्ये',
     notificationsSub: 'आपली प्राधान्ये व्यवस्थापित करा',

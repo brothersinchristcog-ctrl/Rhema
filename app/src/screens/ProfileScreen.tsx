@@ -44,7 +44,9 @@ import {
   Shield,
   Sun,
   Sparkles,
-  Search
+  Search,
+  Info,
+  Phone
 } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -593,6 +595,33 @@ export default function ProfileScreen({ navigation }: any) {
               subColor={colors.textSecondary}
             />
           )}
+        </View>
+
+        {/* Gray Divider Band between sections (Instagram style) */}
+        <View style={[styles.igSectionDividerBand, { backgroundColor: isDark ? '#141416' : '#F1F5F9' }]} />
+
+        {/* ── Church Info Section ── */}
+        <View style={styles.igSection}>
+          <Text style={[styles.igSectionHeader, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+            {t('profile.churchSection') || 'CHURCH'}
+          </Text>
+
+          <MenuItem 
+            icon={<Info size={22} color={colors.text} strokeWidth={1.8} />} 
+            title={t('home.aboutUs') || t('profile.aboutChurch') || 'About Us'} 
+            sub={t('home.aboutUsSub') || 'Our mission'} 
+            onPress={() => navigation.navigate('AboutUs')}
+            textColor={colors.text}
+            subColor={colors.textSecondary}
+          />
+          <MenuItem 
+            icon={<Phone size={22} color={colors.text} strokeWidth={1.8} />} 
+            title={t('home.contactUs') || t('profile.contactUs') || 'Contact Us'} 
+            sub={t('home.contactUsSub') || 'Get in touch'} 
+            onPress={() => navigation.navigate('ContactUs')}
+            textColor={colors.text}
+            subColor={colors.textSecondary}
+          />
         </View>
 
         {/* Gray Divider Band between sections (Instagram style) */}

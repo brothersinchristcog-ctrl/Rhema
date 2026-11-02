@@ -354,6 +354,7 @@ export const ta: TranslationSchema = {
     givingHistorySub: 'உங்கள் நன்கொடை பதிவுகளைக் காண்க',
     churchSubscription: 'சபை சந்தா',
     churchSubscriptionSub: 'சபை திட்டம் மற்றும் கட்டண மேலாண்மை',
+    churchSection: 'சர்ச்',
     settingsSection: 'அமைப்புகள்',
     notifications: 'அறிவிப்பு விருப்பங்கள்',
     notificationsSub: 'விருப்பங்களை நிர்வகிக்கவும்',
