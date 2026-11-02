@@ -7,6 +7,7 @@ import { ArrowLeft, Share2, Sun, Sunset, Moon, BookOpen, Shield, Heart, Repeat, 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import VerseNotificationService, { DailyVerse } from '../services/VerseNotificationService';
+import { getVerseBackgroundUrl } from '../constants/VerseBackgrounds';
 import { useTheme } from '../context/ThemeContext';
 import { useChurch } from '../context/ChurchContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -491,23 +492,18 @@ export default function VerseOfTheDayScreen() {
 
                     return (
                       <View key={periodIndex} style={[styles.cardWrapper, { width }]}>
-                        {verse.backgroundUrl ? (
-                          <ImageBackground 
-                            source={{ uri: verse.backgroundUrl }} 
-                            style={styles.cardGradient}
-                            imageStyle={{ borderRadius: 24 }}
-                          >
-                            <LinearGradient 
-                              colors={['rgba(0,0,0,0.2)', 'rgba(0,0,0,0.8)']} 
-                              style={StyleSheet.absoluteFillObject} 
-                            />
-                            {renderCardContent(verse, period, theme, periodIndex, dayData.date)}
-                          </ImageBackground>
-                        ) : (
-                          <LinearGradient colors={dynamicColors} style={styles.cardGradient}>
-                            {renderCardContent(verse, period, theme, periodIndex, dayData.date)}
-                          </LinearGradient>
-                        )}
+                        <ImageBackground 
+                          source={{ uri: getVerseBackgroundUrl(verse, period, periodIndex) }} 
+                          style={styles.cardGradient}
+                          imageStyle={{ borderRadius: 24 }}
+                          resizeMode="cover"
+                        >
+                          <LinearGradient 
+                            colors={['rgba(0,0,0,0.3)', 'rgba(0,0,0,0.85)']} 
+                            style={StyleSheet.absoluteFillObject} 
+                          />
+                          {renderCardContent(verse, period, theme, periodIndex, dayData.date)}
+                        </ImageBackground>
                       </View>
                     );
                   })}
@@ -676,10 +672,9 @@ export default function VerseOfTheDayScreen() {
       <View style={{ position: 'absolute', top: -10000, left: -10000 }}>
         <ViewShot ref={captureRef} options={{ format: 'png', quality: 1 }}>
           <View style={[styles.cardWrapper, { width, height: width * 1.5 }]} collapsable={false}>
-            {verse.backgroundUrl ? (
-              <View style={[styles.cardGradient, { backgroundColor: '#111' }]} collapsable={false}>
+            <View style={[styles.cardGradient, { backgroundColor: '#111' }]} collapsable={false}>
                 <Image 
-                  source={{ uri: verse.backgroundUrl }} 
+                  source={{ uri: getVerseBackgroundUrl(verse, captureConfig?.period, 0) }} 
                   style={[StyleSheet.absoluteFillObject, { borderRadius: 24 }]} 
                   resizeMode="cover"
                 />
@@ -689,11 +684,6 @@ export default function VerseOfTheDayScreen() {
                 />
                 {captureContent}
               </View>
-            ) : (
-              <LinearGradient colors={dynamicColors} style={styles.cardGradient}>
-                {captureContent}
-              </LinearGradient>
-            )}
           </View>
         </ViewShot>
       </View>

@@ -1658,6 +1658,7 @@ export {
   publishScheduledSermons,
   triggerPublishScheduledSermonsHttp,
   triggerDailyVersePushHttp,
+  sendDailyVersePushScheduled,
   monitorMeetingLive,
   pushMeetingLive
 } from './notifications.js';

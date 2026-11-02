@@ -4,8 +4,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { BibleService } from './BibleService';
 import { SupportedLanguage } from '../locales';
+import { getVerseBackgroundUrl } from '../constants/VerseBackgrounds';
 
-const VERSES_CACHE_KEY = '@wechristian_verses_cache';
+const VERSES_CACHE_KEY = '@rhema_verses_cache';
+
+// Distinct Scripture offset for Rhema Global Ministries to guarantee completely independent verses from WeChristian
+const RHEMA_DAILY_VERSE_OFFSET = 2931;
 
 // Stable notification ID prefix — used to deduplicate / cancel by slot
 const NOTIF_ID_PREFIX = 'daily_verse_';
@@ -92,20 +96,23 @@ class VerseNotificationService {
   /**
    * Calculates which indices a given date needs (Morning, Afternoon, Evening, Night)
    */
-  getIndicesForDate(date: Date, totalVerses: number): number[] {
+  getIndicesForDate(date: Date, totalVerses: number, churchId: string = 'rhema'): number[] {
     if (totalVerses === 0) return [];
     
     // Calculate days since epoch based on local timezone date (so 'today' is consistent per timezone)
-    // To make it globally exact same verse at same moment, we could use UTC, but local is usually better for "Morning".
     const localDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
     const epochDate = new Date(EPOCH.getFullYear(), EPOCH.getMonth(), EPOCH.getDate());
     const daysSinceEpoch = Math.floor((localDate.getTime() - epochDate.getTime()) / (1000 * 60 * 60 * 24));
     
+    // RHEMA has its own independent Scripture offset so it never displays the same verses as WeChristian
+    const offset = churchId === 'rhema' ? RHEMA_DAILY_VERSE_OFFSET : 0;
+    const base = daysSinceEpoch * 4 + offset;
+    
     return [
-      (daysSinceEpoch * 4 + 0) % totalVerses,
-      (daysSinceEpoch * 4 + 1) % totalVerses,
-      (daysSinceEpoch * 4 + 2) % totalVerses,
-      (daysSinceEpoch * 4 + 3) % totalVerses,
+      ((base + 0) % totalVerses + totalVerses) % totalVerses,
+      ((base + 1) % totalVerses + totalVerses) % totalVerses,
+      ((base + 2) % totalVerses + totalVerses) % totalVerses,
+      ((base + 3) % totalVerses + totalVerses) % totalVerses,
     ];
   }
 
@@ -127,7 +134,7 @@ class VerseNotificationService {
    * Protected by an isSyncing mutex to prevent double-execution on auth re-renders.
    * Schedules two distinct notifications simultaneously for each time-slot: English and Telugu.
    */
-  async syncAndSchedule() {
+  async syncAndSchedule(churchId: string = 'rhema') {
     // ── Mutex guard: skip if already running ──────────────────────────────────
     if (this.isSyncing) {
       console.log('[VerseNotificationService] Sync already in progress. Skipping duplicate call.');
@@ -215,7 +222,7 @@ class VerseNotificationService {
       // 7. Calculate which verse indices are required
       const requiredIndices = new Set<number>();
       for (const d of targetDates) {
-        this.getIndicesForDate(d, totalVerses).forEach(idx => requiredIndices.add(idx));
+        this.getIndicesForDate(d, totalVerses, churchId).forEach(idx => requiredIndices.add(idx));
       }
 
       // 8. Load cache and fetch any missing verse data or verses missing backgroundUrl
@@ -242,7 +249,7 @@ class VerseNotificationService {
       let scheduledCount = 0;
 
       for (const d of targetDates) {
-        const dailyIndices = this.getIndicesForDate(d, totalVerses);
+        const dailyIndices = this.getIndicesForDate(d, totalVerses, churchId);
 
         for (let i = 0; i < 4; i++) {
           const time = times[i];
@@ -365,12 +372,17 @@ class VerseNotificationService {
 
       const periodOrder: Record<string, number> = { Morning: 0, Afternoon: 1, Evening: 2, Night: 3 };
       const periodOffset = periodOrder[period] ?? 0;
-      const allIndices = this.getIndicesForDate(date, totalVerses);
+      const allIndices = this.getIndicesForDate(date, totalVerses, 'rhema');
       const targetIndex = allIndices[periodOffset];
 
       if (cacheStr) {
         const cache: Record<number, DailyVerse> = JSON.parse(cacheStr);
-        if (cache[targetIndex] && cache[targetIndex].backgroundUrl) return cache[targetIndex];
+        if (cache[targetIndex]) {
+          if (!cache[targetIndex].backgroundUrl) {
+            cache[targetIndex].backgroundUrl = getVerseBackgroundUrl(cache[targetIndex], period, targetIndex);
+          }
+          return cache[targetIndex];
+        }
       }
 
       // 2. Fallback: fetch from Firestore by index
@@ -378,6 +390,9 @@ class VerseNotificationService {
       if (!snapshot.empty) {
         const doc = snapshot.docs[0];
         const vData = { ...doc.data(), id: doc.id } as DailyVerse;
+        if (!vData.backgroundUrl) {
+          vData.backgroundUrl = getVerseBackgroundUrl(vData, period, targetIndex);
+        }
         if (cacheStr) {
           try {
             const cache = JSON.parse(cacheStr);
@@ -402,22 +417,25 @@ class VerseNotificationService {
    * This executes in < 1ms on JS thread with 0 network calls, allowing the screen
    * to paint instantly without showing any loading spinner or blank page.
    */
-  getSynchronousInitialVerses(pastDays: number = 5): { date: Date, verses: DailyVerse[] }[] {
+  getSynchronousInitialVerses(pastDays: number = 5, churchId: string = 'rhema'): { date: Date, verses: DailyVerse[] }[] {
     try {
       const bundledVerses: any[] = require('../../assets/bulk_verses.json');
       const totalVerses = bundledVerses.length || 5863;
       const today = new Date();
       const results: { date: Date, verses: DailyVerse[] }[] = [];
+      const PERIODS = ['Morning', 'Afternoon', 'Evening', 'Night'];
 
       for (let i = 0; i <= pastDays; i++) {
         const d = new Date(today);
         d.setDate(today.getDate() - i);
-        const dailyIndices = this.getIndicesForDate(d, totalVerses);
+        const dailyIndices = this.getIndicesForDate(d, totalVerses, churchId);
         const versesForDay: DailyVerse[] = [];
 
         for (let periodIdx = 0; periodIdx < 4; periodIdx++) {
           const idx = dailyIndices[periodIdx];
           const bv = bundledVerses[idx] || {};
+          const period = PERIODS[periodIdx];
+          const bgUrl = bv.backgroundUrl || getVerseBackgroundUrl(bv, period, idx);
           versesForDay.push({
             id: `verse_${idx}`,
             index: idx,
@@ -425,6 +443,8 @@ class VerseNotificationService {
             verseTe: bv.verseTe || '',
             referenceEn: bv.referenceEn || '',
             referenceTe: bv.referenceTe || '',
+            backgroundUrl: bgUrl,
+            churchId: 'rhema',
           });
         }
         results.push({ date: d, verses: versesForDay });
@@ -439,10 +459,10 @@ class VerseNotificationService {
   /**
    * Fetches verses for multiple recent days efficiently (combines cache and batch firestore queries).
    */
-  async getRecentVerses(pastDays: number, includeToday: boolean = true, forceRefresh: boolean = false): Promise<{ date: Date, verses: DailyVerse[] }[]> {
+  async getRecentVerses(pastDays: number, includeToday: boolean = true, forceRefresh: boolean = false, churchId: string = 'rhema'): Promise<{ date: Date, verses: DailyVerse[] }[]> {
     try {
       let totalVerses = 0;
-      const metaCacheStr = await AsyncStorage.getItem('@wechristian_verses_meta');
+      const metaCacheStr = await AsyncStorage.getItem('@rhema_verses_meta');
       if (metaCacheStr) {
         totalVerses = parseInt(metaCacheStr, 10);
       }
@@ -453,7 +473,7 @@ class VerseNotificationService {
           const metaExists = typeof metaDoc.exists === 'function' ? metaDoc.exists() : metaDoc.exists;
           if (metaExists) {
             totalVerses = metaDoc.data()?.totalVerses || 0;
-            await AsyncStorage.setItem('@wechristian_verses_meta', totalVerses.toString());
+            await AsyncStorage.setItem('@rhema_verses_meta', totalVerses.toString());
           }
         } catch (mErr) {
           console.warn('[VerseNotificationService] Could not fetch metadata from Firestore:', mErr);
@@ -480,7 +500,7 @@ class VerseNotificationService {
 
       const requiredIndices = new Set<number>();
       for (const d of targetDates) {
-        this.getIndicesForDate(d, totalVerses).forEach(idx => requiredIndices.add(idx));
+        this.getIndicesForDate(d, totalVerses, churchId).forEach(idx => requiredIndices.add(idx));
       }
 
       const cacheStr = await AsyncStorage.getItem(VERSES_CACHE_KEY);
@@ -537,12 +557,18 @@ class VerseNotificationService {
       }
 
       const results = [];
+      const PERIODS = ['Morning', 'Afternoon', 'Evening', 'Night'];
       for (const d of targetDates) {
-        const dailyIndices = this.getIndicesForDate(d, totalVerses);
+        const dailyIndices = this.getIndicesForDate(d, totalVerses, churchId);
         const versesForDay: DailyVerse[] = [];
         for (let i = 0; i < 4; i++) {
-          if (cache[dailyIndices[i]]) {
-            versesForDay.push(cache[dailyIndices[i]]);
+          const idx = dailyIndices[i];
+          if (cache[idx]) {
+            const v = cache[idx];
+            if (!v.backgroundUrl) {
+              v.backgroundUrl = getVerseBackgroundUrl(v, PERIODS[i], idx);
+            }
+            versesForDay.push(v);
           }
         }
         results.push({ date: d, verses: versesForDay });

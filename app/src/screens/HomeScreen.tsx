@@ -84,6 +84,7 @@ import { useLanguage } from '../context/LanguageContext';
 import Theme from '../theme/Theme';
 import FirestoreService, { DailyPromise, ScheduleEvent, AppMember, Sermon } from '../services/FirestoreService';
 import VerseNotificationService, { DailyVerse } from '../services/VerseNotificationService';
+import { getVerseBackgroundUrl } from '../constants/VerseBackgrounds';
 import { BibleService } from '../services/BibleService';
 import { SupportedLanguage } from '../locales';
 import { CustomAlert } from '../components/CustomAlert';
@@ -1737,19 +1738,20 @@ export interface LocalizedVerseDisplay {
 
 export const getSynchronousVersesForToday = (date: Date = new Date()): DailyVerse[] => {
   try {
+    const list = VerseNotificationService.getSynchronousInitialVerses(0);
+    if (list && list[0]?.verses && list[0].verses.length >= 4) {
+      return list[0].verses;
+    }
+  } catch (_) {}
+  try {
     const bulk = require('../../assets/bulk_verses.json');
     const total = bulk.length || 5863;
-    const localDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    const epochDate = new Date(2025, 0, 1);
-    const daysSinceEpoch = Math.floor((localDate.getTime() - epochDate.getTime()) / (1000 * 60 * 60 * 24));
-    const indices = [
-      (daysSinceEpoch * 4 + 0) % total,
-      (daysSinceEpoch * 4 + 1) % total,
-      (daysSinceEpoch * 4 + 2) % total,
-      (daysSinceEpoch * 4 + 3) % total,
-    ];
+    const PERIODS = ['Morning', 'Afternoon', 'Evening', 'Night'];
+    const indices = VerseNotificationService.getIndicesForDate(date, total, 'rhema');
     return indices.map((idx, pIdx) => {
       const bv = bulk[idx] || {};
+      const period = PERIODS[pIdx];
+      const bgUrl = bv.backgroundUrl || getVerseBackgroundUrl(bv, period, idx);
       return {
         id: `today_verse_${idx}_${pIdx}`,
         index: idx,
@@ -1757,15 +1759,21 @@ export const getSynchronousVersesForToday = (date: Date = new Date()): DailyVers
         verseTe: bv.verseTe || '',
         referenceEn: bv.referenceEn || '',
         referenceTe: bv.referenceTe || '',
+        backgroundUrl: bgUrl,
       };
     });
   } catch (e) {
-    return [
+    const PERIODS = ['Morning', 'Afternoon', 'Evening', 'Night'];
+    const defs = [
       { id: 'morning_default', index: 0, verseEn: 'The LORD is my shepherd; I shall not want.', verseTe: 'యెహోవా నా కాపరి నాకు లేమి కలుగదు.', referenceEn: 'Psalms 23:1', referenceTe: 'కీర్తనలు 23:1' },
       { id: 'afternoon_default', index: 1, verseEn: 'Trust in the LORD with all thine heart; and lean not unto thine own understanding.', verseTe: 'నీ స్వబుద్ధిని ఆధారము చేసికొనక నీ పూర్ణహృదయముతో యెహోవాయందు నమ్మకముంచుము.', referenceEn: 'Proverbs 3:5', referenceTe: 'సామెతలు 3:5' },
       { id: 'evening_default', index: 2, verseEn: 'Come unto me, all ye that labour and are heavy laden, and I will give you rest.', verseTe: 'ప్రయాసపడి భారము మోసికొనుచున్న సమస్త జనులారా, నాయొద్దకు రండి; నేను మీకు విశ్రాంతి కలుగజేతును.', referenceEn: 'Matthew 11:28', referenceTe: 'మత్తయి 11:28' },
       { id: 'night_default', index: 3, verseEn: 'I will both lay me down in peace, and sleep: for thou, LORD, only makest me dwell in safety.', verseTe: 'నెమ్మదితో పరుండి నిద్రపోవుదును; యెహోవా, నెమ్మదిగా నేను నివసించునట్లు చేయువాడవు నీవే.', referenceEn: 'Psalms 4:8', referenceTe: 'కీర్తనలు 4:8' },
     ];
+    return defs.map((d, pIdx) => ({
+      ...d,
+      backgroundUrl: getVerseBackgroundUrl(d, PERIODS[pIdx], d.index),
+    }));
   }
 };
 
@@ -1927,6 +1935,7 @@ const DailyVerseCard = ({ verse, period, onPress }: { verse: DailyVerse | null; 
   const loc = getLocalizedVerse(verse, language);
   const greeting = getPeriodGreeting(period, t);
   const cardTitle = `🕊️  ${greeting.toUpperCase()} · ${t('home.quickDailyVerse').toUpperCase()}`;
+  const bgUrl = getVerseBackgroundUrl(verse, period);
 
   const cardContent = (
     <>
@@ -1973,30 +1982,21 @@ const DailyVerseCard = ({ verse, period, onPress }: { verse: DailyVerse | null; 
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={{ marginHorizontal: 0, marginBottom: 20 }}>
-      {verse.backgroundUrl ? (
-        <ImageBackground
-          source={{ uri: verse.backgroundUrl }}
-          style={{
-            borderRadius: 20, padding: 20, overflow: 'hidden',
-            shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 8,
-          }}
-          imageStyle={{ borderRadius: 20 }}
-          resizeMode="cover"
-        >
-          <LinearGradient
-            colors={['rgba(0,0,0,0.3)', 'rgba(0,0,0,0.85)']}
-            style={StyleSheet.absoluteFillObject}
-          />
-          {cardContent}
-        </ImageBackground>
-      ) : (
-        <LinearGradient colors={colors as [string, string]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{
+      <ImageBackground
+        source={{ uri: bgUrl }}
+        style={{
           borderRadius: 20, padding: 20, overflow: 'hidden',
           shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 8,
-        }}>
-          {cardContent}
-        </LinearGradient>
-      )}
+        }}
+        imageStyle={{ borderRadius: 20 }}
+        resizeMode="cover"
+      >
+        <LinearGradient
+          colors={['rgba(0,0,0,0.3)', 'rgba(0,0,0,0.85)']}
+          style={StyleSheet.absoluteFillObject}
+        />
+        {cardContent}
+      </ImageBackground>
     </TouchableOpacity>
   );
 };
@@ -2296,7 +2296,7 @@ export default function HomeScreen() {
   const useWeChristianDailyPromise = true;
   const hasServiceTimings = !!(activeChurch?.serviceTimings && activeChurch.serviceTimings.length > 0);
   const [todayFourVerses, setTodayFourVerses] = useState<DailyVerse[]>(() => {
-    if (cachedTodayFourVerses && cachedTodayFourVerses.length >= 4) return cachedTodayFourVerses;
+    if (cachedTodayFourVerses && cachedTodayFourVerses.length >= 4 && cachedTodayFourVerses[0]?.backgroundUrl) return cachedTodayFourVerses;
     try {
       const initial = getSynchronousVersesForToday();
       if (initial && initial.length >= 4) {
@@ -3573,23 +3573,26 @@ export default function HomeScreen() {
                           style={[styles.vdSlide, { width: screenWidth }]}
                           onPress={() => navigation.navigate('VerseOfTheDay', { verseId: verse.id, period })}
                         >
-                          <View style={[
-                            styles.vdCleanWhiteCard, 
-                            {
-                              backgroundColor: screenTheme.promiseCardBg,
-                              borderColor: screenTheme.promiseCardBorder,
-                              borderWidth: 1,
-                              shadowColor: screenTheme.isDark ? '#000' : '#0F172A',
-                              shadowOpacity: screenTheme.isDark ? 0.35 : 0.06,
-                              shadowRadius: 10,
-                              elevation: screenTheme.isDark ? 4 : 2,
-                            }
-                          ]}>
-                            {/* Subtle bottom-right open book & soft circle watermark */}
-                            <View style={[styles.vdWatermarkCircle, { backgroundColor: screenTheme.isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.03)' }]} pointerEvents="none" />
-                            <View style={styles.vdWatermarkBook} pointerEvents="none">
-                              <BookOpen size={64} color={screenTheme.isDark ? "rgba(255, 255, 255, 0.14)" : "rgba(0, 0, 0, 0.06)"} strokeWidth={1.5} />
-                            </View>
+                          <ImageBackground
+                            source={{ uri: getVerseBackgroundUrl(verse, period, idx) }}
+                            style={[
+                              styles.vdCleanWhiteCard, 
+                              {
+                                borderColor: screenTheme.promiseCardBorder,
+                                borderWidth: 1,
+                                shadowColor: screenTheme.isDark ? '#000' : '#0F172A',
+                                shadowOpacity: screenTheme.isDark ? 0.35 : 0.06,
+                                shadowRadius: 10,
+                                elevation: screenTheme.isDark ? 4 : 2,
+                              }
+                            ]}
+                            imageStyle={{ borderRadius: 24 }}
+                            resizeMode="cover"
+                          >
+                            <LinearGradient
+                              colors={['rgba(15, 23, 42, 0.45)', 'rgba(15, 23, 42, 0.88)']}
+                              style={StyleSheet.absoluteFillObject}
+                            />
 
                             <Text style={[styles.phLabel, { color: screenTheme.promiseLabel }]} maxFontSizeMultiplier={1.15}>
                               {greeting}
@@ -3657,7 +3660,7 @@ export default function HomeScreen() {
                                 <Text style={[styles.vdSaveBtnTxt, { color: screenTheme.promiseBtnText }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{t('common.saveCard')}</Text>
                               </TouchableOpacity>
                             </View>
-                          </View>
+                          </ImageBackground>
                         </TouchableOpacity>
                       );
                     })
@@ -4570,13 +4573,11 @@ export default function HomeScreen() {
         <View style={{ position: 'absolute', top: -10000, left: -10000 }}>
           <ViewShot ref={captureVerseRef} options={{ format: 'png', quality: 1 }}>
             <View style={{ width, height: width * 1.5, backgroundColor: '#0a1945' }} collapsable={false}>
-              {captureVerseConfig.verse.backgroundUrl ? (
-                <Image
-                  source={{ uri: captureVerseConfig.verse.backgroundUrl }}
+              <Image
+                  source={{ uri: getVerseBackgroundUrl(captureVerseConfig.verse, captureVerseConfig.period) }}
                   style={StyleSheet.absoluteFillObject}
                   resizeMode="cover"
                 />
-              ) : null}
               <LinearGradient
                 colors={['rgba(0,0,0,0.3)', 'rgba(0,0,0,0.88)']}
                 style={StyleSheet.absoluteFillObject}
