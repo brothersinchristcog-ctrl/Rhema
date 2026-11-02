@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, StatusBar, Platform, ActivityIndicator, Modal, PanResponder, Animated, Dimensions, Linking, Alert, Image, BackHandler, Clipboard, ToastAndroid } from 'react-native';
-import { ChevronLeft, ArrowLeft, Bell, Calendar, Info, MessageCircle, AlertTriangle, X, Gift, Heart, Sparkles, Trash2, Tv, BookOpen, Music, Mic , Video } from 'lucide-react-native';
+import { ChevronLeft, ArrowLeft, Bell, Calendar, Info, MessageCircle, AlertTriangle, X, Gift, Heart, Sparkles, Droplets, Trash2, Tv, BookOpen, Music, Mic , Video } from 'lucide-react-native';
 import { openZoomMeeting } from '../utils/ZoomLauncher';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -125,6 +125,8 @@ export default function UpdatesScreen({ navigation, route }: any) {
   const { t } = useLanguage();
 
   const getTypeName = (type: string) => {
+    if (type === 'baptism_request_admin' || type === 'baptism_request') return 'BAPTISM REQUEST';
+    if (type === 'baptism' || type === 'baptism_request_member') return 'BAPTISM';
     if (!type) return (t('updates.types.announcement') || 'ANNOUNCEMENT').toUpperCase();
     const trans = t(`updates.types.${type}`);
     return trans && trans !== `updates.types.${type}` ? trans.toUpperCase() : type.toUpperCase();
@@ -144,6 +146,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const { user, member } = useAuth();
   const { activeChurch } = useChurch();
+  const isAdmin = String(member?.userType || '').toUpperCase().includes('ADMIN') || String(member?.userType || '').toUpperCase().includes('SUPER') || String(member?.userType || '').toUpperCase().includes('PASTOR');
 
   const handleBack = () => {
     if (selectedUpdate) {
@@ -226,6 +229,11 @@ export default function UpdatesScreen({ navigation, route }: any) {
               return null;
             }
 
+            // SECURITY: If broadcast is targeted to admin role, skip if current user is not admin
+            if ((data.targetRole === 'admin' || data.type === 'baptism_request_admin' || data.type === 'prayer_request_admin') && !isAdmin) {
+              return null;
+            }
+
             // SECURITY: If broadcast is targeted to a specific phone, skip it if not for this user
             const isTargeted = data.targetPhone && typeof data.targetPhone === 'string' && data.targetPhone.trim().length > 0;
             if (isTargeted) {
@@ -276,6 +284,19 @@ export default function UpdatesScreen({ navigation, route }: any) {
               icon = Calendar;
               color = '#10b981';
               resolvedType = 'event';
+            } else if (data.type === 'baptism_request_admin' || data.title?.includes('New Baptism Request')) {
+              icon = Droplets;
+              color = '#0284c7';
+              resolvedType = 'baptism_request_admin';
+            } else if (
+              data.type === 'baptism_request_member' || 
+              data.type === 'baptism_request' || 
+              data.title?.includes('Baptism Request Update') || 
+              data.title?.includes('Baptism Request Approved')
+            ) {
+              icon = Droplets;
+              color = '#0284c7';
+              resolvedType = 'baptism';
             } else if (data.title?.includes('🎂') || data.content?.includes('Birthday') || data.type === 'birthday') {
               icon = Gift;
               color = '#d97706';
@@ -723,7 +744,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
                       if (base.includes('@') && !base.includes('/live') && !base.includes('/streams')) {
                         base = base.endsWith('/') ? `${base}live` : `${base}/live`;
                       }
-                      setShowModal(false);
+                      setSelectedUpdate(null);
                       navigation.navigate('YouTubeLive', {
                         url: base,
                         videoId: selectedUpdate?.videoId,
@@ -766,6 +787,23 @@ export default function UpdatesScreen({ navigation, route }: any) {
                     }}
                   >
                     <Text style={styles.joinLiveBtnTxt}>📖 Play Bible Quiz Now</Text>
+                  </TouchableOpacity>
+                )}
+
+                {(selectedUpdate?.type === 'baptism_request_admin' || selectedUpdate?.type === 'baptism_request' || selectedUpdate?.type === 'baptism_request_member') && (
+                  <TouchableOpacity
+                    style={[styles.joinLiveBtn, { backgroundColor: '#0284c7' }]}
+                    onPress={() => {
+                      const reqId = selectedUpdate?.requestId || selectedUpdate?.id;
+                      setSelectedUpdate(null);
+                      if (isAdmin) {
+                        navigation.navigate('AdminRoot', { targetTab: 'Baptism', requestId: reqId });
+                      } else {
+                        navigation.navigate('BaptismRequest', { requestId: reqId });
+                      }
+                    }}
+                  >
+                    <Text style={styles.joinLiveBtnTxt}>💧 {isAdmin ? 'Review Baptism Request' : 'View My Baptism Request'}</Text>
                   </TouchableOpacity>
                 )}
 

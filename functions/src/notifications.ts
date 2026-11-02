@@ -23,7 +23,7 @@ export const pushMeetingLive = onDocumentCreated('churches/{churchId}/online_mee
   let shouldSend = false;
   try {
     shouldSend = await db.runTransaction(async (transaction) => {
-      const freshDoc = await transaction.get(meetingRef);
+      const freshDoc: any = await transaction.get(meetingRef as any);
       if (!freshDoc.exists) return false;
       const data = freshDoc.data();
       if (data?.notificationSent === true) {
@@ -251,6 +251,243 @@ export const onPrayerRequestCreatedAdmin = onDocumentCreated('churches/{churchId
     console.error('Error writing in-app notification document:', dbErr);
   }
 });
+
+/**
+ * 💧 HELPER: DISPATCH BAPTISM REQUEST PUSH TO ADMINS ONLY
+ * Guarantees that only users with role admin, pastor, or super receive baptism alerts.
+ * Regular church members NEVER receive these sacramental request notifications.
+ */
+async function handleBaptismRequestAdminPush(baptism: any, churchId: string, requestId: string, snapRef?: any) {
+  if (!baptism) return;
+
+  const db = getFirestore();
+  const messaging = getMessaging();
+
+  // Deduplication guard
+  if (baptism.adminPushSent === true) {
+    console.log(`🛑 Skipping duplicate baptism admin push for request: ${requestId}`);
+    return;
+  }
+
+  if (snapRef) {
+    try {
+      await snapRef.update({
+        adminPushSent: true,
+        adminPushSentAt: FieldValue.serverTimestamp(),
+      });
+    } catch (_) {}
+  }
+
+  // 1. Identify member name and preferred date
+  let memberName = (baptism.memberName || baptism.name || '').trim();
+  if (!memberName) {
+    const memberId = baptism.memberId || baptism.uid || baptism.userId;
+    if (memberId) {
+      try {
+        let mSnap = await db.collection('Rhema Church').doc(churchId).collection('members').doc(memberId).get();
+        if (!mSnap.exists) {
+          mSnap = await db.collection('churches').doc(churchId).collection('members').doc(memberId).get();
+        }
+        if (mSnap.exists && mSnap.data()?.name) {
+          memberName = mSnap.data()!.name;
+        } else {
+          const uSnap = await db.collection('users').doc(memberId).get();
+          if (uSnap.exists && (uSnap.data()?.name || uSnap.data()?.displayName)) {
+            memberName = uSnap.data()!.name || uSnap.data()!.displayName;
+          }
+        }
+      } catch (err) {
+        console.warn('Could not resolve baptism member name:', err);
+      }
+    }
+  }
+
+  if (!memberName) {
+    memberName = 'A Church Member';
+  }
+
+  const prefDate = (baptism.preferredDate || '').trim();
+  const title = `💧 New Baptism Request: ${memberName}`;
+  const body = prefDate
+    ? `${memberName} has requested baptism for ${prefDate}. Tap to review in Admin Dashboard.`
+    : `${memberName} has submitted a new baptism request. Tap to review in Admin Dashboard.`;
+
+  // 2. Query all admins strictly for this church
+  const adminTokens: string[] = [];
+  const adminUids: string[] = [];
+
+  try {
+    // A. Check Rhema Church members
+    let membersSnap = await db.collection('Rhema Church').doc(churchId).collection('members').get();
+    if (membersSnap.empty) {
+      membersSnap = await db.collection('churches').doc(churchId).collection('members').get();
+    }
+    membersSnap.forEach(doc => {
+      const m = doc.data();
+      const role = String(m.userType || m.role || '').toLowerCase();
+      const isAdmin = role.includes('admin') || role.includes('pastor') || role.includes('super');
+      if (isAdmin) {
+        adminUids.push(doc.id);
+        if (m.fcmToken && typeof m.fcmToken === 'string' && m.fcmToken.trim().length > 10) {
+          adminTokens.push(m.fcmToken.trim());
+        }
+      }
+    });
+
+    // B. Check church document for admin UIDs
+    let churchDoc = await db.collection('Rhema Church').doc(churchId).get();
+    if (!churchDoc.exists) {
+      churchDoc = await db.collection('churches').doc(churchId).get();
+    }
+    if (churchDoc.exists) {
+      const cData = churchDoc.data();
+      const ownerUids = [cData?.adminUid, cData?.createdBy, cData?.pastorUid].filter(Boolean);
+      for (const uid of ownerUids) {
+        if (!adminUids.includes(uid)) {
+          adminUids.push(uid);
+        }
+      }
+    }
+
+    // C. Check users collection for admin tokens
+    for (const uid of adminUids) {
+      try {
+        const uSnap = await db.collection('users').doc(uid).get();
+        const uData = uSnap.data();
+        if (uData?.fcmToken && typeof uData.fcmToken === 'string' && uData.fcmToken.trim().length > 10) {
+          const t = uData.fcmToken.trim();
+          if (!adminTokens.includes(t)) {
+            adminTokens.push(t);
+          }
+        }
+      } catch (_) {}
+    }
+  } catch (lookupErr) {
+    console.error('Error fetching admin tokens for baptism notification:', lookupErr);
+  }
+
+  const notificationData: Record<string, string> = {
+    type: 'baptism_request_admin',
+    churchId: churchId,
+    requestId: requestId,
+    screen: 'AdminRoot',
+    targetTab: 'Baptism',
+    memberName: memberName,
+    click_action: 'FLUTTER_NOTIFICATION_CLICK',
+  };
+
+  // 3. Direct multicast push to admin devices ONLY
+  const uniqueTokens = Array.from(new Set(adminTokens));
+  if (uniqueTokens.length > 0) {
+    try {
+      const sendRes = await messaging.sendEachForMulticast({
+        notification: { title, body },
+        data: notificationData,
+        tokens: uniqueTokens,
+        android: {
+          priority: 'high',
+          notification: {
+            sound: 'default',
+            channelId: 'church_alerts',
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: 'default',
+              badge: 1,
+            },
+          },
+        },
+      });
+      console.log(`✅ Sent baptism request notification to ${sendRes.successCount} admin devices (${sendRes.failureCount} failed).`);
+    } catch (pushErr) {
+      console.error('Error sending multicast baptism admin notification:', pushErr);
+    }
+  }
+
+  // 4. Send to church admin topic church_{churchId}_admin ONLY (never general church topic)
+  try {
+    await messaging.send({
+      notification: { title, body },
+      data: notificationData,
+      topic: `church_${churchId}_admin`,
+      android: {
+        priority: 'high',
+        notification: {
+          sound: 'default',
+          channelId: 'church_alerts',
+        },
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: 'default',
+            badge: 1,
+          },
+        },
+      },
+    });
+    console.log(`✅ Broadcasted baptism request notification to topic: church_${churchId}_admin`);
+  } catch (topicErr) {
+    console.error('Error sending to church admin topic:', topicErr);
+  }
+
+  // 5. Write in-app notification doc for admins in Rhema Church notifications
+  try {
+    const notifPayload = {
+      type: 'baptism_request_admin',
+      title,
+      body,
+      memberName,
+      memberPhone: baptism.memberPhone || baptism.contactPhone || '',
+      requestId,
+      preferredDate: prefDate,
+      read: false,
+      createdAt: FieldValue.serverTimestamp(),
+    };
+    await db.collection('Rhema Church').doc(churchId).collection('notifications').add(notifPayload);
+    try {
+      await db.collection('churches').doc(churchId).collection('notifications').add(notifPayload);
+    } catch (_) {}
+  } catch (dbErr) {
+    console.error('Error writing baptism in-app notification document:', dbErr);
+  }
+}
+
+/**
+ * 💧 MANDATORY NOTIFICATION: ADMIN NOTIFIED OF EVERY BAPTISM REQUEST (Primary single-church collection)
+ * Triggered automatically whenever a member submits a baptism request in Firestore.
+ * Always notifies church admins ONLY, clearly showing which member submitted it.
+ */
+export const onBaptismRequestCreatedAdmin = onDocumentCreated(
+  { document: 'Rhema Church/{churchId}/baptism_requests/{requestId}', region: 'asia-south1' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+
+    const baptism = snap.data();
+    const churchId = event.params.churchId;
+    const requestId = event.params.requestId;
+    await handleBaptismRequestAdminPush(baptism, churchId, requestId, snap.ref);
+  }
+);
+
+/**
+ * 💧 MANDATORY NOTIFICATION: ADMIN NOTIFIED OF EVERY BAPTISM REQUEST (Legacy churches collection)
+ */
+export const onBaptismRequestCreatedAdminLegacy = onDocumentCreated(
+  { document: 'churches/{churchId}/baptism_requests/{requestId}', region: 'asia-south1' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+
+    const baptism = snap.data();
+    const churchId = event.params.churchId;
+    const requestId = event.params.requestId;
+    await handleBaptismRequestAdminPush(baptism, churchId, requestId, snap.ref);
+  }
+);
 
 /**
  * 🙏 NOTIFY COMMUNITY OF APPROVED PRAYER REQUEST
@@ -1451,7 +1688,28 @@ export const triggerPublishScheduledSermonsHttp = onRequest({ cors: true }, asyn
  * 1. English notification ('✝️ Good Morning' + verseEn + referenceEn)
  * 2. Telugu notification ('✝️ శుభోదయం' + verseTe + referenceTe)
  */
-export async function sendDailyVersePushInternal(slotOverride?: string) {
+/**
+ * ⏰ SCHEDULED DAILY VERSE PUSH
+ * Automatically dispatches Daily Verse push notifications 4 times a day:
+ * Morning (06:00 AM IST), Afternoon (12:00 PM IST), Evening (06:00 PM IST), Night (09:00 PM IST)
+ */
+export const sendDailyVersePushScheduled = onSchedule({
+  schedule: '0 6,12,18,21 * * *',
+  timeZone: 'Asia/Kolkata',
+  region: 'asia-south1',
+}, async () => {
+  console.log('⏰ [sendDailyVersePushScheduled] Running scheduled Daily Verse push...');
+  await sendDailyVersePushInternal();
+});
+
+/**
+ * 📖 AUTOMATED DAILY VERSE MULTICAST PUSH (English & Telugu)
+ * Determines the current slot (Morning, Afternoon, Evening, Night) or uses slotOverride.
+ * Queries today's verse for Rhema Church and dispatches FCM push notifications:
+ * 1. Multicast to registered member tokens (Rhema members & users)
+ * 2. Topic broadcast to 'church_rhema' for 100% member delivery
+ */
+export async function sendDailyVersePushInternal(slotOverride?: string, targetChurchId: string = 'rhema') {
   if (getApps().length === 0) {
     initializeApp();
   }
@@ -1468,7 +1726,6 @@ export async function sendDailyVersePushInternal(slotOverride?: string) {
 
   let slot = slotOverride;
   if (!slot || !PERIOD_SLOTS[slot]) {
-    // Current hour in IST (Asia/Kolkata)
     const nowIst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
     const hour = nowIst.getHours();
     if (hour >= 5 && hour < 12) {
@@ -1486,8 +1743,13 @@ export async function sendDailyVersePushInternal(slotOverride?: string) {
   console.log(`[sendDailyVersePushInternal] Running for slot: ${slot} (slot index: ${slotInfo.index})`);
 
   // 2. Compute today's verse index
-  const metaDoc = await db.collection('daily_verses_meta').doc('metadata').get();
-  const totalVerses = metaDoc.exists ? (metaDoc.data()?.totalVerses || 5863) : 5863;
+  let totalVerses = 5863;
+  try {
+    const metaDoc = await db.collection('daily_verses_meta').doc('metadata').get();
+    if (metaDoc.exists) {
+      totalVerses = metaDoc.data()?.totalVerses || 5863;
+    }
+  } catch (_) {}
 
   const EPOCH = new Date('2026-10-30T00:00:00Z');
   const nowIst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
@@ -1495,43 +1757,89 @@ export async function sendDailyVersePushInternal(slotOverride?: string) {
   const epochDate = new Date(EPOCH.getFullYear(), EPOCH.getMonth(), EPOCH.getDate());
   const daysSinceEpoch = Math.floor((todayLocal.getTime() - epochDate.getTime()) / (1000 * 60 * 60 * 24));
 
-  const targetIndex = (daysSinceEpoch * 4 + slotInfo.index) % totalVerses;
-  console.log(`[sendDailyVersePushInternal] Target verse index: ${targetIndex} (total: ${totalVerses})`);
+  // RHEMA has its own independent Scripture offset so it never displays the same verses as WeChristian
+  const RHEMA_DAILY_VERSE_OFFSET = 2931;
+  const offset = targetChurchId === 'rhema' ? RHEMA_DAILY_VERSE_OFFSET : 0;
+  const targetIndex = (daysSinceEpoch * 4 + slotInfo.index + offset) % totalVerses;
+  console.log(`[sendDailyVersePushInternal] Target verse index: ${targetIndex} (total: ${totalVerses}, offset: ${offset})`);
 
-  // 3. Query verse document from Firestore
-  const snap = await db.collection('daily_verses').where('index', '==', targetIndex).limit(1).get();
-  if (snap.empty) {
-    console.warn(`[sendDailyVersePushInternal] No verse document found for index ${targetIndex}`);
+  // 3. Query verse document: Check Rhema Church/rhema/daily_verses first, then fallback to daily_verses
+  let verseDocData: any = null;
+  let verseId: string = `verse_${targetIndex}`;
+
+  try {
+    const rhemaSnap = await db.collection('Rhema Church').doc('rhema').collection('daily_verses').where('index', '==', targetIndex).limit(1).get();
+    if (!rhemaSnap.empty) {
+      verseDocData = rhemaSnap.docs[0]?.data();
+      verseId = rhemaSnap.docs[0]?.id || verseId;
+    }
+  } catch (_) {}
+
+  if (!verseDocData) {
+    try {
+      const snap = await db.collection('daily_verses').where('index', '==', targetIndex).limit(1).get();
+      if (!snap.empty) {
+        verseDocData = snap.docs[0]?.data();
+        verseId = snap.docs[0]?.id || verseId;
+      }
+    } catch (_) {}
+  }
+
+  // Fallback to bulk_verses.json if not found in Firestore
+  if (!verseDocData) {
+    try {
+      const fs = await import('fs');
+      const path = await import('path');
+      const candidates = [
+        path.join(process.cwd(), 'bulk_verses.json'),
+        path.join(process.cwd(), '../bulk_verses.json'),
+        path.join(process.cwd(), 'app/assets/bulk_verses.json'),
+      ];
+      for (const p of candidates) {
+        if (fs.existsSync(p)) {
+          const raw = fs.readFileSync(p, 'utf-8');
+          const list = JSON.parse(raw);
+          if (list && list[targetIndex]) {
+            verseDocData = list[targetIndex];
+            break;
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  if (!verseDocData) {
+    console.warn(`[sendDailyVersePushInternal] No verse found for index ${targetIndex}`);
     return { success: false, error: `Verse not found for index ${targetIndex}` };
   }
 
-  const verseDoc = snap.docs[0]!;
-  const verse = verseDoc.data();
-  const verseId = verseDoc.id;
-
-  const verseEnText = verse.verseEn || '';
-  const refEnText = verse.referenceEn || '';
-  const verseTeText = verse.verseTe || verseEnText;
-  const refTeText = verse.referenceTe || refEnText;
+  const verseEnText = verseDocData.verseEn || '';
+  const refEnText = verseDocData.referenceEn || '';
+  const verseTeText = verseDocData.verseTe || verseEnText;
+  const refTeText = verseDocData.referenceTe || refEnText;
 
   // 4. Collect member device FCM tokens
   const tokenSet = new Set<string>();
 
-  const usersSnap = await db.collection('users').get();
-  usersSnap.forEach((d: any) => {
-    const data = d.data();
-    if (data.fcmToken && typeof data.fcmToken === 'string' && data.fcmToken.length > 10) {
-      tokenSet.add(data.fcmToken);
-    }
-  });
+  try {
+    const usersSnap = await db.collection('users').get();
+    usersSnap.forEach((d: any) => {
+      const data = d.data();
+      if (data.fcmToken && typeof data.fcmToken === 'string' && data.fcmToken.length > 10) {
+        tokenSet.add(data.fcmToken);
+      }
+    });
+  } catch (_) {}
 
-  const membersSnap = await db.collection('Rhema Church').doc('rhema').collection('members').get();
-  membersSnap.forEach((d: any) => {
-    const data = d.data();
-    if (data.fcmToken && typeof data.fcmToken === 'string' && data.fcmToken.length > 10) {
-      tokenSet.add(data.fcmToken);
-    }
-  });
+  try {
+    const membersSnap = await db.collection('Rhema Church').doc('rhema').collection('members').get();
+    membersSnap.forEach((d: any) => {
+      const data = d.data();
+      if (data.fcmToken && typeof data.fcmToken === 'string' && data.fcmToken.length > 10) {
+        tokenSet.add(data.fcmToken);
+      }
+    });
+  } catch (_) {}
 
   const tokens = Array.from(tokenSet);
   console.log(`[sendDailyVersePushInternal] Collected ${tokens.length} FCM tokens for dispatch.`);
@@ -1539,80 +1847,88 @@ export async function sendDailyVersePushInternal(slotOverride?: string) {
   let enSuccess = 0;
   let teSuccess = 0;
 
-  if (tokens.length > 0) {
-    // Send in chunks of 500 (FCM multicast limit)
-    for (let i = 0; i < tokens.length; i += 500) {
-      const batchTokens = tokens.slice(i, i + 500);
+  // 4. Send EXACTLY ONE Unified Notification to the Church Topic (church_rhema)
+  // Using Android 'tag' and 'collapseKey' guarantees that Android OS displays EXACTLY ONE banner.
+  const unifiedTitle = `${slotInfo.titleEn} · ${slotInfo.titleTe}`;
+  let unifiedBody = '';
+  if (verseTeText && verseEnText && verseTeText !== verseEnText) {
+    unifiedBody = `"${verseTeText}"\n— ${refTeText}\n\n"${verseEnText}"\n— ${refEnText}`;
+  } else {
+    unifiedBody = `"${verseTeText || verseEnText}"\n— ${refTeText || refEnText}`;
+  }
 
-      // Notification 1: English
-      const enMessage = {
+  try {
+    const topicMessage = {
+      topic: `church_${targetChurchId}`,
+      notification: {
+        title: unifiedTitle,
+        body: unifiedBody,
+      },
+      data: {
+        type: 'daily_verse',
+        verseId: verseId,
+        period: slot,
+        churchId: targetChurchId,
+      },
+      android: {
+        priority: 'high' as const,
+        collapseKey: `daily_verse_${slot}`,
         notification: {
-          title: slotInfo.titleEn,
-          body: `"${verseEnText}"\n— ${refEnText}`,
+          sound: 'default',
+          priority: 'max' as const,
+          channelId: 'daily_verse',
+          tag: `daily_verse_${slot}`,
         },
-        data: {
-          type: 'daily_verse',
-          verseId: verseId,
-          period: slot,
-          lang: 'en',
+      },
+      apns: {
+        headers: {
+          'apns-priority': '10',
+          'apns-collapse-id': `daily_verse_${slot}`,
         },
-        android: {
-          priority: 'high' as const,
-          notification: {
-            sound: 'default',
-            priority: 'max' as const,
-            channelId: 'daily_verse',
-          },
-        },
-        apns: {
-          headers: { 'apns-priority': '10' },
-          payload: { aps: { sound: 'default', badge: 1 } },
-        },
-        tokens: batchTokens,
-      };
+        payload: { aps: { sound: 'default', badge: 1 } },
+      },
+    };
 
-      // Notification 2: Telugu (simultaneously)
-      const teMessage = {
-        notification: {
-          title: slotInfo.titleTe,
-          body: `"${verseTeText}"\n— ${refTeText}`,
-        },
-        data: {
-          type: 'daily_verse',
-          verseId: verseId,
-          period: slot,
-          lang: 'te',
-        },
-        android: {
-          priority: 'high' as const,
-          notification: {
-            sound: 'default',
-            priority: 'max' as const,
-            channelId: 'daily_verse',
-          },
-        },
-        apns: {
-          headers: { 'apns-priority': '10' },
-          payload: { aps: { sound: 'default', badge: 1 } },
-        },
-        tokens: batchTokens,
-      };
+    await messaging.send(topicMessage);
+    console.log(`[sendDailyVersePushInternal] Successfully sent single unified notification to topic church_${targetChurchId}`);
+  } catch (topicErr) {
+    console.warn('[sendDailyVersePushInternal] Topic broadcast notice, falling back to member tokens:', topicErr);
 
-      try {
-        const [enRes, teRes] = await Promise.all([
-          messaging.sendEachForMulticast(enMessage),
-          messaging.sendEachForMulticast(teMessage),
-        ]);
-        enSuccess += enRes.successCount;
-        teSuccess += teRes.successCount;
-        console.log(`[sendDailyVersePushInternal] Batch ${i / 500 + 1}: EN success ${enRes.successCount}, TE success ${teRes.successCount}`);
-      } catch (err: any) {
-        console.error('[sendDailyVersePushInternal] Error in multicast batch:', err);
+    // Fallback: If topic broadcast fails, send a single unified message to member tokens
+    if (tokens.length > 0) {
+      for (let i = 0; i < tokens.length; i += 500) {
+        const batchTokens = tokens.slice(i, i + 500);
+        const batchMsg = {
+          notification: {
+            title: unifiedTitle,
+            body: unifiedBody,
+          },
+          data: {
+            type: 'daily_verse',
+            verseId: verseId,
+            period: slot,
+            churchId: targetChurchId,
+          },
+          android: {
+            priority: 'high' as const,
+            collapseKey: `daily_verse_${slot}`,
+            notification: {
+              sound: 'default',
+              priority: 'max' as const,
+              channelId: 'daily_verse',
+              tag: `daily_verse_${slot}`,
+            },
+          },
+          tokens: batchTokens,
+        };
+        try {
+          await messaging.sendEachForMulticast(batchMsg);
+        } catch (_) {}
       }
     }
   }
 
-  // 5. Log both to broadcasts feed for historical viewing in Updates screen
+  // 5. Log to broadcasts feed for historical viewing in Updates screen
   const todayStr = `${nowIst.getFullYear()}-${String(nowIst.getMonth() + 1).padStart(2, '0')}-${String(nowIst.getDate()).padStart(2, '0')}`;
   try {
     const rhemaChurchRef = db.collection('Rhema Church').doc('rhema');
@@ -1623,7 +1939,7 @@ export async function sendDailyVersePushInternal(slotOverride?: string) {
       type: 'daily_verse',
       period: slot,
       verseId: verseId,
-      silent: true, // Prevents secondary duplicate broadcast trigger
+      silent: true,
       createdAt: FieldValue.serverTimestamp(),
     });
   } catch (bcastErr) {
@@ -1642,10 +1958,8 @@ export async function sendDailyVersePushInternal(slotOverride?: string) {
   };
 }
 
-
 /**
  * 🧪 HTTP endpoint to manually trigger the Daily Verse push (can specify ?slot=Morning/Afternoon/Evening/Night)
- * Also used by external Cloud Schedulers (Google Cloud Console or cron-job.org).
  */
 export const triggerDailyVersePushHttp = onRequest({ cors: true, timeoutSeconds: 120, region: 'asia-south1' }, async (req, res) => {
   try {
@@ -1657,4 +1971,3 @@ export const triggerDailyVersePushHttp = onRequest({ cors: true, timeoutSeconds:
     res.status(500).json({ success: false, error: error.message });
   }
 });
-

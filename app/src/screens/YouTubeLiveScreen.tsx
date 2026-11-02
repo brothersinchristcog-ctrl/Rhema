@@ -74,7 +74,7 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
 
   const churchId = route?.params?.churchId || activeChurch?.id || 'rhema';
   const churchName = activeChurch?.name || 'Rhema Fellowship';
-  const churchAvatar = activeChurch?.logoUrl || activeChurch?.photoUrl;
+  const churchAvatar = (activeChurch as any)?.logoUrl || (activeChurch as any)?.photoUrl;
   const configuredChannelUrl = activeChurch?.socialLinks?.youtube?.trim() || '';
 
   // Input params

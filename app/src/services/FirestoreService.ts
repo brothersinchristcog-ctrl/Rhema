@@ -199,6 +199,39 @@ export interface Sermon {
   notifyMembers?: boolean;
 }
 
+
+export interface BaptismHistoryItem {
+  status: 'pending' | 'under_review' | 'approved' | 'rejected' | 'completed';
+  note?: string;
+  changedBy?: string;
+  timestamp: string | any;
+}
+
+export interface BaptismRequest {
+  id: string;
+  churchId: string;
+  churchName?: string;
+  memberId: string;
+  memberName: string;
+  memberPhone: string;
+  dob?: string;
+  age?: number | string;
+  gender?: 'Male' | 'Female' | 'Other' | string;
+  address?: string;
+  previousBaptism?: boolean | string;
+  reason: string;
+  preferredDate?: string;
+  additionalNotes?: string;
+  status: 'pending' | 'under_review' | 'approved' | 'rejected' | 'completed';
+  adminRemarks?: string;
+  confirmedDate?: string;
+  confirmedTime?: string;
+  confirmedLocation?: string;
+  history?: BaptismHistoryItem[];
+  createdAt: any;
+  updatedAt: any;
+}
+
 export interface ChurchExpense {
   id?: string;
   title?: string;
@@ -1341,95 +1374,122 @@ class FirestoreService {
     }
   }
 
-  async getLatestSermon(): Promise<Sermon | null> {
+  private getSermonUploadTimestamp(doc: any): number {
+    if (!doc) return 0;
+    if (doc.createdAt?.toMillis) return doc.createdAt.toMillis();
+    if (doc.createdAt?.seconds) return doc.createdAt.seconds * 1000;
+    if (typeof doc.createdAt === 'string') {
+      const t = new Date(doc.createdAt).getTime();
+      if (!isNaN(t)) return t;
+    }
+    if (doc.publishedAt) {
+      const t = new Date(doc.publishedAt).getTime();
+      if (!isNaN(t)) return t;
+    }
+    if (doc.date) {
+      const t = new Date(doc.date).getTime();
+      if (!isNaN(t)) return t;
+    }
+    if (doc.updatedAt?.toMillis) return doc.updatedAt.toMillis();
+    if (doc.updatedAt?.seconds) return doc.updatedAt.seconds * 1000;
+    return 0;
+  }
+
+  async getLatestSermons(limitCount: number = 2): Promise<Sermon[]> {
     this.autoPublishDueScheduledSermons().catch(() => {});
     try {
       const col = await this.getCollection('sermons');
       let snapshot;
       try {
-        snapshot = await col.orderBy('createdAt', 'desc').limit(20).get();
+        snapshot = await col.orderBy('createdAt', 'desc').limit(25).get();
         if (!snapshot || snapshot.empty) {
-          snapshot = await col.limit(20).get();
+          snapshot = await col.limit(25).get();
         }
       } catch (err) {
-        snapshot = await col.limit(20).get();
+        snapshot = await col.limit(25).get();
       }
 
-      if (!snapshot || snapshot.empty) return null;
-
-      const today = new Date();
-      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      if (!snapshot || snapshot.empty) return [];
 
       const sermons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Sermon));
       const visible = sermons.filter(s => isSermonVisibleToMembers(s));
 
-      if (visible.length === 0) return null;
+      if (visible.length === 0) return [];
 
       visible.sort((a: any, b: any) => {
+        const timeA = this.getSermonUploadTimestamp(a);
+        const timeB = this.getSermonUploadTimestamp(b);
+        if (timeA && timeB && timeA !== timeB) {
+          return timeB - timeA;
+        }
         const dateA = a.date || '';
         const dateB = b.date || '';
         if (dateA && dateB && dateA !== dateB) {
           return dateB.localeCompare(dateA);
         }
-        const getTime = (doc: any) => {
-          const u = doc.updatedAt?.toMillis ? doc.updatedAt.toMillis() : (doc.updatedAt?.seconds ? doc.updatedAt.seconds * 1000 : 0);
-          const c = doc.createdAt?.toMillis ? doc.createdAt.toMillis() : (doc.createdAt?.seconds ? doc.createdAt.seconds * 1000 : 0);
-          return Math.max(u, c);
-        };
-        return getTime(b) - getTime(a);
+        return timeB - timeA;
       });
 
-      return visible[0];
+      return visible.slice(0, limitCount);
     } catch (e) {
-      console.error('Error fetching latest sermon:', e);
-      return null;
+      console.error('Error fetching latest sermons:', e);
+      return [];
     }
   }
 
-  async listenLatestSermon(callback: (sermon: Sermon | null) => void): Promise<() => void> {
+  async getLatestSermon(): Promise<Sermon | null> {
+    const list = await this.getLatestSermons(1);
+    return list[0] || null;
+  }
+
+  async listenLatestSermons(callback: (sermons: Sermon[]) => void, limitCount: number = 2): Promise<() => void> {
     try {
       const col = await this.getCollection('sermons');
-      return col.limit(20).onSnapshot(
+      return col.limit(25).onSnapshot(
         snapshot => {
           if (!snapshot || snapshot.empty) {
-            callback(null);
+            callback([]);
             return;
           }
-          const today = new Date();
-          const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
           const sermons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Sermon));
           const visible = sermons.filter(s => isSermonVisibleToMembers(s));
 
           if (visible.length === 0) {
-            callback(null);
+            callback([]);
             return;
           }
 
           visible.sort((a: any, b: any) => {
+            const timeA = this.getSermonUploadTimestamp(a);
+            const timeB = this.getSermonUploadTimestamp(b);
+            if (timeA && timeB && timeA !== timeB) {
+              return timeB - timeA;
+            }
             const dateA = a.date || '';
             const dateB = b.date || '';
             if (dateA && dateB && dateA !== dateB) {
               return dateB.localeCompare(dateA);
             }
-            const getTime = (doc: any) => {
-              const u = doc.updatedAt?.toMillis ? doc.updatedAt.toMillis() : (doc.updatedAt?.seconds ? doc.updatedAt.seconds * 1000 : 0);
-              const c = doc.createdAt?.toMillis ? doc.createdAt.toMillis() : (doc.createdAt?.seconds ? doc.createdAt.seconds * 1000 : 0);
-              return Math.max(u, c);
-            };
-            return getTime(b) - getTime(a);
+            return timeB - timeA;
           });
 
-          callback(visible[0]);
+          callback(visible.slice(0, limitCount));
         },
         err => {
-          console.warn('[FirestoreService] listenLatestSermon error:', err);
+          console.warn('[FirestoreService] listenLatestSermons error:', err);
         }
       );
     } catch (e) {
-      console.warn('Failed to listen to latest sermon:', e);
+      console.warn('Failed to listen to latest sermons:', e);
       return () => {};
     }
+  }
+
+  async listenLatestSermon(callback: (sermon: Sermon | null) => void): Promise<() => void> {
+    return this.listenLatestSermons(sermons => {
+      callback(sermons[0] || null);
+    }, 1);
   }
 
   // In-memory cache to avoid re-fetching on tab switches
@@ -3299,6 +3359,285 @@ class FirestoreService {
     } catch (e) {
       console.error('deleteAIContent error:', e);
       throw e;
+    }
+  }
+
+  // ── Baptism Requests & Approval Management ──
+
+  async createBaptismRequest(churchId: string, data: {
+    memberId: string;
+    memberName: string;
+    memberPhone: string;
+    churchName?: string;
+    dob?: string;
+    age?: number | string;
+    gender?: string;
+    address?: string;
+    previousBaptism?: boolean | string;
+    reason: string;
+    preferredDate?: string;
+    additionalNotes?: string;
+  }): Promise<{ success: boolean; id?: string; error?: string }> {
+    try {
+      const db = firestore();
+      const churchRef = db.collection('Rhema Church').doc(churchId);
+      const col = churchRef.collection('baptism_requests');
+      
+      const newDoc = {
+        ...data,
+        churchId,
+        status: 'pending',
+        adminRemarks: '',
+        confirmedDate: '',
+        confirmedTime: '',
+        confirmedLocation: '',
+        history: [
+          {
+            status: 'pending',
+            note: 'Baptism request submitted by member',
+            changedBy: data.memberName,
+            timestamp: new Date().toISOString()
+          }
+        ],
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp()
+      };
+
+      const docRef = await col.add(newDoc);
+      try {
+        await db.collection('churches').doc(churchId).collection('baptism_requests').doc(docRef.id).set(newDoc);
+      } catch (_) {}
+
+      const formattedPrefDate = data.preferredDate ? formatDateDisplay(data.preferredDate) : 'upcoming schedule';
+
+      // 1. Direct in-app notification doc for admins
+      try {
+        const notifData = {
+          type: 'baptism_request_admin',
+          title: `💧 New Baptism Request: ${data.memberName}`,
+          body: `${data.memberName} (${data.memberPhone}) has submitted a baptism request for ${formattedPrefDate}.`,
+          memberName: data.memberName,
+          memberPhone: data.memberPhone,
+          requestId: docRef.id,
+          read: false,
+          createdAt: FieldValue.serverTimestamp()
+        };
+        await churchRef.collection('notifications').add(notifData);
+        try { await db.collection('churches').doc(churchId).collection('notifications').add(notifData); } catch (_) {}
+      } catch (err) {
+        console.warn('Could not write admin baptism notification:', err);
+      }
+
+      console.log('💧 [createBaptismRequest] Successfully created baptism request & admin notification:', docRef.id);
+
+      return { success: true, id: docRef.id };
+    } catch (e: any) {
+      console.error('createBaptismRequest error:', e);
+      return { success: false, error: e.message || 'Failed to submit baptism request' };
+    }
+  }
+
+  async getMemberBaptismRequests(churchId: string, memberId: string, phone?: string): Promise<BaptismRequest[]> {
+    try {
+      if (!churchId) return [];
+      const db = firestore();
+      let snap = await db.collection('Rhema Church').doc(churchId).collection('baptism_requests').get();
+      if (snap.empty) {
+        snap = await db.collection('churches').doc(churchId).collection('baptism_requests').get();
+      }
+      const list: BaptismRequest[] = [];
+      const cleanPhone = (phone || '').replace(/\D/g, '').slice(-10);
+
+      snap.docs.forEach(doc => {
+        const d = doc.data();
+        const docPhone = (d.memberPhone || '').replace(/\D/g, '').slice(-10);
+        if (d.memberId === memberId || (cleanPhone && docPhone === cleanPhone)) {
+          list.push({
+            ...d,
+            id: doc.id
+          } as BaptismRequest);
+        }
+      });
+
+      return list.sort((a, b) => {
+        const tA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : (new Date(a.createdAt || 0).getTime());
+        const tB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : (new Date(b.createdAt || 0).getTime());
+        return tB - tA;
+      });
+    } catch (e) {
+      console.error('getMemberBaptismRequests error:', e);
+      return [];
+    }
+  }
+
+  async getChurchBaptismRequests(churchId: string): Promise<BaptismRequest[]> {
+    try {
+      if (!churchId) return [];
+      const db = firestore();
+      let snap = await db.collection('Rhema Church').doc(churchId).collection('baptism_requests').get();
+      if (snap.empty) {
+        snap = await db.collection('churches').doc(churchId).collection('baptism_requests').get();
+      }
+      const list: BaptismRequest[] = snap.docs.map(doc => ({
+        ...doc.data(),
+        id: doc.id
+      } as BaptismRequest));
+
+      return list.sort((a, b) => {
+        const tA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : (new Date(a.createdAt || 0).getTime());
+        const tB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : (new Date(b.createdAt || 0).getTime());
+        return tB - tA;
+      });
+    } catch (e) {
+      console.error('getChurchBaptismRequests error:', e);
+      return [];
+    }
+  }
+
+  async updateBaptismRequest(
+    churchId: string, 
+    requestId: string, 
+    updates: {
+      status?: 'pending' | 'under_review' | 'approved' | 'rejected' | 'completed';
+      adminRemarks?: string;
+      confirmedDate?: string;
+      confirmedTime?: string;
+      confirmedLocation?: string;
+      historyNote?: string;
+    }, 
+    adminName: string = 'Admin'
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const db = firestore();
+      let docRef = db.collection('Rhema Church').doc(churchId).collection('baptism_requests').doc(requestId);
+      let snap = await docRef.get();
+      if (!snap.exists) {
+        docRef = db.collection('churches').doc(churchId).collection('baptism_requests').doc(requestId);
+        snap = await docRef.get();
+      }
+      if (!snap.exists) {
+        return { success: false, error: 'Request not found' };
+      }
+      const existing = snap.data() || {};
+      const newStatus = updates.status || existing.status || 'pending';
+
+      const historyEntry: BaptismHistoryItem = {
+        status: newStatus,
+        note: updates.historyNote || (
+          newStatus === 'approved' 
+            ? `Approved by ${adminName}${updates.confirmedDate ? ` for ${formatDateDisplay(updates.confirmedDate)}` : ''}`
+            : newStatus === 'rejected'
+            ? `Rejected by ${adminName}${updates.adminRemarks ? `: ${updates.adminRemarks}` : ''}`
+            : newStatus === 'completed'
+            ? `Marked Completed by ${adminName}`
+            : newStatus === 'under_review'
+            ? `Marked Under Review by ${adminName}`
+            : `Updated by ${adminName}`
+        ),
+        changedBy: adminName,
+        timestamp: new Date().toISOString()
+      };
+
+      const existingHistory: BaptismHistoryItem[] = Array.isArray(existing.history) ? existing.history : [];
+      const updatedHistory = [...existingHistory, historyEntry];
+
+      const updatePayload: any = {
+        ...updates,
+        history: updatedHistory,
+        updatedAt: FieldValue.serverTimestamp()
+      };
+      delete updatePayload.historyNote;
+
+      await docRef.update(updatePayload);
+      try {
+        await db.collection('churches').doc(churchId).collection('baptism_requests').doc(requestId).update(updatePayload);
+      } catch (_) {}
+
+      // Notify Member of status change / schedule update
+      const memberPhone = existing.memberPhone;
+      const memberId = existing.memberId;
+      const memberName = existing.memberName;
+      
+      let notifTitle = `💧 Baptism Request Update`;
+      let notifBody = `Your baptism request status is now: ${newStatus.toUpperCase().replace('_', ' ')}.`;
+      
+      const formattedConfirmedDate = updates.confirmedDate ? formatDateDisplay(updates.confirmedDate) : '';
+
+      if (newStatus === 'approved') {
+        notifTitle = `🎉 Baptism Request Approved!`;
+        notifBody = `Congratulations ${memberName}! Your baptism has been approved.${formattedConfirmedDate ? ` Scheduled for ${formattedConfirmedDate}${updates.confirmedTime ? ` at ${updates.confirmedTime}` : ''}${updates.confirmedLocation ? ` at ${updates.confirmedLocation}` : ''}.` : ''}`;
+      } else if (newStatus === 'rejected') {
+        notifTitle = `Baptism Request Update`;
+        notifBody = `Your baptism request status has been updated to rejected.${updates.adminRemarks ? ` Note: ${updates.adminRemarks}` : ''}`;
+      } else if (newStatus === 'completed') {
+        notifTitle = `✝️ Baptism Completed!`;
+        notifBody = `Praise the Lord! Your baptism record has been marked as completed. God bless your spiritual walk!`;
+      } else if (newStatus === 'under_review') {
+        notifTitle = `💧 Baptism Request Under Review`;
+        notifBody = `Your baptism request is currently being reviewed by the pastoral team.`;
+      }
+
+      // 1. Direct in-app notification doc in church notifications collection
+      try {
+        const notifData = {
+          type: 'baptism_request_member',
+          title: notifTitle,
+          body: notifBody,
+          targetMemberId: memberId,
+          targetPhone: memberPhone,
+          status: newStatus,
+          requestId: requestId,
+          confirmedDate: updates.confirmedDate || existing.confirmedDate || '',
+          confirmedTime: updates.confirmedTime || existing.confirmedTime || '',
+          confirmedLocation: updates.confirmedLocation || existing.confirmedLocation || '',
+          adminRemarks: updates.adminRemarks || existing.adminRemarks || '',
+          read: false,
+          createdAt: FieldValue.serverTimestamp()
+        };
+        await db.collection('Rhema Church').doc(churchId).collection('notifications').add(notifData);
+        try { await db.collection('churches').doc(churchId).collection('notifications').add(notifData); } catch (_) {}
+      } catch (err) {
+        console.warn('Could not write member baptism notification doc:', err);
+      }
+
+      // 2. Broadcast push targeted to member's phone
+      if (memberPhone || memberId) {
+        try {
+          const bcastData = {
+            title: notifTitle,
+            content: notifBody,
+            type: 'baptism_request_member',
+            requestId: requestId,
+            targetPhone: memberPhone || '',
+            targetMemberId: memberId || '',
+            createdAt: FieldValue.serverTimestamp()
+          };
+          await db.collection('Rhema Church').doc(churchId).collection('broadcasts').add(bcastData);
+          try { await db.collection('churches').doc(churchId).collection('broadcasts').add(bcastData); } catch (_) {}
+        } catch (bErr) {
+          console.warn('Could not trigger member baptism push broadcast:', bErr);
+        }
+      }
+
+      return { success: true };
+    } catch (e: any) {
+      console.error('updateBaptismRequest error:', e);
+      return { success: false, error: e.message || 'Failed to update baptism request' };
+    }
+  }
+
+  async deleteBaptismRequest(churchId: string, requestId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (!churchId || !requestId) {
+        return { success: false, error: 'Missing churchId or requestId' };
+      }
+      const db = firestore();
+      await db.collection('Rhema Church').doc(churchId).collection('baptism_requests').doc(requestId).delete().catch(() => {});
+      await db.collection('churches').doc(churchId).collection('baptism_requests').doc(requestId).delete().catch(() => {});
+      return { success: true };
+    } catch (e: any) {
+      console.error('deleteBaptismRequest error:', e);
+      return { success: false, error: e.message || 'Failed to delete baptism request' };
     }
   }
 }

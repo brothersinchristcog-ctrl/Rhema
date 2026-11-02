@@ -46,7 +46,6 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
   const [contactId, setContactId] = useState<string | undefined>(undefined);
   const [isMember, setIsMember] = useState(false);
 
-  const [isCreatingChurch, setIsCreatingChurch] = useState(false);
 
   // ── Auto-lookup member as user types ──
   useEffect(() => {
@@ -174,7 +173,6 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
             <TouchableOpacity 
               style={[styles.mainActionBtn, { flex: 1 }]}
               onPress={() => {
-                setIsCreatingChurch(false);
                 setShowPhoneInput(true);
               }}
             >

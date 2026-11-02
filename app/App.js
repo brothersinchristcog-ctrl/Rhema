@@ -10,6 +10,7 @@ import * as Application from 'expo-application';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import SpInAppUpdates, { IAUUpdateKind } from 'sp-react-native-in-app-updates';
 import { loadTeluguFonts } from './src/utils/ThumbnailTypography';
+import './src/utils/FontSizeManager';
 
 // Import Firebase config to initialize it on app start
 import './src/services/firebaseConfig';

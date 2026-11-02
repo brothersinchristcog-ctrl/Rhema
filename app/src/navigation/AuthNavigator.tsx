@@ -5,7 +5,6 @@ import VerifyOtpScreen from '../screens/auth/VerifyOtpScreen';
 import SignUpScreen from '../screens/auth/SignUpScreen';
 import RegistrationSuccessScreen from '../screens/auth/RegistrationSuccessScreen';
 import ChurchSelectionScreen from '../screens/auth/ChurchSelectionScreen';
-import CreateChurchScreen from '../screens/auth/CreateChurchScreen';
 import JoinSuccessScreen from '../screens/auth/JoinSuccessScreen';
 import Theme from '../theme/Theme';
 
@@ -15,7 +14,6 @@ export type AuthStackParamList = {
   RegistrationSuccess: undefined;
   VerifyOtp: { confirmation: any; phoneNumber: string; contactId?: string; memberName?: string; formData?: any; isSignUp?: boolean };
   ChurchSelection: { code?: string } | undefined;
-  CreateChurch: undefined;
   JoinSuccess: { churchName: string; isNewChurch?: boolean; churchCode?: string };
 };
 
@@ -59,11 +57,6 @@ export default function AuthNavigator() {
       <Stack.Screen
         name="ChurchSelection"
         component={ChurchSelectionScreen}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="CreateChurch"
-        component={CreateChurchScreen}
         options={{ headerShown: false }}
       />
       <Stack.Screen

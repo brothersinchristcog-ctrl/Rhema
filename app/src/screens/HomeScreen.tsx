@@ -82,6 +82,7 @@ import { useLanguage } from '../context/LanguageContext';
 import Theme from '../theme/Theme';
 import FirestoreService, { DailyPromise, ScheduleEvent, AppMember, Sermon } from '../services/FirestoreService';
 import VerseNotificationService, { DailyVerse } from '../services/VerseNotificationService';
+import { getVerseBackgroundUrl } from '../constants/VerseBackgrounds';
 import { BibleService } from '../services/BibleService';
 import { SupportedLanguage } from '../locales';
 import { CustomAlert } from '../components/CustomAlert';
@@ -1623,7 +1624,7 @@ let cachedPromise: DailyPromise | null = null;
 let cachedPromiseThumbnail: string | null = null;
 let cachedTodayEvents: ScheduleEvent[] = [];
 let cachedEvents: ScheduleEvent[] = [];
-let cachedLatestSermon: Sermon | null = null;
+let cachedLatestSermons: Sermon[] = [];
 let cachedLatestPrayer: any | null = null;
 let cachedPrayerCount: number = 0;
 let cachedTodayFourVerses: DailyVerse[] = [];
@@ -1773,19 +1774,20 @@ export interface LocalizedVerseDisplay {
 
 export const getSynchronousVersesForToday = (date: Date = new Date()): DailyVerse[] => {
   try {
+    const list = VerseNotificationService.getSynchronousInitialVerses(0);
+    if (list && list[0]?.verses && list[0].verses.length >= 4) {
+      return list[0].verses;
+    }
+  } catch (_) {}
+  try {
     const bulk = require('../../assets/bulk_verses.json');
     const total = bulk.length || 5863;
-    const localDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    const epochDate = new Date(2025, 0, 1);
-    const daysSinceEpoch = Math.floor((localDate.getTime() - epochDate.getTime()) / (1000 * 60 * 60 * 24));
-    const indices = [
-      (daysSinceEpoch * 4 + 0) % total,
-      (daysSinceEpoch * 4 + 1) % total,
-      (daysSinceEpoch * 4 + 2) % total,
-      (daysSinceEpoch * 4 + 3) % total,
-    ];
+    const PERIODS = ['Morning', 'Afternoon', 'Evening', 'Night'];
+    const indices = VerseNotificationService.getIndicesForDate(date, total, 'rhema');
     return indices.map((idx, pIdx) => {
       const bv = bulk[idx] || {};
+      const period = PERIODS[pIdx];
+      const bgUrl = bv.backgroundUrl || getVerseBackgroundUrl(bv, period, idx);
       return {
         id: `today_verse_${idx}_${pIdx}`,
         index: idx,
@@ -1793,15 +1795,21 @@ export const getSynchronousVersesForToday = (date: Date = new Date()): DailyVers
         verseTe: bv.verseTe || '',
         referenceEn: bv.referenceEn || '',
         referenceTe: bv.referenceTe || '',
+        backgroundUrl: bgUrl,
       };
     });
   } catch (e) {
-    return [
+    const PERIODS = ['Morning', 'Afternoon', 'Evening', 'Night'];
+    const defs = [
       { id: 'morning_default', index: 0, verseEn: 'The LORD is my shepherd; I shall not want.', verseTe: 'యెహోవా నా కాపరి నాకు లేమి కలుగదు.', referenceEn: 'Psalms 23:1', referenceTe: 'కీర్తనలు 23:1' },
       { id: 'afternoon_default', index: 1, verseEn: 'Trust in the LORD with all thine heart; and lean not unto thine own understanding.', verseTe: 'నీ స్వబుద్ధిని ఆధారము చేసికొనక నీ పూర్ణహృదయముతో యెహోవాయందు నమ్మకముంచుము.', referenceEn: 'Proverbs 3:5', referenceTe: 'సామెతలు 3:5' },
       { id: 'evening_default', index: 2, verseEn: 'Come unto me, all ye that labour and are heavy laden, and I will give you rest.', verseTe: 'ప్రయాసపడి భారము మోసికొనుచున్న సమస్త జనులారా, నాయొద్దకు రండి; నేను మీకు విశ్రాంతి కలుగజేతును.', referenceEn: 'Matthew 11:28', referenceTe: 'మత్తయి 11:28' },
       { id: 'night_default', index: 3, verseEn: 'I will both lay me down in peace, and sleep: for thou, LORD, only makest me dwell in safety.', verseTe: 'నెమ్మదితో పరుండి నిద్రపోవుదును; యెహోవా, నెమ్మదిగా నేను నివసించునట్లు చేయువాడవు నీవే.', referenceEn: 'Psalms 4:8', referenceTe: 'కీర్తనలు 4:8' },
     ];
+    return defs.map((d, pIdx) => ({
+      ...d,
+      backgroundUrl: getVerseBackgroundUrl(d, PERIODS[pIdx], d.index),
+    }));
   }
 };
 
@@ -1963,6 +1971,7 @@ const DailyVerseCard = ({ verse, period, onPress }: { verse: DailyVerse | null; 
   const loc = getLocalizedVerse(verse, language);
   const greeting = getPeriodGreeting(period, t);
   const cardTitle = `🕊️  ${greeting.toUpperCase()} · ${t('home.quickDailyVerse').toUpperCase()}`;
+  const bgUrl = getVerseBackgroundUrl(verse, period);
 
   const cardContent = (
     <>
@@ -2009,30 +2018,21 @@ const DailyVerseCard = ({ verse, period, onPress }: { verse: DailyVerse | null; 
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={{ marginHorizontal: 0, marginBottom: 20 }}>
-      {verse.backgroundUrl ? (
-        <ImageBackground
-          source={{ uri: verse.backgroundUrl }}
-          style={{
-            borderRadius: 20, padding: 20, overflow: 'hidden',
-            shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 8,
-          }}
-          imageStyle={{ borderRadius: 20 }}
-          resizeMode="cover"
-        >
-          <LinearGradient
-            colors={['rgba(0,0,0,0.3)', 'rgba(0,0,0,0.85)']}
-            style={StyleSheet.absoluteFillObject}
-          />
-          {cardContent}
-        </ImageBackground>
-      ) : (
-        <LinearGradient colors={colors as [string, string]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{
+      <ImageBackground
+        source={{ uri: bgUrl }}
+        style={{
           borderRadius: 20, padding: 20, overflow: 'hidden',
           shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 8,
-        }}>
-          {cardContent}
-        </LinearGradient>
-      )}
+        }}
+        imageStyle={{ borderRadius: 20 }}
+        resizeMode="cover"
+      >
+        <LinearGradient
+          colors={['rgba(0,0,0,0.3)', 'rgba(0,0,0,0.85)']}
+          style={StyleSheet.absoluteFillObject}
+        />
+        {cardContent}
+      </ImageBackground>
     </TouchableOpacity>
   );
 };
@@ -2052,7 +2052,8 @@ export default function HomeScreen() {
   const [promise, setPromise] = useState<DailyPromise | null>(cachedPromise);
   const [todayEvents, setTodayEvents] = useState<ScheduleEvent[]>(cachedTodayEvents);
   const [events, setEvents] = useState<ScheduleEvent[]>(cachedEvents);
-  const [latestSermon, setLatestSermon] = useState<Sermon | null>(cachedLatestSermon);
+  const [latestSermons, setLatestSermons] = useState<Sermon[]>(cachedLatestSermons);
+  const latestSermon = latestSermons[0] || null;
   const [latestPrayer, setLatestPrayer] = useState<any | null>(cachedLatestPrayer);
   const [prayerCount, setPrayerCount] = useState(cachedPrayerCount);
   const [loading, setLoading] = useState(false);
@@ -2200,11 +2201,11 @@ export default function HomeScreen() {
         }
       }).catch(() => {});
 
-      // Always re-fetch the latest published sermon on screen focus to ensure zero stale cache
-      FirestoreService.getLatestSermon().then((fresh) => {
-        if (fresh) {
-          cachedLatestSermon = fresh;
-          setLatestSermon(fresh);
+      // Always re-fetch the latest published sermons on screen focus to ensure zero stale cache
+      FirestoreService.getLatestSermons(2).then((fresh) => {
+        if (fresh && fresh.length > 0) {
+          cachedLatestSermons = fresh;
+          setLatestSermons(fresh);
         }
       }).catch(() => {});
 
@@ -2332,7 +2333,7 @@ export default function HomeScreen() {
   const useWeChristianDailyPromise = true;
   const hasServiceTimings = !!(activeChurch?.serviceTimings && activeChurch.serviceTimings.length > 0);
   const [todayFourVerses, setTodayFourVerses] = useState<DailyVerse[]>(() => {
-    if (cachedTodayFourVerses && cachedTodayFourVerses.length >= 4) return cachedTodayFourVerses;
+    if (cachedTodayFourVerses && cachedTodayFourVerses.length >= 4 && cachedTodayFourVerses[0]?.backgroundUrl) return cachedTodayFourVerses;
     try {
       const initial = getSynchronousVersesForToday();
       if (initial && initial.length >= 4) {
@@ -2352,11 +2353,12 @@ export default function HomeScreen() {
     return () => clearInterval(timer);
   }, []);
 
-  // Automated 4 time-of-day greeting verses (Morning, Afternoon, Evening, Night)
-  // All 4 cards are available for swipe, scrolling initially to current time-of-day card
-  const visibleVerses = todayFourVerses && todayFourVerses.length >= 4 
+  // Time-based progressive unlocked verses (Morning -> +Afternoon -> +Evening -> +Night)
+  const unlockedCount = getUnlockedVersesCount(currentTime);
+  const allVerses = todayFourVerses && todayFourVerses.length >= 4 
     ? todayFourVerses 
     : getSynchronousVersesForToday(currentTime);
+  const visibleVerses = allVerses.slice(0, Math.min(allVerses.length, unlockedCount));
   const verseAutoScrollTimer = useRef<any>(null);
   const captureVerseRef = useRef<ViewShot>(null);
   const capturePromiseRef = useRef<ViewShot>(null);
@@ -2655,11 +2657,11 @@ export default function HomeScreen() {
         setEvents(cachedEvents);
       }).catch(() => {});
 
-      // 6. Fetch Latest Sermon non-blocking
-      FirestoreService.getLatestSermon().then((s: any) => {
-        if (s) {
-          cachedLatestSermon = s;
-          setLatestSermon(cachedLatestSermon);
+      // 6. Fetch Latest Sermons non-blocking
+      FirestoreService.getLatestSermons(2).then((s: any) => {
+        if (s && s.length > 0) {
+          cachedLatestSermons = s;
+          setLatestSermons(cachedLatestSermons);
         }
       }).catch(() => {});
 
@@ -2731,18 +2733,21 @@ export default function HomeScreen() {
     };
   }, [activeChurch?.id]);
 
-  // Real-time listener for Latest Sermon so updates reflect immediately
+  // Real-time listener for Latest Sermons so updates reflect immediately
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
-    FirestoreService.listenLatestSermon((freshSermon) => {
-      if (freshSermon) {
-        cachedLatestSermon = freshSermon;
-        setLatestSermon(freshSermon);
+    FirestoreService.listenLatestSermons((freshSermons) => {
+      if (freshSermons && freshSermons.length > 0) {
+        cachedLatestSermons = freshSermons;
+        setLatestSermons(freshSermons);
+      } else {
+        cachedLatestSermons = [];
+        setLatestSermons([]);
       }
-    }).then(unsub => {
+    }, 2).then(unsub => {
       unsubscribe = unsub;
     }).catch(err => {
-      console.warn('[HomeScreen] listenLatestSermon error:', err);
+      console.warn('[HomeScreen] listenLatestSermons error:', err);
     });
 
     return () => {
@@ -3594,18 +3599,27 @@ export default function HomeScreen() {
                           style={[styles.vdSlide, { width: screenWidth }]}
                           onPress={() => navigation.navigate('VerseOfTheDay', { verseId: verse.id, period })}
                         >
-                          <View style={[
-                            styles.vdCleanWhiteCard, 
-                            {
-                              backgroundColor: screenTheme.promiseCardBg,
-                              borderColor: screenTheme.promiseCardBorder,
-                              borderWidth: 1,
-                              shadowColor: screenTheme.isDark ? '#000' : '#0F172A',
-                              shadowOpacity: screenTheme.isDark ? 0.35 : 0.06,
-                              shadowRadius: 10,
-                              elevation: screenTheme.isDark ? 4 : 2,
-                            }
-                          ]}>
+                          <ImageBackground
+                            source={{ uri: getVerseBackgroundUrl(verse, period, idx) }}
+                            style={[
+                              styles.vdCleanWhiteCard, 
+                              {
+                                borderColor: screenTheme.promiseCardBorder,
+                                borderWidth: 1,
+                                shadowColor: screenTheme.isDark ? '#000' : '#0F172A',
+                                shadowOpacity: screenTheme.isDark ? 0.35 : 0.06,
+                                shadowRadius: 10,
+                                elevation: screenTheme.isDark ? 4 : 2,
+                              }
+                            ]}
+                            imageStyle={{ borderRadius: 24 }}
+                            resizeMode="cover"
+                          >
+                            <LinearGradient
+                              colors={['rgba(15, 23, 42, 0.45)', 'rgba(15, 23, 42, 0.88)']}
+                              style={StyleSheet.absoluteFillObject}
+                            />
+
                             <Text style={[styles.phLabel, { color: screenTheme.promiseLabel }]} maxFontSizeMultiplier={1.15}>
                               {greeting}
                             </Text>
@@ -3672,7 +3686,7 @@ export default function HomeScreen() {
                                 <Text style={[styles.vdSaveBtnTxt, { color: screenTheme.promiseBtnText }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{t('common.saveCard')}</Text>
                               </TouchableOpacity>
                             </View>
-                          </View>
+                          </ImageBackground>
                         </TouchableOpacity>
                       );
                     })
@@ -4523,36 +4537,47 @@ export default function HomeScreen() {
           </View>
 
           <View style={styles.sermonCard}>
-            <TouchableOpacity style={styles.scBody} onPress={() => latestSermon ? navigation.navigate('SermonVideo', { sermonData: latestSermon }) : navigation.navigate('Sermons')}>
-              <View style={styles.scThumb}>
-                {(() => {
-                  const yId = extractYoutubeId(latestSermon?.youtubeId || '');
-                  const thumbUri = latestSermon?.thumbnailUrl || latestSermon?.imageUrl || (yId && yId.length === 11 ? `https://img.youtube.com/vi/${yId}/hqdefault.jpg` : null);
-                  return thumbUri ? (
-                    <Image source={{ uri: thumbUri }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-                  ) : null;
-                })()}
-                <View style={styles.playIconOverlay}>
-                   <Play size={20} color="#fff" fill="#c0392b" />
-                </View>
-              </View>
-              <View style={styles.scInfo}>
-                <Text style={styles.scTitle} numberOfLines={1}>
-                  {latestSermon?.title || t('home.exploreSermons')}
-                </Text>
-                {latestSermon?.titleTelugu ? (
-                  <Text style={styles.scTitleTe} numberOfLines={1}>{latestSermon.titleTelugu}</Text>
-                ) : null}
-                <Text style={styles.scMeta} numberOfLines={1}>
-                  {latestSermon?.pastor || t('sermons.pastor')}
-                  {latestSermon?.date ? ` • ${formatDateDisplay(latestSermon.date)}` : ''}
-                  {latestSermon?.duration && formatSermonDuration(latestSermon.duration) ? ` • ${formatSermonDuration(latestSermon.duration)}` : ''}
-                </Text>
-              </View>
-              <View style={[styles.playBtnCircle, { borderColor: screenTheme.btnPrimaryBorder, backgroundColor: screenTheme.btnPrimaryBg }]}>
-                <Play size={18} color={screenTheme.btnPrimaryText} />
-              </View>
-            </TouchableOpacity>
+            {(latestSermons.length > 0 ? latestSermons.slice(0, 2) : [null]).map((sermon, idx, arr) => (
+              <React.Fragment key={sermon?.id || `fallback-${idx}`}>
+                <TouchableOpacity 
+                  style={styles.scBody} 
+                  onPress={() => sermon ? navigation.navigate('SermonVideo', { sermonData: sermon }) : navigation.navigate('Sermons')}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.scThumb}>
+                    {(() => {
+                      const yId = extractYoutubeId(sermon?.youtubeId || '');
+                      const thumbUri = sermon?.thumbnailUrl || sermon?.imageUrl || (yId && yId.length === 11 ? `https://img.youtube.com/vi/${yId}/hqdefault.jpg` : null);
+                      return thumbUri ? (
+                        <Image source={{ uri: thumbUri }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+                      ) : null;
+                    })()}
+                    <View style={styles.playIconOverlay}>
+                       <Play size={20} color="#fff" fill="#c0392b" />
+                    </View>
+                  </View>
+                  <View style={styles.scInfo}>
+                    <Text style={styles.scTitle} numberOfLines={1}>
+                      {sermon?.title || t('home.exploreSermons')}
+                    </Text>
+                    {sermon?.titleTelugu ? (
+                      <Text style={styles.scTitleTe} numberOfLines={1}>{sermon.titleTelugu}</Text>
+                    ) : null}
+                    <Text style={styles.scMeta} numberOfLines={1}>
+                      {sermon?.pastor || t('sermons.pastor')}
+                      {sermon?.date ? ` • ${formatDateDisplay(sermon.date)}` : ''}
+                      {sermon?.duration && formatSermonDuration(sermon.duration) ? ` • ${formatSermonDuration(sermon.duration)}` : ''}
+                    </Text>
+                  </View>
+                  <View style={[styles.playBtnCircle, { borderColor: screenTheme.btnPrimaryBorder, backgroundColor: screenTheme.btnPrimaryBg }]}>
+                    <Play size={18} color={screenTheme.btnPrimaryText} />
+                  </View>
+                </TouchableOpacity>
+                {idx < arr.length - 1 && (
+                  <View style={{ height: 1, backgroundColor: '#f1f5f9', marginHorizontal: 16 }} />
+                )}
+              </React.Fragment>
+            ))}
           </View>
 
           {/* ─── Prayer Wall ─── */}
@@ -4620,13 +4645,11 @@ export default function HomeScreen() {
         <View style={{ position: 'absolute', top: -10000, left: -10000 }}>
           <ViewShot ref={captureVerseRef} options={{ format: 'png', quality: 1 }}>
             <View style={{ width, height: width * 1.5, backgroundColor: '#0a1945' }} collapsable={false}>
-              {captureVerseConfig.verse.backgroundUrl ? (
-                <Image
-                  source={{ uri: captureVerseConfig.verse.backgroundUrl }}
+              <Image
+                  source={{ uri: getVerseBackgroundUrl(captureVerseConfig.verse, captureVerseConfig.period) }}
                   style={StyleSheet.absoluteFillObject}
                   resizeMode="cover"
                 />
-              ) : null}
               <LinearGradient
                 colors={['rgba(0,0,0,0.3)', 'rgba(0,0,0,0.88)']}
                 style={StyleSheet.absoluteFillObject}

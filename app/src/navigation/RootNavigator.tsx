@@ -17,6 +17,7 @@ import { LanguageProvider, useLanguage } from '../context/LanguageContext';
 import { QuizLanguageProvider } from '../context/QuizLanguageContext';
 import Theme from '../theme/Theme';
 import AdminNavigator from './AdminNavigator'; 
+import AdminBaptism from '../screens/admin/AdminBaptism';
 import NotificationService from '../services/NotificationService';
 import SecurityService from '../services/SecurityService';
 import ChurchService from '../services/ChurchService';
@@ -42,6 +43,7 @@ import EventsScreen from '../screens/EventsScreen';
 import PrayerWallScreen from '../screens/PrayerWallScreen';
 import GivingScreen from '../screens/GivingScreen';
 import GivingHistoryScreen from '../screens/GivingHistoryScreen';
+import BaptismRequestScreen from '../screens/BaptismRequestScreen';
 import SermonsScreen from '../screens/SermonsScreen';
 import SongsScreen from '../screens/SongsScreen';
 import EventDetailsScreen from '../screens/EventDetailsScreen';
@@ -621,7 +623,10 @@ function TabNavigator() {
     </Tab.Navigator>
 
     {isActualAdmin && viewMode === 'member' && (
-      <DraggableAdminPill onPress={() => setViewMode('admin')} />
+      <DraggableAdminPill onPress={() => {
+        setViewMode('admin');
+        navigation.navigate('AdminRoot');
+      }} />
     )}
     </>
   );
@@ -637,9 +642,7 @@ function Navigation() {
   const appState = React.useRef(AppState.currentState);
 
   const isAdmin = String(member?.userType || '').toUpperCase().includes('ADMIN') || String(member?.userType || '').toUpperCase().includes('SUPER');
-  // Show admin UI only when userType is admin AND viewMode is admin
   const showAdminView = isAdmin && viewMode === 'admin';
-  const navigationKey = showAdminView ? 'admin-root' : 'member-root';
   
   const [pendingNotification, setPendingNotification] = useState<any>(null);
 
@@ -727,6 +730,19 @@ function Navigation() {
             } else {
               navigationRef.navigate('ChurchQuizzes');
             }
+          } else if (type === 'baptism_request_admin' || type === 'baptism_request' || type === 'baptism') {
+            const reqId = data.requestId || data.id;
+            console.log('💧 [RootNavigator] Direct routing to Admin Baptism tab:', { reqId });
+            if (isAdmin && viewMode !== 'admin') {
+              setViewMode('admin');
+            }
+            navigationRef.navigate('AdminRoot', {
+              targetTab: 'Baptism',
+              requestId: reqId,
+              timestamp: Date.now(),
+            });
+          } else if (type === 'baptism_request_member') {
+            navigationRef.navigate('BaptismRequest', { requestId: data.requestId || data.id });
           } else {
             NotificationService.handleNotificationNavigation({ data }, navigationRef);
           }
@@ -791,8 +807,15 @@ function Navigation() {
         if (navigationRef && navigationRef.isReady()) {
           const type = pendingNotification?.data?.type;
           
-          if (type === 'invoice' && isAdmin && viewMode !== 'admin') {
-            console.log('Switching to admin view to handle invoice notification');
+          const isAdminNotification = 
+            type === 'invoice' || 
+            type === 'baptism_request_admin' || 
+            type === 'baptism_request' || 
+            type === 'baptism' || 
+            type === 'prayer_request_admin';
+
+          if (isAdminNotification && isAdmin && viewMode !== 'admin') {
+            console.log(`Switching to admin view to handle ${type} notification`);
             setViewMode('admin');
             return; // Exit early, the re-render will trigger this effect again
           }
@@ -893,43 +916,20 @@ function Navigation() {
   };
 
   return (
-    <Stack.Navigator id="root-navigator" key={navigationKey} screenOptions={{ headerShown: false, animation: 'none' }}>
+    <Stack.Navigator
+      id="root-navigator"
+      initialRouteName={showAdminView ? "AdminRoot" : "Tabs"}
+      screenOptions={{ headerShown: false, animation: 'none' }}
+    >
       {user ? (
-        showAdminView ? (
-          <>
-            <Stack.Screen name="AdminRoot" component={AdminNavigator} options={{ gestureEnabled: false, headerBackButtonMenuEnabled: false }} />
-            <Stack.Screen name="Subscription" component={SubscriptionScreen} />
-            <Stack.Screen name="LockedFeature" component={LockedFeatureScreen} />
-            <Stack.Screen name="EventDetail" component={renderPremium(PastorEventDetail)} />
-            <Stack.Screen name="CreateEvent" component={renderPremium(CreatePastorEvent)} />
-            <Stack.Screen name="RoutePlanner" component={renderPremium(PastorEventRoutePlanner)} />
-            <Stack.Screen name="EventMap" component={renderPremium(PastorEventMap)} />
-            <Stack.Screen name="AIAssistant" component={renderPremium(AIAssistantModal)} options={{ presentation: 'modal' }} />
-            <Stack.Screen name="Updates" component={renderPremium(UpdatesScreen)} />
-            <Stack.Screen name="Celebration" component={renderPremium(CelebrationScreen)} />
-            {/* Added for Push Notification Support in Admin View */}
-            <Stack.Screen name="Sermons" component={renderPremium(SermonsScreen)} />
-            <Stack.Screen name="Events" component={renderPremium(EventsScreen)} />
-            <Stack.Screen name="AttendanceScreen" component={renderPremium(AttendanceScreen)} />
-            <Stack.Screen name="EventAttendees" component={EventAttendeesScreen} />
-            <Stack.Screen name="LiveCelebrationsChat" component={renderPremium(LiveCelebrationsChat)} />
-            <Stack.Screen name="VerseOfTheDay" component={renderPremium(VerseOfTheDayScreen)} />
-            <Stack.Screen name="BibleQuizHome" component={BibleQuizHomeScreen} />
-            <Stack.Screen name="ChurchQuizzes" component={ChurchQuizzesScreen} />
-            <Stack.Screen name="BibleQuizLevels" component={BibleQuizLevelsScreen} />
-            <Stack.Screen name="BibleQuizStages" component={BibleQuizStagesScreen} />
-            <Stack.Screen name="BibleQuizDetail" component={BibleQuizDetailScreen} />
-            <Stack.Screen name="BibleQuizPlayer" component={BibleQuizPlayerScreen} />
-            <Stack.Screen name="BibleQuizResult" component={BibleQuizResultScreen} />
-            <Stack.Screen name="BibleQuizReview" component={BibleQuizReviewScreen} />
-            <Stack.Screen name="OnlineMeetings" component={renderPremium(OnlineMeetingsScreen)} />
-            <Stack.Screen name="OnlineMeetingDetail" component={renderPremium(OnlineMeetingDetailScreen)} />
-            <Stack.Screen name="YouTubeLive" component={renderPremium(YouTubeLiveScreen)} />
-          </>
-        ) : onboardingComplete ? (
+        onboardingComplete ? (
           <>
             <Stack.Screen name="Tabs" component={TabNavigator} options={{ gestureEnabled: false, headerBackButtonMenuEnabled: false }} />
+            {isAdmin && (
+              <Stack.Screen name="AdminRoot" component={AdminNavigator} options={{ gestureEnabled: false, headerBackButtonMenuEnabled: false }} />
+            )}
             <Stack.Screen name="LockedFeature" component={LockedFeatureScreen} />
+            <Stack.Screen name="Subscription" component={SubscriptionScreen} />
             <Stack.Screen name="Celebration" component={renderPremium(CelebrationScreen)} />
             <Stack.Screen name="Attendance" component={renderPremium(AttendanceScreen)} />
             <Stack.Screen name="AttendanceScreen" component={renderPremium(AttendanceScreen)} />
@@ -938,6 +938,7 @@ function Navigation() {
             <Stack.Screen name="Events" component={renderPremium(EventsScreen)} />
             <Stack.Screen name="Give" component={renderPremium(GivingScreen)} />
             <Stack.Screen name="GivingHistory" component={renderPremium(GivingHistoryScreen)} />
+            <Stack.Screen name="BaptismRequest" component={renderPremium(BaptismRequestScreen)} />
             <Stack.Screen name="Sermons" component={renderPremium(SermonsScreen)} />
             <Stack.Screen name="Songs" component={renderPremium(SongsScreen)} />
             <Stack.Screen name="EventDetails" component={renderPremium(EventDetailsScreen)} />
@@ -953,7 +954,6 @@ function Navigation() {
             <Stack.Screen name="Appearance" component={renderPremium(AppearanceScreen)} />
             <Stack.Screen name="AboutUs" component={AboutUsScreen} />
             <Stack.Screen name="ContactUs" component={ContactUsScreen} />
-            <Stack.Screen name="Subscription" component={SubscriptionScreen} />
             <Stack.Screen name="OnlineMeetings" component={renderPremium(OnlineMeetingsScreen)} />
             <Stack.Screen name="OnlineMeetingDetail" component={renderPremium(OnlineMeetingDetailScreen)} />
             <Stack.Screen name="YouTubeLive" component={renderPremium(YouTubeLiveScreen)} />
@@ -968,6 +968,13 @@ function Navigation() {
             <Stack.Screen name="BibleQuizPlayer" component={BibleQuizPlayerScreen} />
             <Stack.Screen name="BibleQuizResult" component={BibleQuizResultScreen} />
             <Stack.Screen name="BibleQuizReview" component={BibleQuizReviewScreen} />
+            {/* Pastor / Admin Specific Screens */}
+            <Stack.Screen name="EventDetail" component={renderPremium(PastorEventDetail)} />
+            <Stack.Screen name="CreateEvent" component={renderPremium(CreatePastorEvent)} />
+            <Stack.Screen name="RoutePlanner" component={renderPremium(PastorEventRoutePlanner)} />
+            <Stack.Screen name="EventMap" component={renderPremium(PastorEventMap)} />
+            <Stack.Screen name="AIAssistant" component={renderPremium(AIAssistantModal)} options={{ presentation: 'modal' }} />
+            <Stack.Screen name="EventAttendees" component={EventAttendeesScreen} />
           </>
         ) : (
           <Stack.Screen name="Onboarding" component={OnboardingScreen} />

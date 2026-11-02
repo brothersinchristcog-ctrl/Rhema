@@ -34,6 +34,22 @@ export declare const onPrayerRequestCreatedAdmin: import("firebase-functions/cor
     prayerId: string;
 }>>;
 /**
+ * 💧 MANDATORY NOTIFICATION: ADMIN NOTIFIED OF EVERY BAPTISM REQUEST (Primary single-church collection)
+ * Triggered automatically whenever a member submits a baptism request in Firestore.
+ * Always notifies church admins ONLY, clearly showing which member submitted it.
+ */
+export declare const onBaptismRequestCreatedAdmin: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+    churchId: string;
+    requestId: string;
+}>>;
+/**
+ * 💧 MANDATORY NOTIFICATION: ADMIN NOTIFIED OF EVERY BAPTISM REQUEST (Legacy churches collection)
+ */
+export declare const onBaptismRequestCreatedAdminLegacy: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+    churchId: string;
+    requestId: string;
+}>>;
+/**
  * 🙏 NOTIFY COMMUNITY OF APPROVED PRAYER REQUEST
  * Triggered when a prayer request is approved (isAnswered becomes true).
  */
@@ -117,7 +133,20 @@ export declare const triggerPublishScheduledSermonsHttp: import("firebase-functi
  * 1. English notification ('✝️ Good Morning' + verseEn + referenceEn)
  * 2. Telugu notification ('✝️ శుభోదయం' + verseTe + referenceTe)
  */
-export declare function sendDailyVersePushInternal(slotOverride?: string): Promise<{
+/**
+ * ⏰ SCHEDULED DAILY VERSE PUSH
+ * Automatically dispatches Daily Verse push notifications 4 times a day:
+ * Morning (06:00 AM IST), Afternoon (12:00 PM IST), Evening (06:00 PM IST), Night (09:00 PM IST)
+ */
+export declare const sendDailyVersePushScheduled: import("firebase-functions/v2/scheduler").ScheduleFunction;
+/**
+ * 📖 AUTOMATED DAILY VERSE MULTICAST PUSH (English & Telugu)
+ * Determines the current slot (Morning, Afternoon, Evening, Night) or uses slotOverride.
+ * Queries today's verse for Rhema Church and dispatches FCM push notifications:
+ * 1. Multicast to registered member tokens (Rhema members & users)
+ * 2. Topic broadcast to 'church_rhema' for 100% member delivery
+ */
+export declare function sendDailyVersePushInternal(slotOverride?: string, targetChurchId?: string): Promise<{
     success: boolean;
     error: string;
     slot?: never;
@@ -140,7 +169,6 @@ export declare function sendDailyVersePushInternal(slotOverride?: string): Promi
 }>;
 /**
  * 🧪 HTTP endpoint to manually trigger the Daily Verse push (can specify ?slot=Morning/Afternoon/Evening/Night)
- * Also used by external Cloud Schedulers (Google Cloud Console or cron-job.org).
  */
 export declare const triggerDailyVersePushHttp: import("firebase-functions/v2/https").HttpsFunction;
 //# sourceMappingURL=notifications.d.ts.map

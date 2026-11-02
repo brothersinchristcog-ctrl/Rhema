@@ -28,8 +28,7 @@ import {
   Smartphone,
   Moon,
   Video,
-  Headset,
-  Wand2
+  Headset
 } from 'lucide-react-native';
 import { useChurch } from '../../context/ChurchContext';
 import HexagonDate from '../../components/HexagonDate';
@@ -51,7 +50,6 @@ const CARD_BACKGROUNDS: Record<string, any> = {
   'Pastor Event': require('../../../assets/admin_cards/pastor_event.png'),
   'Gallery': require('../../../assets/admin_cards/gallery.png'),
   'Celebrations': require('../../../assets/admin_cards/celebrations.png'),
-  'WeCelebrations': require('../../../assets/admin_cards/wecelebrations.png'),
   'Notifications': require('../../../assets/admin_cards/notification.png'),
   'WhatsApp': require('../../../assets/admin_cards/whatsapp.png'),
   'Expense': require('../../../assets/admin_cards/expense.png'),
@@ -68,10 +66,7 @@ const CARD_BACKGROUNDS: Record<string, any> = {
   'Online Meetings': require('../../../assets/admin_cards/online_meetings.jpg'),
   'New Online Meeting': require('../../../assets/admin_cards/new_online_meeting.png'),
   'App Admin': require('../../../assets/admin_cards/app_admin.png'),
-  'AI Sermon Assistant': require('../../../assets/admin_cards/ai_sermon.jpg'),
-  'AI Sermon': require('../../../assets/admin_cards/ai_sermon.jpg'),
-  'AI Thumbnail Creation': require('../../../assets/admin_cards/ai_content.jpg'),
-  'AI Content Creator': require('../../../assets/admin_cards/ai_content.jpg'),
+  'Baptism': require('../../../assets/admin_cards/baptism.png'),
   'Bible Quiz': require('../../../assets/admin_cards/bible_quiz.jpg'),
   'Quiz': require('../../../assets/admin_cards/bible_quiz.jpg'),
 };
@@ -96,16 +91,10 @@ const CATEGORIES = [
     keywords: ['Event', 'Celebration']
   },
   {
-    title: 'AI Ministry Tools',
-    icon: Wand2,
-    color: '#6D28D9', // Deep violet for AI
-    keywords: ['AI Sermon', 'AI Content', 'AI Thumbnail']
-  },
-  {
     title: 'Communication',
     icon: Bell,
     color: '#78350F', // Rich Deep Bronze/Chocolate for excellent warm contrast
-    keywords: ['Notification', 'WhatsApp']
+    keywords: ['Notification', 'WhatsApp', 'Baptism']
   },
   {
     title: 'Church Ledger',
@@ -133,7 +122,7 @@ const CATEGORIES = [
   },
 ];
 
-const FULL_WIDTH_MODULES = ['Songs', 'Members', 'Subscription', 'WeCelebrations'];
+const FULL_WIDTH_MODULES = ['Songs', 'Members', 'Subscription', 'Baptism'];
 
 const FONTS = {
   serif: Platform.OS === 'ios' ? 'Georgia' : 'serif',
@@ -513,11 +502,7 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
                                 {tab.name === 'About Us' 
                                   ? 'About\u00A0Us' 
                                   : tab.name === 'Service Roster'
-                                  ? 'Service Roster\n& Teams'
-                                  : (tab.name === 'AI Sermon Assistant' || tab.name === 'AI Sermon') 
-                                  ? 'AI Sermon\nAssistant' 
-                                  : (tab.name === 'AI Content Creator' || tab.name === 'AI Thumbnail Creation') 
-                                  ? 'AI Thumbnail\nCreation' 
+                                  ? 'Service Roster\n& Teams' 
                                   : tab.name}
                               </Text>
                             </View>
@@ -573,7 +558,14 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
           </TouchableOpacity>
 
           <TouchableOpacity
-            onPress={() => setViewMode('member')}
+            onPress={() => {
+              setViewMode('member');
+              try {
+                if (navigation?.navigate) {
+                  navigation.navigate('Tabs');
+                }
+              } catch (_) {}
+            }}
             style={{
               flex: 1,
               backgroundColor: '#1a2d5a', // solid navy
