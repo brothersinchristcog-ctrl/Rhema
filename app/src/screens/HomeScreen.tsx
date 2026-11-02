@@ -1014,6 +1014,7 @@ const DailyVerseCard = ({ verse, period, onPress }: { verse: DailyVerse | null; 
   const loc = getLocalizedVerse(verse, language);
   const greeting = getPeriodGreeting(period, t);
   const cardTitle = `🕊️  ${greeting.toUpperCase()} · ${t('home.quickDailyVerse').toUpperCase()}`;
+  const bgUrl = getVerseBackgroundUrl(verse, period);
 
   const cardContent = (
     <>
@@ -1060,30 +1061,21 @@ const DailyVerseCard = ({ verse, period, onPress }: { verse: DailyVerse | null; 
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={{ marginHorizontal: 0, marginBottom: 20 }}>
-      {verse.backgroundUrl ? (
-        <ImageBackground
-          source={{ uri: verse.backgroundUrl }}
-          style={{
-            borderRadius: 20, padding: 20, overflow: 'hidden',
-            shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 8,
-          }}
-          imageStyle={{ borderRadius: 20 }}
-          resizeMode="cover"
-        >
-          <LinearGradient
-            colors={['rgba(0,0,0,0.3)', 'rgba(0,0,0,0.85)']}
-            style={StyleSheet.absoluteFillObject}
-          />
-          {cardContent}
-        </ImageBackground>
-      ) : (
-        <LinearGradient colors={colors as [string, string]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{
+      <ImageBackground
+        source={{ uri: bgUrl }}
+        style={{
           borderRadius: 20, padding: 20, overflow: 'hidden',
           shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 8,
-        }}>
-          {cardContent}
-        </LinearGradient>
-      )}
+        }}
+        imageStyle={{ borderRadius: 20 }}
+        resizeMode="cover"
+      >
+        <LinearGradient
+          colors={['rgba(0,0,0,0.3)', 'rgba(0,0,0,0.85)']}
+          style={StyleSheet.absoluteFillObject}
+        />
+        {cardContent}
+      </ImageBackground>
     </TouchableOpacity>
   );
 };
@@ -1382,7 +1374,7 @@ export default function HomeScreen() {
   const useWeChristianDailyPromise = true;
   const hasServiceTimings = !!(activeChurch?.serviceTimings && activeChurch.serviceTimings.length > 0);
   const [todayFourVerses, setTodayFourVerses] = useState<DailyVerse[]>(() => {
-    if (cachedTodayFourVerses && cachedTodayFourVerses.length > 0) return cachedTodayFourVerses;
+    if (cachedTodayFourVerses && cachedTodayFourVerses.length > 0 && cachedTodayFourVerses[0]?.backgroundUrl) return cachedTodayFourVerses;
     try {
       const initial = VerseNotificationService.getSynchronousInitialVerses(0);
       const verses = initial[0]?.verses || [];
@@ -2501,30 +2493,16 @@ export default function HomeScreen() {
                           style={[styles.vdSlide, { width: screenWidth }]}
                           onPress={() => navigation.navigate('VerseOfTheDay', { verseId: verse.id, period })}
                         >
-                          <View style={[styles.vdCleanWhiteCard, verse.backgroundUrl ? { backgroundColor: '#1A2E2B' } : undefined]}>
-                            {verse.backgroundUrl ? (
-                              <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
-                                <ImageBackground
-                                  source={{ uri: verse.backgroundUrl }}
-                                  style={StyleSheet.absoluteFillObject}
-                                  imageStyle={{ borderRadius: 24 }}
-                                  resizeMode="cover"
-                                >
-                                  <LinearGradient
-                                    colors={['rgba(24, 46, 42, 0.45)', 'rgba(15, 23, 42, 0.88)']}
-                                    style={StyleSheet.absoluteFillObject}
-                                  />
-                                </ImageBackground>
-                              </View>
-                            ) : (
-                              <>
-                                {/* Subtle bottom-right open book & soft circle watermark */}
-                                <View style={styles.vdWatermarkCircle} pointerEvents="none" />
-                                <View style={styles.vdWatermarkBook} pointerEvents="none">
-                                  <BookOpen size={64} color="rgba(255, 255, 255, 0.14)" strokeWidth={1.5} />
-                                </View>
-                              </>
-                            )}
+                          <ImageBackground
+                            source={{ uri: getVerseBackgroundUrl(verse, period, idx) }}
+                            style={styles.vdCleanWhiteCard}
+                            imageStyle={{ borderRadius: 24 }}
+                            resizeMode="cover"
+                          >
+                            <LinearGradient
+                              colors={['rgba(24, 46, 42, 0.45)', 'rgba(15, 23, 42, 0.88)']}
+                              style={StyleSheet.absoluteFillObject}
+                            />
 
                             <Text style={styles.phLabel} maxFontSizeMultiplier={1.15}>
                               {greeting}
@@ -2588,7 +2566,7 @@ export default function HomeScreen() {
                                 <Text style={styles.vdSaveBtnTxt} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{t('common.saveCard')}</Text>
                               </TouchableOpacity>
                             </View>
-                          </View>
+                          </ImageBackground>
                         </TouchableOpacity>
                       );
                     })
@@ -3490,13 +3468,11 @@ export default function HomeScreen() {
         <View style={{ position: 'absolute', top: -10000, left: -10000 }}>
           <ViewShot ref={captureVerseRef} options={{ format: 'png', quality: 1 }}>
             <View style={{ width, height: width * 1.5, backgroundColor: '#0a1945' }} collapsable={false}>
-              {captureVerseConfig.verse.backgroundUrl ? (
-                <Image
-                  source={{ uri: captureVerseConfig.verse.backgroundUrl }}
+              <Image
+                  source={{ uri: getVerseBackgroundUrl(captureVerseConfig.verse, captureVerseConfig.period) }}
                   style={StyleSheet.absoluteFillObject}
                   resizeMode="cover"
                 />
-              ) : null}
               <LinearGradient
                 colors={['rgba(0,0,0,0.3)', 'rgba(0,0,0,0.88)']}
                 style={StyleSheet.absoluteFillObject}

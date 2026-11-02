@@ -15,8 +15,11 @@ import {
   KeyboardAvoidingView,
   Keyboard,
   TouchableWithoutFeedback,
+  ImageBackground,
 } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
+import { LinearGradient } from 'expo-linear-gradient';
+import { getVerseBackgroundUrl } from '../../constants/VerseBackgrounds';
 import {
   UploadCloud,
   Trash2,
@@ -672,9 +675,20 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
   const renderVerseItem = useCallback(({ item }: { item: any }) => {
     const schedule = getFastSchedule(item.index);
     const periodColor = PERIOD_COLORS[schedule.periodIndex] || '#3B82F6';
+    const bgUrl = getVerseBackgroundUrl(item, schedule.period, item.index);
 
     return (
-      <View style={[styles.verseCard, { borderLeftColor: periodColor }]}>
+      <View style={[styles.verseCard, { borderLeftColor: periodColor, overflow: 'hidden' }]}>
+        <ImageBackground
+          source={{ uri: bgUrl }}
+          style={StyleSheet.absoluteFillObject}
+          imageStyle={{ borderRadius: 14, opacity: 0.45 }}
+          resizeMode="cover"
+        />
+        <LinearGradient
+          colors={['rgba(15, 23, 42, 0.60)', 'rgba(15, 23, 42, 0.90)']}
+          style={StyleSheet.absoluteFillObject}
+        />
         {/* Card Header Badge Row */}
         <View style={styles.cardHeaderRow}>
           <View style={[
@@ -732,16 +746,10 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
             </Text>
           </View>
 
-          {item.backgroundUrl ? (
-            <View style={styles.imageTag}>
-              <ImageIcon size={12} color="#10B981" />
-              <Text style={styles.imageTagText}>Image Ready</Text>
-            </View>
-          ) : (
-            <View style={styles.noImageTag}>
-              <Text style={styles.noImageTagText}>Gradient Theme</Text>
-            </View>
-          )}
+          <View style={styles.imageTag}>
+            <ImageIcon size={12} color="#10B981" />
+            <Text style={styles.imageTagText}>Image Ready</Text>
+          </View>
         </View>
       </View>
     );
