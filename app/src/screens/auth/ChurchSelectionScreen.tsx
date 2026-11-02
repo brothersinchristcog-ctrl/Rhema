@@ -17,7 +17,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import { AuthStackParamList } from '../../navigation/AuthNavigator';
 import { useChurch } from '../../context/ChurchContext';
-import { Church, Search, ArrowRight, Plus } from 'lucide-react-native';
+import { Church, Search, ArrowRight } from 'lucide-react-native';
 import ChurchService, { ChurchDetails } from '../../services/ChurchService';
 import { SubscriptionGuard } from '../../services/SubscriptionGuard';
 import * as Application from 'expo-application';
@@ -87,7 +87,7 @@ export default function ChurchSelectionScreen({ navigation, route }: Props) {
               </View>
               <Text style={styles.title}>Join Your Church</Text>
               <Text style={styles.subtitle}>
-                Connect with your church community on WeChristian
+                Connect with your church community on Rhema Global Ministries
               </Text>
             </View>
 
@@ -122,22 +122,7 @@ export default function ChurchSelectionScreen({ navigation, route }: Props) {
                 </TouchableOpacity>
               </View>
 
-            {/* Create Church */}
-            <View style={styles.createSection}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%', marginVertical: 24 }}>
-                <View style={{ flex: 1, height: 1, backgroundColor: '#1e293b' }} />
-                <Text style={{ color: '#64748b', marginHorizontal: 16, fontSize: 13 }}>or</Text>
-                <View style={{ flex: 1, height: 1, backgroundColor: '#1e293b' }} />
-              </View>
-              <Text style={styles.createTitle}>Are you a Church Admin?</Text>
-              <TouchableOpacity
-                style={styles.createBtn}
-                onPress={() => navigation.navigate('CreateChurch')}
-              >
-                <Plus size={18} color="#D9A05B" />
-                <Text style={styles.createBtnTxt}>Register Your Church</Text>
-              </TouchableOpacity>
-            </View>
+
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -208,14 +193,5 @@ const styles = StyleSheet.create({
   resultAddr: { color: '#94a3b8', fontSize: 12, marginTop: 2 },
   noResults: { color: '#64748b', textAlign: 'center', marginTop: 16, fontSize: 13 },
 
-  createSection: {
-    alignItems: 'center', gap: 12,
-  },
-  createTitle: { color: '#64748b', fontSize: 13 },
-  createBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: 'transparent', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 20,
-    borderWidth: 1, borderColor: '#D9A05B',
-  },
-  createBtnTxt: { color: '#D9A05B', fontSize: 14, fontWeight: '700' },
+
 });
