@@ -17,7 +17,7 @@ import {
   Switch
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ChevronLeft, Save, Palette, Image as ImageIcon, Link, DollarSign, Building2, Plus, Trash2, Plug, Info, Edit2, Clock, MapPin, Navigation } from 'lucide-react-native';
+import { ChevronLeft, Save, Palette, Image as ImageIcon, Link, DollarSign, Building2, Plus, Trash2, Info, Edit2, Clock, MapPin, Navigation } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import ChurchService, { ChurchDetails, ServiceTiming } from '../../services/ChurchService';
@@ -45,7 +45,7 @@ export default function AdminChurchSettings({ navigation }: any) {
   const [linkCode, setLinkCode] = useState('');
   const [linking, setLinking] = useState(false);
   const [secrets, setSecrets] = useState<{ razorpayKeyId?: string; razorpayKeySecret?: string; whatsappAccessToken?: string; whatsappPhoneId?: string; useWeChristianWhatsApp?: boolean }>({});
-  const [activeTab, setActiveTab] = useState<'info' | 'branding' | 'giving' | 'integrations'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'branding' | 'giving'>('info');
   const [isEditing, setIsEditing] = useState(false);
   const [alertConfig, setAlertConfig] = useState<{
     visible: boolean;
@@ -376,24 +376,7 @@ export default function AdminChurchSettings({ navigation }: any) {
             <DollarSign size={18} color={activeTab === 'giving' ? primaryColor : '#64748b'} />
             <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.tabTxt, activeTab === 'giving' && { color: primaryColor, fontWeight: '700' }]}>Giving</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'integrations' && { borderBottomColor: primaryColor }]}
-            onPress={() => {
-              if (activeChurch?.whatsappIntegrationEnabled) {
-                setActiveTab('integrations');
-              } else {
-                setAlertConfig({
-                  visible: true,
-                  title: 'WhatsApp Integration Not Enabled',
-                  message: 'WhatsApp Integration is not enabled for your church. Please contact the Rhema support team to activate this feature. Once enabled, you will be able to use WhatsApp Integration from the We Celebration module and Church Settings.',
-                  type: 'info'
-                });
-              }
-            }}
-          >
-            <Plug size={18} color={activeTab === 'integrations' ? primaryColor : '#64748b'} />
-            <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.tabTxt, activeTab === 'integrations' && { color: primaryColor, fontWeight: '700' }]}>WhatsApp</Text>
-          </TouchableOpacity>
+          
         </View>
 
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -885,54 +868,6 @@ export default function AdminChurchSettings({ navigation }: any) {
                 </View>
               ))}
 
-            </View>
-          )}
-
-          {/* INTEGRATIONS TAB */}
-          {activeTab === 'integrations' && (
-            <View>
-              {!isEditing && <Text style={styles.viewModeHint}>Tap 'Edit' in the top right to make changes.</Text>}
-
-              <Text style={styles.sectionLabel}>WhatsApp Meta Graph API</Text>
-              <Text style={{ fontSize: 11, color: '#64748b', marginBottom: 16 }}>
-                Configure how this church sends automated WhatsApp messages (e.g. Birthdays, Events).
-              </Text>
-
-              <View style={styles.switchRow}>
-                <View style={{ flex: 1, paddingRight: 12 }}>
-                  <Text style={styles.switchLabel}>Use Rhema Official WhatsApp Service</Text>
-                  <Text style={styles.switchHint}>If enabled, messages will be sent from the official platform number. If disabled, you must provide your own Meta credentials below.</Text>
-                </View>
-                <Switch
-                  value={secrets.useWeChristianWhatsApp ?? false}
-                  onValueChange={v => updateSecret('useWeChristianWhatsApp', v)}
-                  disabled={!isEditing}
-                  trackColor={{ false: '#cbd5e1', true: primaryColor }}
-                />
-              </View>
-              
-              {!(secrets.useWeChristianWhatsApp ?? false) && (
-                <View style={{ marginTop: 16 }}>
-                  <View style={{ backgroundColor: '#eff6ff', borderColor: '#bfdbfe', borderWidth: 1, padding: 16, borderRadius: 12, marginBottom: 20, flexDirection: 'row', alignItems: 'flex-start' }}>
-                    <Info size={20} color="#2563eb" style={{ marginTop: 2, marginRight: 12 }} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 14, fontWeight: '700', color: '#1e3a8a', marginBottom: 6 }}>Using your own WhatsApp Business Account?</Text>
-                      <Text style={{ fontSize: 13, color: '#1e40af', lineHeight: 20 }}>Please contact the Rhema support team. We'll assist you in setting up and verifying your Meta API credentials correctly.</Text>
-                    </View>
-                  </View>
-                  
-                  <View style={styles.cardItem}>
-                    <Text style={styles.cardTitle}>Custom API Credentials</Text>
-                    
-                    <View style={{ height: 16 }} />
-                    <Text style={styles.label}>Access Token (Permanent)</Text>
-                    <TextInput style={[styles.input, !isEditing && styles.inputDisabled, { marginBottom: 16 }]} value={secrets.whatsappAccessToken} onChangeText={v => updateSecret('whatsappAccessToken', v)} placeholder="e.g. EAAH..." placeholderTextColor="#94a3b8" secureTextEntry={!isEditing} editable={isEditing} />
-      
-                    <Text style={styles.label}>Phone Number ID</Text>
-                    <TextInput style={[styles.input, !isEditing && styles.inputDisabled, { marginBottom: 0 }]} value={secrets.whatsappPhoneId} onChangeText={v => updateSecret('whatsappPhoneId', v)} placeholder="e.g. 101452637283" placeholderTextColor="#94a3b8" keyboardType="numeric" editable={isEditing} />
-                  </View>
-                </View>
-              )}
             </View>
           )}
 
