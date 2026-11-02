@@ -271,9 +271,13 @@ export default function AdminSermonList() {
               <Text style={[styles.heroSub, { marginTop: 2 }]}>{sermons.length} total · {stats.categories} series</Text>
             </View>
           </View>
-          <TouchableOpacity style={styles.newBtn} onPress={() => { setEditingData(null); setTabByName?.('New Sermon'); }}>
-            <Plus size={16} color="#1a2d5a" />
-            <Text style={styles.newBtnTxt}>New</Text>
+          <TouchableOpacity 
+            style={[styles.newBtn, { flexShrink: 0 }]} 
+            onPress={() => { setEditingData(null); setTabByName?.('New Sermon'); }}
+            activeOpacity={0.8}
+          >
+            <Plus size={15} color="#1a2d5a" strokeWidth={2.5} />
+            <Text style={styles.newBtnTxt} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>New Sermon</Text>
           </TouchableOpacity>
         </View>
       </View>

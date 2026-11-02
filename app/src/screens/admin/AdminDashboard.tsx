@@ -122,7 +122,7 @@ const CATEGORIES = [
   },
 ];
 
-const FULL_WIDTH_MODULES = ['Promises', 'Songs', 'Members', 'Subscription', 'Baptism'];
+const FULL_WIDTH_MODULES = ['Songs', 'Members', 'Subscription', 'Baptism'];
 
 const FONTS = {
   serif: Platform.OS === 'ios' ? 'Georgia' : 'serif',
@@ -213,7 +213,7 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
   CATEGORIES.forEach(cat => categorizedTabs[cat.title] = []);
 
   allTabs.forEach((tab: any, index: number) => {
-    if (tab.name === 'Dashboard' || tab.name === 'New Online Meeting' || tab.name === 'New Promise') return;
+    if (tab.name === 'Dashboard' || tab.name === 'New Online Meeting' || tab.name === 'New Promise' || tab.name === 'New Sermon') return;
     const category = getCategoryForTab(tab.name);
     categorizedTabs[category.title].push({ ...tab, index });
   });
