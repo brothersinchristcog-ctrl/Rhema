@@ -623,7 +623,10 @@ function TabNavigator() {
     </Tab.Navigator>
 
     {isActualAdmin && viewMode === 'member' && (
-      <DraggableAdminPill onPress={() => setViewMode('admin')} />
+      <DraggableAdminPill onPress={() => {
+        setViewMode('admin');
+        navigation.navigate('AdminRoot');
+      }} />
     )}
     </>
   );
@@ -925,6 +928,7 @@ function Navigation() {
         showAdminView ? (
           <>
             <Stack.Screen name="AdminRoot" component={AdminNavigator} options={{ gestureEnabled: false, headerBackButtonMenuEnabled: false }} />
+            <Stack.Screen name="Tabs" component={TabNavigator} options={{ gestureEnabled: false, headerBackButtonMenuEnabled: false }} />
             <Stack.Screen name="Subscription" component={SubscriptionScreen} />
             <Stack.Screen name="LockedFeature" component={LockedFeatureScreen} />
             <Stack.Screen name="EventDetail" component={renderPremium(PastorEventDetail)} />
@@ -996,6 +1000,9 @@ function Navigation() {
             <Stack.Screen name="BibleQuizPlayer" component={BibleQuizPlayerScreen} />
             <Stack.Screen name="BibleQuizResult" component={BibleQuizResultScreen} />
             <Stack.Screen name="BibleQuizReview" component={BibleQuizReviewScreen} />
+            {isAdmin && (
+              <Stack.Screen name="AdminRoot" component={AdminNavigator} options={{ gestureEnabled: false, headerBackButtonMenuEnabled: false }} />
+            )}
           </>
         ) : (
           <Stack.Screen name="Onboarding" component={OnboardingScreen} />

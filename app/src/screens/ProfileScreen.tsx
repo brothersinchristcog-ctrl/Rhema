@@ -546,7 +546,14 @@ export default function ProfileScreen({ navigation }: any) {
               icon={<Shield size={22} color={colors.text} strokeWidth={1.8} />} 
               title={t('profile.adminDashboard')} 
               sub={t('profile.adminDashboardSub')} 
-              onPress={() => setViewMode('admin')}
+              onPress={() => {
+                setViewMode('admin');
+                try {
+                  if (navigation?.navigate) {
+                    navigation.navigate('AdminRoot');
+                  }
+                } catch (_) {}
+              }}
               textColor={colors.text}
               subColor={colors.textSecondary}
             />
