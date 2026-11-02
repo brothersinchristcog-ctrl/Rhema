@@ -585,26 +585,28 @@ const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig =>
       return {
         appearance: 'warm_white',
         bg: '#FFFFFF',
+        // Radiant sunset orange gradient matching user reference image, confined strictly to top hero section
         gradient: [
-          '#2265FA',
-          '#2B70F7',
-          '#4285F5',
-          '#6B98F5',
-          '#97B8F7',
-          '#C4D6F9',
-          '#E4ECFB',
+          '#F5720A',
+          '#F77712',
+          '#FA8220',
+          '#FB8F33',
+          '#FC9F4E',
+          '#FDB272',
+          '#FDC89F',
+          '#FEE4D0',
           '#FFFFFF',
         ],
-        gradientHeight: 520,
-        overscrollTop: '#2265FA',
+        gradientHeight: 215, // Confined strictly to top section (does NOT include marquee)
+        overscrollTop: '#F5720A',
         overscrollBottom: '#FFFFFF',
         text: '#0B1938',
         textMuted: '#5A708E',
-        heroText: '#0F172A',
-        heroTagline: '#334155',
+        heroText: '#FFFFFF',
+        heroTagline: 'rgba(255, 255, 255, 0.92)',
         heroDateNum: '#0F172A',
         heroDateMonth: '#C2410C',
-        heroGreet: '#0F172A',
+        heroGreet: '#FFFFFF',
         cardBg: '#FFFFFF',
         cardBorder: '#E2E8F0',
         barStyle: 'light-content' as const,
@@ -1029,7 +1031,7 @@ const PremiumHero = ({
                 <Image source={{ uri: logoUrl }} style={hStyles.logoImg} resizeMode="cover" />
               ) : (
                 <LinearGradient colors={theme.isDark ? ['#2d5750', '#15302c'] : ['#FFFFFF', '#FFFFFF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={hStyles.logoFallback}>
-                  <Text style={[hStyles.logoInitials, !theme.isDark && { color: '#2563EB' }]}>{initials}</Text>
+                  <Text style={[hStyles.logoInitials, !theme.isDark && { color: '#F5720A' }]}>{initials}</Text>
                 </LinearGradient>
               )}
             </View>
@@ -1046,7 +1048,7 @@ const PremiumHero = ({
               {churchName}
             </Text>
             <View style={hStyles.taglineRow}>
-              <Cross w={7} h={9} color={theme.isDark ? C.gold : theme.accent} />
+              <Cross w={7} h={9} color={theme.isDark ? C.gold : '#FED7AA'} />
               <Text 
                 style={[hStyles.tagline, { color: theme.heroTagline }]} 
                 numberOfLines={1} 
@@ -1063,17 +1065,17 @@ const PremiumHero = ({
             style={[
               hStyles.bellBtn, 
               { 
-                backgroundColor: theme.isDark ? 'rgba(255,255,255,0.08)' : '#FFFFFF',
-                borderColor: theme.isDark ? 'rgba(232,196,110,0.55)' : 'rgba(255,255,255,0.8)' 
+                backgroundColor: theme.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.22)',
+                borderColor: theme.isDark ? 'rgba(232,196,110,0.55)' : 'rgba(255,255,255,0.35)' 
               }
             ]} 
             onPress={onBellPress} 
             activeOpacity={0.75}
           >
             <Animated.View style={{ transform: [{ rotate: bellRotate }] }}>
-              <Bell color={theme.isDark ? C.gold : '#2563EB'} size={20} strokeWidth={2} />
+              <Bell color={theme.isDark ? C.gold : '#FFFFFF'} size={20} strokeWidth={2} />
             </Animated.View>
-            <View style={[hStyles.bellDot, { borderColor: theme.isDark ? theme.bg : '#FFFFFF' }]} />
+            <View style={[hStyles.bellDot, { borderColor: theme.isDark ? theme.bg : '#F5720A' }]} />
           </TouchableOpacity>
         </View>
 
@@ -1082,7 +1084,7 @@ const PremiumHero = ({
           {/* Left Column: Greeting with Sun/Moon Icon + Bold Serif User Name */}
           <View style={{ flex: 1, minWidth: 0, paddingRight: 12, justifyContent: 'center' }}>
             <View style={gStyles.greetRow}>
-              {Icon ? <Icon size={18} color={theme.isDark ? '#FCD34D' : '#D97706'} /> : null}
+              {Icon ? <Icon size={18} color={theme.isDark ? '#FCD34D' : '#FEF3C7'} /> : null}
               <Text 
                 style={[
                   gStyles.greet, 
@@ -3391,15 +3393,17 @@ export default function HomeScreen() {
           {/* Over-scroll covers for pull-down & pull-up */}
           <View pointerEvents="none" style={{ position: 'absolute', top: -800, left: 0, right: 0, height: 800, backgroundColor: screenTheme.overscrollTop }} />
           <View pointerEvents="none" style={{ position: 'absolute', bottom: -800, left: 0, right: 0, height: 800, backgroundColor: screenTheme.overscrollBottom }} />
-          {/* Continuous linear gradient covering the top section and fading into white */}
+          {/* Continuous linear gradient covering ONLY the top section (stops right above marquee) */}
           <LinearGradient
             colors={screenTheme.gradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 0, y: 1 }}
             style={
-              screenTheme.gradientHeight
-                ? { position: 'absolute', top: 0, left: 0, right: 0, height: screenTheme.gradientHeight }
-                : StyleSheet.absoluteFill
+              heroHeight
+                ? { position: 'absolute', top: 0, left: 0, right: 0, height: heroHeight + 4 }
+                : (screenTheme.gradientHeight
+                  ? { position: 'absolute', top: 0, left: 0, right: 0, height: screenTheme.gradientHeight }
+                  : StyleSheet.absoluteFill)
             }
             pointerEvents="none"
           />
