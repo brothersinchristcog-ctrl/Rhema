@@ -82,7 +82,7 @@ const CATEGORIES = [
     title: 'Community & Members',
     icon: Users,
     color: '#581C87', // Deep Royal Purple/Eggplant for excellent contrast
-    keywords: ['Member', 'Attendance', 'Prayer', 'Service Roster']
+    keywords: ['Member', 'Attendance', 'Prayer']
   },
   {
     title: 'Events & Celebrations',
@@ -112,7 +112,7 @@ const CATEGORIES = [
     title: 'Administration',
     icon: Settings,
     color: '#1E3A8A', // Deep Navy for maximum contrast
-    keywords: ['Daily Verses', 'Verse', 'Church Setting', 'Church Branch', 'App Admin', 'About', 'Contact', 'Schedule', 'Quiz', 'Bible Quiz']
+    keywords: ['Daily Verses', 'Verse', 'Service Roster', 'Church Setting', 'Church Branch', 'App Admin', 'About', 'Contact', 'Schedule', 'Quiz', 'Bible Quiz']
   },
   {
     title: 'Support',
@@ -122,7 +122,7 @@ const CATEGORIES = [
   },
 ];
 
-const FULL_WIDTH_MODULES = ['Songs', 'Members', 'Subscription', 'Baptism'];
+const FULL_WIDTH_MODULES = ['Songs', 'Members', 'Subscription', 'Baptism', 'Celebrations'];
 
 const FONTS = {
   serif: Platform.OS === 'ios' ? 'Georgia' : 'serif',
@@ -213,7 +213,7 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
   CATEGORIES.forEach(cat => categorizedTabs[cat.title] = []);
 
   allTabs.forEach((tab: any, index: number) => {
-    if (tab.name === 'Dashboard' || tab.name === 'New Online Meeting') return;
+    if (tab.name === 'Dashboard' || tab.name === 'New Online Meeting' || tab.name === 'New Promise' || tab.name === 'New Sermon' || tab.name === 'New Event') return;
     const category = getCategoryForTab(tab.name);
     categorizedTabs[category.title].push({ ...tab, index });
   });

@@ -148,7 +148,7 @@ export default function AdminNavigator({ navigation, route }: any) {
         setAlertConfig({
           visible: true,
           title: 'WhatsApp Integration Not Enabled',
-          message: 'WhatsApp Integration is not enabled for your church. Please contact the Rhema support team to activate this feature. Once enabled, you will be able to use WhatsApp Integration from the Celebrations module and Church Settings.',
+          message: 'WhatsApp Integration is not enabled for your church. Please contact the Rhema support team to activate this feature. Once enabled, you will be able to use WhatsApp Integration from the Celebrations module.',
           type: 'info'
         });
         return;

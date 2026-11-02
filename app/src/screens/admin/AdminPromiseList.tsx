@@ -239,7 +239,7 @@ export default function AdminPromiseList() {
           
           <View style={{ width: 10 }} />
           <TouchableOpacity style={[styles.newBtn, { flexShrink: 0 }]} onPress={() => { setEditingData(null); setTabByName?.('New Promise'); }}>
-            <Text style={styles.newBtnTxt}>+ New</Text>
+            <Text style={styles.newBtnTxt} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>+ New Promise</Text>
           </TouchableOpacity>
         </View>
       </View>

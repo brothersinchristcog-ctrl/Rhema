@@ -183,14 +183,14 @@ export default function AppearanceScreen() {
             Choose how quick action buttons appear on your Home screen.
           </Text>
 
-          <View style={styles.grid}>
+          <View style={[styles.twoColRow, { gap: cardGap }]}>
             {/* Bento Grid Option */}
             <TouchableOpacity
               activeOpacity={0.85}
               style={[
                 styles.card,
+                styles.cardHalf,
                 {
-                  width: cardWidth,
                   borderColor: quickActionsStyle === 'bento' ? (accentColor || '#881337') : isDark ? '#27272A' : '#E2E8F0',
                   borderWidth: quickActionsStyle === 'bento' ? 2.5 : 1.5,
                   backgroundColor: isDark ? '#121212' : '#FFFFFF',
@@ -209,7 +209,7 @@ export default function AppearanceScreen() {
                 <View style={[styles.bentoMockWide, { backgroundColor: '#F59E0B' }]} />
               </View>
 
-              <View style={[styles.cardBottomRow, { backgroundColor: isDark ? '#121212' : '#FFFFFF', minHeight: isSmallDevice ? 46 : 52, height: undefined, paddingVertical: 4 }]}>
+              <View style={[styles.cardBottomRow, { backgroundColor: isDark ? '#121212' : '#FFFFFF' }]}>
                 <View style={{ flex: 1, marginRight: 4 }}>
                   <Text
                     style={[
@@ -220,10 +220,17 @@ export default function AppearanceScreen() {
                       },
                     ]}
                     numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.8}
                   >
                     Bento Cards
                   </Text>
-                  <Text style={[styles.qaCardSub, { color: isDark ? '#A1A1AA' : '#64748B' }]} numberOfLines={1}>
+                  <Text
+                    style={[styles.qaCardSub, { color: isDark ? '#A1A1AA' : '#64748B' }]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.75}
+                  >
                     Modern asymmetric
                   </Text>
                 </View>
@@ -241,8 +248,8 @@ export default function AppearanceScreen() {
               activeOpacity={0.85}
               style={[
                 styles.card,
+                styles.cardHalf,
                 {
-                  width: cardWidth,
                   borderColor: quickActionsStyle === 'grid' ? (accentColor || '#881337') : isDark ? '#27272A' : '#E2E8F0',
                   borderWidth: quickActionsStyle === 'grid' ? 2.5 : 1.5,
                   backgroundColor: isDark ? '#121212' : '#FFFFFF',
@@ -273,7 +280,7 @@ export default function AppearanceScreen() {
                 </View>
               </View>
 
-              <View style={[styles.cardBottomRow, { backgroundColor: isDark ? '#121212' : '#FFFFFF', minHeight: isSmallDevice ? 46 : 52, height: undefined, paddingVertical: 4 }]}>
+              <View style={[styles.cardBottomRow, { backgroundColor: isDark ? '#121212' : '#FFFFFF' }]}>
                 <View style={{ flex: 1, marginRight: 4 }}>
                   <Text
                     style={[
@@ -284,10 +291,17 @@ export default function AppearanceScreen() {
                       },
                     ]}
                     numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.8}
                   >
                     4-in-a-Row
                   </Text>
-                  <Text style={[styles.qaCardSub, { color: isDark ? '#A1A1AA' : '#64748B' }]} numberOfLines={1}>
+                  <Text
+                    style={[styles.qaCardSub, { color: isDark ? '#A1A1AA' : '#64748B' }]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.75}
+                  >
                     Clean 3D icon tiles
                   </Text>
                 </View>
@@ -312,14 +326,14 @@ export default function AppearanceScreen() {
             Choose your preferred bottom navigation bar style.
           </Text>
 
-          <View style={styles.grid}>
+          <View style={[styles.twoColRow, { gap: cardGap }]}>
             {/* Minimal Capsule Option */}
             <TouchableOpacity
               activeOpacity={0.85}
               style={[
                 styles.card,
+                styles.cardHalf,
                 {
-                  width: cardWidth,
                   borderColor: navBarStyle === 'capsule' ? (accentColor || '#881337') : isDark ? '#27272A' : '#E2E8F0',
                   borderWidth: navBarStyle === 'capsule' ? 2.5 : 1.5,
                   backgroundColor: isDark ? '#121212' : '#FFFFFF',
@@ -331,7 +345,7 @@ export default function AppearanceScreen() {
                 {/* Simulated edge-to-edge capsule bar */}
                 <View style={[styles.navMockCapsuleBar, { backgroundColor: isDark ? '#12141A' : '#FFFFFF', borderColor: isDark ? '#272B35' : '#E2E8F0' }]}>
                   <View style={{ alignItems: 'center' }}>
-                    <View style={[styles.navMockCapsuleActive, { backgroundColor: isDark ? '#232936' : (accentColor ? `${accentColor}20` : '#F1F5F9'), height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center' }]}>
+                    <View style={[styles.navMockCapsuleActive, { backgroundColor: isDark ? '#232936' : (accentColor ? (accentColor + '20') : '#F1F5F9'), height: 26, borderRadius: 13, justifyContent: 'center', alignItems: 'center' }]}>
                       <View style={[styles.navMockHomeShape, { backgroundColor: isDark ? '#FFFFFF' : (accentColor || '#2563EB') }]} />
                       <View style={[styles.navMockLabelLine, { backgroundColor: isDark ? '#FFFFFF' : (accentColor || '#2563EB'), marginTop: 2 }]} />
                     </View>
@@ -358,7 +372,7 @@ export default function AppearanceScreen() {
                 </View>
               </View>
 
-              <View style={[styles.cardBottomRow, { backgroundColor: isDark ? '#121212' : '#FFFFFF', minHeight: isSmallDevice ? 46 : 52, height: undefined, paddingVertical: 4 }]}>
+              <View style={[styles.cardBottomRow, { backgroundColor: isDark ? '#121212' : '#FFFFFF' }]}>
                 <View style={{ flex: 1, marginRight: 4 }}>
                   <Text
                     style={[
@@ -369,10 +383,17 @@ export default function AppearanceScreen() {
                       },
                     ]}
                     numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.8}
                   >
                     Minimal Capsule
                   </Text>
-                  <Text style={[styles.qaCardSub, { color: isDark ? '#A1A1AA' : '#64748B' }]} numberOfLines={1}>
+                  <Text
+                    style={[styles.qaCardSub, { color: isDark ? '#A1A1AA' : '#64748B' }]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.75}
+                  >
                     Edge-to-edge with labels
                   </Text>
                 </View>
@@ -390,8 +411,8 @@ export default function AppearanceScreen() {
               activeOpacity={0.85}
               style={[
                 styles.card,
+                styles.cardHalf,
                 {
-                  width: cardWidth,
                   borderColor: navBarStyle === 'pill' ? (accentColor || '#881337') : isDark ? '#27272A' : '#E2E8F0',
                   borderWidth: navBarStyle === 'pill' ? 2.5 : 1.5,
                   backgroundColor: isDark ? '#121212' : '#FFFFFF',
@@ -412,7 +433,7 @@ export default function AppearanceScreen() {
                 </View>
               </View>
 
-              <View style={[styles.cardBottomRow, { backgroundColor: isDark ? '#121212' : '#FFFFFF', minHeight: isSmallDevice ? 46 : 52, height: undefined, paddingVertical: 4 }]}>
+              <View style={[styles.cardBottomRow, { backgroundColor: isDark ? '#121212' : '#FFFFFF' }]}>
                 <View style={{ flex: 1, marginRight: 4 }}>
                   <Text
                     style={[
@@ -423,10 +444,17 @@ export default function AppearanceScreen() {
                       },
                     ]}
                     numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.8}
                   >
                     Floating Pill
                   </Text>
-                  <Text style={[styles.qaCardSub, { color: isDark ? '#A1A1AA' : '#64748B' }]} numberOfLines={1}>
+                  <Text
+                    style={[styles.qaCardSub, { color: isDark ? '#A1A1AA' : '#64748B' }]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.75}
+                  >
                     Classic floating bar
                   </Text>
                 </View>
@@ -501,7 +529,7 @@ export default function AppearanceScreen() {
                     </ScaledText>
                   </View>
 
-                  {/* Title & Sub */}
+                  {/* Title */}
                   <View style={styles.fontSizeCardInfo}>
                     <ScaledText
                       skipFontScaling
@@ -510,25 +538,14 @@ export default function AppearanceScreen() {
                         {
                           color: isDark ? '#F4F4F5' : '#1E293B',
                           fontWeight: isSelected ? '800' : '600',
-                          fontSize: isSmallDevice ? 11.5 : 13,
+                          fontSize: isSmallDevice ? 12 : 13.5,
                         },
                       ]}
                       numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.85}
                     >
                       {item.label}
-                    </ScaledText>
-                    <ScaledText
-                      skipFontScaling
-                      style={[
-                        styles.fontSizeCardSub,
-                        {
-                          color: isDark ? '#A1A1AA' : '#64748B',
-                          fontSize: isSmallDevice ? 9.5 : 11,
-                        },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {item.displaySub}
                     </ScaledText>
                   </View>
 
@@ -568,7 +585,7 @@ export default function AppearanceScreen() {
           >
             <View style={styles.livePreviewHeader}>
               <Text style={[styles.livePreviewBadge, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                LIVE PREVIEW ({(FONT_SIZE_CONFIG[fontSize] || FONT_SIZE_CONFIG.medium).px} PX)
+                LIVE PREVIEW
               </Text>
             </View>
             <ScaledText
@@ -951,6 +968,13 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
 
+  twoColRow: {
+    flexDirection: 'row',
+    width: '100%',
+  },
+  cardHalf: {
+    flex: 1,
+  },
   navMockCapsuleBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -958,7 +982,7 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: 18,
     borderWidth: 1,
-    paddingHorizontal: 8,
+    paddingHorizontal: 4,
     width: '100%',
   },
   navMockCapsuleActive: {
@@ -995,17 +1019,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    height: 34,
-    borderRadius: 17,
+    height: 32,
+    borderRadius: 16,
     borderWidth: 1,
-    paddingHorizontal: 10,
+    paddingHorizontal: 6,
     width: '85%',
     alignSelf: 'center',
   },
   navMockPillActiveCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },

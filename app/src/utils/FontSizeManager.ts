@@ -14,9 +14,9 @@ export interface FontSizeItem {
 }
 
 export const FONT_SIZE_OPTIONS: FontSizeItem[] = [
-  { id: 'small', label: 'Small', px: 14, scale: 0.875, displayTitle: 'Small (Aa)', displaySub: '14 px' },
-  { id: 'medium', label: 'Medium', px: 16, scale: 1.0, displayTitle: 'Medium (Aa)', displaySub: '16 px' },
-  { id: 'large', label: 'Large', px: 20, scale: 1.25, displayTitle: 'Large (Aa)', displaySub: '20 px' },
+  { id: 'small', label: 'Small', px: 14, scale: 0.875, displayTitle: 'Small (Aa)', displaySub: '' },
+  { id: 'medium', label: 'Medium', px: 16, scale: 1.0, displayTitle: 'Medium (Aa)', displaySub: '' },
+  { id: 'large', label: 'Large', px: 20, scale: 1.25, displayTitle: 'Large (Aa)', displaySub: '' },
 ];
 
 export const FONT_SIZE_CONFIG: Record<FontSizeOption, FontSizeItem> = {

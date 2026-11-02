@@ -303,7 +303,12 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
       );
     }
 
-    // 2. FLOATING PILL STYLE (Original floating capsule with labels, preserved untouched)
+    // 2. FLOATING PILL STYLE (Responsive floating capsule with labels)
+    const floatingPillBottom = Math.max(
+      (insets?.bottom || 0) + (Platform.OS === 'ios' ? 14 : 10),
+      Platform.OS === 'android' ? 16 : 24
+    );
+
     return (
       <View style={[
         styles.tabBarContainer, 
@@ -311,6 +316,7 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
           backgroundColor: colors.tabBarBg,
           borderColor: colors.tabBarBorder,
           borderWidth: 1,
+          bottom: floatingPillBottom,
           shadowColor: isDark ? '#000' : 'rgba(15, 23, 42, 0.15)',
         }
       ]}>
@@ -1114,18 +1120,19 @@ const styles = StyleSheet.create({
   },
   tabBarContainer: {
     flexDirection: 'row',
-    height: 65,
+    height: 62,
     position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 65 : 50,
-    left: 20,
-    right: 20,
-    borderRadius: 40,
-    elevation: 15,
+    bottom: Platform.OS === 'ios' ? 34 : 20,
+    left: 16,
+    right: 16,
+    borderRadius: 36,
+    elevation: 25,
+    zIndex: 9999,
     shadowColor: '#000',
     shadowOpacity: 0.2,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 5 },
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
