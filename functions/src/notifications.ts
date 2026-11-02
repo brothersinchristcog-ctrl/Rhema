@@ -23,7 +23,7 @@ export const pushMeetingLive = onDocumentCreated('churches/{churchId}/online_mee
   let shouldSend = false;
   try {
     shouldSend = await db.runTransaction(async (transaction) => {
-      const freshDoc = await transaction.get(meetingRef);
+      const freshDoc: any = await transaction.get(meetingRef as any);
       if (!freshDoc.exists) return false;
       const data = freshDoc.data();
       if (data?.notificationSent === true) {
