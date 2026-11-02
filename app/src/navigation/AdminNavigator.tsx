@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, Image, Dimensions, Alert, BackHandler } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, Image, Dimensions, Alert, BackHandler, Animated, PanResponder } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { 
   BookOpen, 
@@ -86,7 +86,69 @@ import ChurchService from '../services/ChurchService';
 import AdminServicePlanner from '../screens/admin/AdminServicePlanner';
 import AdminDailyVersesManager from '../screens/admin/AdminDailyVersesManager';
 
-const { width } = Dimensions.get('window');
+const { width, width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+function DraggableMemberPill({ onPress }: { onPress: () => void }) {
+  const pan = React.useRef(new Animated.ValueXY({ 
+    x: SCREEN_WIDTH - 165, 
+    y: SCREEN_HEIGHT - (Platform.OS === 'ios' ? 180 : 160) 
+  })).current;
+
+  const panResponder = React.useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return Math.abs(gestureState.dx) > 5 || Math.abs(gestureState.dy) > 5;
+      },
+      onPanResponderGrant: () => {
+        pan.extractOffset();
+      },
+      onPanResponderMove: Animated.event(
+        [null, { dx: pan.x, dy: pan.y }],
+        { useNativeDriver: false }
+      ),
+      onPanResponderRelease: () => {
+        pan.flattenOffset();
+      }
+    })
+  ).current;
+
+  return (
+    <Animated.View
+      {...panResponder.panHandlers}
+      style={[
+        pan.getLayout(),
+        {
+          position: 'absolute',
+          zIndex: 99999,
+        }
+      ]}
+    >
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.8}
+        style={{
+          backgroundColor: '#1a2d5a', 
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: 16,
+          paddingVertical: 12,
+          borderRadius: 30,
+          borderWidth: 1,
+          borderColor: 'rgba(252, 211, 77, 0.5)',
+          gap: 8,
+          elevation: 10,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 6 },
+          shadowOpacity: 0.35,
+          shadowRadius: 10,
+        }}
+      >
+        <Smartphone size={18} color="#FCD34D" />
+        <Text style={{ color: '#fff', fontSize: 13, fontWeight: '800', letterSpacing: 0.5 }}>Member View</Text>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
 
 const DotGridIcon = ({ color, size }: { color: string; size: number }) => {
   const dotSize = size * 0.22;
@@ -410,6 +472,20 @@ export default function AdminNavigator({ navigation, route }: any) {
             <ActiveComponent navigation={navigation} routeParams={route?.params} />
           )}
         </View>
+
+        {/* Floating Draggable Member View Pill (Matching DraggableAdminPill in Member View) */}
+        <DraggableMemberPill onPress={() => {
+          setViewMode('member');
+          const { navigationRef } = require('../../App');
+          if (navigationRef && navigationRef.isReady()) {
+            try {
+              navigationRef.reset({
+                index: 0,
+                routes: [{ name: 'Tabs' }],
+              });
+            } catch (_) {}
+          }
+        }} />
 
         {/* Premium Floating Bottom Tab Bar Removed */}
 

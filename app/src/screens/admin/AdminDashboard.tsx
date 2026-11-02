@@ -558,7 +558,18 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
           </TouchableOpacity>
 
           <TouchableOpacity
-            onPress={() => setViewMode('member')}
+            onPress={() => {
+              setViewMode('member');
+              const { navigationRef } = require('../../App');
+              if (navigationRef && navigationRef.isReady()) {
+                try {
+                  navigationRef.reset({
+                    index: 0,
+                    routes: [{ name: 'Tabs' }],
+                  });
+                } catch (_) {}
+              }
+            }}
             style={{
               flex: 1,
               backgroundColor: '#1a2d5a', // solid navy

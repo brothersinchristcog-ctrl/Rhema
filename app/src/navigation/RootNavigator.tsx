@@ -623,7 +623,18 @@ function TabNavigator() {
     </Tab.Navigator>
 
     {isActualAdmin && viewMode === 'member' && (
-      <DraggableAdminPill onPress={() => setViewMode('admin')} />
+      <DraggableAdminPill onPress={() => {
+        setViewMode('admin');
+        const { navigationRef } = require('../../App');
+        if (navigationRef && navigationRef.isReady()) {
+          try {
+            navigationRef.reset({
+              index: 0,
+              routes: [{ name: 'AdminRoot' }],
+            });
+          } catch (_) {}
+        }
+      }} />
     )}
     </>
   );
@@ -996,12 +1007,6 @@ function Navigation() {
             <Stack.Screen name="BibleQuizPlayer" component={BibleQuizPlayerScreen} />
             <Stack.Screen name="BibleQuizResult" component={BibleQuizResultScreen} />
             <Stack.Screen name="BibleQuizReview" component={BibleQuizReviewScreen} />
-            {isAdmin && (
-              <>
-                <Stack.Screen name="AdminRoot" component={AdminNavigator} options={{ gestureEnabled: false, headerBackButtonMenuEnabled: false }} />
-                <Stack.Screen name="AdminBaptism" component={AdminBaptism} />
-              </>
-            )}
           </>
         ) : (
           <Stack.Screen name="Onboarding" component={OnboardingScreen} />
