@@ -584,7 +584,7 @@ const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig =>
     case 'warm_white':
       return {
         appearance: 'warm_white',
-        bg: '#FFFFFF',
+        bg: '#FAF7F2',
         gradient: [
           '#2265FA',
           '#2B70F7',
@@ -593,11 +593,11 @@ const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig =>
           '#97B8F7',
           '#C4D6F9',
           '#E4ECFB',
-          '#FFFFFF',
+          '#FAF7F2',
         ],
         gradientHeight: 520,
         overscrollTop: '#2265FA',
-        overscrollBottom: '#FFFFFF',
+        overscrollBottom: '#FAF7F2',
         text: '#0B1938',
         textMuted: '#5A708E',
         heroText: '#0F172A',
