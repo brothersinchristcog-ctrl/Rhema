@@ -3459,8 +3459,8 @@ class FirestoreService {
         const docPhone = (d.memberPhone || '').replace(/\D/g, '').slice(-10);
         if (d.memberId === memberId || (cleanPhone && docPhone === cleanPhone)) {
           list.push({
-            id: doc.id,
-            ...d
+            ...d,
+            id: doc.id
           } as BaptismRequest);
         }
       });
@@ -3485,8 +3485,8 @@ class FirestoreService {
         snap = await db.collection('churches').doc(churchId).collection('baptism_requests').get();
       }
       const list: BaptismRequest[] = snap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
+        ...doc.data(),
+        id: doc.id
       } as BaptismRequest));
 
       return list.sort((a, b) => {

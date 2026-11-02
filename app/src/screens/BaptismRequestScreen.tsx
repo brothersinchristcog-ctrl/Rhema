@@ -239,9 +239,15 @@ export default function BaptismRequestScreen({ navigation }: any) {
 
       // Also include any family members from prior submitted requests
       currentRequests.forEach(r => {
-        if (r.memberName && !candidates.some(c => c.name.trim().toLowerCase() === r.memberName.trim().toLowerCase())) {
+        // Do NOT duplicate self if the request was submitted for the logged in user
+        const isSelfCandidate = (r.memberId === selfCandidate.id || r.memberId === user?.uid) &&
+          (!r.memberName || r.memberName.trim().toLowerCase() === selfCandidate.name.trim().toLowerCase());
+
+        if (isSelfCandidate) return;
+
+        if (r.memberName && !candidates.some(c => c.id === r.id || c.name.trim().toLowerCase() === r.memberName.trim().toLowerCase())) {
           candidates.push({
-            id: r.memberId || r.id,
+            id: r.id || `fam_${r.memberId || 'req'}_${r.memberName.trim().toLowerCase().replace(/\s+/g, '_')}`,
             name: r.memberName,
             relation: 'Family Member',
             phone: r.memberPhone || selfCandidate.phone,
@@ -554,14 +560,14 @@ export default function BaptismRequestScreen({ navigation }: any) {
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.candidateChipsScroll}
               >
-                {familyMembers.map((cand) => {
+                {familyMembers.map((cand, idx) => {
                   const req = getCandidateRequest(cand);
                   const isSelected = !isOtherSelected && selectedCandidate?.id === cand.id;
                   const statusBadge = req ? getStatusBadge(req.status) : null;
 
                   return (
                     <TouchableOpacity
-                      key={cand.id}
+                      key={cand.id ? `${cand.id}_${idx}` : `cand_${idx}`}
                       activeOpacity={0.7}
                       style={[styles.candidateChip, isSelected && styles.candidateChipActive]}
                       onPress={() => handleSelectCandidate(cand)}

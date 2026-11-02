@@ -429,7 +429,7 @@ export default function AdminBaptism({ navigation }: any) {
           </View>
         ) : (
           <View style={styles.membersList}>
-            {filteredRequests.map(req => {
+            {filteredRequests.map((req, idx) => {
               const isExpanded = expandedId === req.id;
               const badge = getStatusBadge(req.status);
               const BadgeIcon = badge.icon;
@@ -438,7 +438,7 @@ export default function AdminBaptism({ navigation }: any) {
 
               return (
                 <View
-                  key={req.id}
+                  key={req.id + '_' + idx}
                   style={[styles.memberCard, isExpanded && styles.memberCardExpanded]}
                 >
                   {/* Card Header (Expand / Collapse) */}
