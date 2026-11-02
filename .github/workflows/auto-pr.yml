@@ -1,0 +1,26 @@
+name: Auto Create Pull Request
+
+on:
+  push:
+    branches:
+      - backend
+
+jobs:
+  create-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create Pull Request to Master
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr create \
+            --base master \
+            --head backend \
+            --title "Backend" \
+            --body "Automated Pull Request: latest updates and fixes from backend branch." || echo "Pull request already exists or no new commits to merge."
