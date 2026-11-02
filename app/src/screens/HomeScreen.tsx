@@ -3745,24 +3745,24 @@ export default function HomeScreen() {
                               {
                                 backgroundColor:
                                   appearance === 'pure_white'
-                                    ? '#FAFAFA' // Clean neutral lightish white (no warm yellow, no blue)
+                                    ? '#F5F5F5' // PhonePe soft neutral card background
                                     : appearance === 'warm_white'
                                     ? '#FFFFFF'
                                     : appearance === 'sage_ecru'
                                     ? '#F4F7EE'
                                     : screenTheme.isDark
                                     ? '#121212'
-                                    : '#FAFAFA',
+                                    : '#F5F5F5',
                                 borderColor:
                                   appearance === 'pure_white'
-                                    ? '#E5E7EB' // Crisp neutral light border
+                                    ? '#E9E9E9' // PhonePe hairline card border
                                     : appearance === 'warm_white'
                                     ? '#E2E8F0'
                                     : appearance === 'sage_ecru'
                                     ? '#CBD1C4'
                                     : screenTheme.isDark
                                     ? '#27272A'
-                                    : '#E5E7EB',
+                                    : '#E9E9E9',
                               },
                             ]}
                           >
