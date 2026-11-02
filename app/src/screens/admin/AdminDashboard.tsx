@@ -50,7 +50,6 @@ const CARD_BACKGROUNDS: Record<string, any> = {
   'Pastor Event': require('../../../assets/admin_cards/pastor_event.png'),
   'Gallery': require('../../../assets/admin_cards/gallery.png'),
   'Celebrations': require('../../../assets/admin_cards/celebrations.png'),
-  'WeCelebrations': require('../../../assets/admin_cards/wecelebrations.png'),
   'Notifications': require('../../../assets/admin_cards/notification.png'),
   'WhatsApp': require('../../../assets/admin_cards/whatsapp.png'),
   'Expense': require('../../../assets/admin_cards/expense.png'),
@@ -122,7 +121,7 @@ const CATEGORIES = [
   },
 ];
 
-const FULL_WIDTH_MODULES = ['Songs', 'Members', 'Subscription', 'WeCelebrations'];
+const FULL_WIDTH_MODULES = ['Songs', 'Members', 'Subscription'];
 
 const FONTS = {
   serif: Platform.OS === 'ios' ? 'Georgia' : 'serif',

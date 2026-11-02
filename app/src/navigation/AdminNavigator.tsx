@@ -69,7 +69,6 @@ import AdminAttendance from '../screens/admin/AdminAttendance';
 import PastorEventDashboard from '../screens/admin/pastor_events/PastorEventDashboard';
 import SuperAdminDashboard from '../screens/admin/SuperAdminDashboard';
 
-import AdminWeCelebrations from '../screens/admin/AdminWeCelebrations';
 import AdminWhatsAppInbox from '../screens/admin/AdminWhatsAppInbox';
 import AdminFinanceDashboard from '../screens/admin/AdminFinanceDashboard';
 // Force TS cache refresh
@@ -138,7 +137,7 @@ export default function AdminNavigator({ navigation, route }: any) {
     if (index !== activeTab) {
       const tabName = tabs[index]?.name;
       
-      if ((tabName === 'WhatsApp' || tabName === 'WeCelebrations') && !activeChurch?.whatsappIntegrationEnabled) {
+      if ((tabName === 'WhatsApp') && !activeChurch?.whatsappIntegrationEnabled) {
         setAlertConfig({
           visible: true,
           title: 'WhatsApp Integration Not Enabled',
@@ -153,7 +152,7 @@ export default function AdminNavigator({ navigation, route }: any) {
         'Sermons', 'New Sermon', 'Songs', 'Events', 'New Event', 'Pastor Event',
         'Prayers', 'Celebrations', 'Gallery', 'Expense', 'Donations', 
         'Online Meetings', 'New Online Meeting',
-        'WeCelebrations', 'WhatsApp', 'Bible Quiz'
+        'WhatsApp', 'Bible Quiz'
       ];
       
       if (premiumTabs.includes(tabName) && ChurchService.isSubscriptionExpired(activeChurch)) {
@@ -234,7 +233,6 @@ export default function AdminNavigator({ navigation, route }: any) {
     { name: 'Members', icon: Users, component: AdminMembers },
     { name: 'Celebrations', icon: Gift, component: AdminCelebrations },
     { name: 'Gallery', icon: ImageIcon, component: AdminGalleryNavigator },
-    ...(String(member?.userType || '').toUpperCase().includes('ADMIN') || String(member?.userType || '').toUpperCase().includes('SUPER') ? [{ name: 'WeCelebrations', icon: Sparkles, component: AdminWeCelebrations }] : []),
     ...(String(member?.userType || '').toUpperCase().includes('ADMIN') || String(member?.userType || '').toUpperCase().includes('SUPER') ? [{ name: 'WhatsApp', icon: MessageCircle, component: AdminWhatsAppInbox }] : []),
     { name: 'About Us', icon: Building2, component: AdminAboutUsEditor },
     { name: 'Contact Us', icon: PhoneCall, component: AdminContactUsEditor },
