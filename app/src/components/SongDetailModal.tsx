@@ -13,6 +13,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, Platform, 
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft, ChevronLeft, Bookmark, Globe, Sliders, ExternalLink } from 'lucide-react-native';
 import { useLanguage } from '../context/LanguageContext';
+import { useTheme } from '../context/ThemeContext';
 import { SupportedLanguage } from '../locales';
 import { WorshipSong } from '../services/FirestoreService';
 import { SongLanguageHelper } from '../services/SongLanguageHelper';
@@ -54,6 +55,7 @@ export default function SongDetailModal({
   onDelete
 }: SongDetailModalProps) {
   const { language, t } = useLanguage();
+  const { colors, currentThemeOption } = useTheme();
   const [selectedLangOverride, setSelectedLangOverride] = useState<SupportedLanguage | null>(null);
 
   useEffect(() => {
@@ -105,32 +107,48 @@ export default function SongDetailModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
-      <View style={[styles.modalCard, { backgroundColor: isDark ? '#0f172a' : '#f8fafc' }]}>
+      <View style={[styles.modalCard, { backgroundColor: colors.background }]}>
         <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} bounces={false}>
-          <LinearGradient 
-            colors={headerColors}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.modalHeader}
+                    {/* ── Screen Header (Clean circular back button & title) ── */}
+          <View
+            style={[
+              styles.headerRow,
+              { paddingTop: Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight ?? 24) + 12 }
+            ]}
           >
-            <TouchableOpacity style={styles.backBtn} onPress={onClose} hitSlop={{top:10, bottom:10, left:10, right:10}}>
-              <ArrowLeft size={24} color="#fff" />
+            <TouchableOpacity
+              style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={onClose}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              activeOpacity={0.8}
+            >
+              <ArrowLeft size={20} color={colors.text} strokeWidth={2.4} />
             </TouchableOpacity>
-            
-            <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
-              <View style={{ flex: 1, justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 20 }}>
-                <Text style={styles.modalTitleEn} numberOfLines={1}>
-                  {primary}
+
+            <View style={styles.headerTitleWrap}>
+              <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
+                {primary}
+              </Text>
+              {subtitle ? (
+                <Text style={[styles.headerSubtitleText, { color: colors.textSecondary }]} numberOfLines={1}>
+                  {subtitle}
                 </Text>
-                {subtitle ? (
-                  <Text style={styles.modalTitleTe} numberOfLines={1}>
-                    {subtitle}
-                  </Text>
-                ) : null}
-              </View>
+              ) : null}
             </View>
-            <View style={{ width: 24 }} />
-          </LinearGradient>
+
+            {onToggleSave ? (
+              <TouchableOpacity
+                style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                onPress={() => onToggleSave(song)}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                activeOpacity={0.8}
+              >
+                <Bookmark size={18} color={isSaved ? '#E8C46E' : colors.textSecondary} fill={isSaved ? '#E8C46E' : 'none'} />
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.headerRightSpacer} />
+            )}
+          </View>
 
           <View style={styles.modalScroll}>
             {/* Multiple translations tab switcher */}
@@ -338,7 +356,7 @@ export default function SongDetailModal({
                 )}
               </View>
 
-              <Text style={[styles.lyricsText, { color: isDark ? '#e2e8f0' : '#1e293b' }]}>
+              <Text style={[styles.lyricsText, { color: colors.text }]}>
                 {lyricsInfo.lyrics || t('songs.noLyrics')}
               </Text>
             </View>
@@ -348,7 +366,7 @@ export default function SongDetailModal({
 
         {(totalSongs > 0 && onPrev && onNext) && (
           <LinearGradient 
-            colors={bottomBarColors}
+            colors={colors.headerGradient || bottomBarColors}
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
             style={styles.bottomBar}
           >
@@ -382,6 +400,48 @@ export default function SongDetailModal({
 
 const styles = StyleSheet.create({
   modalCard: { flex: 1 },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+  },
+  circularBackBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  headerTitleWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  headerTitleText: {
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+    textAlign: 'center',
+  },
+  headerSubtitleText: {
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 2,
+  },
+  headerRightSpacer: {
+    width: 44,
+    height: 44,
+  },
   modalHeader: {
     paddingTop: Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight ?? 24) + 12,
     paddingHorizontal: 20,

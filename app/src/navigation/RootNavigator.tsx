@@ -12,7 +12,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { ChurchProvider, useChurch } from '../context/ChurchContext';
-import { ThemeProvider } from '../context/ThemeContext';
+import { ThemeProvider, useTheme } from '../context/ThemeContext';
 import { LanguageProvider, useLanguage } from '../context/LanguageContext';
 import { QuizLanguageProvider } from '../context/QuizLanguageContext';
 import Theme from '../theme/Theme';
@@ -55,6 +55,7 @@ import MembersScreen from '../screens/MembersScreen';
 import SubscriptionScreen from '../screens/SubscriptionScreen';
 import BibleSearchScreen from '../screens/BibleSearchScreen';
 import AboutUsScreen from '../screens/AboutUsScreen';
+import AppearanceScreen from '../screens/AppearanceScreen';
 import ContactUsScreen from '../screens/ContactUsScreen';
 import AttendanceScreen from '../screens/AttendanceScreen';
 import EventAttendeesScreen from '../screens/admin/EventAttendeesScreen';
@@ -137,6 +138,14 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
   function CustomTabBar({ state, descriptors, navigation }: any) {
     const { activeChurch } = useChurch();
     const { language, t } = useLanguage();
+    const { colors, isDark, navBarStyle } = useTheme();
+    const insets = useSafeAreaInsets();
+
+    // Clearance for Android 3-button navigation / iOS home indicator
+    const deviceBottomInset = Math.max(
+      insets?.bottom || 0,
+      Platform.OS === 'android' ? 52 : (Platform.OS === 'ios' ? 24 : 0)
+    );
   
     const currentRoute = state.routes[state.index];
     const activeConfig = getTabConfig(currentRoute.name, t);
@@ -188,8 +197,121 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
       }
     }, [showPrayerBadge]);
 
+    // 1. MINIMAL CAPSULE STYLE (Edge-to-edge with active circle/pill containing both icon & text label)
+    if (navBarStyle === 'capsule') {
+      return (
+        <View style={[
+          styles.capsuleTabBarContainer,
+          {
+            backgroundColor: isDark ? '#09090B' : '#FFFFFF',
+            borderTopColor: isDark ? '#1F242D' : '#E2E8F0',
+            paddingBottom: deviceBottomInset,
+            height: 60 + deviceBottomInset,
+          }
+        ]}>
+          <View style={styles.capsuleTabsRow}>
+            {state.routes.map((route: any, index: number) => {
+              const { options } = descriptors[route.key];
+              const isFocused = state.index === index;
+              const config = getTabConfig(route.name, t);
+              const IconComponent = config.Icon;
+
+              const onPress = () => {
+                if (config.key === 'Prayer' && showPrayerBadge) {
+                  setLastSeenPrayerCount(publicPrayerCount);
+                  AsyncStorage.setItem('@LastSeenPrayerCount', publicPrayerCount.toString());
+                }
+
+                const event = navigation.emit({
+                  type: 'tabPress',
+                  target: route.key,
+                  canPreventDefault: true,
+                });
+
+                if (!event.defaultPrevented) {
+                  if (config.key === 'Prayer' && showPrayerBadge) {
+                    navigation.navigate(route.name, { tab: 'public_requests' });
+                  } else if (!isFocused) {
+                    navigation.navigate(route.name);
+                  }
+                }
+              };
+
+              const activeBg = isDark ? '#1F242D' : (colors.tabBarActiveBg || '#0F766E');
+              const activeFg = isDark ? '#FFFFFF' : (colors.tabBarActiveFg || '#FFFFFF');
+              const inactiveFg = isDark ? '#94A3B8' : (colors.tabBarInactiveFg || '#64748B');
+
+              return (
+                <TouchableOpacity
+                  key={index}
+                  accessibilityRole="button"
+                  accessibilityState={isFocused ? { selected: true } : {}}
+                  accessibilityLabel={options.tabBarAccessibilityLabel}
+                  testID={options.tabBarTestID}
+                  onPress={onPress}
+                  style={styles.capsuleTabItem}
+                  activeOpacity={0.7}
+                >
+                  {isFocused ? (
+                    <View style={[styles.activeCapsulePill, { backgroundColor: activeBg }]}>
+                      <View style={{ position: 'relative' }}>
+                        <IconComponent 
+                          color={activeFg} 
+                          size={19} 
+                          strokeWidth={2.4} 
+                        />
+                        {config.key === 'Prayer' && showPrayerBadge && (
+                          <View style={[styles.capsuleRedDot, { borderColor: activeBg }]} />
+                        )}
+                      </View>
+                      <Text
+                        style={[styles.activeCapsuleLabel, { color: activeFg }]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                      >
+                        {config.label}
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={styles.inactiveCapsuleWrapper}>
+                      <View style={{ position: 'relative' }}>
+                        <IconComponent 
+                          color={inactiveFg} 
+                          size={20} 
+                          strokeWidth={2.0} 
+                        />
+                        {config.key === 'Prayer' && showPrayerBadge && (
+                          <View style={[styles.capsuleRedDot, { borderColor: isDark ? '#09090B' : '#FFFFFF' }]} />
+                        )}
+                      </View>
+                      <Text
+                        style={[styles.inactiveCapsuleLabel, { color: inactiveFg }]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                      >
+                        {config.label}
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      );
+    }
+
+    // 2. FLOATING PILL STYLE (Original floating capsule with labels, preserved untouched)
     return (
-      <View style={[styles.tabBarContainer, { backgroundColor: activeConfig.bg }]}>
+      <View style={[
+        styles.tabBarContainer, 
+        { 
+          backgroundColor: colors.tabBarBg,
+          borderColor: colors.tabBarBorder,
+          borderWidth: 1,
+          shadowColor: isDark ? '#000' : 'rgba(15, 23, 42, 0.15)',
+        }
+      ]}>
         {state.routes.map((route: any, index: number) => {
           const { options } = descriptors[route.key];
           const isFocused = state.index === index;
@@ -229,9 +351,9 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
               activeOpacity={0.9}
             >
               {isFocused ? (
-                <View style={styles.activeCircle}>
+                <View style={[styles.activeCircle, { backgroundColor: colors.tabBarActiveBg }]}>
                   <View>
-                    <IconComponent color={config.fg} size={20} strokeWidth={2.5} />
+                    <IconComponent color={colors.tabBarActiveFg} size={20} strokeWidth={2.5} />
                     {config.key === 'Prayer' && showPrayerBadge && (
                       <View style={styles.badgeActive}>
                         <Text style={styles.badgeText}>{unseenPrayers}</Text>
@@ -239,7 +361,7 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
                     )}
                   </View>
                   <Text 
-                    style={[styles.activeLabel, { color: config.fg }]}
+                    style={[styles.activeLabel, { color: colors.tabBarActiveFg }]}
                     numberOfLines={1}
                     adjustsFontSizeToFit
                   >
@@ -255,7 +377,7 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
                         { transform: [{ scale: pulseAnim }], opacity: pulseAnim.interpolate({ inputRange: [1, 1.5], outputRange: [0.8, 0] }) }
                       ]} />
                     )}
-                    <IconComponent color="rgba(255, 255, 255, 0.7)" size={22} strokeWidth={2} />
+                    <IconComponent color={colors.tabBarInactiveFg} size={22} strokeWidth={2} />
                     {config.key === 'Prayer' && showPrayerBadge && (
                       <View style={styles.badgeInactive}>
                         <Text style={styles.badgeText}>{unseenPrayers}</Text>
@@ -263,7 +385,7 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
                     )}
                   </View>
                   <Text 
-                    style={styles.inactiveLabel}
+                    style={[styles.inactiveLabel, { color: colors.tabBarInactiveFg }]}
                     numberOfLines={1}
                     adjustsFontSizeToFit
                   >
@@ -435,6 +557,7 @@ function TabNavigator() {
   const { user, signOut, member, viewMode, setViewMode } = useAuth();
   const { activeChurch } = useChurch();
   const { language, t } = useLanguage();
+  const { colors } = useTheme();
 
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
@@ -470,7 +593,7 @@ function TabNavigator() {
         id="main-tab-navigator"
         key={language}
         tabBar={(props) => <CustomTabBar key={language} {...props} />}
-        screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: '#FAF7F2' } }}
+        screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: colors.background } }}
       >
       <Tab.Screen 
         name="Home" 
@@ -711,7 +834,7 @@ function Navigation() {
 
   // Existing auth effect
   useEffect(() => {
-    const timer = setTimeout(() => setShowSplash(false), 2500);
+    const timer = setTimeout(() => setShowSplash(false), 3500);
     
     let unsub: any;
 
@@ -735,7 +858,7 @@ function Navigation() {
   }, [user]);
 
   if (showSplash || loading) {
-    return <SplashScreen />;
+    return <SplashScreen onFinish={() => setShowSplash(false)} />;
   }
 
   // ── Lock Screen View ──
@@ -827,6 +950,7 @@ function Navigation() {
             <Stack.Screen name="BibleSearch" component={renderPremium(BibleSearchScreen)} />
             <Stack.Screen name="MemberNotes" component={renderPremium(MemberNotesScreen)} />
             <Stack.Screen name="Members" component={renderPremium(MembersScreen)} />
+            <Stack.Screen name="Appearance" component={renderPremium(AppearanceScreen)} />
             <Stack.Screen name="AboutUs" component={AboutUsScreen} />
             <Stack.Screen name="ContactUs" component={ContactUsScreen} />
             <Stack.Screen name="Subscription" component={SubscriptionScreen} />
@@ -872,6 +996,75 @@ export default function RootNavigator() {
 }
 
 const styles = StyleSheet.create({
+  capsuleTabBarContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    borderTopWidth: 1,
+    elevation: 25,
+    zIndex: 9999,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: -2 },
+  },
+  capsuleTabsRow: {
+    flexDirection: 'row',
+    height: 60,
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    width: '100%',
+  },
+  capsuleTabItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 60,
+  },
+  activeCapsulePill: {
+    width: 58,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+  },
+  inactiveCapsuleWrapper: {
+    width: 58,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+  },
+  activeCapsuleLabel: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    marginTop: 2,
+    textAlign: 'center',
+    paddingHorizontal: 2,
+    letterSpacing: 0,
+  },
+  inactiveCapsuleLabel: {
+    fontSize: 10,
+    fontWeight: '500',
+    marginTop: 2.5,
+    textAlign: 'center',
+    paddingHorizontal: 2,
+    letterSpacing: 0,
+  },
+  capsuleRedDot: {
+    position: 'absolute',
+    top: -2,
+    right: -4,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#EF4444',
+    borderWidth: 1.5,
+  },
   tabBarContainer: {
     flexDirection: 'row',
     height: 65,

@@ -77,15 +77,16 @@ const PrayerForm = ({
   setIsPublic
 }: PrayerFormProps) => {
   const { t } = useLanguage();
+  const { colors } = useTheme();
 
   return (
-    <View style={styles.composeCard}>
-      <View style={styles.composeHeader}>
+    <View style={[styles.composeCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <View style={[styles.composeHeader, { backgroundColor: colors.accent }]}>
         <CheckCircle size={16} color="#fff" />
         <Text style={styles.composeHeaderText}>{t('prayer.submitPrayerRequestHeader')}</Text>
       </View>
       <View style={styles.composeBody}>
-        <Text style={styles.inputLabel}>{t('prayer.selectCategory')}</Text>
+        <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>{t('prayer.selectCategory')}</Text>
         <ScrollView 
           horizontal 
           showsHorizontalScrollIndicator={false} 
@@ -94,11 +95,11 @@ const PrayerForm = ({
           {categories.map((cat) => (
             <TouchableOpacity 
               key={cat.label}
-              style={[styles.catBtn, category === cat.label && styles.catBtnActive]}
+              style={[styles.catBtn, { backgroundColor: category === cat.label ? colors.accent : colors.background, borderColor: category === cat.label ? colors.accent : colors.border }]}
               onPress={() => setCategory(cat.label)}
             >
               <Text style={styles.catIcon}>{cat.icon}</Text>
-              <Text style={[styles.catLabel, category === cat.label && styles.catLabelActive]}>
+              <Text style={[styles.catLabel, { color: category === cat.label ? "#FFFFFF" : colors.textSecondary }]}>
                 {getPrayerCategoryLabel(cat.label, t)}
               </Text>
             </TouchableOpacity>
@@ -124,14 +125,14 @@ const PrayerForm = ({
             onPress={() => setIsPublic(!isPublic)}
             activeOpacity={0.7}
           >
-            <Text style={styles.toggleLabel}>{t('prayer.publicToggle')}</Text>
-            <View style={[styles.toggleSwitch, isPublic && styles.toggleSwitchActive]}>
+            <Text style={[styles.toggleLabel, { color: colors.text }]}>{t('prayer.publicToggle')}</Text>
+            <View style={[styles.toggleSwitch, isPublic && { backgroundColor: colors.accent }]}>
               <View style={[styles.toggleThumb, isPublic && styles.toggleThumbActive]} />
             </View>
           </TouchableOpacity>
 
           <TouchableOpacity 
-            style={[styles.submitBtn, isSubmitting && { opacity: 0.7 }]}
+            style={[styles.submitBtn, { backgroundColor: colors.accent }, isSubmitting && { opacity: 0.7 }]}
             onPress={handleSubmit}
             disabled={isSubmitting}
             activeOpacity={0.85}
@@ -387,27 +388,27 @@ export default function PrayerWallScreen({ navigation, route }: any) {
     // ── PUBLIC PRAYERS TAB ─────────────────────────────────
     if (isPublicTab) {
       return (
-        <View style={styles.prayerCard}>
+        <View style={[styles.prayerCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           {/* Header */}
           <View style={styles.cardHeader}>
             <View style={[styles.avatar, { backgroundColor: '#7c3aed' }]}>
               <Text style={styles.avatarText}>{initial}</Text>
             </View>
             <View style={styles.headerInfo}>
-              <Text style={styles.name}>{item.name}</Text>
-              <Text style={styles.metaText}>
+              <Text style={[styles.name, { color: colors.text }]}>{item.name}</Text>
+              <Text style={[styles.metaText, { color: colors.textSecondary }]}>
                 {getTimeAgo(item.createdAt)} · {getPrayerCategoryLabel(item.category, t) || 'General'}
               </Text>
             </View>
           </View>
 
           {/* Prayer Text */}
-          <Text style={styles.prayerText}>{item.text}</Text>
+          <Text style={[styles.prayerText, { color: colors.text }]}>{item.text}</Text>
 
           {/* Button Row: Pray btn + Chevron */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 }}>
             <TouchableOpacity
-              style={[styles.prayBtnSmall, hasPrayed && styles.prayBtnActive]}
+              style={[styles.prayBtnSmall, { backgroundColor: colors.accent }, hasPrayed && styles.prayBtnActive]}
               onPress={() => handlePray(item.id)}
               disabled={hasPrayed}
               activeOpacity={0.8}
@@ -419,7 +420,7 @@ export default function PrayerWallScreen({ navigation, route }: any) {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.chevronBtn}
+              style={[styles.chevronBtn, { backgroundColor: colors.background, borderColor: colors.border }]}
               onPress={toggleExpand}
               activeOpacity={0.7}
             >
@@ -545,48 +546,34 @@ export default function PrayerWallScreen({ navigation, route }: any) {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: '#FAF7F2' }]}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FAF7F2" />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={colors.barStyle} backgroundColor={colors.background} />
       
+            {/* ── Screen Header (Clean circular back button & title) ── */}
       <View
         style={[
-          styles.headerCardWrapper,
-          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 6 }
+          styles.headerRow,
+          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8 }
         ]}
       >
-        <LinearGradient 
-          colors={['#527C78', '#355B56']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.header}
+        <TouchableOpacity
+          style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          activeOpacity={0.8}
         >
-          <View style={styles.headerDecoCircle1} pointerEvents="none" />
-          <View style={styles.headerDecoCircle2} pointerEvents="none" />
+          <ArrowLeft size={20} color={colors.text} strokeWidth={2.4} />
+        </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => navigation.goBack()}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            activeOpacity={0.8}
-          >
-            <ArrowLeft size={20} color="#355B56" />
-          </TouchableOpacity>
-          
-          <View style={styles.headerCenterTitleWrap} pointerEvents="none">
-            <Text style={styles.headerTitle} numberOfLines={1} maxFontSizeMultiplier={1.15}>
-              {t('prayer.title')}
-            </Text>
-            <View style={styles.headerTitleAccentBar} />
-          </View>
-          
-          <View style={styles.headerRightIconBadge}>
-            <Heart size={18} color="#355B56" />
-          </View>
-        </LinearGradient>
+        <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
+          {t('prayer.title')}
+        </Text>
+
+        <View style={styles.headerRightSpacer} />
       </View>
 
       <FlatList
-        style={{ flex: 1, backgroundColor: '#FAF7F2' }}
+        style={{ flex: 1, backgroundColor: colors.background }}
         data={activeTab === 'my_requests' 
           ? prayers.filter(p => 
               p.contactId === member?.id || p.authorId === member?.id
@@ -599,18 +586,18 @@ export default function PrayerWallScreen({ navigation, route }: any) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1a2d5a" />}
         ListHeaderComponent={
           <View>
-            <View style={[styles.tabsContainer, { marginTop: 20 }]}>
+            <View style={[styles.tabsContainer, { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, marginTop: 20 }]}>
               <TouchableOpacity 
-                style={[styles.tabBtn, activeTab === 'my_requests' && styles.tabBtnActive]}
+                style={[styles.tabBtn, activeTab === 'my_requests' && { backgroundColor: colors.accent }]}
                 onPress={() => setActiveTab('my_requests')}
               >
-                <Text style={[styles.tabBtnText, activeTab === 'my_requests' && styles.tabBtnTextActive]}>{t('prayer.myPrayers')}</Text>
+                <Text style={[styles.tabBtnText, { color: activeTab === 'my_requests' ? '#FFFFFF' : colors.textSecondary }]}>{t('prayer.myPrayers')}</Text>
               </TouchableOpacity>
               <TouchableOpacity 
-                style={[styles.tabBtn, activeTab === 'public_requests' && styles.tabBtnActive]}
+                style={[styles.tabBtn, activeTab === 'public_requests' && { backgroundColor: colors.accent }]}
                 onPress={() => setActiveTab('public_requests')}
               >
-                <Text style={[styles.tabBtnText, activeTab === 'public_requests' && styles.tabBtnTextActive]}>{t('prayer.allPrayers')}</Text>
+                <Text style={[styles.tabBtnText, { color: activeTab === 'public_requests' ? '#FFFFFF' : colors.textSecondary }]}>{t('prayer.allPrayers')}</Text>
               </TouchableOpacity>
             </View>
             {activeTab === 'my_requests' && (
@@ -659,6 +646,36 @@ const styles = StyleSheet.create({
   loadingText: { color: '#1a2d5a', marginTop: 15, fontWeight: '600' },
 
   // Header
+    headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+  },
+  circularBackBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  headerTitleText: {
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+    textAlign: 'center',
+  },
+  headerRightSpacer: {
+    width: 44,
+    height: 44,
+  },
   headerCardWrapper: {
     paddingHorizontal: 16,
     paddingBottom: 4,

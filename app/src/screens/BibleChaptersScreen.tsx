@@ -23,7 +23,7 @@ const { width } = Dimensions.get('window');
 export default function BibleChaptersScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
   const { bookName, lang: paramLang, bookIndex: paramBookIndex } = route.params || {};
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   const { language, t } = useLanguage();
   const [readChapters, setReadChapters] = useState<Set<number>>(new Set());
 
@@ -61,49 +61,35 @@ export default function BibleChaptersScreen({ route, navigation }: any) {
   );
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2' }]}>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#0f172a' : '#FAF7F2'} />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={colors.barStyle} backgroundColor={colors.background} />
       
       {/* Header */}
+            {/* ── Screen Header (Clean circular back button & title) ── */}
       <View
         style={[
-          styles.headerCardWrapper,
-          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 6 }
+          styles.headerRow,
+          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8 }
         ]}
       >
-        <LinearGradient 
-          colors={['#527C78', '#355B56']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.header}
+        <TouchableOpacity
+          style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          activeOpacity={0.8}
         >
-          <View style={styles.headerDecoCircle1} pointerEvents="none" />
-          <View style={styles.headerDecoCircle2} pointerEvents="none" />
+          <ArrowLeft size={20} color={colors.text} strokeWidth={2.4} />
+        </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => navigation.goBack()}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            activeOpacity={0.8}
-          >
-            <ArrowLeft color="#355B56" size={20} />
-          </TouchableOpacity>
-          
-          <View style={styles.headerCenterTitleWrap} pointerEvents="none">
-            <Text style={styles.headerTitle} numberOfLines={1} maxFontSizeMultiplier={1.15}>
-              {displayBookName}
-            </Text>
-            <View style={styles.headerTitleAccentBar} />
-          </View>
+        <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
+          {displayBookName}
+        </Text>
 
-          <View style={styles.headerRightIconBadge}>
-            <BookOpen size={18} color="#355B56" />
-          </View>
-        </LinearGradient>
+        <View style={styles.headerRightSpacer} />
       </View>
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-        <Text style={[styles.secTitle, { color: isDark ? '#fff' : '#1a2d5a' }]}>
+        <Text style={[styles.secTitle, { color: colors.text }]}>
           {t('bible.chapters')}
         </Text>
         <View style={styles.grid}>
@@ -114,7 +100,7 @@ export default function BibleChaptersScreen({ route, navigation }: any) {
                 key={chapter} 
                 style={[
                   styles.chapterBox, 
-                  { backgroundColor: isDark ? '#1e293b' : '#fff' },
+                  { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 },
                   isRead && { backgroundColor: isDark ? '#064e3b' : '#d1fae5', borderColor: '#10b981', borderWidth: 1 }
                 ]}
                 onPress={() => navigation.navigate('BibleReader', { 
@@ -144,6 +130,36 @@ export default function BibleChaptersScreen({ route, navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+    headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+  },
+  circularBackBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  headerTitleText: {
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+    textAlign: 'center',
+  },
+  headerRightSpacer: {
+    width: 44,
+    height: 44,
+  },
   headerCardWrapper: {
     paddingHorizontal: 16,
     paddingBottom: 4,

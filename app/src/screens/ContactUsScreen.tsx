@@ -19,6 +19,7 @@ import Svg, { Path, Rect, Circle } from 'react-native-svg';
 import firestore from '@react-native-firebase/firestore';
 import firestoreService from '../services/FirestoreService';
 import { useLanguage } from '../context/LanguageContext';
+import { useTheme } from '../context/ThemeContext';
 
 interface ContactData {
   churchName: string;
@@ -78,6 +79,7 @@ const WhatsappIcon = ({ size = 26 }: { size?: number }) => (
 
 export default function ContactUsScreen() {
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
   const navigation = useNavigation();
   const { t } = useLanguage();
   const [data, setData] = useState<ContactData>(DEFAULT);
@@ -149,41 +151,27 @@ export default function ContactUsScreen() {
     <View style={styles.safe}>
       <StatusBar barStyle="dark-content" backgroundColor="#FAF7F2" />
       {/* Hero Header Card */}
+            {/* ── Screen Header (Clean circular back button & title) ── */}
       <View
         style={[
-          styles.headerCardWrapper,
-          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 6 }
+          styles.headerRow,
+          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8 }
         ]}
       >
-        <LinearGradient 
-          colors={['#527C78', '#355B56']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.header}
+        <TouchableOpacity
+          style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          activeOpacity={0.8}
         >
-          <View style={styles.headerDecoCircle1} pointerEvents="none" />
-          <View style={styles.headerDecoCircle2} pointerEvents="none" />
+          <ArrowLeft size={20} color={colors.text} strokeWidth={2.4} />
+        </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => navigation.goBack()}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            activeOpacity={0.8}
-          >
-            <ArrowLeft size={20} color="#355B56" />
-          </TouchableOpacity>
-          
-          <View style={styles.headerCenterTitleWrap} pointerEvents="none">
-            <Text style={styles.headerTitle} numberOfLines={1} maxFontSizeMultiplier={1.15}>
-              {t('contactUs.title')}
-            </Text>
-            <View style={styles.headerTitleAccentBar} />
-          </View>
+        <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
+          {t('contactUs.title')}
+        </Text>
 
-          <View style={styles.headerRightIconBadge}>
-            <Phone size={18} color="#355B56" />
-          </View>
-        </LinearGradient>
+        <View style={styles.headerRightSpacer} />
       </View>
 
       {loading ? (
@@ -314,6 +302,36 @@ export default function ContactUsScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#FAF7F2' },
+    headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+  },
+  circularBackBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  headerTitleText: {
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+    textAlign: 'center',
+  },
+  headerRightSpacer: {
+    width: 44,
+    height: 44,
+  },
   headerCardWrapper: {
     paddingHorizontal: 16,
     paddingBottom: 4,

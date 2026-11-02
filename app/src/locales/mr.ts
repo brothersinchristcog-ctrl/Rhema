@@ -378,6 +378,7 @@ export const mr: TranslationSchema = {
     contactUs: 'आमच्याशी संपर्क साधा',
     personalInfo: 'वैयक्तिक माहिती',
     editProfile: 'प्रोफाईल संपादित करा',
+    uploadPhoto: 'फोटो निवडा',
     changePhoto: 'फोटो बदला',
     removePhoto: 'फोटो हटवा',
     firstName: 'पहिले नाव',

@@ -42,7 +42,7 @@ const HighlightText = ({ text, highlight, style, highlightStyle }: any) => {
 export default function BibleSearchScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
   const { initialQuery, initialLang } = route.params || {};
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   const { language, t } = useLanguage();
   
   const activeLang = initialLang || language;
@@ -307,68 +307,55 @@ export default function BibleSearchScreen({ route, navigation }: any) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2' }]}>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#0f172a' : '#FAF7F2'} />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar 
+        barStyle={colors.barStyle || (isDark ? 'light-content' : 'dark-content')} 
+        backgroundColor={colors.background} 
+      />
       
-      {/* Header */}
+      {/* ── Screen Header (Clean circular back button & title) ── */}
       <View
         style={[
-          styles.headerCardWrapper,
-          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 6 }
+          styles.headerRow,
+          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8 }
         ]}
       >
-        <LinearGradient 
-          colors={['#527C78', '#355B56']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.header}
+        <TouchableOpacity
+          style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          activeOpacity={0.8}
         >
-          <View style={styles.headerDecoCircle1} pointerEvents="none" />
-          <View style={styles.headerDecoCircle2} pointerEvents="none" />
+          <ArrowLeft size={20} color={colors.text} strokeWidth={2.4} />
+        </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => {
-              if (hasSearched) {
-                setHasSearched(false);
-                setResults([]);
-                setQuery('');
-                setSuggestions([]);
-              } else if (navigation.canGoBack()) {
-                navigation.goBack();
-              } else {
-                navigation.navigate('Bible');
-              }
-            }}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            activeOpacity={0.8}
-          >
-            <ArrowLeft color="#355B56" size={20} />
-          </TouchableOpacity>
-          
-          <View style={styles.headerCenterTitleWrap} pointerEvents="none">
-            <Text style={styles.headerTitle} numberOfLines={1} maxFontSizeMultiplier={1.15}>
-              {t('bible.verseSearch')}
-            </Text>
-            <View style={styles.headerTitleAccentBar} />
-          </View>
+        <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
+          {t('bible.verseSearch')}
+        </Text>
 
-          <View style={styles.headerRightIconBadge}>
-            <Search size={18} color="#355B56" />
-          </View>
-        </LinearGradient>
+        <View style={styles.headerRightSpacer} />
       </View>
 
       {/* Search Input */}
       <View style={{ marginHorizontal: 20, zIndex: 100 }}>
-        <View style={[styles.searchContainer, { backgroundColor: isDark ? '#1e293b' : '#fff', marginHorizontal: 0, marginTop: 16, marginBottom: 0 }]}>
+        <View style={[
+          styles.searchContainer, 
+          { 
+            backgroundColor: colors.surface, 
+            borderColor: colors.border,
+            borderWidth: 1,
+            marginHorizontal: 0, 
+            marginTop: 16, 
+            marginBottom: 0 
+          }
+        ]}>
           <TouchableOpacity onPress={() => performSearch(query)} style={{ padding: 4, flexShrink: 0 }}>
-            <Search size={20} color={isDark ? '#94a3b8' : '#64748b'} />
+            <Search size={20} color={colors.textSecondary} />
           </TouchableOpacity>
           <TextInput
-            style={[styles.searchInput, { color: isDark ? '#fff' : '#0f172a' }]}
+            style={[styles.searchInput, { color: colors.text }]}
             placeholder={t('bible.searchPlaceholder')}
-            placeholderTextColor={isDark ? '#64748b' : '#94a3b8'}
+            placeholderTextColor={colors.textSecondary}
             value={query}
             onChangeText={setQuery}
             onSubmitEditing={() => performSearch(query)}
@@ -377,26 +364,26 @@ export default function BibleSearchScreen({ route, navigation }: any) {
           />
           {query.length > 0 && (
             <TouchableOpacity onPress={() => { setQuery(''); setResults([]); setSuggestions([]); setHasSearched(false); }} style={{ padding: 8, flexShrink: 0 }}>
-              <X size={18} color={isDark ? '#64748b' : '#94a3b8'} />
+              <X size={18} color={colors.textSecondary} />
             </TouchableOpacity>
           )}
         </View>
 
         {/* Dropdown Suggestions */}
         {!hasSearched && suggestions.length > 0 && (
-          <View style={[styles.suggestionDropdown, { backgroundColor: isDark ? '#1e293b' : '#fff' }]}>
+          <View style={[styles.suggestionDropdown, { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 }]}>
             {suggestions.slice(0, 6).map((sugg, idx) => (
               <TouchableOpacity
                 key={idx}
                 style={[
                   styles.suggestionItem,
-                  { borderBottomColor: isDark ? '#334155' : '#FAF7F2' },
+                  { borderBottomColor: colors.border },
                   idx === suggestions.slice(0, 6).length - 1 && { borderBottomWidth: 0 }
                 ]}
                 onPress={() => { setQuery(sugg); performSearch(sugg); setSuggestions([]); }}
               >
-                <Search size={14} color={isDark ? '#64748b' : '#64748b'} style={{ marginRight: 10 }} />
-                <Text style={[styles.suggestionItemTxt, { color: isDark ? '#f1f5f9' : '#0f172a' }]}>{sugg}</Text>
+                <Search size={14} color={colors.textSecondary} style={{ marginRight: 10 }} />
+                <Text style={[styles.suggestionItemTxt, { color: colors.text }]}>{sugg}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -408,61 +395,77 @@ export default function BibleSearchScreen({ route, navigation }: any) {
         <TouchableOpacity
           style={[
             styles.filterBtn,
-            { backgroundColor: filterTestament !== 'All' ? '#1a2d5a' : (isDark ? '#1e293b' : '#fff') }
+            { 
+              backgroundColor: filterTestament !== 'All' ? colors.accent : colors.surface,
+              borderColor: filterTestament !== 'All' ? colors.accent : colors.border,
+              borderWidth: 1,
+            }
           ]}
           onPress={() => { setModalType('Testament'); setModalVisible(true); }}
         >
-          <Text style={[styles.filterBtnTxt, { color: filterTestament !== 'All' ? '#fff' : (isDark ? '#94a3b8' : '#64748b') }]}>
+          <Text style={[styles.filterBtnTxt, { color: filterTestament !== 'All' ? '#fff' : colors.textSecondary }]}>
             {filterTestament === 'All' ? 'Testament' : filterTestament === 'Old' ? '📖 Old' : '✝️ New'}
           </Text>
-          <ChevronDown size={12} color={filterTestament !== 'All' ? '#fff' : (isDark ? '#94a3b8' : '#64748b')} />
+          <ChevronDown size={12} color={filterTestament !== 'All' ? '#fff' : colors.textSecondary} />
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[
             styles.filterBtn,
-            { backgroundColor: filterBook !== null ? '#1a2d5a' : (isDark ? '#1e293b' : '#fff') }
+            { 
+              backgroundColor: filterBook !== null ? colors.accent : colors.surface,
+              borderColor: filterBook !== null ? colors.accent : colors.border,
+              borderWidth: 1,
+            }
           ]}
           onPress={() => { setModalType('Book'); setModalVisible(true); }}
         >
-          <Text style={[styles.filterBtnTxt, { color: filterBook !== null ? '#fff' : (isDark ? '#94a3b8' : '#64748b') }]} numberOfLines={1}>
+          <Text style={[styles.filterBtnTxt, { color: filterBook !== null ? '#fff' : colors.textSecondary }]} numberOfLines={1}>
             {filterBook !== null ? BibleService.getBookName(filterBook, activeLang) : 'Book'}
           </Text>
-          <ChevronDown size={12} color={filterBook !== null ? '#fff' : (isDark ? '#94a3b8' : '#64748b')} />
+          <ChevronDown size={12} color={filterBook !== null ? '#fff' : colors.textSecondary} />
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[
             styles.filterBtn,
-            { backgroundColor: filterChapter !== null ? '#1a2d5a' : (isDark ? '#1e293b' : '#fff') }
+            { 
+              backgroundColor: filterChapter !== null ? colors.accent : colors.surface,
+              borderColor: filterChapter !== null ? colors.accent : colors.border,
+              borderWidth: 1,
+            }
           ]}
           onPress={() => { setModalType('Chapter'); setModalVisible(true); }}
         >
-          <Text style={[styles.filterBtnTxt, { color: filterChapter !== null ? '#fff' : (isDark ? '#94a3b8' : '#64748b') }]}>
+          <Text style={[styles.filterBtnTxt, { color: filterChapter !== null ? '#fff' : colors.textSecondary }]}>
             {filterChapter !== null ? `Ch ${filterChapter}` : 'Chapter'}
           </Text>
-          <ChevronDown size={12} color={filterChapter !== null ? '#fff' : (isDark ? '#94a3b8' : '#64748b')} />
+          <ChevronDown size={12} color={filterChapter !== null ? '#fff' : colors.textSecondary} />
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[
             styles.filterBtn,
-            { backgroundColor: filterVerse !== null ? '#1a2d5a' : (isDark ? '#1e293b' : '#fff') }
+            { 
+              backgroundColor: filterVerse !== null ? colors.accent : colors.surface,
+              borderColor: filterVerse !== null ? colors.accent : colors.border,
+              borderWidth: 1,
+            }
           ]}
           onPress={() => { setModalType('Verse'); setModalVisible(true); }}
         >
-          <Text style={[styles.filterBtnTxt, { color: filterVerse !== null ? '#fff' : (isDark ? '#94a3b8' : '#64748b') }]}>
+          <Text style={[styles.filterBtnTxt, { color: filterVerse !== null ? '#fff' : colors.textSecondary }]}>
             {filterVerse !== null ? `V ${filterVerse}` : 'Verse'}
           </Text>
-          <ChevronDown size={12} color={filterVerse !== null ? '#fff' : (isDark ? '#94a3b8' : '#64748b')} />
+          <ChevronDown size={12} color={filterVerse !== null ? '#fff' : colors.textSecondary} />
         </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         {loading ? (
           <View style={styles.centerContainer}>
-            <ActivityIndicator size="large" color="#1a2d5a" />
-            <Text style={[styles.loadingText, { color: isDark ? '#94a3b8' : '#64748b' }]}>
+            <ActivityIndicator size="large" color={colors.accent || (isDark ? '#38BDF8' : '#0F766E')} />
+            <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
               {t('bible.readNow')}...
             </Text>
           </View>
@@ -473,12 +476,12 @@ export default function BibleSearchScreen({ route, navigation }: any) {
         ) : results.length > 0 ? (
           <View style={styles.resultsList}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <Text style={[styles.resultsCount, { color: isDark ? '#94a3b8' : '#64748b', marginBottom: 0 }]}>
+              <Text style={[styles.resultsCount, { color: colors.textSecondary, marginBottom: 0 }]}>
                 Found {results.length} results
               </Text>
               {(filterTestament !== 'All' || filterBook !== null || filterChapter !== null || filterVerse !== null) && (
                 <TouchableOpacity
-                  style={{ backgroundColor: '#1a2d5a', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 }}
+                  style={{ backgroundColor: colors.accent || (isDark ? '#38BDF8' : '#0F766E'), paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 }}
                   onPress={() => {
                     setFilterTestament('All');
                     setFilterBook(null);
@@ -500,9 +503,9 @@ export default function BibleSearchScreen({ route, navigation }: any) {
                   style={[
                     styles.resultCard, 
                     { 
-                      backgroundColor: isDark ? '#1e293b' : '#fff',
-                      borderWidth: isSelected ? 2 : 0, 
-                      borderColor: isSelected ? '#1a2d5a' : 'transparent' 
+                      backgroundColor: colors.surface,
+                      borderWidth: 1, 
+                      borderColor: isSelected ? (colors.accent || '#38BDF8') : colors.border 
                     }
                   ]}
                   onPress={() => handleVerseClick(item)}
@@ -514,11 +517,11 @@ export default function BibleSearchScreen({ route, navigation }: any) {
                     onPress={() => toggleVerseSelection(item.id)}
                   >
                     {isSelected
-                      ? <CheckSquare size={20} color="#1a2d5a" />
-                      : <Square size={20} color="#cbd5e1" />}
+                      ? <CheckSquare size={20} color={colors.accent || (isDark ? '#38BDF8' : '#0F766E')} />
+                      : <Square size={20} color={colors.border} />}
                   </TouchableOpacity>
                   
-                  <View style={styles.referenceBadge}>
+                  <View style={[styles.referenceBadge, { backgroundColor: colors.accent || (isDark ? '#38BDF8' : '#0F766E') }]}>
                     <BookOpen size={14} color="#fff" style={{ marginRight: 6 }} />
                     <Text style={styles.referenceText}>
                       {item.book} {item.chapter}:{item.verse}
@@ -530,8 +533,12 @@ export default function BibleSearchScreen({ route, navigation }: any) {
                     <HighlightText 
                       text={item.text}
                       highlight={item.highlight}
-                      style={[styles.verseTextEn, { color: isDark ? '#e2e8f0' : '#1e293b' }]}
-                      highlightStyle={{ backgroundColor: 'rgba(250, 204, 21, 0.4)', color: isDark ? '#fde047' : '#854d0e', fontWeight: 'bold' }}
+                      style={[styles.verseTextEn, { color: colors.text }]}
+                      highlightStyle={{ 
+                        backgroundColor: isDark ? 'rgba(250, 204, 21, 0.25)' : 'rgba(250, 204, 21, 0.4)', 
+                        color: isDark ? '#fde047' : '#854d0e', 
+                        fontWeight: 'bold' 
+                      }}
                     />
                   ) : null}
                 </TouchableOpacity>
@@ -540,7 +547,7 @@ export default function BibleSearchScreen({ route, navigation }: any) {
           </View>
         ) : query.length > 0 && !loading ? (
           <View style={styles.centerContainer}>
-            <Text style={[styles.noResultsText, { color: isDark ? '#94a3b8' : '#64748b' }]}>
+            <Text style={[styles.noResultsText, { color: colors.textSecondary }]}>
               {t('bible.noBooksFound')}
             </Text>
           </View>
@@ -550,7 +557,14 @@ export default function BibleSearchScreen({ route, navigation }: any) {
 
       {/* Floating Save to Notes Bar */}
       {selectedVerses.size > 0 && (
-        <View style={styles.saveNotesBar}>
+        <View style={[
+          styles.saveNotesBar, 
+          { 
+            backgroundColor: isDark ? '#18181B' : (colors.accent || '#0F766E'),
+            borderWidth: isDark ? 1 : 0,
+            borderColor: colors.border
+          }
+        ]}>
           <View style={{ flex: 1 }}>
             <Text style={styles.saveNotesCount}>{selectedVerses.size} verse{selectedVerses.size > 1 ? 's' : ''} selected</Text>
             <Text style={styles.saveNotesHint}>Tap to save to Sermon Notes</Text>
@@ -570,11 +584,11 @@ export default function BibleSearchScreen({ route, navigation }: any) {
         onRequestClose={() => setModalVisible(false)}
       >
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setModalVisible(false)}>
-          <View style={[styles.modalContent, { backgroundColor: isDark ? '#1e293b' : '#fff' }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: isDark ? '#fff' : '#0f172a' }]}>Select {modalType}</Text>
+          <View style={[styles.modalContent, { backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Select {modalType}</Text>
               <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.closeBtn}>
-                <X size={24} color={isDark ? '#94a3b8' : '#64748b'} />
+                <X size={24} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
             <FlatList
@@ -582,10 +596,10 @@ export default function BibleSearchScreen({ route, navigation }: any) {
               keyExtractor={(_, index) => index.toString()}
               renderItem={({ item }) => (
                 <TouchableOpacity
-                  style={[styles.modalItem, { borderBottomColor: isDark ? '#334155' : '#FAF7F2' }]}
+                  style={[styles.modalItem, { borderBottomColor: colors.border }]}
                   onPress={() => handleSelectFilter(item.value)}
                 >
-                  <Text style={[styles.modalItemTxt, { color: isDark ? '#f8fafc' : '#1e293b' }]}>
+                  <Text style={[styles.modalItemTxt, { color: colors.text }]}>
                     {item.label}
                   </Text>
                 </TouchableOpacity>
@@ -600,6 +614,36 @@ export default function BibleSearchScreen({ route, navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+    headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+  },
+  circularBackBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  headerTitleText: {
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+    textAlign: 'center',
+  },
+  headerRightSpacer: {
+    width: 44,
+    height: 44,
+  },
   headerCardWrapper: {
     paddingHorizontal: 16,
     paddingBottom: 4,
@@ -785,7 +829,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: '#1a2d5a',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
@@ -807,7 +850,6 @@ const styles = StyleSheet.create({
     bottom: 20,
     left: 20,
     right: 20,
-    backgroundColor: '#1a2d5a',
     borderRadius: 20,
     paddingHorizontal: 20,
     paddingVertical: 14,

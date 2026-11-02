@@ -378,6 +378,7 @@ export const ml: TranslationSchema = {
     contactUs: 'ഞങ്ങളുമായി ബന്ധപ്പെടുക',
     personalInfo: 'വ്യക്തിഗത വിവരങ്ങൾ',
     editProfile: 'പ്രൊഫൈൽ തിരുത്തുക',
+    uploadPhoto: 'ഫോട്ടോ തിരഞ്ഞെടുക്കുക',
     changePhoto: 'ഫോട്ടോ മാറ്റുക',
     removePhoto: 'ഫോട്ടോ ഒഴിവാക്കുക',
     firstName: 'ആദ്യ പേര്',
