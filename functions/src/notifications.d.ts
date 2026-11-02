@@ -153,9 +153,23 @@ export declare const sendDailyVersePushScheduled: import("firebase-functions/v2/
  * 1. Multicast to registered member tokens (Rhema members & users)
  * 2. Topic broadcast to 'church_rhema' for 100% member delivery
  */
-export declare function sendDailyVersePushInternal(slotOverride?: string, targetChurchId?: string): Promise<{
+export declare function sendDailyVersePushInternal(slotOverride?: string, targetChurchId?: string, force?: boolean): Promise<{
+    success: boolean;
+    message: string;
+    skipped: boolean;
+    error?: never;
+    slot?: never;
+    targetIndex?: never;
+    verseReferenceEn?: never;
+    verseReferenceTe?: never;
+    totalTokens?: never;
+    sentEnCount?: never;
+    sentTeCount?: never;
+} | {
     success: boolean;
     error: string;
+    message?: never;
+    skipped?: never;
     slot?: never;
     targetIndex?: never;
     verseReferenceEn?: never;
@@ -172,6 +186,8 @@ export declare function sendDailyVersePushInternal(slotOverride?: string, target
     totalTokens: number;
     sentEnCount: number;
     sentTeCount: number;
+    message?: never;
+    skipped?: never;
     error?: never;
 }>;
 /**

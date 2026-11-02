@@ -1802,7 +1802,7 @@ export const sendDailyVersePushScheduled = onSchedule({
  * 1. Multicast to registered member tokens (Rhema members & users)
  * 2. Topic broadcast to 'church_rhema' for 100% member delivery
  */
-export async function sendDailyVersePushInternal(slotOverride?: string, targetChurchId: string = 'rhema') {
+export async function sendDailyVersePushInternal(slotOverride?: string, targetChurchId: string = 'rhema', force: boolean = false) {
   if (getApps().length === 0) {
     initializeApp();
   }
@@ -1817,9 +1817,9 @@ export async function sendDailyVersePushInternal(slotOverride?: string, targetCh
     Night: { index: 3, titleEn: '✝️ Good Night', titleTe: '✝️ శుభరాత్రి' },
   };
 
+  const nowIst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
   let slot = slotOverride;
   if (!slot || !PERIOD_SLOTS[slot]) {
-    const nowIst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
     const hour = nowIst.getHours();
     if (hour >= 5 && hour < 12) {
       slot = 'Morning';
@@ -1833,7 +1833,48 @@ export async function sendDailyVersePushInternal(slotOverride?: string, targetCh
   }
 
   const slotInfo = PERIOD_SLOTS[slot] || PERIOD_SLOTS.Morning!;
-  console.log(`[sendDailyVersePushInternal] Running for slot: ${slot} (slot index: ${slotInfo.index})`);
+  const todayStr = `${nowIst.getFullYear()}-${String(nowIst.getMonth() + 1).padStart(2, '0')}-${String(nowIst.getDate()).padStart(2, '0')}`;
+  const slotLockKey = `${todayStr}_${slot}`;
+  console.log(`[sendDailyVersePushInternal] Running for slot: ${slot} (slot index: ${slotInfo.index}, lock key: ${slotLockKey})`);
+
+  // ── ATOMIC DISTRIBUTED IDEMPOTENCY LOCK ──────────────────────────────
+  // Prevents duplicate deliveries when Google Cloud Scheduler retries,
+  // or multiple schedulers/endpoints fire concurrently within the same slot.
+  if (!force) {
+    const lockRef = db.collection('Rhema Church').doc(targetChurchId).collection('settings').doc('daily_verse_lock');
+    let lockAcquired = false;
+
+    try {
+      lockAcquired = await db.runTransaction(async (transaction) => {
+        const lockSnap = await transaction.get(lockRef);
+        if (lockSnap.exists) {
+          const lockData = lockSnap.data() || {};
+          if (lockData.lastSlotKey === slotLockKey) {
+            console.log(`🔒 [DailyVerse] Slot '${slotLockKey}' was already dispatched at ${lockData.dispatchedAt ? new Date(lockData.dispatchedAt.toMillis?.() || lockData.dispatchedAt).toISOString() : 'earlier'}. Skipping duplicate.`);
+            return false;
+          }
+        }
+
+        transaction.set(lockRef, {
+          lastSlotKey: slotLockKey,
+          slot: slot,
+          date: todayStr,
+          dispatchedAt: FieldValue.serverTimestamp(),
+          targetChurchId: targetChurchId,
+        }, { merge: true });
+        return true;
+      });
+    } catch (txErr) {
+      console.warn('[DailyVerse] Transaction lock acquisition failed/contended:', txErr);
+      return { success: true, message: `Concurrency contention for slot ${slotLockKey}, skipping duplicate delivery.`, skipped: true };
+    }
+
+    if (!lockAcquired) {
+      return { success: true, message: `Daily verse already dispatched for slot ${slotLockKey}. Skipped duplicate.`, skipped: true };
+    }
+
+    console.log(`🔑 [DailyVerse] Lock acquired for slot ${slotLockKey}. Dispatching notification...`);
+  }
 
   // 2. Compute today's verse index
   let totalVerses = 5863;
@@ -1845,7 +1886,6 @@ export async function sendDailyVersePushInternal(slotOverride?: string, targetCh
   } catch (_) {}
 
   const EPOCH = new Date('2026-10-30T00:00:00Z');
-  const nowIst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
   const todayLocal = new Date(nowIst.getFullYear(), nowIst.getMonth(), nowIst.getDate());
   const epochDate = new Date(EPOCH.getFullYear(), EPOCH.getMonth(), EPOCH.getDate());
   const daysSinceEpoch = Math.floor((todayLocal.getTime() - epochDate.getTime()) / (1000 * 60 * 60 * 24));
@@ -2022,7 +2062,6 @@ export async function sendDailyVersePushInternal(slotOverride?: string, targetCh
   }
 
   // 5. Log to broadcasts feed for historical viewing in Updates screen
-  const todayStr = `${nowIst.getFullYear()}-${String(nowIst.getMonth() + 1).padStart(2, '0')}-${String(nowIst.getDate()).padStart(2, '0')}`;
   try {
     const rhemaChurchRef = db.collection('Rhema Church').doc('rhema');
     await rhemaChurchRef.collection('broadcasts').add({
@@ -2057,7 +2096,8 @@ export async function sendDailyVersePushInternal(slotOverride?: string, targetCh
 export const triggerDailyVersePushHttp = onRequest({ cors: true, timeoutSeconds: 120, region: 'asia-south1' }, async (req, res) => {
   try {
     const slot = (req.query.slot as string) || req.body?.slot;
-    const result = await sendDailyVersePushInternal(slot);
+    const force = req.query.force === 'true' || req.body?.force === true;
+    const result = await sendDailyVersePushInternal(slot, 'rhema', force);
     res.status(200).json(result);
   } catch (error: any) {
     console.error('triggerDailyVersePushHttp error:', error);
