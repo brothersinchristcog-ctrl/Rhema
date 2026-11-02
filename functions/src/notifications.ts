@@ -1613,7 +1613,12 @@ export async function sendDailyVersePushInternal(slotOverride?: string, targetCh
   // 4. Send EXACTLY ONE Unified Notification to the Church Topic (church_rhema)
   // Using Android 'tag' and 'collapseKey' guarantees that Android OS displays EXACTLY ONE banner.
   const unifiedTitle = `${slotInfo.titleEn} · ${slotInfo.titleTe}`;
-  const unifiedBody = verseTeText ? `"${verseTeText}"\n— ${refTeText}` : `"${verseEnText}"\n— ${refEnText}`;
+  let unifiedBody = '';
+  if (verseTeText && verseEnText && verseTeText !== verseEnText) {
+    unifiedBody = `"${verseTeText}"\n— ${refTeText}\n\n"${verseEnText}"\n— ${refEnText}`;
+  } else {
+    unifiedBody = `"${verseTeText || verseEnText}"\n— ${refTeText || refEnText}`;
+  }
 
   try {
     const topicMessage = {
