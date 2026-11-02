@@ -156,7 +156,7 @@ const GIVING_WORDS = [
 export default function GivingScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { isDark, toggleTheme } = useTheme();
+  const {  isDark, toggleTheme , colors } = useTheme();
   const { activeChurch } = useChurch();
   const { t, language } = useLanguage();
   const amountInputRef = useRef<TextInput>(null);
@@ -497,46 +497,34 @@ export default function GivingScreen({ navigation }: any) {
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor="transparent" translucent={true} />
 
       {/* ── Top Floating Header Card ── */}
+            {/* ── Screen Header (Clean circular back button & title) ── */}
       <View
         style={[
-          styles.headerCardWrapper,
-          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 6 }
+          styles.headerRow,
+          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8 }
         ]}
       >
-        <LinearGradient 
-          colors={['#527C78', '#355B56']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.topHeaderCard}
+        <TouchableOpacity
+          style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          activeOpacity={0.8}
         >
-          <View style={styles.headerDecoCircle1} pointerEvents="none" />
-          <View style={styles.headerDecoCircle2} pointerEvents="none" />
+          <ArrowLeft size={20} color={colors.text} strokeWidth={2.4} />
+        </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => navigation.goBack()}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            activeOpacity={0.8}
-          >
-            <ArrowLeft size={20} color="#355B56" />
-          </TouchableOpacity>
+        <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
+          {t('nav.give') || 'Give'}
+        </Text>
 
-          <View style={styles.headerCenterTitleWrap} pointerEvents="none">
-            <Text style={styles.topHeaderTitle} numberOfLines={1} maxFontSizeMultiplier={1.15}>
-              {t('nav.give') || 'Give'}
-            </Text>
-            <View style={styles.headerTitleAccentBar} />
-          </View>
-
-          <TouchableOpacity 
-            style={styles.backBtn} 
-            onPress={() => navigation.navigate('GivingHistory')}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            activeOpacity={0.8}
-          >
-            <Clock size={18} color="#355B56" />
-          </TouchableOpacity>
-        </LinearGradient>
+        <TouchableOpacity 
+          style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          onPress={() => navigation.navigate('GivingHistory')}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          activeOpacity={0.8}
+        >
+          <Clock size={18} color={colors.text} />
+        </TouchableOpacity>
       </View>
       
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
@@ -922,6 +910,36 @@ export default function GivingScreen({ navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+    headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+  },
+  circularBackBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  headerTitleText: {
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+    textAlign: 'center',
+  },
+  headerRightSpacer: {
+    width: 44,
+    height: 44,
+  },
   headerCardWrapper: {
     paddingHorizontal: 16,
     paddingBottom: 4,

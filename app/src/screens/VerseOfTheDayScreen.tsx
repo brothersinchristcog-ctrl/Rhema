@@ -407,63 +407,37 @@ export default function VerseOfTheDayScreen() {
   }
 
   return (
-    <View style={[styles.screenContainer, { backgroundColor: '#FAF7F2' }]}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FAF7F2" />
+    <View style={[styles.screenContainer, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={colors.barStyle || (isDark ? 'light-content' : 'dark-content')} backgroundColor={colors.background} />
 
       {/* ── Page Header ── */}
+            {/* ── Screen Header (Clean circular back button & title) ── */}
       <View
         style={[
-          styles.headerCardWrapper,
-          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 6 }
+          styles.headerRow,
+          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8 }
         ]}
       >
-        <LinearGradient 
-          colors={['#527C78', '#355B56']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.header}
+        <TouchableOpacity
+          style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          activeOpacity={0.8}
         >
-          <View style={styles.headerDecoCircle1} pointerEvents="none" />
-          <View style={styles.headerDecoCircle2} pointerEvents="none" />
+          <ArrowLeft size={20} color={colors.text} strokeWidth={2.4} />
+        </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={styles.backBtn} 
-            onPress={() => {
-              if (navigation.canGoBack()) {
-                navigation.goBack();
-              } else {
-                navigation.navigate('Home');
-              }
-            }} 
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            activeOpacity={0.8}
-          >
-            <ArrowLeft size={20} color="#355B56" />
-          </TouchableOpacity>
-          
-          <View style={styles.headerCenterTitleWrap} pointerEvents="none">
-            <Text style={styles.headerTitle} numberOfLines={1} maxFontSizeMultiplier={1.15}>
-              {t('nav.dailyVerse')}
-            </Text>
-            <View style={styles.headerTitleAccentBar} />
-          </View>
-          
-          <TouchableOpacity 
-            onPress={() => setShowTelugu(!showTelugu)} 
-            style={styles.themeToggle}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            activeOpacity={0.8}
-          >
-            <Repeat size={13} color="#355B56" style={{ marginRight: 5 }} />
-            <Text style={styles.themeToggleText}>{showTelugu ? 'English' : (language === 'te' ? 'Telugu' : (languages.find(l => l.code === language)?.nativeName || 'Regional'))}</Text>
-          </TouchableOpacity>
-        </LinearGradient>
+        <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
+          {t('nav.dailyVerse')}
+        </Text>
+
+        <View style={styles.headerRightSpacer} />
       </View>
 
       <ScrollView 
         showsVerticalScrollIndicator={false} 
-        style={[styles.mainScroll, { backgroundColor: '#FAF7F2' }]}
-        contentContainerStyle={{ paddingBottom: 140, backgroundColor: '#FAF7F2' }}
+        style={[styles.mainScroll, { backgroundColor: colors.background }]}
+        contentContainerStyle={{ paddingBottom: 140, backgroundColor: colors.background }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => loadVerses(true)} tintColor="#1a2d5a" />
         }
@@ -739,6 +713,36 @@ const getStyles = (isDark: boolean, colors: any) => StyleSheet.create({
   fallbackContainer: {
     flex: 1,
     backgroundColor: '#FAF7F2',
+  },
+    headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+  },
+  circularBackBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  headerTitleText: {
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+    textAlign: 'center',
+  },
+  headerRightSpacer: {
+    width: 44,
+    height: 44,
   },
   headerCardWrapper: {
     paddingHorizontal: 16,

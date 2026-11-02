@@ -23,6 +23,7 @@ import {
   useWindowDimensions
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Font from 'expo-font';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { formatDateDisplay, formatSermonDuration } from '../utils/DateUtils';
@@ -301,23 +302,20 @@ const getGreetingData = (d: Date) => {
 const formatEventTime = (timeStr?: string, lang: 'en' | 'te' = 'en') => {
   if (!timeStr) return '';
   try {
-    const timePart = timeStr.includes('T') ? timeStr.split('T')[1].split('.')[0] : timeStr;
-    const [hours, minutes] = timePart.split(':');
-    const h = parseInt(hours, 10);
-    if (isNaN(h)) return timeStr;
-    const ampmEn = h >= 12 ? 'PM' : 'AM';
-
-    let ampmTe = '';
-    if (h < 12) ampmTe = 'ఉదయం'; // Morning
-    else if (h < 16) ampmTe = 'మధ్యాహ్నం'; // Afternoon
-    else if (h < 20) ampmTe = 'సాయంత్రం'; // Evening
-    else ampmTe = 'రాత్రి'; // Night
-
-    const formattedHours = h % 12 || 12;
-    if (lang === 'te') {
-      return `${ampmTe} ${formattedHours}:${minutes}`;
+    // If string already contains AM/PM, clean any extra duplicate AM/PM and return clean
+    const cleanStr = timeStr.replace(/\b(am|pm)\s+(am|pm)\b/gi, '$1').trim();
+    if (/am|pm/i.test(cleanStr) && !cleanStr.includes('T')) {
+      return cleanStr;
     }
-    return `${formattedHours}:${minutes} ${ampmEn}`;
+    const timePart = cleanStr.includes('T') ? cleanStr.split('T')[1].split('.')[0] : cleanStr;
+    const parts = timePart.split(':');
+    const h = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10) || 0;
+    if (isNaN(h)) return cleanStr;
+    const ampmEn = h >= 12 ? 'PM' : 'AM';
+    const formattedHours = h % 12 || 12;
+    const formattedMinutes = m < 10 ? `0${m}` : `${m}`;
+    return `${formattedHours}:${formattedMinutes} ${ampmEn}`;
   } catch {
     return timeStr;
   }
@@ -484,72 +482,890 @@ export const GreetingCard = ({ userName = 'Prabhakar Yeddula' }: { userName?: st
   );
 };
 
-/* ───────────── events ticker ───────────── */
-const TICKER_SPEED = 38; // px per second
+/* ───────────── theme palette engine for full-screen appearance ───────────── */
+interface ScreenThemeConfig {
+  appearance: string;
+  bg: string;
+  gradient: readonly [string, string, ...string[]];
+  gradientHeight?: number;
+  overscrollTop: string;
+  overscrollBottom: string;
+  text: string;
+  textMuted: string;
+  heroText: string;
+  heroTagline: string;
+  heroDateNum: string;
+  heroDateMonth: string;
+  heroGreet: string;
+  cardBg: string;
+  cardBorder: string;
+  barStyle: 'dark-content' | 'light-content';
+  isDark: boolean;
+  accent: string;
+  // Button Colors
+  btnPrimaryBg: string;
+  btnPrimaryText: string;
+  btnPrimaryBorder: string;
+  seeAllColor: string;
+  medallionBg: readonly [string, string];
+  medallionBorder: string;
+  sermonCardGradient: readonly [string, string, ...string[]];
+  sermonCardBorder: string;
+  // Marquee
+  mqBg: string;
+  mqBorder: string;
+  mqTitle: string;
+  mqLine: readonly [string, string];
+  mqRule: readonly [string, string];
+  mqRowBorder: string;
+  mqItemTitle: string;
+  mqItemTitleTe: string;
+  mqTimeCapBg: string;
+  mqTimeCapBorder: string;
+  mqTimeText: string;
+  mqSeeAll: string;
+  mqSep: string;
+  // Promise & Verse Card
+  promiseCardBg: string;
+  promiseCardBorder: string;
+  promiseLabel: string;
+  promiseVerseTe: string;
+  promiseVerseEn: string;
+  promiseRefPrimary: string;
+  promiseRefSecondary: string;
+  promiseRefDivider: string;
+  promiseQuote: string;
+  promiseLine: string;
+  promiseBtnBg: string;
+  promiseBtnBorder: string;
+  promiseBtnText: string;
+  promiseBtnIcon: string;
+  dotColor: string;
+  dotActiveColor: string;
+  // Quick Actions / Bento Grid Cards
+  bentoSermonsGradient: readonly [string, string, ...string[]];
+  bentoSermonsBorder: string;
+  bentoSermonsText: string;
+  bentoSermonsSub: string;
+  bentoEventsGradient: readonly [string, string, ...string[]];
+  bentoEventsBorder: string;
+  bentoEventsText: string;
+  bentoEventsSub: string;
+  bentoSongsGradient: readonly [string, string, ...string[]];
+  bentoSongsBorder: string;
+  bentoSongsText: string;
+  bentoSongsSub: string;
+  bentoGiveGradient: readonly [string, string, ...string[]];
+  bentoGiveBorder: string;
+  bentoGiveText: string;
+  bentoGiveSub: string;
+  bentoVerseGradient: readonly [string, string, ...string[]];
+  bentoVerseBorder: string;
+  bentoVerseText: string;
+  bentoAttendanceGradient: readonly [string, string, ...string[]];
+  bentoAttendanceBorder: string;
+  bentoAttendanceText: string;
+  bentoNotesGradient: readonly [string, string, ...string[]];
+  bentoNotesBorder: string;
+  bentoNotesText: string;
+  bentoQuizGradient: readonly [string, string, ...string[]];
+  bentoQuizBorder: string;
+  bentoQuizText: string;
+  bentoMembersGradient: readonly [string, string, ...string[]];
+  bentoMembersBorder: string;
+  bentoMembersText: string;
+  bentoMeetingsGradient: readonly [string, string, ...string[]];
+  bentoMeetingsBorder: string;
+  bentoMeetingsText: string;
+}
 
-const TodayBadge = () => {
-  const ring = useRef(new Animated.Value(0)).current;
-  const pulse = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    const r = Animated.loop(Animated.sequence([
-      Animated.delay(2000),
-      Animated.timing(ring, { toValue: 1, duration: 800, easing: Easing.linear, useNativeDriver: true }),
-      Animated.timing(ring, { toValue: 0, duration: 0, useNativeDriver: true }),
-    ]));
-    const p = Animated.loop(Animated.sequence([
-      Animated.timing(pulse, { toValue: 0.3, duration: 600, useNativeDriver: true }),
-      Animated.timing(pulse, { toValue: 1, duration: 600, useNativeDriver: true }),
-    ]));
-    r.start(); p.start();
-    return () => { r.stop(); p.stop(); };
-  }, [ring, pulse]);
-  const rotate = ring.interpolate({
-    inputRange: [0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1],
-    outputRange: ['0deg', '16deg', '-14deg', '10deg', '-6deg', '3deg', '-1deg', '0deg'],
+const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig => {
+  switch (appearance) {
+    case 'warm_white':
+      return {
+        appearance: 'warm_white',
+        bg: '#FFFFFF',
+        gradient: [
+          '#2265FA',
+          '#2B70F7',
+          '#4285F5',
+          '#6B98F5',
+          '#97B8F7',
+          '#C4D6F9',
+          '#E4ECFB',
+          '#FFFFFF',
+        ],
+        gradientHeight: 520,
+        overscrollTop: '#2265FA',
+        overscrollBottom: '#FFFFFF',
+        text: '#0B1938',
+        textMuted: '#5A708E',
+        heroText: '#0F172A',
+        heroTagline: '#334155',
+        heroDateNum: '#0F172A',
+        heroDateMonth: '#C2410C',
+        heroGreet: '#0F172A',
+        cardBg: '#FFFFFF',
+        cardBorder: '#E2E8F0',
+        barStyle: 'light-content' as const,
+        isDark: false,
+        accent: '#2563EB',
+        btnPrimaryBg: '#F1F5F9',
+        btnPrimaryText: '#0F766E',
+        btnPrimaryBorder: '#E2E8F0',
+        seeAllColor: '#0F766E',
+        medallionBg: ['#FFFFFF', '#F8FAFC'],
+        medallionBorder: '#E2E8F0',
+        sermonCardGradient: ['#243348', '#141E2C'],
+        sermonCardBorder: '#3E4E68',
+        mqBg: '#FFFFFF',
+        mqBorder: '#E2E8F0',
+        mqTitle: '#1E3A8A',
+        mqLine: ['#2563EB', 'transparent'],
+        mqRule: ['#E2E8F0', '#CBD5E1'],
+        mqRowBorder: '#F1F5F9',
+        mqItemTitle: '#0F172A',
+        mqItemTitleTe: '#334155',
+        mqTimeCapBg: '#EFF6FF',
+        mqTimeCapBorder: '#BFDBFE',
+        mqTimeText: '#2563EB',
+        mqSeeAll: '#1E3A8A',
+        mqSep: '#BFDBFE',
+        promiseCardBg: '#FFFFFF',
+        promiseCardBorder: '#E2E8F0',
+        promiseLabel: '#2563EB',
+        promiseVerseTe: '#0F172A',
+        promiseVerseEn: '#334155',
+        promiseRefPrimary: '#2563EB',
+        promiseRefSecondary: '#64748B',
+        promiseRefDivider: '#CBD5E1',
+        promiseQuote: 'rgba(37, 99, 235, 0.08)',
+        promiseLine: '#2563EB',
+        promiseBtnBg: '#EFF6FF',
+        promiseBtnBorder: '#BFDBFE',
+        promiseBtnText: '#2563EB',
+        promiseBtnIcon: '#2563EB',
+        dotColor: 'rgba(37, 99, 235, 0.2)',
+        dotActiveColor: '#2563EB',
+        // Quick Actions Bento Cards (Warm White - Warm organic jewel tones)
+        bentoSermonsGradient: ['#243348', '#141E2C'],
+        bentoSermonsBorder: '#3E4E68',
+        bentoSermonsText: '#FFFFFF',
+        bentoSermonsSub: '#CBD5E1',
+        bentoEventsGradient: ['#A06334', '#794318'],
+        bentoEventsBorder: '#B87B4A',
+        bentoEventsText: '#FFFFFF',
+        bentoEventsSub: '#FCEEE3',
+        bentoSongsGradient: ['#9E3B4F', '#782335'],
+        bentoSongsBorder: '#BD5268',
+        bentoSongsText: '#FFFFFF',
+        bentoSongsSub: '#FCE7EC',
+        bentoGiveGradient: ['#7A5813', '#4E3507'],
+        bentoGiveBorder: '#9E7422',
+        bentoGiveText: '#FFEAA8',
+        bentoGiveSub: '#E5CB82',
+        bentoVerseGradient: ['#5E3C75', '#3C204F'],
+        bentoVerseBorder: '#7C5399',
+        bentoVerseText: '#FFFFFF',
+        bentoAttendanceGradient: ['#475569', '#334155'],
+        bentoAttendanceBorder: '#64748B',
+        bentoAttendanceText: '#FFFFFF',
+        bentoNotesGradient: ['#2F5875', '#1B3A52'],
+        bentoNotesBorder: '#457294',
+        bentoNotesText: '#FFFFFF',
+        bentoQuizGradient: ['#3B6D51', '#214D35'],
+        bentoQuizBorder: '#538A6B',
+        bentoQuizText: '#FFFFFF',
+        bentoMembersGradient: ['#9E492B', '#702B13'],
+        bentoMembersBorder: '#B85F3E',
+        bentoMembersText: '#FFFFFF',
+        bentoMeetingsGradient: ['#243E5E', '#14273E'],
+        bentoMeetingsBorder: '#3B5B84',
+        bentoMeetingsText: '#FFFFFF',
+      };
+    case 'sage_ecru':
+      return {
+        appearance: 'sage_ecru',
+        bg: '#E5E9DB',
+        gradient: ['#E5E9DB', '#DFE3D6', '#CBD1C4'],
+        overscrollTop: '#E5E9DB',
+        overscrollBottom: '#CBD1C4',
+        text: '#14231C',
+        textMuted: '#52665B',
+        heroText: '#14231C',
+        heroTagline: '#2D5750',
+        heroDateNum: '#14231C',
+        heroDateMonth: '#2D5750',
+        heroGreet: '#52665B',
+        cardBg: '#F4F7EE',
+        cardBorder: '#CBD1C4',
+        barStyle: 'dark-content' as const,
+        isDark: false,
+        accent: '#2D5750',
+        btnPrimaryBg: '#E5E9DB',
+        btnPrimaryText: '#2D5750',
+        btnPrimaryBorder: '#CBD1C4',
+        seeAllColor: '#2D5750',
+        medallionBg: ['#F4F7EE', '#EBF0E4'],
+        medallionBorder: '#CBD1C4',
+        sermonCardGradient: ['#243831', '#172722'],
+        sermonCardBorder: '#3A564C',
+        mqBg: '#F4F7EE',
+        mqBorder: '#CBD1C4',
+        mqTitle: '#2D5750',
+        mqLine: ['#2D5750', 'transparent'],
+        mqRule: ['#CBD1C4', '#DFE3D6'],
+        mqRowBorder: '#E5E9DB',
+        mqItemTitle: '#14231C',
+        mqItemTitleTe: '#3E5247',
+        mqTimeCapBg: '#E5E9DB',
+        mqTimeCapBorder: '#CBD1C4',
+        mqTimeText: '#2D5750',
+        mqSeeAll: '#2D5750',
+        mqSep: '#CBD1C4',
+        promiseCardBg: '#F4F7EE',
+        promiseCardBorder: '#CBD1C4',
+        promiseLabel: '#2D5750',
+        promiseVerseTe: '#14231C',
+        promiseVerseEn: '#354D42',
+        promiseRefPrimary: '#2D5750',
+        promiseRefSecondary: '#52665B',
+        promiseRefDivider: '#CBD1C4',
+        promiseQuote: 'rgba(20, 35, 28, 0.08)',
+        promiseLine: '#2D5750',
+        promiseBtnBg: '#E5E9DB',
+        promiseBtnBorder: '#CBD1C4',
+        promiseBtnText: '#2D5750',
+        promiseBtnIcon: '#2D5750',
+        dotColor: 'rgba(20, 35, 28, 0.25)',
+        dotActiveColor: '#2D5750',
+        // Quick Actions Bento Cards (Sage Ecru - Earthy mineral tones)
+        bentoSermonsGradient: ['#243831', '#172722'],
+        bentoSermonsBorder: '#3A564C',
+        bentoSermonsText: '#FFFFFF',
+        bentoSermonsSub: '#D1DDD7',
+        bentoEventsGradient: ['#6B5838', '#4A3B22'],
+        bentoEventsBorder: '#8A724B',
+        bentoEventsText: '#FFFFFF',
+        bentoEventsSub: '#EFE8D6',
+        bentoSongsGradient: ['#6E404E', '#4A2531'],
+        bentoSongsBorder: '#8C5766',
+        bentoSongsText: '#FFFFFF',
+        bentoSongsSub: '#F0DEE3',
+        bentoGiveGradient: ['#524E26', '#353315'],
+        bentoGiveBorder: '#706B36',
+        bentoGiveText: '#FFECA6',
+        bentoGiveSub: '#DDD49C',
+        bentoVerseGradient: ['#44425C', '#2C2B3E'],
+        bentoVerseBorder: '#5D5B7D',
+        bentoVerseText: '#FFFFFF',
+        bentoAttendanceGradient: ['#3D4A41', '#28332B'],
+        bentoAttendanceBorder: '#526357',
+        bentoAttendanceText: '#FFFFFF',
+        bentoNotesGradient: ['#304D54', '#1E343A'],
+        bentoNotesBorder: '#446973',
+        bentoNotesText: '#FFFFFF',
+        bentoQuizGradient: ['#385A42', '#223E2A'],
+        bentoQuizBorder: '#4F7A5D',
+        bentoQuizText: '#FFFFFF',
+        bentoMembersGradient: ['#7A4833', '#522D1E'],
+        bentoMembersBorder: '#9B5F46',
+        bentoMembersText: '#FFFFFF',
+        bentoMeetingsGradient: ['#28424B', '#172B32'],
+        bentoMeetingsBorder: '#3B5E6A',
+        bentoMeetingsText: '#FFFFFF',
+      };
+    case 'pure_dark':
+      return {
+        appearance: 'pure_dark',
+        bg: '#000000',
+        gradient: ['#000000', '#000000', '#000000'],
+        overscrollTop: '#000000',
+        overscrollBottom: '#000000',
+        text: '#FFFFFF',
+        textMuted: '#A1A1AA',
+        heroText: '#FFFFFF',
+        heroTagline: '#38BDF8',
+        heroDateNum: '#FFFFFF',
+        heroDateMonth: '#38BDF8',
+        heroGreet: '#A1A1AA',
+        cardBg: '#121212',
+        cardBorder: '#27272A',
+        barStyle: 'light-content' as const,
+        isDark: true,
+        accent: '#38BDF8',
+        btnPrimaryBg: '#18181B',
+        btnPrimaryText: '#38BDF8',
+        btnPrimaryBorder: '#27272A',
+        seeAllColor: '#38BDF8',
+        medallionBg: ['#18181B', '#09090B'],
+        medallionBorder: '#27272A',
+        sermonCardGradient: ['#18181B', '#09090B'],
+        sermonCardBorder: '#27272A',
+        mqBg: '#121212',
+        mqBorder: '#27272A',
+        mqTitle: '#38BDF8',
+        mqLine: ['#38BDF8', 'transparent'],
+        mqRule: ['#27272A', '#3F3F46'],
+        mqRowBorder: '#27272A',
+        mqItemTitle: '#F8FAFC',
+        mqItemTitleTe: '#E4E4E7',
+        mqTimeCapBg: '#18181B',
+        mqTimeCapBorder: '#27272A',
+        mqTimeText: '#38BDF8',
+        mqSeeAll: '#38BDF8',
+        mqSep: '#38BDF8',
+        promiseCardBg: '#121212',
+        promiseCardBorder: '#27272A',
+        promiseLabel: '#38BDF8',
+        promiseVerseTe: '#FFFFFF',
+        promiseVerseEn: '#E4E4E7',
+        promiseRefPrimary: '#38BDF8',
+        promiseRefSecondary: '#A1A1AA',
+        promiseRefDivider: '#27272A',
+        promiseQuote: 'rgba(255, 255, 255, 0.12)',
+        promiseLine: '#38BDF8',
+        promiseBtnBg: '#18181B',
+        promiseBtnBorder: '#27272A',
+        promiseBtnText: '#38BDF8',
+        promiseBtnIcon: '#38BDF8',
+        dotColor: 'rgba(255,255,255,0.3)',
+        dotActiveColor: '#38BDF8',
+        // Quick Actions Bento Cards (Pure Dark - AMOLED dark surface, NO blue)
+        bentoSermonsGradient: ['#18181B', '#121212'],
+        bentoSermonsBorder: '#27272A',
+        bentoSermonsText: '#F8FAFC',
+        bentoSermonsSub: '#94A3B8',
+        bentoEventsGradient: ['#2A2438', '#181424'],
+        bentoEventsBorder: '#433A59',
+        bentoEventsText: '#F8FAFC',
+        bentoEventsSub: '#A79BBF',
+        bentoSongsGradient: ['#2E1825', '#1A0C14'],
+        bentoSongsBorder: '#4D293E',
+        bentoSongsText: '#F8FAFC',
+        bentoSongsSub: '#BFA0B2',
+        bentoGiveGradient: ['#261E0E', '#161005'],
+        bentoGiveBorder: '#4A3C1D',
+        bentoGiveText: '#FDE68A',
+        bentoGiveSub: '#C2AE74',
+        bentoVerseGradient: ['#221A33', '#120D1F'],
+        bentoVerseBorder: '#3D305C',
+        bentoVerseText: '#F8FAFC',
+        bentoAttendanceGradient: ['#1C2333', '#0E131F'],
+        bentoAttendanceBorder: '#2D3952',
+        bentoAttendanceText: '#F8FAFC',
+        bentoNotesGradient: ['#16283A', '#0C1724'],
+        bentoNotesBorder: '#264361',
+        bentoNotesText: '#F8FAFC',
+        bentoQuizGradient: ['#142B24', '#0A1A15'],
+        bentoQuizBorder: '#22483C',
+        bentoQuizText: '#F8FAFC',
+        bentoMembersGradient: ['#2B1B17', '#190E0A'],
+        bentoMembersBorder: '#4A3029',
+        bentoMembersText: '#F8FAFC',
+        bentoMeetingsGradient: ['#152538', '#0A1521'],
+        bentoMeetingsBorder: '#243F5F',
+        bentoMeetingsText: '#F8FAFC',
+      };
+    case 'pure_white':
+      return {
+        appearance: 'pure_white',
+        bg: '#FFFFFF',
+        gradient: [
+          '#2265FA',
+          '#2B70F7',
+          '#4285F5',
+          '#6B98F5',
+          '#97B8F7',
+          '#C4D6F9',
+          '#E4ECFB',
+          '#FFFFFF',
+        ],
+        gradientHeight: 520,
+        overscrollTop: '#2265FA',
+        overscrollBottom: '#FFFFFF',
+        text: '#0B1938',
+        textMuted: '#5A708E',
+        heroText: '#0F172A',
+        heroTagline: '#334155',
+        heroDateNum: '#0F172A',
+        heroDateMonth: '#C2410C',
+        heroGreet: '#0F172A',
+        cardBg: '#FFFFFF',
+        cardBorder: '#E2E8F0',
+        barStyle: 'light-content' as const,
+        isDark: false,
+        accent: '#2563EB',
+        btnPrimaryBg: '#F8FAFC',
+        btnPrimaryText: '#0F766E',
+        btnPrimaryBorder: '#E2E8F0',
+        seeAllColor: '#0F766E',
+        medallionBg: ['#FFFFFF', '#F8FAFC'],
+        medallionBorder: '#E2E8F0',
+        sermonCardGradient: ['#1E293B', '#0F172A'],
+        sermonCardBorder: '#334155',
+        mqBg: '#FFFFFF',
+        mqBorder: '#E2E8F0',
+        mqTitle: '#0F766E',
+        mqLine: ['#0F766E', 'transparent'],
+        mqRule: ['#E2E8F0', '#CBD5E1'],
+        mqRowBorder: '#F8FAFC',
+        mqItemTitle: '#0F172A',
+        mqItemTitleTe: '#334155',
+        mqTimeCapBg: '#F8FAFC',
+        mqTimeCapBorder: '#E2E8F0',
+        mqTimeText: '#0F766E',
+        mqSeeAll: '#0F766E',
+        mqSep: '#CBD5E1',
+        promiseCardBg: '#FFFFFF',
+        promiseCardBorder: '#E2E8F0',
+        promiseLabel: '#0F766E',
+        promiseVerseTe: '#0F172A',
+        promiseVerseEn: '#334155',
+        promiseRefPrimary: '#854D0E',
+        promiseRefSecondary: '#64748B',
+        promiseRefDivider: '#CBD5E1',
+        promiseQuote: 'rgba(15, 23, 42, 0.08)',
+        promiseLine: '#0F766E',
+        promiseBtnBg: '#F8FAFC',
+        promiseBtnBorder: '#E2E8F0',
+        promiseBtnText: '#0F766E',
+        promiseBtnIcon: '#0F766E',
+        dotColor: 'rgba(15, 23, 42, 0.2)',
+        dotActiveColor: '#0F766E',
+        // Quick Actions Bento Cards (Pure White)
+        bentoSermonsGradient: ['#243348', '#141E2C'],
+        bentoSermonsBorder: '#3E4E68',
+        bentoSermonsText: '#FFFFFF',
+        bentoSermonsSub: '#CBD5E1',
+        bentoEventsGradient: ['#A06334', '#794318'],
+        bentoEventsBorder: '#B87B4A',
+        bentoEventsText: '#FFFFFF',
+        bentoEventsSub: '#FCEEE3',
+        bentoSongsGradient: ['#9E3B4F', '#782335'],
+        bentoSongsBorder: '#BD5268',
+        bentoSongsText: '#FFFFFF',
+        bentoSongsSub: '#FCE7EC',
+        bentoGiveGradient: ['#7A5813', '#4E3507'],
+        bentoGiveBorder: '#9E7422',
+        bentoGiveText: '#FFEAA8',
+        bentoGiveSub: '#E5CB82',
+        bentoVerseGradient: ['#5E3C75', '#3C204F'],
+        bentoVerseBorder: '#7C5399',
+        bentoVerseText: '#FFFFFF',
+        bentoAttendanceGradient: ['#475569', '#334155'],
+        bentoAttendanceBorder: '#64748B',
+        bentoAttendanceText: '#FFFFFF',
+        bentoNotesGradient: ['#2F5875', '#1B3A52'],
+        bentoNotesBorder: '#457294',
+        bentoNotesText: '#FFFFFF',
+        bentoQuizGradient: ['#3B6D51', '#214D35'],
+        bentoQuizBorder: '#538A6B',
+        bentoQuizText: '#FFFFFF',
+        bentoMembersGradient: ['#9E492B', '#702B13'],
+        bentoMembersBorder: '#B85F3E',
+        bentoMembersText: '#FFFFFF',
+        bentoMeetingsGradient: ['#243E5E', '#14273E'],
+        bentoMeetingsBorder: '#3B5B84',
+        bentoMeetingsText: '#FFFFFF',
+      };
+    case 'theme_green':
+    default:
+      return getScreenTheme('warm_white');
+  }
+};
+
+/* ───────────── unique signature church hero & greeting card ───────────── */
+const PremiumHero = ({
+  churchName, tagline, logoUrl, initials, userName, bellRotate, onBellPress, topInset, onHeight, theme,
+}: {
+  churchName: string; tagline: string; logoUrl?: string; initials: string; userName: string;
+  bellRotate: any; onBellPress: () => void; topInset: number; onHeight?: (h: number) => void;
+  theme: any;
+}) => {
+  const now = useMemo(() => new Date(), []);
+  const { text: greet, Icon } = getGreetingData(now);
+  const [first, ...rest] = (userName || 'Beloved').trim().split(/\s+/);
+  const last = rest.join(' ');
+  const fullName = [first, last].filter(Boolean).join(' ');
+
+  const enter = useRef(new Animated.Value(0)).current;
+  const [cursiveLoaded, setCursiveLoaded] = useState(() => {
+    try {
+      return Font.isLoaded('Pacifico') || Font.isLoaded('Yellowtail');
+    } catch {
+      return false;
+    }
   });
+  useEffect(() => {
+    Animated.timing(enter, { toValue: 1, duration: 800, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    let isMounted = true;
+    Font.loadAsync({
+      Pacifico: require('../../assets/fonts/Pacifico-Regular.ttf'),
+      'Pacifico-Regular': require('../../assets/fonts/Pacifico-Regular.ttf'),
+      Borel: require('../../assets/fonts/Borel-Regular.ttf'),
+      'Borel-Regular': require('../../assets/fonts/Borel-Regular.ttf'),
+      Satisfy: require('../../assets/fonts/Satisfy-Regular.ttf'),
+      'Satisfy-Regular': require('../../assets/fonts/Satisfy-Regular.ttf'),
+      CaveatBrush: require('../../assets/fonts/CaveatBrush-Regular.ttf'),
+      'CaveatBrush-Regular': require('../../assets/fonts/CaveatBrush-Regular.ttf'),
+      Yellowtail: require('../../assets/fonts/Yellowtail-Regular.ttf'),
+      'Yellowtail-Regular': require('../../assets/fonts/Yellowtail-Regular.ttf'),
+    })
+      .then(() => { if (isMounted) setCursiveLoaded(true); })
+      .catch((err) => console.warn('Bold cursive font load error:', err));
+    return () => { isMounted = false; };
+  }, [enter]);
+
   return (
-    <View style={gStyles.fix}>
-      <View style={gStyles.badgeRow}>
-        <LinearGradient colors={C.foil} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={gStyles.medal}>
-          <Animated.View style={{ transform: [{ rotate }] }}>
-            <BellFilled size={14} color={C.tealD} />
-          </Animated.View>
-        </LinearGradient>
-        <View style={gStyles.ribbon}>
-          <Svg width={86} height={30} viewBox="0 0 112 38" style={StyleSheet.absoluteFill}>
-            <Defs>
-              <SvgLinearGradient id="todayGoldGrad" x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0%" stopColor="#fff0bc" /><Stop offset="50%" stopColor="#e5be64" /><Stop offset="100%" stopColor="#a37624" />
-              </SvgLinearGradient>
-              <SvgLinearGradient id="todayGreenGrad" x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0%" stopColor="#41736a" /><Stop offset="100%" stopColor="#142c28" />
-              </SvgLinearGradient>
-            </Defs>
-            {/* Ultra-sharp chevron arrow point with crisp metallic gold rim */}
-            <Path d="M0 0H94L112 19L94 38H0Z" fill="url(#todayGoldGrad)" />
-            <Path d="M1.6 1.6H93.2L109.2 19L93.2 36.4H1.6Z" fill="url(#todayGreenGrad)" />
-          </Svg>
-          <Animated.View style={[gStyles.liveDot, { opacity: pulse }]} />
-          <Text style={gStyles.todayText}>TODAY</Text>
+    <View style={[hStyles.hero, { paddingTop: Math.max(0, topInset - 10) }]} onLayout={(e) => onHeight && onHeight(e.nativeEvent.layout.height)}>
+      <Animated.View style={{ opacity: enter, transform: [{ translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) }] }}>
+        
+        {/* 1. TOP BAR: Church Identity Row */}
+        <View style={hStyles.identityRow}>
+          <LinearGradient colors={theme.isDark ? C.foil : ['#FFFFFF', '#FFFFFF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={hStyles.logoRing}>
+            <View style={[hStyles.logoInner, !theme.isDark && { backgroundColor: '#FFFFFF' }]}>
+              {logoUrl ? (
+                <Image source={{ uri: logoUrl }} style={hStyles.logoImg} resizeMode="cover" />
+              ) : (
+                <LinearGradient colors={theme.isDark ? ['#2d5750', '#15302c'] : ['#FFFFFF', '#FFFFFF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={hStyles.logoFallback}>
+                  <Text style={[hStyles.logoInitials, !theme.isDark && { color: '#2563EB' }]}>{initials}</Text>
+                </LinearGradient>
+              )}
+            </View>
+          </LinearGradient>
+
+          <View style={{ flex: 1, minWidth: 0, marginLeft: 12 }}>
+            <Text 
+              style={[hStyles.churchName, { color: theme.heroText }]} 
+              numberOfLines={1} 
+              adjustsFontSizeToFit 
+              minimumFontScale={0.6} 
+              maxFontSizeMultiplier={1.1}
+            >
+              {churchName}
+            </Text>
+            <View style={hStyles.taglineRow}>
+              <Cross w={7} h={9} color={theme.isDark ? C.gold : theme.accent} />
+              <Text 
+                style={[hStyles.tagline, { color: theme.heroTagline }]} 
+                numberOfLines={1} 
+                adjustsFontSizeToFit 
+                minimumFontScale={0.7} 
+                maxFontSizeMultiplier={1.1}
+              >
+                {tagline}
+              </Text>
+            </View>
+          </View>
+
+          <TouchableOpacity 
+            style={[
+              hStyles.bellBtn, 
+              { 
+                backgroundColor: theme.isDark ? 'rgba(255,255,255,0.08)' : '#FFFFFF',
+                borderColor: theme.isDark ? 'rgba(232,196,110,0.55)' : 'rgba(255,255,255,0.8)' 
+              }
+            ]} 
+            onPress={onBellPress} 
+            activeOpacity={0.75}
+          >
+            <Animated.View style={{ transform: [{ rotate: bellRotate }] }}>
+              <Bell color={theme.isDark ? C.gold : '#2563EB'} size={20} strokeWidth={2} />
+            </Animated.View>
+            <View style={[hStyles.bellDot, { borderColor: theme.isDark ? theme.bg : '#FFFFFF' }]} />
+          </TouchableOpacity>
         </View>
-      </View>
+
+        {/* 2. GREETING & DATE: Bold cursive greeting (Pacifico) + compact date card */}
+        <View style={hStyles.greetingRowDirect}>
+          {/* Left Column: Greeting with Sun/Moon Icon + Bold Serif User Name */}
+          <View style={{ flex: 1, minWidth: 0, paddingRight: 12, justifyContent: 'center' }}>
+            <View style={gStyles.greetRow}>
+              {Icon ? <Icon size={18} color={theme.isDark ? '#FCD34D' : '#D97706'} /> : null}
+              <Text 
+                style={[
+                  gStyles.greet, 
+                  { 
+                    fontFamily: cursiveLoaded ? 'Pacifico' : (Platform.OS === 'ios' ? 'Snell Roundhand' : 'Pacifico'),
+                    fontSize: 27,
+                    fontStyle: 'normal',
+                    fontWeight: 'normal',
+                    letterSpacing: 0.2,
+                    color: theme.heroGreet,
+                    textShadowColor: 'transparent',
+                    textShadowRadius: 0,
+                  }
+                ]}
+              >
+                {greet}
+              </Text>
+            </View>
+
+            {/* USER NAME: Bold SERIF font in premium black */}
+            <Text 
+              style={[
+                hStyles.userName, 
+                { 
+                  color: theme.heroText,
+                  textShadowColor: 'transparent',
+                  textShadowRadius: 0,
+                  marginTop: 2,
+                }
+              ]} 
+              numberOfLines={1} 
+              adjustsFontSizeToFit 
+              minimumFontScale={0.6}
+            >
+              {fullName}
+            </Text>
+          </View>
+
+          {/* Right Column: Calendar Date Card (Ultra-compact 60px) */}
+          <View 
+            style={[
+              gStyles.cal, 
+              {
+                width: 60,
+                borderRadius: 12,
+                backgroundColor: theme.isDark ? '#18181B' : '#FFFFFF',
+                borderWidth: 1,
+                borderColor: theme.isDark ? '#27272A' : 'rgba(255,255,255,0.7)',
+                shadowOpacity: theme.isDark ? 0.25 : 0.08,
+                shadowRadius: 4,
+                shadowOffset: { width: 0, height: 2 },
+                elevation: 2.5,
+              }
+            ]}
+          >
+            <LinearGradient 
+              colors={theme.isDark ? ['#3F2615', '#2C1B10'] : ['#FFE5CD', '#FFD9B8']} 
+              style={[gStyles.calMonthBox, { paddingTop: 3, paddingBottom: 2 }]}
+            >
+              <Text style={[gStyles.calMonth, { fontSize: 9, letterSpacing: 1.1, color: theme.isDark ? '#FB923C' : '#C2410C' }]}>
+                {MONS_LIST[now.getMonth()]}
+              </Text>
+            </LinearGradient>
+            <Text style={[gStyles.calDay, { fontSize: 20, lineHeight: 24, paddingTop: 1, color: theme.isDark ? '#FFFFFF' : (theme.heroDateNum || '#0F172A') }]}>
+              {now.getDate()}
+            </Text>
+            <Text 
+              style={[gStyles.calWeek, { fontSize: 8.5, paddingTop: 0, paddingBottom: 3.5, color: theme.isDark ? '#A1A1AA' : '#5A708E' }]} 
+              numberOfLines={1} 
+              adjustsFontSizeToFit 
+              minimumFontScale={0.7}
+            >
+              {DAYS_LIST[now.getDay()]}
+            </Text>
+          </View>
+        </View>
+
+      </Animated.View>
     </View>
   );
 };
+
+const hStyles = StyleSheet.create({
+  hero: { paddingHorizontal: 16, paddingBottom: 4, backgroundColor: 'transparent' },
+  identityRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+  logoRing: { width: 52, height: 52, borderRadius: 26, padding: 2, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 5 },
+  logoInner: { flex: 1, borderRadius: 24, overflow: 'hidden', backgroundColor: '#15302c' },
+  logoImg: { width: '100%', height: '100%' },
+  logoFallback: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  logoInitials: { color: C.gold, fontSize: 17, fontWeight: '800', fontFamily: SERIF, letterSpacing: 0.5 },
+  churchName: { fontSize: 24, fontWeight: '800', fontFamily: SERIF, letterSpacing: 0.3 },
+  taglineRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2, gap: 5 },
+  tagline: { flexShrink: 1, fontSize: 12.5, fontStyle: 'italic', fontFamily: SERIF, letterSpacing: 0.5 },
+  bellBtn: { width: 42, height: 42, borderRadius: 21, marginLeft: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  bellDot: { position: 'absolute', top: 8, right: 9, width: 8, height: 8, borderRadius: 4, backgroundColor: '#F95738', borderWidth: 1.5 },
+  greetingRowDirect: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 4, paddingBottom: 10 },
+  cardWrap: { borderRadius: 24, overflow: 'hidden', marginBottom: 6 },
+  greetingCard: { borderRadius: 24, paddingVertical: 18, paddingHorizontal: 18, borderWidth: 1, overflow: 'hidden', position: 'relative' },
+  cardInnerFrame: { position: 'absolute', top: 6, left: 6, right: 6, bottom: 6, borderRadius: 18, borderWidth: 1 },
+  cardRow: { flexDirection: 'row', alignItems: 'center' },
+  userName: { fontSize: 27, fontWeight: '700', fontFamily: SERIF, letterSpacing: 0.2, marginTop: 2, textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
+  blessedPill: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', marginTop: 12, paddingVertical: 4.5, paddingLeft: 8, paddingRight: 12, borderRadius: 20, borderWidth: 1, gap: 6 },
+  blessedText: { fontSize: 11.5, fontWeight: '700', letterSpacing: 0.5 },
+  dateCol: { flexDirection: 'row', alignItems: 'center', marginLeft: 4 },
+  dateRule: { width: 1, height: 96, marginRight: 12 },
+  dateBlock: { width: 68, alignItems: 'center' },
+  dateMonth: { fontSize: 11.5, fontWeight: '800', letterSpacing: 2.5, marginBottom: 0 },
+  dateDay: { fontSize: 40, lineHeight: 46, fontWeight: '700', fontFamily: SERIF },
+  dateWeek: { fontSize: 11.5, fontWeight: '600', letterSpacing: 0.8 },
+});
+
+/* ───────────── Premium Badge Marquee (Exact match to reference card marquee) ───────────── */
+const TICKER_SPEED = 40; // px per second
+
+const getTeluguServiceTitle = (title: string, rawTelugu?: string): string => {
+  if (rawTelugu && rawTelugu.trim() && rawTelugu.trim().toLowerCase() !== (title || '').trim().toLowerCase()) {
+    return rawTelugu.trim();
+  }
+  const lower = (title || '').toLowerCase().trim();
+  if (lower.includes('sunday')) return 'ఆదివారపు ఆరాధన';
+  if (lower.includes('worship')) return 'ఆరాధన కూడిక';
+  if (lower.includes('bible')) return 'బైబిల్ స్టడీ';
+  if (lower.includes('prayer')) return 'ప్రార్థన కూడిక';
+  if (lower.includes('morning')) return 'ఉదయ కాల ప్రార్థన';
+  if (lower.includes('evening') || lower.includes('fellowship')) return 'సాయంకాల సహవాసం';
+  if (lower.includes('fasting')) return 'ఉపవాస ప్రార్థన';
+  if (lower.includes('youth')) return 'యూత్ మీటింగ్';
+  return (rawTelugu && rawTelugu.trim()) || 'ప్రత్యేక ఆరాధన';
+};
+
+const cleanEnglishTitle = (title: string): string => {
+  if (!title) return 'Church Service';
+  const match = title.match(/^(.*?)\s*[\(\[].*?[\)\]]\s*$/);
+  if (match && match[1].trim()) {
+    return match[1].trim();
+  }
+  return title.trim();
+};
+
+const cleanTimeText = (timeStr?: string): string => {
+  if (!timeStr) return '';
+  return timeStr
+    .replace(/ఉదయం|మధ్యాహ్నం|సాయంత్రం|రాత్రి/g, '')
+    .replace(/\b(am|pm)\s+(am|pm)\b/gi, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+const GoldMedalBadge = () => (
+  <View style={mqStyles.iconWrap}>
+    <Svg width={30} height={34} viewBox="0 0 30 34">
+      <Defs>
+        <SvgLinearGradient id="gmGoldGrad" x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0%" stopColor="#FDE047" />
+          <Stop offset="50%" stopColor="#EAB308" />
+          <Stop offset="100%" stopColor="#CA8A04" />
+        </SvgLinearGradient>
+        <SvgLinearGradient id="gmRibbonL" x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0%" stopColor="#EA580C" />
+          <Stop offset="100%" stopColor="#C2410C" />
+        </SvgLinearGradient>
+        <SvgLinearGradient id="gmRibbonR" x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0%" stopColor="#F97316" />
+          <Stop offset="100%" stopColor="#EA580C" />
+        </SvgLinearGradient>
+      </Defs>
+      {/* Ribbon tails with chevron notch */}
+      <Path d="M10 16 L4 31 L10 27 L13 31 L14 16 Z" fill="url(#gmRibbonL)" />
+      <Path d="M16 16 L17 31 L20 27 L26 31 L20 16 Z" fill="url(#gmRibbonR)" />
+      {/* Gold Circle Medal */}
+      <Circle cx="15" cy="13" r="12.5" fill="url(#gmGoldGrad)" stroke="#B45309" strokeWidth={1} />
+      <Circle cx="15" cy="13" r="10.5" fill="none" stroke="#FEF08A" strokeWidth={0.8} />
+      {/* Bold numeral 1 */}
+      <SvgText x="15" y="18" fill="#FFFFFF" fontSize="14" fontWeight="900" textAnchor="middle" fontFamily="System">
+        1
+      </SvgText>
+    </Svg>
+  </View>
+);
+
+const ProductHuntBadge = () => (
+  <View style={mqStyles.iconWrap}>
+    <Svg width={28} height={28} viewBox="0 0 28 28">
+      <Defs>
+        <SvgLinearGradient id="phGrad" x1="0" y1="0" x2="1" y2="1">
+          <Stop offset="0%" stopColor="#DDE3EA" />
+          <Stop offset="100%" stopColor="#94A3B8" />
+        </SvgLinearGradient>
+      </Defs>
+      <Circle cx="14" cy="14" r="13" fill="url(#phGrad)" stroke="#64748B" strokeWidth={0.8} />
+      <Circle cx="14" cy="14" r="11.5" fill="#E2E8F0" />
+      <SvgText x="14" y="19" fill="#475569" fontSize="15" fontWeight="900" textAnchor="middle" fontFamily="System">
+        P
+      </SvgText>
+    </Svg>
+  </View>
+);
+
+const StarTrophyBadge = () => (
+  <View style={mqStyles.iconWrap}>
+    <Svg width={28} height={28} viewBox="0 0 28 28">
+      <Defs>
+        <SvgLinearGradient id="starGrad" x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0%" stopColor="#38BDF8" />
+          <Stop offset="100%" stopColor="#0284C7" />
+        </SvgLinearGradient>
+      </Defs>
+      <Circle cx="14" cy="14" r="13" fill="url(#starGrad)" stroke="#0369A1" strokeWidth={0.8} />
+      <Path
+        d="M14 5.5 L16 10.2 L21 10.8 L17.2 14.3 L18.2 19.3 L14 16.7 L9.8 19.3 L10.8 14.3 L7 10.8 L12 10.2 Z"
+        fill="#FEF08A"
+        stroke="#CA8A04"
+        strokeWidth={0.6}
+      />
+    </Svg>
+  </View>
+);
+
+const ChurchEventBadge = () => (
+  <View style={mqStyles.iconWrap}>
+    <Svg width={28} height={28} viewBox="0 0 28 28">
+      <Defs>
+        <SvgLinearGradient id="crossGrad" x1="0" y1="0" x2="1" y2="1">
+          <Stop offset="0%" stopColor="#F59E0B" />
+          <Stop offset="100%" stopColor="#B45309" />
+        </SvgLinearGradient>
+      </Defs>
+      <Circle cx="14" cy="14" r="13" fill="url(#crossGrad)" stroke="#92400E" strokeWidth={0.8} />
+      <Path d="M12 6h4v4h4v3h-4v9h-4v-9h-4v-3h4z" fill="#FFFFFF" />
+    </Svg>
+  </View>
+);
 
 export const EventsTicker = ({
   events = [],
   onSeeAll,
   onEventPress,
+  theme,
 }: {
   events?: any[];
   onSeeAll?: () => void;
   onEventPress?: (event: any) => void;
+  theme?: any;
 }) => {
   const x = useRef(new Animated.Value(0)).current;
-  const shimmer = useRef(new Animated.Value(0)).current;
   const [setW, setSetW] = useState(0);
   const animRef = useRef<Animated.CompositeAnimation | null>(null);
+
+  // English Card and dedicated Telugu Card with timings next to event name (no 'ఉదయం')
+  const marqueeItems = useMemo(() => {
+    const evList = (events && events.length > 0) ? events : [
+      { title: 'Sunday Service', titleTelugu: 'ఆదివారపు ఆరాధన', time: '10:00 AM - 12:30 PM' },
+      { title: 'Bible Study', titleTelugu: 'బైబిల్ స్టడీ', time: '7:00 PM - 8:30 PM' },
+      { title: 'Morning Prayer', titleTelugu: 'ఉదయ కాల ప్రార్థన', time: '6:00 AM - 7:30 AM' },
+    ];
+
+    const items: any[] = [];
+    evList.forEach((ev: any, idx: number) => {
+      const enTitle = cleanEnglishTitle(ev.title);
+      const teTitle = getTeluguServiceTitle(ev.title, ev.titleTelugu);
+      const cleanTime = cleanTimeText(ev.time || '10:00 AM');
+
+      // 1. English Event Card: Category on top, timing next to event name
+      items.push({
+        id: `ev-en-${idx}`,
+        type: idx % 2 === 0 ? 'medal' : 'star',
+        category: 'UPCOMING EVENT',
+        title: cleanTime ? `${enTitle}  •  ${cleanTime}` : enTitle,
+        raw: ev,
+      });
+
+      // 2. Dedicated Telugu Event Card: Category on top, timing next to event name (no 'ఉదయం')
+      items.push({
+        id: `ev-te-${idx}`,
+        type: 'church',
+        category: 'రాబోవు కూడిక',
+        title: cleanTime ? `${teTitle}  •  ${cleanTime}` : teTitle,
+        raw: ev,
+      });
+    });
+
+    return items;
+  }, [events]);
 
   useEffect(() => {
     if (setW > 0) {
@@ -559,7 +1375,7 @@ export const EventsTicker = ({
       animRef.current = Animated.loop(
         Animated.timing(x, {
           toValue: -setW,
-          duration: Math.max(3000, duration),
+          duration: Math.max(4000, duration),
           easing: Easing.linear,
           useNativeDriver: true,
         })
@@ -569,84 +1385,129 @@ export const EventsTicker = ({
     return () => {
       animRef.current?.stop();
     };
-  }, [setW]);
+  }, [setW, marqueeItems]);
 
-  useEffect(() => {
-    const l = Animated.loop(Animated.timing(shimmer, { toValue: 1, duration: 5000, easing: Easing.linear, useNativeDriver: true }));
-    l.start();
-    return () => l.stop();
-  }, [shimmer]);
+  // User requested: Keep Cross symbol only for all cards
+  const renderBadge = () => {
+    return <ChurchEventBadge />;
+  };
 
   const renderSet = (key: string, measure?: boolean) => (
-    <View key={key} style={gStyles.set} onLayout={measure ? (e) => setSetW(e.nativeEvent.layout.width) : undefined}>
-      {events.map((ev: any, i: number) => (
+    <View 
+      key={key} 
+      style={mqStyles.setRow} 
+      onLayout={measure ? (e) => setSetW(e.nativeEvent.layout.width) : undefined}
+    >
+      {marqueeItems.map((item, idx) => (
         <TouchableOpacity
-          key={`${key}-${i}`}
-          style={gStyles.item}
-          onPress={() => onEventPress ? onEventPress(ev) : onSeeAll?.()}
-          activeOpacity={0.75}
+          key={`${key}-${item.id || idx}`}
+          style={[
+            mqStyles.card,
+            {
+              backgroundColor: theme?.isDark ? '#18181B' : '#FFFFFF',
+              borderColor: theme?.isDark ? '#27272A' : '#D9E1EC',
+            }
+          ]}
+          onPress={() => {
+            if (item.raw) {
+              onEventPress ? onEventPress(item.raw) : onSeeAll?.();
+            } else {
+              onSeeAll?.();
+            }
+          }}
+          activeOpacity={0.8}
         >
-          {/* English block */}
-          <Text style={gStyles.itemTitle}>{ev.title}</Text>
-          <View style={gStyles.timeCap}>
-            <Text style={gStyles.timeText}>⏰ {ev.time}</Text>
+          {renderBadge()}
+          <View style={mqStyles.textCol}>
+            {/* Category highlighted with sky blue, exact same 11px font size */}
+            <Text 
+              style={[
+                mqStyles.categoryText, 
+                { color: theme?.isDark ? '#38BDF8' : '#0284C7' }
+              ]} 
+              numberOfLines={1}
+            >
+              {item.category}
+            </Text>
+            <Text 
+              style={[
+                mqStyles.titleText, 
+                { color: theme?.isDark ? '#FFFFFF' : '#2C3A5A' }
+              ]} 
+              numberOfLines={1}
+            >
+              {item.title}
+            </Text>
           </View>
-
-          {/* Telugu block — always shown */}
-          {ev.titleTelugu ? (
-            <>
-              <Text style={gStyles.langDivider}>|</Text>
-              <Text style={gStyles.itemTitleTe}>{ev.titleTelugu}</Text>
-              <View style={[gStyles.timeCap, { borderColor: 'rgba(74, 122, 113, 0.45)', backgroundColor: 'rgba(255,255,255,0.7)' }]}>
-                <Text style={[gStyles.timeText, { color: C.tealD }]}>⏰ {ev.timeTelugu || ev.time}</Text>
-              </View>
-            </>
-          ) : null}
-
-          <View style={gStyles.sep} />
         </TouchableOpacity>
       ))}
     </View>
   );
 
   return (
-    <View style={gStyles.mq}>
-      {/* top gold rule with travelling glint */}
-      <LinearGradient colors={['#fff7dc', '#f1dc9b']} style={[gStyles.rule5, { top: 0 }]}>
-        <Animated.View style={{ width: 120, height: 5, transform: [{ translateX: shimmer.interpolate({ inputRange: [0, 1], outputRange: [-120, 440] }) }] }}>
-          <LinearGradient colors={['transparent', 'rgba(255,255,255,0.95)', 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flex: 1 }} />
-        </Animated.View>
-      </LinearGradient>
-
-      <View style={gStyles.mqHead}>
-        <Text style={{ fontSize: 16 }}>🎉</Text>
-        <Text style={gStyles.mqTitle}>UPCOMING EVENTS</Text>
-        <LinearGradient colors={['#c9a24a', 'rgba(201,162,74,0)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={gStyles.mqLine} />
-        <Pressable onPress={onSeeAll} style={gStyles.seeAll} hitSlop={8}>
-          <Text style={gStyles.seeAllText}>See all</Text>
-          <ArrowRight size={13} color={C.teal} />
-        </Pressable>
-      </View>
-
-      <View style={gStyles.row}>
-        {/* Ticker viewport: text scrolls strictly next to the sharp badge */}
-        <View style={gStyles.tickerViewport}>
-          <Animated.View style={[gStyles.track, { transform: [{ translateX: x }] }]}>
-            {renderSet('a', true)}
-            {renderSet('b', false)}
-          </Animated.View>
-          <LinearGradient colors={['rgba(251,243,221,0)', '#fbf3dd']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={gStyles.fadeRight} pointerEvents="none" />
-          <LinearGradient colors={['#fbf3dd', 'rgba(251,243,221,0)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={gStyles.fadeLeft} pointerEvents="none" />
-        </View>
-
-        {/* Clean, sharp Today badge only — NO card or rectangle behind it */}
-        <TodayBadge />
-      </View>
-
-      <LinearGradient colors={['#f1dc9b', '#fff7dc']} style={[gStyles.rule5, { bottom: 0 }]} />
+    <View style={mqStyles.container}>
+      <Animated.View style={[mqStyles.track, { transform: [{ translateX: x }] }]}>
+        {renderSet('a', true)}
+        {renderSet('b', false)}
+      </Animated.View>
     </View>
   );
 };
+
+const mqStyles = StyleSheet.create({
+  container: {
+    height: 70,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    marginVertical: 4,
+  },
+  track: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  setRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    paddingRight: 16,
+  },
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 60,
+    paddingHorizontal: 18,
+    borderRadius: 20,
+    borderWidth: 1.2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  iconWrap: {
+    width: 32,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  textCol: {
+    justifyContent: 'center',
+  },
+  categoryText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    marginBottom: 2,
+  },
+  titleText: {
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+});
 
 /* ───────────── styles for greeting card & ticker ───────────── */
 const gStyles = StyleSheet.create({
@@ -664,7 +1525,7 @@ const gStyles = StyleSheet.create({
   eyeLine: { width: 22, height: 1 },
   eye: { color: C.gold, fontSize: 9.5, fontWeight: '600', letterSpacing: 3 },
   greetRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
-  greet: { color: '#f3e3b4', fontFamily: SERIF, fontStyle: 'italic', fontSize: 17.5 },
+  greet: { color: '#0F172A', fontFamily: 'Pacifico', fontStyle: 'normal', fontWeight: 'normal', fontSize: 27 },
   name: { color: '#fbe9b4', fontFamily: SERIF, fontWeight: '700', fontSize: 30, lineHeight: 34, letterSpacing: -0.2, textShadowColor: 'rgba(0,0,0,0.35)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 5 },
   rule: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 15, marginBottom: 14, width: 90 },
   ruleLine: { flex: 1, height: 1 },
@@ -872,68 +1733,119 @@ export interface LocalizedVerseDisplay {
   isAvailableInLanguage: boolean;
 }
 
+export const getSynchronousVersesForToday = (date: Date = new Date()): DailyVerse[] => {
+  try {
+    const bulk = require('../../assets/bulk_verses.json');
+    const total = bulk.length || 5863;
+    const localDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const epochDate = new Date(2025, 0, 1);
+    const daysSinceEpoch = Math.floor((localDate.getTime() - epochDate.getTime()) / (1000 * 60 * 60 * 24));
+    const indices = [
+      (daysSinceEpoch * 4 + 0) % total,
+      (daysSinceEpoch * 4 + 1) % total,
+      (daysSinceEpoch * 4 + 2) % total,
+      (daysSinceEpoch * 4 + 3) % total,
+    ];
+    return indices.map((idx, pIdx) => {
+      const bv = bulk[idx] || {};
+      return {
+        id: `today_verse_${idx}_${pIdx}`,
+        index: idx,
+        verseEn: bv.verseEn || '',
+        verseTe: bv.verseTe || '',
+        referenceEn: bv.referenceEn || '',
+        referenceTe: bv.referenceTe || '',
+      };
+    });
+  } catch (e) {
+    return [
+      { id: 'morning_default', index: 0, verseEn: 'The LORD is my shepherd; I shall not want.', verseTe: 'యెహోవా నా కాపరి నాకు లేమి కలుగదు.', referenceEn: 'Psalms 23:1', referenceTe: 'కీర్తనలు 23:1' },
+      { id: 'afternoon_default', index: 1, verseEn: 'Trust in the LORD with all thine heart; and lean not unto thine own understanding.', verseTe: 'నీ స్వబుద్ధిని ఆధారము చేసికొనక నీ పూర్ణహృదయముతో యెహోవాయందు నమ్మకముంచుము.', referenceEn: 'Proverbs 3:5', referenceTe: 'సామెతలు 3:5' },
+      { id: 'evening_default', index: 2, verseEn: 'Come unto me, all ye that labour and are heavy laden, and I will give you rest.', verseTe: 'ప్రయాసపడి భారము మోసికొనుచున్న సమస్త జనులారా, నాయొద్దకు రండి; నేను మీకు విశ్రాంతి కలుగజేతును.', referenceEn: 'Matthew 11:28', referenceTe: 'మత్తయి 11:28' },
+      { id: 'night_default', index: 3, verseEn: 'I will both lay me down in peace, and sleep: for thou, LORD, only makest me dwell in safety.', verseTe: 'నెమ్మదితో పరుండి నిద్రపోవుదును; యెహోవా, నెమ్మదిగా నేను నివసించునట్లు చేయువాడవు నీవే.', referenceEn: 'Psalms 4:8', referenceTe: 'కీర్తనలు 4:8' },
+    ];
+  }
+};
+
 export const getLocalizedVerse = (verse: any, lang: string): LocalizedVerseDisplay => {
   if (!verse) {
-    return { primaryVerse: '', primaryReference: '', isAvailableInLanguage: false };
+    const fallback = getSynchronousVersesForToday()[0];
+    return getLocalizedVerse(fallback, lang);
   }
+
+  let result: LocalizedVerseDisplay;
 
   // 1. If language is English ('en')
   if (lang === 'en') {
     // When English is selected, display both Telugu and English on the card if Telugu is available
     if (verse.verseTe && verse.verseTe.trim().length > 0) {
-      return {
+      result = {
         primaryVerse: verse.verseTe.trim(),
         primaryReference: verse.referenceTe || '',
         secondaryVerse: (verse.verseEn || verse.verse || '').trim(),
         secondaryReference: verse.referenceEn || verse.reference || '',
         isAvailableInLanguage: true,
       };
+    } else {
+      result = {
+        primaryVerse: verse.verseEn || verse.verse || '',
+        primaryReference: verse.referenceEn || verse.reference || '',
+        isAvailableInLanguage: true,
+      };
     }
-    return {
-      primaryVerse: verse.verseEn || verse.verse || '',
-      primaryReference: verse.referenceEn || verse.reference || '',
-      isAvailableInLanguage: true,
-    };
+  } else {
+    // 2. Check direct language-specific fields on the verse:
+    const cap = lang.charAt(0).toUpperCase() + lang.slice(1);
+    const directVerse = verse[`verse${cap}`] || verse[`verse_${lang}`] || verse.translations?.[lang]?.verse || (typeof verse.translations?.[lang] === 'string' ? verse.translations[lang] : undefined);
+    const directRef = verse[`reference${cap}`] || verse[`reference_${lang}`] || verse.translations?.[lang]?.reference;
+
+    if (directVerse && typeof directVerse === 'string' && directVerse.trim().length > 0) {
+      const locRef = directRef || BibleService.getLocalizedReference(verse.referenceEn || verse.reference || '', lang as any) || verse.referenceEn || '';
+      result = {
+        primaryVerse: directVerse.trim(),
+        primaryReference: locRef,
+        secondaryVerse: verse.verseEn ? verse.verseEn.trim() : undefined,
+        secondaryReference: verse.referenceEn || '',
+        isAvailableInLanguage: true,
+      };
+    } else if (lang === 'te' && verse.verseTe && verse.verseTe.trim().length > 0) {
+      const teRef = verse.referenceTe || BibleService.getLocalizedReference(verse.referenceEn || verse.reference || '', 'te') || verse.referenceEn || '';
+      result = {
+        primaryVerse: verse.verseTe.trim(),
+        primaryReference: teRef,
+        secondaryVerse: verse.verseEn ? verse.verseEn.trim() : undefined,
+        secondaryReference: verse.referenceEn || '',
+        isAvailableInLanguage: true,
+      };
+    } else {
+      const localizedRef = BibleService.getLocalizedReference(verse.referenceEn || verse.reference || '', lang as any);
+      result = {
+        primaryVerse: verse.verseEn || verse.verse || '',
+        primaryReference: localizedRef || verse.referenceEn || verse.reference || '',
+        isAvailableInLanguage: false,
+      };
+    }
   }
 
-  // 2. Check direct language-specific fields on the verse:
-  // e.g., verseTe / referenceTe, verseHi / referenceHi, verseTa / referenceTa, etc.
-  const cap = lang.charAt(0).toUpperCase() + lang.slice(1);
-  const directVerse = verse[`verse${cap}`] || verse[`verse_${lang}`] || verse.translations?.[lang]?.verse || (typeof verse.translations?.[lang] === 'string' ? verse.translations[lang] : undefined);
-  const directRef = verse[`reference${cap}`] || verse[`reference_${lang}`] || verse.translations?.[lang]?.reference;
-
-  if (directVerse && typeof directVerse === 'string' && directVerse.trim().length > 0) {
-    const locRef = directRef || BibleService.getLocalizedReference(verse.referenceEn || verse.reference || '', lang as any) || verse.referenceEn || '';
-    return {
-      primaryVerse: directVerse.trim(),
-      primaryReference: locRef,
-      secondaryVerse: verse.verseEn ? verse.verseEn.trim() : undefined,
-      secondaryReference: verse.referenceEn || '',
-      isAvailableInLanguage: true,
-    };
+  // Failsafe: Never return an empty primaryVerse or primaryReference
+  if (!result.primaryVerse || result.primaryVerse.trim().length === 0) {
+    const idx = typeof verse.index === 'number' ? verse.index : 0;
+    try {
+      const bulk = require('../../assets/bulk_verses.json');
+      const bv = bulk[idx % bulk.length] || bulk[0];
+      if (bv) {
+        result = {
+          primaryVerse: (lang === 'te' ? bv.verseTe : bv.verseEn) || bv.verseEn || bv.verseTe || '',
+          primaryReference: (lang === 'te' ? bv.referenceTe : bv.referenceEn) || bv.referenceEn || bv.referenceTe || '',
+          secondaryVerse: lang === 'te' ? bv.verseEn : undefined,
+          secondaryReference: lang === 'te' ? bv.referenceEn : undefined,
+          isAvailableInLanguage: true,
+        };
+      }
+    } catch (_) {}
   }
 
-  // 3. If selected language is Telugu ('te') and verse.verseTe is present
-  if (lang === 'te' && verse.verseTe && verse.verseTe.trim().length > 0) {
-    const teRef = verse.referenceTe || BibleService.getLocalizedReference(verse.referenceEn || verse.reference || '', 'te') || verse.referenceEn || '';
-    return {
-      primaryVerse: verse.verseTe.trim(),
-      primaryReference: teRef,
-      secondaryVerse: verse.verseEn ? verse.verseEn.trim() : undefined,
-      secondaryReference: verse.referenceEn || '',
-      isAvailableInLanguage: true,
-    };
-  }
-
-  // 4. If selected language verse text is still fetching / not directly stored,
-  // dynamically localize the reference (e.g. "Psalms 78:52" -> "भजन संहिता 78:52")
-  // and fall back cleanly to original English verse without machine-translating:
-  const localizedRef = BibleService.getLocalizedReference(verse.referenceEn || verse.reference || '', lang as any);
-  return {
-    primaryVerse: verse.verseEn || verse.verse || '',
-    primaryReference: localizedRef || verse.referenceEn || verse.reference || '',
-    isAvailableInLanguage: false,
-  };
+  return result;
 };
 
 export const getPeriodTheme = (period: string, date: Date = new Date(), t?: any) => {
@@ -1094,8 +2006,9 @@ export default function HomeScreen() {
   const { width: screenWidth } = useWindowDimensions();
   const { user, signOut, member: authMember } = useAuth();
   const { activeChurch, isImpersonating, impersonatedBranchName, stopImpersonation } = useChurch();
-  const { mode, toggleTheme, colors } = useTheme();
-  const isDark = false; // Home screen uses a clean white cream background
+  const { mode, toggleTheme, colors, appearance, quickActionsStyle } = useTheme();
+  const screenTheme = useMemo(() => getScreenTheme(appearance), [appearance]);
+  const isDark = screenTheme.isDark;
   const { language, setLanguage, languages, t } = useLanguage();
   const [member, setMember] = useState<AppMember | null>(authMember as AppMember | null);
   const [promise, setPromise] = useState<DailyPromise | null>(cachedPromise);
@@ -1381,19 +2294,19 @@ export default function HomeScreen() {
   const useWeChristianDailyPromise = true;
   const hasServiceTimings = !!(activeChurch?.serviceTimings && activeChurch.serviceTimings.length > 0);
   const [todayFourVerses, setTodayFourVerses] = useState<DailyVerse[]>(() => {
-    if (cachedTodayFourVerses && cachedTodayFourVerses.length > 0) return cachedTodayFourVerses;
+    if (cachedTodayFourVerses && cachedTodayFourVerses.length >= 4) return cachedTodayFourVerses;
     try {
-      const initial = VerseNotificationService.getSynchronousInitialVerses(0);
-      const verses = initial[0]?.verses || [];
-      if (verses.length > 0) cachedTodayFourVerses = verses;
-      return verses;
-    } catch (_) {
-      return [];
-    }
+      const initial = getSynchronousVersesForToday();
+      if (initial && initial.length >= 4) {
+        cachedTodayFourVerses = initial;
+        return initial;
+      }
+    } catch (_) {}
+    return getSynchronousVersesForToday();
   });
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  // Periodically refresh time every 60s so newly unlocked time-based cards appear automatically
+  // Periodically refresh time every 60s
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentTime(new Date());
@@ -1401,9 +2314,11 @@ export default function HomeScreen() {
     return () => clearInterval(timer);
   }, []);
 
-  // Time-based progressive unlocked verses (Morning -> +Afternoon -> +Evening -> +Night)
-  const unlockedCount = getUnlockedVersesCount(currentTime);
-  const visibleVerses = todayFourVerses.slice(0, Math.min(todayFourVerses.length, unlockedCount));
+  // Automated 4 time-of-day greeting verses (Morning, Afternoon, Evening, Night)
+  // All 4 cards are available for swipe, scrolling initially to current time-of-day card
+  const visibleVerses = todayFourVerses && todayFourVerses.length >= 4 
+    ? todayFourVerses 
+    : getSynchronousVersesForToday(currentTime);
   const verseAutoScrollTimer = useRef<any>(null);
   const captureVerseRef = useRef<ViewShot>(null);
   const capturePromiseRef = useRef<ViewShot>(null);
@@ -1432,6 +2347,119 @@ export default function HomeScreen() {
   const sermonCardWidthRef = useRef(0);
   sermonSlideRef.current = sermonSlide;
   sermonCardWidthRef.current = sermonCardWidth;
+
+  const quickActionsGridItems = [
+    // Row 1: Core Worship
+    {
+      id: 'sermons',
+      title: t('home.quickSermons') || 'Sermons',
+      icon: require('../../assets/retro_mic_3d.png'),
+      onPress: () => navigation.navigate('Sermons'),
+    },
+    {
+      id: 'events',
+      title: t('home.quickEvents') || 'Events',
+      icon: require('../../assets/3d_events.png'),
+      onPress: () => navigation.navigate('Events'),
+    },
+    {
+      id: 'songs',
+      title: t('home.quickSongs') || 'Songs',
+      icon: require('../../assets/3d_sermons.png'),
+      onPress: () => handleGuestProtectedNavigation('Songs'),
+    },
+    {
+      id: 'give',
+      title: language === 'en' ? 'Give' : t('home.quickGiving') || 'Give',
+      icon: require('../../assets/3d_give.png'),
+      onPress: () => {
+        if (!activeChurch?.features?.hasGiving) {
+          setAlertConfig({
+            visible: true,
+            title: 'Coming Soon',
+            message: 'Online donations via the app are coming soon. Please contact the church administration for offline donation options.',
+            type: 'info'
+          });
+        } else {
+          handleGuestProtectedNavigation('Give');
+        }
+      },
+    },
+    // Row 2: Spiritual Growth & Engagement
+    {
+      id: 'daily_verse',
+      title: t('home.quickDailyVerse') || 'Daily Verse',
+      icon: require('../../assets/3d_daily_verse.png'),
+      onPress: () => {
+        if (todayVerse) {
+          navigation.navigate('VerseOfTheDay', { verseId: todayVerse.id, period: todayPeriod });
+        } else if (visibleVerses && visibleVerses.length > 0) {
+          navigation.navigate('VerseOfTheDay', { verseId: visibleVerses[0].id, period: VERSE_PERIODS[0] || 'Morning' });
+        } else {
+          handleGuestProtectedNavigation('Promise');
+        }
+      },
+    },
+    {
+      id: 'attendance',
+      title: t('nav.attendance') || 'Attendance',
+      icon: require('../../assets/3d_attendance.png'),
+      onPress: () => navigation.navigate('Attendance'),
+    },
+    {
+      id: 'notes',
+      title: t('home.quickSermonNotes') || 'Notes',
+      icon: require('../../assets/3d_sermon_notes.png'),
+      onPress: () => handleGuestProtectedNavigation('MemberNotes'),
+    },
+    {
+      id: 'quiz',
+      title: t('home.quickBibleQuiz') || 'Bible Quiz',
+      icon: require('../../assets/3d_bible_quiz.png'),
+      onPress: () => navigation.navigate('BibleQuizHome'),
+    },
+    // Row 3: Community & Multimedia
+    {
+      id: 'members',
+      title: t('home.quickMembers') || 'Members',
+      icon: require('../../assets/3d_members.png'),
+      onPress: () => handleOpenMembers(),
+    },
+    {
+      id: 'meetings',
+      title: 'Meetings',
+      icon: require('../../assets/3d_online_meetings.png'),
+      onPress: () => navigation.navigate('OnlineMeetings'),
+    },
+    {
+      id: 'gallery',
+      title: t('home.gallery') || 'Gallery',
+      icon: require('../../assets/3d_gallery.png'),
+      onPress: () => navigation.navigate('Gallery'),
+    },
+    {
+      id: 'youtube',
+      title: 'YouTube',
+      icon: require('../../assets/3d_youtube.png'),
+      onPress: () => {
+        const yUrl = activeChurch?.socialLinks?.youtube?.trim() || 'https://www.youtube.com/@RhemaGlobalMinistries';
+        Linking.openURL(yUrl).catch(() => {});
+      },
+    },
+    // Row 4: Church Info & Contact
+    {
+      id: 'about',
+      title: t('home.aboutUs') || 'About Us',
+      icon: require('../../assets/3d_about_us.png'),
+      onPress: () => navigation.navigate('AboutUs'),
+    },
+    {
+      id: 'contact',
+      title: t('home.contactUs') || 'Contact Us',
+      icon: require('../../assets/3d_contact_us.png'),
+      onPress: () => navigation.navigate('ContactUs'),
+    },
+  ];
 
   const sermonPanResponder = useRef(
     PanResponder.create({
@@ -1480,6 +2508,13 @@ export default function HomeScreen() {
 
   const scrollY = useRef(new Animated.Value(0)).current;
   const headerPadding = Math.max(insets.top + 8, Platform.OS === 'ios' ? 50 : (StatusBar.currentHeight ? StatusBar.currentHeight + 12 : 36));
+  // Hero draws edge-to-edge behind a transparent status bar, so push content below camera cut-out / notifications
+  const heroTopInset = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0,
+    Platform.OS === 'ios' ? 54 : 50
+  ) + 2;
+  const [heroHeight, setHeroHeight] = useState(300);
   const HEADER_SCROLL_DISTANCE = 85;
   const headerTranslateY = scrollY.interpolate({
     inputRange: [0, HEADER_SCROLL_DISTANCE],
@@ -1789,13 +2824,14 @@ export default function HomeScreen() {
       if (visibleVerses.length === 0) return;
 
       // Determine initial slide based on current time
+      const customOffset = (promise ? 1 : 0) + (promise && promiseThumbnail ? 1 : 0);
       const hour = currentTime.getHours();
-      let initialIndex = 0; // Morning (12:00 AM - 11:59 AM)
-      if (hour >= 12 && hour < 17) initialIndex = 1; // Afternoon (12:00 PM - 4:59 PM)
-      else if (hour >= 17 && hour < 20) initialIndex = 2; // Evening (5:00 PM - 7:59 PM)
-      else if (hour >= 20) initialIndex = 3; // Night (8:00 PM - 11:59 PM)
+      let periodIdx = 0; // Morning (12:00 AM - 11:59 AM)
+      if (hour >= 12 && hour < 17) periodIdx = 1; // Afternoon (12:00 PM - 4:59 PM)
+      else if (hour >= 17 && hour < 20) periodIdx = 2; // Evening (5:00 PM - 7:59 PM)
+      else if (hour >= 20) periodIdx = 3; // Night (8:00 PM - 11:59 PM)
 
-      initialIndex = Math.min(initialIndex, Math.max(0, visibleVerses.length - 1));
+      const initialIndex = Math.min(customOffset + periodIdx, Math.max(0, getUnifiedSlideCount() - 1));
       setCarouselSlide(initialIndex);
 
       setTimeout(() => {
@@ -2124,18 +3160,27 @@ export default function HomeScreen() {
 
     return (
       <View key="service-timings-slide" style={[styles.phSlide, { width: screenWidth }]}>
-        <LinearGradient
-          colors={['#527C78', '#527C78']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[styles.phInner, styles.serviceSlideCleanInner]}
+        <View
+          style={[
+            styles.phInner, 
+            styles.serviceSlideCleanInner,
+            {
+              backgroundColor: screenTheme.promiseCardBg,
+              borderColor: screenTheme.promiseCardBorder,
+              borderWidth: 1,
+              shadowColor: screenTheme.isDark ? '#000' : '#0F172A',
+              shadowOpacity: screenTheme.isDark ? 0.35 : 0.06,
+              shadowRadius: 10,
+              elevation: screenTheme.isDark ? 4 : 2,
+              minHeight: 270,
+            }
+          ]}
         >
-          {/* Subtle background curved accent ring on top right */}
-          <View style={{ position: 'absolute', top: -50, right: -50, width: 190, height: 190, borderRadius: 95, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.08)' }} />
-
           {/* Centered Header */}
-          <Text style={styles.serviceSlideCleanTitle}>{t('home.churchServiceTimings')}</Text>
-          <View style={styles.serviceSlideCleanBar} />
+          <Text style={[styles.serviceSlideCleanTitle, { color: screenTheme.promiseLabel }]}>
+            {t('home.churchServiceTimings') || 'CHURCH SERVICE TIMINGS'}
+          </Text>
+          <View style={[styles.serviceSlideCleanBar, { backgroundColor: screenTheme.promiseLine }]} />
 
           {/* Service Items List */}
           <ScrollView
@@ -2151,28 +3196,40 @@ export default function HomeScreen() {
                 : '';
 
               return (
-                <View key={service.id || idx} style={styles.serviceSlideCleanRow}>
+                <View 
+                  key={service.id || idx} 
+                  style={[
+                    styles.serviceSlideCleanRow, 
+                    { 
+                      borderBottomColor: screenTheme.isDark ? 'rgba(255,255,255,0.08)' : '#F1F5F9', 
+                      borderBottomWidth: idx < timings.length - 1 ? 1 : 0, 
+                      paddingBottom: 10 
+                    }
+                  ]}
+                >
                   <View style={styles.serviceSlideCleanLeft}>
-                    <Text style={styles.serviceSlideCleanName} numberOfLines={2}>
+                    <Text style={[styles.serviceSlideCleanName, { color: screenTheme.promiseVerseTe }]} numberOfLines={2}>
                       {title || `Service #${idx + 1}`}
                     </Text>
                     {note ? (
-                      <Text style={styles.serviceSlideCleanNote}>
+                      <Text style={[styles.serviceSlideCleanNote, { color: screenTheme.textMuted }]}>
                         {note}
                       </Text>
                     ) : null}
                   </View>
 
                   {timeDisplay ? (
-                    <Text style={styles.serviceSlideCleanTime}>
-                      {timeDisplay}
-                    </Text>
+                    <View style={{ backgroundColor: screenTheme.promiseBtnBg, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: screenTheme.promiseBtnBorder }}>
+                      <Text style={[styles.serviceSlideCleanTime, { color: screenTheme.promiseRefPrimary }]}>
+                        {timeDisplay}
+                      </Text>
+                    </View>
                   ) : null}
                 </View>
               );
             })}
           </ScrollView>
-        </LinearGradient>
+        </View>
       </View>
     );
   };
@@ -2217,7 +3274,7 @@ export default function HomeScreen() {
 
           return {
             title: st.name || 'Church Service',
-            titleTelugu: st.nameTelugu || st.name || 'చర్చి సర్వీస్',
+            titleTelugu: st.nameTelugu || getTeluguServiceTitle(st.name),
             time: timeEn,
             timeTelugu: timeTe,
             raw: st,
@@ -2251,8 +3308,8 @@ export default function HomeScreen() {
 
 
   return (
-    <View style={[styles.mainContainer, { backgroundColor: '#FAF7F2' }]}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FAF7F2" />
+    <View style={[styles.mainContainer, { backgroundColor: screenTheme.bg }]}>
+      <StatusBar barStyle={screenTheme.barStyle} backgroundColor="transparent" translucent />
       <CustomAlert 
         visible={alertConfig.visible}
         title={alertConfig.title}
@@ -2261,84 +3318,63 @@ export default function HomeScreen() {
         onClose={() => setAlertConfig(prev => ({ ...prev, visible: false }))}
       />
       
-      {/* ── Fixed Top Church Header Row (Stays in Place While Content Scrolls Behind It) ── */}
-      <View 
-        style={{ 
-          position: 'absolute', 
-          top: 0, 
-          left: 0, 
-          right: 0, 
-          zIndex: 10, 
-          backgroundColor: '#FAF7F2',
-          paddingTop: headerPadding,
-          paddingHorizontal: 14,
-          paddingBottom: 6,
+      {/* ── Compact church bar: fades in once the hero scrolls away (church name + bell always reachable) ── */}
+      <Animated.View
+        pointerEvents="box-none"
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 10,
+          backgroundColor: screenTheme.bg,
+          paddingTop: heroTopInset - 6,
+          paddingHorizontal: 16,
+          paddingBottom: 10,
+          flexDirection: 'row',
+          alignItems: 'center',
+          borderBottomWidth: 1,
+          borderBottomColor: screenTheme.isDark ? 'rgba(232,196,110,0.45)' : 'rgba(0,0,0,0.08)',
+          opacity: scrollY.interpolate({ inputRange: [heroHeight * 0.5, heroHeight * 0.78], outputRange: [0, 1], extrapolate: 'clamp' }),
+          transform: [{ translateY: scrollY.interpolate({ inputRange: [heroHeight * 0.5, heroHeight * 0.78], outputRange: [-8, 0], extrapolate: 'clamp' }) }],
         }}
-        onLayout={(e) => setDynamicHeaderHeight(e.nativeEvent.layout.height)}
       >
-        {/* SECTION 1: Clean Top Church Identity Row (Full Title Always Visible) */}
-        <View style={[styles.rhemaTopIdentityRow, { marginBottom: 4 }]}>
-          <View style={styles.headerLeft}>
-            <View style={styles.rhemaLogoCircle}>
-              {activeChurch?.theme?.logoUrl ? (
-                <Image 
-                  source={{ uri: activeChurch.theme.logoUrl }} 
-                  style={styles.rhemaLogoImg}
-                  resizeMode="cover"
-                />
-              ) : (
-                <LinearGradient
-                  colors={['#1E64D8', '#082B7A']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.rhemaLogoGradient}
-                >
-                  <Text style={styles.rhemaLogoInitials}>{churchInitials}</Text>
-                </LinearGradient>
-              )}
-            </View>
-            <View style={styles.titleCol}>
-              <Text 
-                style={styles.rhemaCardTitle} 
-                numberOfLines={1} 
-                adjustsFontSizeToFit 
-                minimumFontScale={0.6}
-                maxFontSizeMultiplier={1.1}
-              >
-                {churchDisplayName}
-              </Text>
-              <Text 
-                style={styles.rhemaCardSubtitle} 
-                numberOfLines={1} 
-                adjustsFontSizeToFit 
-                minimumFontScale={0.7}
-                maxFontSizeMultiplier={1.1}
-              >
-                {activeChurch?.tagline || 'Together In Christ'}
-              </Text>
-            </View>
+        <LinearGradient colors={C.foil} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: 36, height: 36, borderRadius: 18, padding: 1.5 }}>
+          <View style={{ flex: 1, borderRadius: 16.5, overflow: 'hidden', backgroundColor: '#15302c' }}>
+            {activeChurch?.theme?.logoUrl ? (
+              <Image source={{ uri: activeChurch.theme.logoUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+            ) : (
+              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ color: C.gold, fontSize: 13, fontWeight: '800', fontFamily: SERIF }}>{churchInitials}</Text>
+              </View>
+            )}
           </View>
-
-          <View style={styles.headerRight}>
-            <TouchableOpacity 
-              style={styles.rhemaBellButton} 
-              onPress={() => navigation.navigate('Updates')}
-              activeOpacity={0.75}
-            >
-              <Animated.View style={{ transform: [{ rotate: bellRotate }] }}>
-                <Bell color="#0B1938" size={21} strokeWidth={2.2} />
-              </Animated.View>
-              <View style={styles.rhemaBellDot} />
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
+        </LinearGradient>
+        <Text
+          style={{ flex: 1, marginLeft: 10, color: screenTheme.text, fontSize: 17, fontWeight: '700', fontFamily: SERIF, letterSpacing: 0.3 }}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.7}
+        >
+          {churchDisplayName}
+        </Text>
+        <TouchableOpacity
+          style={{ width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: screenTheme.isDark ? 'rgba(255,255,255,0.08)' : '#F1F5F9', borderWidth: 1, borderColor: screenTheme.isDark ? 'rgba(232,196,110,0.55)' : '#E2E8F0' }}
+          onPress={() => navigation.navigate('Updates')}
+          activeOpacity={0.75}
+        >
+          <Animated.View style={{ transform: [{ rotate: bellRotate }] }}>
+            <Bell color={screenTheme.isDark ? C.gold : screenTheme.accent} size={18} strokeWidth={2} />
+          </Animated.View>
+          <View style={{ position: 'absolute', top: 7, right: 8, width: 8, height: 8, borderRadius: 4, backgroundColor: '#F95738', borderWidth: 1.5, borderColor: screenTheme.bg }} />
+        </TouchableOpacity>
+      </Animated.View>
 
       <Animated.ScrollView 
         style={styles.scroll} 
         contentContainerStyle={{ 
-          paddingTop: dynamicHeaderHeight > 0 ? dynamicHeaderHeight + 4 : headerPadding + 74,
-          paddingBottom: 180
+          paddingTop: 0,
+          paddingBottom: 0
         }}
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
@@ -2347,29 +3383,58 @@ export default function HomeScreen() {
           { useNativeDriver: true }
         )}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#0055D4" progressViewOffset={dynamicHeaderHeight > 0 ? dynamicHeaderHeight + 4 : headerPadding + 74} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#E8C46E" colors={['#2D5750']} progressViewOffset={heroTopInset + 10} />
         }
       >
-        {/* SECTION 2: Premium Greeting Card (Beloved In Christ with Interactive 3D Tilt) */}
-        <View style={{ paddingHorizontal: 14, marginTop: 4, marginBottom: 16 }}>
-          <GreetingCard userName={currentUserName} />
-        </View>
-
-        {/* Upcoming Events Marquee Ticker (Padded with matching card shape) */}
-        <View style={{ paddingHorizontal: 14, marginBottom: 16 }}>
-          <EventsTicker 
-            events={tickerEvents} 
-            onSeeAll={() => navigation.navigate('Events')} 
-            onEventPress={(evItem) => {
-              if (evItem?.raw) {
-                navigation.navigate('EventDetails', { event: evItem.raw });
-              } else {
-                navigation.navigate('Events');
-              }
-            }} 
+        {/* SCREEN CONTAINER: Fully matches selected theme */}
+        <View style={{ backgroundColor: screenTheme.bg, minHeight: '100%' }}>
+          {/* Over-scroll covers for pull-down & pull-up */}
+          <View pointerEvents="none" style={{ position: 'absolute', top: -800, left: 0, right: 0, height: 800, backgroundColor: screenTheme.overscrollTop }} />
+          <View pointerEvents="none" style={{ position: 'absolute', bottom: -800, left: 0, right: 0, height: 800, backgroundColor: screenTheme.overscrollBottom }} />
+          {/* Continuous linear gradient covering the top section and fading into white */}
+          <LinearGradient
+            colors={screenTheme.gradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={
+              screenTheme.gradientHeight
+                ? { position: 'absolute', top: 0, left: 0, right: 0, height: screenTheme.gradientHeight }
+                : StyleSheet.absoluteFill
+            }
+            pointerEvents="none"
           />
-        </View>
-        <View style={styles.contentPad}>
+
+          {/* UNIQUE PREMIUM CHURCH HERO & SIGNATURE GREETING CARD */}
+          <PremiumHero
+            churchName={churchDisplayName}
+            tagline={activeChurch?.tagline || 'Together In Christ'}
+            logoUrl={activeChurch?.theme?.logoUrl}
+            initials={churchInitials}
+            userName={currentUserName}
+            bellRotate={bellRotate}
+            onBellPress={() => navigation.navigate('Updates')}
+            topInset={heroTopInset}
+            onHeight={(h) => setHeroHeight((prev) => (Math.abs(prev - h) > 1 ? h : prev))}
+            theme={screenTheme}
+          />
+
+          {/* Product Hunt Award & Events Marquee: Edge-to-edge floating pill cards */}
+          <View style={{ paddingHorizontal: 0, paddingTop: 4, paddingBottom: 6 }}>
+            <EventsTicker 
+              events={tickerEvents} 
+              theme={screenTheme}
+              onSeeAll={() => navigation.navigate('Events')} 
+              onEventPress={(evItem) => {
+                if (evItem?.raw) {
+                  navigation.navigate('EventDetails', { event: evItem.raw });
+                } else {
+                  navigation.navigate('Events');
+                }
+              }} 
+            />
+          </View>
+
+          <View style={[styles.contentPad, { paddingTop: 4 }]}>
           {/* ── Daily Promise / Daily Verse Carousel ── */}
           <View style={styles.promiseHero}>
             {/* Slides */}
@@ -2398,36 +3463,42 @@ export default function HomeScreen() {
                   style={[styles.phSlide, { width: screenWidth }]} 
                   onPress={() => handleGuestProtectedNavigation('Promise')}
                 >
-                  <View style={styles.vdCleanWhiteCard}>
-                    <View style={styles.vdWatermarkCircle} pointerEvents="none" />
-                    <View style={styles.vdWatermarkBook} pointerEvents="none">
-                      <BookOpen size={64} color="rgba(255, 255, 255, 0.14)" strokeWidth={1.5} />
-                    </View>
-
-                    <Text style={styles.phLabel} maxFontSizeMultiplier={1.15}>
+                  <View style={[
+                    styles.vdCleanWhiteCard, 
+                    { 
+                      backgroundColor: screenTheme.promiseCardBg,
+                      borderColor: screenTheme.promiseCardBorder,
+                      borderWidth: 1,
+                      shadowColor: screenTheme.isDark ? '#000' : '#0F172A',
+                      shadowOpacity: screenTheme.isDark ? 0.35 : 0.06,
+                      shadowRadius: 10,
+                      elevation: screenTheme.isDark ? 4 : 2,
+                    }
+                  ]}>
+                    <Text style={[styles.phLabel, { color: screenTheme.promiseLabel }]} maxFontSizeMultiplier={1.15}>
                       {t('home.todaysPromise') || "Today's Promise"}
                     </Text>
 
                     <View style={styles.vdVerseBlock}>
-                      <View style={styles.vdVerticalLine} />
+                      
                       <View style={styles.vdVerseTextContainer}>
-                        <Text style={styles.vdTopRightQuote} pointerEvents="none">”</Text>
+                        <Text style={[styles.vdTopRightQuote, { color: screenTheme.promiseQuote }]} pointerEvents="none">”</Text>
                         {promise?.verseTelugu ? (
-                          <Text style={styles.vdVerseTe} numberOfLines={5} maxFontSizeMultiplier={1.15}>
+                          <Text style={[styles.vdVerseTe, { color: screenTheme.promiseVerseTe }]} numberOfLines={5} maxFontSizeMultiplier={1.15}>
                             {stripHtml(promise.verseTelugu)}
                           </Text>
                         ) : null}
-                        <Text style={styles.vdVerseEn} numberOfLines={4} maxFontSizeMultiplier={1.15}>
+                        <Text style={[styles.vdVerseEn, { color: screenTheme.promiseVerseEn }]} numberOfLines={4} maxFontSizeMultiplier={1.15}>
                           {promise ? stripHtml(promise.verse) : ''}
                         </Text>
                         <View style={styles.vdReferenceRow}>
                           {promise?.verseReferenceTe ? (
                             <>
-                              <Text style={styles.vdRefPrimary} maxFontSizeMultiplier={1.15}>{promise.verseReferenceTe}</Text>
-                              <Text style={styles.vdRefDivider} maxFontSizeMultiplier={1.15}>|</Text>
+                              <Text style={[styles.vdRefPrimary, { color: screenTheme.promiseRefPrimary }]} maxFontSizeMultiplier={1.15}>{promise.verseReferenceTe}</Text>
+                              <Text style={[styles.vdRefDivider, { color: screenTheme.promiseRefDivider }]} maxFontSizeMultiplier={1.15}>|</Text>
                             </>
                           ) : null}
-                          <Text style={styles.vdRefSecondary} maxFontSizeMultiplier={1.15}>
+                          <Text style={[styles.vdRefSecondary, { color: screenTheme.promiseRefSecondary }]} maxFontSizeMultiplier={1.15}>
                             {promise ? (promise.verseReferenceEn || promise.verseReference) : ''}
                           </Text>
                         </View>
@@ -2435,12 +3506,15 @@ export default function HomeScreen() {
                     </View>
 
                     <View style={styles.vdActions}>
-                      <TouchableOpacity style={styles.vdShareBtn} onPress={handleSharePromise}>
-                        <Share2 size={17} color="#355B56" />
-                        <Text style={styles.vdShareBtnTxt} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{t('common.share')}</Text>
+                      <TouchableOpacity 
+                        style={[styles.vdShareBtn, { backgroundColor: screenTheme.promiseBtnBg, borderColor: screenTheme.promiseBtnBorder, borderWidth: 1 }]} 
+                        onPress={handleSharePromise}
+                      >
+                        <Share2 size={17} color={screenTheme.promiseBtnIcon} />
+                        <Text style={[styles.vdShareBtnTxt, { color: screenTheme.promiseBtnText }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{t('common.share')}</Text>
                       </TouchableOpacity>
                       <TouchableOpacity 
-                        style={styles.vdSaveBtn} 
+                        style={[styles.vdSaveBtn, { backgroundColor: screenTheme.promiseBtnBg, borderColor: screenTheme.promiseBtnBorder, borderWidth: 1 }]} 
                         onPress={() => {
                           handleGuestProtectedNavigation('DailyVideo', { 
                             youtubeId: promise?.youtubeId,
@@ -2449,8 +3523,8 @@ export default function HomeScreen() {
                           });
                         }}
                       >
-                        <Play size={17} color="#355B56" fill="#355B56" />
-                        <Text style={styles.vdSaveBtnTxt} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{t('common.watchVideo')}</Text>
+                        <Play size={17} color={screenTheme.promiseBtnIcon} fill={screenTheme.promiseBtnIcon} />
+                        <Text style={[styles.vdSaveBtnTxt, { color: screenTheme.promiseBtnText }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{t('common.watchVideo')}</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -2461,24 +3535,21 @@ export default function HomeScreen() {
               {promise && promiseThumbnail && (
                 <View style={[styles.phSlide, styles.phThumbnailSlide, { width: screenWidth }]}>
                   <LinearGradient
-                    colors={['#527C78', '#527C78']}
+                    colors={['transparent', 'transparent']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={{ flex: 1, paddingTop: 16, borderRadius: 24, overflow: 'hidden' }}
                   >
-                    <View style={{ position: 'absolute', top: -40, right: -40, width: 160, height: 160, borderRadius: 80, borderWidth: 1.5, borderColor: 'rgba(203, 213, 225, 0.15)' }} />
-                    <View style={{ position: 'absolute', top: -10, right: -10, width: 100, height: 100, borderRadius: 50, borderWidth: 1.5, borderColor: 'rgba(203, 213, 225, 0.1)' }} />
-                    <View style={{ position: 'absolute', bottom: -50, left: -20, width: 140, height: 140, borderRadius: 70, borderWidth: 1.5, borderColor: 'rgba(203, 213, 225, 0.1)' }} />
-                    <Text style={styles.phLabel} maxFontSizeMultiplier={1.15}>{t('home.todaysPromise') || "Today's Promise"}</Text>
+                    <Text style={[styles.phLabel, { color: screenTheme.promiseLabel }]} maxFontSizeMultiplier={1.15}>{t('home.todaysPromise') || "Today's Promise"}</Text>
                     <Image
                       source={{ uri: promiseThumbnail }}
                       style={[styles.phThumbnailImg, { flex: 1 }]}
                       resizeMode="contain"
                     />
                     <View style={[styles.phActions, { paddingHorizontal: 16, paddingBottom: 14 }]}>
-                      <TouchableOpacity style={styles.phShareBtn} onPress={handleSharePromise}>
-                        <Share2 size={18} color="#355B56" />
-                        <Text style={styles.phBtnTxt} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{t('common.share')}</Text>
+                      <TouchableOpacity style={[styles.phShareBtn, { backgroundColor: screenTheme.promiseBtnBg, borderColor: screenTheme.promiseBtnBorder, borderWidth: 1 }]} onPress={handleSharePromise}>
+                        <Share2 size={18} color={screenTheme.promiseBtnIcon} />
+                        <Text style={[styles.phBtnTxt, { color: screenTheme.promiseBtnText }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{t('common.share')}</Text>
                       </TouchableOpacity>
                     </View>
                   </LinearGradient>
@@ -2487,9 +3558,7 @@ export default function HomeScreen() {
 
                   {visibleVerses.length > 0 ? (
                     visibleVerses.map((verse, idx) => {
-                      const period = visibleVerses.length === 1 
-                        ? getCurrentPeriod(currentTime) 
-                        : (VERSE_PERIODS[idx] || getCurrentPeriod(currentTime));
+                      const period = VERSE_PERIODS[idx] || getCurrentPeriod(currentTime);
                       const loc = getLocalizedVerse(verse, language);
                       const greeting = getPeriodGreeting(period, t);
 
@@ -2500,44 +3569,41 @@ export default function HomeScreen() {
                           style={[styles.vdSlide, { width: screenWidth }]}
                           onPress={() => navigation.navigate('VerseOfTheDay', { verseId: verse.id, period })}
                         >
-                          <View style={[styles.vdCleanWhiteCard, verse.backgroundUrl ? { backgroundColor: '#1A2E2B' } : undefined]}>
-                            {verse.backgroundUrl ? (
-                              <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
-                                <ImageBackground
-                                  source={{ uri: verse.backgroundUrl }}
-                                  style={StyleSheet.absoluteFillObject}
-                                  imageStyle={{ borderRadius: 24 }}
-                                  resizeMode="cover"
-                                >
-                                  <LinearGradient
-                                    colors={['rgba(24, 46, 42, 0.45)', 'rgba(15, 23, 42, 0.88)']}
-                                    style={StyleSheet.absoluteFillObject}
-                                  />
-                                </ImageBackground>
-                              </View>
-                            ) : (
-                              <>
-                                {/* Subtle bottom-right open book & soft circle watermark */}
-                                <View style={styles.vdWatermarkCircle} pointerEvents="none" />
-                                <View style={styles.vdWatermarkBook} pointerEvents="none">
-                                  <BookOpen size={64} color="rgba(255, 255, 255, 0.14)" strokeWidth={1.5} />
-                                </View>
-                              </>
-                            )}
+                          <View style={[
+                            styles.vdCleanWhiteCard, 
+                            {
+                              backgroundColor: screenTheme.promiseCardBg,
+                              borderColor: screenTheme.promiseCardBorder,
+                              borderWidth: 1,
+                              shadowColor: screenTheme.isDark ? '#000' : '#0F172A',
+                              shadowOpacity: screenTheme.isDark ? 0.35 : 0.06,
+                              shadowRadius: 10,
+                              elevation: screenTheme.isDark ? 4 : 2,
+                            }
+                          ]}>
+                            {/* Subtle bottom-right open book & soft circle watermark */}
+                            <View style={[styles.vdWatermarkCircle, { backgroundColor: screenTheme.isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.03)' }]} pointerEvents="none" />
+                            <View style={styles.vdWatermarkBook} pointerEvents="none">
+                              <BookOpen size={64} color={screenTheme.isDark ? "rgba(255, 255, 255, 0.14)" : "rgba(0, 0, 0, 0.06)"} strokeWidth={1.5} />
+                            </View>
 
-                            <Text style={styles.phLabel} maxFontSizeMultiplier={1.15}>
+                            <Text style={[styles.phLabel, { color: screenTheme.promiseLabel }]} maxFontSizeMultiplier={1.15}>
                               {greeting}
                             </Text>
 
                             {/* Main Verse Block */}
                             <View style={styles.vdVerseBlock}>
-                              <View style={styles.vdVerticalLine} />
+                              
                               <View style={styles.vdVerseTextContainer}>
-                                <Text style={styles.vdTopRightQuote} pointerEvents="none">”</Text>
+                                <Text style={[styles.vdTopRightQuote, { color: screenTheme.promiseQuote }]} pointerEvents="none">”</Text>
 
                                 {/* Primary localized verse (Telugu / Primary) */}
                                 <Text 
-                                  style={[styles.vdVerseTe, !loc.secondaryVerse && { fontSize: 17, lineHeight: 26 }]} 
+                                  style={[
+                                    styles.vdVerseTe, 
+                                    { color: screenTheme.promiseVerseTe },
+                                    !loc.secondaryVerse && { fontSize: 17, lineHeight: 26 }
+                                  ]} 
                                   numberOfLines={5}
                                   maxFontSizeMultiplier={1.15}
                                 >
@@ -2546,20 +3612,20 @@ export default function HomeScreen() {
 
                                 {/* Secondary verse (English) if distinct */}
                                 {loc.secondaryVerse && loc.secondaryVerse !== loc.primaryVerse ? (
-                                  <Text style={styles.vdVerseEn} numberOfLines={4} maxFontSizeMultiplier={1.15}>
+                                  <Text style={[styles.vdVerseEn, { color: screenTheme.promiseVerseEn }]} numberOfLines={4} maxFontSizeMultiplier={1.15}>
                                     {stripHtml(loc.secondaryVerse)}
                                   </Text>
                                 ) : null}
 
                                 {/* Reference Line inside Scripture column */}
                                 <View style={styles.vdReferenceRow}>
-                                  <Text style={styles.vdRefPrimary} maxFontSizeMultiplier={1.15}>
+                                  <Text style={[styles.vdRefPrimary, { color: screenTheme.promiseRefPrimary }]} maxFontSizeMultiplier={1.15}>
                                     {loc.primaryReference}
                                   </Text>
                                   {loc.secondaryReference && loc.secondaryReference !== loc.primaryReference ? (
                                     <>
-                                      <Text style={styles.vdRefDivider} maxFontSizeMultiplier={1.15}>|</Text>
-                                      <Text style={styles.vdRefSecondary} maxFontSizeMultiplier={1.15}>
+                                      <Text style={[styles.vdRefDivider, { color: screenTheme.promiseRefDivider }]} maxFontSizeMultiplier={1.15}>|</Text>
+                                      <Text style={[styles.vdRefSecondary, { color: screenTheme.promiseRefSecondary }]} maxFontSizeMultiplier={1.15}>
                                         {loc.secondaryReference}
                                       </Text>
                                     </>
@@ -2568,23 +3634,23 @@ export default function HomeScreen() {
                               </View>
                             </View>
 
-                            {/* Action Buttons: Background #E4EEEA · Text and icon #355B56 */}
+                            {/* Action Buttons */}
                             <View style={styles.vdActions}>
                               <TouchableOpacity 
-                                style={styles.vdShareBtn} 
+                                style={[styles.vdShareBtn, { backgroundColor: screenTheme.promiseBtnBg, borderColor: screenTheme.promiseBtnBorder, borderWidth: 1 }]} 
                                 onPress={() => handleShareDailyVerse(verse, period)}
                                 activeOpacity={0.75}
                               >
-                                <Share2 size={17} color="#355B56" />
-                                <Text style={styles.vdShareBtnTxt} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{t('common.share')}</Text>
+                                <Share2 size={17} color={screenTheme.promiseBtnIcon} />
+                                <Text style={[styles.vdShareBtnTxt, { color: screenTheme.promiseBtnText }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{t('common.share')}</Text>
                               </TouchableOpacity>
                               <TouchableOpacity 
-                                style={styles.vdSaveBtn} 
+                                style={[styles.vdSaveBtn, { backgroundColor: screenTheme.promiseBtnBg, borderColor: screenTheme.promiseBtnBorder, borderWidth: 1 }]} 
                                 onPress={() => handleSaveDailyVerseCard(verse, period)}
                                 activeOpacity={0.75}
                               >
-                                <Download size={17} color="#355B56" />
-                                <Text style={styles.vdSaveBtnTxt} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{t('common.saveCard')}</Text>
+                                <Download size={17} color={screenTheme.promiseBtnIcon} />
+                                <Text style={[styles.vdSaveBtnTxt, { color: screenTheme.promiseBtnText }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15}>{t('common.saveCard')}</Text>
                               </TouchableOpacity>
                             </View>
                           </View>
@@ -2594,9 +3660,16 @@ export default function HomeScreen() {
                   ) : (
                     // Loading placeholder while 4 verses load
                     <View style={[styles.vdSlide, { width: screenWidth }]}>
-                      <View style={[styles.vdCleanWhiteCard, { justifyContent: 'center', alignItems: 'center', minHeight: 240 }]}>
-                        <ActivityIndicator size="small" color="#E4EEEA" />
-                        <Text style={{ color: '#FFFFFF', fontSize: 12, marginTop: 8 }}>{t('common.loading')}</Text>
+                      <View style={[styles.vdCleanWhiteCard, { 
+                        backgroundColor: screenTheme.promiseCardBg, 
+                        borderColor: screenTheme.promiseCardBorder, 
+                        borderWidth: 1, 
+                        justifyContent: 'center', 
+                        alignItems: 'center', 
+                        minHeight: 270 
+                      }]}>
+                        <ActivityIndicator size="small" color={screenTheme.accent} />
+                        <Text style={{ color: screenTheme.textMuted, fontSize: 12, marginTop: 8 }}>{t('common.loading')}</Text>
                       </View>
                     </View>
                   )}
@@ -2616,7 +3689,7 @@ export default function HomeScreen() {
                 <View style={styles.dotRow}>
                   {Array.from({ length: totalDots }).map((_, i) => (
                     <TouchableOpacity key={i} onPress={() => goToSlide(i)} style={styles.dotHit}>
-                      <View style={[styles.dot, carouselSlide === i && styles.dotActive]} />
+                      <View style={[styles.dot, { backgroundColor: screenTheme.dotColor }, carouselSlide === i && [styles.dotActive, { backgroundColor: screenTheme.dotActiveColor }]]} />
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -2636,15 +3709,96 @@ export default function HomeScreen() {
             <View style={styles.bentoHeaderRow}>
               <View style={{ flex: 1, marginRight: 8 }}>
                 <Text 
-                  style={[styles.bentoHeaderTitle, isDark && { color: '#e2e8f0' }]}
+                  style={[styles.bentoHeaderTitle, { color: screenTheme.text }]}
                   numberOfLines={1}
                 >
                   {t('home.quickAccess')}
                 </Text>
               </View>
-              <Text style={styles.bentoHeaderSubtitle}>Tap to explore</Text>
+              <Text style={[styles.bentoHeaderSubtitle, { color: screenTheme.textMuted }]}>Tap to explore</Text>
             </View>
 
+            {quickActionsStyle === 'grid' ? (
+              /* ── 4-in-a-Row 3D Icon Grid (User Selected Style) ── */
+              <View style={styles.grid4Container}>
+                {[0, 1, 2, 3].map((rowIndex) => {
+                  const rowItems = quickActionsGridItems.slice(rowIndex * 4, rowIndex * 4 + 4);
+                  if (rowItems.length === 0) return null;
+                  return (
+                    <View 
+                      key={rowIndex} 
+                      style={[
+                        styles.grid4Row, 
+                        rowItems.length < 4 && { justifyContent: 'flex-start', gap: '2.93%' }
+                      ]}
+                    >
+                      {rowItems.map((item) => (
+                        <TouchableOpacity
+                          key={item.id}
+                          style={styles.grid4Item}
+                          activeOpacity={0.88}
+                          onPress={item.onPress}
+                        >
+                          <View
+                            style={[
+                              styles.grid4Card,
+                              {
+                                backgroundColor:
+                                  appearance === 'pure_white'
+                                    ? '#FAF7F2'
+                                    : appearance === 'warm_white'
+                                    ? '#FFFFFF'
+                                    : appearance === 'sage_ecru'
+                                    ? '#F4F7EE'
+                                    : screenTheme.isDark
+                                    ? '#121212'
+                                    : '#FFFFFF',
+                                borderColor:
+                                  appearance === 'pure_white'
+                                    ? '#E8E3DA'
+                                    : appearance === 'warm_white'
+                                    ? '#E2E8F0'
+                                    : appearance === 'sage_ecru'
+                                    ? '#CBD1C4'
+                                    : screenTheme.isDark
+                                    ? '#27272A'
+                                    : '#E2E8F0',
+                              },
+                            ]}
+                          >
+                            <Image
+                              source={item.icon}
+                              style={[
+                                styles.grid4Icon,
+                                item.id === 'gallery' && styles.grid4IconGallery,
+                                item.id === 'give' && screenTheme.isDark && {
+                                  // Subtle brightness/glow enhancement for dark theme
+                                  shadowColor: '#F59E0B',
+                                  shadowOffset: { width: 0, height: 2 },
+                                  shadowOpacity: 0.35,
+                                  shadowRadius: 4,
+                                }
+                              ]}
+                              resizeMode="contain"
+                            />
+                          </View>
+                          <Text
+                            style={[styles.grid4Label, { color: screenTheme.text }]}
+                            numberOfLines={1}
+                            adjustsFontSizeToFit
+                            minimumFontScale={0.8}
+                          >
+                            {item.title}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  );
+                })}
+              </View>
+            ) : (
+              /* ── Bento Grid: Asymmetric Floating Cards ── */
+              <View>
             {/* ── ROW 1: Sermons (Tall Card) + Stacked Daily Verse & Events (Right Column) ── */}
             <View style={styles.bentoRow1}>
               {/* Left Column: Sermons Card - PanResponder Swipeable & Auto-Scroll */}
@@ -2653,20 +3807,20 @@ export default function HomeScreen() {
                 style={styles.claySermonsTouch}
               >
                 <LinearGradient
-                  colors={['#0D3D34', '#072620']}
+                  colors={screenTheme.bentoSermonsGradient}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={styles.claySermonsCard}
+                  style={[styles.claySermonsCard, { borderColor: screenTheme.bentoSermonsBorder, borderWidth: 1 }]}
                 >
                   {/* 3D Retro Vintage Microphone for Sermons */}
                   <TouchableOpacity 
                     activeOpacity={0.8}
                     onPress={() => navigation.navigate('Sermons')}
-                    style={{ width: 44, height: 48, alignItems: 'center', justifyContent: 'center' }}
+                    style={{ width: 46, height: 52, alignItems: 'center', justifyContent: 'center' }}
                   >
                     <Image
                       source={require('../../assets/retro_mic_3d.png')}
-                      style={{ width: 26, height: 46 }}
+                      style={{ width: 34, height: 52 }}
                       resizeMode="contain"
                     />
                   </TouchableOpacity>
@@ -2693,14 +3847,14 @@ export default function HomeScreen() {
                       {/* Slide 1 */}
                       <View style={{ width: sermonCardWidth > 0 ? sermonCardWidth : 140, paddingRight: 4 }}>
                         <Text
-                          style={styles.claySermonsTitle}
+                          style={[styles.claySermonsTitle, { color: screenTheme.bentoSermonsText }]}
                           numberOfLines={1}
                           adjustsFontSizeToFit
                           minimumFontScale={0.8}
                         >
                           {t('home.quickSermons')}
                         </Text>
-                        <Text style={styles.claySermonsSub} numberOfLines={2}>
+                        <Text style={[styles.claySermonsSub, { color: screenTheme.bentoSermonsSub }]} numberOfLines={2}>
                           Watch & listen to transformative messages
                         </Text>
                       </View>
@@ -2708,14 +3862,14 @@ export default function HomeScreen() {
                       {/* Slide 2 */}
                       <View style={{ width: sermonCardWidth > 0 ? sermonCardWidth : 140, paddingRight: 4 }}>
                         <Text
-                          style={styles.claySermonsTitle}
+                          style={[styles.claySermonsTitle, { color: screenTheme.bentoSermonsText }]}
                           numberOfLines={1}
                           adjustsFontSizeToFit
                           minimumFontScale={0.8}
                         >
                           Sermon Videos
                         </Text>
-                        <Text style={styles.claySermonsSub} numberOfLines={2}>
+                        <Text style={[styles.claySermonsSub, { color: screenTheme.bentoSermonsSub }]} numberOfLines={2}>
                           Rhema Global Ministries sermon videos
                         </Text>
                       </View>
@@ -2723,14 +3877,14 @@ export default function HomeScreen() {
                       {/* Slide 3 */}
                       <View style={{ width: sermonCardWidth > 0 ? sermonCardWidth : 140, paddingRight: 4 }}>
                         <Text
-                          style={styles.claySermonsTitle}
+                          style={[styles.claySermonsTitle, { color: screenTheme.bentoSermonsText }]}
                           numberOfLines={1}
                           adjustsFontSizeToFit
                           minimumFontScale={0.8}
                         >
                           Watch Online
                         </Text>
-                        <Text style={styles.claySermonsSub} numberOfLines={2}>
+                        <Text style={[styles.claySermonsSub, { color: screenTheme.bentoSermonsSub }]} numberOfLines={2}>
                           Stream life-changing sermons anytime
                         </Text>
                       </View>
@@ -2762,78 +3916,25 @@ export default function HomeScreen() {
                         </TouchableOpacity>
                       </View>
 
-                      {/* White Circular Action Button with Upward Cross Arrow */}
-                      <TouchableOpacity 
-                        activeOpacity={0.8}
-                        onPress={() => navigation.navigate('Sermons')}
-                        style={styles.clayArrowCircleMd}
-                      >
-                        <ArrowUpRight size={12} color="#0C3830" strokeWidth={2.4} />
-                      </TouchableOpacity>
+
                     </View>
                   </View>
                 </LinearGradient>
               </View>
 
-              {/* Right Column: Daily Verse + Events - Clean, visible borders */}
+              {/* Right Column: Events (Top) + Songs (Bottom) */}
               <View style={styles.bentoRow1RightCol}>
-                {/* Songs Card: Rich Royal Purple Gradient */}
-                <TouchableOpacity
-                  style={styles.clayDailyVerseTouch}
-                  activeOpacity={0.88}
-                  onPress={() => handleGuestProtectedNavigation('Songs')}
-                >
-                  <LinearGradient
-                    colors={['#582B8A', '#3C1665', '#240842']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={[styles.clayDailyVerseCard, { borderColor: '#7E43BA' }]}
-                  >
-                    {/* 3D Microphone with Music Notes */}
-                    <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
-                      <Image
-                        source={require('../../assets/3d_sermons.png')}
-                        style={{ width: 38, height: 38 }}
-                        resizeMode="contain"
-                      />
-                    </View>
-
-                    <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 24 }}>
-                      <Text
-                        style={[styles.clayCardTitle, { color: '#FFFFFF', fontSize: 14 }]}
-                        numberOfLines={1}
-                        adjustsFontSizeToFit
-                        minimumFontScale={0.85}
-                      >
-                        {t('home.quickSongs')}
-                      </Text>
-                      <Text
-                        style={[styles.clayCardSub, { color: '#E8D4FC', fontSize: 11, marginTop: 2 }]}
-                        numberOfLines={1}
-                        adjustsFontSizeToFit
-                        minimumFontScale={0.8}
-                      >
-                        Worship songs
-                      </Text>
-                    </View>
-
-                    <View style={[styles.clayArrowCircleMd, { position: 'absolute', right: 8, bottom: 8 }]}>
-                      <ArrowUpRight size={11} color="#3C1665" strokeWidth={2.4} />
-                    </View>
-                  </LinearGradient>
-                </TouchableOpacity>
-
-                {/* Events Card: Bright Warm Amber Mocha Gradient */}
+                {/* Events Card */}
                 <TouchableOpacity
                   style={styles.clayEventsTouch}
                   activeOpacity={0.88}
                   onPress={() => navigation.navigate('Events')}
                 >
                   <LinearGradient
-                    colors={['#A86E42', '#865128', '#633714']}
+                    colors={screenTheme.bentoEventsGradient}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
-                    style={[styles.clayEventsCard, { borderColor: '#BF875D' }]}
+                    style={[styles.clayEventsCard, { borderColor: screenTheme.bentoEventsBorder, borderWidth: 1 }]}
                   >
                     {/* 3D Spiral Calendar Icon */}
                     <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
@@ -2844,9 +3945,9 @@ export default function HomeScreen() {
                       />
                     </View>
 
-                    <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 24 }}>
+                    <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 8 }}>
                       <Text
-                        style={[styles.clayCardTitle, { color: '#FFFFFF', fontSize: 14 }]}
+                        style={[styles.clayCardTitle, { color: screenTheme.bentoEventsText, fontSize: 14 }]}
                         numberOfLines={1}
                         adjustsFontSizeToFit
                         minimumFontScale={0.85}
@@ -2854,7 +3955,7 @@ export default function HomeScreen() {
                         {t('home.quickEvents')}
                       </Text>
                       <Text
-                        style={[styles.clayCardSub, { color: '#F9E9DC', fontSize: 11, marginTop: 2 }]}
+                        style={[styles.clayCardSub, { color: screenTheme.bentoEventsSub, fontSize: 11, marginTop: 2 }]}
                         numberOfLines={1}
                         adjustsFontSizeToFit
                         minimumFontScale={0.8}
@@ -2862,9 +3963,47 @@ export default function HomeScreen() {
                         Church services
                       </Text>
                     </View>
+                  </LinearGradient>
+                </TouchableOpacity>
 
-                    <View style={[styles.clayArrowCircleMd, { position: 'absolute', right: 8, bottom: 8 }]}>
-                      <ArrowUpRight size={11} color="#633714" strokeWidth={2.4} />
+                {/* Songs Card */}
+                <TouchableOpacity
+                  style={styles.clayDailyVerseTouch}
+                  activeOpacity={0.88}
+                  onPress={() => handleGuestProtectedNavigation('Songs')}
+                >
+                  <LinearGradient
+                    colors={screenTheme.bentoSongsGradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={[styles.clayDailyVerseCard, { borderColor: screenTheme.bentoSongsBorder, borderWidth: 1 }]}
+                  >
+                    {/* 3D Microphone with Music Notes */}
+                    <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+                      <Image
+                        source={require('../../assets/3d_sermons.png')}
+                        style={{ width: 38, height: 38 }}
+                        resizeMode="contain"
+                      />
+                    </View>
+
+                    <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 8 }}>
+                      <Text
+                        style={[styles.clayCardTitle, { color: screenTheme.bentoSongsText, fontSize: 14 }]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.85}
+                      >
+                        {t('home.quickSongs')}
+                      </Text>
+                      <Text
+                        style={[styles.clayCardSub, { color: screenTheme.bentoSongsSub, fontSize: 11, marginTop: 2 }]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.8}
+                      >
+                        Worship songs
+                      </Text>
                     </View>
                   </LinearGradient>
                 </TouchableOpacity>
@@ -2889,10 +4028,10 @@ export default function HomeScreen() {
               }}
             >
               <LinearGradient
-                colors={['#0B0A08', '#1C1507', '#5B4413', '#B98F2E', '#E8C766']}
+                colors={screenTheme.bentoGiveGradient}
                 start={{ x: 0, y: 0.25 }}
                 end={{ x: 1, y: 0.75 }}
-                style={styles.clayGiveCard}
+                style={[styles.clayGiveCard, { borderColor: screenTheme.bentoGiveBorder, borderWidth: 1 }]}
               >
                 {/* 3D Gold Coins behind the Give badge */}
                 <GiveCoins scrollY={scrollY} triggerY={quickAccessY} />
@@ -2911,14 +4050,14 @@ export default function HomeScreen() {
 
                   <View style={{ flex: 1, justifyContent: 'center', marginLeft: 10, marginRight: 96 }}>
                     <Text
-                      style={[styles.clayCardTitle, { color: '#FFE7A0', fontSize: 16 }]}
+                      style={[styles.clayCardTitle, { color: screenTheme.bentoGiveText, fontSize: 16 }]}
                       numberOfLines={1}
                       adjustsFontSizeToFit
                       minimumFontScale={0.8}
                     >
                       {language === 'en' ? 'Give / Tithe' : t('home.quickGiving')}
                     </Text>
-                    <Text style={[styles.clayCardSub, { color: '#D8C48A', fontSize: 11, marginTop: 1 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+                    <Text style={[styles.clayCardSub, { color: screenTheme.bentoGiveSub, fontSize: 11, marginTop: 1 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
                       Sow a seed · Online giving
                     </Text>
                   </View>
@@ -2943,27 +4082,23 @@ export default function HomeScreen() {
                 }}
               >
                 <LinearGradient
-                  colors={['#3B78C2', '#22559C', '#123972']}
+                  colors={screenTheme.bentoVerseGradient}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={[styles.claySongsCard, { borderColor: '#5B92DA' }]}
+                  style={[styles.claySongsCard, { borderColor: screenTheme.bentoVerseBorder, borderWidth: 1 }]}
                 >
-                  {/* Warm Champagne Claymorphic Squircle with 4-Pointed Star */}
-                  <LinearGradient
-                    colors={['#FEF3C7', '#FDE68A']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.clayIconBoxLg}
-                  >
-                    <View style={styles.clayIconShine} pointerEvents="none" />
-                    <Svg width={18} height={18} viewBox="0 0 24 24" fill="#78350F">
-                      <Path d="M12 0 C12 6.6 6.6 12 0 12 C6.6 12 12 17.4 12 24 C12 17.4 17.4 12 24 12 C17.4 12 12 6.6 12 0 Z" />
-                    </Svg>
-                  </LinearGradient>
+                  {/* 3D Holy Bible Icon for Daily Verse */}
+                  <View style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+                    <Image
+                      source={require('../../assets/3d_daily_verse.png')}
+                      style={{ width: 40, height: 40 }}
+                      resizeMode="contain"
+                    />
+                  </View>
 
-                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 24 }}>
+                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 8 }}>
                     <Text
-                      style={[styles.clayCardTitle, { color: '#FFFFFF', fontSize: 16, fontWeight: '800' }]}
+                      style={[styles.clayCardTitle, { color: screenTheme.bentoVerseText, fontSize: 16, fontWeight: '800' }]}
                       numberOfLines={1}
                       adjustsFontSizeToFit
                       minimumFontScale={0.85}
@@ -2971,24 +4106,20 @@ export default function HomeScreen() {
                       {t('home.quickDailyVerse')}
                     </Text>
                   </View>
-
-                  <View style={[styles.clayArrowCircleMd, { position: 'absolute', right: 8, bottom: 8, backgroundColor: 'rgba(255, 255, 255, 0.16)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.28)' }]}>
-                    <ArrowUpRight size={12} color="#FFFFFF" strokeWidth={2.4} />
-                  </View>
                 </LinearGradient>
               </TouchableOpacity>
 
-              {/* Right: Attendance - Soft Charcoal #343A3A Gradient with Genuinely Large Text */}
+              {/* Right: Attendance */}
               <TouchableOpacity
                 style={styles.clayAttendanceTouch}
                 activeOpacity={0.88}
                 onPress={() => navigation.navigate('Attendance')}
               >
                 <LinearGradient
-                  colors={['#424A4A', '#343A3A', '#262B2B']}
+                  colors={screenTheme.bentoAttendanceGradient}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={[styles.clayAttendanceCard, { borderColor: '#4F5959' }]}
+                  style={[styles.clayAttendanceCard, { borderColor: screenTheme.bentoAttendanceBorder, borderWidth: 1 }]}
                 >
                   {/* 3D Attendance Checklist Clipboard Icon */}
                   <View style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginLeft: 0, marginRight: 2 }}>
@@ -2999,19 +4130,15 @@ export default function HomeScreen() {
                     />
                   </View>
 
-                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 4, marginRight: 20 }}>
+                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 8 }}>
                     <Text
-                      style={[styles.clayCardTitle, { color: '#FFFFFF', fontSize: 18.5, fontWeight: '900', letterSpacing: -0.3 }]}
+                      style={[styles.clayCardTitle, { color: screenTheme.bentoAttendanceText, fontSize: 18.5, fontWeight: '900', letterSpacing: -0.3 }]}
                       numberOfLines={1}
                       adjustsFontSizeToFit
                       minimumFontScale={0.88}
                     >
                       {t('nav.attendance') || 'Attendance'}
                     </Text>
-                  </View>
-
-                  <View style={[styles.clayArrowCircleMd, { position: 'absolute', right: 8, bottom: 8, backgroundColor: 'rgba(255, 255, 255, 0.16)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.28)' }]}>
-                    <ArrowUpRight size={12} color="#FFFFFF" strokeWidth={2.4} />
                   </View>
                 </LinearGradient>
               </TouchableOpacity>
@@ -3026,10 +4153,10 @@ export default function HomeScreen() {
                 onPress={() => handleGuestProtectedNavigation('MemberNotes')}
               >
                 <LinearGradient
-                  colors={['#2E72A6', '#1A537D', '#0E3756']}
+                  colors={screenTheme.bentoNotesGradient}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={[styles.clayQuarterCard, { borderColor: '#4C91C9' }]}
+                  style={[styles.clayQuarterCard, { borderColor: screenTheme.bentoNotesBorder, borderWidth: 1 }]}
                 >
                   {/* 3D Notepad with Writing Pen Icon */}
                   <View style={{ width: 42, height: 42, alignItems: 'center', justifyContent: 'center', marginLeft: 2, marginRight: 4 }}>
@@ -3041,20 +4168,15 @@ export default function HomeScreen() {
                   </View>
 
                   {/* Text Next to Icon */}
-                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 6, marginRight: 22 }}>
+                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 4 }}>
                     <Text
-                      style={[styles.clayCardTitle, { color: '#FFFFFF', fontSize: 14.5, fontWeight: '800' }]}
+                      style={[styles.clayCardTitle, { color: screenTheme.bentoNotesText, fontSize: 14.5, fontWeight: '800' }]}
                       numberOfLines={2}
                       adjustsFontSizeToFit
                       minimumFontScale={0.8}
                     >
                       {t('home.quickSermonNotes')}
                     </Text>
-                  </View>
-
-                  {/* Bottom-right: Arrow */}
-                  <View style={[styles.clayArrowCircleMd, { position: 'absolute', right: 8, bottom: 8, backgroundColor: 'rgba(255, 255, 255, 0.16)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.28)' }]}>
-                    <ArrowUpRight size={12} color="#FFFFFF" strokeWidth={2.4} />
                   </View>
                 </LinearGradient>
               </TouchableOpacity>
@@ -3066,24 +4188,24 @@ export default function HomeScreen() {
                 onPress={() => navigation.navigate('BibleQuizHome')}
               >
                 <LinearGradient
-                  colors={['#248A54', '#15653B', '#0B3F23']}
+                  colors={screenTheme.bentoQuizGradient}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={[styles.clayQuarterCard, { borderColor: '#3EAA70' }]}
+                  style={[styles.clayQuarterCard, { borderColor: screenTheme.bentoQuizBorder, borderWidth: 1 }]}
                 >
                   {/* 3D Golden Trophy Icon */}
                   <View style={{ width: 42, height: 42, alignItems: 'center', justifyContent: 'center', marginLeft: 2, marginRight: 4 }}>
                     <Image
                       source={require('../../assets/3d_bible_quiz.png')}
-                      style={{ width: 30, height: 38 }}
+                      style={{ width: 38, height: 38 }}
                       resizeMode="contain"
                     />
                   </View>
 
                   {/* Text Next to Icon */}
-                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 6, marginRight: 22 }}>
+                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 4 }}>
                     <Text
-                      style={[styles.clayCardTitle, { color: '#FFFFFF', fontSize: 14.5, fontWeight: '800' }]}
+                      style={[styles.clayCardTitle, { color: screenTheme.bentoQuizText, fontSize: 14.5, fontWeight: '800' }]}
                       numberOfLines={2}
                       adjustsFontSizeToFit
                       minimumFontScale={0.8}
@@ -3091,16 +4213,11 @@ export default function HomeScreen() {
                       {t('home.quickBibleQuiz') || 'Bible Quiz'}
                     </Text>
                   </View>
-
-                  {/* Bottom-right: Arrow */}
-                  <View style={[styles.clayArrowCircleMd, { position: 'absolute', right: 8, bottom: 8, backgroundColor: 'rgba(255, 255, 255, 0.16)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.28)' }]}>
-                    <ArrowUpRight size={12} color="#FFFFFF" strokeWidth={2.4} />
-                  </View>
                 </LinearGradient>
               </TouchableOpacity>
             </View>
 
-            {/* ── ROW 5: 3 Capsule Pills (Members, Online Meetings, Attendance) ── */}
+            {/* ── ROW 5: 2 Capsule Pills (Members, Online Meetings) ── */}
             <View
               style={styles.bentoBottomPillsRow}
               onLayout={(e) => setOnlineMeetingsY(e.nativeEvent.layout.y)}
@@ -3112,13 +4229,11 @@ export default function HomeScreen() {
                 activeOpacity={0.85}
               >
                 <LinearGradient
-                  colors={['#A32E52', '#7D1C3A', '#560D24']}
+                  colors={screenTheme.bentoMembersGradient}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={[styles.clayBottomPill, { borderColor: '#BD456C' }]}
+                  style={[styles.clayBottomPill, { borderColor: screenTheme.bentoMembersBorder, borderWidth: 1 }]}
                 >
-
-
                   {/* 3D Members Group Icon */}
                   <View style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}>
                     <Image
@@ -3128,19 +4243,15 @@ export default function HomeScreen() {
                     />
                   </View>
 
-                  <View style={{ flex: 1, zIndex: 2, marginHorizontal: 3, justifyContent: 'center', paddingRight: 16 }}>
+                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 4 }}>
                     <Text
-                      style={[styles.clayCardTitle, { color: '#FFFFFF', fontSize: 12.5, fontWeight: '800', letterSpacing: -0.2 }]}
+                      style={[styles.clayCardTitle, { color: screenTheme.bentoMembersText, fontSize: 13, fontWeight: '800', letterSpacing: -0.2 }]}
                       numberOfLines={1}
                       adjustsFontSizeToFit
                       minimumFontScale={0.8}
                     >
                       {t('home.quickMembers')}
                     </Text>
-                  </View>
-
-                  <View style={[styles.clayArrowCircleXs, { position: 'absolute', right: 5, bottom: 5 }]}>
-                    <ArrowUpRight size={9.5} color="#7D1C3A" strokeWidth={2.4} />
                   </View>
                 </LinearGradient>
               </TouchableOpacity>
@@ -3152,13 +4263,11 @@ export default function HomeScreen() {
                 activeOpacity={0.85}
               >
                 <LinearGradient
-                  colors={['#2563EB', '#1D4ED8', '#143896']}
+                  colors={screenTheme.bentoMeetingsGradient}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={[styles.clayBottomPill, { borderColor: '#5C91FA' }]}
+                  style={[styles.clayBottomPill, { borderColor: screenTheme.bentoMeetingsBorder, borderWidth: 1 }]}
                 >
-
-
                   {/* 3D Online Meetings Laptop Icon */}
                   <View style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}>
                     <Image
@@ -3168,26 +4277,84 @@ export default function HomeScreen() {
                     />
                   </View>
 
-                  <View style={{ flex: 1, zIndex: 2, marginHorizontal: 3, justifyContent: 'center', paddingRight: 16 }}>
+                  <View style={{ flex: 1, zIndex: 2, justifyContent: 'center', marginLeft: 8, marginRight: 4 }}>
                     <Text
-                      style={[styles.clayCardTitle, { color: '#FFFFFF', fontSize: 11.5, lineHeight: 13.5, fontWeight: '800', letterSpacing: -0.2 }]}
-                      numberOfLines={2}
+                      style={[styles.clayCardTitle, { color: screenTheme.bentoMeetingsText, fontSize: 13, fontWeight: '800', letterSpacing: -0.2 }]}
+                      numberOfLines={1}
                       adjustsFontSizeToFit
-                      minimumFontScale={0.75}
+                      minimumFontScale={0.8}
                     >
-                      Online{'\n'}Meetings
+                      Online Meetings
                     </Text>
-                  </View>
-
-                  <View style={[styles.clayArrowCircleXs, { position: 'absolute', right: 5, bottom: 5 }]}>
-                    <ArrowUpRight size={9.5} color="#1D4ED8" strokeWidth={2.4} />
                   </View>
                 </LinearGradient>
               </TouchableOpacity>
+            </View>
+              </View>
+            )}
+        </View>
 
-              {/* YouTube Pill */}
-              <TouchableOpacity
-                style={styles.clayBottomTouch}
+          {/* ── Quick Navigation: About Us, Contact Us, Gallery & YouTube in Single Line ── */}
+          {quickActionsStyle !== 'grid' && (
+          <View style={{ marginTop: 14, marginBottom: 24, width: '100%', paddingHorizontal: 16 }}>
+            <View style={{ flexDirection: 'row', width: '100%', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              {/* About Us */}
+              <TouchableOpacity 
+                style={{ alignItems: 'center', width: '23%' }}
+                onPress={() => navigation.navigate('AboutUs')}
+                activeOpacity={0.82}
+              >
+                <View style={[styles.archMedallionOuter, { backgroundColor: screenTheme.cardBg, shadowColor: '#E11D48' }]}>
+                  <LinearGradient
+                    colors={screenTheme.medallionBg}
+                    style={[styles.archMedallionInner, { borderColor: screenTheme.medallionBorder, borderWidth: 1 }]}
+                  >
+                    <Users size={23} color="#E11D48" strokeWidth={2.2} />
+                  </LinearGradient>
+                </View>
+                <Text style={{ color: screenTheme.text, fontWeight: '800', fontSize: 12.5, textAlign: 'center' }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{t('home.aboutUs')}</Text>
+                <Text style={{ color: screenTheme.textMuted, fontSize: 10.5, fontWeight: '600', marginTop: 2, textAlign: 'center' }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{t('home.aboutUsSub')}</Text>
+              </TouchableOpacity>
+
+              {/* Contact Us */}
+              <TouchableOpacity 
+                style={{ alignItems: 'center', width: '23%' }}
+                onPress={() => navigation.navigate('ContactUs')}
+                activeOpacity={0.82}
+              >
+                <View style={[styles.archMedallionOuter, { backgroundColor: screenTheme.cardBg, shadowColor: '#7C3AED' }]}>
+                  <LinearGradient
+                    colors={screenTheme.medallionBg}
+                    style={[styles.archMedallionInner, { borderColor: screenTheme.medallionBorder, borderWidth: 1 }]}
+                  >
+                    <MessageSquare size={23} color="#7C3AED" strokeWidth={2.2} />
+                  </LinearGradient>
+                </View>
+                <Text style={{ color: screenTheme.text, fontWeight: '800', fontSize: 12.5, textAlign: 'center' }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{t('home.contactUs')}</Text>
+                <Text style={{ color: screenTheme.textMuted, fontSize: 10.5, fontWeight: '600', marginTop: 2, textAlign: 'center' }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{t('home.contactUsSub')}</Text>
+              </TouchableOpacity>
+
+              {/* Gallery */}
+              <TouchableOpacity 
+                style={{ alignItems: 'center', width: '23%' }}
+                onPress={() => navigation.navigate('Gallery')}
+                activeOpacity={0.82}
+              >
+                <View style={[styles.archMedallionOuter, { backgroundColor: screenTheme.cardBg, shadowColor: '#355B56' }]}>
+                  <LinearGradient
+                    colors={screenTheme.medallionBg}
+                    style={[styles.archMedallionInner, { borderColor: screenTheme.medallionBorder, borderWidth: 1 }]}
+                  >
+                    <LucideImage size={23} color="#355B56" strokeWidth={2.2} />
+                  </LinearGradient>
+                </View>
+                <Text style={{ color: screenTheme.text, fontWeight: '800', fontSize: 12.5, textAlign: 'center' }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{t('home.gallery')}</Text>
+                <Text style={{ color: screenTheme.textMuted, fontSize: 10.5, fontWeight: '600', marginTop: 2, textAlign: 'center' }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{t('home.gallerySub')}</Text>
+              </TouchableOpacity>
+
+              {/* YouTube */}
+              <TouchableOpacity 
+                style={{ alignItems: 'center', width: '23%' }}
                 onPress={() => {
                   const yUrl = activeChurch?.socialLinks?.youtube?.trim();
                   if (yUrl) {
@@ -3201,124 +4368,33 @@ export default function HomeScreen() {
                     });
                   }
                 }}
-                activeOpacity={0.85}
-              >
-                <LinearGradient
-                  colors={['#182624', '#101817', '#0A100F']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={[styles.clayBottomPill, { borderColor: '#243835' }]}
-                >
-
-
-                  {/* 3D YouTube Icon */}
-                  <View style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}>
-                    <Image
-                      source={require('../../assets/3d_youtube.png')}
-                      style={{ width: 30, height: 30 }}
-                      resizeMode="contain"
-                    />
-                  </View>
-
-                  <View style={{ flex: 1, zIndex: 2, marginHorizontal: 3, justifyContent: 'center', paddingRight: 16 }}>
-                    <Text
-                      style={[styles.clayCardTitle, { color: '#FFFFFF', fontSize: 12.5, fontWeight: '800', letterSpacing: -0.2 }]}
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.8}
-                    >
-                      YouTube
-                    </Text>
-                  </View>
-
-                  <View style={[styles.clayArrowCircleXs, { position: 'absolute', right: 5, bottom: 5 }]}>
-                    <ArrowUpRight size={9.5} color="#FFFFFF" strokeWidth={2.4} />
-                  </View>
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
-        </View>
-
-          {/* ── Arched Navigation Section ── */}
-          <View style={{ marginTop: 4, marginBottom: 30, width: '100%', height: 165, alignItems: 'center' }}>
-            <View style={{ position: 'absolute', top: 32, left: 0, right: 0, height: 100 }}>
-              <Svg width={width} height={100}>
-                <Path
-                  d={`M -20 70 Q ${width/2} -60 ${width + 20} 70`}
-                  stroke={isDark ? '#3b82f6' : 'rgba(82, 124, 120, 0.45)'}
-                  strokeWidth={2}
-                  strokeDasharray="7, 6"
-                  fill="none"
-                />
-              </Svg>
-            </View>
-
-            <View style={{ flexDirection: 'row', width: '100%', justifyContent: 'space-between', paddingHorizontal: 32, alignItems: 'flex-start', paddingTop: 10 }}>
-              {/* About Us */}
-              <TouchableOpacity 
-                style={{ alignItems: 'center', marginTop: 25, width: 86 }}
-                onPress={() => navigation.navigate('AboutUs')}
                 activeOpacity={0.82}
               >
-                <View style={[styles.archMedallionOuter, { shadowColor: '#E11D48' }]}>
+                <View style={[styles.archMedallionOuter, { backgroundColor: screenTheme.cardBg, shadowColor: '#EF4444' }]}>
                   <LinearGradient
-                    colors={['#FFF1F2', '#FFE4E6']}
-                    style={styles.archMedallionInner}
+                    colors={screenTheme.medallionBg}
+                    style={[styles.archMedallionInner, { borderColor: screenTheme.medallionBorder, borderWidth: 1 }]}
                   >
-                    <Users size={25} color="#E11D48" strokeWidth={2.2} />
+                    <Svg width={24} height={24} viewBox="0 0 24 24" fill="#EF4444">
+                      <Path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+                    </Svg>
                   </LinearGradient>
                 </View>
-                <Text style={{ color: isDark ? '#f8fafc' : '#0B1938', fontWeight: '800', fontSize: 13, textAlign: 'center' }}>{t('home.aboutUs')}</Text>
-                <Text style={{ color: '#64748B', fontSize: 11, fontWeight: '600', marginTop: 2, textAlign: 'center' }}>{t('home.aboutUsSub')}</Text>
-              </TouchableOpacity>
-
-              {/* Contact Us */}
-              <TouchableOpacity 
-                style={{ alignItems: 'center', marginTop: -5, width: 86 }}
-                onPress={() => navigation.navigate('ContactUs')}
-                activeOpacity={0.82}
-              >
-                <View style={[styles.archMedallionOuter, { shadowColor: '#7C3AED' }]}>
-                  <LinearGradient
-                    colors={['#F5F3FF', '#EDE9FE']}
-                    style={styles.archMedallionInner}
-                  >
-                    <MessageSquare size={25} color="#7C3AED" strokeWidth={2.2} />
-                  </LinearGradient>
-                </View>
-                <Text style={{ color: isDark ? '#f8fafc' : '#0B1938', fontWeight: '800', fontSize: 13, textAlign: 'center' }}>{t('home.contactUs')}</Text>
-                <Text style={{ color: '#64748B', fontSize: 11, fontWeight: '600', marginTop: 2, textAlign: 'center' }}>{t('home.contactUsSub')}</Text>
-              </TouchableOpacity>
-
-              {/* Gallery */}
-              <TouchableOpacity 
-                style={{ alignItems: 'center', marginTop: 25, width: 86 }}
-                onPress={() => navigation.navigate('Gallery')}
-                activeOpacity={0.82}
-              >
-                <View style={[styles.archMedallionOuter, { shadowColor: '#355B56' }]}>
-                  <LinearGradient
-                    colors={['#E4EEEA', '#D1E5DF']}
-                    style={styles.archMedallionInner}
-                  >
-                    <LucideImage size={25} color="#355B56" strokeWidth={2.2} />
-                  </LinearGradient>
-                </View>
-                <Text style={{ color: isDark ? '#f8fafc' : '#0B1938', fontWeight: '800', fontSize: 13, textAlign: 'center' }}>{t('home.gallery')}</Text>
-                <Text style={{ color: '#64748B', fontSize: 11, fontWeight: '600', marginTop: 2, textAlign: 'center' }}>{t('home.gallerySub')}</Text>
+                <Text style={{ color: screenTheme.text, fontWeight: '800', fontSize: 12.5, textAlign: 'center' }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>YouTube</Text>
+                <Text style={{ color: screenTheme.textMuted, fontSize: 10.5, fontWeight: '600', marginTop: 2, textAlign: 'center' }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>Watch live</Text>
               </TouchableOpacity>
             </View>
           </View>
-
+          )}
 
           {/* ─── Upcoming Events ─── */}
           <View style={styles.sectionHeader}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Calendar size={16} color={isDark ? '#FCD34D' : '#1a2d5a'} />
-              <Text style={[styles.sectionHeaderTxt, { color: isDark ? '#f1f5f9' : '#1a2d5a' }]}>{t('home.upcomingEvents')}</Text>
+              <Calendar size={16} color={'#E8C46E'} />
+              <Text style={[styles.sectionHeaderTxt, { color: screenTheme.text }]}>{t('home.upcomingEvents')}</Text>
             </View>
             <TouchableOpacity onPress={() => navigation.navigate('Events')}>
-              <Text style={[styles.sectionSeeAll, { color: isDark ? '#FCD34D' : '#1a2d5a' }]}>{t('home.seeAll')}</Text>
+              <Text style={[styles.sectionSeeAll, { color: screenTheme.seeAllColor }]}>{t('home.seeAll')}</Text>
             </TouchableOpacity>
           </View>
 
@@ -3384,11 +4460,11 @@ export default function HomeScreen() {
           {/* ─── Latest Sermon ─── */}
           <View style={styles.sectionHeader}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Mic size={16} color={isDark ? '#FCD34D' : '#1a2d5a'} />
-              <Text style={[styles.sectionHeaderTxt, { color: isDark ? '#f1f5f9' : '#1a2d5a' }]}>{t('sermons.latestSermon')}</Text>
+              <Mic size={16} color={'#E8C46E'} />
+              <Text style={[styles.sectionHeaderTxt, { color: screenTheme.text }]}>{t('sermons.latestSermon')}</Text>
             </View>
             <TouchableOpacity onPress={() => navigation.navigate('Sermons')}>
-              <Text style={[styles.sectionSeeAll, { color: isDark ? '#FCD34D' : '#1a2d5a' }]}>{t('home.seeAll')}</Text>
+              <Text style={[styles.sectionSeeAll, { color: '#E8C46E' }]}>{t('home.seeAll')}</Text>
             </TouchableOpacity>
           </View>
 
@@ -3419,8 +4495,8 @@ export default function HomeScreen() {
                   {latestSermon?.duration && formatSermonDuration(latestSermon.duration) ? ` • ${formatSermonDuration(latestSermon.duration)}` : ''}
                 </Text>
               </View>
-              <View style={styles.playBtnCircle}>
-                <Play size={18} color="#1a2d5a" />
+              <View style={[styles.playBtnCircle, { borderColor: screenTheme.btnPrimaryBorder, backgroundColor: screenTheme.btnPrimaryBg }]}>
+                <Play size={18} color={screenTheme.btnPrimaryText} />
               </View>
             </TouchableOpacity>
           </View>
@@ -3428,11 +4504,11 @@ export default function HomeScreen() {
           {/* ─── Prayer Wall ─── */}
           <View style={styles.sectionHeader}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Heart size={16} color={isDark ? '#FCD34D' : '#1a2d5a'} fill={isDark ? 'rgba(252,211,77,0.2)' : 'rgba(26,45,90,0.15)'} />
-              <Text style={[styles.sectionHeaderTxt, { color: isDark ? '#f1f5f9' : '#1a2d5a' }]}>{t('prayer.title')}</Text>
+              <Heart size={16} color={'#E8C46E'} fill={'rgba(232,196,110,0.25)'} />
+              <Text style={[styles.sectionHeaderTxt, { color: screenTheme.text }]}>{t('prayer.title')}</Text>
             </View>
             <TouchableOpacity onPress={() => handleGuestProtectedNavigation('Prayer')}>
-              <Text style={[styles.sectionSeeAll, { color: isDark ? '#FCD34D' : '#1a2d5a' }]}>{t('home.seeAll')}</Text>
+              <Text style={[styles.sectionSeeAll, { color: '#E8C46E' }]}>{t('home.seeAll')}</Text>
             </TouchableOpacity>
           </View>
 
@@ -3444,14 +4520,15 @@ export default function HomeScreen() {
                 </Text>
               </View>
               <View style={styles.pcFoot}>
-                <TouchableOpacity style={styles.prayedBtn} onPress={() => Alert.alert(t('home.prayedAlertTitle'), t('home.prayedAlertMsg'))}>
-                   <CheckCircle size={14} color="#1a2d5a" />
-                   <Text style={styles.prayedBtnTxt}>{t('home.iPrayedBtn')}</Text>
+                <TouchableOpacity style={[styles.prayedBtn, { backgroundColor: screenTheme.btnPrimaryBg, borderColor: screenTheme.btnPrimaryBorder }]} onPress={() => Alert.alert(t('home.prayedAlertTitle'), t('home.prayedAlertMsg'))}>
+                   <CheckCircle size={14} color={screenTheme.btnPrimaryText} />
+                   <Text style={[styles.prayedBtnTxt, { color: screenTheme.btnPrimaryText }]}>{t('home.iPrayedBtn')}</Text>
                 </TouchableOpacity>
                 <Text style={styles.pcSeeAll}>{prayerCount} {t('home.prayerRequestsCount')}</Text>
               </View>
             </TouchableOpacity>
           </View>
+        </View>
         </View>
       </Animated.ScrollView>
 
@@ -4646,13 +5723,13 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: 'rgba(0,0,0,0.2)',
+    backgroundColor: 'rgba(255,255,255,0.3)',
   },
   dotActive: {
     width: 22,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#0055D4',
+    backgroundColor: '#E8C46E',
   },
 
   // ── Clean "Our Service Timings" Carousel Slide Styles (No Yellow, Matches Image) ──
@@ -5012,8 +6089,8 @@ const styles = StyleSheet.create({
 
   // Section header (external to card)
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginHorizontal: 16, marginTop: 12, marginBottom: 8 },
-  sectionHeaderTxt: { fontSize: 16, fontWeight: '800', color: '#1a2d5a' },
-  sectionSeeAll: { fontSize: 12, fontWeight: '700', color: '#1a2d5a' },
+  sectionHeaderTxt: { fontSize: 16, fontWeight: '800', color: '#FFFFFF' },
+  sectionSeeAll: { fontSize: 12, fontWeight: '700', color: '#E8C46E' },
 
   // Event Banner (clean card, no header band)
   eventBanner: { marginHorizontal: 16, marginBottom: 4, backgroundColor: '#fff', borderRadius: 18, overflow: 'hidden', elevation: 4, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 6, borderWidth: 1, borderColor: '#f1f5f9' },
@@ -5076,12 +6153,12 @@ const styles = StyleSheet.create({
   bentoHeaderTitle: {
     fontSize: 18,
     fontWeight: '800',
-    color: '#0B1938',
+    color: '#FFFFFF',
     letterSpacing: 0,
   },
   bentoHeaderSubtitle: {
     fontSize: 12.5,
-    color: '#5A708E',
+    color: '#C9D9D3',
     fontWeight: '500',
   },
   bentoRow1: {
@@ -5353,32 +6430,29 @@ const styles = StyleSheet.create({
   bentoRow1RightCol: {
     flex: 1.06,
     justifyContent: 'space-between',
-    gap: 9,
+    gap: 8,
   },
   clayDailyVerseTouch: {
-    flex: 1,
     borderRadius: 20,
     elevation: 3,
-    shadowColor: '#240842',
+    shadowColor: '#881337',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.14,
     shadowRadius: 6,
   },
   clayDailyVerseCard: {
-    flex: 1,
-    minHeight: 80,
+    minHeight: 70,
     borderRadius: 20,
     backgroundColor: 'transparent',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
     flexDirection: 'row',
     alignItems: 'center',
     overflow: 'hidden',
     borderWidth: 1.5,
-    borderColor: '#7E43BA',
+    borderColor: '#F43F5E',
   },
   clayEventsTouch: {
-    flex: 1,
     borderRadius: 20,
     elevation: 3,
     shadowColor: '#1F1710',
@@ -5387,12 +6461,11 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
   },
   clayEventsCard: {
-    flex: 1,
-    minHeight: 80,
+    minHeight: 70,
     borderRadius: 20,
     backgroundColor: 'transparent',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
     flexDirection: 'row',
     alignItems: 'center',
     overflow: 'hidden',
@@ -5552,14 +6625,14 @@ const styles = StyleSheet.create({
   claySongsCard: {
     minHeight: 84,
     borderRadius: 22,
-    backgroundColor: '#F3ECFA',
+    backgroundColor: 'transparent',
     paddingHorizontal: 10,
     paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#E8DCF8',
+    borderColor: '#7E43BA',
   },
   bentoRow4: {
     flexDirection: 'row',
@@ -5754,10 +6827,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   archMedallionOuter: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    padding: 4,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    padding: 3.5,
     backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
@@ -5772,7 +6845,7 @@ const styles = StyleSheet.create({
   archMedallionInner: {
     width: '100%',
     height: '100%',
-    borderRadius: 28,
+    borderRadius: 26,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -5999,5 +7072,49 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#64748b',
     marginTop: 2,
+  },
+  grid4Container: {
+    marginTop: 14,
+    marginBottom: 8,
+  },
+  grid4Row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  grid4Item: {
+    width: '22.8%',
+    alignItems: 'center',
+  },
+  grid4Card: {
+    width: '100%',
+    aspectRatio: 1.48,
+    minHeight: 46,
+    maxHeight: 54,
+    borderRadius: 15,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  grid4Icon: {
+    width: 38,
+    height: 38,
+  },
+  grid4IconGallery: {
+    width: 44,
+    height: 44,
+  },
+  grid4Label: {
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+    letterSpacing: -0.1,
   },
 });

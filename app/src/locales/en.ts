@@ -376,6 +376,7 @@ export const en = {
     contactUs: 'Contact Us',
     personalInfo: 'Personal Information',
     editProfile: 'Edit Profile',
+    uploadPhoto: 'Choose Photo',
     changePhoto: 'Change Photo',
     removePhoto: 'Remove Photo',
     firstName: 'First Name',

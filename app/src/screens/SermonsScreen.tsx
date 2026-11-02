@@ -14,12 +14,10 @@ import {
   Platform,
   Image
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { 
   ArrowLeft, 
   Play, 
-  Mic,
   ChevronDown,
   ChevronRight,
   BookOpen,
@@ -229,12 +227,12 @@ export default function SermonsScreen({ navigation }: any) {
 
     return (
       <TouchableOpacity 
-        style={[styles.sermonCard, { backgroundColor: isDark ? '#1e293b' : '#fff', borderColor: isDark ? '#334155' : '#FAF7F2' }]}
+        style={[styles.sermonCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
         onPress={() => navigation.navigate('SermonVideo', { 
           sermonData: item
         })}
       >
-        <View style={[styles.scThumb, { backgroundColor: isDark ? '#0f172a' : '#0f172a', overflow: 'hidden' }]}>
+        <View style={[styles.scThumb, { backgroundColor: isDark ? '#18181B' : '#E2E8F0', overflow: 'hidden' }]}>
           {thumbUri ? (
             <Image source={{ uri: thumbUri }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
           ) : null}
@@ -243,16 +241,16 @@ export default function SermonsScreen({ navigation }: any) {
           </View>
         </View>
       <View style={styles.scInfo}>
-        <Text style={[styles.scTitle, { color: isDark ? '#f1f5f9' : '#1e293b' }]} numberOfLines={2}>
+        <Text style={[styles.scTitle, { color: colors.text }]} numberOfLines={2}>
           {item.title}{item.titleTelugu ? ` · ${item.titleTelugu}` : ''}
         </Text>
-        <Text style={[styles.scMeta, { color: isDark ? '#94a3b8' : '#64748b' }]}>
+        <Text style={[styles.scMeta, { color: colors.textSecondary }]}>
           {item.pastor || t('sermons.pastor')} · {formatDateDisplay(item.date) || 'N/A'}{formatSermonDuration(item.duration) ? ` · ${formatSermonDuration(item.duration)}` : ''}
         </Text>
         {item.scripture ? (
-          <View style={styles.scriptureTag}>
-            <BookOpen size={10} color="#7c3aed" />
-            <Text style={styles.scriptureTagTxt}>{item.scripture}</Text>
+          <View style={[styles.scriptureTag, { backgroundColor: isDark ? 'rgba(124, 58, 237, 0.15)' : '#f5f3ff' }]}>
+            <BookOpen size={10} color={isDark ? '#A78BFA' : '#7c3aed'} />
+            <Text style={[styles.scriptureTagTxt, { color: isDark ? '#A78BFA' : '#7c3aed' }]}>{item.scripture}</Text>
           </View>
         ) : null}
       </View>
@@ -267,17 +265,26 @@ export default function SermonsScreen({ navigation }: any) {
     const countLabel = count === 1 ? t('sermons.sermonCountSingular') : t('sermons.sermonsCountPlural');
     return (
       <TouchableOpacity
-        style={[styles.sectionHeader, { borderLeftColor: color, backgroundColor: isDark ? '#1e293b' : '#FAF7F2' }]}
+        style={[
+          styles.sectionHeader, 
+          { 
+            borderLeftColor: color, 
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            borderWidth: 1,
+            borderLeftWidth: 4,
+          }
+        ]}
         onPress={() => toggleSection(title)}
         activeOpacity={0.7}
       >
         <View style={{ flex: 1 }}>
-          <Text style={[styles.sectionTitle, { color: isDark ? '#f8fafc' : color }]}>{getCategoryLabel(title)}</Text>
-          <Text style={[styles.sectionCount, { color: isDark ? '#94a3b8' : '#94a3b8' }]}>{count} {countLabel}</Text>
+          <Text style={[styles.sectionTitle, { color: isDark ? colors.text : color }]}>{getCategoryLabel(title)}</Text>
+          <Text style={[styles.sectionCount, { color: colors.textSecondary }]}>{count} {countLabel}</Text>
         </View>
         {isCollapsed
-          ? <ChevronRight size={18} color={isDark ? '#f8fafc' : color} />
-          : <ChevronDown size={18} color={isDark ? '#f8fafc' : color} />
+          ? <ChevronRight size={18} color={isDark ? colors.text : color} />
+          : <ChevronDown size={18} color={isDark ? colors.text : color} />
         }
       </TouchableOpacity>
     );
@@ -285,54 +292,38 @@ export default function SermonsScreen({ navigation }: any) {
 
   if (loading && !refreshing) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: isDark ? '#0f172a' : colors.primary }]}>
-        <ActivityIndicator size="large" color={colors.gold} />
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.accent || "#FCD34D"} />
         <Text style={styles.loadingText}>{t('common.loading')}</Text>
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2' }]}>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#0f172a' : '#FAF7F2'} />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={colors.barStyle || (isDark ? 'light-content' : 'dark-content')} backgroundColor={colors.background} />
       
-      {/* Top Floating Attractive Header Card (Removed old top blue card) */}
+      {/* ── Screen Header (Clean circular back button & title) ── */}
       <View
         style={[
-          styles.headerCardWrapper,
-          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 6 }
+          styles.headerRow,
+          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8 }
         ]}
       >
-        <LinearGradient 
-          colors={['#527C78', '#355B56']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.header}
+        <TouchableOpacity
+          style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          activeOpacity={0.8}
         >
-          {/* Decorative soft glow accents inside the card */}
-          <View style={styles.headerDecoCircle1} pointerEvents="none" />
-          <View style={styles.headerDecoCircle2} pointerEvents="none" />
+          <ArrowLeft size={20} color={colors.text} strokeWidth={2.4} />
+        </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => navigation.goBack()}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            activeOpacity={0.8}
-          >
-            <ArrowLeft size={20} color="#355B56" />
-          </TouchableOpacity>
-          
-          <View style={styles.headerCenterTitleWrap} pointerEvents="none">
-            <Text style={styles.headerTitle} numberOfLines={1} maxFontSizeMultiplier={1.15}>
-              Sermons
-            </Text>
-            <View style={styles.headerTitleAccentBar} />
-          </View>
-          
-          <View style={styles.headerRightIconBadge}>
-            <Mic size={18} color="#355B56" />
-          </View>
-        </LinearGradient>
+        <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
+          Sermons
+        </Text>
+
+        <View style={styles.headerRightSpacer} />
       </View>
 
       {/* Category Filter Pills */}
@@ -343,12 +334,12 @@ export default function SermonsScreen({ navigation }: any) {
               key={cat} 
               style={[
                 styles.pill,
-                { backgroundColor: isDark ? '#1e293b' : '#fff', borderColor: isDark ? '#334155' : '#e2e8f0' },
+                { backgroundColor: colors.surface, borderColor: colors.border },
                 activeCategory === cat && { backgroundColor: getCategoryColor(cat), borderColor: getCategoryColor(cat) }
               ]}
               onPress={() => setActiveCategory(cat)}
             >
-              <Text style={[styles.pillText, { color: isDark ? '#94a3b8' : '#64748b' }, activeCategory === cat && { color: '#fff' }]}>{getCategoryLabel(cat)}</Text>
+              <Text style={[styles.pillText, { color: colors.textSecondary }, activeCategory === cat && { color: '#fff' }]}>{getCategoryLabel(cat)}</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -358,13 +349,13 @@ export default function SermonsScreen({ navigation }: any) {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 140 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#527C78" />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent || "#527C78"} />}
       >
         {sections.length === 0 ? (
           <View style={styles.emptyState}>
-            <Layers size={48} color={isDark ? '#334155' : '#cbd5e1'} />
-            <Text style={[styles.emptyTitle, { color: isDark ? '#94a3b8' : '#64748b' }]}>{t('sermons.noSermonsFound')}</Text>
-            <Text style={[styles.emptySub, { color: isDark ? '#475569' : '#94a3b8' }]}>{t('sermons.pullToRefresh')}</Text>
+            <Layers size={48} color={colors.border} />
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>{t('sermons.noSermonsFound')}</Text>
+            <Text style={[styles.emptySub, { color: colors.textSecondary }]}>{t('sermons.pullToRefresh')}</Text>
           </View>
         ) : (
           sections.map(section => {
@@ -389,79 +380,37 @@ export default function SermonsScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { color: '#fbbf24', marginTop: 15, fontWeight: '600' },
+  loadingText: { marginTop: 15, fontWeight: '600' },
 
-  headerCardWrapper: {
-    paddingHorizontal: 16,
-    paddingBottom: 4,
-  },
-  header: {
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    borderRadius: 24,
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    overflow: 'hidden',
-    position: 'relative',
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+  },
+  circularBackBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(228, 238, 234, 0.25)',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
-  headerDecoCircle1: {
-    position: 'absolute',
-    width: 130,
-    height: 130,
-    borderRadius: 65,
-    backgroundColor: 'rgba(228, 238, 234, 0.10)',
-    top: -50,
-    right: -25,
-  },
-  headerDecoCircle2: {
-    position: 'absolute',
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: 'rgba(228, 238, 234, 0.08)',
-    bottom: -40,
-    left: 35,
-  },
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    backgroundColor: '#E4EEEA',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  headerCenterTitleWrap: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-  },
-  headerTitle: {
-    color: '#FFFFFF',
+  headerTitleText: {
     fontSize: 20,
     fontWeight: '800',
-    letterSpacing: 0.5,
+    letterSpacing: -0.2,
     textAlign: 'center',
   },
-  headerTitleAccentBar: {
-    width: 28,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: '#E4EEEA',
-    marginTop: 5,
-    opacity: 0.85,
-  },
-  headerRightIconBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    backgroundColor: '#E4EEEA',
-    justifyContent: 'center',
-    alignItems: 'center',
+  headerRightSpacer: {
+    width: 44,
+    height: 44,
   },
   headerSub: { color: '#aac4e8', fontSize: 11, marginTop: 2 },
   themeToggle: {

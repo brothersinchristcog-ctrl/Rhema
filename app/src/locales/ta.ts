@@ -378,6 +378,7 @@ export const ta: TranslationSchema = {
     contactUs: 'தொடர்புகொள்ள',
     personalInfo: 'தனிப்பட்ட தகவல்',
     editProfile: 'சுயவிவரத்தைத் திருத்து',
+    uploadPhoto: 'புகைப்படத்தைத் தேர்ந்தெடுக்கவும்',
     changePhoto: 'புகைப்படத்தை மாற்றவும்',
     removePhoto: 'புகைப்படத்தை நீக்கு',
     firstName: 'முதல் பெயர்',

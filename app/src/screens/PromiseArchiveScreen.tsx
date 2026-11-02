@@ -146,101 +146,89 @@ export default function PromiseArchiveScreen({ navigation }: { navigation: any }
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: '#FAF7F2' }]}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FAF7F2" />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={colors.barStyle} backgroundColor={colors.background} />
 
       {/* ── Page Header ── */}
+            {/* ── Screen Header (Clean circular back button & title) ── */}
       <View
         style={[
-          styles.headerCardWrapper,
-          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 6 }
+          styles.headerRow,
+          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8 }
         ]}
       >
-        <LinearGradient 
-          colors={['#527C78', '#355B56']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.pageHeader}
+        <TouchableOpacity
+          style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          onPress={() => handleBack()}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          activeOpacity={0.8}
         >
-          <View style={styles.headerDecoCircle1} pointerEvents="none" />
-          <View style={styles.headerDecoCircle2} pointerEvents="none" />
+          <ArrowLeft size={20} color={colors.text} strokeWidth={2.4} />
+        </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={handleBack}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            activeOpacity={0.8}
-          >
-            <ArrowLeft size={20} color="#355B56" />
-          </TouchableOpacity>
-          
-          <View style={styles.headerCenterTitleWrap} pointerEvents="none">
-            <Text style={styles.pageTitle} numberOfLines={1} maxFontSizeMultiplier={1.15}>
-              {t('nav.promise')}
-            </Text>
-            <View style={styles.headerTitleAccentBar} />
-          </View>
+        <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
+          {t('nav.promise')}
+        </Text>
 
-          <View style={styles.headerRightIconBadge}>
-            <BookOpen size={18} color="#355B56" />
-          </View>
-        </LinearGradient>
+        <View style={styles.headerRightSpacer} />
       </View>
 
       <ScrollView 
         ref={scrollViewRef}
-        style={{ flex: 1, backgroundColor: '#FAF7F2' }}
+        style={{ flex: 1, backgroundColor: colors.background }}
         showsVerticalScrollIndicator={false} 
         contentContainerStyle={styles.scroll}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1a2d5a" />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} colors={[colors.accent]} />
         }
       >
         {/* Quick Link to 4 Time-Slot Daily Verses */}
         <TouchableOpacity
-          style={styles.dailyVersesBanner}
+          style={[styles.dailyVersesBanner, { backgroundColor: colors.surface, borderColor: colors.border }]}
           onPress={() => navigation.navigate('VerseOfTheDay')}
           activeOpacity={0.85}
         >
           <View style={styles.dailyVersesBannerLeft}>
-            <View style={styles.dailyVersesBannerIcon}>
-              <Sparkles size={16} color="#fbbf24" />
+            <View style={[styles.dailyVersesBannerIcon, { backgroundColor: colors.accent }]}>
+              <Sparkles size={16} color="#FFFFFF" />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.dailyVersesBannerTitle}>Today's 4 Daily Verses</Text>
-              <Text style={styles.dailyVersesBannerSub}>Morning · Afternoon · Evening · Night</Text>
+              <Text style={[styles.dailyVersesBannerTitle, { color: colors.text }]}>Today's 4 Daily Verses</Text>
+              <Text style={[styles.dailyVersesBannerSub, { color: colors.textSecondary }]}>Morning · Afternoon · Evening · Night</Text>
             </View>
           </View>
-          <ChevronRight size={18} color="#A67C3D" />
+          <ChevronRight size={18} color={colors.accent} />
         </TouchableOpacity>
 
         {selectedPromise ? (
           <View style={styles.mainContent}>
-            <Text style={styles.topDate}>{formatDisplayDate(selectedPromise.date)}</Text>
+            <Text style={[styles.topDate, { color: colors.textSecondary }]}>{formatDisplayDate(selectedPromise.date)}</Text>
 
             {/* --- Hero Card --- */}
-            <View style={styles.heroCardOuter}>
-              <ViewShot ref={viewShotRef} options={{ format: 'jpg', quality: 1 }} style={styles.heroCapture}>
+            <View style={[styles.heroCardOuter, { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 }]}>
+              <ViewShot ref={viewShotRef} options={{ format: 'jpg', quality: 1 }} style={[styles.heroCapture, { backgroundColor: colors.surface }]}>
                 <View style={{ alignItems: 'center', marginBottom: 20 }}>
-                  <Text style={{ color: '#FCD34D', fontSize: 12, fontWeight: '800', letterSpacing: 1.5 }}>
+                  <Text style={{ color: colors.accent, fontSize: 12, fontWeight: '800', letterSpacing: 1.5 }}>
                     {activeChurch?.name?.toUpperCase() || "TODAY'S PROMISE"}
                   </Text>
-                  <View style={{ height: 1.5, width: 30, backgroundColor: 'rgba(255,255,255,0.3)', marginTop: 10 }} />
+                  <View style={{ height: 1.5, width: 32, backgroundColor: colors.accent, opacity: 0.45, marginTop: 10 }} />
                 </View>
 
                 <View style={styles.heroHeader}>
-                  <Text style={[styles.heroRefEn, { textAlign: 'center' }]}>
+                  <Text style={[styles.heroRefEn, { color: colors.accent, textAlign: 'center' }]}>
                     {selectedPromise.verseReferenceEn || ''}
                     {selectedPromise.verseReferenceEn && selectedPromise.verseReferenceTe ? ' - ' : ''}
                     {selectedPromise.verseReferenceTe || (!selectedPromise.verseReferenceEn ? stripHtml(selectedPromise.verse).substring(0, 30) + '...' : '')}
                   </Text>
                 </View>
 
-                <Text style={styles.verseEn}>"{stripHtml(selectedPromise.verse)}"</Text>
-                <Text style={styles.verseTe}>"{stripHtml(selectedPromise.verseTelugu) || 'వాగ్దానము'}"</Text>
+                {selectedPromise.verseTelugu ? (
+                  <Text style={[styles.verseTe, { color: colors.text }]}>"{stripHtml(selectedPromise.verseTelugu)}"</Text>
+                ) : null}
+                <Text style={[styles.verseEn, { color: selectedPromise.verseTelugu ? colors.textSecondary : colors.text }]}>"{stripHtml(selectedPromise.verse)}"</Text>
                 
-                <View style={{ alignItems: 'center', marginTop: 10 }}>
-                  <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: '600', letterSpacing: 1 }}>
+                <View style={{ alignItems: 'center', marginTop: 12 }}>
+                  <Text style={{ color: colors.textSecondary, fontSize: 11, fontWeight: '600', letterSpacing: 1, opacity: 0.75 }}>
                     {formatDisplayDate(selectedPromise.date)}
                   </Text>
                 </View>
@@ -248,16 +236,24 @@ export default function PromiseArchiveScreen({ navigation }: { navigation: any }
 
               <View style={styles.heroActionsContainer}>
                 <View style={styles.heroActions}>
-                  <TouchableOpacity style={styles.actionBtn} onPress={handleSaveCard}>
+                  <TouchableOpacity 
+                    style={[styles.actionBtn, { backgroundColor: isDark ? '#18181B' : '#F8FAFC', borderColor: colors.border }]} 
+                    onPress={handleSaveCard}
+                    activeOpacity={0.8}
+                  >
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
-                      <Calendar size={18} color="#fff" />
-                      <Text style={styles.actionBtnTxt}>Save card</Text>
+                      <Calendar size={18} color={colors.accent} />
+                      <Text style={[styles.actionBtnTxt, { color: colors.text }]}>Save card</Text>
                     </View>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.actionBtn} onPress={() => handleShare(selectedPromise)}>
+                  <TouchableOpacity 
+                    style={[styles.actionBtn, { backgroundColor: isDark ? '#18181B' : '#F8FAFC', borderColor: colors.border }]} 
+                    onPress={() => handleShare(selectedPromise)}
+                    activeOpacity={0.8}
+                  >
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
-                      <Share2 size={18} color="#fff" />
-                      <Text style={styles.actionBtnTxt}>Share</Text>
+                      <Share2 size={18} color={colors.accent} />
+                      <Text style={[styles.actionBtnTxt, { color: colors.text }]}>Share</Text>
                     </View>
                   </TouchableOpacity>
                 </View>
@@ -265,48 +261,49 @@ export default function PromiseArchiveScreen({ navigation }: { navigation: any }
             </View>
 
             {/* --- Devotional Note --- */}
-            <View style={[styles.reflectionBox, { backgroundColor: isDark ? '#14234b' : '#fff', borderColor: isDark ? '#1d3266' : '#FAF7F2' }]}>
-              <Text style={[styles.reflectionTitle, { color: isDark ? '#e0e7ff' : '#1a2d5a' }]}>Devotional Note</Text>
-              <Text style={[styles.reflectionText, { color: isDark ? '#94a3b8' : '#475569' }]}>
+            <View style={[styles.reflectionBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={[styles.reflectionTitle, { color: colors.text }]}>Devotional Note</Text>
+              <Text style={[styles.reflectionText, { color: colors.textSecondary }]}>
                 {stripHtml(selectedPromise.devotionalNote) || "In all seasons of life — in trials, in weakness, in uncertainty — we are not alone."}
               </Text>
-              <Text style={styles.reflectionAuthor}>— Pastor {selectedPromise.pastor || 'Daniel Raju'}</Text>
+              <Text style={[styles.reflectionAuthor, { color: colors.accent }]}>— Pastor {selectedPromise.pastor || 'Daniel Raju'}</Text>
             </View>
 
             {/* --- 1-min Devotional Bar --- */}
             {selectedPromise.youtubeId && (
               <TouchableOpacity
-                style={styles.devotionalBar}
+                style={[styles.devotionalBar, { backgroundColor: colors.surface, borderColor: colors.border }]}
                 onPress={() => navigation.navigate('DailyVideo', { youtubeId: selectedPromise.youtubeId, videoTitle: selectedPromise.videoTitle, pastor: selectedPromise.pastor })}
+                activeOpacity={0.85}
               >
-                <View style={styles.playCircle}>
-                  <Play size={20} color="#c0392b" fill="#c0392b" />
+                <View style={[styles.playCircle, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+                  <Play size={20} color={colors.accent} fill={colors.accent} />
                 </View>
                 <View style={styles.devotionalInfo}>
-                  <Text style={styles.devotionalTitle}>Today's 1-min devotional</Text>
-                  <Text style={styles.devotionalSubTe}>నేటి 1 నిమిషాల సందేశం</Text>
-                  <Text style={styles.devotionalSub}>
+                  <Text style={[styles.devotionalTitle, { color: colors.text }]}>Today's 1-min devotional</Text>
+                  <Text style={[styles.devotionalSubTe, { color: colors.accent }]}>నేటి 1 నిమిషాల సందేశం</Text>
+                  <Text style={[styles.devotionalSub, { color: colors.textSecondary }]}>
                     {selectedPromise.verseReferenceEn || selectedPromise.verseReferenceTe || 'Bible Reference'} · {selectedPromise.duration || '58 seconds'}
                   </Text>
                 </View>
-                <ChevronRight size={24} color="#c0392b" />
+                <ChevronRight size={24} color={colors.accent} />
               </TouchableOpacity>
             )}
           </View>
         ) : !loading ? (
-          <View style={[styles.noTodayCard, { backgroundColor: isDark ? '#14234b' : '#fff', borderColor: isDark ? '#1d3266' : '#FAF7F2' }]}>
-            <View style={[styles.noTodayIcon, { backgroundColor: isDark ? '#1d3266' : '#FAF7F2' }]}>
-              <BookOpen size={30} color={isDark ? '#64748b' : '#64748b'} />
+          <View style={[styles.noTodayCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[styles.noTodayIcon, { backgroundColor: colors.background }]}>
+              <BookOpen size={30} color={colors.textSecondary} />
             </View>
-            <Text style={[styles.noTodayTxt, { color: isDark ? '#e0e7ff' : '#1a2d5a' }]}>No Promise Yet</Text>
-            <Text style={styles.noTodaySubTe}>నేటి వాగ్దానం ఇంకా రాలేదు</Text>
-            <Text style={styles.noTodayHint}>Check back later today for an uplifting verse.</Text>
+            <Text style={[styles.noTodayTxt, { color: colors.text }]}>No Promise Yet</Text>
+            <Text style={[styles.noTodaySubTe, { color: colors.accent }]}>నేటి వాగ్దానం ఇంకా రాలేదు</Text>
+            <Text style={[styles.noTodayHint, { color: colors.textSecondary }]}>Check back later today for an uplifting verse.</Text>
           </View>
         ) : null}
 
         <View style={styles.historySection}>
-          <Text style={[styles.historyLabel, { color: isDark ? '#e0e7ff' : '#1a2d5a' }]}>Past promises</Text>
-          <View style={[styles.historyCard, { backgroundColor: isDark ? '#14234b' : '#fff', borderColor: isDark ? '#1d3266' : '#FAF7F2' }]}>
+          <Text style={[styles.historyLabel, { color: colors.text }]}>Past promises</Text>
+          <View style={[styles.historyCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             {(() => {
               const now = new Date();
               const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -322,7 +319,7 @@ export default function PromiseArchiveScreen({ navigation }: { navigation: any }
               if (pastPromises.length === 0) {
                 return (
                   <View style={{ padding: 20, alignItems: 'center' }}>
-                    <Text style={{ color: isDark ? '#94a3b8' : '#9CA3AF', fontSize: 13, fontStyle: 'italic' }}>
+                    <Text style={{ color: colors.textSecondary, fontSize: 13, fontStyle: 'italic' }}>
                       No past promises available.
                     </Text>
                   </View>
@@ -341,19 +338,19 @@ export default function PromiseArchiveScreen({ navigation }: { navigation: any }
                     }}
                     style={[
                       styles.historyItem,
-                      { borderBottomColor: isDark ? '#1d3266' : '#FAF7F2' },
-                      selectedPromise?.id === item.id && { backgroundColor: isDark ? '#1c3166' : '#FAF7F2' },
+                      { borderBottomColor: colors.border },
+                      selectedPromise?.id === item.id && { backgroundColor: colors.background },
                       index === pastPromises.length - 1 && { borderBottomWidth: 0 }
                     ]}
                   >
                     <View style={styles.historyItemContent}>
-                      <Text style={[styles.historyItemRef, { color: isDark ? '#f8fafc' : '#111827' }]}>{refString}</Text>
-                      <Text style={[styles.historyItemVakyam, { color: isDark ? '#94a3b8' : '#475569' }]} numberOfLines={1}>{stripHtml(item.verseTelugu) || 'వాగ్దానము'}</Text>
-                      <Text style={styles.historyItemDate}>
+                      <Text style={[styles.historyItemRef, { color: colors.text }]}>{refString}</Text>
+                      <Text style={[styles.historyItemVakyam, { color: colors.textSecondary }]} numberOfLines={1}>{stripHtml(item.verseTelugu) || 'వాగ్దానము'}</Text>
+                      <Text style={[styles.historyItemDate, { color: colors.accent }]}>
                         {new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · {new Date(item.date).toLocaleDateString('en-US', { weekday: 'short' })}
                       </Text>
                     </View>
-                    <ChevronRight size={16} color="#D1D5DB" />
+                    <ChevronRight size={16} color={colors.textSecondary} />
                   </TouchableOpacity>
                 );
               });
@@ -371,6 +368,36 @@ const styles = StyleSheet.create({
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
   // Header
+    headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+  },
+  circularBackBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  headerTitleText: {
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+    textAlign: 'center',
+  },
+  headerRightSpacer: {
+    width: 44,
+    height: 44,
+  },
   headerCardWrapper: {
     paddingHorizontal: 16,
     paddingBottom: 4,
@@ -473,14 +500,13 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#1e1b4b',
     alignItems: 'center',
     justifyContent: 'center',
   },
   dailyVersesBannerTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#1a2d5a',
+    color: '#111827',
   },
   dailyVersesBannerSub: {
     fontSize: 11,
@@ -490,40 +516,40 @@ const styles = StyleSheet.create({
   mainContent: { padding: 16 },
   topDate: { fontSize: 11, fontWeight: '700', color: '#94a3b8', textAlign: 'center', marginBottom: 15, letterSpacing: 0.5 },
 
-  heroCardOuter: { backgroundColor: '#1a2d5a', borderRadius: 24, elevation: 12, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 15, overflow: 'hidden' },
-  heroCapture: { padding: 24, backgroundColor: '#1a2d5a' },
+  heroCardOuter: { borderRadius: 24, elevation: 4, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 15, overflow: 'hidden' },
+  heroCapture: { padding: 24 },
   heroActionsContainer: { paddingHorizontal: 24, paddingBottom: 24 },
   heroHeader: { marginBottom: 20 },
-  heroRefEn: { fontSize: 13, fontWeight: '800', color: '#FCD34D' },
+  heroRefEn: { fontSize: 14, fontWeight: '800' },
   heroRefTe: { color: 'rgba(255,255,255,0.7)', fontWeight: '600' },
 
-  verseEn: { fontSize: 19, fontWeight: '700', fontStyle: 'italic', color: '#fff', textAlign: 'center', lineHeight: 28, marginBottom: 15 },
-  verseTe: { fontSize: 16, fontStyle: 'italic', color: '#aac4e8', textAlign: 'center', lineHeight: 26, marginBottom: 25 },
+  verseEn: { fontSize: 15, fontWeight: '500', fontStyle: 'italic', textAlign: 'center', lineHeight: 24, marginBottom: 16 },
+  verseTe: { fontSize: 17, fontWeight: '700', fontStyle: 'italic', textAlign: 'center', lineHeight: 28, marginBottom: 14 },
 
   heroActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 10, justifyContent: 'center' },
-  actionBtn: { flex: 1, backgroundColor: 'transparent', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 25, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
-  actionBtnTxt: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  actionBtn: { flex: 1, borderWidth: 1, borderRadius: 25, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
+  actionBtnTxt: { fontSize: 13, fontWeight: '700' },
 
   reflectionBox: { backgroundColor: '#fff', borderRadius: 20, padding: 22, marginTop: 15, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, borderWidth: 1, borderColor: '#f1f5f9' },
-  reflectionTitle: { fontSize: 13, fontWeight: '800', color: '#1a2d5a', marginBottom: 12 },
+  reflectionTitle: { fontSize: 13, fontWeight: '800', color: '#111827', marginBottom: 12 },
   reflectionText: { fontSize: 14, color: '#475569', lineHeight: 24, marginBottom: 15 },
   reflectionAuthor: { fontSize: 12, color: '#94a3b8', fontWeight: '600' },
 
-  devotionalBar: { backgroundColor: '#111827', borderRadius: 20, padding: 16, marginTop: 15, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, borderWidth: 1, borderColor: '#cbd5e1' },
-  playCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' },
+  devotionalBar: { borderRadius: 20, padding: 16, marginTop: 15, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, borderWidth: 1 },
+  playCircle: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
   devotionalInfo: { flex: 1 },
-  devotionalTitle: { fontSize: 14, fontWeight: '700', color: '#fff', marginBottom: 2 },
-  devotionalSubTe: { fontSize: 12, color: '#FCD34D', marginBottom: 4, fontWeight: '600' },
+  devotionalTitle: { fontSize: 14, fontWeight: '700', marginBottom: 2 },
+  devotionalSubTe: { fontSize: 12, marginBottom: 4, fontWeight: '600' },
   devotionalSub: { fontSize: 11, color: '#94a3b8' },
 
   noTodayCard: { backgroundColor: '#fff', borderRadius: 24, padding: 30, margin: 16, alignItems: 'center', elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, borderWidth: 1, borderColor: '#f1f5f9' },
   noTodayIcon: { width: 70, height: 70, borderRadius: 35, backgroundColor: '#f1f5f9', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
-  noTodayTxt: { fontSize: 17, fontWeight: '800', color: '#1a2d5a', marginBottom: 8, textAlign: 'center' },
+  noTodayTxt: { fontSize: 17, fontWeight: '800', color: '#111827', marginBottom: 8, textAlign: 'center' },
   noTodaySubTe: { fontSize: 14, color: '#c0392b', marginBottom: 15, fontWeight: '600', textAlign: 'center' },
   noTodayHint: { fontSize: 12, color: '#64748b', textAlign: 'center', lineHeight: 18 },
 
   historySection: { paddingHorizontal: 16, paddingBottom: 20 },
-  historyLabel: { fontSize: 14, fontWeight: '700', color: '#1a2d5a', marginTop: 10, marginBottom: 15, marginLeft: 4 },
+  historyLabel: { fontSize: 14, fontWeight: '700', color: '#111827', marginTop: 10, marginBottom: 15, marginLeft: 4 },
   historyCard: { backgroundColor: '#fff', borderRadius: 24, overflow: 'hidden', elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, borderWidth: 1, borderColor: '#f1f5f9' },
   historyItem: { flexDirection: 'row', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#f8fafc' },
   historyItemContent: { flex: 1 },

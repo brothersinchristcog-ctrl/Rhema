@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { 
+  SafeAreaView,
   StyleSheet, 
   View, 
   Text, 
@@ -15,10 +16,14 @@ import {
   Alert,
   Image,
   Switch,
-  Share
+  Share,
+  Animated
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { 
+  ArrowLeft,
+  Camera,
+  Palette,
   ChevronRight, 
   LogOut, 
   User, 
@@ -60,7 +65,7 @@ const { width } = Dimensions.get('window');
 export default function ProfileScreen({ navigation }: any) {
   const { user, signOut, member: authMember, setViewMode, setMember: setGlobalMember } = useAuth();
   const { activeChurch, isImpersonating, impersonatedBranchName, stopImpersonation } = useChurch();
-  const { isDark, toggleTheme, colors } = useTheme();
+  const { isDark, toggleTheme, colors, currentThemeOption } = useTheme();
   const { language, setLanguage, languages, currentLanguageOption, t } = useLanguage();
   
   const [member, setMember] = useState<AppMember | null>(authMember as AppMember | null);
@@ -99,6 +104,32 @@ export default function ProfileScreen({ navigation }: any) {
     secondarySkill: authMember?.secondarySkill || ''
   });
   const [updating, setUpdating] = useState(false);
+
+  // Animated 3-card profile photo banner (Boy card in center + two girl cards reveal slightly after 1.5s)
+  const fanAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    let animTimer: any;
+    if (isEditModalVisible && !localPhotoUrl) {
+      fanAnim.setValue(0);
+
+      // Wait 1.5 seconds after entering screen before gently revealing behind cards
+      animTimer = setTimeout(() => {
+        Animated.spring(fanAnim, {
+          toValue: 1,
+          friction: 7,
+          tension: 32,
+          useNativeDriver: true,
+        }).start();
+      }, 1500);
+    } else {
+      fanAnim.setValue(0);
+    }
+
+    return () => {
+      if (animTimer) clearTimeout(animTimer);
+    };
+  }, [isEditModalVisible, localPhotoUrl]);
   const [isDatePickerVisible, setDatePickerVisibility] = useState(false);
   const [activeDateField, setActiveDateField] = useState<'dob' | 'baptismDate' | 'anniversaryDate' | null>(null);
 
@@ -368,15 +399,15 @@ export default function ProfileScreen({ navigation }: any) {
 
   if (loading && !refreshing) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: '#1a2d5a' }]}>
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color="#FCD34D" />
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2' }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#1a2d5a" />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle="light-content" backgroundColor={colors.headerGradient ? colors.headerGradient[0] : (isDark ? '#000000' : '#1a2d5a')} />
 
       {isImpersonating ? (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
@@ -399,23 +430,20 @@ export default function ProfileScreen({ navigation }: any) {
           <ScrollView 
             showsVerticalScrollIndicator={false} 
             contentContainerStyle={styles.scrollContent}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1a2d5a" />}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? "#FFFFFF" : "#1a2d5a"} />}
             bounces={true}
           >
           {/* ── Hero Section (Navy) ── */}
       <LinearGradient 
-        colors={['#2b52a1', '#1a3673']}
+        colors={colors.headerGradient || (isDark ? ['#18181B', '#000000'] : ['#1E293B', '#0F172A'])}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.heroSection}
       >
         <View style={styles.headerTop}>
           <View style={{ width: 40 }} />
-          <TouchableOpacity style={styles.themeToggle} onPress={toggleTheme}>
-            {isDark
-              ? <Sun size={18} color="#FCD34D" />
-              : <Moon size={18} color="#fff" />
-            }
+          <TouchableOpacity style={styles.themeToggle} onPress={() => navigation.navigate('Appearance')}>
+            <Palette size={18} color="#fff" />
           </TouchableOpacity>
         </View>
 
@@ -512,532 +540,808 @@ export default function ProfileScreen({ navigation }: any) {
 
         {/* Stats removed for accuracy */}
 
-        {/* ── Account Section ── */}
-        <Text style={styles.sectionLabel}>{t('profile.accountSection')}</Text>
-        <View style={styles.menuGroup}>
+        {/* ── All Buttons "n-shaped" Card overlapping the Top Card ── */}
+        <View 
+          style={[
+            styles.buttonsCard, 
+            { 
+              backgroundColor: colors.background,
+            }
+          ]}
+        >
+        {/* ── Account Section (Instagram-Style Flat, Borderless) ── */}
+        <View style={styles.igSection}>
+          <Text style={[styles.igSectionHeader, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+            {t('profile.accountSection') || 'Account'}
+          </Text>
+
           {(String(member?.userType || '').toUpperCase().includes('ADMIN') || String(member?.userType || '').toUpperCase().includes('SUPER')) && (
             <MenuItem 
-              icon={<Shield size={20} color="#1a2d5a" />} 
-              iconBg="#e6f0fa"
+              icon={<Shield size={22} color={colors.text} strokeWidth={1.8} />} 
               title={t('profile.adminDashboard')} 
               sub={t('profile.adminDashboardSub')} 
               onPress={() => setViewMode('admin')}
+              textColor={colors.text}
+              subColor={colors.textSecondary}
             />
           )}
           <MenuItem 
-            icon={<User size={20} color="#1a2d5a" />} 
-            iconBg="#eff6ff"
+            icon={<User size={22} color={colors.text} strokeWidth={1.8} />} 
             title={t('profile.myProfile')} 
             sub={t('profile.myProfileSub')} 
             onPress={() => setIsEditModalVisible(true)}
+            textColor={colors.text}
+            subColor={colors.textSecondary}
           />
           <MenuItem 
-            icon={<CreditCard size={20} color="#94a3b8" />} 
-            iconBg="#f1f5f9"
+            icon={<CreditCard size={22} color={colors.text} strokeWidth={1.8} />} 
             title={t('profile.givingHistory')} 
             sub={t('profile.givingHistorySub')} 
-            onPress={() => {
-              navigation.navigate('GivingHistory');
-            }}
+            onPress={() => navigation.navigate('GivingHistory')}
+            textColor={colors.text}
+            subColor={colors.textSecondary}
           />
-
           {(String(member?.userType || '').toUpperCase().includes('ADMIN') || String(member?.userType || '').toUpperCase().includes('SUPER') || String(member?.userType || '').toUpperCase().includes('PASTOR')) && (
             <MenuItem 
-              icon={<CreditCard size={20} color="#d97706" />} 
-              iconBg="#fffbeb"
+              icon={<CreditCard size={22} color={colors.text} strokeWidth={1.8} />} 
               title={t('profile.churchSubscription')} 
               sub={t('profile.churchSubscriptionSub')} 
-              isLast 
-              onPress={() => {
-                navigation.navigate('Subscription');
-              }}
+              onPress={() => navigation.navigate('Subscription')}
+              textColor={colors.text}
+              subColor={colors.textSecondary}
             />
           )}
         </View>
 
+        {/* Gray Divider Band between sections (Instagram style) */}
+        <View style={[styles.igSectionDividerBand, { backgroundColor: isDark ? '#141416' : '#F1F5F9' }]} />
+
         {/* ── Settings Section ── */}
-        <Text style={styles.sectionLabel}>{t('profile.settingsSection')}</Text>
-        <View style={styles.menuGroup}>
+        <View style={styles.igSection}>
+          <Text style={[styles.igSectionHeader, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+            {t('profile.settingsSection') || 'Settings'}
+          </Text>
+
           <MenuItem 
-            icon={<Bell size={20} color="#0891b2" />} 
-            iconBg="#eff6ff"
+            icon={<Bell size={22} color={colors.text} strokeWidth={1.8} />} 
             title={t('profile.notifications')} 
             sub={t('profile.notificationsSub')} 
             onPress={() => {
               setIsLanguageModalVisible(false);
               setIsNotifyModalVisible(true);
             }}
+            textColor={colors.text}
+            subColor={colors.textSecondary}
           />
           <MenuItem 
-            icon={<Globe size={20} color="#166534" />} 
-            iconBg="#f0fdf4"
+            icon={<Globe size={22} color={colors.text} strokeWidth={1.8} />} 
             title={t('profile.language')} 
-            sub={`${currentLanguageOption.nativeName} (${currentLanguageOption.name})`} 
+            value={`${currentLanguageOption.nativeName} (${currentLanguageOption.name})`} 
             onPress={() => {
-              setIsNotifyModalVisible(false); // Close other modal
+              setIsNotifyModalVisible(false);
               setIsLanguageModalVisible(true);
             }}
+            textColor={colors.text}
+            subColor={colors.textSecondary}
           />
           <MenuItem 
-            icon={<Moon size={20} color="#d97706" />} 
-            iconBg="#fffbeb"
-            title={t('profile.darkMode')} 
-            sub={t('profile.darkModeCurrently', { mode: isDark ? t('profile.modeDark') : t('profile.modeLight') })} 
-            isLast 
-            onPress={toggleTheme}
+            icon={<Palette size={22} color={colors.text} strokeWidth={1.8} />} 
+            title="Appearance" 
+            value={currentThemeOption?.name || 'Warm white'} 
+            onPress={() => navigation.navigate('Appearance')}
+            textColor={colors.text}
+            subColor={colors.textSecondary}
           />
         </View>
 
-        {/* ── Security Section ── */}
+        {/* Gray Divider Band between sections */}
         {biometricAvailable && (
           <>
-            <Text style={styles.sectionLabel}>{t('profile.securitySection')}</Text>
-            <View style={styles.menuGroup}>
-              <View style={[styles.menuItem, { borderBottomWidth: 0 }]}>
-                <View style={[styles.iconBox, { backgroundColor: '#fdf2f2' }]}>
-                  <Lock size={20} color="#c0392b" />
+            <View style={[styles.igSectionDividerBand, { backgroundColor: isDark ? '#141416' : '#F1F5F9' }]} />
+
+            {/* ── Security Section ── */}
+            <View style={styles.igSection}>
+              <Text style={[styles.igSectionHeader, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+                {t('profile.securitySection') || 'Security'}
+              </Text>
+
+              <View style={styles.igRow}>
+                <View style={styles.igIconWrap}>
+                  <Lock size={22} color={colors.text} strokeWidth={1.8} />
                 </View>
-                <View style={styles.menuContent}>
-                  <Text style={styles.menuTitle}>{t('profile.biometricLock')}</Text>
-                  <Text style={styles.menuSub}>{t('profile.biometricSub')}</Text>
+                <View style={styles.igContentWrap}>
+                  <Text style={[styles.igTitle, { color: colors.text }]}>{t('profile.biometricLock')}</Text>
+                  <Text style={[styles.igSub, { color: colors.textSecondary }]}>{t('profile.biometricSub')}</Text>
                 </View>
                 <Switch 
                   value={biometricEnabled} 
                   onValueChange={toggleBiometrics}
-                  trackColor={{ false: '#e2e8f0', true: '#1a2d5a' }}
+                  trackColor={{ false: isDark ? '#3F3F46' : '#E2E8F0', true: colors.accent || '#10B981' }}
+                  thumbColor={Platform.OS === 'android' ? (biometricEnabled ? '#FFFFFF' : '#F4F3F4') : undefined}
                 />
               </View>
             </View>
           </>
         )}
 
+        {/* Gray Divider Band between sections */}
+        <View style={[styles.igSectionDividerBand, { backgroundColor: isDark ? '#141416' : '#F1F5F9' }]} />
+
         {/* ── Referrals Section ── */}
-        <Text style={styles.sectionLabel}>{t('profile.referralsSection')}</Text>
-        <View style={styles.menuGroup}>
+        <View style={styles.igSection}>
+          <Text style={[styles.igSectionHeader, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+            {t('profile.referralsSection') || 'Referrals'}
+          </Text>
+
           <MenuItem 
-            icon={<Award size={20} color="#8b5cf6" />} 
-            iconBg="#f3e8ff"
+            icon={<Award size={22} color={colors.text} strokeWidth={1.8} />} 
             title={t('profile.referChurch')} 
             sub={generatingCode ? t('profile.generatingCode') : (referralCode ? t('profile.yourCode', { code: referralCode }) : t('profile.referChurchSub'))} 
-            isLast 
             onPress={handleReferralShare}
+            textColor={colors.text}
+            subColor={colors.textSecondary}
           />
         </View>
 
+        <View style={[styles.igSectionDividerBand, { backgroundColor: isDark ? '#141416' : '#F1F5F9' }]} />
+
         {/* ── Sign Out Button ── */}
         <TouchableOpacity 
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: '#0f172a',
-            paddingVertical: 16,
-            paddingHorizontal: 32,
-            borderRadius: 100, // Pill shape
-            alignSelf: 'center',
-            marginTop: 40,
-            marginBottom: 20,
-            shadowColor: '#0f172a',
-            shadowOpacity: 0.25,
-            shadowRadius: 12,
-            shadowOffset: { width: 0, height: 6 },
-            elevation: 8
-          }}
+          style={[
+            styles.signOutBtn,
+            {
+              backgroundColor: isDark ? '#18181B' : '#F8FAFC',
+              borderColor: isDark ? '#27272A' : '#E2E8F0',
+            }
+          ]}
           onPress={signOut}
+          activeOpacity={0.8}
         >
-          <LogOut size={20} color="#ffffff" style={{ marginRight: 10 }} />
-          <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: '700' }}>{t('profile.signOut')}</Text>
+          <LogOut size={18} color="#EF4444" style={{ marginRight: 8 }} />
+          <Text style={{ color: '#EF4444', fontSize: 15, fontWeight: '700' }}>{t('profile.signOut')}</Text>
         </TouchableOpacity>
 
         <Text style={styles.versionTxt}>
           {t('profile.version')} {Constants.expoConfig?.version || '1.0.6'}
         </Text>
+        </View>
       </ScrollView>
 
-      {/* ── Edit Profile Modal (Using View for better reliability) ── */}
-      {isEditModalVisible && (
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{t('profile.editProfile')}</Text>
-              <TouchableOpacity onPress={() => setIsEditModalVisible(false)}>
-                <Text style={styles.closeText}>{t('common.cancel')}</Text>
+      {/* ── Edit Profile Screen (Full Screen, Theme-Styled) ── */}
+      <Modal
+        visible={isEditModalVisible}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setIsEditModalVisible(false)}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+          <StatusBar 
+            barStyle={isDark ? "light-content" : "dark-content"} 
+            backgroundColor={colors.background} 
+          />
+
+          {/* Full Screen Header */}
+          <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingHorizontal: 16,
+            paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ? StatusBar.currentHeight + 14 : 42) : 16,
+            paddingBottom: 14,
+            backgroundColor: colors.background,
+          }}>
+            <TouchableOpacity 
+              onPress={() => setIsEditModalVisible(false)}
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                justifyContent: 'center',
+                alignItems: 'center',
+                backgroundColor: isDark ? '#18181B' : '#E2E8F0',
+              }}
+              activeOpacity={0.7}
+            >
+              <ArrowLeft size={22} color={colors.text} />
+            </TouchableOpacity>
+
+            <Text style={{ fontSize: 19, fontWeight: '800', color: colors.text, textAlign: 'center', flex: 1, marginHorizontal: 8 }}>
+              {t('profile.editProfile') || 'My Profile'}
+            </Text>
+
+            {/* Balancer to guarantee exact horizontal centering */}
+            <View style={{ width: 40 }} />
+          </View>
+
+          {/* Form Content */}
+          <ScrollView 
+            showsVerticalScrollIndicator={false} 
+            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: 60 }}
+            style={{ flex: 1, backgroundColor: colors.background }}
+          >
+            {/* ── Profile Image Section: 3-Cards Fan Animation OR Single User Card ── */}
+            {localPhotoUrl ? (
+              <View style={{ alignItems: 'center', marginBottom: 28, marginTop: 6 }}>
+                {/* Single Card with User Image */}
+                <TouchableOpacity 
+                  activeOpacity={0.9} 
+                  onPress={pickImage}
+                  style={{
+                    width: 154,
+                    height: 204,
+                    borderRadius: 24,
+                    overflow: 'hidden',
+                    backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                    borderWidth: 2,
+                    borderColor: colors.accent || (isDark ? '#38BDF8' : '#0F766E'),
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 6 },
+                    shadowOpacity: isDark ? 0.3 : 0.12,
+                    shadowRadius: 12,
+                    elevation: 6,
+                  }}
+                >
+                  <Image 
+                    source={{ uri: localPhotoUrl }} 
+                    style={{ width: '100%', height: '100%' }} 
+                    resizeMode="cover" 
+                  />
+                  {/* Camera Badge Overlay */}
+                  <View style={{
+                    position: 'absolute',
+                    bottom: 10,
+                    right: 10,
+                    width: 32,
+                    height: 32,
+                    borderRadius: 16,
+                    backgroundColor: colors.accent || (isDark ? '#38BDF8' : '#0F766E'),
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    borderWidth: 2,
+                    borderColor: '#FFFFFF',
+                  }}>
+                    <Camera size={16} color="#FFFFFF" strokeWidth={2.2} />
+                  </View>
+                </TouchableOpacity>
+
+                {/* Action Buttons for user image */}
+                <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
+                  <TouchableOpacity 
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      backgroundColor: isDark ? '#27272A' : '#F1F5F9',
+                      paddingHorizontal: 16,
+                      paddingVertical: 9,
+                      borderRadius: 20,
+                      gap: 6,
+                    }} 
+                    onPress={pickImage}
+                    activeOpacity={0.7}
+                  >
+                    <Camera size={15} color={colors.text} strokeWidth={2} />
+                    <Text style={{ color: colors.text, fontSize: 13, fontWeight: '700' }}>
+                      {(t('profile.changePhoto') && t('profile.changePhoto') !== 'profile.changePhoto') ? t('profile.changePhoto') : 'Change Photo'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      backgroundColor: isDark ? 'rgba(239,68,68,0.15)' : '#FEF2F2',
+                      paddingHorizontal: 16,
+                      paddingVertical: 9,
+                      borderRadius: 20,
+                      borderWidth: 1,
+                      borderColor: 'rgba(239,68,68,0.25)',
+                      gap: 6,
+                    }} 
+                    onPress={handleRemovePhoto}
+                    activeOpacity={0.7}
+                  >
+                    <X size={15} color="#EF4444" strokeWidth={2.2} />
+                    <Text style={{ color: '#EF4444', fontSize: 13, fontWeight: '700' }}>
+                      {(t('profile.removePhoto') && t('profile.removePhoto') !== 'profile.removePhoto') ? t('profile.removePhoto') : 'Remove'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <View style={{ alignItems: 'center', marginBottom: 20, marginTop: -6 }}>
+                {/* 3 Animated Cards: Boy card in middle, two girl cards reveal more after 1.5s */}
+                <TouchableOpacity 
+                  activeOpacity={0.92} 
+                  onPress={pickImage}
+                  style={{
+                    width: width - 40,
+                    height: 196,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                  }}
+                >
+                  {/* Behind Left Card: Girl in white dress (reveals more to left after 1.5s) */}
+                  <Animated.View style={{
+                    position: 'absolute',
+                    width: 138,
+                    height: 172,
+                    zIndex: 1,
+                    transform: [
+                      { translateX: fanAnim.interpolate({ inputRange: [0, 1], outputRange: [0, -68] }) },
+                      { translateY: fanAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 8] }) },
+                      { rotate: fanAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '-9deg'] }) },
+                      { scale: fanAnim.interpolate({ inputRange: [0, 1], outputRange: [0.92, 0.96] }) },
+                    ],
+                    opacity: fanAnim.interpolate({ inputRange: [0, 0.25, 1], outputRange: [0, 0.7, 1] }),
+                    shadowColor: isDark ? '#000' : 'transparent',
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: isDark ? 0.2 : 0,
+                    shadowRadius: isDark ? 8 : 0,
+                    elevation: isDark ? 2 : 0,
+                  }}>
+                    <Image 
+                      source={require('../../assets/profile_card_center.png')} 
+                      style={{ width: '100%', height: '100%' }} 
+                      resizeMode="contain" 
+                    />
+                  </Animated.View>
+
+                  {/* Behind Right Card: Denim Girl card (reveals more to right after 1.5s) */}
+                  <Animated.View style={{
+                    position: 'absolute',
+                    width: 138,
+                    height: 172,
+                    zIndex: 2,
+                    transform: [
+                      { translateX: fanAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 68] }) },
+                      { translateY: fanAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 8] }) },
+                      { rotate: fanAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '9deg'] }) },
+                      { scale: fanAnim.interpolate({ inputRange: [0, 1], outputRange: [0.92, 0.96] }) },
+                    ],
+                    opacity: fanAnim.interpolate({ inputRange: [0, 0.25, 1], outputRange: [0, 0.7, 1] }),
+                    shadowColor: isDark ? '#000' : 'transparent',
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: isDark ? 0.2 : 0,
+                    shadowRadius: isDark ? 8 : 0,
+                    elevation: isDark ? 2 : 0,
+                  }}>
+                    <Image 
+                      source={require('../../assets/profile_card_right.png')} 
+                      style={{ width: '100%', height: '100%' }} 
+                      resizeMode="contain" 
+                    />
+                  </Animated.View>
+
+                  {/* Front Center Card: Boy card in middle (upright and crisp, zero shadow on light themes) */}
+                  <View style={{
+                    width: 142,
+                    height: 182,
+                    zIndex: 3,
+                    shadowColor: isDark ? '#000' : 'transparent',
+                    shadowOffset: { width: 0, height: 6 },
+                    shadowOpacity: isDark ? 0.25 : 0,
+                    shadowRadius: isDark ? 10 : 0,
+                    elevation: isDark ? 3 : 0,
+                  }}>
+                    <Image 
+                      source={require('../../assets/profile_card_boy_center.png')} 
+                      style={{ width: '100%', height: '100%' }} 
+                      resizeMode="contain" 
+                    />
+                  </View>
+                </TouchableOpacity>
+
+                {/* Below cards: Display text matching user reference */}
+                <Text style={{
+                  fontSize: 24,
+                  fontWeight: '800',
+                  color: colors.text,
+                  textAlign: 'center',
+                  marginTop: 12,
+                  letterSpacing: -0.3,
+                }}>
+                  Your profile
+                </Text>
+
+                <Text style={{
+                  fontSize: 14.5,
+                  lineHeight: 21,
+                  color: colors.textSecondary,
+                  textAlign: 'center',
+                  marginTop: 6,
+                  paddingHorizontal: 20,
+                }}>
+                  {'Add your photo and keep your details up to\ndate so your church family can reach you.'}
+                </Text>
+
+                {/* Choose Photo Button */}
+                <TouchableOpacity 
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    backgroundColor: colors.accent || (isDark ? '#38BDF8' : '#0F766E'),
+                    paddingVertical: 12,
+                    paddingHorizontal: 24,
+                    borderRadius: 25,
+                    marginTop: 14,
+                    gap: 8,
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 3 },
+                    shadowOpacity: 0.15,
+                    shadowRadius: 6,
+                    elevation: 3,
+                  }}
+                  onPress={pickImage}
+                  activeOpacity={0.8}
+                >
+                  <Camera size={17} color="#FFFFFF" strokeWidth={2.2} />
+                  <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '700' }}>
+                    {(t('profile.uploadPhoto') && t('profile.uploadPhoto') !== 'profile.uploadPhoto') ? t('profile.uploadPhoto') : 'Choose Photo'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>{t('profile.firstName')}</Text>
+              <TextInput 
+                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+                value={editForm.firstName}
+                onChangeText={(t) => setEditForm({...editForm, firstName: t})}
+                placeholder={t('profile.firstName')}
+                placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>{t('profile.lastName')}</Text>
+              <TextInput 
+                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+                value={editForm.lastName}
+                onChangeText={(t) => setEditForm({...editForm, lastName: t})}
+                placeholder={t('profile.lastName')}
+                placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>{t('profile.email')}</Text>
+              <TextInput 
+                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+                value={editForm.email}
+                onChangeText={(t) => setEditForm({...editForm, email: t})}
+                placeholder={t('profile.email')}
+                placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+                keyboardType="email-address"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>{t('profile.birthday')}</Text>
+              <TouchableOpacity 
+                style={[styles.input, { justifyContent: 'center', backgroundColor: colors.surface, borderColor: colors.border }]}
+                onPress={() => {
+                  setActiveDateField('dob');
+                  setDatePickerVisibility(true);
+                }}
+              >
+                <Text style={{ fontSize: 15, color: editForm.dob ? colors.text : (isDark ? '#71717A' : '#94a3b8') }}>
+                  {editForm.dob ? formatDateDisplay(editForm.dob) : t('profile.selectDate')}
+                </Text>
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} style={styles.modalScroll}>
-              <View style={styles.photoEditSection}>
-                <View style={styles.modalAvatarCircle}>
-                   {localPhotoUrl ? (
-                     <Image source={{ uri: localPhotoUrl }} style={styles.modalAvatarImg} />
-                   ) : (
-                     <User size={40} color="#fff" strokeWidth={1.5} />
-                   )}
-                </View>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 10 }}>
-                  <TouchableOpacity style={styles.changePhotoBtn} onPress={pickImage}>
-                    <Text style={styles.changePhotoText}>{t('profile.changePhoto')}</Text>
-                  </TouchableOpacity>
-                  {localPhotoUrl ? (
-                    <TouchableOpacity style={styles.removePhotoBtn} onPress={handleRemovePhoto}>
-                      <Text style={styles.removePhotoText}>{t('profile.removePhoto')}</Text>
-                    </TouchableOpacity>
-                  ) : null}
-                </View>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>{t('profile.firstName')}</Text>
-                <TextInput 
-                  style={styles.input}
-                  value={editForm.firstName}
-                  onChangeText={(t) => setEditForm({...editForm, firstName: t})}
-                  placeholder={t('profile.firstName')}
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>{t('profile.lastName')}</Text>
-                <TextInput 
-                  style={styles.input}
-                  value={editForm.lastName}
-                  onChangeText={(t) => setEditForm({...editForm, lastName: t})}
-                  placeholder={t('profile.lastName')}
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>{t('profile.email')}</Text>
-                <TextInput 
-                  style={styles.input}
-                  value={editForm.email}
-                  onChangeText={(t) => setEditForm({...editForm, email: t})}
-                  placeholder={t('profile.email')}
-                  keyboardType="email-address"
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>{t('profile.birthday')}</Text>
-                <TouchableOpacity 
-                  style={[styles.input, { justifyContent: 'center' }]}
-                  onPress={() => {
-                    setActiveDateField('dob');
-                    setDatePickerVisibility(true);
-                  }}
-                >
-                  <Text style={{ fontSize: 15, color: editForm.dob ? '#1e293b' : '#94a3b8' }}>
-                    {editForm.dob ? formatDateDisplay(editForm.dob) : t('profile.selectDate')}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>{t('profile.baptismDate')}</Text>
-                <TouchableOpacity 
-                  style={[styles.input, { justifyContent: 'center' }]}
-                  onPress={() => {
-                    setActiveDateField('baptismDate');
-                    setDatePickerVisibility(true);
-                  }}
-                >
-                  <Text style={{ fontSize: 15, color: editForm.baptismDate ? '#1e293b' : '#94a3b8' }}>
-                    {editForm.baptismDate ? formatDateDisplay(editForm.baptismDate) : t('profile.selectDate')}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>{t('profile.weddingAnniversaryDate')}</Text>
-                <TouchableOpacity 
-                  style={[styles.input, { justifyContent: 'center' }]}
-                  onPress={() => {
-                    setActiveDateField('anniversaryDate');
-                    setDatePickerVisibility(true);
-                  }}
-                >
-                  <Text style={{ fontSize: 15, color: editForm.anniversaryDate ? '#1e293b' : '#94a3b8' }}>
-                    {editForm.anniversaryDate ? formatDateDisplay(editForm.anniversaryDate) : t('profile.selectDate')}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Primary Skill */}
-              <View style={styles.inputGroup}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <Text style={styles.inputLabel}>Primary Skill</Text>
-                  {editForm.primarySkill ? (
-                    <TouchableOpacity onPress={() => setEditForm({ ...editForm, primarySkill: '' })}>
-                      <Text style={{ fontSize: 11, color: '#dc2626', fontWeight: '600' }}>Clear</Text>
-                    </TouchableOpacity>
-                  ) : null}
-                </View>
-                <TouchableOpacity 
-                  style={[styles.input, { justifyContent: 'space-between', flexDirection: 'row', alignItems: 'center' }]}
-                  onPress={() => {
-                    setActiveSkillField('primarySkill');
-                    setSkillSearchText('');
-                    setSelectedCategoryTab('all');
-                    setCustomSkillInput('');
-                    setSkillPickerVisible(true);
-                  }}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
-                    <Award size={16} color={editForm.primarySkill ? '#1a2d5a' : '#94a3b8'} style={{ marginRight: 8 }} />
-                    <Text style={{ fontSize: 15, color: editForm.primarySkill ? '#1e293b' : '#94a3b8' }} numberOfLines={1}>
-                      {editForm.primarySkill || 'Select Primary Skill'}
-                    </Text>
-                  </View>
-                  <ChevronRight size={18} color="#94a3b8" />
-                </TouchableOpacity>
-              </View>
-
-              {/* Secondary Skill */}
-              <View style={styles.inputGroup}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <Text style={styles.inputLabel}>Secondary Skill</Text>
-                  {editForm.secondarySkill ? (
-                    <TouchableOpacity onPress={() => setEditForm({ ...editForm, secondarySkill: '' })}>
-                      <Text style={{ fontSize: 11, color: '#dc2626', fontWeight: '600' }}>Clear</Text>
-                    </TouchableOpacity>
-                  ) : null}
-                </View>
-                <TouchableOpacity 
-                  style={[styles.input, { justifyContent: 'space-between', flexDirection: 'row', alignItems: 'center' }]}
-                  onPress={() => {
-                    setActiveSkillField('secondarySkill');
-                    setSkillSearchText('');
-                    setSelectedCategoryTab('all');
-                    setCustomSkillInput('');
-                    setSkillPickerVisible(true);
-                  }}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
-                    <Sparkles size={16} color={editForm.secondarySkill ? '#4338ca' : '#94a3b8'} style={{ marginRight: 8 }} />
-                    <Text style={{ fontSize: 15, color: editForm.secondarySkill ? '#1e293b' : '#94a3b8' }} numberOfLines={1}>
-                      {editForm.secondarySkill || 'Select Secondary Skill'}
-                    </Text>
-                  </View>
-                  <ChevronRight size={18} color="#94a3b8" />
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>{t('profile.phoneManagedByAuth')}</Text>
-                <TextInput 
-                  style={[styles.input, { backgroundColor: '#f1f5f9', color: '#64748b' }]}
-                  value={user?.phoneNumber || ''}
-                  editable={false}
-                />
-              </View>
-
-              <View style={styles.inputRow}>
-                <View style={[styles.inputGroup, { flex: 1 }]}>
-                  <Text style={styles.inputLabel}>{t('profile.city')}</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={editForm.city}
-                    onChangeText={(t) => setEditForm({...editForm, city: t})}
-                    placeholder={t('profile.city')}
-                  />
-                </View>
-                <View style={[styles.inputGroup, { flex: 1, marginLeft: 10 }]}>
-                  <Text style={styles.inputLabel}>{t('profile.state')}</Text>
-                  <TextInput 
-                    style={styles.input}
-                    value={editForm.mailingState}
-                    onChangeText={(t) => setEditForm({...editForm, mailingState: t})}
-                    placeholder={t('profile.state')}
-                  />
-                </View>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>{t('profile.streetAddress')}</Text>
-                <TextInput 
-                  style={styles.input}
-                  value={editForm.mailingStreet}
-                  onChangeText={(t) => setEditForm({...editForm, mailingStreet: t})}
-                  placeholder={t('profile.streetAddress')}
-                  multiline
-                />
-              </View>
-
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>{t('profile.baptismDate')}</Text>
               <TouchableOpacity 
-                style={[styles.saveBtn, updating && { opacity: 0.7 }]} 
-                onPress={handleUpdateProfile}
-                disabled={updating}
+                style={[styles.input, { justifyContent: 'center', backgroundColor: colors.surface, borderColor: colors.border }]}
+                onPress={() => {
+                  setActiveDateField('baptismDate');
+                  setDatePickerVisibility(true);
+                }}
               >
-                {updating ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <Text style={styles.saveBtnText}>{t('profile.updateProfileBtn')}</Text>
-                )}
+                <Text style={{ fontSize: 15, color: editForm.baptismDate ? colors.text : (isDark ? '#71717A' : '#94a3b8') }}>
+                  {editForm.baptismDate ? formatDateDisplay(editForm.baptismDate) : t('profile.selectDate')}
+                </Text>
               </TouchableOpacity>
-              
-              <View style={{ height: 60 }} />
-            </ScrollView>
+            </View>
 
-            <DateTimePickerModal
-              isVisible={isDatePickerVisible}
-              mode="date"
-              onConfirm={handleConfirmDate}
-              onCancel={() => setDatePickerVisibility(false)}
-              date={
-                activeDateField && editForm[activeDateField] 
-                ? new Date(editForm[activeDateField]) 
-                : new Date()
-              }
-              maximumDate={new Date()}
-            />
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>{t('profile.weddingAnniversaryDate')}</Text>
+              <TouchableOpacity 
+                style={[styles.input, { justifyContent: 'center', backgroundColor: colors.surface, borderColor: colors.border }]}
+                onPress={() => {
+                  setActiveDateField('anniversaryDate');
+                  setDatePickerVisibility(true);
+                }}
+              >
+                <Text style={{ fontSize: 15, color: editForm.anniversaryDate ? colors.text : (isDark ? '#71717A' : '#94a3b8') }}>
+                  {editForm.anniversaryDate ? formatDateDisplay(editForm.anniversaryDate) : t('profile.selectDate')}
+                </Text>
+              </TouchableOpacity>
+            </View>
 
-            {/* Skill Picker Modal */}
-            <Modal
-              visible={skillPickerVisible}
-              transparent
-              animationType="slide"
-              onRequestClose={() => setSkillPickerVisible(false)}
+            {/* Primary Skill */}
+            <View style={styles.inputGroup}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Primary Skill</Text>
+                {editForm.primarySkill ? (
+                  <TouchableOpacity onPress={() => setEditForm({ ...editForm, primarySkill: '' })}>
+                    <Text style={{ fontSize: 11, color: '#dc2626', fontWeight: '600' }}>Clear</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+              <TouchableOpacity 
+                style={[styles.input, { justifyContent: 'space-between', flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border }]}
+                onPress={() => {
+                  setActiveSkillField('primarySkill');
+                  setSkillSearchText('');
+                  setSelectedCategoryTab('all');
+                  setCustomSkillInput('');
+                  setSkillPickerVisible(true);
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
+                  <Award size={16} color={editForm.primarySkill ? (colors.accent || '#0F766E') : (isDark ? '#71717A' : '#94a3b8')} style={{ marginRight: 8 }} />
+                  <Text style={{ fontSize: 15, color: editForm.primarySkill ? colors.text : (isDark ? '#71717A' : '#94a3b8') }} numberOfLines={1}>
+                    {editForm.primarySkill || 'Select Primary Skill'}
+                  </Text>
+                </View>
+                <ChevronRight size={18} color={isDark ? '#71717A' : '#94a3b8'} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Secondary Skill */}
+            <View style={styles.inputGroup}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Secondary Skill</Text>
+                {editForm.secondarySkill ? (
+                  <TouchableOpacity onPress={() => setEditForm({ ...editForm, secondarySkill: '' })}>
+                    <Text style={{ fontSize: 11, color: '#dc2626', fontWeight: '600' }}>Clear</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+              <TouchableOpacity 
+                style={[styles.input, { justifyContent: 'space-between', flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border }]}
+                onPress={() => {
+                  setActiveSkillField('secondarySkill');
+                  setSkillSearchText('');
+                  setSelectedCategoryTab('all');
+                  setCustomSkillInput('');
+                  setSkillPickerVisible(true);
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
+                  <Sparkles size={16} color={editForm.secondarySkill ? (colors.accent || '#4338CA') : (isDark ? '#71717A' : '#94a3b8')} style={{ marginRight: 8 }} />
+                  <Text style={{ fontSize: 15, color: editForm.secondarySkill ? colors.text : (isDark ? '#71717A' : '#94a3b8') }} numberOfLines={1}>
+                    {editForm.secondarySkill || 'Select Secondary Skill'}
+                  </Text>
+                </View>
+                <ChevronRight size={18} color={isDark ? '#71717A' : '#94a3b8'} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>{t('profile.phoneManagedByAuth')}</Text>
+              <TextInput 
+                style={[styles.input, { backgroundColor: isDark ? '#18181B' : '#f1f5f9', borderColor: colors.border, color: colors.textSecondary }]}
+                value={user?.phoneNumber || ''}
+                editable={false}
+              />
+            </View>
+
+            <View style={styles.inputRow}>
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>{t('profile.city')}</Text>
+                <TextInput
+                  style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+                  value={editForm.city}
+                  onChangeText={(t) => setEditForm({...editForm, city: t})}
+                  placeholder={t('profile.city')}
+                  placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+                />
+              </View>
+              <View style={[styles.inputGroup, { flex: 1, marginLeft: 10 }]}>
+                <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>{t('profile.state')}</Text>
+                <TextInput 
+                  style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+                  value={editForm.mailingState}
+                  onChangeText={(t) => setEditForm({...editForm, mailingState: t})}
+                  placeholder={t('profile.state')}
+                  placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+                />
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>{t('profile.streetAddress')}</Text>
+              <TextInput 
+                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+                value={editForm.mailingStreet}
+                onChangeText={(t) => setEditForm({...editForm, mailingStreet: t})}
+                placeholder={t('profile.streetAddress')}
+                placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+                multiline
+              />
+            </View>
+
+            <TouchableOpacity 
+              style={[styles.saveBtn, { backgroundColor: colors.accent || (isDark ? '#38BDF8' : '#0F766E') }, updating && { opacity: 0.7 }]} 
+              onPress={handleUpdateProfile}
+              disabled={updating}
             >
-              <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
-                <View style={{ width: '100%', backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '85%', paddingBottom: 24 }}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 18, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                      {activeSkillField === 'primarySkill' ? (
-                        <Award size={20} color="#1a2d5a" style={{ marginRight: 8 }} />
-                      ) : (
-                        <Sparkles size={20} color="#4338CA" style={{ marginRight: 8 }} />
-                      )}
-                      <Text style={{ fontSize: 18, fontWeight: '800', color: '#1a2d5a' }}>
-                        {activeSkillField === 'primarySkill' ? 'Select Primary Skill' : 'Select Secondary Skill'}
-                      </Text>
-                    </View>
-                    <TouchableOpacity onPress={() => setSkillPickerVisible(false)} style={{ backgroundColor: '#f1f5f9', padding: 6, borderRadius: 20 }}>
-                      <X size={18} color="#1a2d5a" />
-                    </TouchableOpacity>
-                  </View>
+              {updating ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.saveBtnText}>{t('profile.updateProfileBtn')}</Text>
+              )}
+            </TouchableOpacity>
+            
+            <View style={{ height: 60 }} />
+          </ScrollView>
 
-                  {/* Category Tabs */}
-                  <View style={{ paddingVertical: 10, paddingHorizontal: 16 }}>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+          <DateTimePickerModal
+            isVisible={isDatePickerVisible}
+            mode="date"
+            onConfirm={handleConfirmDate}
+            onCancel={() => setDatePickerVisibility(false)}
+            date={
+              activeDateField && editForm[activeDateField] 
+              ? new Date(editForm[activeDateField]) 
+              : new Date()
+            }
+            maximumDate={new Date()}
+          />
+
+          {/* Skill Picker Modal */}
+          <Modal
+            visible={skillPickerVisible}
+            transparent
+            animationType="slide"
+            onRequestClose={() => setSkillPickerVisible(false)}
+          >
+            <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' }}>
+              <View style={{ width: '100%', backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '85%', paddingBottom: 24 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 18, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    {activeSkillField === 'primarySkill' ? (
+                      <Award size={20} color={colors.accent || (isDark ? '#38BDF8' : '#0F766E')} style={{ marginRight: 8 }} />
+                    ) : (
+                      <Sparkles size={20} color={colors.accent || (isDark ? '#C084FC' : '#4338CA')} style={{ marginRight: 8 }} />
+                    )}
+                    <Text style={{ fontSize: 18, fontWeight: '800', color: colors.text }}>
+                      {activeSkillField === 'primarySkill' ? 'Select Primary Skill' : 'Select Secondary Skill'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setSkillPickerVisible(false)} style={{ backgroundColor: isDark ? '#27272A' : '#f1f5f9', padding: 6, borderRadius: 20 }}>
+                    <X size={18} color={colors.text} />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Category Tabs */}
+                <View style={{ paddingVertical: 10, paddingHorizontal: 16 }}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                    <TouchableOpacity
+                      style={[
+                        styles.catTab,
+                        { backgroundColor: isDark ? '#1F1F23' : '#f1f5f9' },
+                        selectedCategoryTab === 'all' && { backgroundColor: colors.accent || (isDark ? '#38BDF8' : '#0F766E') }
+                      ]}
+                      onPress={() => setSelectedCategoryTab('all')}
+                    >
+                      <Text style={[styles.catTabTxt, { color: selectedCategoryTab === 'all' ? '#FFFFFF' : colors.textSecondary }]}>All Skills</Text>
+                    </TouchableOpacity>
+                    {CHURCH_SKILL_CATEGORIES.map(cat => (
                       <TouchableOpacity
+                        key={cat.id}
                         style={[
                           styles.catTab,
-                          selectedCategoryTab === 'all' && styles.catTabActive
+                          { backgroundColor: isDark ? '#1F1F23' : '#f1f5f9' },
+                          selectedCategoryTab === cat.id && { backgroundColor: colors.accent || (isDark ? '#38BDF8' : '#0F766E') }
                         ]}
-                        onPress={() => setSelectedCategoryTab('all')}
+                        onPress={() => setSelectedCategoryTab(cat.id)}
                       >
-                        <Text style={[styles.catTabTxt, selectedCategoryTab === 'all' && styles.catTabTxtActive]}>All Skills</Text>
+                        <Text style={[styles.catTabTxt, { color: selectedCategoryTab === cat.id ? '#FFFFFF' : colors.textSecondary }]}>{cat.name}</Text>
                       </TouchableOpacity>
-                      {CHURCH_SKILL_CATEGORIES.map(cat => (
-                        <TouchableOpacity
-                          key={cat.id}
-                          style={[
-                            styles.catTab,
-                            selectedCategoryTab === cat.id && styles.catTabActive
-                          ]}
-                          onPress={() => setSelectedCategoryTab(cat.id)}
-                        >
-                          <Text style={[styles.catTabTxt, selectedCategoryTab === cat.id && styles.catTabTxtActive]}>{cat.name}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
-                  </View>
-
-                  {/* Search Input */}
-                  <View style={{ paddingHorizontal: 16, marginBottom: 8 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#f1f5f9', borderRadius: 10, paddingHorizontal: 12, height: 40 }}>
-                      <Search size={16} color="#94a3b8" style={{ marginRight: 8 }} />
-                      <TextInput
-                        placeholder="Search skill..."
-                        placeholderTextColor="#94a3b8"
-                        value={skillSearchText}
-                        onChangeText={setSkillSearchText}
-                        style={{ flex: 1, fontSize: 13, color: '#1e293b' }}
-                      />
-                      {skillSearchText ? (
-                        <TouchableOpacity onPress={() => setSkillSearchText('')}>
-                          <X size={14} color="#94a3b8" />
-                        </TouchableOpacity>
-                      ) : null}
-                    </View>
-                  </View>
-
-                  {/* Skills List */}
-                  <ScrollView style={{ paddingHorizontal: 16, maxHeight: 260 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-                    {filteredSkillList.map((skill) => {
-                      const isSelected = activeSkillField && editForm[activeSkillField] === skill;
-                      return (
-                        <TouchableOpacity
-                          key={skill}
-                          style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            paddingVertical: 12,
-                            paddingHorizontal: 12,
-                            borderBottomWidth: 1,
-                            borderBottomColor: '#f1f5f9',
-                            backgroundColor: isSelected ? '#eff6ff' : 'transparent',
-                            borderRadius: 8
-                          }}
-                          onPress={() => {
-                            if (activeSkillField) {
-                              setEditForm(prev => ({ ...prev, [activeSkillField]: skill }));
-                            }
-                            setSkillPickerVisible(false);
-                          }}
-                        >
-                          <Text style={{ fontSize: 14, fontWeight: isSelected ? '700' : '500', color: isSelected ? '#1a2d5a' : '#334155' }}>
-                            {skill}
-                          </Text>
-                          {isSelected && <Check size={18} color="#1a2d5a" />}
-                        </TouchableOpacity>
-                      );
-                    })}
+                    ))}
                   </ScrollView>
+                </View>
 
-                  {/* Custom Skill Input */}
-                  <View style={{ paddingHorizontal: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#f1f5f9', marginTop: 8 }}>
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748b', marginBottom: 6, textTransform: 'uppercase' }}>
-                      Or Add Custom Skill
-                    </Text>
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      <TextInput
-                        style={{ flex: 1, borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 10, paddingHorizontal: 12, height: 42, color: '#1e293b', fontSize: 13 }}
-                        placeholder="Type custom skill..."
-                        placeholderTextColor="#94a3b8"
-                        value={customSkillInput}
-                        onChangeText={setCustomSkillInput}
-                      />
+                {/* Search Input */}
+                <View style={{ paddingHorizontal: 16, marginBottom: 8 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? '#18181B' : '#f1f5f9', borderRadius: 10, paddingHorizontal: 12, height: 40, borderWidth: 1, borderColor: colors.border }}>
+                    <Search size={16} color={isDark ? '#71717A' : '#94a3b8'} style={{ marginRight: 8 }} />
+                    <TextInput
+                      placeholder="Search skill..."
+                      placeholderTextColor={isDark ? '#71717A' : '#94a3b8'}
+                      value={skillSearchText}
+                      onChangeText={setSkillSearchText}
+                      style={{ flex: 1, fontSize: 13, color: colors.text }}
+                    />
+                    {skillSearchText ? (
+                      <TouchableOpacity onPress={() => setSkillSearchText('')}>
+                        <X size={14} color={isDark ? '#71717A' : '#94a3b8'} />
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                </View>
+
+                {/* Skills List */}
+                <ScrollView style={{ paddingHorizontal: 16, maxHeight: 260 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                  {filteredSkillList.map((skill) => {
+                    const isSelected = activeSkillField && editForm[activeSkillField] === skill;
+                    return (
                       <TouchableOpacity
-                        style={{ backgroundColor: '#1a2d5a', paddingHorizontal: 14, borderRadius: 10, justifyContent: 'center', alignItems: 'center' }}
+                        key={skill}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          paddingVertical: 12,
+                          paddingHorizontal: 12,
+                          borderBottomWidth: 1,
+                          borderBottomColor: colors.border,
+                          backgroundColor: isSelected ? (isDark ? '#27272A' : '#eff6ff') : 'transparent',
+                          borderRadius: 8
+                        }}
                         onPress={() => {
-                          if (customSkillInput.trim() && activeSkillField) {
-                            setEditForm(prev => ({ ...prev, [activeSkillField]: customSkillInput.trim() }));
-                            setCustomSkillInput('');
-                            setSkillPickerVisible(false);
+                          if (activeSkillField) {
+                            setEditForm(prev => ({ ...prev, [activeSkillField]: skill }));
                           }
+                          setSkillPickerVisible(false);
                         }}
                       >
-                        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>Apply</Text>
+                        <Text style={{ fontSize: 14, fontWeight: isSelected ? '700' : '500', color: isSelected ? (colors.accent || (isDark ? '#38BDF8' : '#1a2d5a')) : colors.text }}>
+                          {skill}
+                        </Text>
+                        {isSelected && <Check size={18} color={colors.accent || (isDark ? '#38BDF8' : '#1a2d5a')} />}
                       </TouchableOpacity>
-                    </View>
+                    );
+                  })}
+                </ScrollView>
+
+                {/* Custom Skill Input */}
+                <View style={{ paddingHorizontal: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border, marginTop: 8 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary, marginBottom: 6, textTransform: 'uppercase' }}>
+                    Or Add Custom Skill
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TextInput
+                      style={{ flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 12, height: 42, color: colors.text, backgroundColor: isDark ? '#18181B' : '#FFFFFF', fontSize: 13 }}
+                      placeholder="Type custom skill..."
+                      placeholderTextColor={isDark ? '#71717A' : '#94a3b8'}
+                      value={customSkillInput}
+                      onChangeText={setCustomSkillInput}
+                    />
+                    <TouchableOpacity
+                      style={{ backgroundColor: colors.accent || (isDark ? '#38BDF8' : '#0F766E'), paddingHorizontal: 14, borderRadius: 10, justifyContent: 'center', alignItems: 'center' }}
+                      onPress={() => {
+                        if (customSkillInput.trim() && activeSkillField) {
+                          setEditForm(prev => ({ ...prev, [activeSkillField]: customSkillInput.trim() }));
+                          setCustomSkillInput('');
+                          setSkillPickerVisible(false);
+                        }
+                      }}
+                    >
+                      <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>Apply</Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
               </View>
-            </Modal>
-          </View>
-        </View>
-      )}
+            </View>
+          </Modal>
+        </SafeAreaView>
+      </Modal>
+      
 
       {/* ── Language Selection Modal ── */}
       {isLanguageModalVisible && (
         <View style={styles.modalOverlay}>
-          <View style={styles.bottomSheetContent}>
+          <View style={[styles.bottomSheetContent, { backgroundColor: colors.surface }]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{t('profile.selectLanguage')}</Text>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>{t('profile.selectLanguage')}</Text>
               <TouchableOpacity onPress={() => setIsLanguageModalVisible(false)}>
-                <X size={24} color="#64748b" />
+                <X size={24} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
 
@@ -1047,8 +1351,9 @@ export default function ProfileScreen({ navigation }: any) {
                   <TouchableOpacity 
                     key={lang.code}
                     style={[
-                      styles.langItem, 
-                      language === lang.code && styles.langItemActive
+                      styles.langItem,
+                      { backgroundColor: isDark ? '#18181B' : '#f8fafc', borderColor: colors.border },
+                      language === lang.code && { backgroundColor: isDark ? '#27272A' : '#eff6ff', borderColor: colors.accent || '#0F766E' }
                     ]}
                     onPress={() => {
                       setLanguage(lang.code);
@@ -1059,23 +1364,24 @@ export default function ProfileScreen({ navigation }: any) {
                       <View style={[
                         { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
                         language === lang.code
-                          ? { backgroundColor: '#1a2d5a' }
-                          : { backgroundColor: '#f1f5f9' }
+                          ? { backgroundColor: colors.accent || '#0F766E' }
+                          : { backgroundColor: isDark ? '#27272A' : '#f1f5f9' }
                       ]}>
-                        <Text style={{ fontSize: 14, fontWeight: '800', color: language === lang.code ? '#fff' : '#64748b' }}>
+                        <Text style={{ fontSize: 14, fontWeight: '800', color: language === lang.code ? '#fff' : colors.textSecondary }}>
                           {lang.nativeName.charAt(0)}
                         </Text>
                       </View>
                       <View>
                         <Text style={[
                           styles.langName,
-                          language === lang.code && styles.langTextActive
+                          { color: colors.text },
+                          language === lang.code && { color: colors.accent || '#0F766E' }
                         ]}>{lang.nativeName}</Text>
-                        <Text style={styles.langNative}>{lang.name}</Text>
+                        <Text style={[styles.langNative, { color: colors.textSecondary }]}>{lang.name}</Text>
                       </View>
                     </View>
                     {language === lang.code && (
-                      <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#1a2d5a', justifyContent: 'center', alignItems: 'center' }}>
+                      <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: colors.accent || '#0F766E', justifyContent: 'center', alignItems: 'center' }}>
                         <Check size={14} color="#fff" />
                       </View>
                     )}
@@ -1090,60 +1396,60 @@ export default function ProfileScreen({ navigation }: any) {
       {/* ── Notification Preferences Modal ── */}
       {isNotifyModalVisible && (
         <View style={styles.modalOverlay}>
-          <View style={styles.bottomSheetContent}>
+          <View style={[styles.bottomSheetContent, { backgroundColor: colors.surface }]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{t('profile.notifications')}</Text>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>{t('profile.notifications')}</Text>
               <TouchableOpacity onPress={() => setIsNotifyModalVisible(false)}>
-                <X size={24} color="#64748b" />
+                <X size={24} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
 
             <View style={styles.notifyList}>
               <View style={styles.notifyItem}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.notifyName}>{t('profile.dailyPromiseNotif')}</Text>
-                  <Text style={styles.notifyDesc}>{t('profile.dailyPromiseNotifDesc')}</Text>
+                  <Text style={[styles.notifyName, { color: colors.text }]}>{t('profile.dailyPromiseNotif')}</Text>
+                  <Text style={[styles.notifyDesc, { color: colors.textSecondary }]}>{t('profile.dailyPromiseNotifDesc')}</Text>
                 </View>
                 <Switch 
                   value={dailyPromiseNotify} 
                   onValueChange={setDailyPromiseNotify}
-                  trackColor={{ false: '#e2e8f0', true: '#1a2d5a' }}
+                  trackColor={{ false: isDark ? '#3F3F46' : '#e2e8f0', true: colors.accent || '#0F766E' }}
                 />
               </View>
 
               <View style={styles.notifyItem}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.notifyName}>{t('profile.newSermonsNotif')}</Text>
-                  <Text style={styles.notifyDesc}>{t('profile.newSermonsNotifDesc')}</Text>
+                  <Text style={[styles.notifyName, { color: colors.text }]}>{t('profile.newSermonsNotif')}</Text>
+                  <Text style={[styles.notifyDesc, { color: colors.textSecondary }]}>{t('profile.newSermonsNotifDesc')}</Text>
                 </View>
                 <Switch 
                   value={newSermonNotify} 
                   onValueChange={setNewSermonNotify}
-                  trackColor={{ false: '#e2e8f0', true: '#1a2d5a' }}
+                  trackColor={{ false: isDark ? '#3F3F46' : '#e2e8f0', true: colors.accent || '#0F766E' }}
                 />
               </View>
 
               <View style={styles.notifyItem}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.notifyName}>{t('profile.eventsNotif')}</Text>
-                  <Text style={styles.notifyDesc}>{t('profile.eventsNotifDesc')}</Text>
+                  <Text style={[styles.notifyName, { color: colors.text }]}>{t('profile.eventsNotif')}</Text>
+                  <Text style={[styles.notifyDesc, { color: colors.textSecondary }]}>{t('profile.eventsNotifDesc')}</Text>
                 </View>
                 <Switch 
                   value={eventReminderNotify} 
                   onValueChange={setEventReminderNotify}
-                  trackColor={{ false: '#e2e8f0', true: '#1a2d5a' }}
+                  trackColor={{ false: isDark ? '#3F3F46' : '#e2e8f0', true: colors.accent || '#0F766E' }}
                 />
               </View>
 
               <View style={styles.notifyItem}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.notifyName}>{t('profile.prayerNotif')}</Text>
-                  <Text style={styles.notifyDesc}>{t('profile.prayerNotifDesc')}</Text>
+                  <Text style={[styles.notifyName, { color: colors.text }]}>{t('profile.prayerNotif')}</Text>
+                  <Text style={[styles.notifyDesc, { color: colors.textSecondary }]}>{t('profile.prayerNotifDesc')}</Text>
                 </View>
                 <Switch 
                   value={prayerNotify} 
                   onValueChange={setPrayerNotify}
-                  trackColor={{ false: '#e2e8f0', true: '#1a2d5a' }}
+                  trackColor={{ false: isDark ? '#3F3F46' : '#e2e8f0', true: colors.accent || '#0F766E' }}
                 />
               </View>
             </View>
@@ -1233,21 +1539,26 @@ export default function ProfileScreen({ navigation }: any) {
   );
 }
 
-function MenuItem({ icon, iconBg, title, sub, isLast, onPress }: any) {
+function MenuItem({ icon, title, sub, value, onPress, textColor, subColor }: any) {
   return (
     <TouchableOpacity 
-      style={[styles.menuItem, isLast && { borderBottomWidth: 0 }]} 
+      style={styles.igRow} 
       onPress={onPress}
-      activeOpacity={0.7}
+      activeOpacity={0.65}
     >
-      <View style={[styles.iconBox, { backgroundColor: iconBg }]}>
+      <View style={styles.igIconWrap}>
         {icon}
       </View>
-      <View style={styles.menuContent}>
-        <Text style={styles.menuTitle}>{title}</Text>
-        <Text style={styles.menuSub}>{sub}</Text>
+      <View style={styles.igContentWrap}>
+        <Text style={[styles.igTitle, { color: textColor || '#0F172A' }]}>{title}</Text>
+        {sub ? <Text style={[styles.igSub, { color: subColor || '#64748B' }]}>{sub}</Text> : null}
       </View>
-      <ChevronRight size={16} color="#cbd5e1" />
+      {value ? (
+        <Text style={[styles.igValue, { color: subColor || '#64748B' }]} numberOfLines={1}>
+          {value}
+        </Text>
+      ) : null}
+      <ChevronRight size={18} color={subColor || '#94A3B8'} strokeWidth={1.8} />
     </TouchableOpacity>
   );
 }
@@ -1256,14 +1567,24 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
-  // Hero Section
+  // Hero Section - Normal flat bottom (no U shape)
   heroSection: { 
     backgroundColor: 'transparent', 
     paddingTop: Platform.OS === 'ios' ? 60 : (StatusBar.currentHeight ? StatusBar.currentHeight + 10 : 45), 
-    paddingBottom: 28,
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
+    paddingBottom: 44,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
     alignItems: 'center'
+  },
+  // All Buttons Card - "n-shaped" card with rounded top corners overlapping top card (no top line)
+  buttonsCard: {
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    marginTop: -24,
+    paddingTop: 14,
+    paddingBottom: 20,
+    overflow: 'hidden',
+    zIndex: 2,
   },
   headerTop: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20, alignItems: 'center', alignSelf: 'stretch' },
   themeToggle: { backgroundColor: 'rgba(255,255,255,0.15)', width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
@@ -1351,14 +1672,67 @@ const styles = StyleSheet.create({
 
   scrollContent: { paddingBottom: 150 },
 
-  // Menu List
+  // Menu List - Instagram Style (Flat, Borderless, Group Divider Bands)
   sectionLabel: { fontSize: 11, fontWeight: '800', color: '#94a3b8', letterSpacing: 0.8, marginHorizontal: 25, marginTop: 25, marginBottom: 12 },
-  menuGroup: { backgroundColor: '#fff', marginHorizontal: 20, borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: '#f1f5f9' },
-  menuItem: { flexDirection: 'row', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: '#f8fafc' },
-  iconBox: { width: 42, height: 42, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
-  menuContent: { flex: 1 },
-  menuTitle: { fontSize: 14, fontWeight: '700', color: '#1e293b' },
-  menuSub: { fontSize: 11, color: '#94a3b8', marginTop: 2 },
+  igSection: {
+    paddingVertical: 6,
+  },
+  igSectionHeader: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    paddingHorizontal: 18,
+    paddingTop: 14,
+    paddingBottom: 6,
+    letterSpacing: -0.1,
+  },
+  igSectionDividerBand: {
+    height: 8,
+    width: '100%',
+  },
+  igRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+  },
+  igIconWrap: {
+    width: 26,
+    height: 26,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  igContentWrap: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  igTitle: {
+    fontSize: 15.5,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  igSub: {
+    fontSize: 12,
+    marginTop: 2,
+    letterSpacing: -0.1,
+  },
+  igValue: {
+    fontSize: 14,
+    marginRight: 8,
+    fontWeight: '400',
+  },
+  signOutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 100,
+    alignSelf: 'center',
+    marginTop: 32,
+    marginBottom: 20,
+    borderWidth: 1,
+  },
 
   // Modal
   modalOverlay: { 

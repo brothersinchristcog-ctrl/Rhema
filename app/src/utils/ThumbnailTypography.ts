@@ -18,6 +18,29 @@ export const loadTeluguFonts = async (): Promise<boolean> => {
     fontsLoadedPromise = (async () => {
       try {
         await Font.loadAsync({
+          // Bold Cursive Scripts (Apple-style bold cursive)
+          Pacifico: require('../../assets/fonts/Pacifico-Regular.ttf'),
+          'Pacifico-Regular': require('../../assets/fonts/Pacifico-Regular.ttf'),
+          Borel: require('../../assets/fonts/Borel-Regular.ttf'),
+          'Borel-Regular': require('../../assets/fonts/Borel-Regular.ttf'),
+          Satisfy: require('../../assets/fonts/Satisfy-Regular.ttf'),
+          'Satisfy-Regular': require('../../assets/fonts/Satisfy-Regular.ttf'),
+          CaveatBrush: require('../../assets/fonts/CaveatBrush-Regular.ttf'),
+          'CaveatBrush-Regular': require('../../assets/fonts/CaveatBrush-Regular.ttf'),
+          Yellowtail: require('../../assets/fonts/Yellowtail-Regular.ttf'),
+          'Yellowtail-Regular': require('../../assets/fonts/Yellowtail-Regular.ttf'),
+          Damion: require('../../assets/fonts/Damion-Regular.ttf'),
+          'Damion-Regular': require('../../assets/fonts/Damion-Regular.ttf'),
+          // Premium Cursive Scripts
+          AlexBrush: require('../../assets/fonts/AlexBrush-Regular.ttf'),
+          'AlexBrush-Regular': require('../../assets/fonts/AlexBrush-Regular.ttf'),
+          Sacramento: require('../../assets/fonts/Sacramento-Regular.ttf'),
+          'Sacramento-Regular': require('../../assets/fonts/Sacramento-Regular.ttf'),
+          // Apple Hello Script (Cursive / Official Apple lettering)
+          AppleHello: require('../../assets/fonts/AppleHello-Regular.ttf'),
+          'AppleHello-Regular': require('../../assets/fonts/AppleHello-Regular.ttf'),
+          MacintoshSkeletal: require('../../assets/fonts/MacintoshSkeletalFilled.ttf'),
+          'MacintoshSkeletalFilled-Regular': require('../../assets/fonts/MacintoshSkeletalFilled.ttf'),
           // Suranna
           Suranna: require('../../assets/fonts/Suranna-Regular.ttf'),
           'Suranna-Regular': require('../../assets/fonts/Suranna-Regular.ttf'),

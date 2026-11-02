@@ -378,6 +378,7 @@ export const te: TranslationSchema = {
     contactUs: 'సంప్రదించండి',
     personalInfo: 'వ్యక్తిగత సమాచారం',
     editProfile: 'ప్రొఫైల్ సవరించండి',
+    uploadPhoto: 'ఫోటోను ఎంచుకోండి',
     changePhoto: 'ఫోటో మార్చండి',
     removePhoto: 'ఫోటో తొలగించండి',
     firstName: 'మొదటి పేరు',
