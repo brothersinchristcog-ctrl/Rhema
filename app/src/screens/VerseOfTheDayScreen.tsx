@@ -7,6 +7,7 @@ import { ArrowLeft, Share2, Sun, Sunset, Moon, BookOpen, Shield, Heart, Repeat, 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import VerseNotificationService, { DailyVerse } from '../services/VerseNotificationService';
+import { getVerseBackgroundUrl } from '../constants/VerseBackgrounds';
 import { useTheme } from '../context/ThemeContext';
 import { useChurch } from '../context/ChurchContext';
 import { useLanguage } from '../context/LanguageContext';

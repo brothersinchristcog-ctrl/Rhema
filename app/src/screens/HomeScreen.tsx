@@ -83,6 +83,7 @@ import { useLanguage } from '../context/LanguageContext';
 import Theme from '../theme/Theme';
 import FirestoreService, { DailyPromise, ScheduleEvent, AppMember, Sermon } from '../services/FirestoreService';
 import VerseNotificationService, { DailyVerse } from '../services/VerseNotificationService';
+import { getVerseBackgroundUrl } from '../constants/VerseBackgrounds';
 import { BibleService } from '../services/BibleService';
 import { SupportedLanguage } from '../locales';
 import { CustomAlert } from '../components/CustomAlert';

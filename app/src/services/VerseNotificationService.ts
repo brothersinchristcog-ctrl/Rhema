@@ -4,8 +4,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { BibleService } from './BibleService';
 import { SupportedLanguage } from '../locales';
+import { getVerseBackgroundUrl } from '../constants/VerseBackgrounds';
 
-const VERSES_CACHE_KEY = '@wechristian_verses_cache';
+const VERSES_CACHE_KEY = '@rhema_verses_cache';
+
+// Distinct Scripture offset for Rhema Global Ministries to guarantee completely independent verses from WeChristian
+const RHEMA_DAILY_VERSE_OFFSET = 2931;
 
 // Stable notification ID prefix — used to deduplicate / cancel by slot
 const NOTIF_ID_PREFIX = 'daily_verse_';
@@ -127,7 +131,7 @@ class VerseNotificationService {
    * Protected by an isSyncing mutex to prevent double-execution on auth re-renders.
    * Schedules two distinct notifications simultaneously for each time-slot: English and Telugu.
    */
-  async syncAndSchedule() {
+  async syncAndSchedule(churchId: string = 'rhema') {
     // ── Mutex guard: skip if already running ──────────────────────────────────
     if (this.isSyncing) {
       console.log('[VerseNotificationService] Sync already in progress. Skipping duplicate call.');
@@ -215,7 +219,7 @@ class VerseNotificationService {
       // 7. Calculate which verse indices are required
       const requiredIndices = new Set<number>();
       for (const d of targetDates) {
-        this.getIndicesForDate(d, totalVerses).forEach(idx => requiredIndices.add(idx));
+        this.getIndicesForDate(d, totalVerses, churchId).forEach(idx => requiredIndices.add(idx));
       }
 
       // 8. Load cache and fetch any missing verse data or verses missing backgroundUrl
@@ -242,7 +246,7 @@ class VerseNotificationService {
       let scheduledCount = 0;
 
       for (const d of targetDates) {
-        const dailyIndices = this.getIndicesForDate(d, totalVerses);
+        const dailyIndices = this.getIndicesForDate(d, totalVerses, churchId);
 
         for (let i = 0; i < 4; i++) {
           const time = times[i];
@@ -439,7 +443,7 @@ class VerseNotificationService {
   /**
    * Fetches verses for multiple recent days efficiently (combines cache and batch firestore queries).
    */
-  async getRecentVerses(pastDays: number, includeToday: boolean = true, forceRefresh: boolean = false): Promise<{ date: Date, verses: DailyVerse[] }[]> {
+  async getRecentVerses(pastDays: number, includeToday: boolean = true, forceRefresh: boolean = false, churchId: string = 'rhema'): Promise<{ date: Date, verses: DailyVerse[] }[]> {
     try {
       let totalVerses = 0;
       const metaCacheStr = await AsyncStorage.getItem('@wechristian_verses_meta');

@@ -1525,5 +1525,5 @@ const testBaptismsV1 = functionsCompat.https.onRequest(async (req, res) => {
         res.status(500).send(error.message);
     }
 });
-export { publishScheduledSermons, triggerPublishScheduledSermonsHttp, triggerDailyVersePushHttp, monitorMeetingLive, pushMeetingLive } from './notifications.js';
+export { publishScheduledSermons, triggerPublishScheduledSermonsHttp, triggerDailyVersePushHttp, sendDailyVersePushScheduled, monitorMeetingLive, pushMeetingLive } from './notifications.js';
 //# sourceMappingURL=index.js.map

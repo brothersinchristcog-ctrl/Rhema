@@ -1360,7 +1360,27 @@ export const triggerPublishScheduledSermonsHttp = onRequest({ cors: true }, asyn
  * 1. English notification ('✝️ Good Morning' + verseEn + referenceEn)
  * 2. Telugu notification ('✝️ శుభోదయం' + verseTe + referenceTe)
  */
-export async function sendDailyVersePushInternal(slotOverride) {
+/**
+ * ⏰ SCHEDULED DAILY VERSE PUSH
+ * Automatically dispatches Daily Verse push notifications 4 times a day:
+ * Morning (06:00 AM IST), Afternoon (12:00 PM IST), Evening (06:00 PM IST), Night (09:00 PM IST)
+ */
+export const sendDailyVersePushScheduled = onSchedule({
+    schedule: '0 6,12,18,21 * * *',
+    timeZone: 'Asia/Kolkata',
+    region: 'asia-south1',
+}, async () => {
+    console.log('⏰ [sendDailyVersePushScheduled] Running scheduled Daily Verse push...');
+    await sendDailyVersePushInternal();
+});
+/**
+ * 📖 AUTOMATED DAILY VERSE MULTICAST PUSH (English & Telugu)
+ * Determines the current slot (Morning, Afternoon, Evening, Night) or uses slotOverride.
+ * Queries today's verse for Rhema Church and dispatches FCM push notifications:
+ * 1. Multicast to registered member tokens (Rhema members & users)
+ * 2. Topic broadcast to 'church_rhema' for 100% member delivery
+ */
+export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 'rhema') {
     if (getApps().length === 0) {
         initializeApp();
     }
@@ -1375,7 +1395,6 @@ export async function sendDailyVersePushInternal(slotOverride) {
     };
     let slot = slotOverride;
     if (!slot || !PERIOD_SLOTS[slot]) {
-        // Current hour in IST (Asia/Kolkata)
         const nowIst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
         const hour = nowIst.getHours();
         if (hour >= 5 && hour < 12) {
@@ -1394,53 +1413,106 @@ export async function sendDailyVersePushInternal(slotOverride) {
     const slotInfo = PERIOD_SLOTS[slot] || PERIOD_SLOTS.Morning;
     console.log(`[sendDailyVersePushInternal] Running for slot: ${slot} (slot index: ${slotInfo.index})`);
     // 2. Compute today's verse index
-    const metaDoc = await db.collection('daily_verses_meta').doc('metadata').get();
-    const totalVerses = metaDoc.exists ? (metaDoc.data()?.totalVerses || 5863) : 5863;
+    let totalVerses = 5863;
+    try {
+        const metaDoc = await db.collection('daily_verses_meta').doc('metadata').get();
+        if (metaDoc.exists) {
+            totalVerses = metaDoc.data()?.totalVerses || 5863;
+        }
+    }
+    catch (_) { }
     const EPOCH = new Date('2026-10-30T00:00:00Z');
     const nowIst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
     const todayLocal = new Date(nowIst.getFullYear(), nowIst.getMonth(), nowIst.getDate());
     const epochDate = new Date(EPOCH.getFullYear(), EPOCH.getMonth(), EPOCH.getDate());
     const daysSinceEpoch = Math.floor((todayLocal.getTime() - epochDate.getTime()) / (1000 * 60 * 60 * 24));
-    const targetIndex = (daysSinceEpoch * 4 + slotInfo.index) % totalVerses;
-    console.log(`[sendDailyVersePushInternal] Target verse index: ${targetIndex} (total: ${totalVerses})`);
-    // 3. Query verse document from Firestore
-    const snap = await db.collection('daily_verses').where('index', '==', targetIndex).limit(1).get();
-    if (snap.empty) {
-        console.warn(`[sendDailyVersePushInternal] No verse document found for index ${targetIndex}`);
+    // RHEMA has its own independent Scripture offset so it never displays the same verses as WeChristian
+    const RHEMA_DAILY_VERSE_OFFSET = 2931;
+    const offset = targetChurchId === 'rhema' ? RHEMA_DAILY_VERSE_OFFSET : 0;
+    const targetIndex = (daysSinceEpoch * 4 + slotInfo.index + offset) % totalVerses;
+    console.log(`[sendDailyVersePushInternal] Target verse index: ${targetIndex} (total: ${totalVerses}, offset: ${offset})`);
+    // 3. Query verse document: Check Rhema Church/rhema/daily_verses first, then fallback to daily_verses
+    let verseDocData = null;
+    let verseId = `verse_${targetIndex}`;
+    try {
+        const rhemaSnap = await db.collection('Rhema Church').doc('rhema').collection('daily_verses').where('index', '==', targetIndex).limit(1).get();
+        if (!rhemaSnap.empty) {
+            verseDocData = rhemaSnap.docs[0]?.data();
+            verseId = rhemaSnap.docs[0]?.id || verseId;
+        }
+    }
+    catch (_) { }
+    if (!verseDocData) {
+        try {
+            const snap = await db.collection('daily_verses').where('index', '==', targetIndex).limit(1).get();
+            if (!snap.empty) {
+                verseDocData = snap.docs[0]?.data();
+                verseId = snap.docs[0]?.id || verseId;
+            }
+        }
+        catch (_) { }
+    }
+    // Fallback to bulk_verses.json if not found in Firestore
+    if (!verseDocData) {
+        try {
+            const fs = await import('fs');
+            const path = await import('path');
+            const candidates = [
+                path.join(process.cwd(), 'bulk_verses.json'),
+                path.join(process.cwd(), '../bulk_verses.json'),
+                path.join(process.cwd(), 'app/assets/bulk_verses.json'),
+            ];
+            for (const p of candidates) {
+                if (fs.existsSync(p)) {
+                    const raw = fs.readFileSync(p, 'utf-8');
+                    const list = JSON.parse(raw);
+                    if (list && list[targetIndex]) {
+                        verseDocData = list[targetIndex];
+                        break;
+                    }
+                }
+            }
+        }
+        catch (_) { }
+    }
+    if (!verseDocData) {
+        console.warn(`[sendDailyVersePushInternal] No verse found for index ${targetIndex}`);
         return { success: false, error: `Verse not found for index ${targetIndex}` };
     }
-    const verseDoc = snap.docs[0];
-    const verse = verseDoc.data();
-    const verseId = verseDoc.id;
-    const verseEnText = verse.verseEn || '';
-    const refEnText = verse.referenceEn || '';
-    const verseTeText = verse.verseTe || verseEnText;
-    const refTeText = verse.referenceTe || refEnText;
+    const verseEnText = verseDocData.verseEn || '';
+    const refEnText = verseDocData.referenceEn || '';
+    const verseTeText = verseDocData.verseTe || verseEnText;
+    const refTeText = verseDocData.referenceTe || refEnText;
     // 4. Collect member device FCM tokens
     const tokenSet = new Set();
-    const usersSnap = await db.collection('users').get();
-    usersSnap.forEach((d) => {
-        const data = d.data();
-        if (data.fcmToken && typeof data.fcmToken === 'string' && data.fcmToken.length > 10) {
-            tokenSet.add(data.fcmToken);
-        }
-    });
-    const membersSnap = await db.collection('Rhema Church').doc('rhema').collection('members').get();
-    membersSnap.forEach((d) => {
-        const data = d.data();
-        if (data.fcmToken && typeof data.fcmToken === 'string' && data.fcmToken.length > 10) {
-            tokenSet.add(data.fcmToken);
-        }
-    });
+    try {
+        const usersSnap = await db.collection('users').get();
+        usersSnap.forEach((d) => {
+            const data = d.data();
+            if (data.fcmToken && typeof data.fcmToken === 'string' && data.fcmToken.length > 10) {
+                tokenSet.add(data.fcmToken);
+            }
+        });
+    }
+    catch (_) { }
+    try {
+        const membersSnap = await db.collection('Rhema Church').doc('rhema').collection('members').get();
+        membersSnap.forEach((d) => {
+            const data = d.data();
+            if (data.fcmToken && typeof data.fcmToken === 'string' && data.fcmToken.length > 10) {
+                tokenSet.add(data.fcmToken);
+            }
+        });
+    }
+    catch (_) { }
     const tokens = Array.from(tokenSet);
     console.log(`[sendDailyVersePushInternal] Collected ${tokens.length} FCM tokens for dispatch.`);
     let enSuccess = 0;
     let teSuccess = 0;
+    // 4a. Multicast to individual registered tokens
     if (tokens.length > 0) {
-        // Send in chunks of 500 (FCM multicast limit)
         for (let i = 0; i < tokens.length; i += 500) {
             const batchTokens = tokens.slice(i, i + 500);
-            // Notification 1: English
             const enMessage = {
                 notification: {
                     title: slotInfo.titleEn,
@@ -1451,6 +1523,7 @@ export async function sendDailyVersePushInternal(slotOverride) {
                     verseId: verseId,
                     period: slot,
                     lang: 'en',
+                    churchId: targetChurchId,
                 },
                 android: {
                     priority: 'high',
@@ -1466,7 +1539,6 @@ export async function sendDailyVersePushInternal(slotOverride) {
                 },
                 tokens: batchTokens,
             };
-            // Notification 2: Telugu (simultaneously)
             const teMessage = {
                 notification: {
                     title: slotInfo.titleTe,
@@ -1477,6 +1549,7 @@ export async function sendDailyVersePushInternal(slotOverride) {
                     verseId: verseId,
                     period: slot,
                     lang: 'te',
+                    churchId: targetChurchId,
                 },
                 android: {
                     priority: 'high',
@@ -1506,7 +1579,40 @@ export async function sendDailyVersePushInternal(slotOverride) {
             }
         }
     }
-    // 5. Log both to broadcasts feed for historical viewing in Updates screen
+    // 4b. Broadcast to Church Topic for 100% Church Member Delivery
+    try {
+        const topicMessage = {
+            topic: `church_${targetChurchId}`,
+            notification: {
+                title: `${slotInfo.titleEn} · ${slotInfo.titleTe}`,
+                body: `"${verseTeText}"\n— ${refTeText}`,
+            },
+            data: {
+                type: 'daily_verse',
+                verseId: verseId,
+                period: slot,
+                churchId: targetChurchId,
+            },
+            android: {
+                priority: 'high',
+                notification: {
+                    sound: 'default',
+                    priority: 'max',
+                    channelId: 'daily_verse',
+                },
+            },
+            apns: {
+                headers: { 'apns-priority': '10' },
+                payload: { aps: { sound: 'default', badge: 1 } },
+            },
+        };
+        await messaging.send(topicMessage);
+        console.log(`[sendDailyVersePushInternal] Dispatched topic broadcast to church_${targetChurchId}`);
+    }
+    catch (topicErr) {
+        console.warn('[sendDailyVersePushInternal] Topic broadcast notice:', topicErr);
+    }
+    // 5. Log to broadcasts feed for historical viewing in Updates screen
     const todayStr = `${nowIst.getFullYear()}-${String(nowIst.getMonth() + 1).padStart(2, '0')}-${String(nowIst.getDate()).padStart(2, '0')}`;
     try {
         const rhemaChurchRef = db.collection('Rhema Church').doc('rhema');
@@ -1517,7 +1623,7 @@ export async function sendDailyVersePushInternal(slotOverride) {
             type: 'daily_verse',
             period: slot,
             verseId: verseId,
-            silent: true, // Prevents secondary duplicate broadcast trigger
+            silent: true,
             createdAt: FieldValue.serverTimestamp(),
         });
     }
@@ -1537,7 +1643,6 @@ export async function sendDailyVersePushInternal(slotOverride) {
 }
 /**
  * 🧪 HTTP endpoint to manually trigger the Daily Verse push (can specify ?slot=Morning/Afternoon/Evening/Night)
- * Also used by external Cloud Schedulers (Google Cloud Console or cron-job.org).
  */
 export const triggerDailyVersePushHttp = onRequest({ cors: true, timeoutSeconds: 120, region: 'asia-south1' }, async (req, res) => {
     try {
