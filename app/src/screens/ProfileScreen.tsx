@@ -73,7 +73,7 @@ const parseSkillsList = (val: any): string[] => {
 };
 
 export default function ProfileScreen({ navigation }: any) {
-  const { user, signOut, member: authMember, setViewMode, switchViewMode, setMember: setGlobalMember } = useAuth();
+  const { user, signOut, member: authMember, setViewMode, setMember: setGlobalMember } = useAuth();
   const { activeChurch, isImpersonating, impersonatedBranchName, stopImpersonation } = useChurch();
   const { isDark, toggleTheme, colors, currentThemeOption } = useTheme();
   const { language, setLanguage, languages, currentLanguageOption, t } = useLanguage();
@@ -547,11 +547,12 @@ export default function ProfileScreen({ navigation }: any) {
               title={t('profile.adminDashboard')} 
               sub={t('profile.adminDashboardSub')} 
               onPress={() => {
-                switchViewMode('admin', () => {
+                setViewMode('admin');
+                try {
                   if (navigation?.navigate) {
                     navigation.navigate('AdminRoot');
                   }
-                });
+                } catch (_) {}
               }}
               textColor={colors.text}
               subColor={colors.textSecondary}
