@@ -31,7 +31,7 @@ import {
   User,
   X,
   ChevronRight,
-  ChevronDown,
+  ChevronDown,
   ChevronUp,
   Edit2,
   MessageSquare,
@@ -55,10 +55,12 @@ const { width } = Dimensions.get('window');
 
 type StatusType = 'all' | 'pending' | 'under_review' | 'approved' | 'rejected' | 'completed';
 
-export default function AdminBaptism({ navigation }: any) {
+export default function AdminBaptism({ navigation, route, routeParams }: any) {
   const { user, member } = useAuth();
   const { activeChurch } = useChurch();
   const { setActiveTab } = useContext(AdminTabContext) || {};
+
+  const targetRequestId = routeParams?.requestId || route?.params?.requestId;
 
   const [requests, setRequests] = useState<BaptismRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,6 +68,16 @@ export default function AdminBaptism({ navigation }: any) {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusType>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (targetRequestId && requests.length > 0) {
+      const match = requests.find(r => r.id === targetRequestId);
+      if (match) {
+        setStatusFilter('all');
+        setExpandedId(targetRequestId);
+      }
+    }
+  }, [targetRequestId, requests]);
 
   const handleToggleExpand = (id: string) => {
     setExpandedId(prev => (prev === id ? null : id));
@@ -431,6 +443,7 @@ export default function AdminBaptism({ navigation }: any) {
           <View style={styles.membersList}>
             {filteredRequests.map((req, idx) => {
               const isExpanded = expandedId === req.id;
+              const isTarget = Boolean(targetRequestId && req.id === targetRequestId);
               const badge = getStatusBadge(req.status);
               const BadgeIcon = badge.icon;
               const initials = getInitials(req.memberName);
@@ -439,7 +452,11 @@ export default function AdminBaptism({ navigation }: any) {
               return (
                 <View
                   key={req.id + '_' + idx}
-                  style={[styles.memberCard, isExpanded && styles.memberCardExpanded]}
+                  style={[
+                    styles.memberCard,
+                    isExpanded && styles.memberCardExpanded,
+                    isTarget && { borderColor: '#0284c7', borderWidth: 2, backgroundColor: '#f0f9ff' }
+                  ]}
                 >
                   {/* Card Header (Expand / Collapse) */}
                   <TouchableOpacity
@@ -448,11 +465,18 @@ export default function AdminBaptism({ navigation }: any) {
                     onPress={() => handleToggleExpand(req.id)}
                   >
                     <View style={styles.profileSection}>
-                      <View style={styles.avatar}>
+                      <View style={[styles.avatar, isTarget && { backgroundColor: '#0284c7' }]}>
                         <Text style={styles.avatarTxt}>{initials}</Text>
                       </View>
                       <View style={styles.nameSection}>
-                        <Text style={styles.name}>{req.memberName}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          <Text style={styles.name}>{req.memberName}</Text>
+                          {isTarget && (
+                            <View style={{ marginLeft: 8, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: '#0284c7' }}>
+                              <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800' }}>SUBMITTED</Text>
+                            </View>
+                          )}
+                        </View>
                         {req.address ? (
                           <Text style={{ fontSize: 12, color: '#6B7280', marginTop: 2, marginBottom: 4 }} numberOfLines={1}>
                             📍 {req.address.trim()}

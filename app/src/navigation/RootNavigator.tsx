@@ -17,6 +17,7 @@ import { LanguageProvider, useLanguage } from '../context/LanguageContext';
 import { QuizLanguageProvider } from '../context/QuizLanguageContext';
 import Theme from '../theme/Theme';
 import AdminNavigator from './AdminNavigator'; 
+import AdminBaptism from '../screens/admin/AdminBaptism';
 import NotificationService from '../services/NotificationService';
 import SecurityService from '../services/SecurityService';
 import ChurchService from '../services/ChurchService';
@@ -728,6 +729,19 @@ function Navigation() {
             } else {
               navigationRef.navigate('ChurchQuizzes');
             }
+          } else if (type === 'baptism_request_admin' || type === 'baptism_request' || type === 'baptism') {
+            const reqId = data.requestId || data.id;
+            console.log('💧 [RootNavigator] Direct routing to Admin Baptism tab:', { reqId });
+            if (isAdmin && viewMode !== 'admin') {
+              setViewMode('admin');
+            }
+            navigationRef.navigate('AdminRoot', {
+              targetTab: 'Baptism',
+              requestId: reqId,
+              timestamp: Date.now(),
+            });
+          } else if (type === 'baptism_request_member') {
+            navigationRef.navigate('BaptismRequest', { requestId: data.requestId || data.id });
           } else {
             NotificationService.handleNotificationNavigation({ data }, navigationRef);
           }
@@ -792,8 +806,15 @@ function Navigation() {
         if (navigationRef && navigationRef.isReady()) {
           const type = pendingNotification?.data?.type;
           
-          if (type === 'invoice' && isAdmin && viewMode !== 'admin') {
-            console.log('Switching to admin view to handle invoice notification');
+          const isAdminNotification = 
+            type === 'invoice' || 
+            type === 'baptism_request_admin' || 
+            type === 'baptism_request' || 
+            type === 'baptism' || 
+            type === 'prayer_request_admin';
+
+          if (isAdminNotification && isAdmin && viewMode !== 'admin') {
+            console.log(`Switching to admin view to handle ${type} notification`);
             setViewMode('admin');
             return; // Exit early, the re-render will trigger this effect again
           }
@@ -929,6 +950,12 @@ function Navigation() {
           </>
         ) : onboardingComplete ? (
           <>
+            {isAdmin && (
+              <>
+                <Stack.Screen name="AdminRoot" component={AdminNavigator} options={{ gestureEnabled: false, headerBackButtonMenuEnabled: false }} />
+                <Stack.Screen name="AdminBaptism" component={AdminBaptism} />
+              </>
+            )}
             <Stack.Screen name="Tabs" component={TabNavigator} options={{ gestureEnabled: false, headerBackButtonMenuEnabled: false }} />
             <Stack.Screen name="LockedFeature" component={LockedFeatureScreen} />
             <Stack.Screen name="Celebration" component={renderPremium(CelebrationScreen)} />

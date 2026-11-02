@@ -959,6 +959,8 @@ async function handleBroadcastPushDispatch(data: any, churchIdParam?: string, me
 
   console.log(`🔔 handleBroadcastPushDispatch fired for: [${title}] type: [${type}] church: [${churchId}]`);
 
+  const isTargetAdmin = data.targetRole === 'admin' || data.type === 'baptism_request_admin' || data.type === 'prayer_request_admin';
+
   try {
     const db = getDb();
     const tokenSet = new Set<string>();
@@ -968,10 +970,15 @@ async function handleBroadcastPushDispatch(data: any, churchIdParam?: string, me
       const rhemaMemSnap = await db.collection('Rhema Church').doc(churchId).collection('members').get();
       rhemaMemSnap.forEach((doc: any) => {
         const mData = doc.data();
-        if (data.targetPhone && mData.phone) {
-          const rawDigits = data.targetPhone.replace(/\D/g, '');
-          const last10 = rawDigits.slice(-10);
-          if (!mData.phone.includes(last10)) return;
+        if (isTargetAdmin) {
+          const role = String(mData.userType || mData.role || '').toLowerCase();
+          const isAdmin = role.includes('admin') || role.includes('pastor') || role.includes('super');
+          if (!isAdmin) return;
+        }
+        if (data.targetPhone) {
+          const rawDigits = String(data.targetPhone).replace(/\D/g, '').slice(-10);
+          const memDigits = String(mData.phone || mData.mobile || '').replace(/\D/g, '').slice(-10);
+          if (!memDigits || !memDigits.includes(rawDigits)) return;
         }
         if (mData.fcmToken && typeof mData.fcmToken === 'string' && mData.fcmToken.trim().length > 0) {
           tokenSet.add(mData.fcmToken.trim());
@@ -986,10 +993,15 @@ async function handleBroadcastPushDispatch(data: any, churchIdParam?: string, me
       const memSnap = await db.collection('churches').doc(churchId).collection('members').get();
       memSnap.forEach((doc: any) => {
         const mData = doc.data();
-        if (data.targetPhone && mData.phone) {
-          const rawDigits = data.targetPhone.replace(/\D/g, '');
-          const last10 = rawDigits.slice(-10);
-          if (!mData.phone.includes(last10)) return;
+        if (isTargetAdmin) {
+          const role = String(mData.userType || mData.role || '').toLowerCase();
+          const isAdmin = role.includes('admin') || role.includes('pastor') || role.includes('super');
+          if (!isAdmin) return;
+        }
+        if (data.targetPhone) {
+          const rawDigits = String(data.targetPhone).replace(/\D/g, '').slice(-10);
+          const memDigits = String(mData.phone || mData.mobile || '').replace(/\D/g, '').slice(-10);
+          if (!memDigits || !memDigits.includes(rawDigits)) return;
         }
         if (mData.fcmToken && typeof mData.fcmToken === 'string' && mData.fcmToken.trim().length > 0) {
           tokenSet.add(mData.fcmToken.trim());
@@ -997,25 +1009,27 @@ async function handleBroadcastPushDispatch(data: any, churchIdParam?: string, me
       });
     } catch (_) {}
 
-    // 3. Also check root 'users' collection where primaryChurchId == churchId
-    try {
-      let query: any = db.collection('users');
-      if (churchId) {
-        query = query.where('primaryChurchId', '==', churchId);
-      }
-      const snapshotUsers = await query.get();
-      snapshotUsers.forEach((doc: any) => {
-        const uData = doc.data();
-        if (data.targetPhone && uData.phone) {
-          const rawDigits = data.targetPhone.replace(/\D/g, '');
-          const last10 = rawDigits.slice(-10);
-          if (!uData.phone.includes(last10)) return;
+    // 3. Also check root 'users' collection where primaryChurchId == churchId (for general broadcasts only)
+    if (!isTargetAdmin) {
+      try {
+        let query: any = db.collection('users');
+        if (churchId) {
+          query = query.where('primaryChurchId', '==', churchId);
         }
-        if (uData.fcmToken && typeof uData.fcmToken === 'string' && uData.fcmToken.trim().length > 0) {
-          tokenSet.add(uData.fcmToken.trim());
-        }
-      });
-    } catch (_) {}
+        const snapshotUsers = await query.get();
+        snapshotUsers.forEach((doc: any) => {
+          const uData = doc.data();
+          if (data.targetPhone) {
+            const rawDigits = String(data.targetPhone).replace(/\D/g, '').slice(-10);
+            const userDigits = String(uData.phone || uData.mobile || '').replace(/\D/g, '').slice(-10);
+            if (!userDigits || !userDigits.includes(rawDigits)) return;
+          }
+          if (uData.fcmToken && typeof uData.fcmToken === 'string' && uData.fcmToken.trim().length > 0) {
+            tokenSet.add(uData.fcmToken.trim());
+          }
+        });
+      } catch (_) {}
+    }
 
     const plainBody = stripHtml(body);
     const targetQuizId = data.quizId || data.relatedId || (data.type === 'quiz' ? data.id : undefined);
@@ -1072,15 +1086,16 @@ async function handleBroadcastPushDispatch(data: any, churchIdParam?: string, me
         console.log(`✅ Broadcast push delivered to tokens: ${response.successCount} success, ${response.failureCount} failed.`);
       }
     } else if (churchId && !data.targetPhone) {
-      // Fallback: If no device tokens exist in DB, send to church topic so subscribers still receive it
-      console.log(`⚠️ No individual device tokens found in DB, falling back to topic church_${churchId}`);
+      // Fallback: If no device tokens exist in DB, send to appropriate topic
+      const fallbackTopic = isTargetAdmin ? `church_${churchId}_admin` : `church_${churchId}`;
+      console.log(`⚠️ No individual device tokens found in DB, falling back to topic ${fallbackTopic}`);
       await getMsg().send({
         notification: {
           title,
           body: plainBody.length > 200 ? plainBody.substring(0, 197) + '...' : plainBody,
         },
         data: notificationData,
-        topic: `church_${churchId}`,
+        topic: fallbackTopic,
         android: {
           priority: 'high' as const,
           notification: {
@@ -1101,7 +1116,7 @@ async function handleBroadcastPushDispatch(data: any, churchIdParam?: string, me
           },
         },
       });
-      console.log(`✅ Fallback broadcast push delivered to topic church_${churchId}`);
+      console.log(`✅ Fallback broadcast push delivered to topic ${fallbackTopic}`);
     }
   } catch (error) {
     console.error('Error sending broadcast push:', error);
@@ -1660,5 +1675,8 @@ export {
   triggerDailyVersePushHttp,
   sendDailyVersePushScheduled,
   monitorMeetingLive,
-  pushMeetingLive
+  pushMeetingLive,
+  onBaptismRequestCreatedAdmin,
+  onBaptismRequestCreatedAdminLegacy,
+  onPrayerRequestCreatedAdmin
 } from './notifications.js';
