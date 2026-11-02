@@ -2,6 +2,23 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useChurch } from './ChurchContext';
+import {
+  FontSizeOption,
+  FONT_SIZE_OPTIONS,
+  FONT_SIZE_CONFIG,
+  setGlobalFontScale,
+  getGlobalFontScale,
+  scaleFontSize,
+} from '../utils/FontSizeManager';
+
+export {
+  FontSizeOption,
+  FONT_SIZE_OPTIONS,
+  FONT_SIZE_CONFIG,
+  setGlobalFontScale,
+  getGlobalFontScale,
+  scaleFontSize,
+};
 
 export type ThemeAppearance = 'warm_white' | 'pure_white' | 'sage_ecru' | 'pure_dark';
 export type QuickActionsStyle = 'bento' | 'grid';
@@ -141,6 +158,11 @@ interface ThemeContextType {
   setQuickActionsStyle: (style: QuickActionsStyle) => Promise<void>;
   navBarStyle: NavBarStyle;
   setNavBarStyle: (style: NavBarStyle) => Promise<void>;
+  fontSize: FontSizeOption;
+  fontSizePx: number;
+  fontScale: number;
+  setFontSize: (size: FontSizeOption) => Promise<void>;
+  scaleFont: (size: number) => number;
   isDark: boolean;
   toggleTheme: () => void;
   colors: any;
@@ -156,6 +178,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [accentColor, setAccentColorState] = useState<string>('#2563EB');
   const [quickActionsStyle, setQuickActionsStyleState] = useState<QuickActionsStyle>('bento');
   const [navBarStyle, setNavBarStyleState] = useState<NavBarStyle>('capsule');
+  const [fontSize, setFontSizeState] = useState<FontSizeOption>('medium');
 
   // Load saved appearance preference on app launch
   useEffect(() => {
@@ -186,6 +209,15 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const savedNav = await AsyncStorage.getItem('user_navbar_style');
         if (savedNav === 'pill' || savedNav === 'capsule') {
           setNavBarStyleState(savedNav as NavBarStyle);
+        }
+
+        const savedFontSize = await AsyncStorage.getItem('user_font_size');
+        if (savedFontSize === 'small' || savedFontSize === 'medium' || savedFontSize === 'large') {
+          setFontSizeState(savedFontSize as FontSizeOption);
+          setGlobalFontScale(FONT_SIZE_CONFIG[savedFontSize as FontSizeOption].scale);
+        } else {
+          setFontSizeState('medium');
+          setGlobalFontScale(1.0);
         }
       } catch (e) {
         // Fallback to warm white default
@@ -219,6 +251,15 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setNavBarStyleState(style);
     try {
       await AsyncStorage.setItem('user_navbar_style', style);
+    } catch (e) {}
+  };
+
+  const setFontSize = async (size: FontSizeOption) => {
+    setFontSizeState(size);
+    const cfg = FONT_SIZE_CONFIG[size] || FONT_SIZE_CONFIG.medium;
+    setGlobalFontScale(cfg.scale);
+    try {
+      await AsyncStorage.setItem('user_font_size', size);
     } catch (e) {}
   };
 
@@ -270,6 +311,11 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setQuickActionsStyle,
         navBarStyle,
         setNavBarStyle,
+        fontSize,
+        fontSizePx: (FONT_SIZE_CONFIG[fontSize] || FONT_SIZE_CONFIG.medium).px,
+        fontScale: (FONT_SIZE_CONFIG[fontSize] || FONT_SIZE_CONFIG.medium).scale,
+        setFontSize,
+        scaleFont: (size: number) => Math.round(size * (FONT_SIZE_CONFIG[fontSize] || FONT_SIZE_CONFIG.medium).scale),
         isDark,
         toggleTheme,
         colors,
