@@ -25,11 +25,18 @@ export declare const sendMeetingPush: import("firebase-functions/core").CloudFun
     meetingId: string;
 }>>;
 /**
- * 🙏 MANDATORY NOTIFICATION: ADMIN NOTIFIED OF EVERY PRAYER REQUEST
+ * 🙏 MANDATORY NOTIFICATION: ADMIN NOTIFIED OF EVERY PRAYER REQUEST (Primary single-church collection)
  * Triggered automatically whenever a member submits a prayer request in Firestore.
- * Always notifies church admins (public or private), clearly showing which specific member submitted it.
+ * Always notifies church admins ONLY, clearly showing which specific member submitted it.
  */
 export declare const onPrayerRequestCreatedAdmin: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+    churchId: string;
+    prayerId: string;
+}>>;
+/**
+ * 🙏 MANDATORY NOTIFICATION: ADMIN NOTIFIED OF EVERY PRAYER REQUEST (Legacy churches collection)
+ */
+export declare const onPrayerRequestCreatedAdminLegacy: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
     churchId: string;
     prayerId: string;
 }>>;

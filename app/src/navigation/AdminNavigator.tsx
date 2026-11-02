@@ -125,7 +125,12 @@ export default function AdminNavigator({ navigation, route }: any) {
 
   useEffect(() => {
     if (route?.params?.targetTab) {
-      const idx = tabs.findIndex(t => t.name === route.params.targetTab);
+      const target = String(route.params.targetTab).trim();
+      const idx = tabs.findIndex(t => 
+        t.name.toLowerCase() === target.toLowerCase() ||
+        (target.toLowerCase().includes('prayer') && t.name === 'Prayers') ||
+        (target.toLowerCase().includes('baptism') && t.name === 'Baptism')
+      );
       if (idx !== -1 && idx !== activeTab) {
         setTimeout(() => {
           setTabHistory(prev => [...prev, activeTab]);
@@ -133,7 +138,7 @@ export default function AdminNavigator({ navigation, route }: any) {
         }, 0);
       }
     }
-  }, [route?.params?.targetTab, route?.params?.timestamp, route?.params?.requestId]);
+  }, [route?.params?.targetTab, route?.params?.timestamp, route?.params?.requestId, route?.params?.prayerId]);
 
   const handleSetTab = (index: number) => {
     if (index !== activeTab) {

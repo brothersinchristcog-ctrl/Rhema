@@ -1678,5 +1678,6 @@ export {
   pushMeetingLive,
   onBaptismRequestCreatedAdmin,
   onBaptismRequestCreatedAdminLegacy,
-  onPrayerRequestCreatedAdmin
+  onPrayerRequestCreatedAdmin,
+  onPrayerRequestCreatedAdminLegacy
 } from './notifications.js';

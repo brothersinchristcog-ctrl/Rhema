@@ -70,11 +70,13 @@ const FONTS = {
 };
 
 
-export default function AdminPrayerModeration() {
+export default function AdminPrayerModeration({ navigation, route, routeParams }: any) {
   const { member } = useAuth();
   const { activeChurch } = useChurch();
   const { setActiveTab } = React.useContext(AdminTabContext);
   const adminName = member?.name || 'Administrator';
+  const targetPrayerId = routeParams?.prayerId || routeParams?.requestId || route?.params?.prayerId || route?.params?.requestId;
+  const scrollViewRef = useRef<ScrollView>(null);
   const churchName = activeChurch?.name || 'Church';
   const churchLogo = activeChurch?.theme?.logoUrl || null;
 
@@ -176,6 +178,12 @@ export default function AdminPrayerModeration() {
   useEffect(() => {
     fetchPrayers();
   }, [fetchPrayers]);
+
+  useEffect(() => {
+    if (targetPrayerId && prayers.length > 0) {
+      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+    }
+  }, [targetPrayerId, prayers.length]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -427,8 +435,24 @@ export default function AdminPrayerModeration() {
     }
   };
 
-  const pendingPrayers = prayers.filter(p => !p.isAnswered && !p.isClosed);
-  const answeredPrayers = prayers.filter(p => p.isAnswered && !p.isClosed);
+  const pendingPrayers = prayers
+    .filter(p => !p.isAnswered && !p.isClosed)
+    .sort((a, b) => {
+      if (targetPrayerId) {
+        if (a.id === targetPrayerId) return -1;
+        if (b.id === targetPrayerId) return 1;
+      }
+      return 0;
+    });
+  const answeredPrayers = prayers
+    .filter(p => p.isAnswered && !p.isClosed)
+    .sort((a, b) => {
+      if (targetPrayerId) {
+        if (a.id === targetPrayerId) return -1;
+        if (b.id === targetPrayerId) return 1;
+      }
+      return 0;
+    });
 
   const getTimeAgo = (rawDate: any) => {
     try {
@@ -453,8 +477,42 @@ export default function AdminPrayerModeration() {
     }
   };
 
-  const renderPrayerCard = (item: any, isAnswered = false) => (
-    <View key={item.id} style={[styles.pCard, isAnswered && styles.pCardAnswered]}>
+  const renderPrayerCard = (item: any, isAnswered = false) => {
+    const isTarget = Boolean(targetPrayerId && item.id === targetPrayerId);
+    return (
+    <View 
+      key={item.id} 
+      style={[
+        styles.pCard, 
+        isAnswered && styles.pCardAnswered,
+        isTarget && {
+          borderColor: '#7C3AED',
+          borderWidth: 2,
+          backgroundColor: '#FAF5FF',
+          shadowColor: '#7C3AED',
+          shadowOpacity: 0.2,
+          shadowRadius: 8,
+          elevation: 4,
+        }
+      ]}
+    >
+      {isTarget && (
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          backgroundColor: '#7C3AED',
+          paddingHorizontal: 12,
+          paddingVertical: 6,
+          borderRadius: 8,
+          marginBottom: 12,
+          gap: 6,
+        }}>
+          <Heart size={14} color="#FFFFFF" fill="#FFFFFF" />
+          <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '800' }}>
+            NEW PRAYER REQUEST FROM NOTIFICATION
+          </Text>
+        </View>
+      )}
       <View style={styles.pCardHd}>
         <View style={[styles.pAvatar, { backgroundColor: isAnswered ? '#059669' : '#7C3AED' }]}>
           <Text style={styles.pAvatarTxt}>{(item.name || 'F').charAt(0)}</Text>
@@ -570,6 +628,7 @@ export default function AdminPrayerModeration() {
       )}
     </View>
   );
+  };
 
   if (loading && !refreshing) {
     return (
@@ -607,6 +666,7 @@ export default function AdminPrayerModeration() {
       </View>
 
       <ScrollView
+        ref={scrollViewRef}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
