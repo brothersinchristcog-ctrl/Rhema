@@ -253,6 +253,243 @@ export const onPrayerRequestCreatedAdmin = onDocumentCreated('churches/{churchId
 });
 
 /**
+ * 💧 HELPER: DISPATCH BAPTISM REQUEST PUSH TO ADMINS ONLY
+ * Guarantees that only users with role admin, pastor, or super receive baptism alerts.
+ * Regular church members NEVER receive these sacramental request notifications.
+ */
+async function handleBaptismRequestAdminPush(baptism: any, churchId: string, requestId: string, snapRef?: any) {
+  if (!baptism) return;
+
+  const db = getFirestore();
+  const messaging = getMessaging();
+
+  // Deduplication guard
+  if (baptism.adminPushSent === true) {
+    console.log(`🛑 Skipping duplicate baptism admin push for request: ${requestId}`);
+    return;
+  }
+
+  if (snapRef) {
+    try {
+      await snapRef.update({
+        adminPushSent: true,
+        adminPushSentAt: FieldValue.serverTimestamp(),
+      });
+    } catch (_) {}
+  }
+
+  // 1. Identify member name and preferred date
+  let memberName = (baptism.memberName || baptism.name || '').trim();
+  if (!memberName) {
+    const memberId = baptism.memberId || baptism.uid || baptism.userId;
+    if (memberId) {
+      try {
+        let mSnap = await db.collection('Rhema Church').doc(churchId).collection('members').doc(memberId).get();
+        if (!mSnap.exists) {
+          mSnap = await db.collection('churches').doc(churchId).collection('members').doc(memberId).get();
+        }
+        if (mSnap.exists && mSnap.data()?.name) {
+          memberName = mSnap.data()!.name;
+        } else {
+          const uSnap = await db.collection('users').doc(memberId).get();
+          if (uSnap.exists && (uSnap.data()?.name || uSnap.data()?.displayName)) {
+            memberName = uSnap.data()!.name || uSnap.data()!.displayName;
+          }
+        }
+      } catch (err) {
+        console.warn('Could not resolve baptism member name:', err);
+      }
+    }
+  }
+
+  if (!memberName) {
+    memberName = 'A Church Member';
+  }
+
+  const prefDate = (baptism.preferredDate || '').trim();
+  const title = `💧 New Baptism Request: ${memberName}`;
+  const body = prefDate
+    ? `${memberName} has requested baptism for ${prefDate}. Tap to review in Admin Dashboard.`
+    : `${memberName} has submitted a new baptism request. Tap to review in Admin Dashboard.`;
+
+  // 2. Query all admins strictly for this church
+  const adminTokens: string[] = [];
+  const adminUids: string[] = [];
+
+  try {
+    // A. Check Rhema Church members
+    let membersSnap = await db.collection('Rhema Church').doc(churchId).collection('members').get();
+    if (membersSnap.empty) {
+      membersSnap = await db.collection('churches').doc(churchId).collection('members').get();
+    }
+    membersSnap.forEach(doc => {
+      const m = doc.data();
+      const role = String(m.userType || m.role || '').toLowerCase();
+      const isAdmin = role.includes('admin') || role.includes('pastor') || role.includes('super');
+      if (isAdmin) {
+        adminUids.push(doc.id);
+        if (m.fcmToken && typeof m.fcmToken === 'string' && m.fcmToken.trim().length > 10) {
+          adminTokens.push(m.fcmToken.trim());
+        }
+      }
+    });
+
+    // B. Check church document for admin UIDs
+    let churchDoc = await db.collection('Rhema Church').doc(churchId).get();
+    if (!churchDoc.exists) {
+      churchDoc = await db.collection('churches').doc(churchId).get();
+    }
+    if (churchDoc.exists) {
+      const cData = churchDoc.data();
+      const ownerUids = [cData?.adminUid, cData?.createdBy, cData?.pastorUid].filter(Boolean);
+      for (const uid of ownerUids) {
+        if (!adminUids.includes(uid)) {
+          adminUids.push(uid);
+        }
+      }
+    }
+
+    // C. Check users collection for admin tokens
+    for (const uid of adminUids) {
+      try {
+        const uSnap = await db.collection('users').doc(uid).get();
+        const uData = uSnap.data();
+        if (uData?.fcmToken && typeof uData.fcmToken === 'string' && uData.fcmToken.trim().length > 10) {
+          const t = uData.fcmToken.trim();
+          if (!adminTokens.includes(t)) {
+            adminTokens.push(t);
+          }
+        }
+      } catch (_) {}
+    }
+  } catch (lookupErr) {
+    console.error('Error fetching admin tokens for baptism notification:', lookupErr);
+  }
+
+  const notificationData: Record<string, string> = {
+    type: 'baptism_request_admin',
+    churchId: churchId,
+    requestId: requestId,
+    screen: 'AdminRoot',
+    targetTab: 'Baptism',
+    memberName: memberName,
+    click_action: 'FLUTTER_NOTIFICATION_CLICK',
+  };
+
+  // 3. Direct multicast push to admin devices ONLY
+  const uniqueTokens = Array.from(new Set(adminTokens));
+  if (uniqueTokens.length > 0) {
+    try {
+      const sendRes = await messaging.sendEachForMulticast({
+        notification: { title, body },
+        data: notificationData,
+        tokens: uniqueTokens,
+        android: {
+          priority: 'high',
+          notification: {
+            sound: 'default',
+            channelId: 'church_alerts',
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: 'default',
+              badge: 1,
+            },
+          },
+        },
+      });
+      console.log(`✅ Sent baptism request notification to ${sendRes.successCount} admin devices (${sendRes.failureCount} failed).`);
+    } catch (pushErr) {
+      console.error('Error sending multicast baptism admin notification:', pushErr);
+    }
+  }
+
+  // 4. Send to church admin topic church_{churchId}_admin ONLY (never general church topic)
+  try {
+    await messaging.send({
+      notification: { title, body },
+      data: notificationData,
+      topic: `church_${churchId}_admin`,
+      android: {
+        priority: 'high',
+        notification: {
+          sound: 'default',
+          channelId: 'church_alerts',
+        },
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: 'default',
+            badge: 1,
+          },
+        },
+      },
+    });
+    console.log(`✅ Broadcasted baptism request notification to topic: church_${churchId}_admin`);
+  } catch (topicErr) {
+    console.error('Error sending to church admin topic:', topicErr);
+  }
+
+  // 5. Write in-app notification doc for admins in Rhema Church notifications
+  try {
+    const notifPayload = {
+      type: 'baptism_request_admin',
+      title,
+      body,
+      memberName,
+      memberPhone: baptism.memberPhone || baptism.contactPhone || '',
+      requestId,
+      preferredDate: prefDate,
+      read: false,
+      createdAt: FieldValue.serverTimestamp(),
+    };
+    await db.collection('Rhema Church').doc(churchId).collection('notifications').add(notifPayload);
+    try {
+      await db.collection('churches').doc(churchId).collection('notifications').add(notifPayload);
+    } catch (_) {}
+  } catch (dbErr) {
+    console.error('Error writing baptism in-app notification document:', dbErr);
+  }
+}
+
+/**
+ * 💧 MANDATORY NOTIFICATION: ADMIN NOTIFIED OF EVERY BAPTISM REQUEST (Primary single-church collection)
+ * Triggered automatically whenever a member submits a baptism request in Firestore.
+ * Always notifies church admins ONLY, clearly showing which member submitted it.
+ */
+export const onBaptismRequestCreatedAdmin = onDocumentCreated(
+  { document: 'Rhema Church/{churchId}/baptism_requests/{requestId}', region: 'asia-south1' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+
+    const baptism = snap.data();
+    const churchId = event.params.churchId;
+    const requestId = event.params.requestId;
+    await handleBaptismRequestAdminPush(baptism, churchId, requestId, snap.ref);
+  }
+);
+
+/**
+ * 💧 MANDATORY NOTIFICATION: ADMIN NOTIFIED OF EVERY BAPTISM REQUEST (Legacy churches collection)
+ */
+export const onBaptismRequestCreatedAdminLegacy = onDocumentCreated(
+  { document: 'churches/{churchId}/baptism_requests/{requestId}', region: 'asia-south1' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+
+    const baptism = snap.data();
+    const churchId = event.params.churchId;
+    const requestId = event.params.requestId;
+    await handleBaptismRequestAdminPush(baptism, churchId, requestId, snap.ref);
+  }
+);
+
+/**
  * 🙏 NOTIFY COMMUNITY OF APPROVED PRAYER REQUEST
  * Triggered when a prayer request is approved (isAnswered becomes true).
  */

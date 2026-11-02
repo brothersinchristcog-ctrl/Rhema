@@ -146,6 +146,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const { user, member } = useAuth();
   const { activeChurch } = useChurch();
+  const isAdmin = String(member?.userType || '').toUpperCase().includes('ADMIN') || String(member?.userType || '').toUpperCase().includes('SUPER') || String(member?.userType || '').toUpperCase().includes('PASTOR');
 
   const handleBack = () => {
     if (selectedUpdate) {
@@ -225,6 +226,11 @@ export default function UpdatesScreen({ navigation, route }: any) {
             
             // SECURITY: If broadcast is targeted to a specific church, skip it if not for this user's church
             if (data.targetChurchId && churchToQuery && data.targetChurchId !== churchToQuery) {
+              return null;
+            }
+
+            // SECURITY: If broadcast is targeted to admin role, skip if current user is not admin
+            if ((data.targetRole === 'admin' || data.type === 'baptism_request_admin' || data.type === 'prayer_request_admin') && !isAdmin) {
               return null;
             }
 
@@ -738,7 +744,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
                       if (base.includes('@') && !base.includes('/live') && !base.includes('/streams')) {
                         base = base.endsWith('/') ? `${base}live` : `${base}/live`;
                       }
-                      setShowModal(false);
+                      setSelectedUpdate(null);
                       navigation.navigate('YouTubeLive', {
                         url: base,
                         videoId: selectedUpdate?.videoId,
@@ -781,6 +787,23 @@ export default function UpdatesScreen({ navigation, route }: any) {
                     }}
                   >
                     <Text style={styles.joinLiveBtnTxt}>📖 Play Bible Quiz Now</Text>
+                  </TouchableOpacity>
+                )}
+
+                {(selectedUpdate?.type === 'baptism_request_admin' || selectedUpdate?.type === 'baptism_request' || selectedUpdate?.type === 'baptism_request_member') && (
+                  <TouchableOpacity
+                    style={[styles.joinLiveBtn, { backgroundColor: '#0284c7' }]}
+                    onPress={() => {
+                      const reqId = selectedUpdate?.requestId || selectedUpdate?.id;
+                      setSelectedUpdate(null);
+                      if (isAdmin) {
+                        navigation.navigate('AdminRoot', { targetTab: 'Baptism', requestId: reqId });
+                      } else {
+                        navigation.navigate('BaptismRequest', { requestId: reqId });
+                      }
+                    }}
+                  >
+                    <Text style={styles.joinLiveBtnTxt}>💧 {isAdmin ? 'Review Baptism Request' : 'View My Baptism Request'}</Text>
                   </TouchableOpacity>
                 )}
 

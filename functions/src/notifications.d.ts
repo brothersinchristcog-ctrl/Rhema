@@ -34,6 +34,22 @@ export declare const onPrayerRequestCreatedAdmin: import("firebase-functions/cor
     prayerId: string;
 }>>;
 /**
+ * 💧 MANDATORY NOTIFICATION: ADMIN NOTIFIED OF EVERY BAPTISM REQUEST (Primary single-church collection)
+ * Triggered automatically whenever a member submits a baptism request in Firestore.
+ * Always notifies church admins ONLY, clearly showing which member submitted it.
+ */
+export declare const onBaptismRequestCreatedAdmin: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+    churchId: string;
+    requestId: string;
+}>>;
+/**
+ * 💧 MANDATORY NOTIFICATION: ADMIN NOTIFIED OF EVERY BAPTISM REQUEST (Legacy churches collection)
+ */
+export declare const onBaptismRequestCreatedAdminLegacy: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+    churchId: string;
+    requestId: string;
+}>>;
+/**
  * 🙏 NOTIFY COMMUNITY OF APPROVED PRAYER REQUEST
  * Triggered when a prayer request is approved (isAnswered becomes true).
  */

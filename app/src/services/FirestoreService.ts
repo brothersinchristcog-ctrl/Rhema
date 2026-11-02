@@ -3401,40 +3401,7 @@ class FirestoreService {
         console.warn('Could not write admin baptism notification:', err);
       }
 
-      // 2. Broadcast push trigger to admin phones
-      try {
-        let membersSnap = await churchRef.collection('members').get();
-        if (membersSnap.empty) {
-          membersSnap = await db.collection('churches').doc(churchId).collection('members').get();
-        }
-        const adminPhones: string[] = [];
-        membersSnap.docs.forEach(d => {
-          const m = d.data();
-          const role = String(m.userType || '').toLowerCase();
-          if (role.includes('admin') || role.includes('pastor') || role.includes('super')) {
-            const p = m.phone || m.mobile || m.phoneNumber;
-            if (p) adminPhones.push(p);
-          }
-        });
-
-        const bcastCol = churchRef.collection('broadcasts');
-        const uniquePhones = Array.from(new Set(adminPhones));
-        for (const phone of uniquePhones) {
-          const bcastData = {
-            title: `💧 New Baptism Request: ${data.memberName}`,
-            content: `${data.memberName} has requested baptism. Preferred date: ${formattedPrefDate}. Tap to review.`,
-            type: 'baptism_request_admin',
-            requestId: docRef.id,
-            targetPhone: phone,
-            targetRole: 'admin',
-            createdAt: FieldValue.serverTimestamp()
-          };
-          await bcastCol.add(bcastData);
-          try { await db.collection('churches').doc(churchId).collection('broadcasts').add(bcastData); } catch (_) {}
-        }
-      } catch (bErr) {
-        console.warn('Could not trigger baptism admin push:', bErr);
-      }
+      console.log('💧 [createBaptismRequest] Successfully created baptism request & admin notification:', docRef.id);
 
       return { success: true, id: docRef.id };
     } catch (e: any) {
@@ -3459,8 +3426,8 @@ class FirestoreService {
         const docPhone = (d.memberPhone || '').replace(/\D/g, '').slice(-10);
         if (d.memberId === memberId || (cleanPhone && docPhone === cleanPhone)) {
           list.push({
-            id: doc.id,
-            ...d
+            ...d,
+            id: doc.id
           } as BaptismRequest);
         }
       });
@@ -3485,8 +3452,8 @@ class FirestoreService {
         snap = await db.collection('churches').doc(churchId).collection('baptism_requests').get();
       }
       const list: BaptismRequest[] = snap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
+        ...doc.data(),
+        id: doc.id
       } as BaptismRequest));
 
       return list.sort((a, b) => {

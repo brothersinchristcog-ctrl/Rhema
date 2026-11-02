@@ -1,11 +1,6 @@
-import { Text, StyleSheet, TextStyle } from 'react-native';
+import React from 'react';
+import { StyleSheet, TextStyle } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-declare module 'react-native' {
-  interface TextProps {
-    skipFontScaling?: boolean;
-  }
-}
 
 export type FontSizeOption = 'small' | 'medium' | 'large';
 
@@ -50,8 +45,8 @@ export const scaleFontSize = (fontSize: number, scale: number = currentScale): n
 };
 
 /**
- * Monkey-patches React Native Text.render to automatically and globally apply
- * the selected font size scaling to every text element in the app.
+ * Intercepts React Native Text rendering globally so every text element
+ * in the entire app scales automatically based on the user's selected preference.
  */
 export const installGlobalFontScaling = () => {
   if (isInstalled) return;
@@ -66,50 +61,88 @@ export const installGlobalFontScaling = () => {
     })
     .catch(() => {});
 
-  const originalRender = (Text as any).render;
-  if (!originalRender) return;
+  try {
+    const ReactNative = require('react-native');
+    const OriginalText = ReactNative.Text;
+    if (!OriginalText) return;
 
-  (Text as any).render = function (props: any, ref: any) {
-    if (!props || currentScale === 1.0 || props.skipFontScaling) {
-      return originalRender.call(this, props, ref);
-    }
+    const PatchedText = React.forwardRef<any, any>(function ScaledText(props: any, ref: any) {
+      const mergedProps = ref !== undefined ? { ...props, ref } : props;
 
-    const flatStyle = StyleSheet.flatten(props.style) as TextStyle | undefined;
-
-    // Never alter vector icon fonts
-    if (flatStyle && flatStyle.fontFamily && ICON_FONT_FAMILIES.test(flatStyle.fontFamily)) {
-      return originalRender.call(this, props, ref);
-    }
-
-    // Scale explicit fontSize
-    if (flatStyle && typeof flatStyle.fontSize === 'number') {
-      const originalFontSize = flatStyle.fontSize;
-      // Protect micro-badges from clipping
-      if (originalFontSize <= 9) {
-        return originalRender.call(this, props, ref);
+      if (!props || currentScale === 1.0 || props.skipFontScaling) {
+        return React.createElement(OriginalText, mergedProps);
       }
 
-      const scaledFontSize = Math.round(originalFontSize * currentScale);
-      const newStyle: any = { ...flatStyle, fontSize: scaledFontSize };
+      const flatStyle = StyleSheet.flatten(props.style) as TextStyle | undefined;
 
-      if (typeof flatStyle.lineHeight === 'number') {
-        newStyle.lineHeight = Math.round(flatStyle.lineHeight * currentScale);
+      // Never alter vector icon fonts
+      if (flatStyle && flatStyle.fontFamily && ICON_FONT_FAMILIES.test(flatStyle.fontFamily)) {
+        return React.createElement(OriginalText, mergedProps);
       }
 
-      return originalRender.call(this, { ...props, style: newStyle }, ref);
+      // Scale explicit fontSize
+      if (flatStyle && typeof flatStyle.fontSize === 'number') {
+        // Protect micro-badges, tab bar labels, and tiny counter pills (<= 10.5px) from clipping
+        if (flatStyle.fontSize <= 10.5) {
+          return React.createElement(OriginalText, mergedProps);
+        }
+
+        // Apply smooth dampening for very large titles (>= 28px) so headings fit every mobile screen
+        let effectiveScale = currentScale;
+        if (flatStyle.fontSize >= 28 && currentScale > 1.0) {
+          effectiveScale = 1.0 + (currentScale - 1.0) * 0.55;
+        }
+
+        const scaledFontSize = Math.round(flatStyle.fontSize * effectiveScale);
+        const scaledLineHeight = typeof flatStyle.lineHeight === 'number'
+          ? Math.round(flatStyle.lineHeight * effectiveScale)
+          : undefined;
+
+        const overrideStyle = scaledLineHeight !== undefined
+          ? { fontSize: scaledFontSize, lineHeight: scaledLineHeight }
+          : { fontSize: scaledFontSize };
+
+        const newStyle = Array.isArray(props.style)
+          ? [...props.style, overrideStyle]
+          : [props.style, overrideStyle];
+
+        return React.createElement(OriginalText, { ...mergedProps, style: newStyle });
+      }
+
+      return React.createElement(OriginalText, mergedProps);
+    });
+
+    (PatchedText as any).displayName = 'Text';
+    Object.assign(PatchedText, OriginalText);
+
+    // 1. Redefine getter on ReactNative
+    try {
+      Object.defineProperty(ReactNative, 'Text', {
+        configurable: true,
+        enumerable: true,
+        get: () => PatchedText,
+        set: (v) => { (ReactNative as any)._Text = v; },
+      });
+    } catch (_) {
+      (ReactNative as any).Text = PatchedText;
     }
 
-    // Scale default font size (14px in React Native)
-    if (!flatStyle || flatStyle.fontSize === undefined) {
-      const scaledDefault = Math.round(14 * currentScale);
-      const newStyle = flatStyle ? { ...flatStyle, fontSize: scaledDefault } : { fontSize: scaledDefault };
-      return originalRender.call(this, { ...props, style: newStyle }, ref);
-    }
+    // 2. Patch require('react-native/Libraries/Text/Text').default if available
+    try {
+      const TextModule = require('react-native/Libraries/Text/Text');
+      if (TextModule) {
+        TextModule.default = PatchedText;
+      }
+    } catch (_) {}
 
-    return originalRender.call(this, props, ref);
-  };
+    // 3. Backward compatibility with older Text.render monkeypatching
+    try {
+      (OriginalText as any).render = PatchedText;
+    } catch (_) {}
+  } catch (err) {
+    console.warn('installGlobalFontScaling failed:', err);
+  }
 };
 
-// Auto-install on module import
+// Auto-run once on module import
 installGlobalFontScaling();
-

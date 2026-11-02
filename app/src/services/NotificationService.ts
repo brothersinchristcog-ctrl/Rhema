@@ -143,11 +143,28 @@ class NotificationService {
           break;
         case 'birthday':
         case 'anniversary':
-        case 'baptism':
         case 'celebration':
         case 'emergency':
           nav.navigate('Updates', { highlightId: id, highlightType: type });
           break;
+        case 'baptism_request_admin':
+        case 'baptism_request':
+        case 'baptism': {
+          const reqId = rawData.requestId || rawData.id || id;
+          console.log('💧 [NotificationService] Routing to Admin Baptism tab:', { reqId });
+          nav.navigate('AdminRoot', {
+            targetTab: 'Baptism',
+            requestId: reqId,
+            timestamp: Date.now(),
+          });
+          break;
+        }
+        case 'baptism_request_member': {
+          const reqId = rawData.requestId || rawData.id || id;
+          console.log('💧 [NotificationService] Routing to Member BaptismRequest screen:', { reqId });
+          nav.navigate('BaptismRequest', { requestId: reqId });
+          break;
+        }
         case 'youtube_live': {
           const liveUrl = remoteMessage.data && remoteMessage.data.url ? remoteMessage.data.url : 'https://www.youtube.com/@Brothersinchristfellowship/live';
           const videoId = rawData.videoId || (remoteMessage?.data && remoteMessage.data.videoId) || '';
