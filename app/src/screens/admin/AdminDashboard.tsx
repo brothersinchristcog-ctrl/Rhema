@@ -558,7 +558,14 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
           </TouchableOpacity>
 
           <TouchableOpacity
-            onPress={() => setViewMode('member')}
+            onPress={() => {
+              setViewMode('member');
+              try {
+                if (navigation?.navigate) {
+                  navigation.navigate('Tabs');
+                }
+              } catch (_) {}
+            }}
             style={{
               flex: 1,
               backgroundColor: '#1a2d5a', // solid navy

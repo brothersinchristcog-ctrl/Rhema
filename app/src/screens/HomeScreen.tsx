@@ -1588,7 +1588,7 @@ let cachedPromise: DailyPromise | null = null;
 let cachedPromiseThumbnail: string | null = null;
 let cachedTodayEvents: ScheduleEvent[] = [];
 let cachedEvents: ScheduleEvent[] = [];
-let cachedLatestSermon: Sermon | null = null;
+let cachedLatestSermons: Sermon[] = [];
 let cachedLatestPrayer: any | null = null;
 let cachedPrayerCount: number = 0;
 let cachedTodayFourVerses: DailyVerse[] = [];
@@ -2016,7 +2016,8 @@ export default function HomeScreen() {
   const [promise, setPromise] = useState<DailyPromise | null>(cachedPromise);
   const [todayEvents, setTodayEvents] = useState<ScheduleEvent[]>(cachedTodayEvents);
   const [events, setEvents] = useState<ScheduleEvent[]>(cachedEvents);
-  const [latestSermon, setLatestSermon] = useState<Sermon | null>(cachedLatestSermon);
+  const [latestSermons, setLatestSermons] = useState<Sermon[]>(cachedLatestSermons);
+  const latestSermon = latestSermons[0] || null;
   const [latestPrayer, setLatestPrayer] = useState<any | null>(cachedLatestPrayer);
   const [prayerCount, setPrayerCount] = useState(cachedPrayerCount);
   const [loading, setLoading] = useState(false);
@@ -2164,11 +2165,11 @@ export default function HomeScreen() {
         }
       }).catch(() => {});
 
-      // Always re-fetch the latest published sermon on screen focus to ensure zero stale cache
-      FirestoreService.getLatestSermon().then((fresh) => {
-        if (fresh) {
-          cachedLatestSermon = fresh;
-          setLatestSermon(fresh);
+      // Always re-fetch the latest published sermons on screen focus to ensure zero stale cache
+      FirestoreService.getLatestSermons(2).then((fresh) => {
+        if (fresh && fresh.length > 0) {
+          cachedLatestSermons = fresh;
+          setLatestSermons(fresh);
         }
       }).catch(() => {});
 
@@ -2633,11 +2634,11 @@ export default function HomeScreen() {
         setEvents(cachedEvents);
       }).catch(() => {});
 
-      // 6. Fetch Latest Sermon non-blocking
-      FirestoreService.getLatestSermon().then((s: any) => {
-        if (s) {
-          cachedLatestSermon = s;
-          setLatestSermon(cachedLatestSermon);
+      // 6. Fetch Latest Sermons non-blocking
+      FirestoreService.getLatestSermons(2).then((s: any) => {
+        if (s && s.length > 0) {
+          cachedLatestSermons = s;
+          setLatestSermons(cachedLatestSermons);
         }
       }).catch(() => {});
 
@@ -2709,18 +2710,21 @@ export default function HomeScreen() {
     };
   }, [activeChurch?.id]);
 
-  // Real-time listener for Latest Sermon so updates reflect immediately
+  // Real-time listener for Latest Sermons so updates reflect immediately
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
-    FirestoreService.listenLatestSermon((freshSermon) => {
-      if (freshSermon) {
-        cachedLatestSermon = freshSermon;
-        setLatestSermon(freshSermon);
+    FirestoreService.listenLatestSermons((freshSermons) => {
+      if (freshSermons && freshSermons.length > 0) {
+        cachedLatestSermons = freshSermons;
+        setLatestSermons(freshSermons);
+      } else {
+        cachedLatestSermons = [];
+        setLatestSermons([]);
       }
-    }).then(unsub => {
+    }, 2).then(unsub => {
       unsubscribe = unsub;
     }).catch(err => {
-      console.warn('[HomeScreen] listenLatestSermon error:', err);
+      console.warn('[HomeScreen] listenLatestSermons error:', err);
     });
 
     return () => {
@@ -4477,36 +4481,47 @@ export default function HomeScreen() {
           </View>
 
           <View style={styles.sermonCard}>
-            <TouchableOpacity style={styles.scBody} onPress={() => latestSermon ? navigation.navigate('SermonVideo', { sermonData: latestSermon }) : navigation.navigate('Sermons')}>
-              <View style={styles.scThumb}>
-                {(() => {
-                  const yId = extractYoutubeId(latestSermon?.youtubeId || '');
-                  const thumbUri = latestSermon?.thumbnailUrl || latestSermon?.imageUrl || (yId && yId.length === 11 ? `https://img.youtube.com/vi/${yId}/hqdefault.jpg` : null);
-                  return thumbUri ? (
-                    <Image source={{ uri: thumbUri }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-                  ) : null;
-                })()}
-                <View style={styles.playIconOverlay}>
-                   <Play size={20} color="#fff" fill="#c0392b" />
-                </View>
-              </View>
-              <View style={styles.scInfo}>
-                <Text style={styles.scTitle} numberOfLines={1}>
-                  {latestSermon?.title || t('home.exploreSermons')}
-                </Text>
-                {latestSermon?.titleTelugu ? (
-                  <Text style={styles.scTitleTe} numberOfLines={1}>{latestSermon.titleTelugu}</Text>
-                ) : null}
-                <Text style={styles.scMeta} numberOfLines={1}>
-                  {latestSermon?.pastor || t('sermons.pastor')}
-                  {latestSermon?.date ? ` • ${formatDateDisplay(latestSermon.date)}` : ''}
-                  {latestSermon?.duration && formatSermonDuration(latestSermon.duration) ? ` • ${formatSermonDuration(latestSermon.duration)}` : ''}
-                </Text>
-              </View>
-              <View style={[styles.playBtnCircle, { borderColor: screenTheme.btnPrimaryBorder, backgroundColor: screenTheme.btnPrimaryBg }]}>
-                <Play size={18} color={screenTheme.btnPrimaryText} />
-              </View>
-            </TouchableOpacity>
+            {(latestSermons.length > 0 ? latestSermons.slice(0, 2) : [null]).map((sermon, idx, arr) => (
+              <React.Fragment key={sermon?.id || `fallback-${idx}`}>
+                <TouchableOpacity 
+                  style={styles.scBody} 
+                  onPress={() => sermon ? navigation.navigate('SermonVideo', { sermonData: sermon }) : navigation.navigate('Sermons')}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.scThumb}>
+                    {(() => {
+                      const yId = extractYoutubeId(sermon?.youtubeId || '');
+                      const thumbUri = sermon?.thumbnailUrl || sermon?.imageUrl || (yId && yId.length === 11 ? `https://img.youtube.com/vi/${yId}/hqdefault.jpg` : null);
+                      return thumbUri ? (
+                        <Image source={{ uri: thumbUri }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+                      ) : null;
+                    })()}
+                    <View style={styles.playIconOverlay}>
+                       <Play size={20} color="#fff" fill="#c0392b" />
+                    </View>
+                  </View>
+                  <View style={styles.scInfo}>
+                    <Text style={styles.scTitle} numberOfLines={1}>
+                      {sermon?.title || t('home.exploreSermons')}
+                    </Text>
+                    {sermon?.titleTelugu ? (
+                      <Text style={styles.scTitleTe} numberOfLines={1}>{sermon.titleTelugu}</Text>
+                    ) : null}
+                    <Text style={styles.scMeta} numberOfLines={1}>
+                      {sermon?.pastor || t('sermons.pastor')}
+                      {sermon?.date ? ` • ${formatDateDisplay(sermon.date)}` : ''}
+                      {sermon?.duration && formatSermonDuration(sermon.duration) ? ` • ${formatSermonDuration(sermon.duration)}` : ''}
+                    </Text>
+                  </View>
+                  <View style={[styles.playBtnCircle, { borderColor: screenTheme.btnPrimaryBorder, backgroundColor: screenTheme.btnPrimaryBg }]}>
+                    <Play size={18} color={screenTheme.btnPrimaryText} />
+                  </View>
+                </TouchableOpacity>
+                {idx < arr.length - 1 && (
+                  <View style={{ height: 1, backgroundColor: '#f1f5f9', marginHorizontal: 16 }} />
+                )}
+              </React.Fragment>
+            ))}
           </View>
 
           {/* ─── Prayer Wall ─── */}
