@@ -39,7 +39,6 @@ import {
   ChevronLeft,
   Eye,
   X,
-  Wand2,
   Image as ImageIcon,
   Award
 } from 'lucide-react-native';
@@ -81,8 +80,6 @@ import AdminOnlineMeetingEditor from '../screens/admin/AdminOnlineMeetingEditor'
 import AdminSupportTeam from '../screens/admin/AdminSupportTeam';
 import AdminGalleryNavigator from '../screens/admin/gallery/AdminGalleryNavigator';
 import { Shield, Video as VideoIcon, Headset } from 'lucide-react-native';
-import AISermonAssistant from '../screens/admin/AISermonAssistant';
-import AIContentCreator from '../screens/admin/AIContentCreator';
 import AdminQuizList from '../screens/admin/quiz/AdminQuizList';
 import ChurchService from '../services/ChurchService';
 import AdminServicePlanner from '../screens/admin/AdminServicePlanner';
@@ -155,7 +152,7 @@ export default function AdminNavigator({ navigation, route }: any) {
         'Promises', 'New Promise', 'Schedule', 'Promise Calendar', 'Add Promise', 'Daily Verses',
         'Sermons', 'New Sermon', 'Songs', 'Events', 'New Event', 'Pastor Event',
         'Prayers', 'Celebrations', 'Gallery', 'Expense', 'Donations', 
-        'Online Meetings', 'New Online Meeting', 'AI Sermon Assistant', 'AI Thumbnail Creation', 'AI Content Creator',
+        'Online Meetings', 'New Online Meeting',
         'WeCelebrations', 'WhatsApp', 'Bible Quiz'
       ];
       
@@ -248,9 +245,6 @@ export default function AdminNavigator({ navigation, route }: any) {
 
     { name: 'Online Meetings', icon: VideoIcon, component: AdminOnlineMeetings },
     { name: 'New Online Meeting', icon: VideoIcon, component: AdminOnlineMeetingEditor },
-    // ── AI Ministry Tools ──
-    { name: 'AI Sermon Assistant', icon: Sparkles, component: AISermonAssistant },
-    { name: 'AI Thumbnail Creation', icon: Wand2, component: AIContentCreator },
     { name: 'Bible Quiz', icon: Award, component: AdminQuizList },
     ...(isPlatformSuperAdmin ? [{ name: 'App Admin', icon: Shield, component: SuperAdminDashboard }] : []),
   ];
@@ -295,14 +289,13 @@ export default function AdminNavigator({ navigation, route }: any) {
   }
 
   const isSuperAdminTab = tabs[activeTab]?.name === 'App Admin';
-  const isAiTab = tabs[activeTab]?.name === 'AI Thumbnail Creation' || tabs[activeTab]?.name === 'AI Content Creator' || tabs[activeTab]?.name === 'AI Sermon Assistant';
 
   // We provide handleSetTab via setActiveTab so child components can push to history
   return (
     <AdminTabContext.Provider value={{ activeTab, setActiveTab: handleSetTab, editingData, setEditingData, goBack: handleBack, setTabByName, dashboardScrollY, setDashboardScrollY }}>
       <View style={[styles.container, { backgroundColor: activeTab === 0 ? '#F4F0EA' : isSuperAdminTab ? '#0a0f1e' : '#f0f2f7' }]}>
         {!isSuperAdminTab && (
-          <SafeAreaView edges={['top']} style={{ backgroundColor: activeTab === 0 ? '#F4F0EA' : isAiTab ? '#3A2A6B' : '#1a2d5a' }} />
+          <SafeAreaView edges={['top']} style={{ backgroundColor: activeTab === 0 ? '#F4F0EA' : '#1a2d5a' }} />
         )}
         
         {isImpersonating && (
@@ -359,7 +352,7 @@ export default function AdminNavigator({ navigation, route }: any) {
           </TouchableOpacity>
         )}
 
-        {activeTab !== 0 && !isSuperAdminTab && !isAiTab && (
+        {activeTab !== 0 && !isSuperAdminTab && (
           <View style={[styles.header, { backgroundColor: '#1a2d5a' }]}>
             <View style={styles.headerTop}>
               <View style={styles.headerText}>

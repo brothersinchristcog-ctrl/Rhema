@@ -28,8 +28,7 @@ import {
   Smartphone,
   Moon,
   Video,
-  Headset,
-  Wand2
+  Headset
 } from 'lucide-react-native';
 import { useChurch } from '../../context/ChurchContext';
 import HexagonDate from '../../components/HexagonDate';
@@ -68,10 +67,6 @@ const CARD_BACKGROUNDS: Record<string, any> = {
   'Online Meetings': require('../../../assets/admin_cards/online_meetings.jpg'),
   'New Online Meeting': require('../../../assets/admin_cards/new_online_meeting.png'),
   'App Admin': require('../../../assets/admin_cards/app_admin.png'),
-  'AI Sermon Assistant': require('../../../assets/admin_cards/ai_sermon.jpg'),
-  'AI Sermon': require('../../../assets/admin_cards/ai_sermon.jpg'),
-  'AI Thumbnail Creation': require('../../../assets/admin_cards/ai_content.jpg'),
-  'AI Content Creator': require('../../../assets/admin_cards/ai_content.jpg'),
   'Bible Quiz': require('../../../assets/admin_cards/bible_quiz.jpg'),
   'Quiz': require('../../../assets/admin_cards/bible_quiz.jpg'),
 };
@@ -94,12 +89,6 @@ const CATEGORIES = [
     icon: Calendar,
     color: '#831843', // Deep Ruby/Berry for a festive, elegant look with high contrast
     keywords: ['Event', 'Celebration']
-  },
-  {
-    title: 'AI Ministry Tools',
-    icon: Wand2,
-    color: '#6D28D9', // Deep violet for AI
-    keywords: ['AI Sermon', 'AI Content', 'AI Thumbnail']
   },
   {
     title: 'Communication',
@@ -513,11 +502,7 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
                                 {tab.name === 'About Us' 
                                   ? 'About\u00A0Us' 
                                   : tab.name === 'Service Roster'
-                                  ? 'Service Roster\n& Teams'
-                                  : (tab.name === 'AI Sermon Assistant' || tab.name === 'AI Sermon') 
-                                  ? 'AI Sermon\nAssistant' 
-                                  : (tab.name === 'AI Content Creator' || tab.name === 'AI Thumbnail Creation') 
-                                  ? 'AI Thumbnail\nCreation' 
+                                  ? 'Service Roster\n& Teams' 
                                   : tab.name}
                               </Text>
                             </View>
