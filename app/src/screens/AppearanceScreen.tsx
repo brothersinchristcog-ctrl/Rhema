@@ -171,122 +171,6 @@ export default function AppearanceScreen() {
         {/* ── Divider ── */}
         <View style={[styles.divider, { backgroundColor: isDark ? '#27272A' : 'rgba(0,0,0,0.06)' }]} />
 
-        {/* ── Font Size Settings Section ── */}
-        <View style={styles.sectionWrap}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Font size</Text>
-          <Text style={[styles.sectionDesc, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
-            Adjust reading comfort across all screens, tabs, menus, Bible content, and songs. Medium is the default.
-          </Text>
-
-          {/* 3-Column Font Size Option Cards */}
-          <View style={styles.fontSizeRow}>
-            {FONT_SIZE_OPTIONS.map((item) => {
-              const isSelected = fontSize === item.id;
-              const activeBorderColor = accentColor || '#881337';
-
-              return (
-                <TouchableOpacity
-                  key={item.id}
-                  activeOpacity={0.85}
-                  style={[
-                    styles.fontSizeCard,
-                    {
-                      borderColor: isSelected ? activeBorderColor : isDark ? '#27272A' : '#E2E8F0',
-                      borderWidth: isSelected ? 2.5 : 1.5,
-                      backgroundColor: isDark ? '#121212' : '#FFFFFF',
-                    },
-                  ]}
-                  onPress={() => setFontSize(item.id)}
-                >
-                  {/* Top Preview Badge with unscaled 'Aa' */}
-                  <View
-                    style={[
-                      styles.fontSizeAaBox,
-                      {
-                        backgroundColor: isSelected
-                          ? (isDark ? 'rgba(56, 189, 248, 0.12)' : 'rgba(37, 99, 235, 0.08)')
-                          : isDark ? '#18181B' : '#F8FAFC',
-                      },
-                    ]}
-                  >
-                    {/* @ts-ignore */}
-                    <Text skipFontScaling
-                      style={[
-                        styles.fontSizeAaTxt,
-                        {
-                          fontSize: item.px,
-                          color: isSelected ? activeBorderColor : isDark ? '#F4F4F5' : '#1E293B',
-                          fontWeight: isSelected ? '800' : '600',
-                        },
-                      ]}
-                    >
-                      Aa
-                    </Text>
-                  </View>
-
-                  {/* Title & Sub */}
-                  <View style={styles.fontSizeCardInfo}>
-                    <Text
-                      style={[
-                        styles.fontSizeCardTitle,
-                        {
-                          color: isDark ? '#F4F4F5' : '#1E293B',
-                          fontWeight: isSelected ? '800' : '600',
-                        },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {item.label}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.fontSizeCardSub,
-                        { color: isDark ? '#A1A1AA' : '#64748B' },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {item.displaySub}
-                    </Text>
-                  </View>
-
-                  {/* Selection Indicator */}
-                  {isSelected && (
-                    <View style={[styles.fontSizeCheckCircle, { backgroundColor: activeBorderColor }]}>
-                      <Check size={11} color="#FFFFFF" strokeWidth={3} />
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {/* Live Preview Card */}
-          <View
-            style={[
-              styles.livePreviewCard,
-              {
-                backgroundColor: isDark ? '#18181B' : '#F1F5F9',
-                borderColor: isDark ? '#27272A' : '#E2E8F0',
-              },
-            ]}
-          >
-            <View style={styles.livePreviewHeader}>
-              <Text style={[styles.livePreviewBadge, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                LIVE PREVIEW ({(FONT_SIZE_CONFIG[fontSize] || FONT_SIZE_CONFIG.medium).px} PX)
-              </Text>
-            </View>
-            <Text style={[styles.livePreviewScripture, { color: colors.text }]}>
-              "Your word is a lamp to my feet and a light to my path."
-            </Text>
-            <Text style={[styles.livePreviewRef, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
-              Psalm 119:105
-            </Text>
-          </View>
-        </View>
-
-        {/* ── Divider ── */}
-        <View style={[styles.divider, { backgroundColor: isDark ? '#27272A' : 'rgba(0,0,0,0.06)' }]} />
-
         {/* ── Quick Actions Layout Section ── */}
         <View style={styles.sectionWrap}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Quick actions layout</Text>
@@ -554,6 +438,124 @@ export default function AppearanceScreen() {
 
         {/* ── Divider ── */}
         <View style={[styles.divider, { backgroundColor: isDark ? '#27272A' : 'rgba(0,0,0,0.06)' }]} />
+        {/* ── Font Size Settings Section ── */}
+        <View style={styles.sectionWrap}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Font size</Text>
+          <Text style={[styles.sectionDesc, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+            Adjust reading comfort across all screens, tabs, menus, Bible content, and songs. Medium is the default.
+          </Text>
+
+          {/* 3-Column Font Size Option Cards */}
+          <View style={styles.fontSizeRow}>
+            {FONT_SIZE_OPTIONS.map((item) => {
+              const isSelected = fontSize === item.id;
+              const activeBorderColor = accentColor || '#881337';
+
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  activeOpacity={0.85}
+                  style={[
+                    styles.fontSizeCard,
+                    {
+                      borderColor: isSelected ? activeBorderColor : isDark ? '#27272A' : '#E2E8F0',
+                      borderWidth: isSelected ? 2.5 : 1.5,
+                      backgroundColor: isDark ? '#121212' : '#FFFFFF',
+                    },
+                  ]}
+                  onPress={() => setFontSize(item.id)}
+                >
+                  {/* Top Preview Badge with unscaled 'Aa' */}
+                  <View
+                    style={[
+                      styles.fontSizeAaBox,
+                      {
+                        backgroundColor: isSelected
+                          ? (isDark ? 'rgba(56, 189, 248, 0.12)' : 'rgba(37, 99, 235, 0.08)')
+                          : isDark ? '#18181B' : '#F8FAFC',
+                      },
+                    ]}
+                  >
+                    {/* @ts-ignore */}
+                    <Text skipFontScaling
+                      style={[
+                        styles.fontSizeAaTxt,
+                        {
+                          fontSize: item.px,
+                          color: isSelected ? activeBorderColor : isDark ? '#F4F4F5' : '#1E293B',
+                          fontWeight: isSelected ? '800' : '600',
+                        },
+                      ]}
+                    >
+                      Aa
+                    </Text>
+                  </View>
+
+                  {/* Title & Sub */}
+                  <View style={styles.fontSizeCardInfo}>
+                    <Text
+                      style={[
+                        styles.fontSizeCardTitle,
+                        {
+                          color: isDark ? '#F4F4F5' : '#1E293B',
+                          fontWeight: isSelected ? '800' : '600',
+                        },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {item.label}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.fontSizeCardSub,
+                        { color: isDark ? '#A1A1AA' : '#64748B' },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {item.displaySub}
+                    </Text>
+                  </View>
+
+                  {/* Selection Indicator */}
+                  {isSelected && (
+                    <View style={[styles.fontSizeCheckCircle, { backgroundColor: activeBorderColor }]}>
+                      <Check size={11} color="#FFFFFF" strokeWidth={3} />
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Live Preview Card */}
+          <View
+            style={[
+              styles.livePreviewCard,
+              {
+                backgroundColor: isDark ? '#18181B' : '#F1F5F9',
+                borderColor: isDark ? '#27272A' : '#E2E8F0',
+              },
+            ]}
+          >
+            <View style={styles.livePreviewHeader}>
+              <Text style={[styles.livePreviewBadge, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                LIVE PREVIEW ({(FONT_SIZE_CONFIG[fontSize] || FONT_SIZE_CONFIG.medium).px} PX)
+              </Text>
+            </View>
+            {/* @ts-ignore */}
+            <Text skipFontScaling style={[styles.livePreviewScripture, { color: colors.text, fontSize: (FONT_SIZE_CONFIG[fontSize] || FONT_SIZE_CONFIG.medium).px, lineHeight: Math.round((FONT_SIZE_CONFIG[fontSize] || FONT_SIZE_CONFIG.medium).px * 1.45) }]}>
+              "Your word is a lamp to my feet and a light to my path."
+            </Text>
+            {/* @ts-ignore */}
+            <Text skipFontScaling style={[styles.livePreviewRef, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+              Psalm 119:105
+            </Text>
+          </View>
+        </View>
+
+        {/* ── Divider ── */}
+        <View style={[styles.divider, { backgroundColor: isDark ? '#27272A' : 'rgba(0,0,0,0.06)' }]} />
+
 
         {/* ── Accent Color Section ── */}
         <View style={styles.accentSection}>
