@@ -32,6 +32,7 @@ import {
   Moon, 
   Heart, 
   CreditCard,
+  Droplets,
   Globe,
   Check,
   X,
@@ -566,6 +567,15 @@ export default function ProfileScreen({ navigation }: any) {
             textColor={colors.text}
             subColor={colors.textSecondary}
           />
+          <MenuItem 
+            icon={<Droplets size={22} color={colors.text} strokeWidth={1.8} />} 
+            title="Baptism" 
+            sub="Submit request & track approval status" 
+            onPress={() => navigation.navigate('BaptismRequest')}
+            textColor={colors.text}
+            subColor={colors.textSecondary}
+          />
+
           {(String(member?.userType || '').toUpperCase().includes('ADMIN') || String(member?.userType || '').toUpperCase().includes('SUPER') || String(member?.userType || '').toUpperCase().includes('PASTOR')) && (
             <MenuItem 
               icon={<CreditCard size={22} color={colors.text} strokeWidth={1.8} />} 

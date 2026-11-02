@@ -26,6 +26,7 @@ import {
   MoreHorizontal,
   HeartHandshake,
   Sparkles,
+  Droplets,
   Video,
   Music,
   CalendarPlus,
@@ -80,6 +81,7 @@ import AdminSupportTeam from '../screens/admin/AdminSupportTeam';
 import AdminGalleryNavigator from '../screens/admin/gallery/AdminGalleryNavigator';
 import { Shield, Video as VideoIcon, Headset } from 'lucide-react-native';
 import AdminQuizList from '../screens/admin/quiz/AdminQuizList';
+import AdminBaptism from '../screens/admin/AdminBaptism';
 import ChurchService from '../services/ChurchService';
 import AdminServicePlanner from '../screens/admin/AdminServicePlanner';
 import AdminDailyVersesManager from '../screens/admin/AdminDailyVersesManager';
@@ -152,7 +154,7 @@ export default function AdminNavigator({ navigation, route }: any) {
         'Sermons', 'New Sermon', 'Songs', 'Events', 'New Event', 'Pastor Event',
         'Prayers', 'Celebrations', 'Gallery', 'Expense', 'Donations', 
         'Online Meetings', 'New Online Meeting',
-        'WhatsApp', 'Bible Quiz'
+        'WhatsApp', 'Bible Quiz', 'Baptism'
       ];
       
       if (premiumTabs.includes(tabName) && ChurchService.isSubscriptionExpired(activeChurch)) {
@@ -244,6 +246,7 @@ export default function AdminNavigator({ navigation, route }: any) {
     { name: 'Online Meetings', icon: VideoIcon, component: AdminOnlineMeetings },
     { name: 'New Online Meeting', icon: VideoIcon, component: AdminOnlineMeetingEditor },
     { name: 'Bible Quiz', icon: Award, component: AdminQuizList },
+    { name: 'Baptism', icon: Droplets, component: AdminBaptism },
     ...(isPlatformSuperAdmin ? [{ name: 'App Admin', icon: Shield, component: SuperAdminDashboard }] : []),
   ];
 

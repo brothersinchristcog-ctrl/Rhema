@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, StatusBar, Platform, ActivityIndicator, Modal, PanResponder, Animated, Dimensions, Linking, Alert, Image, BackHandler, Clipboard, ToastAndroid } from 'react-native';
-import { ChevronLeft, ArrowLeft, Bell, Calendar, Info, MessageCircle, AlertTriangle, X, Gift, Heart, Sparkles, Trash2, Tv, BookOpen, Music, Mic , Video } from 'lucide-react-native';
+import { ChevronLeft, ArrowLeft, Bell, Calendar, Info, MessageCircle, AlertTriangle, X, Gift, Heart, Sparkles, Droplets, Trash2, Tv, BookOpen, Music, Mic , Video } from 'lucide-react-native';
 import { openZoomMeeting } from '../utils/ZoomLauncher';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -125,6 +125,8 @@ export default function UpdatesScreen({ navigation, route }: any) {
   const { t } = useLanguage();
 
   const getTypeName = (type: string) => {
+    if (type === 'baptism_request_admin' || type === 'baptism_request') return 'BAPTISM REQUEST';
+    if (type === 'baptism' || type === 'baptism_request_member') return 'BAPTISM';
     if (!type) return (t('updates.types.announcement') || 'ANNOUNCEMENT').toUpperCase();
     const trans = t(`updates.types.${type}`);
     return trans && trans !== `updates.types.${type}` ? trans.toUpperCase() : type.toUpperCase();
@@ -276,6 +278,19 @@ export default function UpdatesScreen({ navigation, route }: any) {
               icon = Calendar;
               color = '#10b981';
               resolvedType = 'event';
+            } else if (data.type === 'baptism_request_admin' || data.title?.includes('New Baptism Request')) {
+              icon = Droplets;
+              color = '#0284c7';
+              resolvedType = 'baptism_request_admin';
+            } else if (
+              data.type === 'baptism_request_member' || 
+              data.type === 'baptism_request' || 
+              data.title?.includes('Baptism Request Update') || 
+              data.title?.includes('Baptism Request Approved')
+            ) {
+              icon = Droplets;
+              color = '#0284c7';
+              resolvedType = 'baptism';
             } else if (data.title?.includes('🎂') || data.content?.includes('Birthday') || data.type === 'birthday') {
               icon = Gift;
               color = '#d97706';

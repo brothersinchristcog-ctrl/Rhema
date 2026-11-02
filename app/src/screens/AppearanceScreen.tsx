@@ -12,12 +12,12 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { ArrowLeft, Check, Building2 } from 'lucide-react-native';
-import { useTheme, THEME_OPTIONS, ACCENT_PALETTE, ThemeAppearance, NavBarStyle } from '../context/ThemeContext';
+import { useTheme, THEME_OPTIONS, ACCENT_PALETTE, FONT_SIZE_OPTIONS, FONT_SIZE_CONFIG, ThemeAppearance, NavBarStyle, FontSizeOption } from '../context/ThemeContext';
 
 export default function AppearanceScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
-  const { appearance, setAppearance, accentColor, setAccentColor, quickActionsStyle, setQuickActionsStyle, navBarStyle, setNavBarStyle, colors, isDark } = useTheme();
+  const { appearance, setAppearance, accentColor, setAccentColor, quickActionsStyle, setQuickActionsStyle, navBarStyle, setNavBarStyle, fontSize, setFontSize, colors, isDark } = useTheme();
 
   const screenWidth = Dimensions.get('window').width;
   const cardWidth = (screenWidth - 36 - 14) / 2;
@@ -167,6 +167,122 @@ export default function AppearanceScreen() {
         <Text style={[styles.caption, { color: isDark ? '#64748B' : '#94A3B8' }]}>
           Changes apply instantly, and only on this phone.
         </Text>
+
+        {/* ── Divider ── */}
+        <View style={[styles.divider, { backgroundColor: isDark ? '#27272A' : 'rgba(0,0,0,0.06)' }]} />
+
+        {/* ── Font Size Settings Section ── */}
+        <View style={styles.sectionWrap}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Font size</Text>
+          <Text style={[styles.sectionDesc, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+            Adjust reading comfort across all screens, tabs, menus, Bible content, and songs. Medium is the default.
+          </Text>
+
+          {/* 3-Column Font Size Option Cards */}
+          <View style={styles.fontSizeRow}>
+            {FONT_SIZE_OPTIONS.map((item) => {
+              const isSelected = fontSize === item.id;
+              const activeBorderColor = accentColor || '#881337';
+
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  activeOpacity={0.85}
+                  style={[
+                    styles.fontSizeCard,
+                    {
+                      borderColor: isSelected ? activeBorderColor : isDark ? '#27272A' : '#E2E8F0',
+                      borderWidth: isSelected ? 2.5 : 1.5,
+                      backgroundColor: isDark ? '#121212' : '#FFFFFF',
+                    },
+                  ]}
+                  onPress={() => setFontSize(item.id)}
+                >
+                  {/* Top Preview Badge with unscaled 'Aa' */}
+                  <View
+                    style={[
+                      styles.fontSizeAaBox,
+                      {
+                        backgroundColor: isSelected
+                          ? (isDark ? 'rgba(56, 189, 248, 0.12)' : 'rgba(37, 99, 235, 0.08)')
+                          : isDark ? '#18181B' : '#F8FAFC',
+                      },
+                    ]}
+                  >
+                    {/* @ts-ignore */}
+                    <Text skipFontScaling
+                      style={[
+                        styles.fontSizeAaTxt,
+                        {
+                          fontSize: item.px,
+                          color: isSelected ? activeBorderColor : isDark ? '#F4F4F5' : '#1E293B',
+                          fontWeight: isSelected ? '800' : '600',
+                        },
+                      ]}
+                    >
+                      Aa
+                    </Text>
+                  </View>
+
+                  {/* Title & Sub */}
+                  <View style={styles.fontSizeCardInfo}>
+                    <Text
+                      style={[
+                        styles.fontSizeCardTitle,
+                        {
+                          color: isDark ? '#F4F4F5' : '#1E293B',
+                          fontWeight: isSelected ? '800' : '600',
+                        },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {item.label}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.fontSizeCardSub,
+                        { color: isDark ? '#A1A1AA' : '#64748B' },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {item.displaySub}
+                    </Text>
+                  </View>
+
+                  {/* Selection Indicator */}
+                  {isSelected && (
+                    <View style={[styles.fontSizeCheckCircle, { backgroundColor: activeBorderColor }]}>
+                      <Check size={11} color="#FFFFFF" strokeWidth={3} />
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Live Preview Card */}
+          <View
+            style={[
+              styles.livePreviewCard,
+              {
+                backgroundColor: isDark ? '#18181B' : '#F1F5F9',
+                borderColor: isDark ? '#27272A' : '#E2E8F0',
+              },
+            ]}
+          >
+            <View style={styles.livePreviewHeader}>
+              <Text style={[styles.livePreviewBadge, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                LIVE PREVIEW ({(FONT_SIZE_CONFIG[fontSize] || FONT_SIZE_CONFIG.medium).px} PX)
+              </Text>
+            </View>
+            <Text style={[styles.livePreviewScripture, { color: colors.text }]}>
+              "Your word is a lamp to my feet and a light to my path."
+            </Text>
+            <Text style={[styles.livePreviewRef, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+              Psalm 119:105
+            </Text>
+          </View>
+        </View>
 
         {/* ── Divider ── */}
         <View style={[styles.divider, { backgroundColor: isDark ? '#27272A' : 'rgba(0,0,0,0.06)' }]} />
@@ -704,5 +820,142 @@ const styles = StyleSheet.create({
     borderRadius: 1.5,
     marginTop: 3,
   },
+
+  fontSizeRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 14,
+  },
+  fontSizeCard: {
+    flex: 1,
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    position: 'relative',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  fontSizeAaBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  fontSizeAaTxt: {
+    textAlign: 'center',
+  },
+  fontSizeCardInfo: {
+    alignItems: 'center',
+  },
+  fontSizeCardTitle: {
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  fontSizeCardSub: {
+    fontSize: 11,
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  fontSizeCheckCircle: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  livePreviewCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    marginTop: 14,
+  },
+  livePreviewHeader: {
+    marginBottom: 6,
+  },
+  livePreviewBadge: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  livePreviewScripture: {
+    fontSize: 15.5,
+    fontStyle: 'italic',
+    lineHeight: 23,
+  },
+  livePreviewRef: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    marginTop: 6,
+  },
+
+  navMockCapsuleBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    width: '100%',
+  },
+  navMockCapsuleActive: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  navMockHomeShape: {
+    width: 12,
+    height: 8,
+    borderRadius: 2,
+  },
+  navMockLabelLine: {
+    width: 14,
+    height: 3,
+    borderRadius: 1.5,
+  },
+  navMockIconDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    borderWidth: 1,
+  },
+  navMockRedDot: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#EF4444',
+  },
+  navMockFloatingPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    width: '85%',
+    alignSelf: 'center',
+  },
+  navMockPillActiveCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
 });
 

@@ -263,3 +263,11 @@ export const formatDateTimeDisplay = (val: any): string => {
 
   return day + '-' + month + '-' + year + ' at ' + hourStr + ':' + mins + ' ' + ampm;
 };
+
+/**
+ * Scans a string for any YYYY-MM-DD date occurrences and replaces them with DD-MM-YYYY
+ */
+export const formatDatesInText = (text: string): string => {
+  if (!text || typeof text !== 'string') return text || '';
+  return text.replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (_match, y, m, d) => `${d}-${m}-${y}`);
+};

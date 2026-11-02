@@ -213,6 +213,11 @@ service cloud.firestore {
       allow update: if isChurchAdmin() || (isAuthenticated() && resource.data.createdBy == request.auth.uid);
       allow delete: if isChurchAdmin();
 
+      // Baptism Requests
+      match /baptism_requests/{requestId} {
+        allow read, write: if isAuthenticated();
+      }
+
       // Promises (Daily Word)
       match /promises/{docId} {
         allow read: if isAuthenticated();
