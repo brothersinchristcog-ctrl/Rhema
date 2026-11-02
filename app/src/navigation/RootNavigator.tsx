@@ -915,7 +915,12 @@ function Navigation() {
   };
 
   return (
-    <Stack.Navigator id="root-navigator" key={navigationKey} screenOptions={{ headerShown: false, animation: 'none' }}>
+    <Stack.Navigator
+      id="root-navigator"
+      key={navigationKey}
+      initialRouteName={showAdminView ? "AdminRoot" : "Tabs"}
+      screenOptions={{ headerShown: false, animation: 'none' }}
+    >
       {user ? (
         showAdminView ? (
           <>
@@ -950,12 +955,6 @@ function Navigation() {
           </>
         ) : onboardingComplete ? (
           <>
-            {isAdmin && (
-              <>
-                <Stack.Screen name="AdminRoot" component={AdminNavigator} options={{ gestureEnabled: false, headerBackButtonMenuEnabled: false }} />
-                <Stack.Screen name="AdminBaptism" component={AdminBaptism} />
-              </>
-            )}
             <Stack.Screen name="Tabs" component={TabNavigator} options={{ gestureEnabled: false, headerBackButtonMenuEnabled: false }} />
             <Stack.Screen name="LockedFeature" component={LockedFeatureScreen} />
             <Stack.Screen name="Celebration" component={renderPremium(CelebrationScreen)} />
@@ -997,6 +996,12 @@ function Navigation() {
             <Stack.Screen name="BibleQuizPlayer" component={BibleQuizPlayerScreen} />
             <Stack.Screen name="BibleQuizResult" component={BibleQuizResultScreen} />
             <Stack.Screen name="BibleQuizReview" component={BibleQuizReviewScreen} />
+            {isAdmin && (
+              <>
+                <Stack.Screen name="AdminRoot" component={AdminNavigator} options={{ gestureEnabled: false, headerBackButtonMenuEnabled: false }} />
+                <Stack.Screen name="AdminBaptism" component={AdminBaptism} />
+              </>
+            )}
           </>
         ) : (
           <Stack.Screen name="Onboarding" component={OnboardingScreen} />

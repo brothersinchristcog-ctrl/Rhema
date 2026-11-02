@@ -6,16 +6,46 @@
  * @param dateString The YYYY-MM-DD string
  * @returns The DD-MM-YYYY formatted string, or the original string if not matched
  */
-export const formatDateDisplay = (dateString: string | null | undefined): string => {
+export const formatDateDisplay = (dateString: any): string => {
   if (!dateString) return '';
   
+  let str = '';
+  if (typeof dateString === 'string') {
+    str = dateString;
+  } else if (dateString instanceof Date) {
+    if (isNaN(dateString.getTime())) return '';
+    const y = dateString.getFullYear();
+    const m = String(dateString.getMonth() + 1).padStart(2, '0');
+    const d = String(dateString.getDate()).padStart(2, '0');
+    return `${d}-${m}-${y}`;
+  } else if (typeof dateString.toDate === 'function') {
+    const d = dateString.toDate();
+    if (!d || isNaN(d.getTime())) return '';
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${day}-${m}-${y}`;
+  } else if (typeof dateString._seconds === 'number' || typeof dateString.seconds === 'number') {
+    const secs = dateString._seconds ?? dateString.seconds;
+    const d = new Date(secs * 1000);
+    if (isNaN(d.getTime())) return '';
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${day}-${m}-${y}`;
+  } else {
+    str = String(dateString);
+  }
+
+  if (!str || typeof str !== 'string') return '';
+
   // Handle cases where time is appended (e.g. "YYYY-MM-DD • 10:00 AM" or "DD-MM-YYYY • 10:00 AM")
   let separator = '';
-  if (dateString.includes(' • ')) separator = ' • ';
-  else if (dateString.includes('   ')) separator = '   ';
-  else if (dateString.includes(' ? ')) separator = ' ? ';
+  if (str.includes(' • ')) separator = ' • ';
+  else if (str.includes('   ')) separator = '   ';
+  else if (str.includes(' · ')) separator = ' · ';
 
-  const dateParts = separator ? dateString.split(separator) : [dateString];
+  const dateParts = separator ? str.split(separator) : [str];
   const actualDate = dateParts[0]?.split('T')[0]?.trim() || '';
   const timeSuffix = dateParts.length > 1 ? ` • ${dateParts.slice(1).join(separator).trim()}` : '';
   
@@ -36,8 +66,10 @@ export const formatDateDisplay = (dateString: string | null | undefined): string
  * @param dateStr Raw date string (e.g. "2026-10-19" or "19-10-2026")
  * @returns Local Date object set at 12:00:00
  */
-export const parseLocalDate = (dateStr: string | null | undefined): Date => {
+export const parseLocalDate = (dateStr: any): Date => {
   if (!dateStr) return new Date();
+  if (dateStr instanceof Date) return dateStr;
+  if (typeof dateStr?.toDate === 'function') return dateStr.toDate();
   
   const cleanStr = String(dateStr).trim().split(' ')[0].split('T')[0];
   const parts = cleanStr.split('-');
@@ -73,8 +105,14 @@ export const parseLocalDate = (dateStr: string | null | undefined): Date => {
  * @param date Date object or string
  * @returns Standard "YYYY-MM-DD" string
  */
-export const toStandardDateString = (date: Date | string | null | undefined): string => {
+export const toStandardDateString = (date: any): string => {
   if (!date) return '';
+  if (typeof date?.toDate === 'function') {
+    date = date.toDate();
+  } else if (typeof date?._seconds === 'number' || typeof date?.seconds === 'number') {
+    const secs = date._seconds ?? date.seconds;
+    date = new Date(secs * 1000);
+  }
   if (typeof date === 'string') {
     const cleanStr = date.trim().split(' ')[0].split('T')[0];
     const parts = cleanStr.split('-');
