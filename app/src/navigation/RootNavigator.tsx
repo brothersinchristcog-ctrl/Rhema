@@ -623,18 +623,7 @@ function TabNavigator() {
     </Tab.Navigator>
 
     {isActualAdmin && viewMode === 'member' && (
-      <DraggableAdminPill onPress={() => {
-        setViewMode('admin');
-        const { navigationRef } = require('../../App');
-        if (navigationRef && navigationRef.isReady()) {
-          try {
-            navigationRef.reset({
-              index: 0,
-              routes: [{ name: 'AdminRoot' }],
-            });
-          } catch (_) {}
-        }
-      }} />
+      <DraggableAdminPill onPress={() => setViewMode('admin')} />
     )}
     </>
   );

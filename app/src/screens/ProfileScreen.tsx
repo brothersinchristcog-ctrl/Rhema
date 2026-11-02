@@ -546,18 +546,7 @@ export default function ProfileScreen({ navigation }: any) {
               icon={<Shield size={22} color={colors.text} strokeWidth={1.8} />} 
               title={t('profile.adminDashboard')} 
               sub={t('profile.adminDashboardSub')} 
-              onPress={() => {
-                setViewMode('admin');
-                const { navigationRef } = require('../../App');
-                if (navigationRef && navigationRef.isReady()) {
-                  try {
-                    navigationRef.reset({
-                      index: 0,
-                      routes: [{ name: 'AdminRoot' }],
-                    });
-                  } catch (_) {}
-                }
-              }}
+              onPress={() => setViewMode('admin')}
               textColor={colors.text}
               subColor={colors.textSecondary}
             />
