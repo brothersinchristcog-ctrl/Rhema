@@ -1,7 +1,7 @@
 // YouTubeService.ts
 // Automatically finds the recording of a past church event from YouTube or active live streams
 
-const YOUTUBE_API_KEY = 'AIzaSyBKLbyuINc04XXgrUPyoSCZYtKdBbv-6ic';
+const YOUTUBE_API_KEY = 'AIzaSyBGkm7DNk_jpM-XKJI0JPk_vJlufS4Q7-Q';
 
 // Cache channelId per handle so we don't fetch it every time
 const channelIdCache: Record<string, string> = {};

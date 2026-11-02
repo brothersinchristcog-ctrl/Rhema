@@ -630,7 +630,7 @@ export const monitorMeetingLive = onSchedule({ schedule: '* * * * *', timeZone: 
         console.error('Error in checkOnlineMeetings cron job:', error);
     }
 });
-const YOUTUBE_DATA_API_KEY = 'AIzaSyBKLbyuINc04XXgrUPyoSCZYtKdBbv-6ic';
+const YOUTUBE_DATA_API_KEY = 'AIzaSyBGkm7DNk_jpM-XKJI0JPk_vJlufS4Q7-Q';
 const ytChannelCache = {};
 /**
  * Resolves the YouTube channel ID from a channel handle or URL.

@@ -665,7 +665,7 @@ export const monitorMeetingLive = onSchedule({ schedule: '* * * * *', timeZone: 
 });
 
 
-const YOUTUBE_DATA_API_KEY = 'AIzaSyBKLbyuINc04XXgrUPyoSCZYtKdBbv-6ic';
+const YOUTUBE_DATA_API_KEY = 'AIzaSyBGkm7DNk_jpM-XKJI0JPk_vJlufS4Q7-Q';
 const ytChannelCache: Record<string, string> = {};
 
 /**
