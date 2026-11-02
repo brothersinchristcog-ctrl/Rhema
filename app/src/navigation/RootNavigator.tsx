@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
-import { Home, Heart, BookOpen, HandCoins, User, ShieldCheck, Users as UsersSwitch } from 'lucide-react-native';
+import { Home, Heart, BookOpen, HandCoins, User, ShieldCheck, Users as UsersSwitch , Smartphone } from 'lucide-react-native';
 import { ActivityIndicator, View, Text, StyleSheet, Alert, Platform, TouchableOpacity, AppState, Image, Animated, PanResponder, Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import firestore from '@react-native-firebase/firestore';
@@ -556,7 +556,7 @@ const LockedFeatureScreen = ({ navigation }: any) => {
 };
 
 function TabNavigator() {
-  const { user, signOut, member, viewMode, setViewMode } = useAuth();
+  const { user, signOut, member, viewMode, setViewMode, switchViewMode } = useAuth();
   const { activeChurch } = useChurch();
   const { language, t } = useLanguage();
   const { colors } = useTheme();
@@ -624,8 +624,7 @@ function TabNavigator() {
 
     {isActualAdmin && viewMode === 'member' && (
       <DraggableAdminPill onPress={() => {
-        setViewMode('admin');
-        navigation.navigate('AdminRoot');
+        switchViewMode('admin', () => navigation.navigate('AdminRoot'));
       }} />
     )}
     </>
@@ -916,6 +915,7 @@ function Navigation() {
   };
 
   return (
+    <>
     <Stack.Navigator
       id="root-navigator"
       initialRouteName={showAdminView ? "AdminRoot" : "Tabs"}
@@ -983,8 +983,91 @@ function Navigation() {
         <Stack.Screen name="Auth" component={AuthNavigator} />
       )}
     </Stack.Navigator>
+    <ViewSwitchLoadingOverlay />
+    </>
   );
 }
+
+
+function ViewSwitchLoadingOverlay() {
+  const { isSwitchingView, switchingTarget } = useAuth();
+
+  if (!isSwitchingView) return null;
+
+  const isAdmin = switchingTarget === 'admin';
+
+  return (
+    <View style={overlayStyles.backdrop}>
+      <View style={overlayStyles.card}>
+        <View style={overlayStyles.iconCircle}>
+          {isAdmin ? (
+            <ShieldCheck size={32} color="#FCD34D" />
+          ) : (
+            <Smartphone size={32} color="#FCD34D" />
+          )}
+        </View>
+        <ActivityIndicator size="large" color="#FCD34D" style={{ marginVertical: 14 }} />
+        <Text style={overlayStyles.title}>
+          {isAdmin ? 'Switching to Admin View...' : 'Switching to Member View...'}
+        </Text>
+        <Text style={overlayStyles.subtitle}>
+          {isAdmin ? 'Accessing administration dashboard' : 'Returning to member view'}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+const overlayStyles = StyleSheet.create({
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(10, 25, 47, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999999,
+    elevation: 999999,
+  },
+  card: {
+    backgroundColor: '#1a2d5a',
+    borderRadius: 24,
+    paddingVertical: 28,
+    paddingHorizontal: 32,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(252, 211, 77, 0.4)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.4,
+    shadowRadius: 15,
+    elevation: 20,
+    minWidth: 260,
+    maxWidth: '85%',
+  },
+  iconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(252, 211, 77, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(252, 211, 77, 0.3)',
+  },
+  title: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '800',
+    textAlign: 'center',
+    letterSpacing: 0.3,
+  },
+  subtitle: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 12.5,
+    marginTop: 6,
+    textAlign: 'center',
+  },
+});
 
 export default function RootNavigator() {
   return (

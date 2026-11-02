@@ -177,7 +177,7 @@ const AnimatedParticle = ({ left, size, duration, delay, color, opacity }: any) 
 
 export default function AdminDashboard({ navigation, allTabs = [] }: any) {
   const { setActiveTab, dashboardScrollY, setDashboardScrollY } = useContext(AdminTabContext);
-  const { member, user, signOut, setViewMode } = useAuth();
+  const { member, user, signOut, setViewMode, switchViewMode } = useAuth();
   const { activeChurch } = useChurch();
   
   const scrollRef = React.useRef<ScrollView>(null);
@@ -559,12 +559,11 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
 
           <TouchableOpacity
             onPress={() => {
-              setViewMode('member');
-              try {
+              switchViewMode('member', () => {
                 if (navigation?.navigate) {
                   navigation.navigate('Tabs');
                 }
-              } catch (_) {}
+              });
             }}
             style={{
               flex: 1,

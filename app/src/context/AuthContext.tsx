@@ -17,6 +17,9 @@ interface AuthContextType {
   viewMode: 'admin' | 'member';
   setViewMode: (mode: 'admin' | 'member') => void;
   isPlatformSuperAdmin: boolean;
+  isSwitchingView: boolean;
+  switchingTarget: 'admin' | 'member' | null;
+  switchViewMode: (mode: 'admin' | 'member', onComplete?: () => void) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -27,6 +30,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'admin' | 'member'>('member');
   const [isPlatformSuperAdmin, setIsPlatformSuperAdmin] = useState(false);
+  const [isSwitchingView, setIsSwitchingView] = useState(false);
+  const [switchingTarget, setSwitchingTarget] = useState<'admin' | 'member' | null>(null);
+
+  const switchViewMode = (target: 'admin' | 'member', onComplete?: () => void) => {
+    setIsSwitchingView(true);
+    setSwitchingTarget(target);
+    setTimeout(() => {
+      setViewMode(target);
+      if (onComplete) {
+        try {
+          onComplete();
+        } catch (_) {}
+      }
+      setTimeout(() => {
+        setIsSwitchingView(false);
+        setSwitchingTarget(null);
+      }, 80);
+    }, 1000);
+  };
   const memberListenerRef = useRef<(() => void) | null>(null);
   const isSigningOutRef = useRef<boolean>(false);
 
@@ -328,7 +350,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, member, loading, signInAnonymously, signOut, setMember: updateMember, viewMode, setViewMode, isPlatformSuperAdmin }}>
+    <AuthContext.Provider value={{ user, member, loading, signInAnonymously, signOut, setMember: updateMember, viewMode, setViewMode, isPlatformSuperAdmin, isSwitchingView, switchingTarget, switchViewMode }}>
       {children}
     </AuthContext.Provider>
   );
