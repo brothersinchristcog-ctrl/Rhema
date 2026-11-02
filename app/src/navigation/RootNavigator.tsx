@@ -642,9 +642,7 @@ function Navigation() {
   const appState = React.useRef(AppState.currentState);
 
   const isAdmin = String(member?.userType || '').toUpperCase().includes('ADMIN') || String(member?.userType || '').toUpperCase().includes('SUPER');
-  // Show admin UI only when userType is admin AND viewMode is admin
   const showAdminView = isAdmin && viewMode === 'admin';
-  const navigationKey = showAdminView ? 'admin-root' : 'member-root';
   
   const [pendingNotification, setPendingNotification] = useState<any>(null);
 
@@ -920,47 +918,18 @@ function Navigation() {
   return (
     <Stack.Navigator
       id="root-navigator"
-      key={navigationKey}
       initialRouteName={showAdminView ? "AdminRoot" : "Tabs"}
       screenOptions={{ headerShown: false, animation: 'none' }}
     >
       {user ? (
-        showAdminView ? (
+        onboardingComplete ? (
           <>
-            <Stack.Screen name="AdminRoot" component={AdminNavigator} options={{ gestureEnabled: false, headerBackButtonMenuEnabled: false }} />
             <Stack.Screen name="Tabs" component={TabNavigator} options={{ gestureEnabled: false, headerBackButtonMenuEnabled: false }} />
+            {isAdmin && (
+              <Stack.Screen name="AdminRoot" component={AdminNavigator} options={{ gestureEnabled: false, headerBackButtonMenuEnabled: false }} />
+            )}
+            <Stack.Screen name="LockedFeature" component={LockedFeatureScreen} />
             <Stack.Screen name="Subscription" component={SubscriptionScreen} />
-            <Stack.Screen name="LockedFeature" component={LockedFeatureScreen} />
-            <Stack.Screen name="EventDetail" component={renderPremium(PastorEventDetail)} />
-            <Stack.Screen name="CreateEvent" component={renderPremium(CreatePastorEvent)} />
-            <Stack.Screen name="RoutePlanner" component={renderPremium(PastorEventRoutePlanner)} />
-            <Stack.Screen name="EventMap" component={renderPremium(PastorEventMap)} />
-            <Stack.Screen name="AIAssistant" component={renderPremium(AIAssistantModal)} options={{ presentation: 'modal' }} />
-            <Stack.Screen name="Updates" component={renderPremium(UpdatesScreen)} />
-            <Stack.Screen name="Celebration" component={renderPremium(CelebrationScreen)} />
-            {/* Added for Push Notification Support in Admin View */}
-            <Stack.Screen name="Sermons" component={renderPremium(SermonsScreen)} />
-            <Stack.Screen name="Events" component={renderPremium(EventsScreen)} />
-            <Stack.Screen name="AttendanceScreen" component={renderPremium(AttendanceScreen)} />
-            <Stack.Screen name="EventAttendees" component={EventAttendeesScreen} />
-            <Stack.Screen name="LiveCelebrationsChat" component={renderPremium(LiveCelebrationsChat)} />
-            <Stack.Screen name="VerseOfTheDay" component={renderPremium(VerseOfTheDayScreen)} />
-            <Stack.Screen name="BibleQuizHome" component={BibleQuizHomeScreen} />
-            <Stack.Screen name="ChurchQuizzes" component={ChurchQuizzesScreen} />
-            <Stack.Screen name="BibleQuizLevels" component={BibleQuizLevelsScreen} />
-            <Stack.Screen name="BibleQuizStages" component={BibleQuizStagesScreen} />
-            <Stack.Screen name="BibleQuizDetail" component={BibleQuizDetailScreen} />
-            <Stack.Screen name="BibleQuizPlayer" component={BibleQuizPlayerScreen} />
-            <Stack.Screen name="BibleQuizResult" component={BibleQuizResultScreen} />
-            <Stack.Screen name="BibleQuizReview" component={BibleQuizReviewScreen} />
-            <Stack.Screen name="OnlineMeetings" component={renderPremium(OnlineMeetingsScreen)} />
-            <Stack.Screen name="OnlineMeetingDetail" component={renderPremium(OnlineMeetingDetailScreen)} />
-            <Stack.Screen name="YouTubeLive" component={renderPremium(YouTubeLiveScreen)} />
-          </>
-        ) : onboardingComplete ? (
-          <>
-            <Stack.Screen name="Tabs" component={TabNavigator} options={{ gestureEnabled: false, headerBackButtonMenuEnabled: false }} />
-            <Stack.Screen name="LockedFeature" component={LockedFeatureScreen} />
             <Stack.Screen name="Celebration" component={renderPremium(CelebrationScreen)} />
             <Stack.Screen name="Attendance" component={renderPremium(AttendanceScreen)} />
             <Stack.Screen name="AttendanceScreen" component={renderPremium(AttendanceScreen)} />
@@ -985,7 +954,6 @@ function Navigation() {
             <Stack.Screen name="Appearance" component={renderPremium(AppearanceScreen)} />
             <Stack.Screen name="AboutUs" component={AboutUsScreen} />
             <Stack.Screen name="ContactUs" component={ContactUsScreen} />
-            <Stack.Screen name="Subscription" component={SubscriptionScreen} />
             <Stack.Screen name="OnlineMeetings" component={renderPremium(OnlineMeetingsScreen)} />
             <Stack.Screen name="OnlineMeetingDetail" component={renderPremium(OnlineMeetingDetailScreen)} />
             <Stack.Screen name="YouTubeLive" component={renderPremium(YouTubeLiveScreen)} />
@@ -1000,9 +968,13 @@ function Navigation() {
             <Stack.Screen name="BibleQuizPlayer" component={BibleQuizPlayerScreen} />
             <Stack.Screen name="BibleQuizResult" component={BibleQuizResultScreen} />
             <Stack.Screen name="BibleQuizReview" component={BibleQuizReviewScreen} />
-            {isAdmin && (
-              <Stack.Screen name="AdminRoot" component={AdminNavigator} options={{ gestureEnabled: false, headerBackButtonMenuEnabled: false }} />
-            )}
+            {/* Pastor / Admin Specific Screens */}
+            <Stack.Screen name="EventDetail" component={renderPremium(PastorEventDetail)} />
+            <Stack.Screen name="CreateEvent" component={renderPremium(CreatePastorEvent)} />
+            <Stack.Screen name="RoutePlanner" component={renderPremium(PastorEventRoutePlanner)} />
+            <Stack.Screen name="EventMap" component={renderPremium(PastorEventMap)} />
+            <Stack.Screen name="AIAssistant" component={renderPremium(AIAssistantModal)} options={{ presentation: 'modal' }} />
+            <Stack.Screen name="EventAttendees" component={EventAttendeesScreen} />
           </>
         ) : (
           <Stack.Screen name="Onboarding" component={OnboardingScreen} />
