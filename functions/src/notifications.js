@@ -630,8 +630,59 @@ export const monitorMeetingLive = onSchedule({ schedule: '* * * * *', timeZone: 
         console.error('Error in checkOnlineMeetings cron job:', error);
     }
 });
+const YOUTUBE_DATA_API_KEY = 'AIzaSyBKLbyuINc04XXgrUPyoSCZYtKdBbv-6ic';
+const ytChannelCache = {};
+/**
+ * Resolves the YouTube channel ID from a channel handle or URL.
+ */
+async function resolveYouTubeChannelId(rawYtUrl) {
+    const clean = rawYtUrl.trim();
+    if (ytChannelCache[clean])
+        return ytChannelCache[clean] || null;
+    if (clean.includes('/channel/')) {
+        const parts = clean.split('/channel/')[1];
+        if (parts) {
+            const cid = parts.split('/')[0]?.split('?')[0];
+            if (cid) {
+                ytChannelCache[clean] = cid;
+                return cid;
+            }
+        }
+    }
+    let handle = '';
+    if (clean.includes('@')) {
+        const parts = clean.split('@')[1];
+        if (parts) {
+            handle = parts.split('/')[0]?.split('?')[0] || '';
+        }
+    }
+    else if (!clean.startsWith('http') && !clean.startsWith('UC')) {
+        handle = clean.replace(/^@/, '');
+    }
+    if (handle) {
+        try {
+            const url = `https://www.googleapis.com/youtube/v3/channels?part=id&forHandle=${encodeURIComponent(handle)}&key=${YOUTUBE_DATA_API_KEY}`;
+            const res = await fetch(url);
+            const data = await res.json();
+            if (data.items && data.items.length > 0) {
+                const cid = data.items[0]?.id;
+                if (cid) {
+                    ytChannelCache[clean] = cid;
+                    return cid;
+                }
+            }
+        }
+        catch (_) { }
+    }
+    if (clean.startsWith('UC') && clean.length > 20) {
+        ytChannelCache[clean] = clean;
+        return clean;
+    }
+    return null;
+}
 /**
  * 🔴 Automatically check if church's YouTube channel is currently streaming live.
+ * Uses the official YouTube Data API v3 (reliable in cloud datacenters) with scrape fallback.
  * When a stream starts, immediately dispatches push notification to topic church_{churchId}
  * and adds to broadcasts, saving live state directly on the church document (NO extra documents or subcollections).
  */
@@ -646,53 +697,74 @@ async function checkChurchYouTubeLive(churchDoc, churchId, db) {
     }
     if (!rawYtUrl)
         return;
-    // Format the live checking URL
-    let liveCheckUrl = rawYtUrl;
-    if (liveCheckUrl.includes('@') && !liveCheckUrl.includes('/live') && !liveCheckUrl.includes('/streams')) {
-        liveCheckUrl = liveCheckUrl.endsWith('/') ? `${liveCheckUrl}live` : `${liveCheckUrl}/live`;
-    }
-    else if (liveCheckUrl.includes('/channel/') && !liveCheckUrl.includes('/live')) {
-        liveCheckUrl = liveCheckUrl.endsWith('/') ? `${liveCheckUrl}live` : `${liveCheckUrl}/live`;
-    }
     try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 7000);
-        const res = await fetch(liveCheckUrl, {
-            signal: controller.signal,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept-Language': 'en-US,en;q=0.9',
-            },
-        }).catch(() => null);
-        clearTimeout(timeout);
-        if (!res || !res.ok)
-            return;
-        const html = await res.text().catch(() => '');
-        if (!html)
-            return;
-        // Detect if live
-        const isLive = (html.includes('"isLive":true') ||
-            html.includes('"style":"LIVE"') ||
-            html.includes('LIVE_STREAM') ||
-            html.includes('"status":"LIVE"')) &&
-            !html.includes('"isUpcoming":true');
-        // Extract videoId
+        let isLive = false;
         let videoId = '';
-        const match = html.match(/"liveStreamability".*?"videoId":"([^"]+)"/) ||
-            html.match(/"videoRenderer".*?"videoId":"([^"]+)"/) ||
-            html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([^"]+)">/);
-        if (match && match[1]) {
-            videoId = match[1];
-        }
-        // Extract title
         let streamTitle = '';
-        const titleMatch = html.match(/"title":{"runs":\[{"text":"([^"]+)"}\]}/) ||
-            html.match(/<meta name="title" content="([^"]+)"/);
-        if (titleMatch && titleMatch[1]) {
-            streamTitle = titleMatch[1];
+        // ── Method 1: Official YouTube Data API v3 (100% reliable in Google Cloud) ──
+        const channelId = await resolveYouTubeChannelId(rawYtUrl);
+        if (channelId) {
+            try {
+                const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelId}&eventType=live&type=video&key=${YOUTUBE_DATA_API_KEY}`;
+                const apiRes = await fetch(searchUrl);
+                if (apiRes.ok) {
+                    const apiData = await apiRes.json();
+                    if (apiData.items && apiData.items.length > 0) {
+                        isLive = true;
+                        videoId = apiData.items[0].id?.videoId || '';
+                        streamTitle = apiData.items[0].snippet?.title || '';
+                        console.log(`🔴 [YouTube API] Live stream detected for church ${churchId}: ${videoId} - "${streamTitle}"`);
+                    }
+                }
+            }
+            catch (apiErr) {
+                console.warn('[checkChurchYouTubeLive] YouTube API query notice:', apiErr);
+            }
+        }
+        // ── Method 2: Scrape Fallback (if API quota or network fails) ──
+        if (!isLive) {
+            let liveCheckUrl = rawYtUrl;
+            if (liveCheckUrl.includes('@') && !liveCheckUrl.includes('/live') && !liveCheckUrl.includes('/streams')) {
+                liveCheckUrl = liveCheckUrl.endsWith('/') ? `${liveCheckUrl}live` : `${liveCheckUrl}/live`;
+            }
+            else if (liveCheckUrl.includes('/channel/') && !liveCheckUrl.includes('/live')) {
+                liveCheckUrl = liveCheckUrl.endsWith('/') ? `${liveCheckUrl}live` : `${liveCheckUrl}/live`;
+            }
+            try {
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 6000);
+                const res = await fetch(liveCheckUrl, {
+                    signal: controller.signal,
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept-Language': 'en-US,en;q=0.9',
+                    },
+                }).catch(() => null);
+                clearTimeout(timeout);
+                if (res && res.ok) {
+                    const html = await res.text().catch(() => '');
+                    if ((html.includes('"isLive":true') ||
+                        html.includes('"style":"LIVE"') ||
+                        html.includes('LIVE_STREAM') ||
+                        html.includes('"status":"LIVE"')) &&
+                        !html.includes('"isUpcoming":true')) {
+                        isLive = true;
+                        const match = html.match(/"liveStreamability".*?"videoId":"([^"]+)"/) ||
+                            html.match(/"videoRenderer".*?"videoId":"([^"]+)"/) ||
+                            html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([^"]+)">/);
+                        if (match && match[1])
+                            videoId = match[1];
+                        const titleMatch = html.match(/"title":{"runs":\[{"text":"([^"]+)"}\]}/) ||
+                            html.match(/<meta name="title" content="([^"]+)"/);
+                        if (titleMatch && titleMatch[1])
+                            streamTitle = titleMatch[1];
+                    }
+                }
+            }
+            catch (_) { }
         }
         const prevState = cData.youtubeLiveState || { isLive: false };
-        const liveWatchUrl = videoId ? `https://www.youtube.com/watch?v=${videoId}` : liveCheckUrl;
+        const liveWatchUrl = videoId ? `https://www.youtube.com/watch?v=${videoId}` : rawYtUrl;
         if (isLive) {
             // Check if we already notified for this stream
             const alreadyNotified = prevState?.isLive &&
