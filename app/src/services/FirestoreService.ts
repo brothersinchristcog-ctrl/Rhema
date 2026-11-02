@@ -1374,95 +1374,122 @@ class FirestoreService {
     }
   }
 
-  async getLatestSermon(): Promise<Sermon | null> {
+  private getSermonUploadTimestamp(doc: any): number {
+    if (!doc) return 0;
+    if (doc.createdAt?.toMillis) return doc.createdAt.toMillis();
+    if (doc.createdAt?.seconds) return doc.createdAt.seconds * 1000;
+    if (typeof doc.createdAt === 'string') {
+      const t = new Date(doc.createdAt).getTime();
+      if (!isNaN(t)) return t;
+    }
+    if (doc.publishedAt) {
+      const t = new Date(doc.publishedAt).getTime();
+      if (!isNaN(t)) return t;
+    }
+    if (doc.date) {
+      const t = new Date(doc.date).getTime();
+      if (!isNaN(t)) return t;
+    }
+    if (doc.updatedAt?.toMillis) return doc.updatedAt.toMillis();
+    if (doc.updatedAt?.seconds) return doc.updatedAt.seconds * 1000;
+    return 0;
+  }
+
+  async getLatestSermons(limitCount: number = 2): Promise<Sermon[]> {
     this.autoPublishDueScheduledSermons().catch(() => {});
     try {
       const col = await this.getCollection('sermons');
       let snapshot;
       try {
-        snapshot = await col.orderBy('createdAt', 'desc').limit(20).get();
+        snapshot = await col.orderBy('createdAt', 'desc').limit(25).get();
         if (!snapshot || snapshot.empty) {
-          snapshot = await col.limit(20).get();
+          snapshot = await col.limit(25).get();
         }
       } catch (err) {
-        snapshot = await col.limit(20).get();
+        snapshot = await col.limit(25).get();
       }
 
-      if (!snapshot || snapshot.empty) return null;
-
-      const today = new Date();
-      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      if (!snapshot || snapshot.empty) return [];
 
       const sermons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Sermon));
       const visible = sermons.filter(s => isSermonVisibleToMembers(s));
 
-      if (visible.length === 0) return null;
+      if (visible.length === 0) return [];
 
       visible.sort((a: any, b: any) => {
+        const timeA = this.getSermonUploadTimestamp(a);
+        const timeB = this.getSermonUploadTimestamp(b);
+        if (timeA && timeB && timeA !== timeB) {
+          return timeB - timeA;
+        }
         const dateA = a.date || '';
         const dateB = b.date || '';
         if (dateA && dateB && dateA !== dateB) {
           return dateB.localeCompare(dateA);
         }
-        const getTime = (doc: any) => {
-          const u = doc.updatedAt?.toMillis ? doc.updatedAt.toMillis() : (doc.updatedAt?.seconds ? doc.updatedAt.seconds * 1000 : 0);
-          const c = doc.createdAt?.toMillis ? doc.createdAt.toMillis() : (doc.createdAt?.seconds ? doc.createdAt.seconds * 1000 : 0);
-          return Math.max(u, c);
-        };
-        return getTime(b) - getTime(a);
+        return timeB - timeA;
       });
 
-      return visible[0];
+      return visible.slice(0, limitCount);
     } catch (e) {
-      console.error('Error fetching latest sermon:', e);
-      return null;
+      console.error('Error fetching latest sermons:', e);
+      return [];
     }
   }
 
-  async listenLatestSermon(callback: (sermon: Sermon | null) => void): Promise<() => void> {
+  async getLatestSermon(): Promise<Sermon | null> {
+    const list = await this.getLatestSermons(1);
+    return list[0] || null;
+  }
+
+  async listenLatestSermons(callback: (sermons: Sermon[]) => void, limitCount: number = 2): Promise<() => void> {
     try {
       const col = await this.getCollection('sermons');
-      return col.limit(20).onSnapshot(
+      return col.limit(25).onSnapshot(
         snapshot => {
           if (!snapshot || snapshot.empty) {
-            callback(null);
+            callback([]);
             return;
           }
-          const today = new Date();
-          const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
           const sermons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Sermon));
           const visible = sermons.filter(s => isSermonVisibleToMembers(s));
 
           if (visible.length === 0) {
-            callback(null);
+            callback([]);
             return;
           }
 
           visible.sort((a: any, b: any) => {
+            const timeA = this.getSermonUploadTimestamp(a);
+            const timeB = this.getSermonUploadTimestamp(b);
+            if (timeA && timeB && timeA !== timeB) {
+              return timeB - timeA;
+            }
             const dateA = a.date || '';
             const dateB = b.date || '';
             if (dateA && dateB && dateA !== dateB) {
               return dateB.localeCompare(dateA);
             }
-            const getTime = (doc: any) => {
-              const u = doc.updatedAt?.toMillis ? doc.updatedAt.toMillis() : (doc.updatedAt?.seconds ? doc.updatedAt.seconds * 1000 : 0);
-              const c = doc.createdAt?.toMillis ? doc.createdAt.toMillis() : (doc.createdAt?.seconds ? doc.createdAt.seconds * 1000 : 0);
-              return Math.max(u, c);
-            };
-            return getTime(b) - getTime(a);
+            return timeB - timeA;
           });
 
-          callback(visible[0]);
+          callback(visible.slice(0, limitCount));
         },
         err => {
-          console.warn('[FirestoreService] listenLatestSermon error:', err);
+          console.warn('[FirestoreService] listenLatestSermons error:', err);
         }
       );
     } catch (e) {
-      console.warn('Failed to listen to latest sermon:', e);
+      console.warn('Failed to listen to latest sermons:', e);
       return () => {};
     }
+  }
+
+  async listenLatestSermon(callback: (sermon: Sermon | null) => void): Promise<() => void> {
+    return this.listenLatestSermons(sermons => {
+      callback(sermons[0] || null);
+    }, 1);
   }
 
   // In-memory cache to avoid re-fetching on tab switches
