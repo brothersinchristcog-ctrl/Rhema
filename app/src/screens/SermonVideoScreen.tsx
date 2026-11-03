@@ -13,7 +13,8 @@ import {
   StatusBar, 
   Platform,
   Alert,
-  Modal 
+  Modal,
+  Animated
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import YoutubePlayer from 'react-native-youtube-iframe';
@@ -29,6 +30,7 @@ import {
   ExternalLink,
   ChevronRight,
   Heart,
+  Bell,
   BellOff,
   X,
   BookOpen,
@@ -36,7 +38,8 @@ import {
   ChevronUp,
   ChevronDown,
   Calendar as CalendarIcon,
-  Folder
+  Folder,
+  User
 } from 'lucide-react-native';
 import FirestoreService from '../services/FirestoreService';
 import { useChurch } from '../context/ChurchContext';
@@ -129,11 +132,37 @@ export default function SermonVideoScreen({ navigation, route }: any) {
   const [loadingTextNotes, setLoadingTextNotes] = useState(false);
   const [isNotesExpanded, setIsNotesExpanded] = useState(false);
   const [showFullscreenNotes, setShowFullscreenNotes] = useState(false);
+  const [readerKey, setReaderKey] = useState(0);
   const scrollViewRef = useRef<ScrollView>(null);
   const { activeChurch } = useChurch();
   const { t } = useLanguage();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
+
+  // Bell ringing animation for Subscribe button
+  const bellAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const ringSequence = Animated.loop(
+      Animated.sequence([
+        Animated.delay(1600),
+        Animated.timing(bellAnim, { toValue: 1, duration: 75, useNativeDriver: true }),
+        Animated.timing(bellAnim, { toValue: -1, duration: 75, useNativeDriver: true }),
+        Animated.timing(bellAnim, { toValue: 0.8, duration: 70, useNativeDriver: true }),
+        Animated.timing(bellAnim, { toValue: -0.8, duration: 70, useNativeDriver: true }),
+        Animated.timing(bellAnim, { toValue: 0.4, duration: 65, useNativeDriver: true }),
+        Animated.timing(bellAnim, { toValue: -0.4, duration: 65, useNativeDriver: true }),
+        Animated.timing(bellAnim, { toValue: 0, duration: 65, useNativeDriver: true }),
+      ])
+    );
+    ringSequence.start();
+    return () => ringSequence.stop();
+  }, [bellAnim]);
+
+  const bellRotation = bellAnim.interpolate({
+    inputRange: [-1, 0, 1],
+    outputRange: ['-20deg', '0deg', '20deg'],
+  });
 
   // Load persistent subscription state
   useEffect(() => {
@@ -338,21 +367,26 @@ export default function SermonVideoScreen({ navigation, route }: any) {
   const isTextDoc = detectedFileType === 'txt' || (inlineNotesText && !activeVideo?.notesUrl);
 
   const cleanDocTitle = formatNotesTitle(activeVideo?.notesFileName);
+  const safeNotesUrl = (activeVideo?.notesUrl || '').trim();
 
   const primaryCategory = (() => {
     if (!activeVideo?.categories) return '';
+    let cat = '';
     if (typeof activeVideo.categories === 'string') {
       const first = activeVideo.categories.split(';')[0]?.trim();
-      return first || '';
+      cat = first || '';
+    } else if (Array.isArray(activeVideo.categories) && activeVideo.categories.length > 0) {
+      cat = activeVideo.categories[0] || '';
     }
-    if (Array.isArray(activeVideo.categories) && activeVideo.categories.length > 0) {
-      return activeVideo.categories[0];
+    if (cat.toLowerCase().includes("women's fasting")) {
+      return "Women's Fasting";
     }
-    return '';
+    return cat;
   })();
 
   const finalVideoId = extractYoutubeId(activeVideo?.youtubeId || '');
   const hasValidVideo = finalVideoId.length > 0;
+  const metaTextColor = isDark ? '#F8FAFC' : '#0F172A';
 
   const playerWidth = Math.min(width - 32, 600);
   const playerHeight = Math.round(playerWidth * 0.5625);
@@ -395,6 +429,65 @@ export default function SermonVideoScreen({ navigation, route }: any) {
               play={playing}
               videoId={finalVideoId}
               onChangeState={onStateChange}
+              initialPlayerParams={{
+                preventFullScreen: false,
+                controls: true,
+                rel: false,
+                iv_load_policy: 3,
+              }}
+              webViewProps={{
+                androidLayerType: 'hardware',
+                injectedJavaScriptBeforeContentLoaded: `
+                  (function() {
+                    const hideCSS = \`
+                      .ytp-youtube-button,
+                      .ytp-impression-link,
+                      .ytp-impression-link-content,
+                      .ytp-watermark,
+                      a.ytp-watermark,
+                      .ytp-pause-overlay,
+                      .ytp-title-channel,
+                      a.ytp-title-link,
+                      a[aria-label*="Watch on YouTube"],
+                      a[title*="Watch on YouTube"],
+                      a[aria-label*="Watch on"],
+                      a[title*="Watch on"],
+                      a[href*="youtube.com/watch"] {
+                        display: none !important;
+                        opacity: 0 !important;
+                        visibility: hidden !important;
+                        pointer-events: none !important;
+                        width: 0 !important;
+                        height: 0 !important;
+                      }
+                    \`;
+                    const head = document.head || document.documentElement;
+                    const style = document.createElement('style');
+                    style.type = 'text/css';
+                    style.appendChild(document.createTextNode(hideCSS));
+                    head.appendChild(style);
+                  })();
+                  true;
+                `,
+                injectedJavaScript: `
+                  (function() {
+                    const hideWatchOnYT = () => {
+                      try {
+                        const els = document.querySelectorAll('.ytp-youtube-button, .ytp-impression-link, .ytp-watermark, a[aria-label*="Watch on"], a[title*="Watch on"], a[href*="youtube.com/watch"]');
+                        els.forEach(el => {
+                          el.style.display = 'none';
+                          el.style.opacity = '0';
+                          el.style.visibility = 'hidden';
+                          el.style.pointerEvents = 'none';
+                        });
+                      } catch(e) {}
+                    };
+                    hideWatchOnYT();
+                    setInterval(hideWatchOnYT, 600);
+                  })();
+                  true;
+                `,
+              }}
             />
           ) : (
             <View style={{ height: playerHeight, width: playerWidth, justifyContent: 'center', alignItems: 'center', backgroundColor: '#111827' }}>
@@ -405,114 +498,151 @@ export default function SermonVideoScreen({ navigation, route }: any) {
         </View>
 
         {/* ── Video Details ── */}
-        <View style={[styles.videoDetails, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View style={[styles.videoDetails, { backgroundColor: colors.surface, borderColor: isDark ? colors.border : '#E2E8F0' }]}>
           <Text style={[styles.videoTitle, { color: colors.text }]}>{activeVideo?.title || t('home.exploreSermons')}</Text>
+          
+          {/* Normal text row for Category, Date, Duration (All visible in a single row, no badges, no clipping) */}
           <View style={styles.metaRow}>
-            {/* 1. Highlighted Category Badge FIRST */}
             {primaryCategory ? (
-              <View style={styles.categoryBadge}>
-                <Folder size={11} color="#FCD34D" fill="#FCD34D" style={{ marginRight: 4 }} />
-                <Text style={styles.categoryBadgeTxt}>{primaryCategory}</Text>
-              </View>
+              <Text style={[styles.metaNormalTxt, { color: metaTextColor }]} numberOfLines={1}>
+                {primaryCategory}
+              </Text>
             ) : null}
 
-            {/* 2. Formatted Date */}
+            {primaryCategory && activeVideo?.date ? (
+              <Text style={[styles.metaDot, { color: isDark ? 'rgba(255,255,255,0.4)' : '#64748B' }]}>•</Text>
+            ) : null}
+
             {activeVideo?.date ? (
-              <View style={styles.metaItem}>
-                <CalendarIcon size={12} color="#6B7280" />
-                <Text style={styles.metaTxt}>{formatSermonDate(activeVideo.date)}</Text>
-              </View>
+              <Text style={[styles.metaNormalTxt, { color: metaTextColor }]} numberOfLines={1}>
+                {formatSermonDate(activeVideo.date)}
+              </Text>
             ) : null}
 
-            {/* 3. Duration */}
             {activeVideo?.duration && formatSermonDuration(activeVideo.duration) ? (
-              <View style={styles.metaItem}>
-                <Clock size={12} color="#6B7280" />
-                <Text style={styles.metaTxt}>{formatSermonDuration(activeVideo.duration)}</Text>
-              </View>
-            ) : null}
-
-            {/* 4. Scripture reference */}
-            {activeVideo?.scripture ? (
-              <View style={styles.metaItem}>
-                <BookOpen size={12} color="#1a2d5a" />
-                <Text style={[styles.metaTxt, { color: '#1a2d5a', fontWeight: '600' }]}>
-                  {activeVideo.scripture}
+              <>
+                <Text style={[styles.metaDot, { color: isDark ? 'rgba(255,255,255,0.4)' : '#64748B' }]}>•</Text>
+                <Text style={[styles.metaNormalTxt, { color: metaTextColor }]} numberOfLines={1}>
+                  {formatSermonDuration(activeVideo.duration)}
                 </Text>
-              </View>
+              </>
             ) : null}
           </View>
 
-          <View style={[styles.pastorCard, { backgroundColor: isDark ? '#1e293b' : '#f8fafc', borderColor: colors.border }]}>
-            <View style={[styles.pastorAv, { backgroundColor: colors.accent || '#c0392b' }]}><Text style={styles.pastorAvTxt}>P</Text></View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.pastorName, { color: colors.text }]}>{activeVideo?.pastor || t('sermons.pastor')}</Text>
-              <Text style={[styles.pastorRole, { color: colors.textSecondary }]}>{t('sermons.mainSpeaker')}</Text>
+          {activeVideo?.scripture ? (
+            <View style={styles.scriptureRow}>
+              <BookOpen size={12} color={colors.textSecondary} />
+              <Text style={[styles.scriptureTxt, { color: colors.textSecondary }]} numberOfLines={1}>
+                {activeVideo.scripture}
+              </Text>
+            </View>
+          ) : null}
+
+          <View style={styles.pastorCard}>
+            <View style={styles.pastorAv}>
+              <User size={18} color="#FFFFFF" strokeWidth={2.4} />
+            </View>
+            <View style={{ flex: 1, paddingRight: 8 }}>
+              <Text style={[styles.pastorName, { color: colors.text }]} numberOfLines={1}>
+                {activeVideo?.pastor || t('sermons.pastor')}
+              </Text>
+              <Text style={[styles.pastorRole, { color: colors.textSecondary }]}>
+                {t('sermons.mainSpeaker')}
+              </Text>
             </View>
             <TouchableOpacity 
-              style={isSubscribed ? styles.unsubBtn : styles.subBtn} 
+              activeOpacity={0.8}
               onPress={handleSubscribeToggle}
+              style={styles.subBtnWrapper}
             >
-              <Text style={isSubscribed ? styles.unsubBtnTxt : styles.subBtnTxt}>
-                {isSubscribed ? 'Unsubscribe' : t('sermons.subscribe')}
-              </Text>
+              {isSubscribed ? (
+                <View style={[styles.unsubBtn, { backgroundColor: isDark ? '#27272A' : '#F4F4F5', borderColor: isDark ? '#3F3F46' : '#E4E4E7' }]}>
+                  <Bell size={13} color={isDark ? '#A1A1AA' : '#71717A'} fill={isDark ? '#A1A1AA' : '#71717A'} style={{ marginRight: 5 }} />
+                  <Text style={[styles.unsubBtnTxt, { color: isDark ? '#D4D4D8' : '#52525B' }]}>
+                    {t('sermons.subscribed') || 'Subscribed'}
+                  </Text>
+                </View>
+              ) : (
+                <LinearGradient
+                  colors={['#FF0000', '#B91C1C']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.subGradientBtn}
+                >
+                  <Animated.View style={{ transform: [{ rotate: bellRotation }], marginRight: 5.5 }}>
+                    <Bell size={13} color="#FFFFFF" fill="#FFFFFF" />
+                  </Animated.View>
+                  <Text style={styles.subBtnTxt}>
+                    {t('sermons.subscribe') || 'Subscribe'}
+                  </Text>
+                </LinearGradient>
+              )}
             </TouchableOpacity>
           </View>
-
-          <TouchableOpacity style={[styles.shareBtn, { backgroundColor: colors.accent || '#c0392b' }]} onPress={handleShare}>
-            <Share2 size={16} color="#fff" />
-            <Text style={styles.shareBtnTxt}>{t('sermons.shareThisMessage')}</Text>
-          </TouchableOpacity>
         </View>
 
         {/* ── Sermon Notes Section (Directly Below Video Details) ── */}
         {hasNotes && (
           <View style={styles.notesSection}>
-            <View style={styles.notesCard}>
-              {/* Card Header Bar */}
+            <View style={[styles.notesCard, { backgroundColor: colors.surface, borderColor: isDark ? colors.border : '#E2E8F0' }]}>
+              {/* Card Header Bar (Seamless dark theme, no line, book icon directly displayed) */}
               <View style={styles.notesHeaderBar}>
-                <View style={styles.notesHeaderIconBox}>
-                  <BookOpen size={18} color="#1a2d5a" />
-                </View>
+                <BookOpen size={20} color={isDark ? '#FFFFFF' : '#111827'} strokeWidth={2.2} />
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={styles.notesHeaderTitle}>Sermon Notes</Text>
+                    <Text style={[styles.notesHeaderTitle, { color: isDark ? '#FFFFFF' : '#111827' }]}>Sermon Notes</Text>
                     <View style={[
                       styles.notesBadge,
-                      detectedFileType === 'pdf' ? styles.badgePdf :
-                      (detectedFileType === 'doc' || detectedFileType === 'docx') ? styles.badgeDoc :
-                      styles.badgeTxt
+                      detectedFileType === 'pdf' ? (isDark ? styles.badgePdfDark : styles.badgePdf) :
+                      (detectedFileType === 'doc' || detectedFileType === 'docx') ? (isDark ? styles.badgeDocDark : styles.badgeDoc) :
+                      (isDark ? styles.badgeTxtDark : styles.badgeTxt)
                     ]}>
                       <Text style={[
                         styles.notesBadgeTxt,
-                        detectedFileType === 'pdf' ? styles.badgePdfTxt :
-                        (detectedFileType === 'doc' || detectedFileType === 'docx') ? styles.badgeDocTxt :
-                        styles.badgeTxtTxt
+                        detectedFileType === 'pdf' ? (isDark ? styles.badgePdfDarkTxt : styles.badgePdfTxt) :
+                        (detectedFileType === 'doc' || detectedFileType === 'docx') ? (isDark ? styles.badgeDocDarkTxt : styles.badgeDocTxt) :
+                        (isDark ? styles.badgeTxtDarkTxt : styles.badgeTxtTxt)
                       ]}>
                         {detectedFileType.toUpperCase()}
                       </Text>
                     </View>
                   </View>
-                  <Text style={styles.notesFileName} numberOfLines={1}>
+                  <Text style={[styles.notesFileName, { color: isDark ? '#94A3B8' : '#4B5563' }]} numberOfLines={1}>
                     {cleanDocTitle}
                   </Text>
                 </View>
               </View>
 
-              {/* Action Buttons: Read Fullscreen (Primary) & Inline Preview Toggle */}
+              {/* Action Buttons: Badges in single row (Seamless dark theme, no dividing line) */}
               <View style={styles.notesActionBox}>
+                {/* Button 1: Read In-App */}
                 <TouchableOpacity
-                  style={styles.notesReadPrimaryBtn}
-                  onPress={() => setShowFullscreenNotes(true)}
-                  activeOpacity={0.88}
+                  style={[
+                    styles.notesBadgeBtn,
+                    {
+                      backgroundColor: isDark ? '#27272A' : '#1E293B',
+                      borderColor: isDark ? '#52525B' : '#64748B',
+                    }
+                  ]}
+                  onPress={() => {
+                    setReaderKey(k => k + 1);
+                    setShowFullscreenNotes(true);
+                  }}
+                  activeOpacity={0.75}
                 >
-                  <BookOpen size={16} color="#FFFFFF" />
-                  <Text style={styles.notesReadPrimaryBtnTxt}>Read Full Document (In-App)</Text>
-                  <Maximize2 size={13} color="rgba(255,255,255,0.7)" />
+                  <Text style={styles.notesBadgeBtnTxt}>Read In-App</Text>
+                  <Maximize2 size={12} color="#94A3B8" style={{ marginLeft: 6 }} />
                 </TouchableOpacity>
 
+                {/* Button 2: Inline Preview */}
                 <TouchableOpacity
-                  style={styles.notesInlineToggleBtn}
+                  style={[
+                    styles.notesBadgeBtn,
+                    {
+                      backgroundColor: isDark ? '#27272A' : '#1E293B',
+                      borderColor: isDark ? '#52525B' : '#64748B',
+                    }
+                  ]}
                   onPress={() => {
                     const next = !isNotesExpanded;
                     setIsNotesExpanded(next);
@@ -522,27 +652,27 @@ export default function SermonVideoScreen({ navigation, route }: any) {
                       }, 100);
                     }
                   }}
-                  activeOpacity={0.7}
+                  activeOpacity={0.75}
                 >
-                  <Text style={styles.notesInlineToggleTxt}>
-                    {isNotesExpanded ? 'Hide Inline Preview' : 'Show Inline Preview'}
+                  <Text style={styles.notesBadgeBtnTxt}>
+                    {isNotesExpanded ? 'Hide Preview' : 'Inline Preview'}
                   </Text>
                   {isNotesExpanded ? (
-                    <ChevronUp size={14} color="#1a2d5a" />
+                    <ChevronUp size={13} color="#94A3B8" style={{ marginLeft: 5 }} />
                   ) : (
-                    <ChevronDown size={14} color="#1a2d5a" />
+                    <ChevronDown size={13} color="#94A3B8" style={{ marginLeft: 5 }} />
                   )}
                 </TouchableOpacity>
               </View>
 
               {/* Plain Text Notes Container */}
               {isTextDoc && isNotesExpanded && (
-                <View style={styles.notesContentWrap}>
-                  <View style={styles.notesTextContainer}>
+                <View style={[styles.notesContentWrap, { borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : '#E2E8F0', backgroundColor: colors.surface }]}>
+                  <View style={[styles.notesTextContainer, { backgroundColor: isDark ? '#18181B' : '#FAFAF9' }]}>
                     {loadingTextNotes ? (
-                      <View style={styles.notesLoadingBox}>
-                        <ActivityIndicator size="small" color="#1a2d5a" />
-                        <Text style={styles.notesLoadingTxt}>Loading sermon text…</Text>
+                      <View style={[styles.notesLoadingBox, { backgroundColor: isDark ? '#18181B' : '#FFFFFF' }]}>
+                        <ActivityIndicator size="small" color={isDark ? '#60A5FA' : '#1a2d5a'} />
+                        <Text style={[styles.notesLoadingTxt, { color: colors.textSecondary }]}>Loading sermon text…</Text>
                       </View>
                     ) : (
                       <ScrollView
@@ -550,7 +680,7 @@ export default function SermonVideoScreen({ navigation, route }: any) {
                         nestedScrollEnabled={true}
                         showsVerticalScrollIndicator={true}
                       >
-                        <Text style={styles.notesTextContent} selectable={true}>
+                        <Text style={[styles.notesTextContent, { color: isDark ? '#F1F5F9' : '#1F2937' }]} selectable={true}>
                           {inlineNotesText || 'No text content available.'}
                         </Text>
                       </ScrollView>
@@ -559,20 +689,21 @@ export default function SermonVideoScreen({ navigation, route }: any) {
                 </View>
               )}
 
-              {/* Pre-mounted PDF/DOC WebView (Loads in background for instant display) */}
-              {!isTextDoc && activeVideo?.notesUrl ? (
+              {/* PDF/DOC WebView (Only rendered when user expands preview to avoid duplicate requests) */}
+              {!isTextDoc && safeNotesUrl && isNotesExpanded ? (
                 <View style={[
                   styles.notesContentWrap,
-                  !isNotesExpanded && { height: 0, opacity: 0, overflow: 'hidden', borderTopWidth: 0 }
+                  { borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : '#E2E8F0', backgroundColor: colors.surface }
                 ]}>
-                  <View style={styles.notesWebViewBox}>
+                  <View style={[styles.notesWebViewBox, { backgroundColor: isDark ? '#18181B' : '#FFFFFF' }]}>
                     <WebView
                       source={{
                         uri: (detectedFileType === 'pdf' && Platform.OS === 'ios')
-                          ? activeVideo.notesUrl
-                          : `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(activeVideo.notesUrl)}`
+                          ? safeNotesUrl
+                          : `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(safeNotesUrl)}`
                       }}
-                      style={styles.notesWebView}
+                      style={[styles.notesWebView, { backgroundColor: isDark ? '#18181B' : '#FFFFFF' }]}
+                      originWhitelist={['*']}
                       injectedJavaScript={injectedGviewCSS}
                       nestedScrollEnabled={true}
                       javaScriptEnabled={true}
@@ -581,9 +712,9 @@ export default function SermonVideoScreen({ navigation, route }: any) {
                       scalesPageToFit={true}
                       startInLoadingState={true}
                       renderLoading={() => (
-                        <View style={styles.notesLoadingBox}>
-                          <ActivityIndicator size="small" color="#1a2d5a" />
-                          <Text style={styles.notesLoadingTxt}>Loading sermon notes…</Text>
+                        <View style={[styles.notesLoadingBox, { backgroundColor: isDark ? '#18181B' : '#FFFFFF' }]}>
+                          <ActivityIndicator size="small" color={isDark ? '#60A5FA' : '#1a2d5a'} />
+                          <Text style={[styles.notesLoadingTxt, { color: colors.textSecondary }]}>Loading sermon notes…</Text>
                         </View>
                       )}
                     />
@@ -595,33 +726,50 @@ export default function SermonVideoScreen({ navigation, route }: any) {
         )}
 
                 {/* ── Archive ── */}
-        <Text style={[styles.secLbl, { color: colors.textSecondary }]}>{t('sermons.pastSermons')}</Text>
-        <View style={[styles.archiveList, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Text style={[styles.secLbl, { color: isDark ? '#FFFFFF' : '#000000' }]}>{t('sermons.pastSermons')}</Text>
+        <View style={[styles.archiveList, { backgroundColor: colors.surface, borderColor: isDark ? colors.border : '#E2E8F0' }]}>
           {videos.filter(v => v.id !== activeVideo?.id).length === 0 ? (
             <View style={{ padding: 20, alignItems: 'center' }}>
               <Text style={{ color: '#9CA3AF', fontSize: 12, fontStyle: 'italic' }}>{t('sermons.noPastSermons')}</Text>
             </View>
           ) : (
-            videos.filter(v => v.id !== activeVideo?.id).map((video) => (
-              <TouchableOpacity 
-                key={video.id} 
-                style={styles.archiveItem}
-                onPress={() => setActiveVideo(video)}
-              >
-                <View style={styles.thumbBox}>
-                  <Image 
-                    source={{ uri: video.thumbnailUrl || `https://img.youtube.com/vi/${extractYoutubeId(video.youtubeId)}/mqdefault.jpg` }} 
-                    style={styles.thumb} 
-                  />
-                  <View style={styles.playIcon}><Play size={10} color="#fff" fill="#fff" /></View>
-                </View>
-                <View style={styles.itemInfo}>
-                  <Text style={styles.itemTitle} numberOfLines={1}>{video.title}</Text>
-                  <Text style={styles.itemMeta}>{video.date ? new Date(video.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}{video.duration && formatSermonDuration(video.duration) ? ` · ${formatSermonDuration(video.duration)}` : ''}</Text>
-                </View>
-                <ChevronRight size={16} color="#D1D5DB" />
-              </TouchableOpacity>
-            ))
+            videos.filter(v => v.id !== activeVideo?.id).map((video) => {
+              const formattedDate = video.date ? formatSermonDate(video.date) : '';
+              const formattedDuration = video.duration && formatSermonDuration(video.duration) ? formatSermonDuration(video.duration) : '';
+              const metaString = [formattedDate, formattedDuration].filter(Boolean).join(' · ');
+
+              return (
+                <TouchableOpacity 
+                  key={video.id} 
+                  style={[styles.archiveItem, { borderBottomColor: isDark ? 'rgba(255,255,255,0.08)' : '#f3f4f6' }]}
+                  onPress={() => {
+                    setActiveVideo(video);
+                    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.thumbBox}>
+                    <Image 
+                      source={{ uri: video.thumbnailUrl || `https://img.youtube.com/vi/${extractYoutubeId(video.youtubeId)}/mqdefault.jpg` }} 
+                      style={styles.thumb} 
+                      resizeMode="cover"
+                    />
+                    <View style={styles.playIcon}><Play size={10} color="#fff" fill="#fff" /></View>
+                  </View>
+                  <View style={styles.itemInfo}>
+                    <Text style={[styles.itemTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]} numberOfLines={2}>
+                      {video.title}
+                    </Text>
+                    {metaString ? (
+                      <Text style={[styles.itemMeta, { color: isDark ? '#94A3B8' : '#64748B' }]} numberOfLines={1}>
+                        {metaString}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <ChevronRight size={16} color={isDark ? '#64748B' : '#CBD5E1'} />
+                </TouchableOpacity>
+              );
+            })
           )}
         </View>
 
@@ -693,71 +841,86 @@ export default function SermonVideoScreen({ navigation, route }: any) {
         onRequestClose={() => setShowFullscreenNotes(false)}
       >
         <View style={styles.fullscreenModalContainer}>
-          <StatusBar barStyle="light-content" backgroundColor="#1a2d5a" />
-          {/* Modal Header */}
+          <StatusBar barStyle="light-content" backgroundColor="#000000" />
+          
+          {/* Modal Header: Only back arrow icon on left, document name in middle, spacer on right */}
           <View style={styles.fullscreenModalHeader}>
             <TouchableOpacity 
               style={styles.fullscreenCloseBtn}
               onPress={() => setShowFullscreenNotes(false)}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              activeOpacity={0.7}
+              accessibilityLabel="Back"
             >
-              <ArrowLeft size={20} color="#fff" />
-              <Text style={styles.fullscreenCloseTxt}>Back to Sermon</Text>
+              <ArrowLeft size={22} color="#FFFFFF" strokeWidth={2.4} />
             </TouchableOpacity>
 
-            <View style={{ flex: 1, paddingHorizontal: 8 }}>
-              <Text style={styles.fullscreenTitle} numberOfLines={1}>
-                {cleanDocTitle}
-              </Text>
-              <Text style={styles.fullscreenSubtitle} numberOfLines={1}>
-                {activeVideo?.title || 'Rhema Global Ministries'}
-              </Text>
-            </View>
+            <Text style={styles.fullscreenCenterTitle} numberOfLines={1}>
+              {cleanDocTitle}
+            </Text>
 
-            <View style={[
-              styles.notesBadge,
-              detectedFileType === 'pdf' ? styles.badgePdf :
-              (detectedFileType === 'doc' || detectedFileType === 'docx') ? styles.badgeDoc :
-              styles.badgeTxt
-            ]}>
-              <Text style={[
-                styles.notesBadgeTxt,
-                detectedFileType === 'pdf' ? styles.badgePdfTxt :
-                (detectedFileType === 'doc' || detectedFileType === 'docx') ? styles.badgeDocTxt :
-                styles.badgeTxtTxt
-              ]}>
-                {(detectedFileType || 'DOC').toUpperCase()}
-              </Text>
-            </View>
+            <View style={styles.fullscreenHeaderSpacer} />
           </View>
 
-          {/* Fullscreen Body */}
-          <View style={{ flex: 1, backgroundColor: '#fff' }}>
+          {/* Fullscreen Body (Black background) */}
+          <View style={{ flex: 1, backgroundColor: '#000000' }}>
             {isTextDoc ? (
-              <ScrollView style={{ flex: 1, padding: 18 }} showsVerticalScrollIndicator={true}>
-                <Text style={[styles.notesTextContent, { fontSize: 16, lineHeight: 26 }]} selectable={true}>
+              <ScrollView style={{ flex: 1, padding: 18, backgroundColor: '#000000' }} showsVerticalScrollIndicator={true}>
+                <Text style={[styles.notesTextContent, { color: '#F8FAFC', fontSize: 16, lineHeight: 26 }]} selectable={true}>
                   {inlineNotesText || 'No text content available.'}
                 </Text>
               </ScrollView>
-            ) : activeVideo?.notesUrl ? (
+            ) : safeNotesUrl ? (
               <WebView
+                key={`fullscreen-doc-${readerKey}`}
                 source={{
                   uri: (detectedFileType === 'pdf' && Platform.OS === 'ios')
-                    ? activeVideo.notesUrl
-                    : `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(activeVideo.notesUrl)}`
+                    ? safeNotesUrl
+                    : `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(safeNotesUrl)}`
                 }}
-                style={{ flex: 1 }}
+                style={{ flex: 1, backgroundColor: '#000000' }}
+                originWhitelist={['*']}
+                injectedJavaScript={injectedGviewCSS}
                 javaScriptEnabled={true}
                 domStorageEnabled={true}
+                scalesPageToFit={true}
                 startInLoadingState={true}
+                cacheEnabled={true}
+                mixedContentMode="always"
                 renderLoading={() => (
-                  <View style={styles.notesLoadingBox}>
-                    <ActivityIndicator size="large" color="#1a2d5a" />
-                    <Text style={styles.notesLoadingTxt}>Loading full document…</Text>
+                  <View style={[styles.notesLoadingBox, { backgroundColor: '#000000' }]}>
+                    <ActivityIndicator size="large" color="#FFFFFF" />
+                    <Text style={[styles.notesLoadingTxt, { color: '#9CA3AF' }]}>Loading full document…</Text>
+                  </View>
+                )}
+                renderError={() => (
+                  <View style={styles.notesErrorContainer}>
+                    <Text style={styles.notesErrorTitle}>Could not display document preview</Text>
+                    <Text style={styles.notesErrorDesc}>Google Docs preview is taking too long to render.</Text>
+                    <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
+                      <TouchableOpacity 
+                        style={styles.notesRetryBtn}
+                        onPress={() => setReaderKey(k => k + 1)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.notesRetryBtnTxt}>Retry</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={styles.notesExternalBtn}
+                        onPress={() => Linking.openURL(safeNotesUrl)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.notesExternalBtnTxt}>Open Directly</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 )}
               />
-            ) : null}
+            ) : (
+              <View style={styles.notesErrorContainer}>
+                <Text style={styles.notesErrorTitle}>No document link available</Text>
+              </View>
+            )}
           </View>
         </View>
       </Modal>
@@ -825,44 +988,156 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     marginBottom: 16,
-    elevation: 2,
+    elevation: 4,
     shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.10,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
   },
   videoTitle: { fontSize: 18, fontWeight: '800', color: '#111827', marginBottom: 8 },
-  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 15, marginBottom: 20 },
-  metaItem: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 },
-  metaTxt: { fontSize: 11, color: '#6B7280', fontWeight: '500' },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'nowrap',
+    marginBottom: 14,
+    marginTop: 2,
+  },
+  metaNormalTxt: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    letterSpacing: -0.1,
+  },
+  metaDot: {
+    fontSize: 13,
+    fontWeight: '900',
+    marginHorizontal: 6,
+  },
+  scriptureRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 14,
+  },
+  scriptureTxt: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  metaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5.5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  metaItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  metaTxt: { fontSize: 11.5, fontWeight: '700', letterSpacing: -0.1 },
 
   pastorCard: { 
-    flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, padding: 12, 
-    backgroundColor: '#f9fafb', borderRadius: 14, marginBottom: 15,
-    borderWidth: 0.5, borderColor: '#e5e7eb'
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    gap: 12, 
+    paddingVertical: 10,
+    paddingHorizontal: 0,
+    backgroundColor: 'transparent', 
+    borderRadius: 14, 
+    marginBottom: 0,
+    borderWidth: 0,
   },
   pastorAv: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#c0392b', justifyContent: 'center', alignItems: 'center' },
   pastorAvTxt: { color: '#fff', fontWeight: '700' },
   pastorName: { fontSize: 13, fontWeight: '700', color: '#111827' },
   pastorRole: { fontSize: 10, color: '#6B7280', marginTop: 1 },
-  subBtn: { backgroundColor: '#1a2d5a', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8 },
-  subBtnTxt: { color: '#fff', fontSize: 10, fontWeight: '700' },
-  unsubBtn: { backgroundColor: '#e2e8f0', paddingHorizontal: 13, paddingVertical: 7, borderRadius: 8, borderWidth: 1, borderColor: '#cbd5e1' },
-  unsubBtnTxt: { color: '#475569', fontSize: 10, fontWeight: '700' },
+  subBtnWrapper: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    shadowColor: '#DC2626',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+    elevation: 4,
+  },
+  subGradientBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 13,
+    paddingVertical: 7.5,
+    borderRadius: 20,
+  },
+  subBtnTxt: {
+    color: '#FFFFFF',
+    fontSize: 11.5,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  unsubBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  unsubBtnTxt: {
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
 
+  cardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  cornerShareBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1.5 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 2,
+  },
   shareBtn: { backgroundColor: '#c0392b', paddingVertical: 14, borderRadius: 12, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: 8 },
   shareBtnTxt: { color: '#fff', fontSize: 13, fontWeight: '700' },
 
-  secLbl: { fontSize: 10, fontWeight: '700', color: '#9CA3AF', letterSpacing: 0.6, marginHorizontal: 16, marginBottom: 12, marginTop: 20 },
+  secLbl: { 
+    fontSize: 16, 
+    fontWeight: '700', 
+    color: '#000000', 
+    marginHorizontal: 16, 
+    marginBottom: 12, 
+    marginTop: 22 
+  },
   
-  archiveList: { backgroundColor: '#fff', marginHorizontal: 12, borderRadius: 16, overflow: 'hidden', borderWidth: 0.5, borderColor: '#e5e7eb' },
-  archiveItem: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', padding: 12, borderBottomWidth: 0.5, borderBottomColor: '#f3f4f6', gap: 12 },
-  thumbBox: { width: 80, height: 60, borderRadius: 8, overflow: 'hidden', position: 'relative' },
+  archiveList: { 
+    marginHorizontal: 16, 
+    borderRadius: 16, 
+    overflow: 'hidden', 
+    borderWidth: 1, 
+    borderColor: '#e5e7eb',
+    marginBottom: 24,
+  },
+  archiveItem: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    padding: 12, 
+    borderBottomWidth: 0.5, 
+    gap: 12 
+  },
+  thumbBox: { width: 84, height: 56, borderRadius: 8, overflow: 'hidden', position: 'relative' },
   thumb: { width: '100%', height: '100%' },
-  playIcon: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center' },
+  playIcon: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'center', alignItems: 'center' },
   itemInfo: { flex: 1 },
-  itemTitle: { fontSize: 12, fontWeight: '600', color: '#111827' },
-  itemMeta: { fontSize: 9.5, color: '#9CA3AF', marginTop: 2 },
+  itemTitle: { fontSize: 13.5, fontWeight: '700', lineHeight: 18 },
+  itemMeta: { fontSize: 12, fontWeight: '600', marginTop: 4 },
 
   // Beautiful Unsubscribe Modal Styles
   modalOverlay: {
@@ -980,70 +1255,54 @@ const styles = StyleSheet.create({
 
   // Meta Details Row
   categoryBadge: {
-    backgroundColor: '#1a2d5a',
+    backgroundColor: '#0F172A',
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 11,
-    paddingVertical: 4.5,
+    paddingVertical: 5.5,
     borderRadius: 8,
-    shadowColor: '#1a2d5a',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 1.5 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.15,
     shadowRadius: 3,
-    elevation: 3,
+    elevation: 2,
   },
   categoryBadgeTxt: {
-    fontSize: 11,
+    fontSize: 11.5,
     fontWeight: '800',
     color: '#FFFFFF',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
 
   // ─── Sermon Notes In-App Reader Styles ──────────────────────────────
   notesSection: {
     marginTop: 14,
-    marginHorizontal: 12,
+    marginHorizontal: 16,
   },
   notesCard: {
-    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#1a2d5a',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 2,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.10,
+    shadowRadius: 10,
+    elevation: 4,
   },
   notesHeaderBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    backgroundColor: '#F8FAFC',
-    gap: 10,
-  },
-  notesHeaderIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: '#EEF2FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#C7D2FE',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
+    gap: 12,
   },
   notesHeaderTitle: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#111827',
   },
   notesFileName: {
     fontSize: 11.5,
-    color: '#4B5563',
     fontWeight: '600',
     marginTop: 2,
   },
@@ -1064,48 +1323,43 @@ const styles = StyleSheet.create({
   badgeDocTxt: { color: '#2563EB' },
   badgeTxt: { backgroundColor: '#DCFCE7', borderColor: '#86EFAC' },
   badgeTxtTxt: { color: '#16A34A' },
+  badgePdfDark: { backgroundColor: 'rgba(239,68,68,0.15)', borderColor: 'rgba(239,68,68,0.3)' },
+  badgePdfDarkTxt: { color: '#F87171' },
+  badgeDocDark: { backgroundColor: 'rgba(59,130,246,0.15)', borderColor: 'rgba(59,130,246,0.3)' },
+  badgeDocDarkTxt: { color: '#60A5FA' },
+  badgeTxtDark: { backgroundColor: 'rgba(34,197,94,0.15)', borderColor: 'rgba(34,197,94,0.3)' },
+  badgeTxtDarkTxt: { color: '#4ADE80' },
 
   notesActionBox: {
-    padding: 12,
-    backgroundColor: '#FFFFFF',
-    gap: 8,
-  },
-  notesReadPrimaryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#1a2d5a',
-    paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 12,
-    shadowColor: '#1a2d5a',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 5,
-    elevation: 3,
+    paddingTop: 4,
+    paddingBottom: 16,
+    gap: 10,
   },
-  notesReadPrimaryBtnTxt: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-  },
-  notesInlineToggleBtn: {
+  notesBadgeBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 7,
-    borderRadius: 8,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#1E293B',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#64748B',
+    borderRadius: 22,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1.5 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 2,
   },
-  notesInlineToggleTxt: {
-    fontSize: 11.5,
-    fontWeight: '600',
-    color: '#1a2d5a',
+  notesBadgeBtnTxt: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.1,
   },
 
   notesContentWrap: {
@@ -1150,7 +1404,7 @@ const styles = StyleSheet.create({
   // Fullscreen In-App Modal Reader
   fullscreenModalContainer: {
     flex: 1,
-    backgroundColor: '#1a2d5a',
+    backgroundColor: '#000000',
   },
   fullscreenModalHeader: {
     paddingTop: Platform.OS === 'ios' ? 52 : (StatusBar.currentHeight ?? 24) + 8,
@@ -1158,30 +1412,72 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#1a2d5a',
+    justifyContent: 'space-between',
+    backgroundColor: '#000000',
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
+    borderBottomColor: '#27272A',
   },
   fullscreenCloseBtn: {
-    flexDirection: 'row',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+  },
+  fullscreenCenterTitle: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+    textAlign: 'center',
+    paddingHorizontal: 8,
+  },
+  fullscreenHeaderSpacer: {
+    width: 44,
+    height: 44,
+  },
+  notesErrorContainer: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#000000',
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 6,
-    paddingVertical: 6,
-    paddingRight: 6,
+    padding: 24,
   },
-  fullscreenCloseTxt: {
+  notesErrorTitle: {
     color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 6,
   },
-  fullscreenTitle: {
-    color: '#FFFFFF',
-    fontSize: 13.5,
+  notesErrorDesc: {
+    color: '#94A3B8',
+    fontSize: 12.5,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  notesRetryBtn: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  notesRetryBtnTxt: {
+    color: '#000000',
+    fontSize: 12.5,
     fontWeight: '700',
   },
-  fullscreenSubtitle: {
-    color: 'rgba(255,255,255,0.65)',
-    fontSize: 10.5,
+  notesExternalBtn: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  notesExternalBtnTxt: {
+    color: '#FFFFFF',
+    fontSize: 12.5,
+    fontWeight: '600',
   },
 });

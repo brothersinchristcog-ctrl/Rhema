@@ -63,7 +63,8 @@ import {
   Clock,
   CalendarCheck,
   ArrowUpRight,
-  ArrowRight
+  ArrowRight,
+  User
 } from 'lucide-react-native';
 import ViewShot from 'react-native-view-shot';
 import * as MediaLibrary from 'expo-media-library';
@@ -934,7 +935,7 @@ const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig =>
         medallionBg: ['#F8FAFC', '#E2E8F0'], // Lightish ash gradient
         medallionBorder: '#CBD5E1',
         sermonCardGradient: ['#1E293B', '#0F172A'],
-        sermonCardBorder: '#334155',
+        sermonCardBorder: '#27272A',
         mqBg: '#FFFFFF',
         mqBorder: '#E2E8F0',
         mqTitle: '#0F766E',
@@ -1016,9 +1017,9 @@ const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig =>
 
 /* ───────────── unique signature church hero & greeting card ───────────── */
 const PremiumHero = ({
-  churchName, tagline, logoUrl, initials, userName, bellRotate, onBellPress, topInset, onHeight, theme,
+  churchName, tagline, logoUrl, initials, userName, bellRotate, onBellPress, topInset, onHeight, theme, 
 }: {
-  churchName: string; tagline: string; logoUrl?: string; initials: string; userName: string;
+  churchName: string; tagline: string; logoUrl?: string; initials: string; userName: string; 
   bellRotate: any; onBellPress: () => void; topInset: number; onHeight?: (h: number) => void;
   theme: any;
 }) => {
@@ -1027,6 +1028,28 @@ const PremiumHero = ({
   const [first, ...rest] = (userName || 'Beloved').trim().split(/\s+/);
   const last = rest.join(' ');
   const fullName = [first, last].filter(Boolean).join(' ');
+
+  // Device responsive scaling (user's phone stays 100% exact, smaller phones scale seamlessly)
+  const { width: heroWidth } = useWindowDimensions();
+  const isCompactPhone = heroWidth < 385; // e.g. Samsung M30/M31, Galaxy A-series (~360px)
+  const isSmallPhone = heroWidth < 350;   // e.g. iPhone SE (~320-340px)
+  const deviceScale = isSmallPhone ? 0.88 : isCompactPhone ? 0.94 : 1.0;
+
+  // 1. Church Name: 18px on user's phone, gracefully scaled on smaller phones
+  const churchNameSize = Math.round(18 * deviceScale);
+
+  // 2. Greeting Text: 26px on user's phone, gracefully scaled on smaller phones
+  const greetingTextSize = Math.round(26 * deviceScale);
+
+  // 3. User Name: Flexible length-based, scaled proportionally by device
+  const nameLen = fullName.length;
+  const baseUserNameSize = nameLen <= 8 ? 26 : nameLen <= 14 ? 23 : nameLen <= 20 ? 20 : 18;
+  const dynamicUserNameSize = Math.round(baseUserNameSize * deviceScale);
+
+  // Responsive element widths
+  const logoSize = isSmallPhone ? 44 : isCompactPhone ? 48 : 52;
+  const bellSize = isSmallPhone ? 36 : isCompactPhone ? 38 : 42;
+  const dateCardWidth = isSmallPhone ? 52 : isCompactPhone ? 56 : 60;
 
   const enter = useRef(new Animated.Value(0)).current;
   const [cursiveLoaded, setCursiveLoaded] = useState(() => {
@@ -1062,7 +1085,7 @@ const PremiumHero = ({
         
         {/* 1. TOP BAR: Church Identity Row */}
         <View style={hStyles.identityRow}>
-          <LinearGradient colors={theme.isDark ? C.foil : ['#FFFFFF', '#FFFFFF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={hStyles.logoRing}>
+          <LinearGradient colors={theme.isDark ? C.foil : ['#FFFFFF', '#FFFFFF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[hStyles.logoRing, isCompactPhone && { width: logoSize, height: logoSize, borderRadius: logoSize / 2 }]}>
             <View style={[hStyles.logoInner, !theme.isDark && { backgroundColor: '#FFFFFF' }]}>
               {logoUrl ? (
                 <Image source={{ uri: logoUrl }} style={hStyles.logoImg} resizeMode="cover" />
@@ -1074,13 +1097,13 @@ const PremiumHero = ({
             </View>
           </LinearGradient>
 
-          <View style={{ flex: 1, minWidth: 0, marginLeft: 12 }}>
+          <View style={{ flex: 1, minWidth: 0, marginLeft: 10 }}>
             <Text 
-              style={[hStyles.churchName, { color: theme.heroText }]} 
+              {...({ fixedFontSize: true, allowFontScaling: false } as any)}
+              style={[hStyles.churchName, { color: theme.heroText, fontSize: churchNameSize }]} 
               numberOfLines={1} 
-              adjustsFontSizeToFit 
-              minimumFontScale={0.6} 
-              maxFontSizeMultiplier={1.1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.78}
             >
               {churchName}
             </Text>
@@ -1101,6 +1124,7 @@ const PremiumHero = ({
           <TouchableOpacity 
             style={[
               hStyles.bellBtn, 
+              isCompactPhone && { width: bellSize, height: bellSize, borderRadius: bellSize / 2, marginLeft: 6 },
               { 
                 backgroundColor: theme.isDark ? 'rgba(255,255,255,0.08)' : '#FFFFFF',
                 borderColor: theme.isDark ? 'rgba(232,196,110,0.55)' : 'rgba(255,255,255,0.8)' 
@@ -1110,7 +1134,7 @@ const PremiumHero = ({
             activeOpacity={0.75}
           >
             <Animated.View style={{ transform: [{ rotate: bellRotate }] }}>
-              <Bell color={theme.isDark ? C.gold : '#2563EB'} size={20} strokeWidth={2} />
+              <Bell color={theme.isDark ? C.gold : '#2563EB'} size={isSmallPhone ? 17 : isCompactPhone ? 18 : 20} strokeWidth={2} />
             </Animated.View>
             <View style={[hStyles.bellDot, { borderColor: theme.isDark ? theme.bg : '#FFFFFF' }]} />
           </TouchableOpacity>
@@ -1119,15 +1143,16 @@ const PremiumHero = ({
         {/* 2. GREETING & DATE: Bold cursive greeting (Pacifico) + compact date card */}
         <View style={hStyles.greetingRowDirect}>
           {/* Left Column: Greeting with Sun/Moon Icon + Bold Serif User Name */}
-          <View style={{ flex: 1, minWidth: 0, paddingRight: 12, justifyContent: 'center' }}>
+          <View style={{ flex: 1, minWidth: 0, paddingRight: isCompactPhone ? 8 : 12, justifyContent: 'center' }}>
             <View style={gStyles.greetRow}>
               {Icon ? <Icon size={18} color={theme.isDark ? '#FCD34D' : '#D97706'} /> : null}
               <Text 
+                {...({ fixedFontSize: true, allowFontScaling: false } as any)}
                 style={[
-                  gStyles.greet, 
-                  { 
+                  gStyles.greet,
+                  {
                     fontFamily: cursiveLoaded ? 'Pacifico' : (Platform.OS === 'ios' ? 'Snell Roundhand' : 'Pacifico'),
-                    fontSize: 27,
+                    fontSize: greetingTextSize,
                     fontStyle: 'normal',
                     fontWeight: 'normal',
                     letterSpacing: 0.2,
@@ -1141,8 +1166,9 @@ const PremiumHero = ({
               </Text>
             </View>
 
-            {/* USER NAME: Bold SERIF font in premium black */}
+            {/* USER NAME: Flexible responsive sizing (short = big, long = clearly visible) */}
             <Text 
+              {...({ fixedFontSize: true, allowFontScaling: false } as any)}
               style={[
                 hStyles.userName, 
                 { 
@@ -1150,11 +1176,12 @@ const PremiumHero = ({
                   textShadowColor: 'transparent',
                   textShadowRadius: 0,
                   marginTop: 2,
+                  fontSize: dynamicUserNameSize,
                 }
               ]} 
               numberOfLines={1} 
-              adjustsFontSizeToFit 
-              minimumFontScale={0.6}
+              adjustsFontSizeToFit
+              minimumFontScale={0.72}
             >
               {fullName}
             </Text>
@@ -1165,7 +1192,7 @@ const PremiumHero = ({
             style={[
               gStyles.cal, 
               {
-                width: 60,
+                width: dateCardWidth,
                 borderRadius: 12,
                 backgroundColor: theme.isDark ? '#18181B' : '#FFFFFF',
                 borderWidth: 1,
@@ -1212,17 +1239,17 @@ const hStyles = StyleSheet.create({
   logoImg: { width: '100%', height: '100%' },
   logoFallback: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   logoInitials: { color: C.gold, fontSize: 17, fontWeight: '800', fontFamily: SERIF, letterSpacing: 0.5 },
-  churchName: { fontSize: 24, fontWeight: '800', fontFamily: SERIF, letterSpacing: 0.3 },
+  churchName: { fontSize: 18, fontWeight: '800', fontFamily: SERIF, letterSpacing: 0 },
   taglineRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2, gap: 5 },
   tagline: { flexShrink: 1, fontSize: 12.5, fontStyle: 'italic', fontFamily: SERIF, letterSpacing: 0.5 },
-  bellBtn: { width: 42, height: 42, borderRadius: 21, marginLeft: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  bellBtn: { width: 42, height: 42, borderRadius: 21, marginLeft: 8, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
   bellDot: { position: 'absolute', top: 8, right: 9, width: 8, height: 8, borderRadius: 4, backgroundColor: '#F95738', borderWidth: 1.5 },
   greetingRowDirect: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 4, paddingBottom: 10 },
   cardWrap: { borderRadius: 24, overflow: 'hidden', marginBottom: 6 },
   greetingCard: { borderRadius: 24, paddingVertical: 18, paddingHorizontal: 18, borderWidth: 1, overflow: 'hidden', position: 'relative' },
   cardInnerFrame: { position: 'absolute', top: 6, left: 6, right: 6, bottom: 6, borderRadius: 18, borderWidth: 1 },
   cardRow: { flexDirection: 'row', alignItems: 'center' },
-  userName: { fontSize: 27, fontWeight: '700', fontFamily: SERIF, letterSpacing: 0.2, marginTop: 2, textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
+  userName: { fontSize: 23, fontWeight: '700', fontFamily: SERIF, letterSpacing: 0.2, marginTop: 2, textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
   blessedPill: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', marginTop: 12, paddingVertical: 4.5, paddingLeft: 8, paddingRight: 12, borderRadius: 20, borderWidth: 1, gap: 6 },
   blessedText: { fontSize: 11.5, fontWeight: '700', letterSpacing: 0.5 },
   dateCol: { flexDirection: 'row', alignItems: 'center', marginLeft: 4 },
@@ -4466,60 +4493,96 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.eventBanner}>
+          <View style={[
+            styles.eventBanner,
+            {
+              backgroundColor: screenTheme.isDark ? '#18181B' : '#FFFFFF',
+              borderColor: (appearance === 'pure_white' || screenTheme.isDark) ? '#27272A' : '#E2E8F0',
+              shadowOpacity: screenTheme.isDark ? 0.35 : 0.08,
+            }
+          ]}>
             <View style={styles.ebList}>
               {events.length > 0 ? (
-                events.map((item: any, index: number) => (
-                  <View key={`${item.id || 'evt'}-${index}`}>
-                    <TouchableOpacity 
-                      style={styles.ebItem} 
-                      onPress={() => navigation.navigate('EventDetails', { event: item })}
-                    >
-                      <View style={styles.ebThumbnailContainer}>
-                        <Image 
-                          source={{ uri: item.image || item.bannerUrl || 'https://images.unsplash.com/photo-1438232992991-995b7058bbb3?q=80&w=400' }}
-                          style={styles.ebThumbnail}
-                          resizeMode="cover"
-                        />
-                      </View>
-                      <View style={styles.ebInfo}>
-                        <Text style={styles.ebTitle} numberOfLines={2}>
-                          {item.title}
-                        </Text>
-                        
-                        <View style={styles.highlightRow}>
-                          <View style={styles.dateBadge}>
-                            <Calendar size={11} color="#1a2d5a" />
-                            <Text style={styles.badgeTextMain}>
-                              {new Date(item.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
-                              {item.endDate && item.endDate !== item.date ? ` – ${new Date(item.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}
+                events.map((item: any, index: number) => {
+                  const ebTextColor = screenTheme.isDark ? '#FFFFFF' : '#0F172A';
+                  const ebIconColor = screenTheme.isDark ? '#FFFFFF' : '#2563EB';
+
+                  const formattedDate = (() => {
+                    const dStr = new Date(item.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+                    if (item.endDate && item.endDate !== item.date) {
+                      const endStr = new Date(item.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+                      return `${dStr} – ${endStr}`;
+                    }
+                    return dStr;
+                  })();
+
+                  const timeStr = (item.startTime && item.endTime) 
+                    ? `${formatTime(item.startTime)} – ${formatTime(item.endTime)}` 
+                    : (item.startTime ? formatTime(item.startTime) : null);
+
+                  return (
+                    <View key={`${item.id || 'evt'}-${index}`}>
+                      <TouchableOpacity 
+                        style={styles.ebItem} 
+                        onPress={() => navigation.navigate('EventDetails', { event: item })}
+                        activeOpacity={0.75}
+                      >
+                        {/* Event Thumbnail */}
+                        <View style={styles.ebThumbnailContainer}>
+                          <Image 
+                            source={{ uri: item.image || item.bannerUrl || 'https://images.unsplash.com/photo-1438232992991-995b7058bbb3?q=80&w=400' }}
+                            style={styles.ebThumbnail}
+                            resizeMode="cover"
+                          />
+                        </View>
+
+                        {/* Event Info (All text in clean white, no badge boxes) */}
+                        <View style={styles.ebInfo}>
+                          <Text style={[styles.ebTitle, { color: ebTextColor }]} numberOfLines={2}>
+                            {item.title}
+                          </Text>
+                          
+                          {/* Date Row */}
+                          <View style={styles.ebDetailRow}>
+                            <Calendar size={12} color={ebIconColor} strokeWidth={2.2} />
+                            <Text style={[styles.ebDetailText, { color: ebTextColor }]} numberOfLines={1}>
+                              {formattedDate}
+                            </Text>
+                          </View>
+    
+                          {/* Time Row */}
+                          {timeStr ? (
+                            <View style={styles.ebDetailRow}>
+                              <Clock size={12} color={ebIconColor} strokeWidth={2.2} />
+                              <Text style={[styles.ebDetailText, { color: ebTextColor }]} numberOfLines={1}>
+                                {timeStr}
+                              </Text>
+                            </View>
+                          ) : null}
+    
+                          {/* Location Row */}
+                          <View style={styles.ebDetailRow}>
+                            <MapPin size={12} color={ebIconColor} strokeWidth={2.2} />
+                            <Text style={[styles.ebDetailText, { color: ebTextColor }]} numberOfLines={1}>
+                              {item.address || item.location || t('home.churchMainHall')}
                             </Text>
                           </View>
                         </View>
-  
-                        <View style={[styles.highlightRow, { marginTop: 4 }]}>
-                          <View style={styles.timeBadge}>
-                            <Play size={8} color="#c0392b" fill="#c0392b" style={{ transform: [{ rotate: '90deg' }] }} />
-                            <Text style={styles.timeBadgeText}>{formatTime(item.startTime)} – {formatTime(item.endTime)}</Text>
-                          </View>
-                        </View>
-  
-                        <View style={[styles.ebMetaRow, { marginTop: 6, alignItems: 'flex-start' }]}>
-                          <MapPin size={11} color="#64748b" style={{ marginTop: 2 }} />
-                          <Text style={styles.ebMetaText}>{item.address || item.location || t('home.churchMainHall')}</Text>
-                        </View>
+
+                        {/* Subtle Navigation Arrow */}
                         
-                        <Text style={styles.ebDetailsLink}>{t('home.details')}</Text>
-                      </View>
-                    </TouchableOpacity>
-                    {index < events.length - 1 && <View style={styles.ebDivider} />}
-                  </View>
-                ))
+                      </TouchableOpacity>
+                      {index < events.length - 1 && (
+                        <View style={[styles.ebDivider, { backgroundColor: screenTheme.isDark ? '#27272A' : '#F1F5F9' }]} />
+                      )}
+                    </View>
+                  );
+                })
               ) : (
                 <View style={styles.emptyEvents}>
-                  <Calendar size={32} color="#94a3b8" />
-                  <Text style={styles.emptyEventsTxt}>{t('events.noUpcomingEvents')}</Text>
-                  <Text style={styles.emptyEventsSub}>{t('home.emptyEventsSub')}</Text>
+                  <Calendar size={32} color={screenTheme.isDark ? '#64748B' : '#94a3b8'} />
+                  <Text style={[styles.emptyEventsTxt, screenTheme.isDark && { color: '#FFFFFF' }]}>{t('events.noUpcomingEvents')}</Text>
+                  <Text style={[styles.emptyEventsSub, screenTheme.isDark && { color: '#A1A1AA' }]}>{t('home.emptyEventsSub')}</Text>
                 </View>
               )}
             </View>
@@ -4529,84 +4592,199 @@ export default function HomeScreen() {
           <View style={styles.sectionHeader}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Mic size={16} color={'#E8C46E'} />
-              <Text style={[styles.sectionHeaderTxt, { color: screenTheme.text }]}>{t('sermons.latestSermon')}</Text>
+              <Text style={[styles.sectionHeaderTxt, { color: screenTheme.text }]}>{t('sermons.latestSermon') || 'Latest Sermon'}</Text>
             </View>
             <TouchableOpacity onPress={() => navigation.navigate('Sermons')}>
-              <Text style={[styles.sectionSeeAll, { color: '#E8C46E' }]}>{t('home.seeAll')}</Text>
+              <Text style={[styles.sectionSeeAll, { color: screenTheme.seeAllColor }]}>{t('home.seeAll')}</Text>
             </TouchableOpacity>
           </View>
 
-          <View style={styles.sermonCard}>
-            {(latestSermons.length > 0 ? latestSermons.slice(0, 2) : [null]).map((sermon, idx, arr) => (
-              <React.Fragment key={sermon?.id || `fallback-${idx}`}>
-                <TouchableOpacity 
-                  style={styles.scBody} 
-                  onPress={() => sermon ? navigation.navigate('SermonVideo', { sermonData: sermon }) : navigation.navigate('Sermons')}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.scThumb}>
-                    {(() => {
-                      const yId = extractYoutubeId(sermon?.youtubeId || '');
-                      const thumbUri = sermon?.thumbnailUrl || sermon?.imageUrl || (yId && yId.length === 11 ? `https://img.youtube.com/vi/${yId}/hqdefault.jpg` : null);
-                      return thumbUri ? (
-                        <Image source={{ uri: thumbUri }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-                      ) : null;
-                    })()}
-                    <View style={styles.playIconOverlay}>
-                       <Play size={20} color="#fff" fill="#c0392b" />
-                    </View>
-                  </View>
-                  <View style={styles.scInfo}>
-                    <Text style={styles.scTitle} numberOfLines={1}>
-                      {sermon?.title || t('home.exploreSermons')}
-                    </Text>
-                    {sermon?.titleTelugu ? (
-                      <Text style={styles.scTitleTe} numberOfLines={1}>{sermon.titleTelugu}</Text>
-                    ) : null}
-                    <Text style={styles.scMeta} numberOfLines={1}>
-                      {sermon?.pastor || t('sermons.pastor')}
-                      {sermon?.date ? ` • ${formatDateDisplay(sermon.date)}` : ''}
-                      {sermon?.duration && formatSermonDuration(sermon.duration) ? ` • ${formatSermonDuration(sermon.duration)}` : ''}
-                    </Text>
-                  </View>
-                  <View style={[styles.playBtnCircle, { borderColor: screenTheme.btnPrimaryBorder, backgroundColor: screenTheme.btnPrimaryBg }]}>
-                    <Play size={18} color={screenTheme.btnPrimaryText} />
-                  </View>
-                </TouchableOpacity>
-                {idx < arr.length - 1 && (
-                  <View style={{ height: 1, backgroundColor: '#f1f5f9', marginHorizontal: 16 }} />
-                )}
-              </React.Fragment>
-            ))}
-          </View>
+          {(() => {
+            const sermonCardWidth = Math.max(160, Math.floor((width - 44) / 2));
+            const thumbHeight = Math.round(sermonCardWidth * 0.5625); // Exact 16:9 ratio
+            const displayList: (Sermon & { isSample?: boolean; sampleType?: 'english' | 'telugu' })[] = (() => {
+              if (latestSermons && latestSermons.length >= 2) {
+                return latestSermons.slice(0, 4);
+              }
+              if (latestSermons && latestSermons.length === 1) {
+                return [
+                  latestSermons[0],
+                  {
+                    id: 'sample-telugu-sermon',
+                    title: 'TELUGU SERVICE',
+                    titleTelugu: 'తెలుగు సేవ',
+                    pastor: 'Dr.Blessy',
+                    date: '2026-10-17',
+                    duration: '52 min',
+                    youtubeId: '',
+                    isSample: true,
+                    sampleType: 'telugu'
+                  } as any
+                ];
+              }
+              return [
+                {
+                  id: 'sample-english-sermon',
+                  title: 'ENGLISH SERVICE',
+                  titleTelugu: 'ఇంగ్లీష్ సేవ',
+                  pastor: 'Dr.Blessy',
+                  date: '2026-10-24',
+                  duration: '45 min',
+                  youtubeId: '',
+                  isSample: true,
+                  sampleType: 'english'
+                } as any,
+                {
+                  id: 'sample-telugu-sermon',
+                  title: 'TELUGU SERVICE',
+                  titleTelugu: 'తెలుగు సేవ',
+                  pastor: 'Dr.Blessy',
+                  date: '2026-10-17',
+                  duration: '52 min',
+                  youtubeId: '',
+                  isSample: true,
+                  sampleType: 'telugu'
+                } as any
+              ];
+            })();
 
-          {/* ─── Prayer Wall ─── */}
-          <View style={styles.sectionHeader}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Heart size={16} color={'#E8C46E'} fill={'rgba(232,196,110,0.25)'} />
-              <Text style={[styles.sectionHeaderTxt, { color: screenTheme.text }]}>{t('prayer.title')}</Text>
-            </View>
-            <TouchableOpacity onPress={() => handleGuestProtectedNavigation('Prayer')}>
-              <Text style={[styles.sectionSeeAll, { color: '#E8C46E' }]}>{t('home.seeAll')}</Text>
-            </TouchableOpacity>
-          </View>
+            return (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.latestSermonsScrollContent}
+              >
+                {displayList.map((sermon, idx) => {
+                  const isTelugu = sermon.sampleType === 'telugu' || 
+                    sermon.title?.toLowerCase().includes('telugu') || 
+                    sermon.titleTelugu?.includes('తెలుగు') || 
+                    (idx % 2 === 1 && !sermon.title?.toLowerCase().includes('english'));
 
-          <View style={[styles.prayerCard, { marginBottom: 40 }]}>
-            <TouchableOpacity style={styles.pcBody} onPress={() => handleGuestProtectedNavigation('Prayer')}>
-              <View style={styles.pcTextContainer}>
-                <Text style={styles.pcText} numberOfLines={3}>
-                  {latestPrayer ? `"${latestPrayer.text}" — ${latestPrayer.name}` : t('home.prayerDefaultPrompt')}
-                </Text>
-              </View>
-              <View style={styles.pcFoot}>
-                <TouchableOpacity style={[styles.prayedBtn, { backgroundColor: screenTheme.btnPrimaryBg, borderColor: screenTheme.btnPrimaryBorder }]} onPress={() => Alert.alert(t('home.prayedAlertTitle'), t('home.prayedAlertMsg'))}>
-                   <CheckCircle size={14} color={screenTheme.btnPrimaryText} />
-                   <Text style={[styles.prayedBtnTxt, { color: screenTheme.btnPrimaryText }]}>{t('home.iPrayedBtn')}</Text>
-                </TouchableOpacity>
-                <Text style={styles.pcSeeAll}>{prayerCount} {t('home.prayerRequestsCount')}</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
+                  // Golden uppercase header lines (used only when no thumbnail image exists)
+                  let headerL1 = 'ENGLISH';
+                  let headerL2 = 'SERVICE';
+                  if (isTelugu) {
+                    headerL1 = 'TELUGU';
+                    headerL2 = 'SERVICE';
+                  } else if (sermon.title && !sermon.isSample) {
+                    const words = sermon.title.trim().toUpperCase().split(/\s+/);
+                    if (words.length >= 2) {
+                      headerL1 = words[0];
+                      headerL2 = words.slice(1, 3).join(' ');
+                    } else {
+                      headerL1 = words[0] || 'SUNDAY';
+                      headerL2 = 'SERVICE';
+                    }
+                  }
+
+                  const durationBadge = (sermon.duration && formatSermonDuration(sermon.duration)) || (isTelugu ? '52 min' : '45 min');
+                  const pastorName = sermon.pastor || 'Dr.Blessy';
+                  const titleEn = sermon.titleEn || sermon.title || (isTelugu ? 'TELUGU SERVICE' : 'ENGLISH SERVICE');
+                  const titleTe = sermon.titleTelugu || (sermon.isSample ? (isTelugu ? 'తెలుగు సేవ' : 'ఇంగ్లీష్ సేవ') : null);
+                  const dateStr = sermon.date ? formatDateDisplay(sermon.date) : (isTelugu ? '17-10-2026' : '24-10-2026');
+
+                  const yId = extractYoutubeId(sermon.youtubeId || '');
+                  // Using mqdefault.jpg because it is 16:9 widescreen and NEVER has black letterbox bars at top/bottom
+                  const thumbUri = sermon.thumbnailUrl || sermon.imageUrl || (yId && yId.length === 11 ? `https://img.youtube.com/vi/${yId}/mqdefault.jpg` : null);
+
+                  return (
+                    <TouchableOpacity
+                      key={sermon.id || `sermon-${idx}`}
+                      style={[
+                        styles.latestSermonCard,
+                        {
+                          width: sermonCardWidth,
+                          backgroundColor: screenTheme.isDark ? '#18181B' : '#FFFFFF',
+                          borderColor: (appearance === 'pure_white' || screenTheme.isDark) ? '#27272A' : '#E2E8F0',
+                        }
+                      ]}
+                      onPress={() => {
+                        if (sermon && !sermon.isSample && sermon.youtubeId) {
+                          navigation.navigate('SermonVideo', { sermonData: sermon });
+                        } else {
+                          navigation.navigate('Sermons');
+                        }
+                      }}
+                      activeOpacity={0.88}
+                    >
+                      {/* ── Top Half: Artwork / YouTube Thumbnail (Exact 16:9, No Gaps, Edge-to-Edge) ── */}
+                      <View style={[styles.latestSermonThumbContainer, { height: thumbHeight }]}>
+                        {thumbUri ? (
+                          <Image
+                            source={{ uri: thumbUri }}
+                            style={StyleSheet.absoluteFillObject}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <LinearGradient
+                            colors={isTelugu ? ['#132B25', '#101B22'] : ['#291827', '#17121F']}
+                            style={StyleSheet.absoluteFillObject}
+                          >
+                            {/* Abstract silhouette shapes */}
+                            <View style={[styles.sermonSilhouetteCircleBig, { backgroundColor: isTelugu ? '#2D4C43' : '#573730' }]} />
+                            <View style={[styles.sermonSilhouettePeach1, { backgroundColor: '#E5A682' }]} />
+                            <View style={[styles.sermonSilhouettePeach2, { backgroundColor: '#F3C9AB' }]} />
+                            <View style={[styles.sermonSilhouetteShoulderLeft, { backgroundColor: isTelugu ? '#D99B26' : '#21396C' }]} />
+                            <View style={[styles.sermonSilhouetteShoulderRight, { backgroundColor: isTelugu ? '#6E4194' : '#A84A3B' }]} />
+
+                            {/* Bold Golden Header Title shown ONLY when there is no thumbnail image */}
+                            <View style={styles.latestSermonGoldenHeader}>
+                              <Text style={styles.latestSermonGoldenText} numberOfLines={1}>{headerL1}</Text>
+                              <Text style={styles.latestSermonGoldenText} numberOfLines={1}>{headerL2}</Text>
+                            </View>
+                          </LinearGradient>
+                        )}
+
+
+                      </View>
+
+                      {/* ── Bottom Half: Details & Metadata ── */}
+                      <View style={styles.latestSermonInfoContainer}>
+                        <Text 
+                          style={[styles.latestSermonTitleEn, { color: screenTheme.isDark ? '#F8FAFC' : '#0F172A' }]} 
+                          numberOfLines={1}
+                        >
+                          {titleEn}
+                        </Text>
+                        {titleTe ? (
+                          <Text 
+                            style={[styles.latestSermonTitleTe, { color: screenTheme.isDark ? '#CBD5E1' : '#1E293B' }]} 
+                            numberOfLines={1}
+                          >
+                            {titleTe}
+                          </Text>
+                        ) : null}
+
+                        {/* Speaker Row */}
+                        <View style={styles.latestSermonMetaRow}>
+                          <User size={14} color="#2563EB" strokeWidth={2.4} />
+                          <Text 
+                            style={[styles.latestSermonPastorText, { color: screenTheme.isDark ? '#F1F5F9' : '#0F172A' }]} 
+                            numberOfLines={1}
+                          >
+                            {pastorName}
+                          </Text>
+                        </View>
+
+                        {/* Date Row */}
+                        <View style={styles.latestSermonMetaRow}>
+                          <Calendar size={14} color="#2563EB" strokeWidth={2.4} />
+                          <Text 
+                            style={[styles.latestSermonDateText, { color: screenTheme.isDark ? '#94A3B8' : '#64748B' }]} 
+                            numberOfLines={1}
+                          >
+                            {dateStr}
+                          </Text>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            );
+          })()}
+          
+          <View style={{ height: 40 }} />
         </View>
         </View>
       </Animated.ScrollView>
@@ -5839,8 +6017,8 @@ const styles = StyleSheet.create({
   
   greetingSection: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', zIndex: 2 },
   greetingLeft: { flex: 1 },
-  greetingText: { color: '#FCD34D', fontSize: 22, fontWeight: '400', fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontStyle: 'italic', marginBottom: 2, letterSpacing: 0.5, textShadowColor: 'rgba(252, 211, 77, 0.4)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 6 },
-  userNameCream: { color: '#F3EAD9', fontSize: 22, fontWeight: '900', fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', letterSpacing: 0.5 },
+  greetingText: { color: '#FCD34D', fontSize: 16, fontWeight: '400', fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontStyle: 'italic', marginBottom: 2, letterSpacing: 0.5, textShadowColor: 'rgba(252, 211, 77, 0.4)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 6 },
+  userNameCream: { color: '#F3EAD9', fontSize: 16, fontWeight: '900', fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', letterSpacing: 0.5 },
   
   greetingRight: { alignItems: 'center', justifyContent: 'center', marginLeft: 15 },
   calendarBadgeWrap: { width: 66, height: 66, justifyContent: 'center', alignItems: 'center' },
@@ -6259,40 +6437,54 @@ const styles = StyleSheet.create({
   ebHdLbl: { fontSize: 12, color: '#fff', fontWeight: '700' },
   ebSeeAll: { fontSize: 11, color: '#aac4e8', fontWeight: '600' },
   ebList: { padding: 0 },
-  ebItem: { flexDirection: 'row', padding: 15, alignItems: 'center' },
-  ebDivider: { height: 1, backgroundColor: '#f1f5f9', marginHorizontal: 15 },
-  ebThumbnailContainer: { width: 100, height: 56, backgroundColor: 'transparent', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
-  ebThumbnail: { width: 100, height: 56, borderRadius: 8 },
-  ebInfo: { flex: 1 },
-  ebTitle: { fontSize: 13.5, fontWeight: '800', color: '#1a2d5a', marginBottom: 5 },
-  ebDetailsLink: { fontSize: 10, fontWeight: '800', color: '#1a2d5a', marginTop: 8 },
-  highlightRow: { flexDirection: 'row', alignItems: 'center' },
-  dateBadge: { 
+  ebItem: { 
     flexDirection: 'row', 
     alignItems: 'center', 
-    backgroundColor: '#fffbeb', 
-    paddingHorizontal: 7, 
-    paddingVertical: 3, 
-    borderRadius: 5,
-    borderWidth: 1,
-    borderColor: '#fef3c7',
-    gap: 4
+    padding: 13, 
+    gap: 12 
   },
-  timeBadge: { 
+  ebThumbnailContainer: { 
+    width: 114, 
+    height: 64, 
+    borderRadius: 10, 
+    overflow: 'hidden', 
+    backgroundColor: '#0F172A',
+  },
+  ebThumbnail: { 
+    width: '100%', 
+    height: '100%',
+  },
+  ebInfo: { 
+    flex: 1, 
+    justifyContent: 'center',
+    paddingLeft: 4,
+  },
+  ebTitle: { 
+    fontSize: 14.5, 
+    fontWeight: '700', 
+    letterSpacing: 0.1, 
+    marginBottom: 4,
+    lineHeight: 18,
+  },
+  ebDetailRow: { 
     flexDirection: 'row', 
     alignItems: 'center', 
-    backgroundColor: '#f8fafc', 
-    paddingHorizontal: 7, 
-    paddingVertical: 3, 
-    borderRadius: 5,
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-    gap: 4
+    gap: 6, 
+    marginTop: 3 
   },
-  badgeTextMain: { fontSize: 9.5, fontWeight: '700', color: '#1a2d5a' },
-  badgeTextSub: { fontSize: 9.5, color: '#475569', fontWeight: '500' },
-  timeBadgeText: { fontSize: 9, fontWeight: '700', color: '#c0392b' },
-  ebMetaRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 4 },
+  ebDetailText: { 
+    fontSize: 11.5, 
+    fontWeight: '500', 
+    flex: 1 
+  },
+  ebArrowContainer: {
+    paddingLeft: 4,
+    opacity: 0.7,
+  },
+  ebDivider: { 
+    height: 1, 
+    marginHorizontal: 14 
+  },
   
   emptyEvents: { padding: 30, alignItems: 'center', justifyContent: 'center' },
   emptyEventsTxt: { color: '#1a2d5a', fontSize: 13, fontWeight: '700', marginTop: 12 },
@@ -6312,7 +6504,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
   },
   bentoHeaderTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: 0,
@@ -7037,7 +7229,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(53, 91, 86, 0.14)',
   },
   secLbl: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '800',
     color: '#0B1938',
     letterSpacing: 0.4,
@@ -7430,5 +7622,161 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
     letterSpacing: -0.1,
+  },
+
+  /* ── Latest Sermon (Sample Image Design) ── */
+  latestSermonSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginTop: 18,
+    marginBottom: 12,
+  },
+  latestSermonSectionTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  latestSermonSeeAll: {
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: '#2563EB',
+  },
+  latestSermonsScrollContent: {
+    paddingHorizontal: 16,
+    gap: 12,
+    paddingBottom: 4,
+  },
+  latestSermonCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  latestSermonThumbContainer: {
+    position: 'relative',
+    overflow: 'hidden',
+    padding: 10,
+    justifyContent: 'space-between',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+  },
+  latestSermonDurationPill: {
+    backgroundColor: 'rgba(13, 25, 46, 0.85)',
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 5,
+  },
+  latestSermonDurationPillText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  latestSermonGoldenHeader: {
+    zIndex: 2,
+  },
+  latestSermonGoldenText: {
+    color: '#F6BD38',
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+    lineHeight: 19,
+  },
+  latestSermonTopControlsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    zIndex: 2,
+  },
+  latestSermonPillBadge: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  latestSermonPillTop: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 5,
+    borderTopRightRadius: 5,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  latestSermonPillTopText: {
+    color: '#0F172A',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  latestSermonPillBottom: {
+    backgroundColor: '#0D192E',
+    borderBottomLeftRadius: 5,
+    borderBottomRightRadius: 5,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  latestSermonPillBottomText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  latestSermonPlayBtn: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#0D192E',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 3,
+    zIndex: 3,
+  },
+  latestSermonInfoContainer: {
+    paddingHorizontal: 13,
+    paddingTop: 12,
+    paddingBottom: 14,
+  },
+  latestSermonTitleEn: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    letterSpacing: 0.1,
+    marginBottom: 2,
+  },
+  latestSermonTitleTe: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 10,
+  },
+  latestSermonMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 5,
+  },
+  latestSermonPastorText: {
+    fontSize: 13,
+    fontWeight: '700',
+    flex: 1,
+  },
+  latestSermonDateText: {
+    fontSize: 12,
+    fontWeight: '500',
+    flex: 1,
   },
 });

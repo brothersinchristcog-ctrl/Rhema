@@ -12,12 +12,12 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { ArrowLeft, Check, Building2 } from 'lucide-react-native';
-import { useTheme, THEME_OPTIONS, ACCENT_PALETTE, FONT_SIZE_OPTIONS, FONT_SIZE_CONFIG, ThemeAppearance, NavBarStyle, FontSizeOption } from '../context/ThemeContext';
+import { useTheme, THEME_OPTIONS, ACCENT_PALETTE, FONT_SIZE_OPTIONS, FONT_SIZE_CONFIG, ThemeAppearance, NavBarStyle, FontSizeOption, FONT_STYLE_OPTIONS, FontStyleOption } from '../context/ThemeContext';
 
 export default function AppearanceScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
-  const { appearance, setAppearance, accentColor, setAccentColor, quickActionsStyle, setQuickActionsStyle, navBarStyle, setNavBarStyle, fontSize, setFontSize, colors, isDark } = useTheme();
+  const { appearance, setAppearance, accentColor, setAccentColor, quickActionsStyle, setQuickActionsStyle, navBarStyle, setNavBarStyle, fontSize, setFontSize, fontStyle, setFontStyle, colors, isDark } = useTheme();
 
   const ScaledText = Text as any;
   const { width: screenWidth } = useWindowDimensions();
@@ -605,6 +605,103 @@ export default function AppearanceScreen() {
         <View style={[styles.divider, { backgroundColor: isDark ? '#27272A' : 'rgba(0,0,0,0.06)' }]} />
 
 
+        {/* ── Divider ── */}
+        <View style={[styles.divider, { backgroundColor: isDark ? '#27272A' : 'rgba(0,0,0,0.06)' }]} />
+
+        {/* ── Font Style Settings Section ── */}
+        <View style={styles.sectionWrap}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Font style</Text>
+          <Text style={[styles.sectionDesc, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+            Choose the typeface for the entire app — all screens and cards will use it.
+          </Text>
+
+          <View style={[styles.fontSizeRow, { gap: isSmallDevice ? 6 : 8 }]}>
+            {FONT_STYLE_OPTIONS.map((item) => {
+              const isSelected = fontStyle === item.id;
+              const activeBorderColor = accentColor || '#881337';
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  activeOpacity={0.85}
+                  style={[
+                    styles.fontSizeCard,
+                    {
+                      paddingVertical: isSmallDevice ? 10 : 13,
+                      paddingHorizontal: isSmallDevice ? 3 : 6,
+                      borderColor: isSelected ? activeBorderColor : isDark ? '#27272A' : '#E2E8F0',
+                      borderWidth: isSelected ? 2.5 : 1.5,
+                      backgroundColor: isDark ? '#121212' : '#FFFFFF',
+                    },
+                  ]}
+                  onPress={() => setFontStyle(item.id as FontStyleOption)}
+                >
+                  <View
+                    style={[
+                      styles.fontSizeAaBox,
+                      {
+                        width: isSmallDevice ? 38 : 46,
+                        height: isSmallDevice ? 38 : 46,
+                        borderRadius: isSmallDevice ? 10 : 13,
+                        backgroundColor: isSelected
+                          ? (isDark ? 'rgba(56,189,248,0.12)' : 'rgba(37,99,235,0.08)')
+                          : isDark ? '#18181B' : '#F8FAFC',
+                      },
+                    ]}
+                  >
+                    <ScaledText
+                      skipFontScaling
+                      style={[styles.fontSizeAaTxt, {
+                        fontSize: isSmallDevice ? 16 : 19,
+                        fontFamily: item.preview,
+                        color: isSelected ? activeBorderColor : isDark ? '#F4F4F5' : '#1E293B',
+                        fontWeight: isSelected ? '800' : '600',
+                      }]}
+                    >
+                      Aa
+                    </ScaledText>
+                  </View>
+                  <View style={styles.fontSizeCardInfo}>
+                    <ScaledText
+                      skipFontScaling
+                      style={[styles.fontSizeCardTitle, {
+                        color: isDark ? '#F4F4F5' : '#1E293B',
+                        fontWeight: isSelected ? '800' : '600',
+                        fontSize: isSmallDevice ? 11.5 : 13,
+                        fontFamily: item.preview,
+                      }]}
+                      numberOfLines={1}
+                    >
+                      {item.label}
+                    </ScaledText>
+                    <ScaledText
+                      skipFontScaling
+                      style={[styles.fontSizeCardSub, {
+                        color: isDark ? '#A1A1AA' : '#64748B',
+                        fontSize: isSmallDevice ? 9.5 : 11,
+                      }]}
+                      numberOfLines={1}
+                    >
+                      {item.desc}
+                    </ScaledText>
+                  </View>
+                  {isSelected && (
+                    <View style={[styles.fontSizeCheckCircle, {
+                      backgroundColor: activeBorderColor,
+                      width: isSmallDevice ? 15 : 18,
+                      height: isSmallDevice ? 15 : 18,
+                      borderRadius: 9,
+                      top: isSmallDevice ? 4 : 6,
+                      right: isSmallDevice ? 4 : 6,
+                    }]}>
+                      <Check size={isSmallDevice ? 9 : 11} color="#FFFFFF" strokeWidth={3} />
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
         {/* ── Accent Color Section ── */}
         <View style={styles.accentSection}>
           <Text style={[styles.accentTitle, { color: colors.text }]}>Accent color</Text>
@@ -874,6 +971,14 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
 
+
+  fontStyleGroupLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    marginBottom: 10,
+    marginTop: 4,
+  },
   fontSizeRow: {
     flexDirection: 'row',
     gap: 10,
