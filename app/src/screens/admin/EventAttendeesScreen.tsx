@@ -397,7 +397,7 @@ export default function EventAttendeesScreen({ navigation, route }: any) {
             </View>
 
             <Text style={styles.qrInstructions}>
-              Members scan this code with the WeChristian app to mark attendance for this church.
+              Members scan this code with the Rhema app to mark attendance for this church.
             </Text>
             
             <View style={{ flexDirection: 'row', gap: 16, marginTop: 12 }}>

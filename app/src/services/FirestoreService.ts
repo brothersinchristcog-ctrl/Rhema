@@ -2531,6 +2531,36 @@ class FirestoreService {
       delete data.updateMode;
       
       const cleanData = Object.fromEntries(Object.entries(data).filter(([_, v]) => v !== undefined));
+
+      // Resolve Church metadata for generating official QR payload
+      const churchId = (await this.getChurchId()) || '';
+      let churchName = 'Rhema Global Ministries';
+      let churchCode = 'RHEMA';
+      try {
+        const churchDoc = await this.getChurchDoc();
+        if (churchDoc) {
+          const snap = await churchDoc.get();
+          if (snap.exists) {
+            const cData = snap.data();
+            churchName = cData?.name || cData?.churchName || churchName;
+            churchCode = cData?.churchCode || cData?.code || churchCode;
+          }
+        }
+      } catch (err) {
+        console.warn('⚠️ [createEvent] Could not fetch church details for QR generation:', err);
+      }
+
+      const buildEventQRPayload = (eventId: string, eventTitle: string) => JSON.stringify({
+        action: 'Rhema_Attendance',
+        churchId,
+        churchName,
+        churchCode,
+        eventId,
+        eventName: eventTitle || 'Church Event',
+        timestamp: Date.now(),
+        type: 'attendance_checkin',
+        version: '2.0',
+      });
       
       if (cleanData.id) {
         // UPDATING EXISTING
@@ -2619,6 +2649,8 @@ class FirestoreService {
                 occurrenceEndDate = `${ny}-${nm}-${nd}`;
               }
 
+              const eventTitle = cleanData.titleEn || cleanData.title || cleanData.name || 'Event';
+              const occurrenceQr = buildEventQRPayload(docRef.id, eventTitle);
               const instanceData = { 
                 ...cleanData, 
                 id: docRef.id, 
@@ -2629,6 +2661,8 @@ class FirestoreService {
                 recurringGroupId: groupId,
                 occurrenceIndex: i + indexInChunk + 1,
                 totalOccurrences: futureDates.length,
+                qrPayload: occurrenceQr,
+                qrCode: occurrenceQr,
                 createdAt: FieldValue.serverTimestamp() 
               };
               batch.set(docRef, instanceData);
@@ -2639,7 +2673,16 @@ class FirestoreService {
 
           return firstId;
         } else {
-          const docRef = await col.add({ ...cleanData, createdAt: FieldValue.serverTimestamp() });
+          const docRef = col.doc();
+          const eventTitle = cleanData.titleEn || cleanData.title || cleanData.name || 'Event';
+          const singleQr = buildEventQRPayload(docRef.id, eventTitle);
+          await docRef.set({ 
+            ...cleanData, 
+            id: docRef.id,
+            qrPayload: singleQr,
+            qrCode: singleQr,
+            createdAt: FieldValue.serverTimestamp() 
+          });
           return docRef.id;
         }
       }

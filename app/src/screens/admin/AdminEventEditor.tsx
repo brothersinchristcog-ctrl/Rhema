@@ -836,6 +836,18 @@ export default function AdminEventEditor() {
               ) : null}
             </View>
 
+            {requireEventQR && (
+              <View style={styles.successQrBox}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                  <QrCode size={14} color="#92400e" style={{ marginRight: 6 }} />
+                  <Text style={styles.successQrBoxTitle}>Unique Event QR Code Generated</Text>
+                </View>
+                <Text style={styles.successQrBoxSub}>
+                  Attendance strictly requires this event's dedicated QR code. You can view, save, or share it anytime from the Events list or Attendance dashboard.
+                </Text>
+              </View>
+            )}
+
             {/* Action Buttons */}
             <TouchableOpacity 
               activeOpacity={0.88}
@@ -1152,7 +1164,7 @@ export default function AdminEventEditor() {
                 )}
               </View>
 
-              {recurring !== 'Select Recurrence' && (
+              {isRecurring && recurring && recurring !== 'Select Recurrence' && recurring !== 'One-time event' && (
                 <View style={styles.recurringInfoCard}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
                     <Repeat size={14} color="#0D9488" style={{ marginRight: 6 }} />
@@ -1165,7 +1177,7 @@ export default function AdminEventEditor() {
                   <Text style={styles.recurringInfoHeading}>
                     {recurring === 'Every day'
                       ? `Repeats Every Day from ${date} to ${endDate}`
-                      : `Repeats (${recurring}) from ${date} to ${endDate}`}
+                      : `Repeats (${RECURRING_OPTIONS.find((t: any) => t.value === recurring)?.label || recurring}) from ${date} to ${endDate}`}
                   </Text>
                   <Text style={styles.recurringInfoSub}>
                     Every occurrence in this period will automatically be generated in the church calendar. Attendance is recorded independently for each day.
@@ -1486,12 +1498,17 @@ export default function AdminEventEditor() {
         </View>
 
         {/* ── Attendance & QR Check-In Settings ── */}
-        <View style={[styles.section, styles.secNavy]}>
+        <View style={[styles.section, styles.secNavy, requireEventQR && { borderColor: '#B45309', borderWidth: 1.5, backgroundColor: '#FFFBEB' }]}>
           <View style={styles.secHd}>
-            <View style={[styles.secHdPill, { backgroundColor: '#1a2d5a' }]}>
+            <View style={[styles.secHdPill, { backgroundColor: requireEventQR ? '#B45309' : '#1a2d5a' }]}>
               <QrCode size={13} color="#fff" />
             </View>
             <Text style={styles.secHdTXT}>Attendance Check-In Settings</Text>
+            {requireEventQR && (
+              <View style={{ backgroundColor: '#FEF3C7', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, marginLeft: 'auto' }}>
+                <Text style={{ fontSize: 10, fontWeight: '800', color: '#92400E' }}>STRICT QR ACTIVE</Text>
+              </View>
+            )}
           </View>
 
           <View style={[styles.switchRow, { alignItems: 'flex-start' }]}>
@@ -1506,10 +1523,22 @@ export default function AdminEventEditor() {
             <Switch
               value={requireEventQR}
               onValueChange={setRequireEventQR}
-              trackColor={{ false: '#CBD5E1', true: '#1a2d5a' }}
-              thumbColor={requireEventQR ? '#C9A84C' : '#FFFFFF'}
+              trackColor={{ false: '#CBD5E1', true: '#B45309' }}
+              thumbColor={requireEventQR ? '#F59E0B' : '#FFFFFF'}
             />
           </View>
+
+          {requireEventQR && (
+            <View style={styles.strictQrActiveBanner}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                <QrCode size={13} color="#92400E" style={{ marginRight: 6 }} />
+                <Text style={styles.strictQrActiveBannerTitle}>EACH EVENT HAS ITS OWN UNIQUE QR CODE</Text>
+              </View>
+              <Text style={styles.strictQrActiveBannerSub}>
+                A unique QR code is automatically generated and linked to this event. QR codes are never shared across events.
+              </Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.footerBtnRow}>
@@ -2590,5 +2619,46 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     marginTop: 3,
     fontWeight: '600',
-  }
+  },
+
+  strictQrActiveBanner: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 12,
+  },
+  strictQrActiveBannerTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#92400E',
+    letterSpacing: 0.5,
+  },
+  strictQrActiveBannerSub: {
+    fontSize: 11,
+    color: '#78350F',
+    lineHeight: 16,
+  },
+
+  successQrBox: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 12,
+    padding: 12,
+    width: '100%',
+    marginBottom: 16,
+  },
+  successQrBoxTitle: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  successQrBoxSub: {
+    fontSize: 11,
+    color: '#78350F',
+    lineHeight: 16,
+    marginTop: 2,
+  },
 });
