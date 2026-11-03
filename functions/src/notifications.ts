@@ -2004,10 +2004,14 @@ export async function sendDailyVersePushInternal(slotOverride?: string, targetCh
   // Using Android 'tag' and 'collapseKey' guarantees that Android OS displays EXACTLY ONE banner.
   const unifiedTitle = slotInfo.title;
   let unifiedBody = '';
+  const combinedRef = (refTeText && refEnText && refTeText !== refEnText)
+    ? `${refTeText} | ${refEnText}`
+    : (refTeText || refEnText);
+
   if (verseTeText && verseEnText && verseTeText !== verseEnText) {
-    unifiedBody = `"${verseTeText}"\n— ${refTeText}\n\n"${verseEnText}"\n— ${refEnText}`;
+    unifiedBody = `"${verseTeText}"\n\n"${verseEnText}"\n\n${combinedRef}`;
   } else {
-    unifiedBody = `"${verseTeText || verseEnText}"\n— ${refTeText || refEnText}`;
+    unifiedBody = `"${verseTeText || verseEnText}"\n\n${combinedRef}`;
   }
 
   try {
@@ -2086,7 +2090,7 @@ export async function sendDailyVersePushInternal(slotOverride?: string, targetCh
     const rhemaChurchRef = db.collection('Rhema Church').doc('rhema');
     await rhemaChurchRef.collection('broadcasts').add({
       title: unifiedTitle,
-      content: `"${verseEnText}" — ${refEnText}\n\n"${verseTeText}" — ${refTeText}`,
+      content: unifiedBody,
       date: todayStr,
       type: 'daily_verse',
       period: slot,
