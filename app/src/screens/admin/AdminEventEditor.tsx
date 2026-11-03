@@ -115,7 +115,6 @@ export default function AdminEventEditor() {
 
   // ── Multi-Service & Setlist State ──
   const [eventServices, setEventServices] = useState<EventServiceItem[]>([]);
-  const [enableWorshipServices, setEnableWorshipServices] = useState(false);
   const [allAvailableSongs, setAllAvailableSongs] = useState<WorshipSong[]>([]);
   const [showSongPicker, setShowSongPicker] = useState(false);
   const [targetServiceIdForPicker, setTargetServiceIdForPicker] = useState<string | null>(null);
@@ -330,10 +329,8 @@ export default function AdminEventEditor() {
       setRequireEventQR(editingData.requireEventQR === true || editingData.requireEventQr === true);
       if (Array.isArray(editingData.services) && editingData.services.length > 0) {
         setEventServices(editingData.services);
-        setEnableWorshipServices(true);
       } else {
         setEventServices([]);
-        setEnableWorshipServices(editingData.hasWorshipServices === true);
       }
       setBannerUrl(editingData.bannerUrl || '');
       setBannerColor(editingData.bannerColor || '#c0392b');
@@ -691,8 +688,8 @@ export default function AdminEventEditor() {
       notifyOnPublish, reminder1Day, reminder1Hour,
       rsvpCap: capAttendance ? 100 : 0,
       updateMode,
-      hasWorshipServices: enableWorshipServices && eventServices.length > 0,
-      services: enableWorshipServices && eventServices.length > 0 ? eventServices : []
+      hasWorshipServices: eventServices.length > 0,
+      services: eventServices.length > 0 ? eventServices : []
     };
 
     try {
@@ -1259,45 +1256,24 @@ export default function AdminEventEditor() {
         {/* ── Worship Services & Setlist Section (Optional) ── */}
         <View style={[styles.section, { borderLeftColor: '#10B981', backgroundColor: '#FFFFFF' }]}>
           <View style={[styles.secHd, { justifyContent: 'space-between', alignItems: 'center' }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, marginRight: 12 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
               <View style={[styles.secHdPill, { backgroundColor: '#10B981' }]}>
                 <Music size={13} color="#fff" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.secHdTXT}>Worship Services & Song Setlists</Text>
                 <Text style={{ fontSize: 11, color: '#64748B', marginTop: 1 }}>
-                  {enableWorshipServices
-                    ? `${eventServices.length} service${eventServices.length === 1 ? '' : 's'} configured`
-                    : 'Optional: attach worship services & song setlists to this event'}
+                  {eventServices.length === 0 ? 'Optional: attach worship services & song setlists to this event' : `${eventServices.length} service${eventServices.length > 1 ? 's' : ''} configured`}
                 </Text>
               </View>
             </View>
-
-            {/* Properly aligned Enable text & Toggle Switch */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={{
-                fontSize: 13,
-                fontWeight: '700',
-                color: enableWorshipServices ? '#047857' : '#64748B'
-              }}>
-                Enable
-              </Text>
-              <Switch
-                value={enableWorshipServices}
-                onValueChange={(val) => {
-                  setEnableWorshipServices(val);
-                  if (val && eventServices.length === 0) {
-                    handleAddService();
-                  }
-                }}
-                trackColor={{ false: '#CBD5E1', true: '#10B981' }}
-                thumbColor="#FFFFFF"
-              />
-            </View>
+            {eventServices.length > 0 && (
+              <View style={{ backgroundColor: '#D1FAE5', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 }}>
+                <Text style={{ fontSize: 11, fontWeight: '800', color: '#047857' }}>ENABLED</Text>
+              </View>
+            )}
           </View>
 
-          {enableWorshipServices && (
-          <View style={{ marginTop: 10 }}>
           {/* List of Configured Services */}
           {eventServices.map((service, sIndex) => (
             <View key={service.id} style={{
@@ -1471,8 +1447,6 @@ export default function AdminEventEditor() {
               {eventServices.length === 0 ? 'Add Worship Service / Setlist' : 'Add Another Service'}
             </Text>
           </TouchableOpacity>
-          </View>
-          )}
         </View>
 
         {/* ── Attendance & QR Check-In Settings ── */}
