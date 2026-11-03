@@ -1009,8 +1009,42 @@ async function handleBroadcastPushDispatch(data: any, churchIdParam?: string, me
       });
     } catch (_) {}
 
-    // 3. Also check root 'users' collection where primaryChurchId == churchId (for general broadcasts only)
-    if (!isTargetAdmin) {
+    // 3. For Admin notifications, additionally check Church Doc UIDs and users collection
+    if (isTargetAdmin) {
+      try {
+        // A. Check church doc for owner/pastor/admin UIDs
+        const cSnap = await db.collection('Rhema Church').doc(churchId).get();
+        if (cSnap.exists) {
+          const cData = cSnap.data();
+          const adminUids = [cData?.adminUid, cData?.createdBy, cData?.pastorUid, cData?.ownerUid].filter(Boolean);
+          for (const uid of adminUids) {
+            try {
+              const uDoc = await db.collection('users').doc(uid).get();
+              const uData = uDoc.data();
+              if (uData?.fcmToken && typeof uData.fcmToken === 'string' && uData.fcmToken.trim().length > 10) {
+                tokenSet.add(uData.fcmToken.trim());
+              }
+            } catch (_) {}
+          }
+        }
+
+        // B. Check users collection directly where role/userType indicates admin
+        const usersSnap = await db.collection('users').get();
+        usersSnap.forEach((doc: any) => {
+          const u = doc.data();
+          const role = String(u.userType || u.role || '').toLowerCase();
+          const isAdmin = role.includes('admin') || role.includes('pastor') || role.includes('super');
+          if (isAdmin) {
+            if (u.fcmToken && typeof u.fcmToken === 'string' && u.fcmToken.trim().length > 10) {
+              tokenSet.add(u.fcmToken.trim());
+            }
+          }
+        });
+      } catch (adminLookupErr) {
+        console.warn('⚠️ Error in secondary admin token lookup:', adminLookupErr);
+      }
+    } else {
+      // General member broadcasts check
       try {
         let query: any = db.collection('users');
         if (churchId) {
@@ -1035,10 +1069,16 @@ async function handleBroadcastPushDispatch(data: any, churchIdParam?: string, me
     const targetQuizId = data.quizId || data.relatedId || (data.type === 'quiz' ? data.id : undefined);
     const notificationData: Record<string, string> = {
       type,
-      id: String(targetQuizId || data.sermonId || messageIdParam || ''),
+      id: String(data.prayerId || data.requestId || targetQuizId || data.sermonId || messageIdParam || ''),
+      ...(data.prayerId ? { prayerId: String(data.prayerId) } : {}),
+      ...(data.requestId ? { requestId: String(data.requestId) } : {}),
+      ...(data.targetTab ? { targetTab: String(data.targetTab) } : {}),
+      ...(data.memberName ? { memberName: String(data.memberName) } : {}),
+      ...(data.category ? { category: String(data.category) } : {}),
+      ...(typeof data.isPublic !== 'undefined' ? { isPublic: String(data.isPublic) } : {}),
       ...(targetQuizId ? { quizId: String(targetQuizId) } : {}),
       ...(data.sermonId ? { sermonId: String(data.sermonId) } : {}),
-      ...(data.screen ? { screen: String(data.screen) } : {}),
+      ...(data.screen ? { screen: String(data.screen) } : { screen: 'AdminRoot' }),
       ...(churchId ? { churchId: String(churchId) } : {}),
       ...(data.date ? { date: String(data.date) } : {}),
       click_action: 'FLUTTER_NOTIFICATION_CLICK',
@@ -1084,6 +1124,42 @@ async function handleBroadcastPushDispatch(data: any, churchIdParam?: string, me
 
         const response = await getMsg().sendEachForMulticast(message);
         console.log(`✅ Broadcast push delivered to tokens: ${response.successCount} success, ${response.failureCount} failed.`);
+      }
+
+      if (isTargetAdmin && churchId) {
+        try {
+          const adminTopic = `church_${churchId}_admin`;
+          await getMsg().send({
+            notification: {
+              title,
+              body: plainBody.length > 200 ? plainBody.substring(0, 197) + '...' : plainBody,
+            },
+            data: notificationData,
+            topic: adminTopic,
+            android: {
+              priority: 'high' as const,
+              notification: {
+                sound: 'default',
+                priority: 'max' as const,
+                channelId: channelId,
+              },
+            },
+            apns: {
+              headers: {
+                'apns-priority': '10',
+              },
+              payload: {
+                aps: {
+                  sound: 'default',
+                  badge: 1,
+                },
+              },
+            },
+          });
+          console.log(`✅ Also broadcasted admin alert to topic: ${adminTopic}`);
+        } catch (adminTopicErr) {
+          console.warn('⚠️ Could not send to church admin topic:', adminTopicErr);
+        }
       }
     } else if (churchId && !data.targetPhone) {
       // Fallback: If no device tokens exist in DB, send to appropriate topic
@@ -1679,5 +1755,8 @@ export {
   onBaptismRequestCreatedAdmin,
   onBaptismRequestCreatedAdminLegacy,
   onPrayerRequestCreatedAdmin,
-  onPrayerRequestCreatedAdminLegacy
+  onPrayerRequestCreatedAdminLegacy,
+  onPrayerRequestProcessedMember,
+  onPrayerRequestProcessedMemberLegacy,
+  pushPrayerRequestApproved
 } from './notifications.js';

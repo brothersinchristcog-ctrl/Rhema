@@ -550,34 +550,285 @@ export const onBaptismRequestCreatedAdminLegacy = onDocumentCreated({ document: 
     await handleBaptismRequestAdminPush(baptism, churchId, requestId, snap.ref);
 });
 /**
- * 🙏 NOTIFY COMMUNITY OF APPROVED PRAYER REQUEST
- * Triggered when a prayer request is approved (isAnswered becomes true).
+ * 🙏 HELPER: DISPATCH PRAYER REQUEST APPROVAL/PROCESSED PUSH TO THE SPECIFIC MEMBER ONLY
+ * Guarantees that ONLY the particular member who submitted the prayer request receives the push notification.
+ * Regular church members and community topics NEVER receive broadcast notifications for individual prayers.
  */
-export const pushPrayerRequestApproved = onDocumentUpdated('churches/{churchId}/prayerRequests/{prayerId}', async (event) => {
+async function handlePrayerRequestMemberPush(before, after, churchId, prayerId, snapRef) {
+    if (!after)
+        return;
+    // Trigger when prayer request is newly answered/processed, or when admin adds a response
+    const justAnswered = (!before?.isAnswered && after.isAnswered);
+    const newResponseAdded = Boolean(after.lastAdminResponse && after.lastAdminResponse !== before?.lastAdminResponse);
+    if (!justAnswered && !newResponseAdded) {
+        return;
+    }
+    // Deduplication guard
+    if (after.memberPushSent === true && !newResponseAdded) {
+        console.log(`🛑 Skipping duplicate prayer member push for request: ${prayerId}`);
+        return;
+    }
+    const db = getFirestore();
+    const messaging = getMessaging();
+    if (snapRef) {
+        try {
+            await snapRef.update({
+                memberPushSent: true,
+                memberPushSentAt: FieldValue.serverTimestamp(),
+            });
+        }
+        catch (_) { }
+    }
+    // 1. Identify the specific submitting member
+    const memberId = (after.uid || after.authorId || after.contactId || '').trim();
+    const memberPhone = (after.phone || after.contactPhone || after.mobile || '').trim();
+    let memberName = (after.name || after.memberName || after.authorName || '').trim();
+    if (!memberName || memberName.toLowerCase() === 'faithful member' || memberName.toLowerCase() === 'church member' || memberName.toLowerCase() === 'a church member') {
+        if (memberId) {
+            try {
+                let mSnap = await db.collection('Rhema Church').doc(churchId).collection('members').doc(memberId).get();
+                if (!mSnap.exists) {
+                    mSnap = await db.collection('churches').doc(churchId).collection('members').doc(memberId).get();
+                }
+                if (mSnap.exists && mSnap.data()?.name) {
+                    memberName = mSnap.data().name;
+                }
+                else {
+                    const uSnap = await db.collection('users').doc(memberId).get();
+                    if (uSnap.exists && (uSnap.data()?.name || uSnap.data()?.displayName)) {
+                        memberName = uSnap.data().name || uSnap.data().displayName;
+                    }
+                }
+            }
+            catch (_) { }
+        }
+    }
+    if (!memberName) {
+        memberName = 'Church Member';
+    }
+    const isPublic = after.isPublic === true;
+    const adminComment = (after.lastAdminResponse || '').trim();
+    // 2. Compose personalized notification title and body
+    const title = isPublic
+        ? '🙏 Prayer Request Approved'
+        : '🙏 Pastoral Prayer Response';
+    let body = '';
+    if (adminComment) {
+        const preview = adminComment.length > 90 ? `${adminComment.substring(0, 87)}...` : adminComment;
+        body = `Pastor has responded to your prayer request: "${preview}"`;
+    }
+    else if (isPublic) {
+        body = `Dear ${memberName}, your prayer request has been approved and our pastoral team is praying for you.`;
+    }
+    else {
+        body = `Dear ${memberName}, your prayer request has been received and our pastoral team has prayed for you.`;
+    }
+    // 3. Find device tokens ONLY for this specific member
+    const memberTokens = [];
+    try {
+        // Check Rhema Church members
+        if (memberId) {
+            try {
+                const mSnap = await db.collection('Rhema Church').doc(churchId).collection('members').doc(memberId).get();
+                if (mSnap.exists) {
+                    const m = mSnap.data();
+                    if (m?.fcmToken && typeof m.fcmToken === 'string' && m.fcmToken.trim().length > 10) {
+                        memberTokens.push(m.fcmToken.trim());
+                    }
+                    if (Array.isArray(m?.fcmTokens)) {
+                        for (const t of m.fcmTokens) {
+                            if (typeof t === 'string' && t.trim().length > 10)
+                                memberTokens.push(t.trim());
+                        }
+                    }
+                }
+            }
+            catch (_) { }
+            // Check legacy churches members
+            try {
+                const mSnap = await db.collection('churches').doc(churchId).collection('members').doc(memberId).get();
+                if (mSnap.exists) {
+                    const m = mSnap.data();
+                    if (m?.fcmToken && typeof m.fcmToken === 'string' && m.fcmToken.trim().length > 10) {
+                        memberTokens.push(m.fcmToken.trim());
+                    }
+                    if (Array.isArray(m?.fcmTokens)) {
+                        for (const t of m.fcmTokens) {
+                            if (typeof t === 'string' && t.trim().length > 10)
+                                memberTokens.push(t.trim());
+                        }
+                    }
+                }
+            }
+            catch (_) { }
+            // Check users collection by UID
+            try {
+                const uSnap = await db.collection('users').doc(memberId).get();
+                if (uSnap.exists) {
+                    const u = uSnap.data();
+                    if (u?.fcmToken && typeof u.fcmToken === 'string' && u.fcmToken.trim().length > 10) {
+                        memberTokens.push(u.fcmToken.trim());
+                    }
+                    if (Array.isArray(u?.fcmTokens)) {
+                        for (const t of u.fcmTokens) {
+                            if (typeof t === 'string' && t.trim().length > 10)
+                                memberTokens.push(t.trim());
+                        }
+                    }
+                }
+            }
+            catch (_) { }
+        }
+        // Check by Phone number across members and users
+        if (memberPhone) {
+            const cleanDigits = memberPhone.replace(/\D/g, '').slice(-10);
+            if (cleanDigits.length >= 7) {
+                try {
+                    const memQuery = await db.collection('Rhema Church').doc(churchId).collection('members').get();
+                    memQuery.forEach(doc => {
+                        const m = doc.data();
+                        const p = String(m.phone || m.mobile || '').replace(/\D/g, '').slice(-10);
+                        if (p === cleanDigits) {
+                            if (m?.fcmToken && typeof m.fcmToken === 'string' && m.fcmToken.trim().length > 10) {
+                                memberTokens.push(m.fcmToken.trim());
+                            }
+                            if (Array.isArray(m?.fcmTokens)) {
+                                for (const t of m.fcmTokens) {
+                                    if (typeof t === 'string' && t.trim().length > 10)
+                                        memberTokens.push(t.trim());
+                                }
+                            }
+                        }
+                    });
+                }
+                catch (_) { }
+                try {
+                    const uQuery = await db.collection('users').get();
+                    uQuery.forEach(doc => {
+                        const u = doc.data();
+                        const p = String(u.phone || u.mobile || u.phoneNumber || '').replace(/\D/g, '').slice(-10);
+                        if (p === cleanDigits) {
+                            if (u?.fcmToken && typeof u.fcmToken === 'string' && u.fcmToken.trim().length > 10) {
+                                memberTokens.push(u.fcmToken.trim());
+                            }
+                            if (Array.isArray(u?.fcmTokens)) {
+                                for (const t of u.fcmTokens) {
+                                    if (typeof t === 'string' && t.trim().length > 10)
+                                        memberTokens.push(t.trim());
+                                }
+                            }
+                        }
+                    });
+                }
+                catch (_) { }
+            }
+        }
+    }
+    catch (lookupErr) {
+        console.error('Error fetching member tokens for prayer push:', lookupErr);
+    }
+    const notificationData = {
+        type: 'prayer_request_member',
+        churchId: churchId,
+        prayerId: prayerId,
+        requestId: prayerId,
+        screen: 'PrayerWall',
+        isPublic: String(isPublic),
+        click_action: 'FLUTTER_NOTIFICATION_CLICK',
+    };
+    // 4. Send direct push ONLY to the specific member's registered devices (NEVER topic broadcast)
+    const uniqueTokens = Array.from(new Set(memberTokens));
+    if (uniqueTokens.length > 0) {
+        try {
+            const sendRes = await messaging.sendEachForMulticast({
+                notification: { title, body },
+                data: notificationData,
+                tokens: uniqueTokens,
+                android: {
+                    priority: 'high',
+                    notification: {
+                        sound: 'default',
+                        channelId: 'church_alerts',
+                    },
+                },
+                apns: {
+                    payload: {
+                        aps: {
+                            sound: 'default',
+                            badge: 1,
+                        },
+                    },
+                },
+            });
+            console.log(`✅ Direct prayer request notification sent to member (${memberName}): ${sendRes.successCount} success, ${sendRes.failureCount} failed.`);
+        }
+        catch (fcmErr) {
+            console.error('Error dispatching multicast to member:', fcmErr);
+        }
+    }
+    else {
+        console.log(`ℹ️ No direct FCM tokens found for member (${memberName} - ID: ${memberId}, Phone: ${memberPhone}). In-app notification doc written.`);
+    }
+    // 5. In-app notification document strictly targeted to this member
+    try {
+        const notifPayload = {
+            type: 'prayer_request_member',
+            title,
+            body,
+            memberName,
+            memberPhone,
+            targetMemberId: memberId,
+            targetPhone: memberPhone,
+            targetUid: memberId,
+            prayerId,
+            requestId: prayerId,
+            isPublic,
+            read: false,
+            createdAt: FieldValue.serverTimestamp(),
+        };
+        await db.collection('Rhema Church').doc(churchId).collection('notifications').add(notifPayload);
+        try {
+            await db.collection('churches').doc(churchId).collection('notifications').add(notifPayload);
+        }
+        catch (_) { }
+    }
+    catch (dbErr) {
+        console.error('Error writing member prayer in-app notification doc:', dbErr);
+    }
+}
+/**
+ * 🙏 NOTIFY MEMBER OF APPROVED / PROCESSED PRAYER REQUEST (Primary single-church collection)
+ * Triggered when a prayer request is approved or processed (isAnswered becomes true).
+ * Notifies ONLY the specific member who submitted it. NEVER broadcasts to community topic.
+ */
+export const onPrayerRequestProcessedMember = onDocumentUpdated({ document: 'Rhema Church/{churchId}/prayerRequests/{prayerId}', region: 'asia-south1' }, async (event) => {
     const snap = event.data;
     if (!snap)
         return;
     const before = snap.before.data();
     const after = snap.after.data();
     const churchId = event.params.churchId;
-    // Check if it just became approved AND is public
-    if (!before.isAnswered && after.isAnswered && after.isPublic) {
-        const payload = {
-            notification: {
-                title: `🙏 Community Prayer`,
-                body: `Please join in prayer for ${after.name || 'a member'}.`,
-            },
-            data: { type: 'prayer_request_public', churchId: churchId },
-            topic: `church_${churchId}`,
-        };
-        try {
-            await getMessaging().send(payload);
-        }
-        catch (error) {
-            console.error('Error sending prayer community notification:', error);
-        }
-    }
+    const prayerId = event.params.prayerId;
+    await handlePrayerRequestMemberPush(before, after, churchId, prayerId, snap.after.ref);
 });
+/**
+ * 🙏 NOTIFY MEMBER OF APPROVED / PROCESSED PRAYER REQUEST (Legacy churches collection)
+ */
+export const onPrayerRequestProcessedMemberLegacy = onDocumentUpdated({ document: 'churches/{churchId}/prayerRequests/{prayerId}', region: 'asia-south1' }, async (event) => {
+    const snap = event.data;
+    if (!snap)
+        return;
+    const before = snap.before.data();
+    const after = snap.after.data();
+    const churchId = event.params.churchId;
+    const prayerId = event.params.prayerId;
+    await handlePrayerRequestMemberPush(before, after, churchId, prayerId, snap.after.ref);
+});
+/**
+ * Deprecated alias to maintain backwards compatibility if referenced elsewhere.
+ * Topic broadcast intentionally removed.
+ */
+export const pushPrayerRequestApproved = onPrayerRequestProcessedMemberLegacy;
 function formatSermonDateDisplay(dateStr) {
     if (!dateStr)
         return '';

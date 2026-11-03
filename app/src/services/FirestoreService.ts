@@ -1964,14 +1964,19 @@ class FirestoreService {
         createdAt: FieldValue.serverTimestamp()
       });
 
-      // Write direct notification to notifications collection to guarantee Admin notification visibility
+      // 1. Write direct notification to notifications collection for Admin in-app visibility
       try {
         const notifCol = await this.getCollection('notifications');
         const excerpt = textVal.length > 80 ? `${textVal.substring(0, 80)}...` : textVal;
+        const pushTitle = data.isPublic
+          ? `🙏 New Public Prayer Request: ${memberNameVal}`
+          : `🙏 New Prayer Request: ${memberNameVal}`;
+        const pushBody = excerpt ? `${memberNameVal} submitted a prayer request: "${excerpt}"` : `${memberNameVal} submitted a new prayer request. Tap to review.`;
+
         await notifCol.add({
           type: 'prayer_request_admin',
-          title: `🙏 New Prayer Request: ${memberNameVal}`,
-          body: excerpt ? `${memberNameVal} submitted a prayer request: "${excerpt}"` : `${memberNameVal} submitted a new prayer request.`,
+          title: pushTitle,
+          body: pushBody,
           memberName: memberNameVal,
           prayerId: docRef.id,
           requestId: docRef.id,
@@ -1987,6 +1992,46 @@ class FirestoreService {
         console.warn('⚠️ Could not write admin notification doc directly:', notifErr);
       }
 
+      // 2. Dispatch immediate Admin push notification via broadcasts collection
+      try {
+        const churchId = await this.getChurchId();
+        const excerpt = textVal.length > 80 ? `${textVal.substring(0, 80)}...` : textVal;
+        const pushTitle = data.isPublic
+          ? `🙏 New Public Prayer Request: ${memberNameVal}`
+          : `🙏 New Prayer Request: ${memberNameVal}`;
+        const pushBody = excerpt ? `${memberNameVal} submitted a prayer request: "${excerpt}"` : `${memberNameVal} submitted a new prayer request. Tap to review.`;
+
+        const bcastData = {
+          type: 'prayer_request_admin',
+          targetRole: 'admin',
+          title: pushTitle,
+          content: pushBody,
+          body: pushBody,
+          memberName: memberNameVal,
+          prayerId: docRef.id,
+          requestId: docRef.id,
+          targetTab: 'Prayers',
+          screen: 'AdminRoot',
+          requestExcerpt: excerpt,
+          category: data.category || '',
+          isPublic: data.isPublic ?? false,
+          silent: false,
+          createdAt: FieldValue.serverTimestamp()
+        };
+
+        const bcastCol = await this.getCollection('broadcasts');
+        await bcastCol.add(bcastData);
+
+        if (churchId) {
+          try {
+            await firestore().collection('churches').doc(churchId).collection('broadcasts').add(bcastData);
+          } catch (_) {}
+        }
+        console.log('🔔 [submitPrayerRequest] Successfully dispatched admin prayer push broadcast:', docRef.id);
+      } catch (bcastErr) {
+        console.warn('⚠️ Could not write admin prayer push broadcast doc:', bcastErr);
+      }
+
       console.log('🙏 [submitPrayerRequest] Successfully submitted prayer request & admin notification:', docRef.id);
 
       return true;
@@ -1995,13 +2040,88 @@ class FirestoreService {
     }
   }
 
-  async markAsAnswered(id: string) {
+  async markAsAnswered(id: string, responseText?: string, adminName?: string, isPublic?: boolean) {
     try {
       const col = await this.getCollection('prayerRequests');
-      await col.doc(id).update({
+      const docRef = col.doc(id);
+
+      let existing: any = {};
+      try {
+        const snap = await docRef.get();
+        if (snap.exists) existing = snap.data() || {};
+      } catch (_) {}
+
+      const updateData: any = {
         isAnswered: true,
         updatedAt: FieldValue.serverTimestamp()
-      });
+      };
+      if (typeof isPublic === 'boolean') {
+        updateData.isPublic = isPublic;
+      }
+      if (responseText && responseText.trim()) {
+        updateData.lastAdminResponse = responseText.trim();
+        updateData.lastAdminName = adminName || 'Pastor';
+      }
+      await docRef.update(updateData);
+
+      // Targeted notification strictly for the specific member who submitted this prayer request
+      const memberId = existing.uid || existing.authorId || existing.contactId || '';
+      const memberPhone = existing.phone || existing.contactPhone || '';
+      let memberName = existing.name || existing.memberName || existing.authorName || '';
+      if (!memberName || memberName.toLowerCase() === 'church member' || memberName.toLowerCase() === 'faithful member') {
+        memberName = 'Beloved Member';
+      }
+
+      const finalIsPublic = typeof isPublic === 'boolean' ? isPublic : (existing.isPublic ?? false);
+      const notifTitle = finalIsPublic ? '🙏 Prayer Request Approved' : '🙏 Pastoral Prayer Response';
+      const cleanComment = responseText && responseText.trim();
+      const notifBody = cleanComment
+        ? `Pastor has responded to your prayer request: "${cleanComment.length > 90 ? cleanComment.substring(0, 87) + '...' : cleanComment}"`
+        : finalIsPublic
+        ? `Dear ${memberName}, your prayer request has been approved and our pastoral team is praying for you.`
+        : `Dear ${memberName}, your prayer request has been received and our pastoral team has prayed for you.`;
+
+      if (memberId || memberPhone) {
+        // 1. In-app notification document targeted to this member only
+        try {
+          const notifCol = await this.getCollection('notifications');
+          await notifCol.add({
+            type: 'prayer_request_member',
+            title: notifTitle,
+            body: notifBody,
+            targetMemberId: memberId,
+            targetPhone: memberPhone,
+            targetUid: memberId,
+            prayerId: id,
+            requestId: id,
+            isPublic: finalIsPublic,
+            read: false,
+            createdAt: FieldValue.serverTimestamp()
+          });
+        } catch (notifErr) {
+          console.warn('⚠️ Could not write member prayer in-app notification:', notifErr);
+        }
+
+        // 2. Targeted push broadcast ONLY for this member (no topic fallback)
+        try {
+          const bcastCol = await this.getCollection('broadcasts');
+          await bcastCol.add({
+            title: notifTitle,
+            content: notifBody,
+            type: 'prayer_request_member',
+            prayerId: id,
+            requestId: id,
+            targetPhone: memberPhone,
+            targetMemberId: memberId,
+            targetUid: memberId,
+            silent: false,
+            createdAt: FieldValue.serverTimestamp()
+          });
+        } catch (bcastErr) {
+          console.warn('⚠️ Could not trigger targeted member broadcast:', bcastErr);
+        }
+      }
+
       return true;
     } catch (e) {
       throw e;

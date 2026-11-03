@@ -304,13 +304,21 @@ service cloud.firestore {
       // Notifications
       match /notifications/{docId} {
         allow read: if isAuthenticated();
-        allow write: if isChurchAdmin();
+        allow create: if isAuthenticated() && (
+          isChurchAdmin() || 
+          request.resource.data.type in ['prayer_request_admin', 'baptism_request_admin']
+        );
+        allow update, delete: if isChurchAdmin();
       }
 
       // Broadcasts (Church scoped updates)
       match /broadcasts/{docId} {
         allow read: if isAuthenticated();
-        allow write: if isChurchAdmin();
+        allow create: if isAuthenticated() && (
+          isChurchAdmin() || 
+          request.resource.data.type in ['prayer_request_admin', 'baptism_request_admin']
+        );
+        allow update, delete: if isChurchAdmin();
       }
 
       // Pastor Events
