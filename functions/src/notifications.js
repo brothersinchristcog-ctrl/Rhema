@@ -1844,6 +1844,40 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
         console.warn(`[sendDailyVersePushInternal] No verse found for index ${targetIndex}`);
         return { success: false, error: `Verse not found for index ${targetIndex}` };
     }
+    // Feature requirement: Daily Bible Verses must be short (<= 130 chars) and fit within 2 lines
+    // If the verse is a lengthy passage, select the nearest concise, inspiring verse
+    if (verseDocData && ((verseDocData.verseEn && verseDocData.verseEn.length > 130) || (verseDocData.verseTe && verseDocData.verseTe.length > 130))) {
+        try {
+            const fsMod = await import('fs');
+            const pathMod = await import('path');
+            const candidates = [
+                pathMod.join(process.cwd(), 'bulk_verses.json'),
+                pathMod.join(process.cwd(), '../bulk_verses.json'),
+                pathMod.join(process.cwd(), 'app/assets/bulk_verses.json'),
+            ];
+            for (const p of candidates) {
+                if (fsMod.existsSync(p)) {
+                    const raw = fsMod.readFileSync(p, 'utf-8');
+                    const list = JSON.parse(raw);
+                    if (list && list.length > 0) {
+                        let hops = 0;
+                        let curr = targetIndex;
+                        while (hops < 15) {
+                            curr = (curr + 1) % list.length;
+                            if (list[curr] && list[curr].verseEn && list[curr].verseEn.length <= 130 && list[curr].verseTe && list[curr].verseTe.length <= 130) {
+                                verseDocData = list[curr];
+                                verseId = `verse_${curr}`;
+                                break;
+                            }
+                            hops++;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        catch (_) { }
+    }
     const verseEnText = verseDocData.verseEn || '';
     const refEnText = verseDocData.referenceEn || '';
     const verseTeText = verseDocData.verseTe || verseEnText;

@@ -1785,12 +1785,23 @@ export const getSynchronousVersesForToday = (date: Date = new Date()): DailyVers
     const PERIODS = ['Morning', 'Afternoon', 'Evening', 'Night'];
     const indices = VerseNotificationService.getIndicesForDate(date, total, 'rhema');
     return indices.map((idx, pIdx) => {
-      const bv = bulk[idx] || {};
+      let finalIdx = idx;
+      let hops = 0;
+      // Skip long passages: find nearest short verse (<= 130 chars) limited to 2 lines per language
+      while (hops < 10) {
+        const candidate = bulk[finalIdx];
+        if (candidate && candidate.verseEn && candidate.verseEn.length <= 130 && candidate.verseTe && candidate.verseTe.length <= 130) {
+          break;
+        }
+        finalIdx = (finalIdx + 1) % total;
+        hops++;
+      }
+      const bv = bulk[finalIdx] || bulk[idx] || {};
       const period = PERIODS[pIdx];
-      const bgUrl = bv.backgroundUrl || getVerseBackgroundUrl(bv, period, idx);
+      const bgUrl = bv.backgroundUrl || getVerseBackgroundUrl(bv, period, finalIdx);
       return {
-        id: `today_verse_${idx}_${pIdx}`,
-        index: idx,
+        id: `today_verse_${finalIdx}_${pIdx}`,
+        index: finalIdx,
         verseEn: bv.verseEn || '',
         verseTe: bv.verseTe || '',
         referenceEn: bv.referenceEn || '',
@@ -3514,11 +3525,11 @@ export default function HomeScreen() {
                       <View style={styles.vdVerseTextContainer}>
                         <Text style={[styles.vdTopRightQuote, { color: screenTheme.promiseQuote }]} pointerEvents="none">”</Text>
                         {promise?.verseTelugu ? (
-                          <Text style={[styles.vdVerseTe, { color: screenTheme.promiseVerseTe }]} numberOfLines={5} maxFontSizeMultiplier={1.15}>
+                          <Text style={[styles.vdVerseTe, { color: screenTheme.promiseVerseTe }]} numberOfLines={2} ellipsizeMode="tail" maxFontSizeMultiplier={1.15}>
                             {stripHtml(promise.verseTelugu)}
                           </Text>
                         ) : null}
-                        <Text style={[styles.vdVerseEn, { color: screenTheme.promiseVerseEn }]} numberOfLines={4} maxFontSizeMultiplier={1.15}>
+                        <Text style={[styles.vdVerseEn, { color: screenTheme.promiseVerseEn }]} numberOfLines={2} ellipsizeMode="tail" maxFontSizeMultiplier={1.15}>
                           {promise ? stripHtml(promise.verse) : ''}
                         </Text>
                         <View style={styles.vdReferenceRow}>
@@ -3637,7 +3648,8 @@ export default function HomeScreen() {
                                     { color: screenTheme.promiseVerseTe },
                                     !loc.secondaryVerse && { fontSize: 17, lineHeight: 26 }
                                   ]} 
-                                  numberOfLines={5}
+                                  numberOfLines={2}
+                                  ellipsizeMode="tail"
                                   maxFontSizeMultiplier={1.15}
                                 >
                                   {stripHtml(loc.primaryVerse)}
@@ -3645,7 +3657,7 @@ export default function HomeScreen() {
 
                                 {/* Secondary verse (English) if distinct */}
                                 {loc.secondaryVerse && loc.secondaryVerse !== loc.primaryVerse ? (
-                                  <Text style={[styles.vdVerseEn, { color: screenTheme.promiseVerseEn }]} numberOfLines={4} maxFontSizeMultiplier={1.15}>
+                                  <Text style={[styles.vdVerseEn, { color: screenTheme.promiseVerseEn }]} numberOfLines={2} ellipsizeMode="tail" maxFontSizeMultiplier={1.15}>
                                     {stripHtml(loc.secondaryVerse)}
                                   </Text>
                                 ) : null}
