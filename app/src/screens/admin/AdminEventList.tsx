@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useRef } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -13,7 +13,12 @@ import {
   Modal,
   Alert
 } from 'react-native';
-import { MapPin, Clock, Calendar, Trash2, ChevronLeft, Plus, Users } from 'lucide-react-native';
+import { MapPin, Clock, Calendar, Trash2, ChevronLeft, Plus, Users, QrCode, Download, Share2, X } from 'lucide-react-native';
+import QRCode from 'react-native-qrcode-svg';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
+import * as MediaLibrary from 'expo-media-library';
+import AttendanceService from '../../services/AttendanceService';
 import { useNavigation } from '@react-navigation/native';
 import { AdminTabContext } from '../../context/AdminTabContext';
 
@@ -51,10 +56,75 @@ export default function AdminEventList() {
   const [loading, setLoading] = useState(true);
   const [eventToDelete, setEventToDelete] = useState<any>(null);
   const [showDeleteSuccess, setShowDeleteSuccess] = useState(false);
+  const [selectedQrEvent, setSelectedQrEvent] = useState<any>(null);
+  const qrRef = useRef<any>(null);
+  const [churchDetails, setChurchDetails] = useState({ id: '', name: 'Rhema Global Ministries', code: 'RHEMA' });
 
   useEffect(() => {
     fetchEvents();
+    (async () => {
+      try {
+        const id = await FirestoreService.getChurchId();
+        const doc = await FirestoreService.getChurchDoc();
+        if (doc) {
+          const snap = await doc.get();
+          if (snap.exists) {
+            const data = snap.data();
+            setChurchDetails({
+              id: id || '',
+              name: data?.name || data?.churchName || 'Rhema Global Ministries',
+              code: data?.churchCode || data?.code || 'RHEMA'
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('⚠️ [AdminEventList] Failed to load church info for QR:', err);
+      }
+    })();
   }, []);
+
+  const handleSaveQR = async () => {
+    if (qrRef.current) {
+      qrRef.current.toDataURL(async (data: string) => {
+        try {
+          const { status } = await MediaLibrary.requestPermissionsAsync();
+          if (status !== 'granted') {
+            Alert.alert('Permission Denied', 'Please allow media library permissions to save the QR code.');
+            return;
+          }
+          const filename = `${FileSystem.cacheDirectory}event-qr-${selectedQrEvent?.id || 'event'}.png`;
+          await FileSystem.writeAsStringAsync(filename, data, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          await MediaLibrary.saveToLibraryAsync(filename);
+          Alert.alert('Saved!', 'Event QR code saved to your gallery.');
+        } catch (e) {
+          Alert.alert('Error', 'Failed to save QR code.');
+        }
+      });
+    }
+  };
+
+  const handleShareQR = () => {
+    if (qrRef.current) {
+      qrRef.current.toDataURL(async (data: string) => {
+        try {
+          const filename = `${FileSystem.cacheDirectory}event-qr-${selectedQrEvent?.id || 'event'}.png`;
+          await FileSystem.writeAsStringAsync(filename, data, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          if (await Sharing.isAvailableAsync()) {
+            await Sharing.shareAsync(filename, {
+              mimeType: 'image/png',
+              dialogTitle: `${selectedQrEvent?.name || selectedQrEvent?.title || 'Event'} - Attendance QR Code`,
+            });
+          }
+        } catch {
+          Alert.alert('Error', 'Failed to share QR code.');
+        }
+      });
+    }
+  };
 
   const fetchEvents = async () => {
     setLoading(true);
@@ -246,9 +316,23 @@ export default function AdminEventList() {
                     {(event.status || 'Published').toUpperCase()}
                   </Text>
                 </View>
+                {(event.requireEventQR === true || event.requireEventQr === true) && (
+                  <View style={styles.badgeQrReq}>
+                    <QrCode size={10} color="#78350F" style={{ marginRight: 3 }} />
+                    <Text style={styles.badgeQrReqTxt}>QR REQUIRED</Text>
+                  </View>
+                )}
               </View>
             </View>
             <View style={styles.actionsContainer}>
+              <TouchableOpacity 
+                onPress={() => setSelectedQrEvent(event)} 
+                style={styles.qrAction}
+                activeOpacity={0.7}
+              >
+                <QrCode size={12} color="#1A2D5A" />
+                <Text style={styles.qrActionTxt}>QR</Text>
+              </TouchableOpacity>
               <TouchableOpacity 
                 onPress={() => navigation.navigate('EventAttendees', { eventId: event.id, eventName: event.name || event.title })} 
                 style={styles.attendeesAction}
@@ -270,6 +354,68 @@ export default function AdminEventList() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* ── Event Attendance QR Code Modal ── */}
+      {selectedQrEvent && (
+        <Modal visible={!!selectedQrEvent} transparent animationType="fade" onRequestClose={() => setSelectedQrEvent(null)}>
+          <View style={styles.qrModalOverlay}>
+            <View style={styles.qrModalCard}>
+              <View style={styles.qrModalHeader}>
+                <View style={{ flex: 1 }}>
+                  <View style={styles.qrTypeBadge}>
+                    <QrCode size={11} color="#1A2D5A" style={{ marginRight: 4 }} />
+                    <Text style={styles.qrTypeBadgeTxt}>Event Attendance QR</Text>
+                  </View>
+                  <Text style={styles.qrModalTitle} numberOfLines={1}>
+                    {selectedQrEvent.name || selectedQrEvent.title}
+                  </Text>
+                  <Text style={styles.qrModalSub}>
+                    {formatDate(selectedQrEvent.date)} · {formatDisplayTime(selectedQrEvent.startTime)}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => setSelectedQrEvent(null)} style={styles.qrModalCloseBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <X size={20} color="#64748B" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.qrWrapper}>
+                <QRCode
+                  value={
+                    selectedQrEvent.qrPayload ||
+                    selectedQrEvent.qrCode ||
+                    AttendanceService.generateAttendanceQRPayload(
+                      churchDetails.id,
+                      churchDetails.name,
+                      churchDetails.code,
+                      selectedQrEvent.id,
+                      selectedQrEvent.name || selectedQrEvent.title
+                    )
+                  }
+                  size={200}
+                  getRef={(ref: any) => { qrRef.current = ref; }}
+                />
+              </View>
+
+              <Text style={styles.qrHintTxt}>
+                {(selectedQrEvent.requireEventQR === true || selectedQrEvent.requireEventQr === true)
+                  ? `⚠️ Attendance strictly requires this Event QR Code. The general Church QR will NOT work.`
+                  : `Members can scan this QR code to mark attendance directly for this event. (Church QR is also allowed)`}
+              </Text>
+
+              <View style={styles.qrActionButtons}>
+                <TouchableOpacity style={styles.qrSaveBtn} onPress={handleSaveQR}>
+                  <Download size={16} color="#1A2D5A" />
+                  <Text style={styles.qrSaveBtnTxt}>Save to Gallery</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.qrShareBtn} onPress={handleShareQR}>
+                  <Share2 size={16} color="#FFFFFF" />
+                  <Text style={styles.qrShareBtnTxt}>Share</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
 
       {/* ── Delete Confirmation Modal ── */}
       {eventToDelete && (
@@ -426,6 +572,146 @@ const styles = StyleSheet.create({
   successActionBtn: { backgroundColor: '#DC2626', height: 52, borderRadius: 14, width: '100%', justifyContent: 'center', alignItems: 'center', marginBottom: 12, shadowColor: '#DC2626', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
   successActionTxt: { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 0.5 },
   successSecBtn: { height: 52, borderRadius: 14, width: '100%', justifyContent: 'center', alignItems: 'center', borderWidth: 1.5, borderColor: '#E2E8F0', backgroundColor: '#F8FAFC' },
-  successSecTxt: { color: '#475569', fontSize: 14, fontWeight: '800' }
+  successSecTxt: { color: '#475569', fontSize: 14, fontWeight: '800' },
+
+  badgeQrReq: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  badgeQrReqTxt: {
+    color: '#92400E',
+    fontSize: 8.5,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  qrAction: {
+    paddingVertical: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    flex: 1,
+  },
+  qrActionTxt: {
+    fontSize: 8.5,
+    fontWeight: '800',
+    color: '#1A2D5A',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+
+  // QR Modal Styles
+  qrModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  qrModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 24,
+    width: '100%',
+    maxWidth: 340,
+    alignItems: 'center',
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+  },
+  qrModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    width: '100%',
+  },
+  qrTypeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginBottom: 6,
+  },
+  qrTypeBadgeTxt: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#1A2D5A',
+  },
+  qrModalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  qrModalSub: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  qrModalCloseBtn: {
+    padding: 4,
+  },
+  qrWrapper: {
+    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 14,
+  },
+  qrHintTxt: {
+    fontSize: 11.5,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 17,
+    marginBottom: 20,
+    paddingHorizontal: 6,
+  },
+  qrActionButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  qrSaveBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#F8FAFC',
+  },
+  qrSaveBtnTxt: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#1A2D5A',
+  },
+  qrShareBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#1A2D5A',
+  },
+  qrShareBtnTxt: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  }
 });
 
