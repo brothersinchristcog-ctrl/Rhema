@@ -351,8 +351,10 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
                 scheduleStartDate: todayStr,
                 totalVerses: totalVerses || 5863,
                 lastReassignedAt: firestore.FieldValue.serverTimestamp(),
+                lastUpdatedAt: firestore.FieldValue.serverTimestamp(),
                 reassignedBy: 'admin',
               }, { merge: true });
+              await VerseNotificationService.invalidateCache();
 
               cachedUpcomingVerses = null;
               cachedAllVerses = [];
@@ -423,6 +425,12 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
 
       await docRef.set(versePayload);
 
+      // Trigger global real-time synchronization and invalidate local cache
+      await firestore().collection('daily_verses_meta').doc('metadata').set({
+        lastUpdatedAt: firestore.FieldValue.serverTimestamp(),
+      }, { merge: true }).catch(() => {});
+      await VerseNotificationService.invalidateCache();
+
       const prependList = (list: any[]) => [versePayload, ...list.filter(v => v.id !== docRef.id)];
       setUpcomingVerses(prev => prependList(prev));
       setAllVerses(prev => prependList(prev));
@@ -451,11 +459,18 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
     setIsUpdating(true);
     try {
       await firestore().collection('daily_verses').doc(editingVerse.id).update({
-        verseEn: editingVerse.verseEn,
-        verseTe: editingVerse.verseTe,
-        referenceEn: editingVerse.referenceEn,
-        referenceTe: editingVerse.referenceTe,
+        verseEn: (editingVerse.verseEn || '').trim(),
+        verseTe: (editingVerse.verseTe || '').trim(),
+        referenceEn: (editingVerse.referenceEn || '').trim(),
+        referenceTe: (editingVerse.referenceTe || '').trim(),
+        updatedAt: firestore.FieldValue.serverTimestamp(),
       });
+
+      // Trigger global real-time synchronization and invalidate local cache
+      await firestore().collection('daily_verses_meta').doc('metadata').set({
+        lastUpdatedAt: firestore.FieldValue.serverTimestamp(),
+      }, { merge: true }).catch(() => {});
+      await VerseNotificationService.invalidateCache();
 
       const updateList = (list: any[]) => list.map(v => (v.id === editingVerse.id ? editingVerse : v));
       setUpcomingVerses(prev => updateList(prev));
@@ -485,6 +500,11 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
           onPress: async () => {
             try {
               await firestore().collection('daily_verses').doc(id).delete();
+              await firestore().collection('daily_verses_meta').doc('metadata').set({
+                lastUpdatedAt: firestore.FieldValue.serverTimestamp(),
+              }, { merge: true }).catch(() => {});
+              await VerseNotificationService.invalidateCache();
+
               const filterList = (list: any[]) => list.filter(v => v.id !== id);
               setUpcomingVerses(prev => filterList(prev));
               setAllVerses(prev => filterList(prev));
@@ -572,7 +592,9 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
         totalVerses: count,
         scheduleStartDate: new Date().toISOString().split('T')[0],
         updatedAt: firestore.FieldValue.serverTimestamp(),
+        lastUpdatedAt: firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
+      await VerseNotificationService.invalidateCache();
 
       Alert.alert('Success', `Successfully uploaded ${count} verses.`);
       setJsonInput('');

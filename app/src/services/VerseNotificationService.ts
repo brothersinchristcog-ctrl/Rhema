@@ -8,9 +8,6 @@ import { getVerseBackgroundUrl } from '../constants/VerseBackgrounds';
 
 const VERSES_CACHE_KEY = '@rhema_verses_cache';
 
-// Distinct Scripture offset for Rhema Global Ministries to guarantee completely independent verses from WeChristian
-const RHEMA_DAILY_VERSE_OFFSET = 2931;
-
 // Stable notification ID prefix — used to deduplicate / cancel by slot
 const NOTIF_ID_PREFIX = 'daily_verse_';
 
@@ -93,20 +90,60 @@ class VerseNotificationService {
     return finalStatus === 'granted';
   }
 
+  private scheduleStartDate: Date | null = null;
+
+  async setScheduleStartDate(date: Date | null) {
+    this.scheduleStartDate = date;
+  }
+
   /**
-   * Calculates which indices a given date needs (Morning, Afternoon, Evening, Night)
+   * Invalidate local verses cache so that newly created/updated verses are pulled fresh from Firestore
    */
-  getIndicesForDate(date: Date, totalVerses: number, churchId: string = 'rhema'): number[] {
-    if (totalVerses === 0) return [];
+  async invalidateCache() {
+    try {
+      await AsyncStorage.removeItem(VERSES_CACHE_KEY);
+      await AsyncStorage.removeItem('@rhema_verses_meta');
+      await AsyncStorage.removeItem('@rhema_last_sync_timestamp');
+      console.log('[VerseNotificationService] Local verses cache successfully invalidated.');
+    } catch (e) {
+      console.warn('[VerseNotificationService] Error invalidating cache:', e);
+    }
+  }
+
+  /**
+   * Update local cache with newly fetched verses
+   */
+  async updateCacheWithVerses(verses: DailyVerse[]) {
+    try {
+      const cacheStr = await AsyncStorage.getItem(VERSES_CACHE_KEY);
+      const cache: Record<number, DailyVerse> = cacheStr ? JSON.parse(cacheStr) : {};
+      verses.forEach(v => {
+        if (v.index !== undefined) {
+          cache[v.index] = v;
+        }
+      });
+      await AsyncStorage.setItem(VERSES_CACHE_KEY, JSON.stringify(cache));
+    } catch (e) {
+      console.warn('[VerseNotificationService] Error updating cache with verses:', e);
+    }
+  }
+
+  /**
+   * Calculates which indices a given date needs (Morning, Afternoon, Evening, Night).
+   * Aligns 100% with SuperAdminVersesManager and AdminDailyVersesManager:
+   * Today is Day 0 (indices 0, 1, 2, 3) unless scheduleStartDate is set in Firestore daily_verses_meta.
+   */
+  getIndicesForDate(date: Date, totalVerses: number = 5863, churchId: string = 'rhema'): number[] {
+    if (totalVerses === 0) return [0, 1, 2, 3];
     
-    // Calculate days since epoch based on local timezone date (so 'today' is consistent per timezone)
+    // Calculate days since schedule start based on local timezone date
     const localDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    const epochDate = new Date(EPOCH.getFullYear(), EPOCH.getMonth(), EPOCH.getDate());
-    const daysSinceEpoch = Math.floor((localDate.getTime() - epochDate.getTime()) / (1000 * 60 * 60 * 24));
+    const epochDate = this.scheduleStartDate 
+      ? new Date(this.scheduleStartDate.getFullYear(), this.scheduleStartDate.getMonth(), this.scheduleStartDate.getDate())
+      : localDate; // default to local date so today maps to index 0, 1, 2, 3
     
-    // RHEMA has its own independent Scripture offset so it never displays the same verses as WeChristian
-    const offset = churchId === 'rhema' ? RHEMA_DAILY_VERSE_OFFSET : 0;
-    const base = daysSinceEpoch * 4 + offset;
+    const daysSinceEpoch = Math.max(0, Math.floor((localDate.getTime() - epochDate.getTime()) / (1000 * 60 * 60 * 24)));
+    const base = daysSinceEpoch * 4;
     
     return [
       ((base + 0) % totalVerses + totalVerses) % totalVerses,
@@ -216,7 +253,11 @@ class VerseNotificationService {
       const metaDoc = await firestore().collection('daily_verses_meta').doc('metadata').get();
       const metaExists = typeof metaDoc.exists === 'function' ? metaDoc.exists() : metaDoc.exists;
       if (!metaExists) return;
-      const totalVerses = metaDoc.data()?.totalVerses || 0;
+      const mData = metaDoc.data();
+      const totalVerses = mData?.totalVerses || 0;
+      if (mData?.scheduleStartDate) {
+        this.scheduleStartDate = new Date(mData.scheduleStartDate);
+      }
       if (totalVerses === 0) return;
 
       // 7. Calculate which verse indices are required
@@ -235,10 +276,15 @@ class VerseNotificationService {
         for (let i = 0; i < missingIndices.length; i += 10) {
           const batch = missingIndices.slice(i, i + 10);
           const snapshot = await firestore().collection('daily_verses').where('index', 'in', batch).get();
-          snapshot.docs.forEach(doc => {
-            const data = doc.data() as DailyVerse;
+          const docs = snapshot.docs.map(doc => ({ ...(doc.data() as any), id: doc.id } as DailyVerse));
+          docs.sort((a, b) => {
+            const tA = (a.updatedAt?.toMillis ? a.updatedAt.toMillis() : (a.updatedAt || a.createdAt || 0));
+            const tB = (b.updatedAt?.toMillis ? b.updatedAt.toMillis() : (b.updatedAt || b.createdAt || 0));
+            return tA - tB;
+          });
+          docs.forEach(data => {
             if (data.index !== undefined) {
-              cache[data.index] = { ...data, id: doc.id };
+              cache[data.index] = data;
             }
           });
         }
@@ -360,22 +406,29 @@ class VerseNotificationService {
   /**
    * (Helper) Used by the HomeScreen Daily Verse Card — fetches today's verse for a specific period
    */
-  async getVerseForDate(date: Date, period: string): Promise<DailyVerse | null> {
+  async getVerseForDate(date: Date, period: string, forceRefresh: boolean = false): Promise<DailyVerse | null> {
     try {
-      // 1. Try cache first
+      // 1. Try cache first if not force refresh
       const cacheStr = await AsyncStorage.getItem(VERSES_CACHE_KEY);
-      const metaDoc = await firestore().collection('daily_verses_meta').doc('metadata').get();
-      const metaExists = typeof metaDoc.exists === 'function' ? metaDoc.exists() : metaDoc.exists;
-      if (!metaExists) return null;
-      const totalVerses = metaDoc.data()?.totalVerses || 0;
-      if (totalVerses === 0) return null;
+      let totalVerses = 5863;
+      try {
+        const metaDoc = await firestore().collection('daily_verses_meta').doc('metadata').get();
+        const metaExists = typeof metaDoc.exists === 'function' ? metaDoc.exists() : metaDoc.exists;
+        if (metaExists) {
+          const mData = metaDoc.data();
+          totalVerses = mData?.totalVerses || 5863;
+          if (mData?.scheduleStartDate) {
+            this.scheduleStartDate = new Date(mData.scheduleStartDate);
+          }
+        }
+      } catch (_) {}
 
       const periodOrder: Record<string, number> = { Morning: 0, Afternoon: 1, Evening: 2, Night: 3 };
       const periodOffset = periodOrder[period] ?? 0;
       const allIndices = this.getIndicesForDate(date, totalVerses, 'rhema');
       const targetIndex = allIndices[periodOffset];
 
-      if (cacheStr) {
+      if (!forceRefresh && cacheStr) {
         const cache: Record<number, DailyVerse> = JSON.parse(cacheStr);
         if (cache[targetIndex]) {
           if (!cache[targetIndex].backgroundUrl) {
@@ -385,21 +438,24 @@ class VerseNotificationService {
         }
       }
 
-      // 2. Fallback: fetch from Firestore by index
-      const snapshot = await firestore().collection('daily_verses').where('index', '==', targetIndex).limit(1).get();
+      // 2. Fetch directly from Firestore by index (getting the latest updated one)
+      const snapshot = await firestore().collection('daily_verses').where('index', '==', targetIndex).get();
       if (!snapshot.empty) {
-        const doc = snapshot.docs[0];
-        const vData = { ...doc.data(), id: doc.id } as DailyVerse;
+        const docs = snapshot.docs.map(d => ({ ...(d.data() as any), id: d.id } as DailyVerse));
+        docs.sort((a, b) => {
+          const tA = (a.updatedAt?.toMillis ? a.updatedAt.toMillis() : (a.updatedAt || a.createdAt || 0));
+          const tB = (b.updatedAt?.toMillis ? b.updatedAt.toMillis() : (b.updatedAt || b.createdAt || 0));
+          return tB - tA;
+        });
+        const vData = docs[0];
         if (!vData.backgroundUrl) {
           vData.backgroundUrl = getVerseBackgroundUrl(vData, period, targetIndex);
         }
-        if (cacheStr) {
-          try {
-            const cache = JSON.parse(cacheStr);
-            cache[targetIndex] = vData;
-            await AsyncStorage.setItem(VERSES_CACHE_KEY, JSON.stringify(cache));
-          } catch (_) {}
-        }
+        try {
+          const cache = cacheStr ? JSON.parse(cacheStr) : {};
+          cache[targetIndex] = vData;
+          await AsyncStorage.setItem(VERSES_CACHE_KEY, JSON.stringify(cache));
+        } catch (_) {}
         return vData;
       }
     } catch (e) {
@@ -419,62 +475,24 @@ class VerseNotificationService {
    */
   getSynchronousInitialVerses(pastDays: number = 5, churchId: string = 'rhema'): { date: Date, verses: DailyVerse[] }[] {
     try {
-      let thematic: any = null;
-      try {
-        thematic = require('../../assets/thematic_daily_verses.json');
-      } catch (_) {}
-
+      const bundledVerses: any[] = require('../../assets/bulk_verses.json');
+      const totalVerses = bundledVerses.length || 5863;
       const today = new Date();
       const results: { date: Date, verses: DailyVerse[] }[] = [];
       const PERIODS = ['Morning', 'Afternoon', 'Evening', 'Night'] as const;
-      const EPOCH = new Date('2026-10-30T00:00:00Z');
-
-      if (thematic && thematic.Morning && thematic.Afternoon && thematic.Evening && thematic.Night) {
-        for (let i = 0; i <= pastDays; i++) {
-          const d = new Date(today);
-          d.setDate(today.getDate() - i);
-          const localDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-          const epochDate = new Date(EPOCH.getFullYear(), EPOCH.getMonth(), EPOCH.getDate());
-          const daysSinceEpoch = Math.floor((localDate.getTime() - epochDate.getTime()) / (1000 * 60 * 60 * 24));
-
-          const versesForDay: DailyVerse[] = PERIODS.map((period, pIdx) => {
-            const list = thematic[period];
-            const vIdx = ((daysSinceEpoch % list.length) + list.length) % list.length;
-            const bv = list[vIdx];
-            const bgUrl = bv.backgroundUrl || getVerseBackgroundUrl(bv, period, vIdx);
-            return {
-              id: `thematic_${period.toLowerCase()}_${daysSinceEpoch}`,
-              index: vIdx,
-              verseEn: bv.verseEn || '',
-              verseTe: bv.verseTe || '',
-              referenceEn: bv.referenceEn || '',
-              referenceTe: bv.referenceTe || '',
-              backgroundUrl: bgUrl,
-              churchId: 'rhema',
-            };
-          });
-          results.push({ date: d, verses: versesForDay });
-        }
-        return results;
-      }
-
-      const bundledVerses: any[] = require('../../assets/bulk_verses.json');
-      const totalVerses = bundledVerses.length || 5863;
-      const fallbackResults: { date: Date, verses: DailyVerse[] }[] = [];
 
       for (let i = 0; i <= pastDays; i++) {
         const d = new Date(today);
         d.setDate(today.getDate() - i);
         const dailyIndices = this.getIndicesForDate(d, totalVerses, churchId);
         const versesForDay: DailyVerse[] = [];
-
-        for (let periodIdx = 0; periodIdx < 4; periodIdx++) {
-          const idx = dailyIndices[periodIdx];
+        for (let pIdx = 0; pIdx < 4; pIdx++) {
+          const idx = dailyIndices[pIdx];
           const bv = bundledVerses[idx] || {};
-          const period = PERIODS[periodIdx];
+          const period = PERIODS[pIdx];
           const bgUrl = bv.backgroundUrl || getVerseBackgroundUrl(bv, period, idx);
           versesForDay.push({
-            id: `verse_${idx}`,
+            id: `bundled_${idx}_${pIdx}`,
             index: idx,
             verseEn: bv.verseEn || '',
             verseTe: bv.verseTe || '',
@@ -484,11 +502,11 @@ class VerseNotificationService {
             churchId: 'rhema',
           });
         }
-        fallbackResults.push({ date: d, verses: versesForDay });
+        results.push({ date: d, verses: versesForDay });
       }
-      return fallbackResults;
+      return results;
     } catch (e) {
-      console.warn('[VerseNotificationService] Failed to load synchronous initial verses:', e);
+      console.warn('[VerseNotificationService] Error in getSynchronousInitialVerses:', e);
       return [];
     }
   }
@@ -509,7 +527,11 @@ class VerseNotificationService {
           const metaDoc = await firestore().collection('daily_verses_meta').doc('metadata').get();
           const metaExists = typeof metaDoc.exists === 'function' ? metaDoc.exists() : metaDoc.exists;
           if (metaExists) {
-            totalVerses = metaDoc.data()?.totalVerses || 0;
+            const mData = metaDoc.data();
+            totalVerses = mData?.totalVerses || 0;
+            if (mData?.scheduleStartDate) {
+              this.scheduleStartDate = new Date(mData.scheduleStartDate);
+            }
             await AsyncStorage.setItem('@rhema_verses_meta', totalVerses.toString());
           }
         } catch (mErr) {
@@ -559,10 +581,15 @@ class VerseNotificationService {
         const snapshots = await Promise.all(batchPromises);
         
         snapshots.forEach(snapshot => {
-          snapshot.docs.forEach(doc => {
-            const data = doc.data() as DailyVerse;
+          const docs = snapshot.docs.map(doc => ({ ...(doc.data() as any), id: doc.id } as DailyVerse));
+          docs.sort((a, b) => {
+            const tA = (a.updatedAt?.toMillis ? a.updatedAt.toMillis() : (a.updatedAt || a.createdAt || 0));
+            const tB = (b.updatedAt?.toMillis ? b.updatedAt.toMillis() : (b.updatedAt || b.createdAt || 0));
+            return tA - tB;
+          });
+          docs.forEach(data => {
             if (data.index !== undefined) {
-              cache[data.index] = { ...data, id: doc.id };
+              cache[data.index] = data;
             }
           });
         });
