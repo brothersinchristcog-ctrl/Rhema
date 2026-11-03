@@ -1152,20 +1152,6 @@ export default function AdminEventEditor() {
             <TextInput style={[styles.input, styles.textarea]} multiline placeholder="Street, area, city..." value={address} onChangeText={setAddress} />
           </View>
 
-          <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Event Mode</Text>
-            <View style={styles.modeRow}>
-              {(metadata?.modes?.length > 0 ? metadata.modes : [
-                { label: 'In person', value: 'In person' },
-                { label: 'Online', value: 'Online' },
-                { label: 'Hybrid', value: 'Hybrid' }
-              ]).map((m: any) => (
-                <TouchableOpacity key={m.value} style={[styles.modeBtn, mode === m.value && styles.modeBtnActive]} onPress={() => setMode(m.value)}>
-                  <Text style={[styles.modeBtnTxt, mode === m.value && styles.modeBtnTxtActive]}>{m.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
         </View>
 
 
@@ -2055,11 +2041,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
 
-  modeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  modeBtn: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20, backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0' },
-  modeBtnActive: { backgroundColor: '#1a2d5a', borderColor: '#1a2d5a' },
-  modeBtnTxt: { fontSize: 12, color: '#475569', fontWeight: '600' },
-  modeBtnTxtActive: { color: '#fff' },
 
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingVertical: 4 },
   chip: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 20, backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0', marginRight: 8 },
