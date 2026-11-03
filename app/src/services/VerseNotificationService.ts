@@ -144,10 +144,10 @@ class VerseNotificationService {
 
     try {
       const times = [
-        { hour: 8,  label: 'Morning',   titleEn: "Good Morning · Today's Verse (నేటి వాక్యం)", titleTe: "Good Morning · Today's Verse (నేటి వాక్యం)" },
-        { hour: 13, label: 'Afternoon', titleEn: "Blessed Afternoon · Daily Peace (అనుదిన శాంతి)", titleTe: "Blessed Afternoon · Daily Peace (అనుదిన శాంతి)" },
-        { hour: 18, label: 'Evening',   titleEn: "Evening Prayer · Faith & Grace (విశ్వాసం - కృప)", titleTe: "Evening Prayer · Faith & Grace (విశ్వాసం - కృప)" },
-        { hour: 21, label: 'Night',     titleEn: "Good Night · God's Protection (దేవుని కాపుదల)", titleTe: "Good Night · God's Protection (దేవుని కాపుదల)" },
+        { hour: 8,  label: 'Morning',   titleEn: "Good Morning\nToday's Verse (నేటి వాక్యం)", titleTe: "Good Morning\nToday's Verse (నేటి వాక్యం)" },
+        { hour: 13, label: 'Afternoon', titleEn: "Blessed Afternoon\nDaily Peace (అనుదిన శాంతి)", titleTe: "Blessed Afternoon\nDaily Peace (అనుదిన శాంతి)" },
+        { hour: 18, label: 'Evening',   titleEn: "Evening Prayer\nFaith & Grace (విశ్వాసం - కృప)", titleTe: "Evening Prayer\nFaith & Grace (విశ్వాసం - కృప)" },
+        { hour: 21, label: 'Night',     titleEn: "Good Night\nGod's Protection (దేవుని కాపుదల)", titleTe: "Good Night\nGod's Protection (దేవుని కాపుదల)" },
       ];
 
       // 1. Calculate the next 7 days we need to cover
@@ -274,7 +274,7 @@ class VerseNotificationService {
               identifier: notifIdEn,
               content: {
                 title: time.titleEn,
-                body: `"${verse.verseEn}"\n— ${verse.referenceEn}`,
+                body: `${(verse.verseEn || "").replace(/^[\"'“‘]+|[\"'”’]+$/g, "").trim()}\n— ${verse.referenceEn}`,
                 sound: true,
                 data: {
                   type: 'daily_verse',
@@ -301,7 +301,7 @@ class VerseNotificationService {
               identifier: notifIdTe,
               content: {
                 title: time.titleTe,
-                body: `"${teVerseText}"\n— ${teRefText}`,
+                body: `${(teVerseText || "").replace(/^[\"'“‘]+|[\"'”’]+$/g, "").trim()}\n— ${teRefText}`,
                 sound: true,
                 data: {
                   type: 'daily_verse',
@@ -419,11 +419,48 @@ class VerseNotificationService {
    */
   getSynchronousInitialVerses(pastDays: number = 5, churchId: string = 'rhema'): { date: Date, verses: DailyVerse[] }[] {
     try {
-      const bundledVerses: any[] = require('../../assets/bulk_verses.json');
-      const totalVerses = bundledVerses.length || 5863;
+      let thematic: any = null;
+      try {
+        thematic = require('../../assets/thematic_daily_verses.json');
+      } catch (_) {}
+
       const today = new Date();
       const results: { date: Date, verses: DailyVerse[] }[] = [];
-      const PERIODS = ['Morning', 'Afternoon', 'Evening', 'Night'];
+      const PERIODS = ['Morning', 'Afternoon', 'Evening', 'Night'] as const;
+      const EPOCH = new Date('2026-10-30T00:00:00Z');
+
+      if (thematic && thematic.Morning && thematic.Afternoon && thematic.Evening && thematic.Night) {
+        for (let i = 0; i <= pastDays; i++) {
+          const d = new Date(today);
+          d.setDate(today.getDate() - i);
+          const localDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+          const epochDate = new Date(EPOCH.getFullYear(), EPOCH.getMonth(), EPOCH.getDate());
+          const daysSinceEpoch = Math.floor((localDate.getTime() - epochDate.getTime()) / (1000 * 60 * 60 * 24));
+
+          const versesForDay: DailyVerse[] = PERIODS.map((period, pIdx) => {
+            const list = thematic[period];
+            const vIdx = ((daysSinceEpoch % list.length) + list.length) % list.length;
+            const bv = list[vIdx];
+            const bgUrl = bv.backgroundUrl || getVerseBackgroundUrl(bv, period, vIdx);
+            return {
+              id: `thematic_${period.toLowerCase()}_${daysSinceEpoch}`,
+              index: vIdx,
+              verseEn: bv.verseEn || '',
+              verseTe: bv.verseTe || '',
+              referenceEn: bv.referenceEn || '',
+              referenceTe: bv.referenceTe || '',
+              backgroundUrl: bgUrl,
+              churchId: 'rhema',
+            };
+          });
+          results.push({ date: d, verses: versesForDay });
+        }
+        return results;
+      }
+
+      const bundledVerses: any[] = require('../../assets/bulk_verses.json');
+      const totalVerses = bundledVerses.length || 5863;
+      const fallbackResults: { date: Date, verses: DailyVerse[] }[] = [];
 
       for (let i = 0; i <= pastDays; i++) {
         const d = new Date(today);
@@ -447,9 +484,9 @@ class VerseNotificationService {
             churchId: 'rhema',
           });
         }
-        results.push({ date: d, verses: versesForDay });
+        fallbackResults.push({ date: d, verses: versesForDay });
       }
-      return results;
+      return fallbackResults;
     } catch (e) {
       console.warn('[VerseNotificationService] Failed to load synchronous initial verses:', e);
       return [];

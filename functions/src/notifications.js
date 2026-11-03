@@ -1699,25 +1699,25 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
     const PERIOD_SLOTS = {
         Morning: {
             index: 0,
-            title: "Good Morning · Today's Verse (నేటి వాక్యం)",
+            title: "Good Morning\nToday's Verse (నేటి వాక్యం)",
             titleEn: "Good Morning",
             titleTe: "Today's Verse (నేటి వాక్యం)",
         },
         Afternoon: {
             index: 1,
-            title: "Blessed Afternoon · Daily Peace (అనుదిన శాంతి)",
+            title: "Blessed Afternoon\nDaily Peace (అనుదిన శాంతి)",
             titleEn: "Blessed Afternoon",
             titleTe: "Daily Peace (అనుదిన శాంతి)",
         },
         Evening: {
             index: 2,
-            title: "Evening Prayer · Faith & Grace (విశ్వాసం - కృప)",
+            title: "Evening Prayer\nFaith & Grace (విశ్వాసం - కృప)",
             titleEn: "Evening Prayer",
             titleTe: "Faith & Grace (విశ్వాసం - కృప)",
         },
         Night: {
             index: 3,
-            title: "Good Night · God's Protection (దేవుని కాపుదల)",
+            title: "Good Night\nGod's Protection (దేవుని కాపుదల)",
             titleEn: "Good Night",
             titleTe: "God's Protection (దేవుని కాపుదల)",
         },
@@ -1796,9 +1796,42 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
     const offset = targetChurchId === 'rhema' ? RHEMA_DAILY_VERSE_OFFSET : 0;
     const targetIndex = (daysSinceEpoch * 4 + slotInfo.index + offset) % totalVerses;
     console.log(`[sendDailyVersePushInternal] Target verse index: ${targetIndex} (total: ${totalVerses}, offset: ${offset})`);
-    // 3. Query verse document: Check Rhema Church/rhema/daily_verses first, then fallback to daily_verses
+    // 3. Priority: Curated Thematic Daily Verses strictly matched to time of day & <= 130 chars:
+    // - Morning: New beginnings, hope, strength, God's guidance
+    // - Afternoon: Encouragement, wisdom, patience, staying strong
+    // - Evening: Peace, gratitude, protection, trusting God
+    // - Night: Rest, comfort, safety, God's care
     let verseDocData = null;
-    let verseId = `verse_${targetIndex}`;
+    let verseId = `thematic_${slot.toLowerCase()}_${daysSinceEpoch}`;
+    try {
+        const fsMod = await import('fs');
+        const pathMod = await import('path');
+        const candidates = [
+            pathMod.join(process.cwd(), 'thematic_daily_verses.json'),
+            pathMod.join(process.cwd(), 'src/thematic_daily_verses.json'),
+            pathMod.join(process.cwd(), 'functions/thematic_daily_verses.json'),
+            pathMod.join(process.cwd(), 'functions/src/thematic_daily_verses.json'),
+            pathMod.join(process.cwd(), 'app/assets/thematic_daily_verses.json'),
+            pathMod.join(process.cwd(), '../app/assets/thematic_daily_verses.json'),
+        ];
+        for (const p of candidates) {
+            if (fsMod.existsSync(p)) {
+                const raw = fsMod.readFileSync(p, 'utf-8');
+                const data = JSON.parse(raw);
+                const slotList = data[slot] || data.Morning;
+                if (slotList && slotList.length > 0) {
+                    const slotIdx = ((daysSinceEpoch % slotList.length) + slotList.length) % slotList.length;
+                    verseDocData = slotList[slotIdx];
+                    console.log(`✨ [sendDailyVersePushInternal] Selected curated thematic verse for slot '${slot}': ${verseDocData.referenceEn} - ${verseDocData.theme || ''}`);
+                    break;
+                }
+            }
+        }
+    }
+    catch (tErr) {
+        console.warn('[sendDailyVersePushInternal] Could not load thematic verses:', tErr);
+    }
+    // Fallback: Query Firestore if thematic list not loaded
     try {
         const rhemaSnap = await db.collection('Rhema Church').doc('rhema').collection('daily_verses').where('index', '==', targetIndex).limit(1).get();
         if (!rhemaSnap.empty) {
@@ -1844,6 +1877,40 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
         console.warn(`[sendDailyVersePushInternal] No verse found for index ${targetIndex}`);
         return { success: false, error: `Verse not found for index ${targetIndex}` };
     }
+    // Feature requirement: Daily Bible Verses must be short (<= 130 chars) and fit within 2 lines
+    // If the verse is a lengthy passage, select the nearest concise, inspiring verse
+    if (verseDocData && ((verseDocData.verseEn && verseDocData.verseEn.length > 130) || (verseDocData.verseTe && verseDocData.verseTe.length > 130))) {
+        try {
+            const fsMod = await import('fs');
+            const pathMod = await import('path');
+            const candidates = [
+                pathMod.join(process.cwd(), 'bulk_verses.json'),
+                pathMod.join(process.cwd(), '../bulk_verses.json'),
+                pathMod.join(process.cwd(), 'app/assets/bulk_verses.json'),
+            ];
+            for (const p of candidates) {
+                if (fsMod.existsSync(p)) {
+                    const raw = fsMod.readFileSync(p, 'utf-8');
+                    const list = JSON.parse(raw);
+                    if (list && list.length > 0) {
+                        let hops = 0;
+                        let curr = targetIndex;
+                        while (hops < 15) {
+                            curr = (curr + 1) % list.length;
+                            if (list[curr] && list[curr].verseEn && list[curr].verseEn.length <= 130 && list[curr].verseTe && list[curr].verseTe.length <= 130) {
+                                verseDocData = list[curr];
+                                verseId = `verse_${curr}`;
+                                break;
+                            }
+                            hops++;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        catch (_) { }
+    }
     const verseEnText = verseDocData.verseEn || '';
     const refEnText = verseDocData.referenceEn || '';
     const verseTeText = verseDocData.verseTe || verseEnText;
@@ -1878,11 +1945,19 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
     // Using Android 'tag' and 'collapseKey' guarantees that Android OS displays EXACTLY ONE banner.
     const unifiedTitle = slotInfo.title;
     let unifiedBody = '';
-    if (verseTeText && verseEnText && verseTeText !== verseEnText) {
-        unifiedBody = `"${verseTeText}"\n— ${refTeText}\n\n"${verseEnText}"\n— ${refEnText}`;
+    const combinedRef = (refTeText && refEnText && refTeText !== refEnText)
+        ? `${refTeText} | ${refEnText}`
+        : (refTeText || refEnText);
+    const cleanVerseTe = (verseTeText || '').replace(/^["“”']+|["“”']+$/g, '').trim();
+    const cleanVerseEn = (verseEnText || '').replace(/^["“”']+|["“”']+$/g, '').trim();
+    // Android notification shade collapses empty newlines unless there is a character.
+    // Using '\n \n' guarantees a visible vertical gap below verses on Android and iOS.
+    const GAP = '\n \n';
+    if (cleanVerseTe && cleanVerseEn && cleanVerseTe !== cleanVerseEn) {
+        unifiedBody = `${cleanVerseTe}${GAP}${cleanVerseEn}${GAP}${combinedRef}`;
     }
     else {
-        unifiedBody = `"${verseTeText || verseEnText}"\n— ${refTeText || refEnText}`;
+        unifiedBody = `${cleanVerseTe || cleanVerseEn}${GAP}${combinedRef}`;
     }
     try {
         const topicMessage = {
@@ -1959,7 +2034,7 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
         const rhemaChurchRef = db.collection('Rhema Church').doc('rhema');
         await rhemaChurchRef.collection('broadcasts').add({
             title: unifiedTitle,
-            content: `"${verseEnText}" — ${refEnText}\n\n"${verseTeText}" — ${refTeText}`,
+            content: unifiedBody,
             date: todayStr,
             type: 'daily_verse',
             period: slot,

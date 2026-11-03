@@ -262,7 +262,7 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
 
   const handleAdminPray = async (id: string) => {
     if (!member) return;
-    const uid = member.id || 'admin';
+    const uid = member?.id || 'admin';
     const name = member.name || adminName;
     // Prevent double-pray
     if (prayers.find(p => p.id === id)?.prayedBy?.includes(uid)) {
@@ -332,7 +332,7 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
       await FirestoreService.submitPrayerRequest({
         name: selectedMember ? selectedMember.name : pastorRequest.postAs,
         phone: selectedMember ? selectedMember.phone : null,
-        contactId: selectedMember ? selectedMember.id : null,
+        contactId: selectedMember ? selectedMember?.id : null,
         requestEn: pastorRequest.en,
         requestTe: pastorRequest.te,
         category: pastorRequest.category
@@ -500,7 +500,8 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
   };
 
   const renderPrayerCard = (item: any, isAnswered = false) => {
-    const isTarget = Boolean(targetPrayerId && item.id === targetPrayerId);
+    if (!item || !item.id) return null;
+    const isTarget = Boolean(targetPrayerId && item?.id === targetPrayerId);
     return (
     <TouchableOpacity 
       key={item.id} 
@@ -744,6 +745,7 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.detailModalOverlay}
         >
+          {detailPrayer ? (
           <View style={styles.detailModalContainer}>
             {/* Modal Header */}
             <View style={styles.detailModalHeader}>
@@ -859,8 +861,8 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
                     style={[styles.adminReplyInput, { backgroundColor: '#FFFFFF', minHeight: 80 }]}
                     placeholder="Write a prayer message or response to this member..."
                     placeholderTextColor="#94a3b8"
-                    value={adminResponses[detailPrayer.id] || ''}
-                    onChangeText={(txt) => setAdminResponses(prev => ({ ...prev, [detailPrayer.id]: txt }))}
+                    value={detailPrayer?.id ? (adminResponses[detailPrayer.id] || '') : ''}
+                    onChangeText={(txt) => { if (detailPrayer?.id) setAdminResponses(prev => ({ ...prev, [detailPrayer.id]: txt })); }}
                     multiline
                   />
 
@@ -869,7 +871,8 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
                       <TouchableOpacity
                         style={{ backgroundColor: '#15803D', paddingVertical: 14, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
                         onPress={async () => {
-                          const id = detailPrayer.id;
+                          const id = detailPrayer?.id;
+                          if (!id) return;
                           await handleApprove(id, adminResponses[id]);
                           setDetailPrayer((prev: any) => ({ ...prev, isAnswered: true, isPublic: true }));
                           setTimeout(() => setDetailModalVisible(false), 800);
@@ -882,7 +885,8 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
                       <TouchableOpacity
                         style={{ backgroundColor: '#2563EB', paddingVertical: 14, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
                         onPress={async () => {
-                          const id = detailPrayer.id;
+                          const id = detailPrayer?.id;
+                          if (!id) return;
                           await handleRespondPrivately(id, adminResponses[id]);
                           setDetailPrayer((prev: any) => ({ ...prev, isAnswered: true }));
                           setTimeout(() => setDetailModalVisible(false), 800);
@@ -900,11 +904,11 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
               <View style={{ flexDirection: 'row', gap: 12, marginBottom: 30 }}>
                 <TouchableOpacity
                   style={{ flex: 1, backgroundColor: '#EFF6FF', paddingVertical: 12, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, borderWidth: 1, borderColor: '#BFDBFE' }}
-                  onPress={() => handleAdminPray(detailPrayer.id)}
+                  onPress={() => detailPrayer?.id && handleAdminPray(detailPrayer.id)}
                 >
                   <Heart size={16} color="#2563EB" />
                   <Text style={{ color: '#2563EB', fontWeight: '700', fontSize: 14 }}>
-                    Pray ({detailPrayer.prayCount || 0})
+                    Pray ({detailPrayer?.prayCount || 0})
                   </Text>
                 </TouchableOpacity>
 
@@ -912,7 +916,7 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
                   style={{ flex: 1, backgroundColor: '#FEE2E2', paddingVertical: 12, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, borderWidth: 1, borderColor: '#FECACA' }}
                   onPress={() => {
                     setDetailModalVisible(false);
-                    handleClose(detailPrayer.id);
+                    if (detailPrayer?.id) handleClose(detailPrayer.id);
                   }}
                 >
                   <Text style={{ color: '#EF4444', fontWeight: '700', fontSize: 14 }}>Close Request</Text>
@@ -920,6 +924,7 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
               </View>
             </ScrollView>
           </View>
+          ) : null}
         </KeyboardAvoidingView>
       </Modal>
 
