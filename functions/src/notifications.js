@@ -1699,25 +1699,25 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
     const PERIOD_SLOTS = {
         Morning: {
             index: 0,
-            title: "Good Morning\n· Today's Verse (నేటి వాక్యం)",
+            title: "Good Morning\nToday's Verse (నేటి వాక్యం)",
             titleEn: "Good Morning",
             titleTe: "Today's Verse (నేటి వాక్యం)",
         },
         Afternoon: {
             index: 1,
-            title: "Blessed Afternoon\n· Daily Peace (అనుదిన శాంతి)",
+            title: "Blessed Afternoon\nDaily Peace (అనుదిన శాంతి)",
             titleEn: "Blessed Afternoon",
             titleTe: "Daily Peace (అనుదిన శాంతి)",
         },
         Evening: {
             index: 2,
-            title: "Evening Prayer\n· Faith & Grace (విశ్వాసం - కృప)",
+            title: "Evening Prayer\nFaith & Grace (విశ్వాసం - కృప)",
             titleEn: "Evening Prayer",
             titleTe: "Faith & Grace (విశ్వాసం - కృప)",
         },
         Night: {
             index: 3,
-            title: "Good Night\n· God's Protection (దేవుని కాపుదల)",
+            title: "Good Night\nGod's Protection (దేవుని కాపుదల)",
             titleEn: "Good Night",
             titleTe: "God's Protection (దేవుని కాపుదల)",
         },

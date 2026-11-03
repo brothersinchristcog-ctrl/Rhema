@@ -144,10 +144,10 @@ class VerseNotificationService {
 
     try {
       const times = [
-        { hour: 8,  label: 'Morning',   titleEn: "Good Morning\n· Today's Verse (నేటి వాక్యం)", titleTe: "Good Morning\n· Today's Verse (నేటి వాక్యం)" },
-        { hour: 13, label: 'Afternoon', titleEn: "Blessed Afternoon\n· Daily Peace (అనుదిన శాంతి)", titleTe: "Blessed Afternoon\n· Daily Peace (అనుదిన శాంతి)" },
-        { hour: 18, label: 'Evening',   titleEn: "Evening Prayer\n· Faith & Grace (విశ్వాసం - కృప)", titleTe: "Evening Prayer\n· Faith & Grace (విశ్వాసం - కృప)" },
-        { hour: 21, label: 'Night',     titleEn: "Good Night\n· God's Protection (దేవుని కాపుదల)", titleTe: "Good Night\n· God's Protection (దేవుని కాపుదల)" },
+        { hour: 8,  label: 'Morning',   titleEn: "Good Morning\nToday's Verse (నేటి వాక్యం)", titleTe: "Good Morning\nToday's Verse (నేటి వాక్యం)" },
+        { hour: 13, label: 'Afternoon', titleEn: "Blessed Afternoon\nDaily Peace (అనుదిన శాంతి)", titleTe: "Blessed Afternoon\nDaily Peace (అనుదిన శాంతి)" },
+        { hour: 18, label: 'Evening',   titleEn: "Evening Prayer\nFaith & Grace (విశ్వాసం - కృప)", titleTe: "Evening Prayer\nFaith & Grace (విశ్వాసం - కృప)" },
+        { hour: 21, label: 'Night',     titleEn: "Good Night\nGod's Protection (దేవుని కాపుదల)", titleTe: "Good Night\nGod's Protection (దేవుని కాపుదల)" },
       ];
 
       // 1. Calculate the next 7 days we need to cover
