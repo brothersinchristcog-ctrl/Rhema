@@ -1679,5 +1679,8 @@ export {
   onBaptismRequestCreatedAdmin,
   onBaptismRequestCreatedAdminLegacy,
   onPrayerRequestCreatedAdmin,
-  onPrayerRequestCreatedAdminLegacy
+  onPrayerRequestCreatedAdminLegacy,
+  onPrayerRequestProcessedMember,
+  onPrayerRequestProcessedMemberLegacy,
+  pushPrayerRequestApproved
 } from './notifications.js';

@@ -1995,13 +1995,88 @@ class FirestoreService {
     }
   }
 
-  async markAsAnswered(id: string) {
+  async markAsAnswered(id: string, responseText?: string, adminName?: string, isPublic?: boolean) {
     try {
       const col = await this.getCollection('prayerRequests');
-      await col.doc(id).update({
+      const docRef = col.doc(id);
+
+      let existing: any = {};
+      try {
+        const snap = await docRef.get();
+        if (snap.exists) existing = snap.data() || {};
+      } catch (_) {}
+
+      const updateData: any = {
         isAnswered: true,
         updatedAt: FieldValue.serverTimestamp()
-      });
+      };
+      if (typeof isPublic === 'boolean') {
+        updateData.isPublic = isPublic;
+      }
+      if (responseText && responseText.trim()) {
+        updateData.lastAdminResponse = responseText.trim();
+        updateData.lastAdminName = adminName || 'Pastor';
+      }
+      await docRef.update(updateData);
+
+      // Targeted notification strictly for the specific member who submitted this prayer request
+      const memberId = existing.uid || existing.authorId || existing.contactId || '';
+      const memberPhone = existing.phone || existing.contactPhone || '';
+      let memberName = existing.name || existing.memberName || existing.authorName || '';
+      if (!memberName || memberName.toLowerCase() === 'church member' || memberName.toLowerCase() === 'faithful member') {
+        memberName = 'Beloved Member';
+      }
+
+      const finalIsPublic = typeof isPublic === 'boolean' ? isPublic : (existing.isPublic ?? false);
+      const notifTitle = finalIsPublic ? '🙏 Prayer Request Approved' : '🙏 Pastoral Prayer Response';
+      const cleanComment = responseText && responseText.trim();
+      const notifBody = cleanComment
+        ? `Pastor has responded to your prayer request: "${cleanComment.length > 90 ? cleanComment.substring(0, 87) + '...' : cleanComment}"`
+        : finalIsPublic
+        ? `Dear ${memberName}, your prayer request has been approved and our pastoral team is praying for you.`
+        : `Dear ${memberName}, your prayer request has been received and our pastoral team has prayed for you.`;
+
+      if (memberId || memberPhone) {
+        // 1. In-app notification document targeted to this member only
+        try {
+          const notifCol = await this.getCollection('notifications');
+          await notifCol.add({
+            type: 'prayer_request_member',
+            title: notifTitle,
+            body: notifBody,
+            targetMemberId: memberId,
+            targetPhone: memberPhone,
+            targetUid: memberId,
+            prayerId: id,
+            requestId: id,
+            isPublic: finalIsPublic,
+            read: false,
+            createdAt: FieldValue.serverTimestamp()
+          });
+        } catch (notifErr) {
+          console.warn('⚠️ Could not write member prayer in-app notification:', notifErr);
+        }
+
+        // 2. Targeted push broadcast ONLY for this member (no topic fallback)
+        try {
+          const bcastCol = await this.getCollection('broadcasts');
+          await bcastCol.add({
+            title: notifTitle,
+            content: notifBody,
+            type: 'prayer_request_member',
+            prayerId: id,
+            requestId: id,
+            targetPhone: memberPhone,
+            targetMemberId: memberId,
+            targetUid: memberId,
+            silent: false,
+            createdAt: FieldValue.serverTimestamp()
+          });
+        } catch (bcastErr) {
+          console.warn('⚠️ Could not trigger targeted member broadcast:', bcastErr);
+        }
+      }
+
       return true;
     } catch (e) {
       throw e;

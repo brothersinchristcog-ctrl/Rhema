@@ -57,8 +57,24 @@ export declare const onBaptismRequestCreatedAdminLegacy: import("firebase-functi
     requestId: string;
 }>>;
 /**
- * 🙏 NOTIFY COMMUNITY OF APPROVED PRAYER REQUEST
- * Triggered when a prayer request is approved (isAnswered becomes true).
+ * 🙏 NOTIFY MEMBER OF APPROVED / PROCESSED PRAYER REQUEST (Primary single-church collection)
+ * Triggered when a prayer request is approved or processed (isAnswered becomes true).
+ * Notifies ONLY the specific member who submitted it. NEVER broadcasts to community topic.
+ */
+export declare const onPrayerRequestProcessedMember: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+    churchId: string;
+    prayerId: string;
+}>>;
+/**
+ * 🙏 NOTIFY MEMBER OF APPROVED / PROCESSED PRAYER REQUEST (Legacy churches collection)
+ */
+export declare const onPrayerRequestProcessedMemberLegacy: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+    churchId: string;
+    prayerId: string;
+}>>;
+/**
+ * Deprecated alias to maintain backwards compatibility if referenced elsewhere.
+ * Topic broadcast intentionally removed.
  */
 export declare const pushPrayerRequestApproved: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
     churchId: string;

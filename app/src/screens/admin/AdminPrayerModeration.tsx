@@ -217,7 +217,7 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
       if (responseText && responseText.trim()) {
         await FirestoreService.addPrayerComment(id, responseText.trim(), adminName);
       }
-      await FirestoreService.markAsAnswered(id);
+      await FirestoreService.markAsAnswered(id, responseText, adminName, true);
       
       setAdminResponses(prev => {
         const next = {...prev};
@@ -239,7 +239,7 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
       if (responseText && responseText.trim()) {
         await FirestoreService.addPrayerComment(id, responseText.trim(), adminName);
       }
-      await FirestoreService.markAsAnswered(id);
+      await FirestoreService.markAsAnswered(id, responseText, adminName, false);
       
       setAdminResponses(prev => {
         const next = {...prev};

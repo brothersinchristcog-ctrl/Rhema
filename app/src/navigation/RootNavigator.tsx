@@ -749,6 +749,8 @@ function Navigation() {
             });
           } else if (type === 'baptism_request_member') {
             navigationRef.navigate('BaptismRequest', { requestId: data.requestId || data.id });
+          } else if (type === 'prayer_request_member') {
+            navigationRef.navigate('PrayerWall', { prayerId: data.prayerId || data.requestId || data.id });
           } else if (type === 'prayer_request_admin' || type === 'prayer_request' || type === 'prayer') {
             const prayerId = data.prayerId || data.requestId || data.id;
             console.log('🙏 [RootNavigator] Direct routing to Admin Prayers tab:', { prayerId });

@@ -191,6 +191,9 @@ class NotificationService {
           });
           break;
         }
+        case 'prayer_request_member':
+          nav.navigate('PrayerWall', { prayerId: rawData.prayerId || rawData.requestId || id });
+          break;
         case 'prayer_request_public':
           nav.navigate('PrayerWall', { tab: 'public_requests' });
           break;
