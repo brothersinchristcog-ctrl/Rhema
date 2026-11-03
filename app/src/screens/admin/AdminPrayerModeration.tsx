@@ -37,11 +37,15 @@ import {
   ChevronLeft,
   FileDown,
   BookOpen,
-  Sparkles,
   Share2,
-  MessageCircle
+  MessageCircle,
+  ChevronDown,
+  Check,
+  Search,
+  X
 } from 'lucide-react-native';
-import PrayerVerseService, { PrayerVerse, SuggestedResponse } from '../../services/PrayerVerseService';
+import { FlatList, Keyboard } from 'react-native';
+import PrayerVerseService, { BibleBookItem } from '../../services/PrayerVerseService';
 import FirestoreService from '../../services/FirestoreService';
 import Theme from '../../theme/Theme';
 import { useAuth } from '../../context/AuthContext';
@@ -100,10 +104,51 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
   const [searchingMembers, setSearchingMembers] = useState(false);
   const [adminResponses, setAdminResponses] = useState<{[key: string]: string}>({});
   const [selectedVerses, setSelectedVerses] = useState<{ [id: string]: { reference: string; referenceTe?: string; text: string; textTe?: string } }>({});
-  const [aiVerseSuggestions, setAiVerseSuggestions] = useState<{ [id: string]: PrayerVerse[] }>({});
-  const [loadingAiVerses, setLoadingAiVerses] = useState<{ [id: string]: boolean }>({});
-  const [aiResponseSuggestions, setAiResponseSuggestions] = useState<{ [id: string]: SuggestedResponse[] }>({});
-  const [loadingAiResponses, setLoadingAiResponses] = useState<{ [id: string]: boolean }>({});
+  const [bcvSelections, setBcvSelections] = useState<{ [id: string]: { bookIndex: number; chapter: number; verse: string } }>({});
+  const [loadingScripture, setLoadingScripture] = useState<{ [id: string]: boolean }>({});
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const modalScrollRef = useRef<ScrollView>(null);
+
+  // BCV Selection Modal State
+  const [bcvPicker, setBcvPicker] = useState<{
+    visible: boolean;
+    reqId: string;
+    step: 'book' | 'chapter' | 'verse';
+    selectedBookIndex: number;
+    selectedChapter: number;
+    selectedVerse: string;
+    searchQuery: string;
+    testamentFilter: 'ALL' | 'OT' | 'NT';
+  }>({
+    visible: false,
+    reqId: '',
+    step: 'book',
+    selectedBookIndex: 49,
+    selectedChapter: 4,
+    selectedVerse: '6-7',
+    searchQuery: '',
+    testamentFilter: 'ALL',
+  });
+
+  // Track keyboard show/hide to make modal and scrolling 100% keyboard aware
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => {
+        setKeyboardHeight(e.endCoordinates.height);
+      }
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setKeyboardHeight(0);
+      }
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
   const [successModalData, setSuccessModalData] = useState<{ visible: boolean; title: string; sub: string }>({ visible: false, title: '', sub: '' });
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [closeConfirmId, setCloseConfirmId] = useState<string | null>(null);
@@ -293,111 +338,123 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
     }
   };
 
-  // ── Verse & Response Helper Methods ──
-  const getVersesForRequest = (req: any): PrayerVerse[] => {
-    if (!req) return [];
-    const reqId = req.id;
-    if (aiVerseSuggestions[reqId] && aiVerseSuggestions[reqId].length > 0) {
-      return aiVerseSuggestions[reqId];
-    }
-    const text = req.text || req.request || req.requestEn || '';
-    return PrayerVerseService.getInstantSuggestedVerses(text, req.category);
-  };
+  // ── Bible Scripture & Pastoral Response Helpers ──
+  const allBibleBooks = React.useMemo(() => PrayerVerseService.getBooksList(), []);
 
-  const handleFetchAIVerses = async (req: any) => {
-    if (!req?.id) return;
-    const reqId = req.id;
-    setLoadingAiVerses(prev => ({ ...prev, [reqId]: true }));
-    try {
-      const text = req.text || req.request || req.requestEn || '';
-      const verses = await PrayerVerseService.fetchAIVerseSuggestions(text, req.category);
-      if (verses && verses.length > 0) {
-        setAiVerseSuggestions(prev => ({ ...prev, [reqId]: verses }));
-      }
-    } catch (err) {
-      console.warn('AI verse suggestion error:', err);
-    } finally {
-      setLoadingAiVerses(prev => ({ ...prev, [reqId]: false }));
-    }
-  };
-
-  const getResponsesForRequest = (req: any): SuggestedResponse[] => {
-    if (!req) return [];
-    const reqId = req.id;
-    if (aiResponseSuggestions[reqId] && aiResponseSuggestions[reqId].length > 0) {
-      return aiResponseSuggestions[reqId];
-    }
-    const memberName = req.name || req.authorName || req.memberName || 'Beloved Member';
-    const verse = selectedVerses[reqId];
-    return PrayerVerseService.getInstantSuggestedResponses(memberName, req.category, verse?.reference);
-  };
-
-  const handleFetchAIResponses = async (req: any) => {
-    if (!req?.id) return;
-    const reqId = req.id;
-    setLoadingAiResponses(prev => ({ ...prev, [reqId]: true }));
-    try {
-      const text = req.text || req.request || req.requestEn || '';
-      const memberName = req.name || req.authorName || req.memberName || 'Beloved Member';
-      const verse = selectedVerses[reqId];
-      const responses = await PrayerVerseService.fetchAIResponseSuggestions(
-        text,
-        memberName,
-        req.category,
-        verse ? { reference: verse.reference, referenceTe: verse.referenceTe, verseEn: verse.text, verseTe: verse.textTe, theme: 'Scripture' } : undefined
-      );
-      if (responses && responses.length > 0) {
-        setAiResponseSuggestions(prev => ({ ...prev, [reqId]: responses }));
-      }
-    } catch (err) {
-      console.warn('AI response suggestion error:', err);
-    } finally {
-      setLoadingAiResponses(prev => ({ ...prev, [reqId]: false }));
-    }
-  };
-
-  const handleSelectVerse = (reqId: string, verse: PrayerVerse) => {
-    setSelectedVerses(prev => {
-      if (prev[reqId]?.reference === verse.reference) {
-        const next = { ...prev };
-        delete next[reqId];
-        return next;
-      }
-      return {
-        ...prev,
-        [reqId]: {
-          reference: verse.reference,
-          referenceTe: verse.referenceTe,
-          text: verse.verseEn,
-          textTe: verse.verseTe,
-        }
-      };
+  const handleOpenBookPicker = (reqId: string) => {
+    const existing = bcvSelections[reqId];
+    setBcvPicker({
+      visible: true,
+      reqId,
+      step: 'book',
+      selectedBookIndex: existing ? existing.bookIndex : 49,
+      selectedChapter: existing ? existing.chapter : 1,
+      selectedVerse: existing ? existing.verse : '1',
+      searchQuery: '',
+      testamentFilter: 'ALL',
     });
   };
 
-  const handleSelectResponse = (reqId: string, resp: SuggestedResponse) => {
-    setAdminResponses(prev => ({
+  const handleOpenChapterPicker = (reqId: string) => {
+    const existing = bcvSelections[reqId];
+    setBcvPicker(prev => ({
       ...prev,
-      [reqId]: resp.body
+      visible: true,
+      reqId,
+      step: 'chapter',
+      selectedBookIndex: existing ? existing.bookIndex : 49,
+      selectedChapter: existing ? existing.chapter : 1,
+      selectedVerse: existing ? existing.verse : '1',
+      searchQuery: '',
     }));
+  };
+
+  const handleOpenVersePicker = (reqId: string) => {
+    const existing = bcvSelections[reqId];
+    setBcvPicker(prev => ({
+      ...prev,
+      visible: true,
+      reqId,
+      step: 'verse',
+      selectedBookIndex: existing ? existing.bookIndex : 49,
+      selectedChapter: existing ? existing.chapter : 1,
+      selectedVerse: existing ? existing.verse : '1',
+      searchQuery: '',
+    }));
+  };
+
+  const handleSelectBookInPicker = (bookIndex: number) => {
+    setBcvPicker(prev => ({
+      ...prev,
+      selectedBookIndex: bookIndex,
+      selectedChapter: 1,
+      selectedVerse: '1',
+      step: 'chapter',
+    }));
+  };
+
+  const handleSelectChapterInPicker = (chapter: number) => {
+    setBcvPicker(prev => ({
+      ...prev,
+      selectedChapter: chapter,
+      selectedVerse: '1',
+      step: 'verse',
+    }));
+  };
+
+  const handleSelectVerseInPicker = async (verse: string | number) => {
+    const reqId = bcvPicker.reqId;
+    const bookIndex = bcvPicker.selectedBookIndex;
+    const chapter = bcvPicker.selectedChapter;
+    const verseStr = String(verse).trim() || '1';
+
+    setBcvSelections(prev => ({
+      ...prev,
+      [reqId]: { bookIndex, chapter, verse: verseStr }
+    }));
+
+    setBcvPicker(prev => ({ ...prev, visible: false }));
+
+    // Automatically lookup Scripture in English and Telugu!
+    setLoadingScripture(prev => ({ ...prev, [reqId]: true }));
+    try {
+      const result = await PrayerVerseService.lookupScripture(bookIndex, chapter, verseStr);
+      setSelectedVerses(prev => ({
+        ...prev,
+        [reqId]: {
+          reference: result.reference,
+          referenceTe: result.referenceTe,
+          text: result.textEn,
+          textTe: result.textTe,
+        }
+      }));
+    } catch (err) {
+      console.warn('Scripture lookup error:', err);
+    } finally {
+      setLoadingScripture(prev => ({ ...prev, [reqId]: false }));
+    }
+  };
+
+  const handleClearVerse = (reqId: string) => {
+    setSelectedVerses(prev => {
+      const next = { ...prev };
+      delete next[reqId];
+      return next;
+    });
+    setBcvSelections(prev => {
+      const next = { ...prev };
+      delete next[reqId];
+      return next;
+    });
   };
 
   const handleShareMotivationalVerse = async (req: any, preferredChannel: 'whatsapp' | 'native' = 'whatsapp') => {
     if (!req) return;
     const reqId = req.id;
-    let verse = selectedVerses[reqId] || (req.bibleVerse ? { reference: req.bibleVerse, text: req.verseText, textTe: req.verseTextTe } : null);
+    let verse = selectedVerses[reqId] || (req.bibleVerse ? { reference: req.bibleVerse, referenceTe: req.verseReferenceTe, text: req.verseText, textTe: req.verseTextTe } : null);
 
     if (!verse || !verse.reference) {
-      const suggestions = getVersesForRequest(req);
-      if (suggestions && suggestions.length > 0) {
-        const top = suggestions[0];
-        verse = { reference: top.reference, referenceTe: top.referenceTe, text: top.verseEn, textTe: top.verseTe };
-        setSelectedVerses(prev => ({ ...prev, [reqId]: verse! }));
-      }
-    }
-
-    if (!verse || !verse.reference) {
-      Alert.alert('Verse Required', 'Please enter or select a Bible verse to share encouragement.');
+      Alert.alert('Verse Required', 'Please select a Bible Book, Chapter, and Verse before sharing.');
       return;
     }
 
@@ -424,11 +481,14 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
     if (!item?.id) return null;
     const reqId = item.id;
     const isPublic = item.isPublic;
-    const verseList = getVersesForRequest(item);
-    const respList = getResponsesForRequest(item);
     const currentVerse = selectedVerses[reqId];
+    const currentBCV = bcvSelections[reqId];
     const currentReply = adminResponses[reqId] || '';
     const phone = item.phone || item.contactPhone;
+
+    const currentBook = currentBCV !== undefined && currentBCV.bookIndex !== undefined
+      ? allBibleBooks[currentBCV.bookIndex]
+      : null;
 
     return (
       <View style={[styles.workflowContainer, isDetailModal && { backgroundColor: '#FFFFFF', borderWidth: 0, padding: 0 }]}>
@@ -441,154 +501,157 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
           </View>
         )}
 
-        {/* ── 1. Bible Verse Entry & AI Suggestions ── */}
+        {/* ── 1. Bible Scripture Selection Fields (Book, Chapter, Verse) ── */}
         <View style={styles.sectionBox}>
           <View style={styles.sectionHeaderRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <BookOpen size={15} color="#92400E" />
-              <Text style={styles.sectionTitle}>1. Bible Verse (Scripture)</Text>
+              <BookOpen size={16} color="#92400E" />
+              <Text style={styles.sectionTitle}>1. Bible Scripture Selection</Text>
             </View>
+            {(currentVerse?.reference || currentBCV) && (
+              <TouchableOpacity
+                onPress={() => handleClearVerse(reqId)}
+                style={styles.clearBtn}
+              >
+                <Text style={styles.clearBtnTxt}>Clear</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Book, Chapter, Verse Selection Row */}
+          <View style={styles.bcvRow}>
+            {/* Book Selector */}
             <TouchableOpacity
-              style={styles.aiPillBtn}
-              onPress={() => handleFetchAIVerses(item)}
-              disabled={loadingAiVerses[reqId]}
+              style={styles.bcvField}
+              onPress={() => handleOpenBookPicker(reqId)}
+              activeOpacity={0.7}
             >
-              {loadingAiVerses[reqId] ? (
-                <ActivityIndicator size="small" color="#7C3AED" />
-              ) : (
-                <>
-                  <Sparkles size={13} color="#7C3AED" />
-                  <Text style={styles.aiPillBtnTxt}>AI Verses</Text>
-                </>
-              )}
+              <Text style={styles.bcvLabel}>Bible Book</Text>
+              <View style={styles.bcvBox}>
+                <Text style={[styles.bcvVal, !currentBook && styles.bcvPlaceholder]} numberOfLines={1}>
+                  {currentBook ? `${currentBook.nameEn} (${currentBook.nameTe})` : 'Select Book'}
+                </Text>
+                <ChevronDown size={14} color="#64748B" />
+              </View>
+            </TouchableOpacity>
+
+            {/* Chapter Selector */}
+            <TouchableOpacity
+              style={styles.bcvFieldSmall}
+              onPress={() => handleOpenChapterPicker(reqId)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.bcvLabel}>Chapter</Text>
+              <View style={styles.bcvBox}>
+                <Text style={[styles.bcvVal, !currentBCV && styles.bcvPlaceholder]}>
+                  {currentBCV ? `Ch ${currentBCV.chapter}` : 'Ch'}
+                </Text>
+                <ChevronDown size={14} color="#64748B" />
+              </View>
+            </TouchableOpacity>
+
+            {/* Verse Selector */}
+            <TouchableOpacity
+              style={styles.bcvFieldSmall}
+              onPress={() => handleOpenVersePicker(reqId)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.bcvLabel}>Verse</Text>
+              <View style={styles.bcvBox}>
+                <Text style={[styles.bcvVal, !currentBCV && styles.bcvPlaceholder]}>
+                  {currentBCV ? `v. ${currentBCV.verse}` : 'Verse'}
+                </Text>
+                <ChevronDown size={14} color="#64748B" />
+              </View>
             </TouchableOpacity>
           </View>
 
-          {/* Quick Curated & AI Verse Chips */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 8, paddingVertical: 4 }}
-          >
-            {verseList.map((v, idx) => {
-              const isSelected = currentVerse?.reference === v.reference;
-              return (
-                <TouchableOpacity
-                  key={v.reference + idx}
-                  style={[styles.verseChip, isSelected && styles.verseChipSelected]}
-                  onPress={() => handleSelectVerse(reqId, v)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.verseChipRef, isSelected && styles.verseChipRefSelected]}>
-                    {v.reference}
-                  </Text>
-                  {v.theme ? (
-                    <Text style={[styles.verseChipTheme, isSelected && styles.verseChipThemeSelected]}>
-                      · {v.theme}
-                    </Text>
-                  ) : null}
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+          {/* Automatic Scripture Display (English & Telugu) */}
+          {loadingScripture[reqId] ? (
+            <View style={styles.scriptureLoadingBox}>
+              <ActivityIndicator size="small" color="#92400E" />
+              <Text style={styles.scriptureLoadingTxt}>Looking up Holy Scripture in English & Telugu...</Text>
+            </View>
+          ) : currentVerse?.reference ? (
+            <View style={styles.scriptureDisplayCard}>
+              {/* Reference Title Header */}
+              <View style={styles.scriptureRefHeader}>
+                <BookOpen size={14} color="#92400E" />
+                <Text style={styles.scriptureRefEn}>{currentVerse.reference}</Text>
+                {currentVerse.referenceTe ? (
+                  <Text style={styles.scriptureRefTe}>· {currentVerse.referenceTe}</Text>
+                ) : null}
+              </View>
 
-          {/* Scripture Reference Input */}
-          <View style={styles.inputWrap}>
-            <Text style={styles.inputFieldLabel}>Scripture Reference</Text>
-            <TextInput
-              style={styles.singleLineInput}
-              placeholder="e.g. Jeremiah 17:14 or యిర్మియా 17:14"
-              placeholderTextColor="#94A3B8"
-              value={currentVerse?.reference || ''}
-              onChangeText={(txt) => setSelectedVerses(prev => ({
-                ...prev,
-                [reqId]: { ...(prev[reqId] || { text: '' }), reference: txt }
-              }))}
-            />
-          </View>
+              {/* English Scripture Words */}
+              <View style={styles.scriptureTextBlock}>
+                <Text style={styles.scriptureLangLabel}>ENGLISH (Holy Bible):</Text>
+                <TextInput
+                  style={styles.scriptureTextInput}
+                  multiline
+                  value={currentVerse.text}
+                  onChangeText={(txt) => setSelectedVerses(prev => ({
+                    ...prev,
+                    [reqId]: { ...(prev[reqId] || { reference: '' }), text: txt }
+                  }))}
+                  placeholder="English scripture text..."
+                  placeholderTextColor="#94A3B8"
+                />
+              </View>
 
-          {/* Scripture Verse Text Input (optional / editable) */}
-          {currentVerse?.reference ? (
-            <View style={[styles.inputWrap, { marginTop: 8 }]}>
-              <Text style={styles.inputFieldLabel}>Scripture Verse Words</Text>
-              <TextInput
-                style={styles.multiLineVerseInput}
-                placeholder="Type or edit verse text..."
-                placeholderTextColor="#94A3B8"
-                multiline
-                value={currentVerse?.text || ''}
-                onChangeText={(txt) => setSelectedVerses(prev => ({
-                  ...prev,
-                  [reqId]: { ...(prev[reqId] || { reference: '' }), text: txt }
-                }))}
-              />
-              {currentVerse?.textTe && currentVerse.textTe.trim() !== (currentVerse.text || '').trim() ? (
-                <Text style={styles.teluguVersePreview}>
-                  Telugu: "{currentVerse.textTe}"
-                </Text>
+              {/* Telugu Scripture Words */}
+              {currentVerse.textTe ? (
+                <View style={[styles.scriptureTextBlock, { borderTopWidth: 1, borderTopColor: '#FEF3C7', paddingTop: 8, marginTop: 8 }]}>
+                  <Text style={[styles.scriptureLangLabel, { color: '#854D0E' }]}>TELUGU (పరిశుద్ధ గ్రంథము):</Text>
+                  <TextInput
+                    style={[styles.scriptureTextInput, { fontStyle: 'italic', color: '#713F12' }]}
+                    multiline
+                    value={currentVerse.textTe}
+                    onChangeText={(txt) => setSelectedVerses(prev => ({
+                      ...prev,
+                      [reqId]: { ...(prev[reqId] || { reference: '' }), textTe: txt }
+                    }))}
+                    placeholder="Telugu scripture text..."
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
               ) : null}
             </View>
-          ) : null}
+          ) : (
+            <Text style={styles.selectScriptureHint}>
+              Select Book, Chapter, and Verse above to display scripture text automatically in English & Telugu.
+            </Text>
+          )}
         </View>
 
-        {/* ── 2. Suggested Responses ── */}
+        {/* ── 2. Admin Personal Prayer Response ── */}
         <View style={[styles.sectionBox, { marginTop: 12 }]}>
           <View style={styles.sectionHeaderRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <MessageSquare size={14} color="#1D4ED8" />
-              <Text style={[styles.sectionTitle, { color: '#1D4ED8' }]}>2. Suggested Responses</Text>
+              <MessageSquare size={15} color="#1D4ED8" />
+              <Text style={[styles.sectionTitle, { color: '#1D4ED8' }]}>2. Personal Prayer Response</Text>
             </View>
-            <TouchableOpacity
-              style={[styles.aiPillBtn, { borderColor: '#BFDBFE', backgroundColor: '#EFF6FF' }]}
-              onPress={() => handleFetchAIResponses(item)}
-              disabled={loadingAiResponses[reqId]}
-            >
-              {loadingAiResponses[reqId] ? (
-                <ActivityIndicator size="small" color="#1D4ED8" />
-              ) : (
-                <>
-                  <Sparkles size={13} color="#1D4ED8" />
-                  <Text style={[styles.aiPillBtnTxt, { color: '#1D4ED8' }]}>AI Response</Text>
-                </>
-              )}
-            </TouchableOpacity>
           </View>
 
-          {/* Quick Response Chips */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 8, paddingVertical: 4 }}
-          >
-            {respList.map((resp) => {
-              const isApplied = currentReply.includes(resp.title) || currentReply === resp.body;
-              return (
-                <TouchableOpacity
-                  key={resp.id}
-                  style={[styles.responseChip, isApplied && styles.responseChipApplied]}
-                  onPress={() => handleSelectResponse(reqId, resp)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.responseChipTxt, isApplied && styles.responseChipTxtApplied]}>
-                    {resp.title}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+          <Text style={styles.inputFieldSubtitle}>
+            Enter your personal pastoral message, prayer, or encouragement for this member:
+          </Text>
 
-          {/* Response Text Input */}
-          <View style={[styles.inputWrap, { marginTop: 8 }]}>
-            <Text style={styles.inputFieldLabel}>Pastoral Response Message</Text>
-            <TextInput
-              style={[styles.adminReplyInput, { minHeight: 74, backgroundColor: '#FFFFFF' }]}
-              placeholder="Write a prayer message or response to this member..."
-              placeholderTextColor="#94A3B8"
-              value={currentReply}
-              onChangeText={(txt) => setAdminResponses(prev => ({ ...prev, [reqId]: txt }))}
-              multiline
-            />
-          </View>
+          <TextInput
+            style={styles.personalResponseInput}
+            placeholder="Type your personal prayer response to the member..."
+            placeholderTextColor="#94A3B8"
+            value={currentReply}
+            onChangeText={(txt) => setAdminResponses(prev => ({ ...prev, [reqId]: txt }))}
+            multiline
+            onFocus={() => {
+              if (isDetailModal) {
+                setTimeout(() => {
+                  modalScrollRef.current?.scrollToEnd({ animated: true });
+                }, 250);
+              }
+            }}
+          />
         </View>
 
         {/* ── 3. Motivational Sharing & Submit Actions ── */}
@@ -1152,14 +1215,23 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
         visible={detailModalVisible && !!detailPrayer}
         transparent
         animationType="slide"
-        onRequestClose={() => setDetailModalVisible(false)}
+        statusBarTranslucent
+        onRequestClose={() => {
+          Keyboard.dismiss();
+          setDetailModalVisible(false);
+        }}
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.detailModalOverlay}
         >
           {detailPrayer ? (
-          <View style={styles.detailModalContainer}>
+          <View style={[
+            styles.detailModalContainer,
+            keyboardHeight > 0 && Platform.OS === 'android' && {
+              maxHeight: Dimensions.get('window').height - 40,
+            }
+          ]}>
             {/* Modal Header */}
             <View style={styles.detailModalHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 12 }}>
@@ -1175,15 +1247,36 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
                   </Text>
                 </View>
               </View>
+              {keyboardHeight > 0 && (
+                <TouchableOpacity
+                  onPress={() => Keyboard.dismiss()}
+                  style={styles.dismissKbdHeaderBtn}
+                >
+                  <Text style={styles.dismissKbdHeaderTxt}>Done</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity
-                onPress={() => setDetailModalVisible(false)}
+                onPress={() => {
+                  Keyboard.dismiss();
+                  setDetailModalVisible(false);
+                }}
                 style={styles.detailModalCloseBtn}
               >
                 <XCircle size={26} color="#64748B" />
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: Dimensions.get('window').height * 0.72, padding: 20 }}>
+            <ScrollView
+              ref={modalScrollRef}
+              showsVerticalScrollIndicator={true}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              contentContainerStyle={{
+                padding: 20,
+                paddingBottom: keyboardHeight > 0 ? keyboardHeight + 80 : 120,
+                flexGrow: 1
+              }}
+            >
               {/* Badges row */}
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
                 <View style={[styles.catBadge, { paddingHorizontal: 10, paddingVertical: 4 }]}>
@@ -1327,6 +1420,205 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
             </ScrollView>
           </View>
           ) : null}
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ── Bible Book, Chapter, Verse Picker Modal ── */}
+      <Modal
+        visible={bcvPicker.visible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setBcvPicker(prev => ({ ...prev, visible: false }))}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.pickerOverlay}
+        >
+          <View style={styles.pickerContainer}>
+            {/* Picker Header with Back Navigation & Close */}
+            <View style={styles.pickerHeader}>
+              {bcvPicker.step !== 'book' ? (
+                <TouchableOpacity
+                  style={styles.pickerNavBtn}
+                  onPress={() => {
+                    if (bcvPicker.step === 'verse') {
+                      setBcvPicker(prev => ({ ...prev, step: 'chapter' }));
+                    } else if (bcvPicker.step === 'chapter') {
+                      setBcvPicker(prev => ({ ...prev, step: 'book' }));
+                    }
+                  }}
+                >
+                  <ChevronLeft size={22} color="#1E293B" />
+                </TouchableOpacity>
+              ) : (
+                <View style={{ width: 32 }} />
+              )}
+
+              <View style={{ alignItems: 'center' }}>
+                <Text style={styles.pickerTitle}>
+                  {bcvPicker.step === 'book'
+                    ? 'Select Bible Book'
+                    : bcvPicker.step === 'chapter'
+                    ? `${allBibleBooks[bcvPicker.selectedBookIndex]?.nameEn} · Select Chapter`
+                    : `${allBibleBooks[bcvPicker.selectedBookIndex]?.nameEn} ${bcvPicker.selectedChapter} · Select Verse`}
+                </Text>
+                <Text style={styles.pickerSubtitle}>
+                  {bcvPicker.step === 'book'
+                    ? 'Choose from 66 Books of Scripture'
+                    : bcvPicker.step === 'chapter'
+                    ? `${allBibleBooks[bcvPicker.selectedBookIndex]?.totalChapters} Chapters available`
+                    : 'Tap a verse or enter range (e.g. 6-7)'}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.pickerNavBtn}
+                onPress={() => setBcvPicker(prev => ({ ...prev, visible: false }))}
+              >
+                <X size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Step 1: Book Selection */}
+            {bcvPicker.step === 'book' && (
+              <View style={{ flex: 1 }}>
+                {/* Search bar */}
+                <View style={styles.pickerSearchBox}>
+                  <Search size={16} color="#94A3B8" />
+                  <TextInput
+                    style={styles.pickerSearchInput}
+                    placeholder="Search by book name (e.g. John, యోహాను)..."
+                    placeholderTextColor="#94A3B8"
+                    value={bcvPicker.searchQuery}
+                    onChangeText={(txt) => setBcvPicker(prev => ({ ...prev, searchQuery: txt }))}
+                  />
+                  {bcvPicker.searchQuery.length > 0 && (
+                    <TouchableOpacity onPress={() => setBcvPicker(prev => ({ ...prev, searchQuery: '' }))}>
+                      <X size={16} color="#94A3B8" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {/* OT / NT Tabs */}
+                <View style={styles.testamentTabBar}>
+                  {(['ALL', 'OT', 'NT'] as const).map(tab => (
+                    <TouchableOpacity
+                      key={tab}
+                      style={[styles.testamentTab, bcvPicker.testamentFilter === tab && styles.testamentTabActive]}
+                      onPress={() => setBcvPicker(prev => ({ ...prev, testamentFilter: tab }))}
+                    >
+                      <Text style={[styles.testamentTabTxt, bcvPicker.testamentFilter === tab && styles.testamentTabTxtActive]}>
+                        {tab === 'ALL' ? 'All (66)' : tab === 'OT' ? 'Old Testament (39)' : 'New Testament (27)'}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* Books List */}
+                <FlatList
+                  data={allBibleBooks.filter(b => {
+                    if (bcvPicker.testamentFilter === 'OT' && b.testament !== 'OT') return false;
+                    if (bcvPicker.testamentFilter === 'NT' && b.testament !== 'NT') return false;
+                    if (bcvPicker.searchQuery.trim()) {
+                      const q = bcvPicker.searchQuery.toLowerCase().trim();
+                      return b.nameEn.toLowerCase().includes(q) || b.nameTe.toLowerCase().includes(q);
+                    }
+                    return true;
+                  })}
+                  keyExtractor={item => item.nameEn + item.index}
+                  keyboardShouldPersistTaps="handled"
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      style={[styles.bookRow, bcvPicker.selectedBookIndex === item.index && styles.bookRowSelected]}
+                      onPress={() => handleSelectBookInPicker(item.index)}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.bookNameEn, bcvPicker.selectedBookIndex === item.index && styles.bookNameEnSelected]}>
+                          {item.nameEn}
+                        </Text>
+                        <Text style={styles.bookNameTe}>{item.nameTe}</Text>
+                      </View>
+                      <View style={styles.chCountBadge}>
+                        <Text style={styles.chCountText}>{item.totalChapters} Ch</Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
+                />
+              </View>
+            )}
+
+            {/* Step 2: Chapter Selection */}
+            {bcvPicker.step === 'chapter' && (
+              <ScrollView contentContainerStyle={{ padding: 16 }} keyboardShouldPersistTaps="handled">
+                <Text style={styles.pickerSectionLabel}>Tap a Chapter Number:</Text>
+                <View style={styles.gridContainer}>
+                  {Array.from({ length: allBibleBooks[bcvPicker.selectedBookIndex]?.totalChapters || 1 }, (_, i) => i + 1).map(ch => (
+                    <TouchableOpacity
+                      key={ch}
+                      style={[styles.gridCell, bcvPicker.selectedChapter === ch && styles.gridCellActive]}
+                      onPress={() => handleSelectChapterInPicker(ch)}
+                    >
+                      <Text style={[styles.gridCellTxt, bcvPicker.selectedChapter === ch && styles.gridCellTxtActive]}>
+                        {ch}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+            )}
+
+            {/* Step 3: Verse Selection */}
+            {bcvPicker.step === 'verse' && (
+              <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+                {/* Custom Verse / Range input */}
+                <View style={styles.customVerseInputRow}>
+                  <Text style={styles.pickerSectionLabel}>Custom Verse or Range:</Text>
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                    <TextInput
+                      style={styles.customVerseInput}
+                      placeholder="e.g. 6 or 6-7"
+                      placeholderTextColor="#94A3B8"
+                      value={bcvPicker.selectedVerse}
+                      onChangeText={(txt) => setBcvPicker(prev => ({ ...prev, selectedVerse: txt }))}
+                      keyboardType="numbers-and-punctuation"
+                    />
+                    <TouchableOpacity
+                      style={styles.applyVerseBtn}
+                      onPress={() => handleSelectVerseInPicker(bcvPicker.selectedVerse)}
+                    >
+                      <Text style={styles.applyVerseBtnTxt}>Confirm</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* Quick Whole Chapter Option */}
+                <TouchableOpacity
+                  style={styles.entireChapterBtn}
+                  onPress={() => handleSelectVerseInPicker(`1-${PrayerVerseService.getVerseCount(bcvPicker.selectedBookIndex, bcvPicker.selectedChapter)}`)}
+                >
+                  <Check size={16} color="#059669" />
+                  <Text style={styles.entireChapterBtnTxt}>
+                    Reference Entire Chapter ({allBibleBooks[bcvPicker.selectedBookIndex]?.nameEn} {bcvPicker.selectedChapter})
+                  </Text>
+                </TouchableOpacity>
+
+                <Text style={[styles.pickerSectionLabel, { marginTop: 16 }]}>Or Tap a Verse Number:</Text>
+                <View style={styles.gridContainer}>
+                  {Array.from({ length: PrayerVerseService.getVerseCount(bcvPicker.selectedBookIndex, bcvPicker.selectedChapter) }, (_, i) => i + 1).map(v => (
+                    <TouchableOpacity
+                      key={v}
+                      style={[styles.gridCell, bcvPicker.selectedVerse === String(v) && styles.gridCellActive]}
+                      onPress={() => handleSelectVerseInPicker(v)}
+                    >
+                      <Text style={[styles.gridCellTxt, bcvPicker.selectedVerse === String(v) && styles.gridCellTxtActive]}>
+                        {v}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+            )}
+          </View>
         </KeyboardAvoidingView>
       </Modal>
 
@@ -1792,108 +2084,146 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.3,
   },
-  aiPillBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#EDE9FE',
-    borderWidth: 1,
-    borderColor: '#C4B5FD',
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+  clearBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    backgroundColor: '#FEE2E2',
+    borderRadius: 6,
   },
-  aiPillBtnTxt: {
+  clearBtnTxt: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#7C3AED',
+    color: '#EF4444',
   },
-  verseChip: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#DDD6FE',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+
+  // BCV Selection Fields Row
+  bcvRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+    gap: 8,
+    marginBottom: 10,
   },
-  verseChipSelected: {
-    backgroundColor: '#7C3AED',
-    borderColor: '#7C3AED',
+  bcvField: {
+    flex: 2,
   },
-  verseChipRef: {
-    fontSize: 12,
+  bcvFieldSmall: {
+    flex: 1.1,
+  },
+  bcvLabel: {
+    fontSize: 11,
     fontWeight: '700',
-    color: '#5B21B6',
-  },
-  verseChipRefSelected: {
-    color: '#FFFFFF',
-  },
-  verseChipTheme: {
-    fontSize: 11,
-    color: '#7C3AED',
-  },
-  verseChipThemeSelected: {
-    color: '#DDD6FE',
-  },
-  inputWrap: {
-    marginTop: 6,
-  },
-  inputFieldLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#64748B',
+    color: '#475569',
     marginBottom: 4,
   },
-  singleLineInput: {
+  bcvBox: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#CBD5E1',
     borderRadius: 8,
     paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingVertical: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  bcvVal: {
     fontSize: 13,
+    fontWeight: '700',
     color: '#1E293B',
+    flex: 1,
+    marginRight: 4,
   },
-  multiLineVerseInput: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+  bcvPlaceholder: {
+    color: '#94A3B8',
+    fontWeight: '500',
+  },
+
+  // Scripture Display Card
+  selectScriptureHint: {
     fontSize: 12,
-    color: '#1E293B',
-    minHeight: 50,
-  },
-  teluguVersePreview: {
-    fontSize: 11,
+    color: '#7C3AED',
     fontStyle: 'italic',
-    color: '#6D28D9',
+    marginTop: 4,
+    lineHeight: 18,
+  },
+  scriptureLoadingBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 8,
+    marginTop: 6,
+  },
+  scriptureLoadingTxt: {
+    fontSize: 12,
+    color: '#92400E',
+    fontWeight: '600',
+  },
+  scriptureDisplayCard: {
+    backgroundColor: '#FFFBEB',
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  scriptureRefHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 8,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#FEF3C7',
+  },
+  scriptureRefEn: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  scriptureRefTe: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  scriptureTextBlock: {
     marginTop: 4,
   },
-  responseChip: {
+  scriptureLangLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#B45309',
+    marginBottom: 2,
+    letterSpacing: 0.5,
+  },
+  scriptureTextInput: {
+    fontSize: 13,
+    lineHeight: 20,
+    color: '#78350F',
+    padding: 0,
+    minHeight: 36,
+  },
+
+  // Personal Response Input
+  inputFieldSubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    marginBottom: 6,
+  },
+  personalResponseInput: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#BFDBFE',
+    borderColor: '#CBD5E1',
     borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    padding: 12,
+    fontSize: 14,
+    color: COLORS.ink,
+    minHeight: 90,
+    textAlignVertical: 'top',
   },
-  responseChipApplied: {
-    backgroundColor: '#2563EB',
-    borderColor: '#2563EB',
-  },
-  responseChipTxt: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#1D4ED8',
-  },
-  responseChipTxtApplied: {
-    color: '#FFFFFF',
-  },
+
+  // Action Buttons
   shareRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1974,5 +2304,218 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
+  },
+  dismissKbdHeaderBtn: {
+    backgroundColor: '#EDE9FE',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginRight: 8,
+  },
+  dismissKbdHeaderTxt: {
+    color: '#7C3AED',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  // ── BCV Picker Modal Styles ──
+  pickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+    justifyContent: 'flex-end',
+  },
+  pickerContainer: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    height: '80%',
+    maxHeight: 650,
+  },
+  pickerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  pickerNavBtn: {
+    padding: 6,
+  },
+  pickerTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  pickerSubtitle: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  pickerSearchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    marginHorizontal: 16,
+    marginTop: 12,
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  pickerSearchInput: {
+    flex: 1,
+    paddingVertical: 9,
+    fontSize: 13,
+    color: '#1E293B',
+  },
+  testamentTabBar: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    marginTop: 10,
+    marginBottom: 8,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
+    padding: 3,
+  },
+  testamentTab: {
+    flex: 1,
+    paddingVertical: 6,
+    alignItems: 'center',
+    borderRadius: 6,
+  },
+  testamentTabActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  testamentTabTxt: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  testamentTabTxtActive: {
+    fontWeight: '800',
+    color: '#7C3AED',
+  },
+  bookRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  bookRowSelected: {
+    backgroundColor: '#F5F3FF',
+  },
+  bookNameEn: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  bookNameEnSelected: {
+    color: '#7C3AED',
+  },
+  bookNameTe: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  chCountBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  chCountText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  pickerSectionLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#475569',
+    marginBottom: 10,
+  },
+  gridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  gridCell: {
+    width: (width - 64) / 5,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gridCellActive: {
+    backgroundColor: '#7C3AED',
+    borderColor: '#7C3AED',
+  },
+  gridCellTxt: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  gridCellTxtActive: {
+    color: '#FFFFFF',
+  },
+  customVerseInputRow: {
+    marginBottom: 14,
+    backgroundColor: '#F8FAFC',
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  customVerseInput: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: '#1E293B',
+  },
+  applyVerseBtn: {
+    backgroundColor: '#7C3AED',
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  applyVerseBtnTxt: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  entireChapterBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    borderRadius: 8,
+    paddingVertical: 10,
+    marginBottom: 14,
+  },
+  entireChapterBtnTxt: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#059669',
   }
 });
