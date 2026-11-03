@@ -1916,9 +1916,43 @@ export async function sendDailyVersePushInternal(slotOverride?: string, targetCh
   const targetIndex = (daysSinceEpoch * 4 + slotInfo.index + offset) % totalVerses;
   console.log(`[sendDailyVersePushInternal] Target verse index: ${targetIndex} (total: ${totalVerses}, offset: ${offset})`);
 
-  // 3. Query verse document: Check Rhema Church/rhema/daily_verses first, then fallback to daily_verses
+  // 3. Priority: Curated Thematic Daily Verses strictly matched to time of day & <= 130 chars:
+  // - Morning: New beginnings, hope, strength, God's guidance
+  // - Afternoon: Encouragement, wisdom, patience, staying strong
+  // - Evening: Peace, gratitude, protection, trusting God
+  // - Night: Rest, comfort, safety, God's care
   let verseDocData: any = null;
-  let verseId: string = `verse_${targetIndex}`;
+  let verseId: string = `thematic_${slot.toLowerCase()}_${daysSinceEpoch}`;
+
+  try {
+    const fsMod = await import('fs');
+    const pathMod = await import('path');
+    const candidates = [
+      pathMod.join(process.cwd(), 'thematic_daily_verses.json'),
+      pathMod.join(process.cwd(), 'src/thematic_daily_verses.json'),
+      pathMod.join(process.cwd(), 'functions/thematic_daily_verses.json'),
+      pathMod.join(process.cwd(), 'functions/src/thematic_daily_verses.json'),
+      pathMod.join(process.cwd(), 'app/assets/thematic_daily_verses.json'),
+      pathMod.join(process.cwd(), '../app/assets/thematic_daily_verses.json'),
+    ];
+    for (const p of candidates) {
+      if (fsMod.existsSync(p)) {
+        const raw = fsMod.readFileSync(p, 'utf-8');
+        const data = JSON.parse(raw);
+        const slotList = data[slot] || data.Morning;
+        if (slotList && slotList.length > 0) {
+          const slotIdx = ((daysSinceEpoch % slotList.length) + slotList.length) % slotList.length;
+          verseDocData = slotList[slotIdx];
+          console.log(`✨ [sendDailyVersePushInternal] Selected curated thematic verse for slot '${slot}': ${verseDocData.referenceEn} - ${verseDocData.theme || ''}`);
+          break;
+        }
+      }
+    }
+  } catch (tErr) {
+    console.warn('[sendDailyVersePushInternal] Could not load thematic verses:', tErr);
+  }
+
+  // Fallback: Query Firestore if thematic list not loaded
 
   try {
     const rhemaSnap = await db.collection('Rhema Church').doc('rhema').collection('daily_verses').where('index', '==', targetIndex).limit(1).get();

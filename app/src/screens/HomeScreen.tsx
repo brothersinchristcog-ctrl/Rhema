@@ -1774,6 +1774,33 @@ export interface LocalizedVerseDisplay {
 
 export const getSynchronousVersesForToday = (date: Date = new Date()): DailyVerse[] => {
   try {
+    const thematic = require('../../assets/thematic_daily_verses.json');
+    if (thematic && thematic.Morning && thematic.Afternoon && thematic.Evening && thematic.Night) {
+      const EPOCH = new Date('2026-10-30T00:00:00Z');
+      const localDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      const epochDate = new Date(EPOCH.getFullYear(), EPOCH.getMonth(), EPOCH.getDate());
+      const daysSinceEpoch = Math.floor((localDate.getTime() - epochDate.getTime()) / (1000 * 60 * 60 * 24));
+      const PERIODS = ['Morning', 'Afternoon', 'Evening', 'Night'] as const;
+
+      return PERIODS.map((period, pIdx) => {
+        const list = thematic[period];
+        const vIdx = ((daysSinceEpoch % list.length) + list.length) % list.length;
+        const bv = list[vIdx];
+        const bgUrl = bv.backgroundUrl || getVerseBackgroundUrl(bv, period, vIdx);
+        return {
+          id: `thematic_${period.toLowerCase()}_${daysSinceEpoch}`,
+          index: vIdx,
+          verseEn: bv.verseEn || '',
+          verseTe: bv.verseTe || '',
+          referenceEn: bv.referenceEn || '',
+          referenceTe: bv.referenceTe || '',
+          backgroundUrl: bgUrl,
+          churchId: 'rhema',
+        };
+      });
+    }
+  } catch (_) {}
+  try {
     const list = VerseNotificationService.getSynchronousInitialVerses(0);
     if (list && list[0]?.verses && list[0].verses.length >= 4) {
       return list[0].verses;
@@ -1998,18 +2025,18 @@ const DailyVerseCard = ({ verse, period, onPress }: { verse: DailyVerse | null; 
           {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
         </Text>
       </View>
-      <Text numberOfLines={3} style={{
+      <Text numberOfLines={2} ellipsizeMode="tail" style={{
         color: '#fff', fontSize: 16, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
         fontWeight: '700', lineHeight: 24, marginBottom: loc.secondaryVerse && loc.secondaryVerse !== loc.primaryVerse ? 6 : 10,
       }}>
-        “{loc.primaryVerse}”
+        {loc.primaryVerse}
       </Text>
       {loc.secondaryVerse && loc.secondaryVerse !== loc.primaryVerse ? (
-        <Text numberOfLines={3} style={{
+        <Text numberOfLines={2} ellipsizeMode="tail" style={{
           color: 'rgba(255,255,255,0.92)', fontSize: 15, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
           fontStyle: 'italic', lineHeight: 22, fontWeight: '500', marginBottom: 10,
         }}>
-          “{loc.secondaryVerse}”
+          {loc.secondaryVerse}
         </Text>
       ) : null}
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
