@@ -1034,6 +1034,42 @@ async function handleBroadcastPushDispatch(data, churchIdParam, messageIdParam) 
                 const response = await getMsg().sendEachForMulticast(message);
                 console.log(`✅ Broadcast push delivered to tokens: ${response.successCount} success, ${response.failureCount} failed.`);
             }
+            if (isTargetAdmin && churchId) {
+                try {
+                    const adminTopic = `church_${churchId}_admin`;
+                    await getMsg().send({
+                        notification: {
+                            title,
+                            body: plainBody.length > 200 ? plainBody.substring(0, 197) + '...' : plainBody,
+                        },
+                        data: notificationData,
+                        topic: adminTopic,
+                        android: {
+                            priority: 'high',
+                            notification: {
+                                sound: 'default',
+                                priority: 'max',
+                                channelId: channelId,
+                            },
+                        },
+                        apns: {
+                            headers: {
+                                'apns-priority': '10',
+                            },
+                            payload: {
+                                aps: {
+                                    sound: 'default',
+                                    badge: 1,
+                                },
+                            },
+                        },
+                    });
+                    console.log(`✅ Also broadcasted admin alert to topic: ${adminTopic}`);
+                }
+                catch (adminTopicErr) {
+                    console.warn('⚠️ Could not send to church admin topic:', adminTopicErr);
+                }
+            }
         }
         else if (churchId && !data.targetPhone) {
             // Fallback: If no device tokens exist in DB, send to appropriate topic
