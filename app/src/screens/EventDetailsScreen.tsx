@@ -29,7 +29,8 @@ import {
   CheckCircle2,
   Navigation,
   Music,
-  Sliders
+  Sliders,
+  QrCode
 } from 'lucide-react-native';
 import { openZoomMeeting } from '../utils/ZoomLauncher';
 import YoutubePlayer from 'react-native-youtube-iframe';
@@ -501,6 +502,21 @@ export default function EventDetailsScreen({ route, navigation }: any) {
               </TouchableOpacity>
             </View>
           </View>
+
+          {/* QR Code Requirement Notice */}
+          {(event.requireEventQR === true || (event as any).requireEventQr === true) && (
+            <View style={styles.qrReqBanner}>
+              <View style={styles.qrReqIconBox}>
+                <QrCode size={18} color="#92400E" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.qrReqTitle}>Event QR Code Required for Check-In</Text>
+                <Text style={styles.qrReqSub}>
+                  Attendance marking is restricted to this event's unique QR code. Please scan the QR code displayed at the entrance to check in.
+                </Text>
+              </View>
+            </View>
+          )}
 
           {/* Description Section */}
           <View style={styles.section}>
@@ -1112,6 +1128,37 @@ const styles = StyleSheet.create({
 
   descCard: { backgroundColor: '#fff', borderRadius: 20, padding: 18, borderWidth: 1, borderColor: '#f1f5f9' },
   description: { fontSize: 15, color: '#475569', lineHeight: 26, fontWeight: '400' },
+  qrReqBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1.5,
+    borderColor: '#FDE68A',
+    borderRadius: 16,
+    padding: 14,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    gap: 12,
+  },
+  qrReqIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FDE68A',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  qrReqTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#92400E',
+    marginBottom: 2,
+  },
+  qrReqSub: {
+    fontSize: 11.5,
+    color: '#78350F',
+    lineHeight: 16,
+  },
 
   // ── UPCOMING — locked card ──
   lockedCard: {

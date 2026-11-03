@@ -1,0 +1,850 @@
+{
+  "Morning": [
+    {
+      "verseEn": "The steadfast love of the Lord never ceases; his mercies are new every morning.",
+      "verseTe": "యెహోవా కృప నిరంతరము నిలుచునది, ఉదయమున ప్రతిదినము నూతనముగా పుట్టుచుండును.",
+      "referenceEn": "Lamentations 3:22-23",
+      "referenceTe": "విలాపవాక్యములు 3:22-23",
+      "theme": "New Beginnings & Mercy"
+    },
+    {
+      "verseEn": "Cause me to hear thy lovingkindness in the morning; cause me to know the way wherein I should walk.",
+      "verseTe": "ఉదయమున నీ కృపావార్తను నాకు వినిపింపుము, నేను నడవవలసిన మార్గము నాకు తెలియజేయుము.",
+      "referenceEn": "Psalms 143:8",
+      "referenceTe": "కీర్తనలు 143:8",
+      "theme": "God's Guidance & Trust"
+    },
+    {
+      "verseEn": "This is the day which the LORD hath made; we will rejoice and be glad in it.",
+      "verseTe": "ఇది యెహోవా కలుగజేసిన దినము; దీనియందు మనము ఉత్సహించి సంతోషించెదము.",
+      "referenceEn": "Psalms 118:24",
+      "referenceTe": "కీర్తనలు 118:24",
+      "theme": "Joy & New Day"
+    },
+    {
+      "verseEn": "They that wait upon the LORD shall renew their strength; they shall mount up with wings as eagles.",
+      "verseTe": "యెహోవాకొరకు ఎదురుచూచువారు నూతన బలము పొందుదురు, వారు పక్షిరాజువలె రెక్కలు చాపి పైకి ఎగురుదురు.",
+      "referenceEn": "Isaiah 40:31",
+      "referenceTe": "యెషయా 40:31",
+      "theme": "Strength & Renewal"
+    },
+    {
+      "verseEn": "My voice shalt thou hear in the morning, O LORD; in the morning will I direct my prayer unto thee.",
+      "verseTe": "యెహోవా, ఉదయమున నా స్వరము నీకు వినబడును; ఉదయమున నీ సన్నిధిని కనిపెట్టుకొని యుందును.",
+      "referenceEn": "Psalms 5:3",
+      "referenceTe": "కీర్తనలు 5:3",
+      "theme": "Morning Prayer"
+    },
+    {
+      "verseEn": "Trust in the LORD with all thine heart; and he shall direct thy paths.",
+      "verseTe": "పూర్ణహృదయముతో యెహోవాయందు నమ్మకముంచుము; అప్పుడు ఆయన నీ త్రోవలను సరాళము చేయును.",
+      "referenceEn": "Proverbs 3:5-6",
+      "referenceTe": "సామెతలు 3:5-6",
+      "theme": "Trust & Direction"
+    },
+    {
+      "verseEn": "God is in the midst of her; she shall not be moved: God shall help her, and that right early.",
+      "verseTe": "దేవుడు ఆమె మధ్యన ఉన్నాడు, ఆమె కదిలింపబడదు; తెల్లవారునప్పుడే దేవుడు సహాయము చేయును.",
+      "referenceEn": "Psalms 46:5",
+      "referenceTe": "కీర్తనలు 46:5",
+      "theme": "Divine Help Early"
+    },
+    {
+      "verseEn": "O satisfy us early with thy mercy; that we may rejoice and be glad all our days.",
+      "verseTe": "ఉదయమున నీ కృపతో మమ్మును తృప్తిపరచుము; అప్పుడు మా దినములన్నియు సంతోషించెదము.",
+      "referenceEn": "Psalms 90:14",
+      "referenceTe": "కీర్తనలు 90:14",
+      "theme": "Early Satisfaction"
+    },
+    {
+      "verseEn": "Weeping may endure for a night, but joy cometh in the morning.",
+      "verseTe": "సాయంకాలమున ఏడ్పు వచ్చి రాత్రి యుండవచ్చును, ఉదయమున సంతోషము కలుగును.",
+      "referenceEn": "Psalms 30:5",
+      "referenceTe": "కీర్తనలు 30:5",
+      "theme": "Morning Joy"
+    },
+    {
+      "verseEn": "O LORD, be gracious unto us; be thou our arm every morning, our salvation also.",
+      "verseTe": "యెహోవా, మాకు కృప చూపుము; ప్రతి ఉదయమున మాకు భుజబలముగాను, రక్షణగాను ఉండుము.",
+      "referenceEn": "Isaiah 33:2",
+      "referenceTe": "యెషయా 33:2",
+      "theme": "Morning Strength"
+    },
+    {
+      "verseEn": "The LORD thy God in the midst of thee is mighty; he will save, he will rejoice over thee.",
+      "verseTe": "నీ దేవుడైన యెహోవా నీ మధ్య ఉన్నాడు, ఆయన రక్షించుటకు శక్తిమంతుడు.",
+      "referenceEn": "Zephaniah 3:17",
+      "referenceTe": "జెఫన్యా 3:17",
+      "theme": "Mighty Savior"
+    },
+    {
+      "verseEn": "For I know the thoughts that I think toward you, saith the LORD, thoughts of peace and not of evil.",
+      "verseTe": "మీకు నిరీక్షణ కలుగునట్లుగా నేను మీ విషయమై ఆలోచించుచున్న తలంపులు సమాధానకరమైనవే.",
+      "referenceEn": "Jeremiah 29:11",
+      "referenceTe": "యిర్మీయా 29:11",
+      "theme": "Hope & Future"
+    },
+    {
+      "verseEn": "I will sing of thy power; yea, I will sing aloud of thy mercy in the morning.",
+      "verseTe": "నేనైతే నీ బలమును కీర్తించెదను, ఉదయమున నీ కృపనుగూర్చి ఉత్సాహగానము చేసెదను.",
+      "referenceEn": "Psalms 59:16",
+      "referenceTe": "కీర్తనలు 59:16",
+      "theme": "Sing of Mercy"
+    },
+    {
+      "verseEn": "The LORD shall preserve thy going out and thy coming in from this time forth, and even for evermore.",
+      "verseTe": "ఇది మొదలుకొని నిరంతరము నీ రాకపోకలయందు యెహోవా నిన్ను కాపాడును.",
+      "referenceEn": "Psalms 121:8",
+      "referenceTe": "కీర్తనలు 121:8",
+      "theme": "Preservation"
+    },
+    {
+      "verseEn": "With my soul have I desired thee in the night; yea, with my spirit within me will I seek thee early.",
+      "verseTe": "రాత్రివేళ నా ఆత్మతో నిన్ను ఆశించుచున్నాను, ఉదయమున నా ఆత్మతో నిన్ను వెదకుచున్నాను.",
+      "referenceEn": "Isaiah 26:9",
+      "referenceTe": "యెషయా 26:9",
+      "theme": "Seeking God Early"
+    },
+    {
+      "verseEn": "Let the words of my mouth, and the meditation of my heart, be acceptable in thy sight, O LORD.",
+      "verseTe": "నా ఆశ్రయదుర్గమా, నా విమోచకుడా, నా నోటి మాటలు నీ దృష్టికి అంగీకారమగును గాక.",
+      "referenceEn": "Psalms 19:14",
+      "referenceTe": "కీర్తనలు 19:14",
+      "theme": "Pure Heart & Words"
+    },
+    {
+      "verseEn": "Lead me in thy truth, and teach me: for thou art the God of my salvation.",
+      "verseTe": "నీ సత్యమునుబట్టి నన్ను నడిపింపుము, నాకు ఉపదేశించుము; నీవే నా రక్షణకర్తవైన దేవుడవు.",
+      "referenceEn": "Psalms 25:5",
+      "referenceTe": "కీర్తనలు 25:5",
+      "theme": "Guidance in Truth"
+    },
+    {
+      "verseEn": "I will sing of the mercies of the LORD for ever: with my mouth will I make known thy faithfulness.",
+      "verseTe": "నేను యెహోవా కృపలను నిత్యము కీర్తించెదను, తరతరములకు నీ విశ్వాస్యతను తెలియజేసెదను.",
+      "referenceEn": "Psalms 89:1",
+      "referenceTe": "కీర్తనలు 89:1",
+      "theme": "Faithfulness"
+    },
+    {
+      "verseEn": "Commit thy way unto the LORD; trust also in him; and he shall bring it to pass.",
+      "verseTe": "నీ మార్గమును యెహోవాకు అప్పగించుము, ఆయనయందు నమ్మికయుంచుము ఆయనయే నెరవేర్చును.",
+      "referenceEn": "Psalms 37:5",
+      "referenceTe": "కీర్తనలు 37:5",
+      "theme": "Trust & Commitment"
+    },
+    {
+      "verseEn": "If I take the wings of the morning, even there shall thy hand lead me.",
+      "verseTe": "నేను ఉదయపు రెక్కలు కట్టుకొని సముద్రపు దిగంతములలో నివసించినను నీ చెయ్యి నన్ను నడిపించును.",
+      "referenceEn": "Psalms 139:9-10",
+      "referenceTe": "కీర్తనలు 139:9-10",
+      "theme": "God's Guiding Hand"
+    },
+    {
+      "verseEn": "Now the God of hope fill you with all joy and peace in believing, that ye may abound in hope.",
+      "verseTe": "పరిశుద్ధాత్మ శక్తిచేత మీకు నిరీక్షణ సమృద్ధిగా కలుగునట్లు నిరీక్షణకర్తయగు దేవుడు మిమ్మును ఆనందముతో నింపును గాక.",
+      "referenceEn": "Romans 15:13",
+      "referenceTe": "రోమీయులకు 15:13",
+      "theme": "Abundant Hope"
+    },
+    {
+      "verseEn": "Therefore if any man be in Christ, he is a new creature: old things are passed away; all things are become new.",
+      "verseTe": "ఎవడైనను క్రీస్తునందున్నయెడల వాడు నూతన సృష్టి; పాతవి గతించెను, ఇదిగో క్రొత్తవాయెను.",
+      "referenceEn": "2 Corinthians 5:17",
+      "referenceTe": "2 కొరింథీయులకు 5:17",
+      "theme": "New Creation"
+    },
+    {
+      "verseEn": "O God, thou art my God; early will I seek thee: my soul thirsteth for thee.",
+      "verseTe": "దేవా, నా దేవుడవు నీవే, ఉదయముననే నేను నిన్ను వెదకుచున్నాను.",
+      "referenceEn": "Psalms 63:1",
+      "referenceTe": "కీర్తనలు 63:1",
+      "theme": "Early Seeking"
+    },
+    {
+      "verseEn": "The path of the just is as the shining light, that shineth more and more unto the perfect day.",
+      "verseTe": "నీతిమంతుల మార్గము పట్టపగలగువరకు అంతకంతకు తేజరిల్లు ప్రకాశమానమైన జ్యోతివలె నుండును.",
+      "referenceEn": "Proverbs 4:18",
+      "referenceTe": "సామెతలు 4:18",
+      "theme": "Shining Light"
+    },
+    {
+      "verseEn": "Behold, I will do a new thing; now it shall spring forth; shall ye not know it?",
+      "verseTe": "ఇదిగో నేను ఒక నూతనమైన కార్యము చేయుచున్నాను, ఇప్పుడే అది మొలచును.",
+      "referenceEn": "Isaiah 43:19",
+      "referenceTe": "యెషయా 43:19",
+      "theme": "New Thing"
+    },
+    {
+      "verseEn": "Awake, psaltery and harp: I myself will awake early.",
+      "verseTe": "స్వరమండలమా, సితారా, మేల్కొనుడి; నేను వేకువనే మేల్కొనెదను.",
+      "referenceEn": "Psalms 108:2",
+      "referenceTe": "కీర్తనలు 108:2",
+      "theme": "Awake Early"
+    },
+    {
+      "verseEn": "I will instruct thee and teach thee in the way which thou shalt go: I will guide thee with mine eye.",
+      "verseTe": "నీకు ఉపదేశము చేసెదను, నీవు నడవవలసిన మార్గమును నీకు బోధించెదను, నీమీద దృష్టియుంచి ఆలోచన చెప్పెదను.",
+      "referenceEn": "Psalms 32:8",
+      "referenceTe": "కీర్తనలు 32:8",
+      "theme": "Divine Instruction"
+    },
+    {
+      "verseEn": "It is a good thing to give thanks unto the LORD, to shew forth thy lovingkindness in the morning.",
+      "verseTe": "యెహోవాను స్తుతించుట మంచిది, ఉదయమున నీ కృపను తెలియజేయుట మంచిది.",
+      "referenceEn": "Psalms 92:1-2",
+      "referenceTe": "కీర్తనలు 92:1-2",
+      "theme": "Morning Thanksgiving"
+    },
+    {
+      "verseEn": "And the LORD shall guide thee continually, and satisfy thy soul in drought.",
+      "verseTe": "యెహోవా నిన్ను నిత్యము నడిపించును, క్షామకాలమున నిన్ను తృప్తిపరచును.",
+      "referenceEn": "Isaiah 58:11",
+      "referenceTe": "యెషయా 58:11",
+      "theme": "Continual Guidance"
+    },
+    {
+      "verseEn": "I will lift up mine eyes unto the hills; my help cometh from the LORD, which made heaven and earth.",
+      "verseTe": "కొండలతట్టు నా కన్నులెత్తుచున్నాను; భూమ్యాకాశములను సృజించిన యెహోవావలననే నాకు సహాయము కలుగును.",
+      "referenceEn": "Psalms 121:1-2",
+      "referenceTe": "కీర్తనలు 121:1-2",
+      "theme": "Help from the Lord"
+    }
+  ],
+  "Afternoon": [
+    {
+      "verseEn": "I can do all things through Christ which strengtheneth me.",
+      "verseTe": "నన్ను బలపరచువానియందే నేను సమస్తమును చేయగలను.",
+      "referenceEn": "Philippians 4:13",
+      "referenceTe": "ఫిలిప్పీయులకు 4:13",
+      "theme": "Strength in Christ"
+    },
+    {
+      "verseEn": "Let us not be weary in well doing: for in due season we shall reap, if we faint not.",
+      "verseTe": "మేలు చేయుటయందు అలయక యుందము; మనము అలయక యుంటిమా తగినకాలమందు పంట కోతుము.",
+      "referenceEn": "Galatians 6:9",
+      "referenceTe": "గలతీయులకు 6:9",
+      "theme": "Perseverance & Patience"
+    },
+    {
+      "verseEn": "If any of you lack wisdom, let him ask of God, that giveth to all men liberally.",
+      "verseTe": "మీలో ఎవనికైనను జ్ఞానము కొదువగా ఉన్నయెడల దేవుని అడుగవలెను; ఆయన ధారాళముగా దయచేయువాడు.",
+      "referenceEn": "James 1:5",
+      "referenceTe": "యాకోబు 1:5",
+      "theme": "Wisdom from God"
+    },
+    {
+      "verseEn": "Be strong and of a good courage; be not afraid, for the LORD thy God is with thee whithersoever thou goest.",
+      "verseTe": "నిబ్బరము కలిగి ధైర్యముగా ఉండుము; నీవు నడుచు మార్గములన్నిటిలో నీ దేవుడైన యెహోవా నీకు తోడైయుండును.",
+      "referenceEn": "Joshua 1:9",
+      "referenceTe": "యెహోషువ 1:9",
+      "theme": "Courage & Strength"
+    },
+    {
+      "verseEn": "And whatsoever ye do, do it heartily, as to the Lord, and not unto men.",
+      "verseTe": "మీరు ఏమి చేసినను, మనుష్యుల నిమిత్తము కాక ప్రభువు నిమిత్తమని మనస్ఫూర్తిగా చేయుడి.",
+      "referenceEn": "Colossians 3:23",
+      "referenceTe": "కొలొస్సయులకు 3:23",
+      "theme": "Diligence & Service"
+    },
+    {
+      "verseEn": "Wait on the LORD: be of good courage, and he shall strengthen thine heart.",
+      "verseTe": "యెహోవాకొరకు కనిపెట్టుకొని యుండుము, ధైర్యము తెచ్చుకొని నీ హృదయమును దృఢపరచుకొనుము.",
+      "referenceEn": "Psalms 27:14",
+      "referenceTe": "కీర్తనలు 27:14",
+      "theme": "Patience & Courage"
+    },
+    {
+      "verseEn": "Commit thy works unto the LORD, and thy thoughts shall be established.",
+      "verseTe": "నీ పనులను యెహోవాకు అప్పగించుము, అప్పుడు నీ యోచనలు సఫలమగును.",
+      "referenceEn": "Proverbs 16:3",
+      "referenceTe": "సామెతలు 16:3",
+      "theme": "Commitment in Work"
+    },
+    {
+      "verseEn": "Watch ye, stand fast in the faith, quit you like men, be strong.",
+      "verseTe": "మెలకువగా ఉండుడి, విశ్వాసమందు స్థిరముగా ఉండుడి, బలవంతులై యుండుడి.",
+      "referenceEn": "1 Corinthians 16:13",
+      "referenceTe": "1 కొరింథీయులకు 16:13",
+      "theme": "Staying Strong"
+    },
+    {
+      "verseEn": "For the LORD giveth wisdom: out of his mouth cometh knowledge and understanding.",
+      "verseTe": "యెహోవాయే జ్ఞానమిచ్చువాడు; ఆయన ముఖమునుండి తెలివియు వివేచనయు కలుగును.",
+      "referenceEn": "Proverbs 2:6",
+      "referenceTe": "సామెతలు 2:6",
+      "theme": "Divine Wisdom"
+    },
+    {
+      "verseEn": "My flesh and my heart faileth: but God is the strength of my heart, and my portion for ever.",
+      "verseTe": "దేవుడు నిత్యము నా హృదయమునకు ఆశ్రయదుర్గమును స్వాస్థ్యమునై యున్నాడు.",
+      "referenceEn": "Psalms 73:26",
+      "referenceTe": "కీర్తనలు 73:26",
+      "theme": "Heart's Strength"
+    },
+    {
+      "verseEn": "Rejoicing in hope; patient in tribulation; continuing instant in prayer.",
+      "verseTe": "నిరీక్షణగలవారై సంతోషించుడి; శ్రమయందు ఓర్చుకొనుడి; ప్రార్థనయందు పట్టుదల కలిగియుండుడి.",
+      "referenceEn": "Romans 12:12",
+      "referenceTe": "రోమీయులకు 12:12",
+      "theme": "Patience & Prayer"
+    },
+    {
+      "verseEn": "But ye, brethren, be not weary in well doing.",
+      "verseTe": "సహోదరులారా, మీరైతే మేలుచేయుటలో అలయకయుండుడి.",
+      "referenceEn": "2 Thessalonians 3:13",
+      "referenceTe": "2 దెస్సలొనీకయులకు 3:13",
+      "theme": "Do Not Grow Weary"
+    },
+    {
+      "verseEn": "Happy is the man that findeth wisdom, and the man that getteth understanding.",
+      "verseTe": "జ్ఞానము సంపాదించినవాడు ధన్యుడు, వివేచన కలిగినవాడు ధన్యుడు.",
+      "referenceEn": "Proverbs 3:13",
+      "referenceTe": "సామెతలు 3:13",
+      "theme": "Blessing of Wisdom"
+    },
+    {
+      "verseEn": "Fear thou not; for I am with thee: be not dismayed; for I am thy God: I will strengthen thee.",
+      "verseTe": "నీవు భయపడకుము నేను నీకు తోడైయున్నాను, దిగులుపడకుము నేను నీ దేవుడనై యున్నాను.",
+      "referenceEn": "Isaiah 41:10",
+      "referenceTe": "యెషయా 41:10",
+      "theme": "Encouragement"
+    },
+    {
+      "verseEn": "For ye have need of patience, that, after ye have done the will of God, ye might receive the promise.",
+      "verseTe": "మీరు దేవుని చిత్తము నెరవేర్చి, వాగ్దానము పొందుటకై మీకు ఓపిక అవసరమైయున్నది.",
+      "referenceEn": "Hebrews 10:36",
+      "referenceTe": "హెబ్రీయులకు 10:36",
+      "theme": "Need of Patience"
+    },
+    {
+      "verseEn": "Blessed is the man that endureth temptation: for when he is tried, he shall receive the crown of life.",
+      "verseTe": "శోధన సహించువాడు ధన్యుడు; అతడు శోధనకు నిలిచినవాడై జీవకిరీటము పొందును.",
+      "referenceEn": "James 1:12",
+      "referenceTe": "యాకోబు 1:12",
+      "theme": "Endurance & Reward"
+    },
+    {
+      "verseEn": "Be of good courage, and he shall strengthen your heart, all ye that hope in the LORD.",
+      "verseTe": "యెహోవాకొరకు కనిపెట్టుకొను సమస్త జనులారా, బలము తెచ్చుకొని మీ హృదయమును ధైర్యముగా ఉంచుకొనుడి.",
+      "referenceEn": "Psalms 31:24",
+      "referenceTe": "కీర్తనలు 31:24",
+      "theme": "Courage in Hope"
+    },
+    {
+      "verseEn": "If thou faint in the day of adversity, thy strength is small.",
+      "verseTe": "ఆపత్కాలమున నీవు కృంగినయెడల నీ బలము కొంచెమైనట్టే.",
+      "referenceEn": "Proverbs 24:10",
+      "referenceTe": "సామెతలు 24:10",
+      "theme": "Staying Resilient"
+    },
+    {
+      "verseEn": "For God hath not given us the spirit of fear; but of power, and of love, and of a sound mind.",
+      "verseTe": "దేవుడు మనకు భయముగల ఆత్మను ఇయ్యలేదు గాని శక్తియు ప్రేమయు స్వస్థబుద్ధియు గల ఆత్మనే యిచ్చెను.",
+      "referenceEn": "2 Timothy 1:7",
+      "referenceTe": "2 తిమోతికి 1:7",
+      "theme": "Spirit of Power"
+    },
+    {
+      "verseEn": "Better is the end of a thing than the beginning thereof: and the patient in spirit is better than the proud.",
+      "verseTe": "కార్యారంభముకంటె కార్యాంతము మేలు; గర్వపడెడి వానికంటె ఓర్పుగలవాడు శ్రేష్ఠుడు.",
+      "referenceEn": "Ecclesiastes 7:8",
+      "referenceTe": "ప్రసంగి 7:8",
+      "theme": "Patience in Finishing"
+    },
+    {
+      "verseEn": "Finally, my brethren, be strong in the Lord, and in the power of his might.",
+      "verseTe": "తుదకు ప్రభువుయొక్క మహాశక్తినిబట్టి ఆయనయందు బలవంతులై యుండుడి.",
+      "referenceEn": "Ephesians 6:10",
+      "referenceTe": "ఎఫెసీయులకు 6:10",
+      "theme": "Strong in the Lord"
+    },
+    {
+      "verseEn": "All things work together for good to them that love God, to them who are the called according to his purpose.",
+      "verseTe": "దేవుని ప్రేమించువారికి, ఆయన సంకల్పముచొప్పున పిలువబడినవారికి సమస్తమును మేలుకై కలుగుచున్నవని యెరుగుదుము.",
+      "referenceEn": "Romans 8:28",
+      "referenceTe": "రోమీయులకు 8:28",
+      "theme": "All Things for Good"
+    },
+    {
+      "verseEn": "Hear counsel, and receive instruction, that thou mayest be wise in thy latter end.",
+      "verseTe": "నీవు తుదకు జ్ఞానివగుటకై ఆలోచన విని ఉపదేశము నంగీకరించుము.",
+      "referenceEn": "Proverbs 19:20",
+      "referenceTe": "సామెతలు 19:20",
+      "theme": "Wisdom & Counsel"
+    },
+    {
+      "verseEn": "Be strong and of good courage, and do it: fear not, nor be dismayed: for the LORD God will be with thee.",
+      "verseTe": "ధైర్యము వహించి కార్యము పూనుకొనుము, భయపడకుము దిగులుపడకుము; దేవుడు నీకు తోడైయుండును.",
+      "referenceEn": "1 Chronicles 28:20",
+      "referenceTe": "1 దినవృత్తాంతములు 28:20",
+      "theme": "Courage to Act"
+    },
+    {
+      "verseEn": "Be ye stedfast, unmoveable, always abounding in the work of the Lord.",
+      "verseTe": "ప్రభువునందు మీ ప్రయాసము వ్యర్థము కాదని యెరిగి, స్థిరులును కదలనివారునై యుండుడి.",
+      "referenceEn": "1 Corinthians 15:58",
+      "referenceTe": "1 కొరింథీయులకు 15:58",
+      "theme": "Steadfast Labor"
+    },
+    {
+      "verseEn": "The LORD will perfect that which concerneth me: thy mercy, O LORD, endureth for ever.",
+      "verseTe": "యెహోవా నా పక్షమున కార్యము ముగించును; యెహోవా, నీ కృప నిరంతరముండును.",
+      "referenceEn": "Psalms 138:8",
+      "referenceTe": "కీర్తనలు 138:8",
+      "theme": "God Perfects His Work"
+    },
+    {
+      "verseEn": "The fear of the LORD is the instruction of wisdom; and before honour is humility.",
+      "verseTe": "యెహోవాయందు భయభక్తులు కలిగియుండుట జ్ఞానాభ్యాసము, ఘనతకు ముందు వినయముండును.",
+      "referenceEn": "Proverbs 15:33",
+      "referenceTe": "సామెతలు 15:33",
+      "theme": "Humility & Wisdom"
+    },
+    {
+      "verseEn": "Thy word is a lamp unto my feet, and a light unto my path.",
+      "verseTe": "నీ వాక్యము నా పాదములకు దీపమును నా త్రోవకు వెలుగునై యున్నది.",
+      "referenceEn": "Psalms 119:105",
+      "referenceTe": "కీర్తనలు 119:105",
+      "theme": "Light for the Path"
+    },
+    {
+      "verseEn": "Let every man be swift to hear, slow to speak, slow to wrath.",
+      "verseTe": "వినుటకు వేగిరపడువాడును, మాట్లాడుటకు నిదానించువాడును, కోపించుటకు నిదానించువాడునై యుండవలెను.",
+      "referenceEn": "James 1:19",
+      "referenceTe": "యాకోబు 1:19",
+      "theme": "Patience in Speech"
+    },
+    {
+      "verseEn": "A man's heart deviseth his way: but the LORD directeth his steps.",
+      "verseTe": "ఒకడు తన మార్గమును యోచించుకొనును, అయితే యెహోవాయే అతని అడుగులను స్థిరపరచును.",
+      "referenceEn": "Proverbs 16:9",
+      "referenceTe": "సామెతలు 16:9",
+      "theme": "God Directs Steps"
+    }
+  ],
+  "Evening": [
+    {
+      "verseEn": "Be careful for nothing; but in every thing by prayer and supplication with thanksgiving let your requests be made known unto God.",
+      "verseTe": "దేనినిగూర్చియు చింతపడకుడి; కృతజ్ఞతాపూర్వకముగా మీ విన్నపములను దేవునికి తెలియజేయుడి.",
+      "referenceEn": "Philippians 4:6-7",
+      "referenceTe": "ఫిలిప్పీయులకు 4:6-7",
+      "theme": "Peace & Thanksgiving"
+    },
+    {
+      "verseEn": "In every thing give thanks: for this is the will of God in Christ Jesus concerning you.",
+      "verseTe": "ప్రతి విషయమునందును కృతజ్ఞతాస్తుతులు చెల్లించుడి; ఇది క్రీస్తుయేసునందు దేవుని చిత్తము.",
+      "referenceEn": "1 Thessalonians 5:18",
+      "referenceTe": "1 దెస్సలొనీకయులకు 5:18",
+      "theme": "Gratitude Always"
+    },
+    {
+      "verseEn": "He that dwelleth in the secret place of the most High shall abide under the shadow of the Almighty.",
+      "verseTe": "మహోన్నతుని చాటున నివసించువాడే సర్వశక్తుని నీడను విశ్రమించువాడు. ఆయన నా ఆశ్రయము నా కోట.",
+      "referenceEn": "Psalms 91:1-2",
+      "referenceTe": "కీర్తనలు 91:1-2",
+      "theme": "Divine Protection"
+    },
+    {
+      "verseEn": "O give thanks unto the LORD, for he is good: for his mercy endureth for ever.",
+      "verseTe": "యెహోవా దయాళుడు, ఆయన కృప నిరంతరము నిలుచును; ఆయనకు కృతజ్ఞతాస్తుతులు చెల్లించుడి.",
+      "referenceEn": "Psalms 107:1",
+      "referenceTe": "కీర్తనలు 107:1",
+      "theme": "Enduring Mercy"
+    },
+    {
+      "verseEn": "God is our refuge and strength, a very present help in trouble.",
+      "verseTe": "దేవుడు మనకు ఆశ్రయమును దుర్గమునై యున్నాడు, ఆపత్కాలములో ఆయన నమ్ముకొనదగిన సహాయకుడు.",
+      "referenceEn": "Psalms 46:1",
+      "referenceTe": "కీర్తనలు 46:1",
+      "theme": "Refuge & Help"
+    },
+    {
+      "verseEn": "Thou wilt keep him in perfect peace, whose mind is stayed on thee: because he trusteth in thee.",
+      "verseTe": "ఎవని మనస్సు నీమీద ఆనుకొనునో వానిని నీవు పూర్ణశాంతిగలవానిగా కాపాడుదువు.",
+      "referenceEn": "Isaiah 26:3",
+      "referenceTe": "యెషయా 26:3",
+      "theme": "Perfect Peace"
+    },
+    {
+      "verseEn": "Bless the LORD, O my soul, and forget not all his benefits.",
+      "verseTe": "నా ప్రాణమా, యెహోవాను సన్నుతించుము, ఆయన చేసిన ఉపకారములలో దేనిని మరువకుము.",
+      "referenceEn": "Psalms 103:2",
+      "referenceTe": "కీర్తనలు 103:2",
+      "theme": "Soul's Gratitude"
+    },
+    {
+      "verseEn": "And let the peace of God rule in your hearts, to the which also ye are called; and be ye thankful.",
+      "verseTe": "క్రీస్తు సమాధానము మీ హృదయములలో ఏలుచుండనియ్యుడి, మరియు కృతజ్ఞులై యుండుడి.",
+      "referenceEn": "Colossians 3:15",
+      "referenceTe": "కొలొస్సయులకు 3:15",
+      "theme": "Rule of Peace"
+    },
+    {
+      "verseEn": "Great peace have they which love thy law: and nothing shall offend them.",
+      "verseTe": "నీ ధర్మశాస్త్రమును ప్రేమించువారికి గొప్ప సమాధానము కలదు; వారిని అభ్యంతరపరచునది ఏదియు లేదు.",
+      "referenceEn": "Psalms 119:165",
+      "referenceTe": "కీర్తనలు 119:165",
+      "theme": "Great Peace"
+    },
+    {
+      "verseEn": "The angel of the LORD encampeth round about them that fear him, and delivereth them.",
+      "verseTe": "యెహోవాయందు భయభక్తులు గలవారి చుట్టు ఆయన దూత కావలియుండి వారిని విడిపించును.",
+      "referenceEn": "Psalms 34:7",
+      "referenceTe": "కీర్తనలు 34:7",
+      "theme": "Angelic Protection"
+    },
+    {
+      "verseEn": "Let my prayer be set forth before thee as incense; and the lifting up of my hands as the evening sacrifice.",
+      "verseTe": "నా ప్రార్థన ధూపమువలెను, నా చేతులెత్తుట సాయంకాల నైవేద్యమువలెను నీ దృష్టికి అంగీకారమగును గాక.",
+      "referenceEn": "Psalms 141:2",
+      "referenceTe": "కీర్తనలు 141:2",
+      "theme": "Evening Sacrifice"
+    },
+    {
+      "verseEn": "Truly my soul waiteth upon God: from him cometh my salvation. He only is my rock and my salvation.",
+      "verseTe": "నా ప్రాణము దేవునికొరకే మౌనముగా కనిపెట్టుచున్నది; ఆయనవలననే నాకు రక్షణ కలుగును.",
+      "referenceEn": "Psalms 62:1-2",
+      "referenceTe": "కీర్తనలు 62:1-2",
+      "theme": "Resting in God"
+    },
+    {
+      "verseEn": "Peace I leave with you, my peace I give unto you: let not your heart be troubled.",
+      "verseTe": "శాంతిని మీకు అనుగ్రహించి వెళ్లుచున్నాను, నా శాంతినే మీకిచ్చుచున్నాను; మీ హృదయమును కలవరపడనియ్యకుడి.",
+      "referenceEn": "John 14:27",
+      "referenceTe": "యోహాను 14:27",
+      "theme": "Christ's Peace"
+    },
+    {
+      "verseEn": "As the mountains are round about Jerusalem, so the LORD is round about his people from henceforth even for ever.",
+      "verseTe": "యెరూషలేముచుట్టు పర్వతములున్నట్లు యెహోవా ఇది మొదలుకొని నిరంతరము తన ప్రజలచుట్టు ఉండును.",
+      "referenceEn": "Psalms 125:2",
+      "referenceTe": "కీర్తనలు 125:2",
+      "theme": "Surrounding Protection"
+    },
+    {
+      "verseEn": "What shall I render unto the LORD for all his benefits toward me?",
+      "verseTe": "యెహోవా నాకు చేసిన ఉపకారములన్నిటికి నేనాయనకు ఏమి చెల్లించుదును?",
+      "referenceEn": "Psalms 116:12",
+      "referenceTe": "కీర్తనలు 116:12",
+      "theme": "Giving Thanks"
+    },
+    {
+      "verseEn": "The LORD bless thee, and keep thee: The LORD lift up his countenance upon thee, and give thee peace.",
+      "verseTe": "యెహోవా నిన్ను ఆశీర్వదించి నిన్ను కాపాడును గాక; యెహోవా నీకు సమాధానము కలుగజేయును గాక.",
+      "referenceEn": "Numbers 6:24-26",
+      "referenceTe": "సంఖ్యాకాండము 6:24-26",
+      "theme": "Priestly Blessing"
+    },
+    {
+      "verseEn": "The LORD is my rock, and my fortress, and my deliverer; my God, my strength, in whom I will trust.",
+      "verseTe": "యెహోవా నా శైలము, నా కోట, నా రక్షకుడు, నా కేడెము, నా ఆశ్రయదుర్గము.",
+      "referenceEn": "Psalms 18:2",
+      "referenceTe": "కీర్తనలు 18:2",
+      "theme": "Fortress & Rock"
+    },
+    {
+      "verseEn": "Now the Lord of peace himself give you peace always by all means. The Lord be with you all.",
+      "verseTe": "సమాధానకర్తయగు ప్రభువు తానే ఎల్లప్పుడును సమస్తవిధముల మీకు సమాధానము అనుగ్రహించును గాక.",
+      "referenceEn": "2 Thessalonians 3:16",
+      "referenceTe": "2 దెస్సలొనీకయులకు 3:16",
+      "theme": "Peace Always"
+    },
+    {
+      "verseEn": "O taste and see that the LORD is good: blessed is the man that trusteth in him.",
+      "verseTe": "యెహోవా ఉత్తముడని రుచిచూచి తెలిసికొనుడి; ఆయనను ఆశ్రయించు నరుడు ధన్యుడు.",
+      "referenceEn": "Psalms 34:8",
+      "referenceTe": "కీర్తనలు 34:8",
+      "theme": "Lord is Good"
+    },
+    {
+      "verseEn": "Enter into his gates with thanksgiving, and into his courts with praise: be thankful unto him.",
+      "verseTe": "కృతజ్ఞతార్పణలు చెల్లించుచు ఆయన గుమ్మములలో ప్రవేశించుడి, ఆయన నామమును స్తుతించుడి.",
+      "referenceEn": "Psalms 100:4",
+      "referenceTe": "కీర్తనలు 100:4",
+      "theme": "Gates of Praise"
+    },
+    {
+      "verseEn": "The LORD will give strength unto his people; the LORD will bless his people with peace.",
+      "verseTe": "యెహోవా తన ప్రజలకు బలము ననుగ్రహించును, యెహోవా తన ప్రజలకు సమాధానమిచ్చి ఆశీర్వదించును.",
+      "referenceEn": "Psalms 29:11",
+      "referenceTe": "కీర్తనలు 29:11",
+      "theme": "Blessed with Peace"
+    },
+    {
+      "verseEn": "O give thanks unto the LORD; for he is good: for his mercy endureth for ever.",
+      "verseTe": "యెహోవా దయాళుడు, ఆయనకు కృతజ్ఞతాస్తుతులు చెల్లించుడి; ఆయన కృప నిరంతరము నిలుచును.",
+      "referenceEn": "Psalms 136:1",
+      "referenceTe": "కీర్తనలు 136:1",
+      "theme": "Everlasting Mercy"
+    },
+    {
+      "verseEn": "The name of the LORD is a strong tower: the righteous runneth into it, and is safe.",
+      "verseTe": "యెహోవా నామము బలమైన దుర్గము; నీతిమంతుడు అందులోనికి పరుగెత్తి సురక్షితముగా నుండును.",
+      "referenceEn": "Proverbs 18:10",
+      "referenceTe": "సామెతలు 18:10",
+      "theme": "Strong Tower"
+    },
+    {
+      "verseEn": "Behold, God is my salvation; I will trust, and not be afraid: for the LORD is my strength and my song.",
+      "verseTe": "ఇదిగో దేవుడే నా రక్షణ, నేను భయపడక ఆయనను నమ్ముకొనుచున్నాను; యెహోవా నా బలము నా గానము.",
+      "referenceEn": "Isaiah 12:2",
+      "referenceTe": "యెషయా 12:2",
+      "theme": "Trust & Song"
+    },
+    {
+      "verseEn": "What time I am afraid, I will trust in thee.",
+      "verseTe": "నాకు భయము కలుగు దినమున నేను నిన్ను ఆశ్రయించెదను.",
+      "referenceEn": "Psalms 56:3",
+      "referenceTe": "కీర్తనలు 56:3",
+      "theme": "Trust in Fear"
+    },
+    {
+      "verseEn": "Now the God of peace be with you all. Amen.",
+      "verseTe": "సమాధానకర్తయగు దేవుడు మీకందరికి తోడైయుండును గాక. ఆమేన్.",
+      "referenceEn": "Romans 15:33",
+      "referenceTe": "రోమీయులకు 15:33",
+      "theme": "God of Peace"
+    },
+    {
+      "verseEn": "Blessed be the Lord, who daily beareth our burdens, even the God of our salvation.",
+      "verseTe": "ప్రభువు స్తుతింపబడును గాక, అనుదినము ఆయన మా భారము భరించుచున్నాడు; దేవుడే మా రక్షణకర్త.",
+      "referenceEn": "Psalms 68:19",
+      "referenceTe": "కీర్తనలు 68:19",
+      "theme": "Bearer of Burdens"
+    },
+    {
+      "verseEn": "The LORD also will be a refuge for the oppressed, a refuge in times of trouble.",
+      "verseTe": "యెహోవా నలిగినవారికి ఆశ్రయము, ఆపత్కాలములలో వారికి ఉన్నతదుర్గము.",
+      "referenceEn": "Psalms 9:9-10",
+      "referenceTe": "కీర్తనలు 9:9-10",
+      "theme": "Refuge in Trouble"
+    },
+    {
+      "verseEn": "Thou art my hiding place; thou shalt preserve me from trouble; thou shalt compass me about with songs of deliverance.",
+      "verseTe": "నా దాగుచోటు నీవే, శ్రమలోనుండి నీవు నన్ను రక్షించెదవు; విమోచన గానములతో నన్ను ఆవరించెదవు.",
+      "referenceEn": "Psalms 32:7",
+      "referenceTe": "కీర్తనలు 32:7",
+      "theme": "Hiding Place"
+    },
+    {
+      "verseEn": "The LORD is nigh unto all them that call upon him, to all that call upon him in truth.",
+      "verseTe": "తనకు మొఱ్ఱపెట్టువారికందరికి, సత్యముగా తనకు మొఱ్ఱపెట్టువారికందరికి యెహోవా సమీపముగా ఉన్నాడు.",
+      "referenceEn": "Psalms 145:18",
+      "referenceTe": "కీర్తనలు 145:18",
+      "theme": "Near to All"
+    }
+  ],
+  "Night": [
+    {
+      "verseEn": "I will both lay me down in peace, and sleep: for thou, LORD, only makest me dwell in safety.",
+      "verseTe": "నెమ్మదితో పరుండి నిద్రపోవుదును; యెహోవా, నెమ్మదిగా నేను నివసించునట్లు చేయువాడవు నీవే.",
+      "referenceEn": "Psalms 4:8",
+      "referenceTe": "కీర్తనలు 4:8",
+      "theme": "Sleep in Safety"
+    },
+    {
+      "verseEn": "He will not suffer thy foot to be moved: he that keepeth thee will not slumber.",
+      "verseTe": "ఆయన నీ పాదము తొట్రిల్లనియ్యడు; నిన్ను కాపాడువాడు కునుకడు నిద్రపోడు.",
+      "referenceEn": "Psalms 121:3-4",
+      "referenceTe": "కీర్తనలు 121:3-4",
+      "theme": "Unslumbering Keeper"
+    },
+    {
+      "verseEn": "Come unto me, all ye that labour and are heavy laden, and I will give you rest.",
+      "verseTe": "ప్రయాసపడి భారము మోసికొనుచున్న సమస్త జనులారా, నాయొద్దకు రండి; నేను మీకు విశ్రాంతి కలుగజేతును.",
+      "referenceEn": "Matthew 11:28",
+      "referenceTe": "మత్తయి 11:28",
+      "theme": "Rest for the Soul"
+    },
+    {
+      "verseEn": "When thou liest down, thou shalt not be afraid: yea, thou shalt lie down, and thy sleep shall be sweet.",
+      "verseTe": "నీవు పండుకొనునప్పుడు భయపడవు, నీవు పరుండి సుఖముగా నిద్రించెదవు.",
+      "referenceEn": "Proverbs 3:24",
+      "referenceTe": "సామెతలు 3:24",
+      "theme": "Sweet Sleep"
+    },
+    {
+      "verseEn": "Thou shalt not be afraid for the terror by night; nor for the arrow that flieth by day.",
+      "verseTe": "రాత్రివేళ కలుగు భయమునకైనను, పగటివేళ ఎగురు బాణమునకైనను నీవు భయపడకుందువు.",
+      "referenceEn": "Psalms 91:5",
+      "referenceTe": "కీర్తనలు 91:5",
+      "theme": "No Night Fear"
+    },
+    {
+      "verseEn": "Casting all your care upon him; for he careth for you.",
+      "verseTe": "ఆయన మిమ్మునుగూర్చి చింతించుచున్నాడు గనుక మీ చింత యావత్తు ఆయనమీద వేయుడి.",
+      "referenceEn": "1 Peter 5:7",
+      "referenceTe": "1 పేతురు 5:7",
+      "theme": "God's Care"
+    },
+    {
+      "verseEn": "When I remember thee upon my bed, and meditate on thee in the night watches.",
+      "verseTe": "నా పరుపుమీద నేను నిన్ను జ్ఞాపకము చేసికొని రాత్రిజాములయందు నిన్ను ధ్యానించుచున్నాను.",
+      "referenceEn": "Psalms 63:6",
+      "referenceTe": "కీర్తనలు 63:6",
+      "theme": "Night Meditation"
+    },
+    {
+      "verseEn": "For so he giveth his beloved sleep.",
+      "verseTe": "ఆయన తన ప్రియులకు నిద్రించుచుండగానే ఇచ్చుచున్నాడు.",
+      "referenceEn": "Psalms 127:2",
+      "referenceTe": "కీర్తనలు 127:2",
+      "theme": "Beloved Sleep"
+    },
+    {
+      "verseEn": "For he shall give his angels charge over thee, to keep thee in all thy ways.",
+      "verseTe": "నీ మార్గములన్నిటిలో నిన్ను కాపాడుటకు ఆయన తన దూతలను నీ విషయమై ఆజ్ఞాపించును.",
+      "referenceEn": "Psalms 91:11",
+      "referenceTe": "కీర్తనలు 91:11",
+      "theme": "Angels Keeping Guard"
+    },
+    {
+      "verseEn": "Because he is at my right hand, I shall not be moved. My flesh also shall rest in hope.",
+      "verseTe": "యెహోవా నా కుడిపార్శ్వమందు ఉన్నాడు గనుక నేను కదిలింపబడను; నా శరీరము సురక్షితముగా నివసించును.",
+      "referenceEn": "Psalms 16:8-9",
+      "referenceTe": "కీర్తనలు 16:8-9",
+      "theme": "Rest in Hope"
+    },
+    {
+      "verseEn": "The eternal God is thy refuge, and underneath are the everlasting arms.",
+      "verseTe": "శాశ్వతుడైన దేవుడు నీకు నివాసము, కింద ఉన్న నిత్యమైన బాహువులు నీకు ఆధారము.",
+      "referenceEn": "Deuteronomy 33:27",
+      "referenceTe": "ద్వితీయోపదేశకాండము 33:27",
+      "theme": "Everlasting Arms"
+    },
+    {
+      "verseEn": "He maketh me to lie down in green pastures: he leadeth me beside the still waters.",
+      "verseTe": "పచ్చికగల చోట్లను ఆయన నన్ను పరుండజేయుచున్నాడు; శాంతికరమైన జలములయొద్ద నన్ను నడిపించుచున్నాడు.",
+      "referenceEn": "Psalms 23:2",
+      "referenceTe": "కీర్తనలు 23:2",
+      "theme": "Still Waters"
+    },
+    {
+      "verseEn": "I laid me down and slept; I awaked; for the LORD sustained me.",
+      "verseTe": "నేను పండుకొని నిద్రపోతిని; యెహోవా నాకు ఆధారము గనుక తిరిగి లేచితిని.",
+      "referenceEn": "Psalms 3:5",
+      "referenceTe": "కీర్తనలు 3:5",
+      "theme": "Sustained in Sleep"
+    },
+    {
+      "verseEn": "Yea, the darkness hideth not from thee; but the night shineth as the day.",
+      "verseTe": "చీకటియైనను నీకు చీకటి కాకపోవును, రాత్రి పగటివలె వెలుగును.",
+      "referenceEn": "Psalms 139:11-12",
+      "referenceTe": "కీర్తనలు 139:11-12",
+      "theme": "Light in Darkness"
+    },
+    {
+      "verseEn": "In the night his song shall be with me, and my prayer unto the God of my life.",
+      "verseTe": "రాత్రివేళ ఆయననుగూర్చిన కీర్తనయు నా జీవదాతయైన దేవునిగూర్చిన ప్రార్థనయు నాకు తోడైయుండును.",
+      "referenceEn": "Psalms 42:8",
+      "referenceTe": "కీర్తనలు 42:8",
+      "theme": "Song in the Night"
+    },
+    {
+      "verseEn": "These things I have spoken unto you, that in me ye might have peace. In the world ye shall have tribulation: but be of good cheer.",
+      "verseTe": "నాయందు మీకు సమాధానము కలుగునట్లు ఈ మాటలు మీతో చెప్పితిని; లోకములో మీకు శ్రమ కలుగును గాని ధైర్యము తెచ్చుకొనుడి.",
+      "referenceEn": "John 16:33",
+      "referenceTe": "యోహాను 16:33",
+      "theme": "Peace in Christ"
+    },
+    {
+      "verseEn": "I have remembered thy name, O LORD, in the night, and have kept thy law.",
+      "verseTe": "యెహోవా, రాత్రివేళ నీ నామమును జ్ఞాపకము చేసికొనుచున్నాను, నీ ధర్మశాస్త్రమును గైకొనుచున్నాను.",
+      "referenceEn": "Psalms 119:55",
+      "referenceTe": "కీర్తనలు 119:55",
+      "theme": "Remembering at Night"
+    },
+    {
+      "verseEn": "He will rest in his love, he will joy over thee with singing.",
+      "verseTe": "ఆయన తన ప్రేమయందు విశ్రమించును, నీయందు ఆనందించుచు సంతోషించును.",
+      "referenceEn": "Zephaniah 3:17",
+      "referenceTe": "జెఫన్యా 3:17",
+      "theme": "Resting in Love"
+    },
+    {
+      "verseEn": "Many are the afflictions of the righteous: but the LORD delivereth him out of them all.",
+      "verseTe": "నీతిమంతునికి కలుగు ఆపదలు అనేకములు, వాటి అన్నిటిలోనుండి యెహోవా వానిని విడిపించును.",
+      "referenceEn": "Psalms 34:19",
+      "referenceTe": "కీర్తనలు 34:19",
+      "theme": "Deliverance"
+    },
+    {
+      "verseEn": "He shall cover thee with his feathers, and under his wings shalt thou trust.",
+      "verseTe": "ఆయన తన రెక్కలతో నిన్ను కప్పును, ఆయన రెక్కలక్రింద నీకు ఆశ్రయము కలుగును.",
+      "referenceEn": "Psalms 91:4",
+      "referenceTe": "కీర్తనలు 91:4",
+      "theme": "Covering Wings"
+    },
+    {
+      "verseEn": "The Father of mercies, and the God of all comfort; Who comforteth us in all our tribulation.",
+      "verseTe": "ఆయన సమస్తవిధమైన ఆదరణను అనుగ్రహించు దేవుడై యుండి, మా శ్రమలన్నిటిలో మమ్మును ఆదరించుచున్నాడు.",
+      "referenceEn": "2 Corinthians 1:3-4",
+      "referenceTe": "2 కొరింథీయులకు 1:3-4",
+      "theme": "God of All Comfort"
+    },
+    {
+      "verseEn": "Return unto thy rest, O my soul; for the LORD hath dealt bountifully with thee.",
+      "verseTe": "నా ప్రాణమా, యెహోవా నీకు ఉపకారము చేసియున్నాడు, నీ విశ్రాంతిలో ప్రవేశింపుము.",
+      "referenceEn": "Psalms 116:7",
+      "referenceTe": "కీర్తనలు 116:7",
+      "theme": "Return to Rest"
+    },
+    {
+      "verseEn": "And my people shall dwell in a peaceable habitation, and in sure dwellings, and in quiet resting places.",
+      "verseTe": "నా ప్రజలు సమాధానకరమైన నివాసములలోను సురక్షితమైన స్థలములలోను విశ్రమించుదురు.",
+      "referenceEn": "Isaiah 32:18",
+      "referenceTe": "యెషయా 32:18",
+      "theme": "Peaceable Habitation"
+    },
+    {
+      "verseEn": "Yea, though I walk through the valley of the shadow of death, I will fear no evil: for thou art with me.",
+      "verseTe": "గాఢాంధకారపు లోయలో నేను సంచరించినను ఏ అపాయమునకు భయపడను, నీవు నాకు తోడైయుందువు.",
+      "referenceEn": "Psalms 23:4",
+      "referenceTe": "కీర్తనలు 23:4",
+      "theme": "No Fear in the Valley"
+    },
+    {
+      "verseEn": "My presence shall go with thee, and I will give thee rest.",
+      "verseTe": "నా సన్నిధి నీకు తోడుగా వచ్చును, నేను నీకు విశ్రాంతి కలుగజేతును.",
+      "referenceEn": "Exodus 33:14",
+      "referenceTe": "నిర్గమకాండము 33:14",
+      "theme": "Rest in His Presence"
+    },
+    {
+      "verseEn": "The LORD shall preserve thee from all evil: he shall preserve thy soul.",
+      "verseTe": "ఏ అపాయమును రాకుండ యెహోవా నిన్ను కాపాడును, ఆయన నీ ప్రాణమును కాపాడును.",
+      "referenceEn": "Psalms 121:7",
+      "referenceTe": "కీర్తనలు 121:7",
+      "theme": "Preserved from Evil"
+    },
+    {
+      "verseEn": "Trust in him at all times; ye people, pour out your heart before him: God is a refuge for us.",
+      "verseTe": "జనులారా, ఎల్లప్పుడు ఆయనయందు నమ్మికయుంచుడి, ఆయన సన్నిధిని మీ హృదయములు కుమ్మరించుడి; దేవుడు మనకు ఆశ్రయము.",
+      "referenceEn": "Psalms 62:8",
+      "referenceTe": "కీర్తనలు 62:8",
+      "theme": "Refuge Always"
+    },
+    {
+      "verseEn": "He healeth the broken in heart, and bindeth up their wounds.",
+      "verseTe": "గుండె చెదరినవారిని ఆయన బాగుచేయును, వారి గాయములను కట్టును.",
+      "referenceEn": "Psalms 147:3",
+      "referenceTe": "కీర్తనలు 147:3",
+      "theme": "Healing Broken Hearts"
+    },
+    {
+      "verseEn": "Let, I pray thee, thy merciful kindness be for my comfort, according to thy word unto thy servant.",
+      "verseTe": "నీ సేవకునికిచ్చిన మాటచొప్పున నీ కృప నన్ను ఆదరించును గాక.",
+      "referenceEn": "Psalms 119:76",
+      "referenceTe": "కీర్తనలు 119:76",
+      "theme": "Comfort in Mercy"
+    },
+    {
+      "verseEn": "And God shall wipe away all tears from their eyes; and there shall be no more death, neither sorrow, nor crying.",
+      "verseTe": "ఆయన వారి కన్నుల ప్రతి బాష్పబిందువును తుడిచివేయును, మరణము ఇక ఉండదు, దుఃఖమైనను ఏడ్పైనను ఉండదు.",
+      "referenceEn": "Revelation 21:4",
+      "referenceTe": "ప్రకటన 21:4",
+      "theme": "Wiping Every Tear"
+    }
+  ]
+}

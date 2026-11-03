@@ -1801,6 +1801,33 @@ export interface LocalizedVerseDisplay {
 
 export const getSynchronousVersesForToday = (date: Date = new Date()): DailyVerse[] => {
   try {
+    const thematic = require('../../assets/thematic_daily_verses.json');
+    if (thematic && thematic.Morning && thematic.Afternoon && thematic.Evening && thematic.Night) {
+      const EPOCH = new Date('2026-10-30T00:00:00Z');
+      const localDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      const epochDate = new Date(EPOCH.getFullYear(), EPOCH.getMonth(), EPOCH.getDate());
+      const daysSinceEpoch = Math.floor((localDate.getTime() - epochDate.getTime()) / (1000 * 60 * 60 * 24));
+      const PERIODS = ['Morning', 'Afternoon', 'Evening', 'Night'] as const;
+
+      return PERIODS.map((period, pIdx) => {
+        const list = thematic[period];
+        const vIdx = ((daysSinceEpoch % list.length) + list.length) % list.length;
+        const bv = list[vIdx];
+        const bgUrl = bv.backgroundUrl || getVerseBackgroundUrl(bv, period, vIdx);
+        return {
+          id: `thematic_${period.toLowerCase()}_${daysSinceEpoch}`,
+          index: vIdx,
+          verseEn: bv.verseEn || '',
+          verseTe: bv.verseTe || '',
+          referenceEn: bv.referenceEn || '',
+          referenceTe: bv.referenceTe || '',
+          backgroundUrl: bgUrl,
+          churchId: 'rhema',
+        };
+      });
+    }
+  } catch (_) {}
+  try {
     const list = VerseNotificationService.getSynchronousInitialVerses(0);
     if (list && list[0]?.verses && list[0].verses.length >= 4) {
       return list[0].verses;
@@ -1812,12 +1839,23 @@ export const getSynchronousVersesForToday = (date: Date = new Date()): DailyVers
     const PERIODS = ['Morning', 'Afternoon', 'Evening', 'Night'];
     const indices = VerseNotificationService.getIndicesForDate(date, total, 'rhema');
     return indices.map((idx, pIdx) => {
-      const bv = bulk[idx] || {};
+      let finalIdx = idx;
+      let hops = 0;
+      // Skip long passages: find nearest short verse (<= 130 chars) limited to 2 lines per language
+      while (hops < 10) {
+        const candidate = bulk[finalIdx];
+        if (candidate && candidate.verseEn && candidate.verseEn.length <= 130 && candidate.verseTe && candidate.verseTe.length <= 130) {
+          break;
+        }
+        finalIdx = (finalIdx + 1) % total;
+        hops++;
+      }
+      const bv = bulk[finalIdx] || bulk[idx] || {};
       const period = PERIODS[pIdx];
-      const bgUrl = bv.backgroundUrl || getVerseBackgroundUrl(bv, period, idx);
+      const bgUrl = bv.backgroundUrl || getVerseBackgroundUrl(bv, period, finalIdx);
       return {
-        id: `today_verse_${idx}_${pIdx}`,
-        index: idx,
+        id: `today_verse_${finalIdx}_${pIdx}`,
+        index: finalIdx,
         verseEn: bv.verseEn || '',
         verseTe: bv.verseTe || '',
         referenceEn: bv.referenceEn || '',
@@ -2014,18 +2052,18 @@ const DailyVerseCard = ({ verse, period, onPress }: { verse: DailyVerse | null; 
           {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
         </Text>
       </View>
-      <Text numberOfLines={3} style={{
+      <Text numberOfLines={2} ellipsizeMode="tail" style={{
         color: '#fff', fontSize: 16, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
         fontWeight: '700', lineHeight: 24, marginBottom: loc.secondaryVerse && loc.secondaryVerse !== loc.primaryVerse ? 6 : 10,
       }}>
-        “{loc.primaryVerse}”
+        {loc.primaryVerse}
       </Text>
       {loc.secondaryVerse && loc.secondaryVerse !== loc.primaryVerse ? (
-        <Text numberOfLines={3} style={{
+        <Text numberOfLines={2} ellipsizeMode="tail" style={{
           color: 'rgba(255,255,255,0.92)', fontSize: 15, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
           fontStyle: 'italic', lineHeight: 22, fontWeight: '500', marginBottom: 10,
         }}>
-          “{loc.secondaryVerse}”
+          {loc.secondaryVerse}
         </Text>
       ) : null}
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -3541,11 +3579,11 @@ export default function HomeScreen() {
                       <View style={styles.vdVerseTextContainer}>
                         <Text style={[styles.vdTopRightQuote, { color: screenTheme.promiseQuote }]} pointerEvents="none">”</Text>
                         {promise?.verseTelugu ? (
-                          <Text style={[styles.vdVerseTe, { color: screenTheme.promiseVerseTe }]} numberOfLines={5} maxFontSizeMultiplier={1.15}>
+                          <Text style={[styles.vdVerseTe, { color: screenTheme.promiseVerseTe }]} numberOfLines={2} ellipsizeMode="tail" maxFontSizeMultiplier={1.15}>
                             {stripHtml(promise.verseTelugu)}
                           </Text>
                         ) : null}
-                        <Text style={[styles.vdVerseEn, { color: screenTheme.promiseVerseEn }]} numberOfLines={4} maxFontSizeMultiplier={1.15}>
+                        <Text style={[styles.vdVerseEn, { color: screenTheme.promiseVerseEn }]} numberOfLines={2} ellipsizeMode="tail" maxFontSizeMultiplier={1.15}>
                           {promise ? stripHtml(promise.verse) : ''}
                         </Text>
                         <View style={styles.vdReferenceRow}>
@@ -3664,7 +3702,8 @@ export default function HomeScreen() {
                                     { color: screenTheme.promiseVerseTe },
                                     !loc.secondaryVerse && { fontSize: 17, lineHeight: 26 }
                                   ]} 
-                                  numberOfLines={5}
+                                  numberOfLines={2}
+                                  ellipsizeMode="tail"
                                   maxFontSizeMultiplier={1.15}
                                 >
                                   {stripHtml(loc.primaryVerse)}
@@ -3672,7 +3711,7 @@ export default function HomeScreen() {
 
                                 {/* Secondary verse (English) if distinct */}
                                 {loc.secondaryVerse && loc.secondaryVerse !== loc.primaryVerse ? (
-                                  <Text style={[styles.vdVerseEn, { color: screenTheme.promiseVerseEn }]} numberOfLines={4} maxFontSizeMultiplier={1.15}>
+                                  <Text style={[styles.vdVerseEn, { color: screenTheme.promiseVerseEn }]} numberOfLines={2} ellipsizeMode="tail" maxFontSizeMultiplier={1.15}>
                                     {stripHtml(loc.secondaryVerse)}
                                   </Text>
                                 ) : null}

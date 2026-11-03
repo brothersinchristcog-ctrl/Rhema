@@ -1,7 +1,7 @@
 import React, { useContext } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, Platform, Dimensions, StatusBar, ImageBackground } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Phone, MessageCircle, Mail, ChevronLeft, Globe } from 'lucide-react-native';
+import { Phone, MessageCircle, Mail, ChevronLeft, Globe , ArrowLeft } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
 import { AdminTabContext } from '../../context/AdminTabContext';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -77,14 +77,12 @@ export default function AdminSupportTeam({ navigation }: any) {
         <View style={styles.hero}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
             <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-              <TouchableOpacity onPress={goBack} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
-                <ChevronLeft size={20} color="#fff" style={{ marginLeft: -6, marginRight: 4 }} />
-                <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Back</Text>
+              <TouchableOpacity onPress={goBack} style={styles.circularBackBtn} activeOpacity={0.7}>
+                <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
               </TouchableOpacity>
-              <Text style={[styles.topbarTitle, { marginHorizontal: 12, opacity: 0.4, color: '#fff' }]}>|</Text>
-              <View>
+              <View style={{ marginLeft: 12 }}>
                 <Text style={styles.topbarTitle}>Contact Support</Text>
-                <Text style={[styles.heroSub, { marginTop: 2 }]}>WeChristian app assistance</Text>
+                <Text style={[styles.heroSub, { marginTop: 2 }]}>Rhema app assistance</Text>
               </View>
             </View>
           </View>
@@ -233,29 +231,42 @@ export default function AdminSupportTeam({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: '#F7F3EA', // --parchment
   },
   hero: {
-    backgroundColor: '#1a2d5a',
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
+    backgroundColor: 'transparent',
+    
+    
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 12,
     overflow: 'visible',
     position: 'relative',
   },
-  topbarTitle: {
-    color: '#fff',
+  topbarTitle: { color: '#1a2d5a',
     fontSize: 20,
     fontFamily: FONTS.serif,
     fontWeight: '600',
     letterSpacing: -0.5,
   },
-  heroSub: {
-    color: '#AEB8D4',
+  heroSub: { color: '#64748b',
     fontSize: 13,
   },
   scrollContent: {

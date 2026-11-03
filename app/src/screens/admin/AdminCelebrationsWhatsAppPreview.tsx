@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, Image, ActivityIndicator, Alert } from 'react-native';
-import { Edit2, ChevronLeft } from 'lucide-react-native';
+import { Edit2, ChevronLeft , ArrowLeft } from 'lucide-react-native';
 import Svg, { Defs, LinearGradient, Stop, Rect, Circle, G, Path } from 'react-native-svg';
 import ViewShot from 'react-native-view-shot';
 
@@ -109,12 +109,10 @@ export default function AdminCelebrationsWhatsAppPreview({
     <View style={styles.container}>
       {/* ── Fixed Header ── */}
       <View style={styles.topBar}>
-        <TouchableOpacity style={styles.topBarBack} onPress={onEdit}>
-          <ChevronLeft size={22} color="#fff" />
-          <Text style={styles.topBarBackText}>Back</Text>
+        <TouchableOpacity style={styles.circularBackBtn} onPress={onEdit} activeOpacity={0.7}>
+          <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
         </TouchableOpacity>
-        <Text style={{ color: '#fff', fontSize: 18, marginHorizontal: 8, opacity: 0.4 }}>|</Text>
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={styles.topBarTitle} numberOfLines={1} ellipsizeMode="tail">{categoryLabel} Preview Greeting</Text>
         </View>
       </View>
@@ -227,6 +225,21 @@ export default function AdminCelebrationsWhatsAppPreview({
 }
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: '#FAF7F2',
@@ -248,7 +261,7 @@ const styles = StyleSheet.create({
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1a2d5a',
+    backgroundColor: 'transparent',
     paddingHorizontal: 20,
     paddingBottom: 20,
     paddingTop: 16,

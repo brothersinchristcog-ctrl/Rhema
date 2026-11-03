@@ -30,7 +30,7 @@ import {
   Music, Save, ChevronDown, CheckCircle, Pencil, X, List, Eye, Square,
   Trash2, Star, ChevronLeft, Plus, Share2, Sparkles, Sliders, ChevronRight,
   Users, Search, Calendar, CalendarDays, Clock, ArrowUp, ArrowDown, FolderPlus, BookOpen, Check
-} from 'lucide-react-native';
+, ArrowLeft } from 'lucide-react-native';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AdminTabContext } from '../../context/AdminTabContext';
@@ -1286,7 +1286,7 @@ export default function AdminSongEditor() {
     return (
       <View style={{ flex: 1, backgroundColor: '#EDE8DC' }}>
         {/* Member View Header */}
-        <View style={{ backgroundColor: '#1a2d5a', paddingVertical: 10, paddingHorizontal: 16 }}>
+        <View style={{ backgroundColor: 'transparent', paddingVertical: 10, paddingHorizontal: 16 }}>
           <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700', textAlign: 'center', opacity: 0.8 }}>
             👁 ADMIN PREVIEW: Member Songs View
           </Text>
@@ -5087,12 +5087,15 @@ export default function AdminSongEditor() {
       <View style={styles.hero}>
         <View style={[styles.heroTitleRow, { alignItems: 'center', justifyContent: 'space-between', width: '100%' }]}>
           <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }}>
-            <TouchableOpacity onPress={() => setActiveTab(0)} style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <ChevronLeft size={20} color="#fff" style={{ marginLeft: -6, marginRight: 4 }} />
-              <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Back</Text>
+            <TouchableOpacity
+              onPress={() => setActiveTab(0)}
+              style={styles.circularBackBtn}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
             </TouchableOpacity>
-            <Text style={[styles.heroTitle, { marginHorizontal: 12, opacity: 0.4 }]}>|</Text>
-            <Text style={[styles.heroTitle, { flexShrink: 1 }]} numberOfLines={1}>Song Manager</Text>
+            <Text style={[styles.heroTitle, { flexShrink: 1, marginLeft: 12 }]} numberOfLines={1}>Song Manager</Text>
           </View>
           <TouchableOpacity style={styles.newBtn} onPress={() => setShowPostModal(true)}>
             <Plus size={16} color="#1a2d5a" />
@@ -6325,20 +6328,35 @@ export default function AdminSongEditor() {
 }
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: { flex: 1, backgroundColor: '#EDE8DC' },
   
   // Hero Section
   hero: {
     backgroundColor: '#1a2d5a',
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
+    
+    
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 12,
     marginBottom: 10,
   },
   heroTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 0 },
-  heroTitle: { color: '#fff', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '600', letterSpacing: -0.5 },
+  heroTitle: { color: '#1a2d5a', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '600', letterSpacing: -0.5 },
   
   newBtn: { 
     backgroundColor: '#C9A84C', 

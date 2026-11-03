@@ -11,7 +11,7 @@ import {
   TextInput,
   ActivityIndicator
 } from 'react-native';
-import { ChevronLeft } from 'lucide-react-native';
+import { ChevronLeft , ArrowLeft } from 'lucide-react-native';
 import { AdminTabContext } from '../../context/AdminTabContext';
 
 import FirestoreService from '../../services/FirestoreService';
@@ -60,16 +60,19 @@ export default function AdminPromiseCalendar() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="dark-content" />
       
       <View style={styles.hero}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-          <TouchableOpacity onPress={() => setActiveTab(0)} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
-            <ChevronLeft size={20} color="#fff" style={{ marginLeft: -6, marginRight: 4 }} />
-            <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Back</Text>
+          <TouchableOpacity
+            onPress={() => setActiveTab(0)}
+            style={styles.circularBackBtn}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
           </TouchableOpacity>
-          <Text style={[styles.heroTitle, { marginHorizontal: 12, opacity: 0.4 }]}>|</Text>
-          <View>
+          <View style={{ marginLeft: 12 }}>
             <Text style={styles.heroTitle}>Promise Calendar</Text>
             <Text style={[styles.heroSub, { marginTop: 2 }]}>{getMonthName(month)} {year}</Text>
           </View>
@@ -180,15 +183,30 @@ function LegendItem({ color, border, label }: any) {
 // We use percentage-based flex layouts instead of fixed pixel widths to prevent flexWrap errors on different devices.
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   // ─── Layout ──────────────────────────────────────────────────────────────
   container: { flex: 1, backgroundColor: '#EDE8DC' },
   scroll: { padding: 14, paddingBottom: 100 },
 
   // ─── Hero ─────────────────────────────────────────────────────────────────
   hero: {
-    backgroundColor: '#1a2d5a',
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
+    backgroundColor: 'transparent',
+    
+    
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 12,
@@ -199,8 +217,8 @@ const styles = StyleSheet.create({
   backBtn: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, marginLeft: -6 },
   backBtnTxt: { fontSize: 13, fontWeight: '700', color: '#fff', marginLeft: 4 },
   heroTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', marginBottom: 0 },
-  heroTitle: { color: '#fff', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '600', letterSpacing: -0.5 },
-  heroSub: { color: '#AEB8D4', fontSize: 13 },
+  heroTitle: { color: '#1a2d5a', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '600', letterSpacing: -0.5 },
+  heroSub: { color: '#64748b', fontSize: 13 },
 
   alertAmber: { backgroundColor: '#FFFBEB', borderRadius: 10, padding: 12, marginBottom: 12, flexDirection: 'row', flexWrap: 'wrap', gap: 8, borderWidth: 0.5, borderColor: '#FDE68A' },
   alertIcon: { fontSize: 16 },

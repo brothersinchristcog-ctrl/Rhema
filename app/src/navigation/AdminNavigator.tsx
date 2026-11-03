@@ -148,7 +148,7 @@ export default function AdminNavigator({ navigation, route }: any) {
         setAlertConfig({
           visible: true,
           title: 'WhatsApp Integration Not Enabled',
-          message: 'WhatsApp Integration is not enabled for your church. Please contact the Rhema support team to activate this feature. Once enabled, you will be able to use WhatsApp Integration from the Celebrations module and Church Settings.',
+          message: 'WhatsApp Integration is not enabled for your church. Please contact the Rhema support team to activate this feature. Once enabled, you will be able to use WhatsApp Integration from the Celebrations module.',
           type: 'info'
         });
         return;
@@ -299,9 +299,9 @@ export default function AdminNavigator({ navigation, route }: any) {
   // We provide handleSetTab via setActiveTab so child components can push to history
   return (
     <AdminTabContext.Provider value={{ activeTab, setActiveTab: handleSetTab, editingData, setEditingData, goBack: handleBack, setTabByName, dashboardScrollY, setDashboardScrollY }}>
-      <View style={[styles.container, { backgroundColor: activeTab === 0 ? '#F4F0EA' : isSuperAdminTab ? '#0a0f1e' : '#f0f2f7' }]}>
+      <View style={[styles.container, { backgroundColor: isSuperAdminTab ? '#0a0f1e' : '#F4F0EA' }]}>
         {!isSuperAdminTab && (
-          <SafeAreaView edges={['top']} style={{ backgroundColor: activeTab === 0 ? '#F4F0EA' : '#1a2d5a' }} />
+          <SafeAreaView edges={['top']} style={{ backgroundColor: isSuperAdminTab ? '#0a0f1e' : '#F4F0EA' }} />
         )}
         
         {isImpersonating && (
@@ -356,16 +356,6 @@ export default function AdminNavigator({ navigation, route }: any) {
               <Text style={{ color: '#ef4444', fontSize: 12, fontWeight: '800' }}>Exit</Text>
             </View>
           </TouchableOpacity>
-        )}
-
-        {activeTab !== 0 && !isSuperAdminTab && (
-          <View style={[styles.header, { backgroundColor: '#1a2d5a' }]}>
-            <View style={styles.headerTop}>
-              <View style={styles.headerText}>
-                {/* Admin Dashboard text removed as requested */}
-              </View>
-            </View>
-          </View>
         )}
 
         {/* Custom Alert Modal */}

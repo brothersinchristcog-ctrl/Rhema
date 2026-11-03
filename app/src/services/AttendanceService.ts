@@ -49,9 +49,9 @@ class AttendanceService {
     eventName?: string
   ): string {
     const payload: AttendanceQRPayload = {
-      action: 'WeChristian_Attendance',
+      action: 'Rhema_Attendance',
       churchId: churchId || '',
-      churchName: churchName || 'Church',
+      churchName: churchName || 'Rhema Global Ministries',
       churchCode: churchCode || '',
       eventId: eventId || 'general_service',
       eventName: eventName || 'General Service',
@@ -168,9 +168,9 @@ class AttendanceService {
         valid: true,
         isChurchQR,
         payload: {
-          action: data.action || 'WeChristian_Attendance',
+          action: data.action || 'Rhema_Attendance',
           churchId: qrChurchId || currentChurchId || '',
-          churchName: data.churchName || data.church_name || currentChurchName || 'Church of God',
+          churchName: data.churchName || data.church_name || currentChurchName || 'Rhema Global Ministries',
           churchCode: qrChurchCode || currentChurchCode || '',
           eventId: qrEventId || expectedEventId || 'general_service',
           eventName: qrEventName || expectedEventName || 'Church Service',
@@ -250,9 +250,9 @@ class AttendanceService {
             valid: true,
             isChurchQR: isChurchQR_URL,
             payload: {
-              action: 'WeChristian_Attendance',
+              action: 'Rhema_Attendance',
               churchId: qrChurchId || currentChurchId || '',
-              churchName: currentChurchName || 'Church of God',
+              churchName: currentChurchName || 'Rhema Global Ministries',
               churchCode: qrChurchCode || currentChurchCode || '',
               eventId: qrEventId || expectedEventId || 'general_service',
               eventName: qrEventName ? decodeURIComponent(qrEventName) : (expectedEventName || 'Church Service'),

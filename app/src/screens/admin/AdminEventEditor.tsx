@@ -71,9 +71,9 @@ const DEFAULT_EVENT_TYPES = [
 ];
 
 const RECURRING_OPTIONS = [
-  { label: 'One time event', value: 'One-time event' },
-  { label: 'Every day · ప్రతిరోజూ', value: 'Every day' },
+  { label: 'Select Recurrence', value: 'Select Recurrence' },
   { label: 'Every Sunday', value: 'Every Sunday' },
+  { label: 'Every day · ప్రతిరోజూ', value: 'Every day' },
   { label: 'Every week (specify day)', value: 'Every week' },
   { label: 'First Sunday of every month', value: 'First Sunday' },
   { label: 'Monthly (same date)', value: 'Monthly' }
@@ -193,7 +193,8 @@ export default function AdminEventEditor() {
     return parseMins(endTime) <= parseMins(startTime);
   }, [date, endDate, startTime, endTime]);
 
-  const [recurring, setRecurring] = useState('');
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurring, setRecurring] = useState('One-time event');
   const [recurrenceDuration, setRecurrenceDuration] = useState(1);
   const [publishStatus, setPublishStatus] = useState('Published');
 
@@ -246,10 +247,8 @@ export default function AdminEventEditor() {
               if (!hasPublished) setPublishStatus(meta.statuses[0].value);
             }
 
-            if (meta.recurring?.length > 0) {
-              const hasOneTime = meta.recurring.some((s: any) => s.value === 'One-time event');
-              if (!hasOneTime) setRecurring(meta.recurring[0].value);
-            }
+            setIsRecurring(false);
+            setRecurring('One-time event');
           }
         }
       } catch (err) {
@@ -324,7 +323,10 @@ export default function AdminEventEditor() {
       setRsvpPublic(editingData.rsvpPublic ?? true);
       setAudience(editingData.audience || 'All members');
       setPublishStatus(editingData.status || 'Published');
-      setRecurring(editingData.recurring || 'One-time event');
+      const rec = editingData.recurring || 'One-time event';
+      const isRec = rec !== 'One-time event' && rec !== '' && rec !== 'None' && rec !== 'Select Recurrence';
+      setIsRecurring(isRec);
+      setRecurring(isRec ? rec : 'One-time event');
       setRecurrenceDuration(editingData.recurrenceDuration || 1);
       setRequireEventQR(editingData.requireEventQR === true || editingData.requireEventQr === true);
       if (Array.isArray(editingData.services) && editingData.services.length > 0) {
@@ -604,6 +606,11 @@ export default function AdminEventEditor() {
       }
     }
 
+    if (isRecurring && (recurring === 'Select Recurrence' || !recurring)) {
+      setValidationError('Please select a recurrence pattern (e.g. Every Sunday) or choose One-Time Event.');
+      return;
+    }
+
     setValidationError(null);
     setErrorModal(null);
 
@@ -682,8 +689,8 @@ export default function AdminEventEditor() {
       bannerColor,
       bannerUrl,
       image: bannerUrl,
-      recurring: resolveValue('recurring', recurring),
-      recurrenceDuration,
+      recurring: isRecurring ? (resolveValue('recurring', recurring) || recurring) : 'One-time event',
+      recurrenceDuration: isRecurring ? recurrenceDuration : 1,
       requireEventQR,
       notifyOnPublish, reminder1Day, reminder1Hour,
       rsvpCap: capAttendance ? 100 : 0,
@@ -759,6 +766,9 @@ export default function AdminEventEditor() {
     const ds = `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
     setDate(ds); setEndDate(ds);
     setStartTime('09:00 AM'); setEndTime('12:00 PM');
+    setIsRecurring(false);
+    setRecurring('One-time event');
+    setRecurrenceDuration(1);
     setNotifyOnPublish(true); setReminder1Day(true); setReminder1Hour(false);
     setRequireEventQR(false);
     setEditingData(null);
@@ -825,6 +835,18 @@ export default function AdminEventEditor() {
                 </View>
               ) : null}
             </View>
+
+            {requireEventQR && (
+              <View style={styles.successQrBox}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                  <QrCode size={14} color="#92400e" style={{ marginRight: 6 }} />
+                  <Text style={styles.successQrBoxTitle}>Unique Event QR Code Generated</Text>
+                </View>
+                <Text style={styles.successQrBoxSub}>
+                  Attendance strictly requires this event's dedicated QR code. You can view, save, or share it anytime from the Events list or Attendance dashboard.
+                </Text>
+              </View>
+            )}
 
             {/* Action Buttons */}
             <TouchableOpacity 
@@ -919,12 +941,15 @@ export default function AdminEventEditor() {
 
       <View style={styles.hero}>
         <View style={styles.heroTitleRow}>
-          <TouchableOpacity onPress={() => setTabByName?.('Events')} style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <ChevronLeft size={20} color="#fff" style={{ marginLeft: -6, marginRight: 4 }} />
-            <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Back</Text>
+          <TouchableOpacity
+            onPress={() => setTabByName?.('Events')}
+            style={styles.circularBackBtn}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
           </TouchableOpacity>
-          <Text style={[styles.heroTitle, { marginHorizontal: 12, opacity: 0.4 }]}>|</Text>
-          <Text style={styles.heroTitle}>{editingData ? 'Edit Event' : 'New Event'}</Text>
+          <Text style={[styles.heroTitle, { marginLeft: 12 }]}>{editingData ? 'Edit Event' : 'New Event'}</Text>
         </View>
       </View>
 
@@ -998,16 +1023,53 @@ export default function AdminEventEditor() {
             <Text style={styles.secHdTXT}>Date & Schedule</Text>
           </View>
 
+          {/* Event Cadence: One-Time vs Recurring Selector */}
+          <View style={styles.cadenceSelector}>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              style={[styles.cadenceBtn, !isRecurring && styles.cadenceBtnActive]}
+              onPress={() => {
+                setIsRecurring(false);
+                setRecurring('One-time event');
+                setShowRecurringDropdown(false);
+                setShowDurationDropdown(false);
+                if (date) setEndDate(date);
+              }}
+            >
+              <CalendarDays size={15} color={!isRecurring ? '#0f172a' : '#64748b'} style={{ marginRight: 6 }} />
+              <Text style={[styles.cadenceBtnTxt, !isRecurring && styles.cadenceBtnTxtActive]}>
+                One-Time Event
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.8}
+              style={[styles.cadenceBtn, isRecurring && styles.cadenceBtnActiveRecurring]}
+              onPress={() => {
+                setIsRecurring(true);
+                setRecurring('Select Recurrence');
+                setShowRecurringDropdown(false);
+                setShowDurationDropdown(false);
+                if (date) setEndDate(addMonthsToDate(date, recurrenceDuration || 1));
+              }}
+            >
+              <Repeat size={15} color={isRecurring ? '#0d9488' : '#64748b'} style={{ marginRight: 6 }} />
+              <Text style={[styles.cadenceBtnTxt, isRecurring && styles.cadenceBtnTxtActiveRecurring]}>
+                Recurring
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.fLabel}>Start Date <Text style={{color:'#c0392b'}}>*</Text></Text>
+              <Text style={styles.fLabel}>{isRecurring ? 'Series Start Date' : 'Start Date'} <Text style={{color:'#c0392b'}}>*</Text></Text>
               <TouchableOpacity style={styles.inputWrap} onPress={() => setDatePickerVisibility(true)}>
                 <CalendarDays size={18} color="#64748b" style={{ marginRight: 8 }} />
                 <Text style={styles.inputText}>{date || 'DD-MM-YYYY'}</Text>
               </TouchableOpacity>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.fLabel}>End Date <Text style={{color:'#c0392b'}}>*</Text></Text>
+              <Text style={styles.fLabel}>{isRecurring ? 'Series End Date' : 'End Date'} <Text style={{color:'#c0392b'}}>*</Text></Text>
               <TouchableOpacity style={styles.inputWrap} onPress={() => setEndDatePickerVisibility(true)}>
                 <CalendarDays size={18} color="#64748b" style={{ marginRight: 8 }} />
                 <Text style={styles.inputText}>{endDate || 'DD-MM-YYYY'}</Text>
@@ -1046,86 +1108,89 @@ export default function AdminEventEditor() {
             </View>
           )}
 
-          <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Recurring</Text>
-            <TouchableOpacity style={styles.inputWrap} onPress={() => setShowRecurringDropdown(!showRecurringDropdown)}>
-              <Text style={styles.inputText}>{RECURRING_OPTIONS.find((t: any) => t.value === recurring)?.label || recurring || 'One-time event'}</Text>
-              <ChevronDown size={14} color="#374151" />
-            </TouchableOpacity>
-            {showRecurringDropdown && (
-              <View style={styles.dropdownMenu}>
-                {RECURRING_OPTIONS.map(r => (
-                  <TouchableOpacity
-                    key={r.value}
-                    style={[styles.dropdownItem, recurring === r.value && styles.dropdownItemActive]}
-                    onPress={() => {
-                      setRecurring(r.value);
-                      setShowRecurringDropdown(false);
-                      if (r.value !== 'One-time event' && date) {
-                        if (endDate === date) {
-                          setEndDate(addMonthsToDate(date, recurrenceDuration || 1));
-                        }
-                      }
-                    }}
-                  >
-                    <Text style={[styles.dropdownItemTxt, recurring === r.value && styles.dropdownItemTxtActive]}>{r.label}</Text>
-                  </TouchableOpacity>
-                ))}
+          {/* Recurrence options: Only displayed when Recurring is selected */}
+          {isRecurring && (
+            <>
+              <View style={styles.fGroup}>
+                <Text style={styles.fLabel}>Repeat Pattern <Text style={{color:'#c0392b'}}>*</Text></Text>
+                <TouchableOpacity style={styles.inputWrap} onPress={() => setShowRecurringDropdown(!showRecurringDropdown)}>
+                  <Text style={[styles.inputText, recurring === 'Select Recurrence' && { color: '#64748b' }]}>
+                    {RECURRING_OPTIONS.find((t: any) => t.value === recurring)?.label || recurring}
+                  </Text>
+                  <ChevronDown size={14} color="#374151" />
+                </TouchableOpacity>
+                {showRecurringDropdown && (
+                  <View style={styles.dropdownMenu}>
+                    {RECURRING_OPTIONS.map(r => (
+                      <TouchableOpacity
+                        key={r.value}
+                        style={[styles.dropdownItem, recurring === r.value && styles.dropdownItemActive]}
+                        onPress={() => {
+                          setRecurring(r.value);
+                          setShowRecurringDropdown(false);
+                          if (r.value !== 'Select Recurrence' && date) {
+                            setEndDate(addMonthsToDate(date, recurrenceDuration || 1));
+                          }
+                        }}
+                      >
+                        <Text style={[styles.dropdownItemTxt, recurring === r.value && styles.dropdownItemTxtActive]}>{r.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
               </View>
-            )}
-          </View>
 
-          {recurring !== 'One-time event' && (
-            <View style={styles.fGroup}>
-              <Text style={styles.fLabel}>Recurrence Duration</Text>
-              <TouchableOpacity style={styles.inputWrap} onPress={() => setShowDurationDropdown(!showDurationDropdown)}>
-                <Text style={styles.inputText}>{DURATION_OPTIONS.find((t: any) => t.value === recurrenceDuration)?.label || `For ${recurrenceDuration} month(s)`}</Text>
-                <ChevronDown size={14} color="#374151" />
-              </TouchableOpacity>
-              {showDurationDropdown && (
-                <View style={styles.dropdownMenu}>
-                  {DURATION_OPTIONS.map(o => (
-                    <TouchableOpacity
-                      key={o.value}
-                      style={[styles.dropdownItem, recurrenceDuration === o.value && styles.dropdownItemActive]}
-                      onPress={() => {
-                        setRecurrenceDuration(o.value);
-                        setShowDurationDropdown(false);
-                        if (date) {
-                          setEndDate(addMonthsToDate(date, o.value));
-                        }
-                      }}
-                    >
-                      <Text style={[styles.dropdownItemTxt, recurrenceDuration === o.value && styles.dropdownItemTxtActive]}>{o.label}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-            </View>
-          )}
+              <View style={styles.fGroup}>
+                <Text style={styles.fLabel}>Recurrence Duration</Text>
+                <TouchableOpacity style={styles.inputWrap} onPress={() => setShowDurationDropdown(!showDurationDropdown)}>
+                  <Text style={styles.inputText}>{DURATION_OPTIONS.find((t: any) => t.value === recurrenceDuration)?.label || `For ${recurrenceDuration} month(s)`}</Text>
+                  <ChevronDown size={14} color="#374151" />
+                </TouchableOpacity>
+                {showDurationDropdown && (
+                  <View style={styles.dropdownMenu}>
+                    {DURATION_OPTIONS.map(o => (
+                      <TouchableOpacity
+                        key={o.value}
+                        style={[styles.dropdownItem, recurrenceDuration === o.value && styles.dropdownItemActive]}
+                        onPress={() => {
+                          setRecurrenceDuration(o.value);
+                          setShowDurationDropdown(false);
+                          if (date && recurring !== 'Select Recurrence') {
+                            setEndDate(addMonthsToDate(date, o.value));
+                          }
+                        }}
+                      >
+                        <Text style={[styles.dropdownItemTxt, recurrenceDuration === o.value && styles.dropdownItemTxtActive]}>{o.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
 
-          {recurring !== 'One-time event' && (
-            <View style={styles.recurringInfoCard}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                <Repeat size={14} color="#0D9488" style={{ marginRight: 6 }} />
-                <View style={styles.recurringInfoBadge}>
-                  <Text style={styles.recurringInfoBadgeTxt}>
-                    {recurring === 'Every day' ? 'DAILY EVENT SERIES' : 'RECURRING EVENT SERIES'}
+              {isRecurring && recurring && recurring !== 'Select Recurrence' && recurring !== 'One-time event' && (
+                <View style={styles.recurringInfoCard}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                    <Repeat size={14} color="#0D9488" style={{ marginRight: 6 }} />
+                    <View style={styles.recurringInfoBadge}>
+                      <Text style={styles.recurringInfoBadgeTxt}>
+                        {recurring === 'Every day' ? 'DAILY EVENT SERIES' : 'RECURRING EVENT SERIES'}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.recurringInfoHeading}>
+                    {recurring === 'Every day'
+                      ? `Repeats Every Day from ${date} to ${endDate}`
+                      : `Repeats (${RECURRING_OPTIONS.find((t: any) => t.value === recurring)?.label || recurring}) from ${date} to ${endDate}`}
+                  </Text>
+                  <Text style={styles.recurringInfoSub}>
+                    Every occurrence in this period will automatically be generated in the church calendar. Attendance is recorded independently for each day.
+                  </Text>
+                  <Text style={styles.recurringInfoTe}>
+                    ఈ కాలంలోని ప్రతి ఈవెంట్ స్వతంత్రంగా క్యాలెండర్‌లో సృష్టించబడుతుంది మరియు ప్రతి దినం హాజరు ప్రత్యేకంగా నమోదు చేయబడుతుంది.
                   </Text>
                 </View>
-              </View>
-              <Text style={styles.recurringInfoHeading}>
-                {recurring === 'Every day'
-                  ? `Repeats Every Day from ${date} to ${endDate}`
-                  : `Repeats (${recurring}) from ${date} to ${endDate}`}
-              </Text>
-              <Text style={styles.recurringInfoSub}>
-                Every day in this period will automatically be generated as its own event occurrence. Attendance is recorded independently for each day.
-              </Text>
-              <Text style={styles.recurringInfoTe}>
-                ఈ కాలంలోని ప్రతి రోజు స్వతంత్ర ఈవెంట్‌గా సృష్టించబడుతుంది మరియు ప్రతి రోజు హాజరు ప్రత్యేకంగా నమోదు చేయబడుతుంది.
-              </Text>
-            </View>
+              )}
+            </>
           )}
         </View>
 
@@ -1152,20 +1217,6 @@ export default function AdminEventEditor() {
             <TextInput style={[styles.input, styles.textarea]} multiline placeholder="Street, area, city..." value={address} onChangeText={setAddress} />
           </View>
 
-          <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Event Mode</Text>
-            <View style={styles.modeRow}>
-              {(metadata?.modes?.length > 0 ? metadata.modes : [
-                { label: 'In person', value: 'In person' },
-                { label: 'Online', value: 'Online' },
-                { label: 'Hybrid', value: 'Hybrid' }
-              ]).map((m: any) => (
-                <TouchableOpacity key={m.value} style={[styles.modeBtn, mode === m.value && styles.modeBtnActive]} onPress={() => setMode(m.value)}>
-                  <Text style={[styles.modeBtnTxt, mode === m.value && styles.modeBtnTxtActive]}>{m.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
         </View>
 
 
@@ -1255,12 +1306,12 @@ export default function AdminEventEditor() {
 
         {/* ── Worship Services & Setlist Section (Optional) ── */}
         <View style={[styles.section, { borderLeftColor: '#10B981', backgroundColor: '#FFFFFF' }]}>
-          <View style={[styles.secHd, { justifyContent: 'space-between' }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <View style={[styles.secHd, { justifyContent: 'space-between', alignItems: 'center' }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
               <View style={[styles.secHdPill, { backgroundColor: '#10B981' }]}>
                 <Music size={13} color="#fff" />
               </View>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.secHdTXT}>Worship Services & Song Setlists</Text>
                 <Text style={{ fontSize: 11, color: '#64748B', marginTop: 1 }}>
                   {eventServices.length === 0 ? 'Optional: attach worship services & song setlists to this event' : `${eventServices.length} service${eventServices.length > 1 ? 's' : ''} configured`}
@@ -1268,8 +1319,8 @@ export default function AdminEventEditor() {
               </View>
             </View>
             {eventServices.length > 0 && (
-              <View style={{ backgroundColor: '#D1FAE5', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
-                <Text style={{ fontSize: 10, fontWeight: '800', color: '#047857' }}>ENABLED</Text>
+              <View style={{ backgroundColor: '#D1FAE5', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 }}>
+                <Text style={{ fontSize: 11, fontWeight: '800', color: '#047857' }}>ENABLED</Text>
               </View>
             )}
           </View>
@@ -1287,7 +1338,7 @@ export default function AdminEventEditor() {
               {/* Service Card Header */}
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-                  <View style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: '#1a2d5a', alignItems: 'center', justifyContent: 'center' }}>
+                  <View style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: 'transparent', alignItems: 'center', justifyContent: 'center' }}>
                     <Text style={{ color: '#fff', fontSize: 12, fontWeight: '900' }}>{sIndex + 1}</Text>
                   </View>
                   <TextInput
@@ -1438,7 +1489,7 @@ export default function AdminEventEditor() {
               paddingVertical: 12,
               paddingHorizontal: 16,
               gap: 8,
-              marginTop: 4
+              marginTop: 6
             }}
             onPress={handleAddService}
           >
@@ -1450,12 +1501,17 @@ export default function AdminEventEditor() {
         </View>
 
         {/* ── Attendance & QR Check-In Settings ── */}
-        <View style={[styles.section, styles.secNavy]}>
+        <View style={[styles.section, styles.secNavy, requireEventQR && { borderColor: '#B45309', borderWidth: 1.5, backgroundColor: '#FFFBEB' }]}>
           <View style={styles.secHd}>
-            <View style={[styles.secHdPill, { backgroundColor: '#1a2d5a' }]}>
+            <View style={[styles.secHdPill, { backgroundColor: requireEventQR ? '#B45309' : '#1a2d5a' }]}>
               <QrCode size={13} color="#fff" />
             </View>
             <Text style={styles.secHdTXT}>Attendance Check-In Settings</Text>
+            {requireEventQR && (
+              <View style={{ backgroundColor: '#FEF3C7', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, marginLeft: 'auto' }}>
+                <Text style={{ fontSize: 10, fontWeight: '800', color: '#92400E' }}>STRICT QR ACTIVE</Text>
+              </View>
+            )}
           </View>
 
           <View style={[styles.switchRow, { alignItems: 'flex-start' }]}>
@@ -1470,32 +1526,22 @@ export default function AdminEventEditor() {
             <Switch
               value={requireEventQR}
               onValueChange={setRequireEventQR}
-              trackColor={{ false: '#CBD5E1', true: '#1a2d5a' }}
-              thumbColor={requireEventQR ? '#C9A84C' : '#FFFFFF'}
+              trackColor={{ false: '#CBD5E1', true: '#B45309' }}
+              thumbColor={requireEventQR ? '#F59E0B' : '#FFFFFF'}
             />
           </View>
-        </View>
 
-        <View style={[styles.section, styles.secBlue]}>
-          <View style={styles.secHd}>
-            <View style={styles.secHdPill}>
-              <Bell size={13} color="#fff" />
+          {requireEventQR && (
+            <View style={styles.strictQrActiveBanner}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                <QrCode size={13} color="#92400E" style={{ marginRight: 6 }} />
+                <Text style={styles.strictQrActiveBannerTitle}>EACH EVENT HAS ITS OWN UNIQUE QR CODE</Text>
+              </View>
+              <Text style={styles.strictQrActiveBannerSub}>
+                A unique QR code is automatically generated and linked to this event. QR codes are never shared across events.
+              </Text>
             </View>
-            <Text style={styles.secHdTXT}>Notifications</Text>
-          </View>
-
-          <View style={styles.switchRow}>
-            <Text style={styles.switchLabel}>Notify members when published</Text>
-            <Switch value={notifyOnPublish} onValueChange={setNotifyOnPublish} trackColor={{ true: '#1a2d5a' }} />
-          </View>
-          <View style={styles.switchRow}>
-            <Text style={styles.switchLabel}>Send reminder 1 day before</Text>
-            <Switch value={reminder1Day} onValueChange={setReminder1Day} trackColor={{ true: '#1a2d5a' }} />
-          </View>
-          <View style={styles.switchRow}>
-            <Text style={styles.switchLabel}>Send reminder 1 hour before</Text>
-            <Switch value={reminder1Hour} onValueChange={setReminder1Hour} trackColor={{ true: '#1a2d5a' }} />
-          </View>
+          )}
         </View>
 
         <View style={styles.footerBtnRow}>
@@ -1530,8 +1576,10 @@ export default function AdminEventEditor() {
           setDate(newDateStr);
           setDatePickerVisibility(false);
           setValidationError(null);
-          if (recurring && recurring !== 'One-time event') {
+          if (isRecurring && recurring !== 'Select Recurrence') {
             setEndDate(addMonthsToDate(newDateStr, recurrenceDuration || 1));
+          } else if (!endDate || endDate === date) {
+            setEndDate(newDateStr);
           }
         }}
         onCancel={() => setDatePickerVisibility(false)}
@@ -1832,6 +1880,21 @@ export default function AdminEventEditor() {
 }
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: { flex: 1, backgroundColor: '#EDE8DC' },
   scroll: { padding: 14, paddingBottom: 100 },
 
@@ -1865,8 +1928,8 @@ const styles = StyleSheet.create({
 
   hero: { 
     backgroundColor: '#1a2d5a', 
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
+    
+    
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 12,
@@ -1875,7 +1938,7 @@ const styles = StyleSheet.create({
     marginBottom: 6
   },
   heroTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start' },
-  heroTitle: { color: '#fff', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '600', letterSpacing: -0.5 },
+  heroTitle: { color: '#1a2d5a', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '600', letterSpacing: -0.5 },
 
   section: {
     backgroundColor: '#FFFFFF',
@@ -2077,11 +2140,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
 
-  modeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  modeBtn: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20, backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0' },
-  modeBtnActive: { backgroundColor: '#1a2d5a', borderColor: '#1a2d5a' },
-  modeBtnTxt: { fontSize: 12, color: '#475569', fontWeight: '600' },
-  modeBtnTxtActive: { color: '#fff' },
 
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingVertical: 4 },
   chip: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 20, backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0', marginRight: 8 },
@@ -2492,6 +2550,54 @@ const styles = StyleSheet.create({
   sectionHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8, alignSelf: 'flex-start', marginBottom: 16 },
   sectionHeaderText: { fontFamily: 'Outfit-Bold', fontSize: 14, fontWeight: '700' },
 
+  cadenceSelector: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+    backgroundColor: '#F1F5F9',
+    padding: 4,
+    borderRadius: 12,
+  },
+  cadenceBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 9,
+    backgroundColor: 'transparent',
+  },
+  cadenceBtnActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  cadenceBtnActiveRecurring: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  cadenceBtnTxt: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  cadenceBtnTxtActive: {
+    color: '#0F172A',
+    fontWeight: '700',
+  },
+  cadenceBtnTxtActiveRecurring: {
+    color: '#0D9488',
+    fontWeight: '700',
+  },
+
   recurringInfoCard: {
     backgroundColor: '#F0FDFA',
     borderWidth: 1,
@@ -2531,5 +2637,46 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     marginTop: 3,
     fontWeight: '600',
-  }
+  },
+
+  strictQrActiveBanner: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 12,
+  },
+  strictQrActiveBannerTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#92400E',
+    letterSpacing: 0.5,
+  },
+  strictQrActiveBannerSub: {
+    fontSize: 11,
+    color: '#78350F',
+    lineHeight: 16,
+  },
+
+  successQrBox: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 12,
+    padding: 12,
+    width: '100%',
+    marginBottom: 16,
+  },
+  successQrBoxTitle: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  successQrBoxSub: {
+    fontSize: 11,
+    color: '#78350F',
+    lineHeight: 16,
+    marginTop: 2,
+  },
 });

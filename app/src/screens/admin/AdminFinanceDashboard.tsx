@@ -31,7 +31,7 @@ import {
   X,
   Pencil,
   Gift
-} from 'lucide-react-native';
+, ArrowLeft } from 'lucide-react-native';
 import { AdminTabContext } from '../../context/AdminTabContext';
 import FirestoreService, { ChurchExpense, ChurchInvoice } from '../../services/FirestoreService';
 import { useAuth } from '../../context/AuthContext';
@@ -2234,13 +2234,28 @@ const FONTS = {
 };
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: { flex: 1, backgroundColor: '#faf7f1' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#faf7f1' },
   
   hero: {
-    backgroundColor: '#1a2d5a',
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
+    backgroundColor: 'transparent',
+    
+    
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 12,
@@ -2249,8 +2264,8 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   heroTitleRow: { flexDirection: 'row', alignItems: 'center' },
-  heroTitle: { color: '#fff', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '600', letterSpacing: -0.5 },
-  heroSub: { color: '#AEB8D4', fontSize: 13 },
+  heroTitle: { color: '#1a2d5a', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '600', letterSpacing: -0.5 },
+  heroSub: { color: '#64748b', fontSize: 13 },
   
   mainScroll: { padding: 18, paddingBottom: 120, minHeight: 520 },
   

@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { ChevronLeft } from 'lucide-react-native';
+import { ChevronLeft , ArrowLeft } from 'lucide-react-native';
 import { colors, spacing, radius, typography, shadow } from '../../../theme/Theme';
 import FirestoreService from '../../../services/FirestoreService';
 import { CustomAlert, AlertButton } from '../../../components/CustomAlert';
@@ -250,12 +250,15 @@ export const PastorEventDetail = ({ route, navigation }: { route: any; navigatio
       <View style={[styles.hero, { paddingTop: insets.top + 16 }]}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-            <TouchableOpacity onPress={() => requestAnimationFrame(() => navigation.goBack())} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
-              <ChevronLeft size={20} color="#fff" style={{ marginLeft: -6, marginRight: 4 }} />
-              <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Back</Text>
+            <TouchableOpacity
+              onPress={() => requestAnimationFrame(() => navigation.goBack())}
+              style={styles.circularBackBtn}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
             </TouchableOpacity>
-            <Text style={[styles.heroTitle, { marginHorizontal: 12, opacity: 0.4 }]}>|</Text>
-            <View>
+            <View style={{ marginLeft: 12 }}>
               <Text style={styles.heroTitle}>Event Details</Text>
               <Text style={[styles.heroSub, { marginTop: 2 }]}>{event.title}</Text>
             </View>
@@ -467,16 +470,31 @@ export const PastorEventDetail = ({ route, navigation }: { route: any; navigatio
 };
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: { flex: 1, backgroundColor: '#EDE8DC' },
   hero: {
-    backgroundColor: '#1a2d5a',
+    backgroundColor: 'transparent',
     paddingHorizontal: 16,
     paddingBottom: 14,
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
+    
+    
   },
-  heroTitle: { color: '#fff', fontSize: 20, fontWeight: '700' },
-  heroSub: { color: '#aac4e8', fontSize: 13, fontWeight: '500' },
+  heroTitle: { color: '#1a2d5a', fontSize: 20, fontWeight: '700' },
+  heroSub: { color: '#64748b', fontSize: 13, fontWeight: '500' },
   scrollContent: { padding: 20, paddingTop: 10, gap: 16 },
   card: {
     backgroundColor: '#fff',

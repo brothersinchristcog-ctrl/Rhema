@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Platform } from 'react-native';
-import { ChevronLeft, ChevronRight, Eye, Image as ImageIcon, Book } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, Eye, Image as ImageIcon, Book , ArrowLeft } from 'lucide-react-native';
 
 export default function AdminCelebrationsPersonalize({ 
   member, 
@@ -69,11 +69,10 @@ export default function AdminCelebrationsPersonalize({
     <View style={styles.container}>
             {/* ── Fixed Header ── */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={onBack}>
-          <ChevronLeft size={22} color="#fff" />
-          <Text style={styles.backBtnTxt}>Back</Text>
+        <TouchableOpacity style={styles.circularBackBtn} onPress={onBack} activeOpacity={0.7}>
+          <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
         </TouchableOpacity>
-        <View style={styles.heroTitles}>
+        <View style={[styles.heroTitles, { borderLeftWidth: 0, paddingLeft: 0, marginLeft: 12 }]}>
           <Text style={styles.headerTitle}>Personalize</Text>
           <Text style={styles.headerSub}>PREPARE WISH</Text>
         </View>
@@ -185,17 +184,32 @@ export default function AdminCelebrationsPersonalize({
 }
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: '#FAF8F0',
   },
     header: { 
-    backgroundColor: '#1a2d5a', 
+    backgroundColor: 'transparent', 
     paddingTop: 16,
     paddingHorizontal: 20,
     paddingBottom: 20,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
+    
+    
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -205,8 +219,8 @@ const styles = StyleSheet.create({
   backBtn: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 2, paddingVertical: 4, paddingHorizontal: 2 },
   backBtnTxt: { fontSize: 13, fontWeight: '700', color: '#fff' },
   heroTitles: { flex: 1, borderLeftWidth: 1, borderLeftColor: 'rgba(255,255,255,0.2)', paddingLeft: 12 },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: '#fff' },
-  headerSub: { fontSize: 11, color: '#F3EAD9', marginTop: 2 },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: '#1a2d5a' },
+  headerSub: { fontSize: 11, color: '#64748b', marginTop: 2 },
   
   content: {
     padding: 20,

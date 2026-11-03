@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Share, Platform, Modal } from 'react-native';
-import { Building2, Users, Plus, ChevronRight, Settings, Share2, CheckCircle2, ChevronLeft, Edit2, Trash2, XCircle, HelpCircle } from 'lucide-react-native';
+import { Building2, Users, Plus, ChevronRight, Settings, Share2, CheckCircle2, ChevronLeft, Edit2, Trash2, XCircle, HelpCircle , ArrowLeft } from 'lucide-react-native';
 import { useChurch } from '../../context/ChurchContext';
 import { useAuth } from '../../context/AuthContext';
 import ChurchService, { ChurchDetails } from '../../services/ChurchService';
@@ -217,12 +217,15 @@ export default function AdminOrganization({ navigation }: any) {
       <View style={styles.hero}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1, paddingRight: 4 }}>
-            <TouchableOpacity onPress={() => setActiveTab(0)} style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <ChevronLeft size={20} color="#fff" style={{ marginLeft: -6, marginRight: 2 }} />
-              <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Back</Text>
+            <TouchableOpacity
+              onPress={() => setActiveTab(0)}
+              style={styles.circularBackBtn}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
             </TouchableOpacity>
-            <Text style={[styles.heroTitle, { marginHorizontal: 8, opacity: 0.4 }]}>|</Text>
-            <Text style={[styles.heroTitle, { flexShrink: 1 }]} numberOfLines={1}>Church Branches</Text>
+            <Text style={[styles.heroTitle, { flexShrink: 1, marginLeft: 12 }]} numberOfLines={1}>Church Branches</Text>
           </View>
         </View>
       </View>
@@ -424,14 +427,29 @@ export default function AdminOrganization({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: { flex: 1, backgroundColor: '#EDE8DC' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   scroll: { padding: 16, paddingBottom: 100 },
   
   hero: {
-    backgroundColor: '#1a2d5a',
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
+    backgroundColor: 'transparent',
+    
+    
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 12,
@@ -439,7 +457,7 @@ const styles = StyleSheet.create({
     position: 'relative',
     marginBottom: 6,
   },
-  heroTitle: { color: '#fff', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '600', letterSpacing: -0.5 },
+  heroTitle: { color: '#1a2d5a', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '600', letterSpacing: -0.5 },
   
   // Premium Summary Card
   premiumSummaryCard: { backgroundColor: '#fff', borderRadius: 16, padding: 20, marginBottom: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', shadowColor: '#1a2d5a', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4, borderLeftWidth: 4, borderLeftColor: '#1a2d5a' },

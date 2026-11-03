@@ -550,34 +550,285 @@ export const onBaptismRequestCreatedAdminLegacy = onDocumentCreated({ document: 
     await handleBaptismRequestAdminPush(baptism, churchId, requestId, snap.ref);
 });
 /**
- * 🙏 NOTIFY COMMUNITY OF APPROVED PRAYER REQUEST
- * Triggered when a prayer request is approved (isAnswered becomes true).
+ * 🙏 HELPER: DISPATCH PRAYER REQUEST APPROVAL/PROCESSED PUSH TO THE SPECIFIC MEMBER ONLY
+ * Guarantees that ONLY the particular member who submitted the prayer request receives the push notification.
+ * Regular church members and community topics NEVER receive broadcast notifications for individual prayers.
  */
-export const pushPrayerRequestApproved = onDocumentUpdated('churches/{churchId}/prayerRequests/{prayerId}', async (event) => {
+async function handlePrayerRequestMemberPush(before, after, churchId, prayerId, snapRef) {
+    if (!after)
+        return;
+    // Trigger when prayer request is newly answered/processed, or when admin adds a response
+    const justAnswered = (!before?.isAnswered && after.isAnswered);
+    const newResponseAdded = Boolean(after.lastAdminResponse && after.lastAdminResponse !== before?.lastAdminResponse);
+    if (!justAnswered && !newResponseAdded) {
+        return;
+    }
+    // Deduplication guard
+    if (after.memberPushSent === true && !newResponseAdded) {
+        console.log(`🛑 Skipping duplicate prayer member push for request: ${prayerId}`);
+        return;
+    }
+    const db = getFirestore();
+    const messaging = getMessaging();
+    if (snapRef) {
+        try {
+            await snapRef.update({
+                memberPushSent: true,
+                memberPushSentAt: FieldValue.serverTimestamp(),
+            });
+        }
+        catch (_) { }
+    }
+    // 1. Identify the specific submitting member
+    const memberId = (after.uid || after.authorId || after.contactId || '').trim();
+    const memberPhone = (after.phone || after.contactPhone || after.mobile || '').trim();
+    let memberName = (after.name || after.memberName || after.authorName || '').trim();
+    if (!memberName || memberName.toLowerCase() === 'faithful member' || memberName.toLowerCase() === 'church member' || memberName.toLowerCase() === 'a church member') {
+        if (memberId) {
+            try {
+                let mSnap = await db.collection('Rhema Church').doc(churchId).collection('members').doc(memberId).get();
+                if (!mSnap.exists) {
+                    mSnap = await db.collection('churches').doc(churchId).collection('members').doc(memberId).get();
+                }
+                if (mSnap.exists && mSnap.data()?.name) {
+                    memberName = mSnap.data().name;
+                }
+                else {
+                    const uSnap = await db.collection('users').doc(memberId).get();
+                    if (uSnap.exists && (uSnap.data()?.name || uSnap.data()?.displayName)) {
+                        memberName = uSnap.data().name || uSnap.data().displayName;
+                    }
+                }
+            }
+            catch (_) { }
+        }
+    }
+    if (!memberName) {
+        memberName = 'Church Member';
+    }
+    const isPublic = after.isPublic === true;
+    const adminComment = (after.lastAdminResponse || '').trim();
+    // 2. Compose personalized notification title and body
+    const title = isPublic
+        ? '🙏 Prayer Request Approved'
+        : '🙏 Pastoral Prayer Response';
+    let body = '';
+    if (adminComment) {
+        const preview = adminComment.length > 90 ? `${adminComment.substring(0, 87)}...` : adminComment;
+        body = `Pastor has responded to your prayer request: "${preview}"`;
+    }
+    else if (isPublic) {
+        body = `Dear ${memberName}, your prayer request has been approved and our pastoral team is praying for you.`;
+    }
+    else {
+        body = `Dear ${memberName}, your prayer request has been received and our pastoral team has prayed for you.`;
+    }
+    // 3. Find device tokens ONLY for this specific member
+    const memberTokens = [];
+    try {
+        // Check Rhema Church members
+        if (memberId) {
+            try {
+                const mSnap = await db.collection('Rhema Church').doc(churchId).collection('members').doc(memberId).get();
+                if (mSnap.exists) {
+                    const m = mSnap.data();
+                    if (m?.fcmToken && typeof m.fcmToken === 'string' && m.fcmToken.trim().length > 10) {
+                        memberTokens.push(m.fcmToken.trim());
+                    }
+                    if (Array.isArray(m?.fcmTokens)) {
+                        for (const t of m.fcmTokens) {
+                            if (typeof t === 'string' && t.trim().length > 10)
+                                memberTokens.push(t.trim());
+                        }
+                    }
+                }
+            }
+            catch (_) { }
+            // Check legacy churches members
+            try {
+                const mSnap = await db.collection('churches').doc(churchId).collection('members').doc(memberId).get();
+                if (mSnap.exists) {
+                    const m = mSnap.data();
+                    if (m?.fcmToken && typeof m.fcmToken === 'string' && m.fcmToken.trim().length > 10) {
+                        memberTokens.push(m.fcmToken.trim());
+                    }
+                    if (Array.isArray(m?.fcmTokens)) {
+                        for (const t of m.fcmTokens) {
+                            if (typeof t === 'string' && t.trim().length > 10)
+                                memberTokens.push(t.trim());
+                        }
+                    }
+                }
+            }
+            catch (_) { }
+            // Check users collection by UID
+            try {
+                const uSnap = await db.collection('users').doc(memberId).get();
+                if (uSnap.exists) {
+                    const u = uSnap.data();
+                    if (u?.fcmToken && typeof u.fcmToken === 'string' && u.fcmToken.trim().length > 10) {
+                        memberTokens.push(u.fcmToken.trim());
+                    }
+                    if (Array.isArray(u?.fcmTokens)) {
+                        for (const t of u.fcmTokens) {
+                            if (typeof t === 'string' && t.trim().length > 10)
+                                memberTokens.push(t.trim());
+                        }
+                    }
+                }
+            }
+            catch (_) { }
+        }
+        // Check by Phone number across members and users
+        if (memberPhone) {
+            const cleanDigits = memberPhone.replace(/\D/g, '').slice(-10);
+            if (cleanDigits.length >= 7) {
+                try {
+                    const memQuery = await db.collection('Rhema Church').doc(churchId).collection('members').get();
+                    memQuery.forEach(doc => {
+                        const m = doc.data();
+                        const p = String(m.phone || m.mobile || '').replace(/\D/g, '').slice(-10);
+                        if (p === cleanDigits) {
+                            if (m?.fcmToken && typeof m.fcmToken === 'string' && m.fcmToken.trim().length > 10) {
+                                memberTokens.push(m.fcmToken.trim());
+                            }
+                            if (Array.isArray(m?.fcmTokens)) {
+                                for (const t of m.fcmTokens) {
+                                    if (typeof t === 'string' && t.trim().length > 10)
+                                        memberTokens.push(t.trim());
+                                }
+                            }
+                        }
+                    });
+                }
+                catch (_) { }
+                try {
+                    const uQuery = await db.collection('users').get();
+                    uQuery.forEach(doc => {
+                        const u = doc.data();
+                        const p = String(u.phone || u.mobile || u.phoneNumber || '').replace(/\D/g, '').slice(-10);
+                        if (p === cleanDigits) {
+                            if (u?.fcmToken && typeof u.fcmToken === 'string' && u.fcmToken.trim().length > 10) {
+                                memberTokens.push(u.fcmToken.trim());
+                            }
+                            if (Array.isArray(u?.fcmTokens)) {
+                                for (const t of u.fcmTokens) {
+                                    if (typeof t === 'string' && t.trim().length > 10)
+                                        memberTokens.push(t.trim());
+                                }
+                            }
+                        }
+                    });
+                }
+                catch (_) { }
+            }
+        }
+    }
+    catch (lookupErr) {
+        console.error('Error fetching member tokens for prayer push:', lookupErr);
+    }
+    const notificationData = {
+        type: 'prayer_request_member',
+        churchId: churchId,
+        prayerId: prayerId,
+        requestId: prayerId,
+        screen: 'PrayerWall',
+        isPublic: String(isPublic),
+        click_action: 'FLUTTER_NOTIFICATION_CLICK',
+    };
+    // 4. Send direct push ONLY to the specific member's registered devices (NEVER topic broadcast)
+    const uniqueTokens = Array.from(new Set(memberTokens));
+    if (uniqueTokens.length > 0) {
+        try {
+            const sendRes = await messaging.sendEachForMulticast({
+                notification: { title, body },
+                data: notificationData,
+                tokens: uniqueTokens,
+                android: {
+                    priority: 'high',
+                    notification: {
+                        sound: 'default',
+                        channelId: 'church_alerts',
+                    },
+                },
+                apns: {
+                    payload: {
+                        aps: {
+                            sound: 'default',
+                            badge: 1,
+                        },
+                    },
+                },
+            });
+            console.log(`✅ Direct prayer request notification sent to member (${memberName}): ${sendRes.successCount} success, ${sendRes.failureCount} failed.`);
+        }
+        catch (fcmErr) {
+            console.error('Error dispatching multicast to member:', fcmErr);
+        }
+    }
+    else {
+        console.log(`ℹ️ No direct FCM tokens found for member (${memberName} - ID: ${memberId}, Phone: ${memberPhone}). In-app notification doc written.`);
+    }
+    // 5. In-app notification document strictly targeted to this member
+    try {
+        const notifPayload = {
+            type: 'prayer_request_member',
+            title,
+            body,
+            memberName,
+            memberPhone,
+            targetMemberId: memberId,
+            targetPhone: memberPhone,
+            targetUid: memberId,
+            prayerId,
+            requestId: prayerId,
+            isPublic,
+            read: false,
+            createdAt: FieldValue.serverTimestamp(),
+        };
+        await db.collection('Rhema Church').doc(churchId).collection('notifications').add(notifPayload);
+        try {
+            await db.collection('churches').doc(churchId).collection('notifications').add(notifPayload);
+        }
+        catch (_) { }
+    }
+    catch (dbErr) {
+        console.error('Error writing member prayer in-app notification doc:', dbErr);
+    }
+}
+/**
+ * 🙏 NOTIFY MEMBER OF APPROVED / PROCESSED PRAYER REQUEST (Primary single-church collection)
+ * Triggered when a prayer request is approved or processed (isAnswered becomes true).
+ * Notifies ONLY the specific member who submitted it. NEVER broadcasts to community topic.
+ */
+export const onPrayerRequestProcessedMember = onDocumentUpdated({ document: 'Rhema Church/{churchId}/prayerRequests/{prayerId}', region: 'asia-south1' }, async (event) => {
     const snap = event.data;
     if (!snap)
         return;
     const before = snap.before.data();
     const after = snap.after.data();
     const churchId = event.params.churchId;
-    // Check if it just became approved AND is public
-    if (!before.isAnswered && after.isAnswered && after.isPublic) {
-        const payload = {
-            notification: {
-                title: `🙏 Community Prayer`,
-                body: `Please join in prayer for ${after.name || 'a member'}.`,
-            },
-            data: { type: 'prayer_request_public', churchId: churchId },
-            topic: `church_${churchId}`,
-        };
-        try {
-            await getMessaging().send(payload);
-        }
-        catch (error) {
-            console.error('Error sending prayer community notification:', error);
-        }
-    }
+    const prayerId = event.params.prayerId;
+    await handlePrayerRequestMemberPush(before, after, churchId, prayerId, snap.after.ref);
 });
+/**
+ * 🙏 NOTIFY MEMBER OF APPROVED / PROCESSED PRAYER REQUEST (Legacy churches collection)
+ */
+export const onPrayerRequestProcessedMemberLegacy = onDocumentUpdated({ document: 'churches/{churchId}/prayerRequests/{prayerId}', region: 'asia-south1' }, async (event) => {
+    const snap = event.data;
+    if (!snap)
+        return;
+    const before = snap.before.data();
+    const after = snap.after.data();
+    const churchId = event.params.churchId;
+    const prayerId = event.params.prayerId;
+    await handlePrayerRequestMemberPush(before, after, churchId, prayerId, snap.after.ref);
+});
+/**
+ * Deprecated alias to maintain backwards compatibility if referenced elsewhere.
+ * Topic broadcast intentionally removed.
+ */
+export const pushPrayerRequestApproved = onPrayerRequestProcessedMemberLegacy;
 function formatSermonDateDisplay(dateStr) {
     if (!dateStr)
         return '';
@@ -1689,7 +1940,7 @@ export const sendDailyVersePushScheduled = onSchedule({
  * 1. Multicast to registered member tokens (Rhema members & users)
  * 2. Topic broadcast to 'church_rhema' for 100% member delivery
  */
-export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 'rhema') {
+export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 'rhema', force = false) {
     if (getApps().length === 0) {
         initializeApp();
     }
@@ -1697,14 +1948,34 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
     const messaging = getMessaging();
     // 1. Determine period slot
     const PERIOD_SLOTS = {
-        Morning: { index: 0, titleEn: '✝️ Good Morning', titleTe: '✝️ శుభోదయం' },
-        Afternoon: { index: 1, titleEn: '✝️ Good Afternoon', titleTe: '✝️ శుభ మధ్యాహ్నం' },
-        Evening: { index: 2, titleEn: '✝️ Good Evening', titleTe: '✝️ శుభ సాయంత్రం' },
-        Night: { index: 3, titleEn: '✝️ Good Night', titleTe: '✝️ శుభరాత్రి' },
+        Morning: {
+            index: 0,
+            title: "Good Morning\nToday's Verse (నేటి వాక్యం)",
+            titleEn: "Good Morning",
+            titleTe: "Today's Verse (నేటి వాక్యం)",
+        },
+        Afternoon: {
+            index: 1,
+            title: "Blessed Afternoon\nDaily Peace (అనుదిన శాంతి)",
+            titleEn: "Blessed Afternoon",
+            titleTe: "Daily Peace (అనుదిన శాంతి)",
+        },
+        Evening: {
+            index: 2,
+            title: "Evening Prayer\nFaith & Grace (విశ్వాసం - కృప)",
+            titleEn: "Evening Prayer",
+            titleTe: "Faith & Grace (విశ్వాసం - కృప)",
+        },
+        Night: {
+            index: 3,
+            title: "Good Night\nGod's Protection (దేవుని కాపుదల)",
+            titleEn: "Good Night",
+            titleTe: "God's Protection (దేవుని కాపుదల)",
+        },
     };
+    const nowIst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
     let slot = slotOverride;
     if (!slot || !PERIOD_SLOTS[slot]) {
-        const nowIst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
         const hour = nowIst.getHours();
         if (hour >= 5 && hour < 12) {
             slot = 'Morning';
@@ -1720,7 +1991,44 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
         }
     }
     const slotInfo = PERIOD_SLOTS[slot] || PERIOD_SLOTS.Morning;
-    console.log(`[sendDailyVersePushInternal] Running for slot: ${slot} (slot index: ${slotInfo.index})`);
+    const todayStr = `${nowIst.getFullYear()}-${String(nowIst.getMonth() + 1).padStart(2, '0')}-${String(nowIst.getDate()).padStart(2, '0')}`;
+    const slotLockKey = `${todayStr}_${slot}`;
+    console.log(`[sendDailyVersePushInternal] Running for slot: ${slot} (slot index: ${slotInfo.index}, lock key: ${slotLockKey})`);
+    // ── ATOMIC DISTRIBUTED IDEMPOTENCY LOCK ──────────────────────────────
+    // Prevents duplicate deliveries when Google Cloud Scheduler retries,
+    // or multiple schedulers/endpoints fire concurrently within the same slot.
+    if (!force) {
+        const lockRef = db.collection('Rhema Church').doc(targetChurchId).collection('settings').doc('daily_verse_lock');
+        let lockAcquired = false;
+        try {
+            lockAcquired = await db.runTransaction(async (transaction) => {
+                const lockSnap = await transaction.get(lockRef);
+                if (lockSnap.exists) {
+                    const lockData = lockSnap.data() || {};
+                    if (lockData.lastSlotKey === slotLockKey) {
+                        console.log(`🔒 [DailyVerse] Slot '${slotLockKey}' was already dispatched at ${lockData.dispatchedAt ? new Date(lockData.dispatchedAt.toMillis?.() || lockData.dispatchedAt).toISOString() : 'earlier'}. Skipping duplicate.`);
+                        return false;
+                    }
+                }
+                transaction.set(lockRef, {
+                    lastSlotKey: slotLockKey,
+                    slot: slot,
+                    date: todayStr,
+                    dispatchedAt: FieldValue.serverTimestamp(),
+                    targetChurchId: targetChurchId,
+                }, { merge: true });
+                return true;
+            });
+        }
+        catch (txErr) {
+            console.warn('[DailyVerse] Transaction lock acquisition failed/contended:', txErr);
+            return { success: true, message: `Concurrency contention for slot ${slotLockKey}, skipping duplicate delivery.`, skipped: true };
+        }
+        if (!lockAcquired) {
+            return { success: true, message: `Daily verse already dispatched for slot ${slotLockKey}. Skipped duplicate.`, skipped: true };
+        }
+        console.log(`🔑 [DailyVerse] Lock acquired for slot ${slotLockKey}. Dispatching notification...`);
+    }
     // 2. Compute today's verse index
     let totalVerses = 5863;
     try {
@@ -1731,7 +2039,6 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
     }
     catch (_) { }
     const EPOCH = new Date('2026-10-30T00:00:00Z');
-    const nowIst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
     const todayLocal = new Date(nowIst.getFullYear(), nowIst.getMonth(), nowIst.getDate());
     const epochDate = new Date(EPOCH.getFullYear(), EPOCH.getMonth(), EPOCH.getDate());
     const daysSinceEpoch = Math.floor((todayLocal.getTime() - epochDate.getTime()) / (1000 * 60 * 60 * 24));
@@ -1740,9 +2047,42 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
     const offset = targetChurchId === 'rhema' ? RHEMA_DAILY_VERSE_OFFSET : 0;
     const targetIndex = (daysSinceEpoch * 4 + slotInfo.index + offset) % totalVerses;
     console.log(`[sendDailyVersePushInternal] Target verse index: ${targetIndex} (total: ${totalVerses}, offset: ${offset})`);
-    // 3. Query verse document: Check Rhema Church/rhema/daily_verses first, then fallback to daily_verses
+    // 3. Priority: Curated Thematic Daily Verses strictly matched to time of day & <= 130 chars:
+    // - Morning: New beginnings, hope, strength, God's guidance
+    // - Afternoon: Encouragement, wisdom, patience, staying strong
+    // - Evening: Peace, gratitude, protection, trusting God
+    // - Night: Rest, comfort, safety, God's care
     let verseDocData = null;
-    let verseId = `verse_${targetIndex}`;
+    let verseId = `thematic_${slot.toLowerCase()}_${daysSinceEpoch}`;
+    try {
+        const fsMod = await import('fs');
+        const pathMod = await import('path');
+        const candidates = [
+            pathMod.join(process.cwd(), 'thematic_daily_verses.json'),
+            pathMod.join(process.cwd(), 'src/thematic_daily_verses.json'),
+            pathMod.join(process.cwd(), 'functions/thematic_daily_verses.json'),
+            pathMod.join(process.cwd(), 'functions/src/thematic_daily_verses.json'),
+            pathMod.join(process.cwd(), 'app/assets/thematic_daily_verses.json'),
+            pathMod.join(process.cwd(), '../app/assets/thematic_daily_verses.json'),
+        ];
+        for (const p of candidates) {
+            if (fsMod.existsSync(p)) {
+                const raw = fsMod.readFileSync(p, 'utf-8');
+                const data = JSON.parse(raw);
+                const slotList = data[slot] || data.Morning;
+                if (slotList && slotList.length > 0) {
+                    const slotIdx = ((daysSinceEpoch % slotList.length) + slotList.length) % slotList.length;
+                    verseDocData = slotList[slotIdx];
+                    console.log(`✨ [sendDailyVersePushInternal] Selected curated thematic verse for slot '${slot}': ${verseDocData.referenceEn} - ${verseDocData.theme || ''}`);
+                    break;
+                }
+            }
+        }
+    }
+    catch (tErr) {
+        console.warn('[sendDailyVersePushInternal] Could not load thematic verses:', tErr);
+    }
+    // Fallback: Query Firestore if thematic list not loaded
     try {
         const rhemaSnap = await db.collection('Rhema Church').doc('rhema').collection('daily_verses').where('index', '==', targetIndex).limit(1).get();
         if (!rhemaSnap.empty) {
@@ -1788,6 +2128,40 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
         console.warn(`[sendDailyVersePushInternal] No verse found for index ${targetIndex}`);
         return { success: false, error: `Verse not found for index ${targetIndex}` };
     }
+    // Feature requirement: Daily Bible Verses must be short (<= 130 chars) and fit within 2 lines
+    // If the verse is a lengthy passage, select the nearest concise, inspiring verse
+    if (verseDocData && ((verseDocData.verseEn && verseDocData.verseEn.length > 130) || (verseDocData.verseTe && verseDocData.verseTe.length > 130))) {
+        try {
+            const fsMod = await import('fs');
+            const pathMod = await import('path');
+            const candidates = [
+                pathMod.join(process.cwd(), 'bulk_verses.json'),
+                pathMod.join(process.cwd(), '../bulk_verses.json'),
+                pathMod.join(process.cwd(), 'app/assets/bulk_verses.json'),
+            ];
+            for (const p of candidates) {
+                if (fsMod.existsSync(p)) {
+                    const raw = fsMod.readFileSync(p, 'utf-8');
+                    const list = JSON.parse(raw);
+                    if (list && list.length > 0) {
+                        let hops = 0;
+                        let curr = targetIndex;
+                        while (hops < 15) {
+                            curr = (curr + 1) % list.length;
+                            if (list[curr] && list[curr].verseEn && list[curr].verseEn.length <= 130 && list[curr].verseTe && list[curr].verseTe.length <= 130) {
+                                verseDocData = list[curr];
+                                verseId = `verse_${curr}`;
+                                break;
+                            }
+                            hops++;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        catch (_) { }
+    }
     const verseEnText = verseDocData.verseEn || '';
     const refEnText = verseDocData.referenceEn || '';
     const verseTeText = verseDocData.verseTe || verseEnText;
@@ -1820,13 +2194,21 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
     let teSuccess = 0;
     // 4. Send EXACTLY ONE Unified Notification to the Church Topic (church_rhema)
     // Using Android 'tag' and 'collapseKey' guarantees that Android OS displays EXACTLY ONE banner.
-    const unifiedTitle = `${slotInfo.titleEn} · ${slotInfo.titleTe}`;
+    const unifiedTitle = slotInfo.title;
     let unifiedBody = '';
-    if (verseTeText && verseEnText && verseTeText !== verseEnText) {
-        unifiedBody = `"${verseTeText}"\n— ${refTeText}\n\n"${verseEnText}"\n— ${refEnText}`;
+    const combinedRef = (refTeText && refEnText && refTeText !== refEnText)
+        ? `${refTeText} | ${refEnText}`
+        : (refTeText || refEnText);
+    const cleanVerseTe = (verseTeText || '').replace(/^["“”']+|["“”']+$/g, '').trim();
+    const cleanVerseEn = (verseEnText || '').replace(/^["“”']+|["“”']+$/g, '').trim();
+    // Android notification shade collapses empty newlines unless there is a character.
+    // Using '\n \n' guarantees a visible vertical gap below verses on Android and iOS.
+    const GAP = '\n \n';
+    if (cleanVerseTe && cleanVerseEn && cleanVerseTe !== cleanVerseEn) {
+        unifiedBody = `${cleanVerseTe}${GAP}${cleanVerseEn}${GAP}${combinedRef}`;
     }
     else {
-        unifiedBody = `"${verseTeText || verseEnText}"\n— ${refTeText || refEnText}`;
+        unifiedBody = `${cleanVerseTe || cleanVerseEn}${GAP}${combinedRef}`;
     }
     try {
         const topicMessage = {
@@ -1899,12 +2281,11 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
         }
     }
     // 5. Log to broadcasts feed for historical viewing in Updates screen
-    const todayStr = `${nowIst.getFullYear()}-${String(nowIst.getMonth() + 1).padStart(2, '0')}-${String(nowIst.getDate()).padStart(2, '0')}`;
     try {
         const rhemaChurchRef = db.collection('Rhema Church').doc('rhema');
         await rhemaChurchRef.collection('broadcasts').add({
-            title: `${slotInfo.titleEn} · ${slotInfo.titleTe}`,
-            content: `"${verseEnText}" — ${refEnText}\n\n"${verseTeText}" — ${refTeText}`,
+            title: unifiedTitle,
+            content: unifiedBody,
             date: todayStr,
             type: 'daily_verse',
             period: slot,
@@ -1933,7 +2314,8 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
 export const triggerDailyVersePushHttp = onRequest({ cors: true, timeoutSeconds: 120, region: 'asia-south1' }, async (req, res) => {
     try {
         const slot = req.query.slot || req.body?.slot;
-        const result = await sendDailyVersePushInternal(slot);
+        const force = req.query.force === 'true' || req.body?.force === true;
+        const result = await sendDailyVersePushInternal(slot, 'rhema', force);
         res.status(200).json(result);
     }
     catch (error) {

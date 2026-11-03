@@ -235,19 +235,33 @@ export default function UpdatesScreen({ navigation, route }: any) {
               return null;
             }
 
-            // SECURITY: If broadcast is targeted to a specific phone, skip it if not for this user
-            const isTargeted = data.targetPhone && typeof data.targetPhone === 'string' && data.targetPhone.trim().length > 0;
-            if (isTargeted) {
+            // SECURITY: If broadcast/notification is targeted to a specific user, skip it if not for this user
+            const isPhoneTargeted = data.targetPhone && typeof data.targetPhone === 'string' && data.targetPhone.trim().length > 0;
+            const isIdTargeted = (data.targetMemberId || data.targetUid) && typeof (data.targetMemberId || data.targetUid) === 'string' && (data.targetMemberId || data.targetUid).trim().length > 0;
+
+            if (isPhoneTargeted || isIdTargeted) {
               const uPhone = user?.phoneNumber || '';
               const mPhone = member?.phone || '';
-              const target = data.targetPhone.replace(/\D/g, ''); // strip non-digits for comparison
-              
-              const match1 = uPhone && uPhone.replace(/\D/g, '').endsWith(target);
-              const match2 = mPhone && mPhone.replace(/\D/g, '').endsWith(target);
-              const match3 = target.endsWith(uPhone.replace(/\D/g, '')) && uPhone.length > 5;
-              const match4 = target.endsWith(mPhone.replace(/\D/g, '')) && mPhone.length > 5;
-              
-              if (!match1 && !match2 && !match3 && !match4) {
+              const uId = user?.uid || '';
+              const mId = member?.id || '';
+
+              const idMatch = isIdTargeted && (
+                (uId && (data.targetMemberId === uId || data.targetUid === uId)) ||
+                (mId && (data.targetMemberId === mId || data.targetUid === mId))
+              );
+
+              let phoneMatch = false;
+              if (isPhoneTargeted) {
+                const target = data.targetPhone.replace(/\D/g, '');
+                phoneMatch = Boolean(
+                  (uPhone && uPhone.replace(/\D/g, '').endsWith(target)) ||
+                  (mPhone && mPhone.replace(/\D/g, '').endsWith(target)) ||
+                  (target.endsWith(uPhone.replace(/\D/g, '')) && uPhone.length > 5) ||
+                  (target.endsWith(mPhone.replace(/\D/g, '')) && mPhone.length > 5)
+                );
+              }
+
+              if (!idMatch && !phoneMatch) {
                 return null; // Skip if not targeted to current user
               }
             }
@@ -293,6 +307,14 @@ export default function UpdatesScreen({ navigation, route }: any) {
               icon = Heart;
               color = '#7C3AED';
               resolvedType = 'prayer_request_admin';
+            } else if (
+              data.type === 'prayer_request_member' || 
+              data.title?.includes('Prayer Request Approved') || 
+              data.title?.includes('Pastoral Prayer Response')
+            ) {
+              icon = Heart;
+              color = '#7C3AED';
+              resolvedType = 'prayer_request_member';
             } else if (
               data.type === 'baptism_request_member' || 
               data.type === 'baptism_request' || 
@@ -552,12 +574,12 @@ export default function UpdatesScreen({ navigation, route }: any) {
                     navigation.navigate('BibleQuizDetail', { quizId: qId, churchId: update.churchId });
                   } else if (update.type === 'event') {
                     navigation.navigate('Events');
-                  } else if (update.type === 'prayer_request_admin' || update.type === 'prayer_request' || update.type === 'prayer') {
+                  } else if (update.type === 'prayer_request_admin' || update.type === 'prayer_request' || update.type === 'prayer' || update.type === 'prayer_request_member') {
                     const pId = update.prayerId || update.requestId || update.id;
-                    if (isAdmin) {
+                    if (isAdmin && update.type !== 'prayer_request_member') {
                       navigation.navigate('AdminRoot', { targetTab: 'Prayers', prayerId: pId, requestId: pId, timestamp: Date.now() });
                     } else {
-                      navigation.navigate('PrayerWall');
+                      navigation.navigate('PrayerWall', { prayerId: pId });
                     }
                   } else if (update.type === 'attendance') {
                     navigation.navigate('AttendanceScreen');
