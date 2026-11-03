@@ -36,7 +36,7 @@ import {
   Globe,
   Lock,
   EyeOff
-} from 'lucide-react-native';
+, ArrowLeft } from 'lucide-react-native';
 import { AdminTabContext } from '../../context/AdminTabContext';
 import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
@@ -503,13 +503,13 @@ export default function AdminOnlineMeetingEditor() {
         <View style={styles.heroTitleRow}>
           <TouchableOpacity 
             onPress={() => { if (setTabByName) setTabByName('Online Meetings'); }} 
-            style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 0 }}
+            style={styles.circularBackBtn}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <ChevronLeft size={20} color="#fff" style={{ marginLeft: -4, marginRight: 2 }} />
-            <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Back</Text>
+            <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
           </TouchableOpacity>
-          <Text style={[styles.heroTitle, { marginHorizontal: 12, opacity: 0.4 }]}>|</Text>
-          <Text style={styles.heroTitle} numberOfLines={1}>Online Meetings</Text>
+          <Text style={[styles.heroTitle, { marginLeft: 12 }]} numberOfLines={1}>Online Meetings</Text>
         </View>
       </View>
 
@@ -901,14 +901,29 @@ export default function AdminOnlineMeetingEditor() {
 }
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: { flex: 1, backgroundColor: '#EDE8DC' },
   scroll: { padding: 16, paddingBottom: 60 },
   
   // Hero Section (Unified across Online Meeting tab)
   hero: { 
-    backgroundColor: '#1a2d5a', 
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
+    backgroundColor: 'transparent', 
+    
+    
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 12,
@@ -923,8 +938,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start', 
     marginBottom: 0,
   },
-  heroTitle: { 
-    color: '#fff', 
+  heroTitle: { color: '#1a2d5a', 
     fontSize: 20, 
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', 
     fontWeight: '600', 

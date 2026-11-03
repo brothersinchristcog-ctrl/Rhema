@@ -42,7 +42,7 @@ import {
   Tv,
   Heart,
   Baby
-} from 'lucide-react-native';
+, ArrowLeft } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import firestore from '@react-native-firebase/firestore';
 import { useChurch } from '../../context/ChurchContext';
@@ -606,15 +606,18 @@ export default function AdminServicePlanner({ navigation }: any) {
       <View style={[styles.hero, { paddingTop: Math.max(insets.top, 12) }]}>
         <View style={styles.heroRow}>
           <View style={styles.heroLeft}>
-            <TouchableOpacity onPress={() => setActiveTab(0)} style={styles.backBtn}>
-              <ChevronLeft size={20} color="#FFFFFF" />
-              <Text style={styles.backBtnTxt}>Back</Text>
+            <TouchableOpacity
+              onPress={() => setActiveTab(0)}
+              style={styles.circularBackBtn}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
             </TouchableOpacity>
-            <Text style={styles.heroDivider}>|</Text>
-            <View style={{ flex: 1 }}>
+            <View style={{ flex: 1, marginLeft: 12 }}>
               <Text style={styles.heroTitle} numberOfLines={1}>Service Operations & Roster</Text>
               <Text style={styles.heroSub} numberOfLines={1}>
-                {activeChurch?.name || 'We Christian'} · {plans.length} Services Scheduled
+                {activeChurch?.name || 'Rhema'} · {plans.length} Services Scheduled
               </Text>
             </View>
           </View>
@@ -624,7 +627,7 @@ export default function AdminServicePlanner({ navigation }: any) {
               onPress={loadData}
               activeOpacity={0.8}
             >
-              <RefreshCw size={15} color="#FFFFFF" />
+              <RefreshCw size={16} color="#1a2d5a" />
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.newBtn}
@@ -1984,6 +1987,21 @@ export default function AdminServicePlanner({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: '#FAF7F2',
@@ -2003,9 +2021,9 @@ const styles = StyleSheet.create({
 
   // ── Hero Header (Navy & Gold) ──────────────────────────────────
   hero: {
-    backgroundColor: '#1A2D5A',
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
+    backgroundColor: 'transparent',
+    
+    
     paddingHorizontal: 16,
     paddingBottom: 16,
     shadowColor: '#000',
@@ -2043,7 +2061,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   heroTitle: {
-    color: '#FFFFFF',
+    color: '#1a2d5a',
     fontSize: 17,
     fontWeight: '700',
     letterSpacing: -0.3,
@@ -2059,12 +2077,14 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   heroRefreshBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    alignItems: 'center',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     justifyContent: 'center',
+    alignItems: 'center',
   },
   newBtn: {
     backgroundColor: '#C9A84C',

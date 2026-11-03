@@ -33,7 +33,7 @@ import {
   Globe,
   HelpCircle,
   Bell,
-} from 'lucide-react-native';
+  ArrowLeft } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as DocumentPicker from 'expo-document-picker';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
@@ -1135,12 +1135,10 @@ export default function AdminQuizEditor({
         {/* ── Signature Navy Hero (Matching Daily Promise Header) ── */}
         <View style={styles.hero}>
           <View style={styles.heroTitleRow}>
-            <TouchableOpacity onPress={onBack} style={styles.heroBackBtn} activeOpacity={0.7}>
-              <ChevronLeft size={20} color="#fff" style={{ marginLeft: -4, marginRight: 2 }} />
-              <Text style={styles.heroBackTxt}>Back</Text>
+            <TouchableOpacity onPress={onBack} style={styles.circularBackBtn} activeOpacity={0.7}>
+              <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
             </TouchableOpacity>
-            <Text style={styles.heroDivider}>|</Text>
-            <Text style={styles.heroTitle}>{quizId ? 'Edit Bible Quiz' : 'New Bible Quiz'}</Text>
+            <Text style={[styles.heroTitle, { marginLeft: 12 }]}>{quizId ? 'Edit Bible Quiz' : 'New Bible Quiz'}</Text>
           </View>
 
           <TouchableOpacity
@@ -1695,15 +1693,30 @@ export default function AdminQuizEditor({
 }
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: '#EDE8DC',
   },
   // ── Hero Header ─────────────────────────────────────────────────────────────
   hero: {
-    backgroundColor: '#1a2d5a',
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
+    backgroundColor: 'transparent',
+    
+    
     paddingTop: Platform.OS === 'ios' ? 44 : 14,
     paddingBottom: 12,
     paddingHorizontal: 16,

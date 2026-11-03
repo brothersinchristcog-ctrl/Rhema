@@ -42,7 +42,7 @@ import {
   Trash2,
   ChevronLeft,
   RefreshCw
-} from 'lucide-react-native';
+, ArrowLeft } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
 import { AdminTabContext } from '../../context/AdminTabContext';
@@ -319,14 +319,13 @@ export default function AdminBaptism({ navigation, route, routeParams }: any) {
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', flexShrink: 1 }}>
             <TouchableOpacity
               onPress={() => (setActiveTab ? setActiveTab(0) : navigation?.goBack?.())}
-              style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={styles.circularBackBtn}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <ChevronLeft size={20} color="#fff" style={{ marginLeft: -6, marginRight: 4 }} />
-              <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Back</Text>
+              <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
             </TouchableOpacity>
-            <Text style={[styles.heroTitle, { marginHorizontal: 12, opacity: 0.4 }]}>|</Text>
-            <View style={{ flexShrink: 1 }}>
+            <View style={{ flexShrink: 1, marginLeft: 12 }}>
               <Text style={styles.heroTitle} numberOfLines={1}>Baptism</Text>
               <Text style={[styles.heroSub, { marginTop: 2 }]} numberOfLines={1}>
                 {requests.length} total · {stats.pending} pending
@@ -957,14 +956,29 @@ export default function AdminBaptism({ navigation, route, routeParams }: any) {
 }
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: '#f0f2f7'
   },
   hero: {
-    backgroundColor: '#1a2d5a',
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
+    backgroundColor: 'transparent',
+    
+    
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 14,
@@ -972,25 +986,24 @@ const styles = StyleSheet.create({
     overflow: 'visible',
     position: 'relative'
   },
-  heroTitle: {
-    color: '#fff',
+  heroTitle: { color: '#1a2d5a',
     fontSize: 20,
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
     fontWeight: '600',
     letterSpacing: -0.5
   },
-  heroSub: {
-    color: '#AEB8D4',
+  heroSub: { color: '#64748b',
     fontSize: 13
   },
   refreshHeroBtn: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     justifyContent: 'center',
-    marginTop: 4
+    alignItems: 'center',
   },
   statsRow: {
     flexDirection: 'row',

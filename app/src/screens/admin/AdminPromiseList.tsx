@@ -10,7 +10,7 @@ import {
   RefreshControl,
   StatusBar
 } from 'react-native';
-import { AlertCircle, Plus, Check, ChevronLeft, Filter, X } from 'lucide-react-native';
+import { AlertCircle, Plus, Check, ChevronLeft, Filter, X , ArrowLeft } from 'lucide-react-native';
 import { AdminTabContext } from '../../context/AdminTabContext';
 
 import FirestoreService, { DailyPromise } from '../../services/FirestoreService';
@@ -222,17 +222,20 @@ export default function AdminPromiseList() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="dark-content" />
 
       <View style={styles.hero}>
         <View style={styles.heroTitleRow}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', flexShrink: 1 }}>
-            <TouchableOpacity onPress={() => setTabByName?.('Dashboard')} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, flexShrink: 0 }}>
-              <ChevronLeft size={20} color="#fff" style={{ marginLeft: -6, marginRight: 4 }} />
-              <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Back</Text>
+            <TouchableOpacity
+              onPress={() => setTabByName?.('Dashboard')}
+              style={styles.circularBackBtn}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
             </TouchableOpacity>
-            <Text style={[styles.heroTitle, { marginHorizontal: 12, opacity: 0.4, flexShrink: 0 }]}>|</Text>
-            <View style={{ flexShrink: 1 }}>
+            <View style={{ flexShrink: 1, marginLeft: 12 }}>
               <Text style={[styles.heroTitle, { flexShrink: 1 }]} numberOfLines={1}>Daily Promises</Text>
             </View>
           </View>
@@ -505,6 +508,21 @@ export default function AdminPromiseList() {
 }
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: { flex: 1, backgroundColor: colors.parchment },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.parchment },
 
@@ -512,9 +530,9 @@ const styles = StyleSheet.create({
   
   // Hero
   hero: { 
-    backgroundColor: colors.ink, 
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
+    backgroundColor: 'transparent', 
+    
+    
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 12,
@@ -523,7 +541,7 @@ const styles = StyleSheet.create({
     position: 'relative'
   },
   heroTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 0 },
-  heroTitle: { color: '#fff', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '600', letterSpacing: -0.5, marginBottom: 0 },
+  heroTitle: { color: '#1a2d5a', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '600', letterSpacing: -0.5, marginBottom: 0 },
   newBtn: { backgroundColor: '#FCD34D', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 3 },
   newBtnTxt: { color: colors.ink, fontSize: 12, fontWeight: '700' },
 

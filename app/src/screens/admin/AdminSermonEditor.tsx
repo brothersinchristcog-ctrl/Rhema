@@ -565,17 +565,20 @@ export default function AdminSermonEditor() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#1a2d5a" />
+      <StatusBar barStyle="dark-content" />
 
       {/* ── Hero Section ── */}
       <View style={styles.hero}>
         <View style={styles.heroTitleRow}>
-          <TouchableOpacity onPress={() => setTabByName?.('Sermons')} style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <ChevronLeft size={20} color="#fff" style={{ marginLeft: -6, marginRight: 4 }} />
-            <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Back</Text>
+          <TouchableOpacity
+            onPress={() => setTabByName?.('Sermons')}
+            style={styles.circularBackBtn}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
           </TouchableOpacity>
-          <Text style={[styles.heroTitle, { marginHorizontal: 12, opacity: 0.4 }]}>|</Text>
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 1, marginLeft: 12 }}>
             <Text style={styles.heroTitle}>{editingData ? 'Edit Sermon' : 'New Sermon'}</Text>
             <Text style={styles.heroSub}>{editingData ? 'Update sermon details & media' : 'Create & publish sermon video'}</Text>
           </View>
@@ -1499,23 +1502,38 @@ export default function AdminSermonEditor() {
 }
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   // ─── Layout ──────────────────────────────────────────────────────────────
   container: { flex: 1, backgroundColor: '#EDE8DC' },
   scroll: { padding: 14, paddingBottom: 100 },
 
   // ─── Hero ────────────────────────────────────────────────────────────────
   hero: {
-    backgroundColor: '#1a2d5a',
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
+    backgroundColor: 'transparent',
+    
+    
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 12,
     marginBottom: 4,
   },
   heroTitleRow: { flexDirection: 'row', alignItems: 'center' },
-  heroTitle: { color: '#fff', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '600', letterSpacing: -0.5 },
-  heroSub: { color: '#AEB8D4', fontSize: 13, marginTop: 2 },
+  heroTitle: { color: '#1a2d5a', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '600', letterSpacing: -0.5 },
+  heroSub: { color: '#64748b', fontSize: 13, marginTop: 2 },
 
   // ─── Cards ───────────────────────────────────────────────────────────────
   modBox: { 

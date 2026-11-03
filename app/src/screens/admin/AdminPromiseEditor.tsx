@@ -43,7 +43,7 @@ import {
   Type,
   Minus,
   Plus
-} from 'lucide-react-native';
+, ArrowLeft } from 'lucide-react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -1008,12 +1008,15 @@ export default function AdminPromiseEditor() {
     <View style={styles.container}>
       <View style={styles.hero}>
         <View style={styles.heroTitleRow}>
-          <TouchableOpacity onPress={() => setTabByName?.('Promises')} style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <ChevronLeft size={20} color="#fff" style={{ marginLeft: -6, marginRight: 4 }} />
-            <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Back</Text>
+          <TouchableOpacity
+            onPress={() => setTabByName?.('Promises')}
+            style={styles.circularBackBtn}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
           </TouchableOpacity>
-          <Text style={[styles.heroTitle, { marginHorizontal: 12, opacity: 0.4 }]}>|</Text>
-          <Text style={styles.heroTitle}>{editingData ? 'Edit Promise' : 'New Promise'}</Text>
+          <Text style={[styles.heroTitle, { marginLeft: 12 }]}>{editingData ? 'Edit Promise' : 'New Promise'}</Text>
         </View>
       </View>
 
@@ -1764,11 +1767,26 @@ export default function AdminPromiseEditor() {
 }
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: { flex: 1, backgroundColor: '#EDE8DC' },
   scroll: { padding: 14, paddingBottom: 100 },
-  hero: { backgroundColor: '#1a2d5a', borderBottomLeftRadius: 18, borderBottomRightRadius: 18, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12, marginBottom: 6 },
+  hero: { backgroundColor: 'transparent',   paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12, marginBottom: 6 },
   heroTitleRow: { flexDirection: 'row', alignItems: 'center' },
-  heroTitle: { color: '#fff', fontSize: 20, fontWeight: '600' },
+  heroTitle: { color: '#1a2d5a', fontSize: 20, fontWeight: '600' },
   section: { backgroundColor: '#FFFFFF', borderRadius: 14, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(26,45,90,0.08)', borderTopWidth: 3, borderTopColor: '#1a2d5a' },
   secNavy: {}, secBlue: {}, secRed: {},
   secHd: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(26,45,90,0.07)', paddingBottom: 10 },

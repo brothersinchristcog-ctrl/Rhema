@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, Dimensions, Image } from 'react-native';
-import { ChevronLeft, Edit2 } from 'lucide-react-native';
+import { ChevronLeft, Edit2 , ArrowLeft } from 'lucide-react-native';
 import Svg, { Defs, LinearGradient, Stop, Rect, Circle, G } from 'react-native-svg';
 
 const { width } = Dimensions.get('window');
@@ -55,11 +55,10 @@ export default function AdminCelebrationsPreview({
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={onBack}>
-          <ChevronLeft size={22} color="#fff" />
-          <Text style={styles.backBtnTxt}>Back</Text>
+        <TouchableOpacity style={styles.circularBackBtn} onPress={onBack} activeOpacity={0.7}>
+          <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
         </TouchableOpacity>
-        <View style={styles.headerTitles}>
+        <View style={[styles.headerTitles, { marginLeft: 12 }]}>
           <Text style={styles.headerTitle}>Prepare Wish</Text>
           <Text style={styles.headerSub}>Preview</Text>
         </View>
@@ -133,6 +132,21 @@ export default function AdminCelebrationsPreview({
 }
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: '#FAF7F2',
@@ -143,7 +157,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
     paddingBottom: 24,
-    backgroundColor: '#1a2d5a',
+    backgroundColor: 'transparent',
     borderBottomLeftRadius: 28,
     borderBottomRightRadius: 28,
     gap: 12,

@@ -941,12 +941,15 @@ export default function AdminEventEditor() {
 
       <View style={styles.hero}>
         <View style={styles.heroTitleRow}>
-          <TouchableOpacity onPress={() => setTabByName?.('Events')} style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <ChevronLeft size={20} color="#fff" style={{ marginLeft: -6, marginRight: 4 }} />
-            <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Back</Text>
+          <TouchableOpacity
+            onPress={() => setTabByName?.('Events')}
+            style={styles.circularBackBtn}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
           </TouchableOpacity>
-          <Text style={[styles.heroTitle, { marginHorizontal: 12, opacity: 0.4 }]}>|</Text>
-          <Text style={styles.heroTitle}>{editingData ? 'Edit Event' : 'New Event'}</Text>
+          <Text style={[styles.heroTitle, { marginLeft: 12 }]}>{editingData ? 'Edit Event' : 'New Event'}</Text>
         </View>
       </View>
 
@@ -1335,7 +1338,7 @@ export default function AdminEventEditor() {
               {/* Service Card Header */}
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-                  <View style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: '#1a2d5a', alignItems: 'center', justifyContent: 'center' }}>
+                  <View style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: 'transparent', alignItems: 'center', justifyContent: 'center' }}>
                     <Text style={{ color: '#fff', fontSize: 12, fontWeight: '900' }}>{sIndex + 1}</Text>
                   </View>
                   <TextInput
@@ -1877,6 +1880,21 @@ export default function AdminEventEditor() {
 }
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: { flex: 1, backgroundColor: '#EDE8DC' },
   scroll: { padding: 14, paddingBottom: 100 },
 
@@ -1910,8 +1928,8 @@ const styles = StyleSheet.create({
 
   hero: { 
     backgroundColor: '#1a2d5a', 
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
+    
+    
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 12,
@@ -1920,7 +1938,7 @@ const styles = StyleSheet.create({
     marginBottom: 6
   },
   heroTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start' },
-  heroTitle: { color: '#fff', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '600', letterSpacing: -0.5 },
+  heroTitle: { color: '#1a2d5a', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '600', letterSpacing: -0.5 },
 
   section: {
     backgroundColor: '#FFFFFF',

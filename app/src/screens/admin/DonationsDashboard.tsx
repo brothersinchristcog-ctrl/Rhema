@@ -29,7 +29,7 @@ import {
   FileText,
   Printer,
   FolderHeart
-} from 'lucide-react-native';
+, ArrowLeft } from 'lucide-react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import ViewShot from 'react-native-view-shot';
@@ -1823,17 +1823,32 @@ const FONTS = {
 };
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: { flex: 1, backgroundColor: '#f4efe6' },
   loadingContainer: { flex: 1, backgroundColor: '#f4efe6', justifyContent: 'center', alignItems: 'center' },
   
   // Hero Section
   hero: { 
-    backgroundColor: '#1a2d5a', 
+    backgroundColor: 'transparent', 
     paddingTop: 8, 
     paddingHorizontal: 16, 
     paddingBottom: 12, 
-    borderBottomLeftRadius: 18, 
-    borderBottomRightRadius: 18,
+     
+    
     overflow: 'visible',
     position: 'relative',
     marginBottom: 6,

@@ -43,7 +43,7 @@ import {
   Check,
   Search,
   X
-} from 'lucide-react-native';
+, ArrowLeft } from 'lucide-react-native';
 import { FlatList, Keyboard } from 'react-native';
 import PrayerVerseService, { BibleBookItem } from '../../services/PrayerVerseService';
 import FirestoreService from '../../services/FirestoreService';
@@ -1145,25 +1145,28 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="dark-content" />
 
       {/* ── Hero Section ── */}
       <View style={styles.hero}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-            <TouchableOpacity onPress={() => setActiveTab(0)} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
-              <ChevronLeft size={20} color="#fff" style={{ marginLeft: -6, marginRight: 4 }} />
-              <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Back</Text>
+            <TouchableOpacity
+              onPress={() => setActiveTab(0)}
+              style={styles.circularBackBtn}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
             </TouchableOpacity>
-            <Text style={[styles.heroTitle, { marginHorizontal: 12, opacity: 0.4 }]}>|</Text>
-            <View>
+            <View style={{ marginLeft: 12 }}>
               <Text style={styles.heroTitle}>Prayers</Text>
               <Text style={[styles.heroSub, { marginTop: 2 }]}>{pendingPrayers.length} new · {answeredPrayers.length} processed</Text>
             </View>
           </View>
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <TouchableOpacity style={{ padding: 8 }} onPress={() => setShowTopMenu(true)}>
-              <MoreVertical size={24} color="#fff" />
+              <MoreVertical size={22} color="#1a2d5a" />
             </TouchableOpacity>
           </View>
         </View>
@@ -1918,13 +1921,28 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
 }
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: { flex: 1, backgroundColor: COLORS.parchment },
   scroll: { padding: 16, paddingBottom: 100 },
 
   hero: {
-    backgroundColor: '#1a2d5a',
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
+    backgroundColor: 'transparent',
+    
+    
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 12,
@@ -1932,8 +1950,8 @@ const styles = StyleSheet.create({
     position: 'relative',
     marginBottom: 6,
   },
-  heroTitle: { color: '#fff', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '600', letterSpacing: -0.5 },
-  heroSub: { color: '#AEB8D4', fontSize: 13 },
+  heroTitle: { color: '#1a2d5a', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '600', letterSpacing: -0.5 },
+  heroSub: { color: '#64748b', fontSize: 13 },
   
   newBtn: { 
     backgroundColor: '#C9A84C', 

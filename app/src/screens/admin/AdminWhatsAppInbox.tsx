@@ -215,11 +215,10 @@ export default function AdminWhatsAppInbox() {
     <View style={styles.container}>
       {/* ── Fixed Header ── */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => { if(goBack) { goBack(); } }}>
-          <ChevronLeft size={22} color="#fff" />
-          <Text style={styles.backBtnTxt}>Back</Text>
+        <TouchableOpacity style={styles.circularBackBtn} onPress={() => { if(goBack) { goBack(); } }} activeOpacity={0.7}>
+          <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
         </TouchableOpacity>
-        <View style={[styles.heroTitles, { borderLeftWidth: 1, borderLeftColor: 'rgba(255,255,255,0.2)', paddingLeft: 12 }]}>
+        <View style={[styles.heroTitles, { marginLeft: 12 }]}>
           <Text style={styles.headerTitle}>WhatsApp</Text>
           <Text style={styles.headerSub}>INBOX</Text>
         </View>
@@ -297,11 +296,10 @@ export default function AdminWhatsAppInbox() {
         return (
       <View style={styles.container}>
         <View style={[styles.header, { paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 16 }]}>
-          <TouchableOpacity onPress={() => setSelectedConversation(null)} style={styles.backBtn}>
-            <ChevronLeft size={22} color="#fff" />
-            <Text style={styles.backBtnTxt}>Back</Text>
+          <TouchableOpacity onPress={() => setSelectedConversation(null)} style={styles.circularBackBtn} activeOpacity={0.7}>
+            <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
           </TouchableOpacity>
-          <View style={[styles.heroTitles, { borderLeftWidth: 1, borderLeftColor: 'rgba(255,255,255,0.2)', paddingLeft: 12 }]}>
+          <View style={[styles.heroTitles, { marginLeft: 12 }]}>
             <Text style={[styles.headerTitle, { fontSize: 20 }]} numberOfLines={1}>
               {selectedConversation.member ? selectedConversation.member.name : selectedConversation.phone}
             </Text>
@@ -381,6 +379,21 @@ export default function AdminWhatsAppInbox() {
 }
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: '#FAF8F0',
@@ -391,7 +404,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   header: { 
-    backgroundColor: '#1a2d5a', 
+    backgroundColor: 'transparent', 
     paddingTop: Platform.OS === 'ios' ? 50 : 30,
     paddingHorizontal: 20,
     paddingBottom: 16,

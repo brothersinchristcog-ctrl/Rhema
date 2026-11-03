@@ -17,7 +17,7 @@ import {
   Image,
   Linking
 } from 'react-native';
-import { Users, Phone, Mail, ChevronDown, ChevronUp, Clock, UserCheck, UserX, Shield, Plus, X, Trash2, Edit2, ChevronLeft, UserPlus, Search, MoreVertical, Award, Sparkles, Check, Briefcase } from 'lucide-react-native';
+import { Users, Phone, Mail, ChevronDown, ChevronUp, Clock, UserCheck, UserX, Shield, Plus, X, Trash2, Edit2, ChevronLeft, UserPlus, Search, MoreVertical, Award, Sparkles, Check, Briefcase , ArrowLeft } from 'lucide-react-native';
 import FirestoreService from '../../services/FirestoreService';
 import { useChurch } from '../../context/ChurchContext';
 import { formatDateDisplay } from '../../utils/DateUtils';
@@ -552,19 +552,22 @@ May God bless you abundantly! ❤️`;
       <View style={styles.hero}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1, paddingRight: 4 }}>
-            <TouchableOpacity onPress={() => setActiveTab(0)} style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <ChevronLeft size={20} color="#fff" style={{ marginLeft: -6, marginRight: 2 }} />
-              <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Back</Text>
+            <TouchableOpacity
+              onPress={() => setActiveTab(0)}
+              style={styles.circularBackBtn}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
             </TouchableOpacity>
-            <Text style={[styles.heroTitle, { marginHorizontal: 8, opacity: 0.4 }]}>|</Text>
-            <Text style={[styles.heroTitle, { flexShrink: 1 }]} numberOfLines={1}>Members</Text>
+            <Text style={[styles.heroTitle, { flexShrink: 1, marginLeft: 12 }]} numberOfLines={1}>Members</Text>
           </View>
           
           <TouchableOpacity 
             onPress={() => setHeaderMenuVisible(true)} 
             style={{ padding: 8, marginRight: -8 }}
           >
-            <MoreVertical size={22} color="#fff" />
+            <MoreVertical size={22} color="#1a2d5a" />
           </TouchableOpacity>
         </View>
       </View>
@@ -1105,7 +1108,7 @@ May God bless you abundantly! ❤️`;
               </View>
 
               <TouchableOpacity
-                style={{ backgroundColor: '#1a2d5a', padding: 16, borderRadius: 14, alignItems: 'center', marginTop: 4, shadowColor: '#1a2d5a', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4 }}
+                style={{ backgroundColor: 'transparent', padding: 16, borderRadius: 14, alignItems: 'center', marginTop: 4, shadowColor: '#1a2d5a', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4 }}
                 onPress={handleAddMember}
                 disabled={addMemberLoading}
               >
@@ -1343,6 +1346,21 @@ const badgeRowStyles = (isActive: boolean) => StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: { flex: 1, backgroundColor: '#EDE8DC' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#EDE8DC', padding: 20 },
   errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#EDE8DC', padding: 20 },
@@ -1353,8 +1371,8 @@ const styles = StyleSheet.create({
 
   hero: {
     backgroundColor: '#1a2d5a',
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
+    
+    
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 12,
@@ -1362,7 +1380,7 @@ const styles = StyleSheet.create({
     position: 'relative',
     marginBottom: 6,
   },
-  heroTitle: { color: '#fff', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '600', letterSpacing: -0.5 },
+  heroTitle: { color: '#1a2d5a', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '600', letterSpacing: -0.5 },
   heroSub: { color: '#AEB8D4', fontSize: 13 },
   
   newBtn: { 
