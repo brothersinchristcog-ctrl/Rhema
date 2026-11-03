@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { useColorScheme } from 'react-native';
+import { useColorScheme, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useChurch } from './ChurchContext';
 import {
@@ -9,6 +9,7 @@ import {
   setGlobalFontScale,
   getGlobalFontScale,
   scaleFontSize,
+  setGlobalFontFamily,
 } from '../utils/FontSizeManager';
 
 export {
@@ -23,6 +24,14 @@ export {
 export type ThemeAppearance = 'warm_white' | 'pure_white' | 'sage_ecru' | 'pure_dark';
 export type QuickActionsStyle = 'bento' | 'grid';
 export type NavBarStyle = 'pill' | 'capsule';
+// ── Font Style Options ──────────────────────────────────────
+export type FontStyleOption = 'modern' | 'classic' | 'prominent';
+
+export const FONT_STYLE_OPTIONS: { id: FontStyleOption; label: string; desc: string; family: string; preview: string }[] = [
+  { id: 'modern',    label: 'Modern',    desc: 'Clean · System default',   family: Platform.OS === 'ios' ? 'System' : 'sans-serif',              preview: 'sans-serif' },
+  { id: 'classic',   label: 'Classic',   desc: 'Elegant · Serif style',    family: Platform.OS === 'ios' ? 'Georgia' : 'serif',                  preview: 'serif'      },
+  { id: 'prominent', label: 'Prominent', desc: 'Bold · Crisp & clear',     family: Platform.OS === 'ios' ? 'Avenir-Medium' : 'sans-serif-medium', preview: Platform.OS === 'ios' ? 'Avenir-Medium' : 'sans-serif-medium' },
+];
 
 export interface ThemeOption {
   id: ThemeAppearance;
@@ -162,6 +171,8 @@ interface ThemeContextType {
   fontSizePx: number;
   fontScale: number;
   setFontSize: (size: FontSizeOption) => Promise<void>;
+  fontStyle: FontStyleOption;
+  setFontStyle: (style: FontStyleOption) => Promise<void>;
   scaleFont: (size: number) => number;
   isDark: boolean;
   toggleTheme: () => void;
@@ -179,6 +190,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [quickActionsStyle, setQuickActionsStyleState] = useState<QuickActionsStyle>('bento');
   const [navBarStyle, setNavBarStyleState] = useState<NavBarStyle>('capsule');
   const [fontSize, setFontSizeState] = useState<FontSizeOption>('medium');
+  const [fontStyle, setFontStyleState] = useState<FontStyleOption>('modern');
 
   // Load saved appearance preference on app launch
   useEffect(() => {
@@ -209,6 +221,17 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const savedNav = await AsyncStorage.getItem('user_navbar_style');
         if (savedNav === 'pill' || savedNav === 'capsule') {
           setNavBarStyleState(savedNav as NavBarStyle);
+        }
+
+        const savedFontStyle = await AsyncStorage.getItem('user_font_style');
+        if (savedFontStyle === 'modern' || savedFontStyle === 'classic' || savedFontStyle === 'prominent') {
+          setFontStyleState(savedFontStyle as FontStyleOption);
+          const opt = FONT_STYLE_OPTIONS.find(o => o.id === savedFontStyle) || FONT_STYLE_OPTIONS[0];
+          setGlobalFontFamily(opt.family);
+        } else {
+          // Default to Modern (system sans-serif)
+          const opt = FONT_STYLE_OPTIONS[0];
+          setGlobalFontFamily(opt.family);
         }
 
         const savedFontSize = await AsyncStorage.getItem('user_font_size');
@@ -254,6 +277,12 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch (e) {}
   };
 
+  const setFontStyle = async (style: FontStyleOption) => {
+    setFontStyleState(style);
+    const opt = FONT_STYLE_OPTIONS.find(o => o.id === style) || FONT_STYLE_OPTIONS[0];
+    setGlobalFontFamily(opt.family);
+    try { await AsyncStorage.setItem('user_font_style', style); } catch (e) {}
+  };
   const setFontSize = async (size: FontSizeOption) => {
     setFontSizeState(size);
     const cfg = FONT_SIZE_CONFIG[size] || FONT_SIZE_CONFIG.medium;
@@ -314,6 +343,8 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         fontSize,
         fontSizePx: (FONT_SIZE_CONFIG[fontSize] || FONT_SIZE_CONFIG.medium).px,
         fontScale: (FONT_SIZE_CONFIG[fontSize] || FONT_SIZE_CONFIG.medium).scale,
+        fontStyle,
+        setFontStyle,
         setFontSize,
         scaleFont: (size: number) => Math.round(size * (FONT_SIZE_CONFIG[fontSize] || FONT_SIZE_CONFIG.medium).scale),
         isDark,
