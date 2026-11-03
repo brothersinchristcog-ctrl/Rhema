@@ -1697,10 +1697,30 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
     const messaging = getMessaging();
     // 1. Determine period slot
     const PERIOD_SLOTS = {
-        Morning: { index: 0, titleEn: '✝️ Good Morning', titleTe: '✝️ శుభోదయం' },
-        Afternoon: { index: 1, titleEn: '✝️ Good Afternoon', titleTe: '✝️ శుభ మధ్యాహ్నం' },
-        Evening: { index: 2, titleEn: '✝️ Good Evening', titleTe: '✝️ శుభ సాయంత్రం' },
-        Night: { index: 3, titleEn: '✝️ Good Night', titleTe: '✝️ శుభరాత్రి' },
+        Morning: {
+            index: 0,
+            title: "Good Morning · Today's Verse (నేటి వాక్యం)",
+            titleEn: "Good Morning",
+            titleTe: "Today's Verse (నేటి వాక్యం)",
+        },
+        Afternoon: {
+            index: 1,
+            title: "Blessed Afternoon · Daily Peace (అనుదిన శాంతి)",
+            titleEn: "Blessed Afternoon",
+            titleTe: "Daily Peace (అనుదిన శాంతి)",
+        },
+        Evening: {
+            index: 2,
+            title: "Evening Prayer · Faith & Grace (విశ్వాసం - కృప)",
+            titleEn: "Evening Prayer",
+            titleTe: "Faith & Grace (విశ్వాసం - కృప)",
+        },
+        Night: {
+            index: 3,
+            title: "Good Night · God's Protection (దేవుని కాపుదల)",
+            titleEn: "Good Night",
+            titleTe: "God's Protection (దేవుని కాపుదల)",
+        },
     };
     const nowIst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
     let slot = slotOverride;
@@ -1856,7 +1876,7 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
     let teSuccess = 0;
     // 4. Send EXACTLY ONE Unified Notification to the Church Topic (church_rhema)
     // Using Android 'tag' and 'collapseKey' guarantees that Android OS displays EXACTLY ONE banner.
-    const unifiedTitle = `${slotInfo.titleEn} · ${slotInfo.titleTe}`;
+    const unifiedTitle = slotInfo.title;
     let unifiedBody = '';
     if (verseTeText && verseEnText && verseTeText !== verseEnText) {
         unifiedBody = `"${verseTeText}"\n— ${refTeText}\n\n"${verseEnText}"\n— ${refEnText}`;
@@ -1938,7 +1958,7 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
     try {
         const rhemaChurchRef = db.collection('Rhema Church').doc('rhema');
         await rhemaChurchRef.collection('broadcasts').add({
-            title: `${slotInfo.titleEn} · ${slotInfo.titleTe}`,
+            title: unifiedTitle,
             content: `"${verseEnText}" — ${refEnText}\n\n"${verseTeText}" — ${refTeText}`,
             date: todayStr,
             type: 'daily_verse',
