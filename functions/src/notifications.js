@@ -1883,11 +1883,14 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
         : (refTeText || refEnText);
     const cleanVerseTe = (verseTeText || '').replace(/^["“”']+|["“”']+$/g, '').trim();
     const cleanVerseEn = (verseEnText || '').replace(/^["“”']+|["“”']+$/g, '').trim();
+    // Android notification shade collapses empty newlines unless there is a character.
+    // Using '\n \n' guarantees a visible vertical gap below verses on Android and iOS.
+    const GAP = '\n \n';
     if (cleanVerseTe && cleanVerseEn && cleanVerseTe !== cleanVerseEn) {
-        unifiedBody = `${cleanVerseTe}\n\n${cleanVerseEn}\n\n${combinedRef}`;
+        unifiedBody = `${cleanVerseTe}${GAP}${cleanVerseEn}${GAP}${combinedRef}`;
     }
     else {
-        unifiedBody = `${cleanVerseTe || cleanVerseEn}\n\n${combinedRef}`;
+        unifiedBody = `${cleanVerseTe || cleanVerseEn}${GAP}${combinedRef}`;
     }
     try {
         const topicMessage = {
