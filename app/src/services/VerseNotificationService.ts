@@ -144,10 +144,10 @@ class VerseNotificationService {
 
     try {
       const times = [
-        { hour: 8,  label: 'Morning',   titleEn: '✝️ Good Morning',   titleTe: '✝️ శుభోదయం'     },
-        { hour: 13, label: 'Afternoon', titleEn: '✝️ Good Afternoon', titleTe: '✝️ శుభ మధ్యాహ్నం' },
-        { hour: 18, label: 'Evening',   titleEn: '✝️ Good Evening',   titleTe: '✝️ శుభ సాయంత్రం' },
-        { hour: 21, label: 'Night',     titleEn: '✝️ Good Night',     titleTe: '✝️ శుభరాత్రి'     },
+        { hour: 8,  label: 'Morning',   titleEn: "Good Morning · Today's Verse (నేటి వాక్యం)", titleTe: "Good Morning · Today's Verse (నేటి వాక్యం)" },
+        { hour: 13, label: 'Afternoon', titleEn: "Blessed Afternoon · Daily Peace (అనుదిన శాంతి)", titleTe: "Blessed Afternoon · Daily Peace (అనుదిన శాంతి)" },
+        { hour: 18, label: 'Evening',   titleEn: "Evening Prayer · Faith & Grace (విశ్వాసం - కృప)", titleTe: "Evening Prayer · Faith & Grace (విశ్వాసం - కృప)" },
+        { hour: 21, label: 'Night',     titleEn: "Good Night · God's Protection (దేవుని కాపుదల)", titleTe: "Good Night · God's Protection (దేవుని కాపుదల)" },
       ];
 
       // 1. Calculate the next 7 days we need to cover
