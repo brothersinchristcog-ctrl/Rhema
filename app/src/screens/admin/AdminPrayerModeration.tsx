@@ -191,7 +191,7 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
         scrollViewRef.current?.scrollTo({ y: 0, animated: true });
       } else {
         FirestoreService.getPrayerRequestById(targetPrayerId).then(fetched => {
-          if (fetched) {
+          if (fetched && (fetched.text || fetched.request || fetched.requestEn || fetched.name || fetched.memberName)) {
             setDetailPrayer(fetched);
             setDetailModalVisible(true);
             setPrayers(prev => {
@@ -310,6 +310,11 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
           style: 'destructive',
           onPress: async () => {
             try {
+              setPrayers(prev => prev.filter(p => p.id !== id));
+              if (detailPrayer?.id === id) {
+                setDetailModalVisible(false);
+                setDetailPrayer(null);
+              }
               await FirestoreService.deletePrayerRequest(id);
               fetchPrayers(true);
             } catch (err) {
@@ -501,6 +506,8 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
 
   const renderPrayerCard = (item: any, isAnswered = false) => {
     if (!item || !item.id) return null;
+    const hasValidContent = Boolean((item.text || item.request || item.requestEn || item.textTe || item.name || item.memberName || '').trim());
+    if (!hasValidContent) return null;
     const isTarget = Boolean(targetPrayerId && item?.id === targetPrayerId);
     return (
     <TouchableOpacity 
