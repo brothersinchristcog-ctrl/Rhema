@@ -71,9 +71,9 @@ const DEFAULT_EVENT_TYPES = [
 ];
 
 const RECURRING_OPTIONS = [
-  { label: 'One time event', value: 'One-time event' },
-  { label: 'Every day · ప్రతిరోజూ', value: 'Every day' },
+  { label: 'Select Recurrence', value: 'Select Recurrence' },
   { label: 'Every Sunday', value: 'Every Sunday' },
+  { label: 'Every day · ప్రతిరోజూ', value: 'Every day' },
   { label: 'Every week (specify day)', value: 'Every week' },
   { label: 'First Sunday of every month', value: 'First Sunday' },
   { label: 'Monthly (same date)', value: 'Monthly' }
@@ -193,7 +193,8 @@ export default function AdminEventEditor() {
     return parseMins(endTime) <= parseMins(startTime);
   }, [date, endDate, startTime, endTime]);
 
-  const [recurring, setRecurring] = useState('');
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurring, setRecurring] = useState('One-time event');
   const [recurrenceDuration, setRecurrenceDuration] = useState(1);
   const [publishStatus, setPublishStatus] = useState('Published');
 
@@ -246,10 +247,8 @@ export default function AdminEventEditor() {
               if (!hasPublished) setPublishStatus(meta.statuses[0].value);
             }
 
-            if (meta.recurring?.length > 0) {
-              const hasOneTime = meta.recurring.some((s: any) => s.value === 'One-time event');
-              if (!hasOneTime) setRecurring(meta.recurring[0].value);
-            }
+            setIsRecurring(false);
+            setRecurring('One-time event');
           }
         }
       } catch (err) {
@@ -324,7 +323,10 @@ export default function AdminEventEditor() {
       setRsvpPublic(editingData.rsvpPublic ?? true);
       setAudience(editingData.audience || 'All members');
       setPublishStatus(editingData.status || 'Published');
-      setRecurring(editingData.recurring || 'One-time event');
+      const rec = editingData.recurring || 'One-time event';
+      const isRec = rec !== 'One-time event' && rec !== '' && rec !== 'None' && rec !== 'Select Recurrence';
+      setIsRecurring(isRec);
+      setRecurring(isRec ? rec : 'One-time event');
       setRecurrenceDuration(editingData.recurrenceDuration || 1);
       setRequireEventQR(editingData.requireEventQR === true || editingData.requireEventQr === true);
       if (Array.isArray(editingData.services) && editingData.services.length > 0) {
@@ -604,6 +606,11 @@ export default function AdminEventEditor() {
       }
     }
 
+    if (isRecurring && (recurring === 'Select Recurrence' || !recurring)) {
+      setValidationError('Please select a recurrence pattern (e.g. Every Sunday) or choose One-Time Event.');
+      return;
+    }
+
     setValidationError(null);
     setErrorModal(null);
 
@@ -682,8 +689,8 @@ export default function AdminEventEditor() {
       bannerColor,
       bannerUrl,
       image: bannerUrl,
-      recurring: resolveValue('recurring', recurring),
-      recurrenceDuration,
+      recurring: isRecurring ? (resolveValue('recurring', recurring) || recurring) : 'One-time event',
+      recurrenceDuration: isRecurring ? recurrenceDuration : 1,
       requireEventQR,
       notifyOnPublish, reminder1Day, reminder1Hour,
       rsvpCap: capAttendance ? 100 : 0,
@@ -759,6 +766,9 @@ export default function AdminEventEditor() {
     const ds = `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
     setDate(ds); setEndDate(ds);
     setStartTime('09:00 AM'); setEndTime('12:00 PM');
+    setIsRecurring(false);
+    setRecurring('One-time event');
+    setRecurrenceDuration(1);
     setNotifyOnPublish(true); setReminder1Day(true); setReminder1Hour(false);
     setRequireEventQR(false);
     setEditingData(null);
@@ -998,16 +1008,53 @@ export default function AdminEventEditor() {
             <Text style={styles.secHdTXT}>Date & Schedule</Text>
           </View>
 
+          {/* Event Cadence: One-Time vs Recurring Selector */}
+          <View style={styles.cadenceSelector}>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              style={[styles.cadenceBtn, !isRecurring && styles.cadenceBtnActive]}
+              onPress={() => {
+                setIsRecurring(false);
+                setRecurring('One-time event');
+                setShowRecurringDropdown(false);
+                setShowDurationDropdown(false);
+                if (date) setEndDate(date);
+              }}
+            >
+              <CalendarDays size={15} color={!isRecurring ? '#0f172a' : '#64748b'} style={{ marginRight: 6 }} />
+              <Text style={[styles.cadenceBtnTxt, !isRecurring && styles.cadenceBtnTxtActive]}>
+                One-Time Event
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.8}
+              style={[styles.cadenceBtn, isRecurring && styles.cadenceBtnActiveRecurring]}
+              onPress={() => {
+                setIsRecurring(true);
+                setRecurring('Select Recurrence');
+                setShowRecurringDropdown(false);
+                setShowDurationDropdown(false);
+                if (date) setEndDate(addMonthsToDate(date, recurrenceDuration || 1));
+              }}
+            >
+              <Repeat size={15} color={isRecurring ? '#0d9488' : '#64748b'} style={{ marginRight: 6 }} />
+              <Text style={[styles.cadenceBtnTxt, isRecurring && styles.cadenceBtnTxtActiveRecurring]}>
+                Recurring
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.fLabel}>Start Date <Text style={{color:'#c0392b'}}>*</Text></Text>
+              <Text style={styles.fLabel}>{isRecurring ? 'Series Start Date' : 'Start Date'} <Text style={{color:'#c0392b'}}>*</Text></Text>
               <TouchableOpacity style={styles.inputWrap} onPress={() => setDatePickerVisibility(true)}>
                 <CalendarDays size={18} color="#64748b" style={{ marginRight: 8 }} />
                 <Text style={styles.inputText}>{date || 'DD-MM-YYYY'}</Text>
               </TouchableOpacity>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.fLabel}>End Date <Text style={{color:'#c0392b'}}>*</Text></Text>
+              <Text style={styles.fLabel}>{isRecurring ? 'Series End Date' : 'End Date'} <Text style={{color:'#c0392b'}}>*</Text></Text>
               <TouchableOpacity style={styles.inputWrap} onPress={() => setEndDatePickerVisibility(true)}>
                 <CalendarDays size={18} color="#64748b" style={{ marginRight: 8 }} />
                 <Text style={styles.inputText}>{endDate || 'DD-MM-YYYY'}</Text>
@@ -1046,86 +1093,89 @@ export default function AdminEventEditor() {
             </View>
           )}
 
-          <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Recurring</Text>
-            <TouchableOpacity style={styles.inputWrap} onPress={() => setShowRecurringDropdown(!showRecurringDropdown)}>
-              <Text style={styles.inputText}>{RECURRING_OPTIONS.find((t: any) => t.value === recurring)?.label || recurring || 'One-time event'}</Text>
-              <ChevronDown size={14} color="#374151" />
-            </TouchableOpacity>
-            {showRecurringDropdown && (
-              <View style={styles.dropdownMenu}>
-                {RECURRING_OPTIONS.map(r => (
-                  <TouchableOpacity
-                    key={r.value}
-                    style={[styles.dropdownItem, recurring === r.value && styles.dropdownItemActive]}
-                    onPress={() => {
-                      setRecurring(r.value);
-                      setShowRecurringDropdown(false);
-                      if (r.value !== 'One-time event' && date) {
-                        if (endDate === date) {
-                          setEndDate(addMonthsToDate(date, recurrenceDuration || 1));
-                        }
-                      }
-                    }}
-                  >
-                    <Text style={[styles.dropdownItemTxt, recurring === r.value && styles.dropdownItemTxtActive]}>{r.label}</Text>
-                  </TouchableOpacity>
-                ))}
+          {/* Recurrence options: Only displayed when Recurring is selected */}
+          {isRecurring && (
+            <>
+              <View style={styles.fGroup}>
+                <Text style={styles.fLabel}>Repeat Pattern <Text style={{color:'#c0392b'}}>*</Text></Text>
+                <TouchableOpacity style={styles.inputWrap} onPress={() => setShowRecurringDropdown(!showRecurringDropdown)}>
+                  <Text style={[styles.inputText, recurring === 'Select Recurrence' && { color: '#64748b' }]}>
+                    {RECURRING_OPTIONS.find((t: any) => t.value === recurring)?.label || recurring}
+                  </Text>
+                  <ChevronDown size={14} color="#374151" />
+                </TouchableOpacity>
+                {showRecurringDropdown && (
+                  <View style={styles.dropdownMenu}>
+                    {RECURRING_OPTIONS.map(r => (
+                      <TouchableOpacity
+                        key={r.value}
+                        style={[styles.dropdownItem, recurring === r.value && styles.dropdownItemActive]}
+                        onPress={() => {
+                          setRecurring(r.value);
+                          setShowRecurringDropdown(false);
+                          if (r.value !== 'Select Recurrence' && date) {
+                            setEndDate(addMonthsToDate(date, recurrenceDuration || 1));
+                          }
+                        }}
+                      >
+                        <Text style={[styles.dropdownItemTxt, recurring === r.value && styles.dropdownItemTxtActive]}>{r.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
               </View>
-            )}
-          </View>
 
-          {recurring !== 'One-time event' && (
-            <View style={styles.fGroup}>
-              <Text style={styles.fLabel}>Recurrence Duration</Text>
-              <TouchableOpacity style={styles.inputWrap} onPress={() => setShowDurationDropdown(!showDurationDropdown)}>
-                <Text style={styles.inputText}>{DURATION_OPTIONS.find((t: any) => t.value === recurrenceDuration)?.label || `For ${recurrenceDuration} month(s)`}</Text>
-                <ChevronDown size={14} color="#374151" />
-              </TouchableOpacity>
-              {showDurationDropdown && (
-                <View style={styles.dropdownMenu}>
-                  {DURATION_OPTIONS.map(o => (
-                    <TouchableOpacity
-                      key={o.value}
-                      style={[styles.dropdownItem, recurrenceDuration === o.value && styles.dropdownItemActive]}
-                      onPress={() => {
-                        setRecurrenceDuration(o.value);
-                        setShowDurationDropdown(false);
-                        if (date) {
-                          setEndDate(addMonthsToDate(date, o.value));
-                        }
-                      }}
-                    >
-                      <Text style={[styles.dropdownItemTxt, recurrenceDuration === o.value && styles.dropdownItemTxtActive]}>{o.label}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-            </View>
-          )}
+              <View style={styles.fGroup}>
+                <Text style={styles.fLabel}>Recurrence Duration</Text>
+                <TouchableOpacity style={styles.inputWrap} onPress={() => setShowDurationDropdown(!showDurationDropdown)}>
+                  <Text style={styles.inputText}>{DURATION_OPTIONS.find((t: any) => t.value === recurrenceDuration)?.label || `For ${recurrenceDuration} month(s)`}</Text>
+                  <ChevronDown size={14} color="#374151" />
+                </TouchableOpacity>
+                {showDurationDropdown && (
+                  <View style={styles.dropdownMenu}>
+                    {DURATION_OPTIONS.map(o => (
+                      <TouchableOpacity
+                        key={o.value}
+                        style={[styles.dropdownItem, recurrenceDuration === o.value && styles.dropdownItemActive]}
+                        onPress={() => {
+                          setRecurrenceDuration(o.value);
+                          setShowDurationDropdown(false);
+                          if (date && recurring !== 'Select Recurrence') {
+                            setEndDate(addMonthsToDate(date, o.value));
+                          }
+                        }}
+                      >
+                        <Text style={[styles.dropdownItemTxt, recurrenceDuration === o.value && styles.dropdownItemTxtActive]}>{o.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
 
-          {recurring !== 'One-time event' && (
-            <View style={styles.recurringInfoCard}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                <Repeat size={14} color="#0D9488" style={{ marginRight: 6 }} />
-                <View style={styles.recurringInfoBadge}>
-                  <Text style={styles.recurringInfoBadgeTxt}>
-                    {recurring === 'Every day' ? 'DAILY EVENT SERIES' : 'RECURRING EVENT SERIES'}
+              {recurring !== 'Select Recurrence' && (
+                <View style={styles.recurringInfoCard}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                    <Repeat size={14} color="#0D9488" style={{ marginRight: 6 }} />
+                    <View style={styles.recurringInfoBadge}>
+                      <Text style={styles.recurringInfoBadgeTxt}>
+                        {recurring === 'Every day' ? 'DAILY EVENT SERIES' : 'RECURRING EVENT SERIES'}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.recurringInfoHeading}>
+                    {recurring === 'Every day'
+                      ? `Repeats Every Day from ${date} to ${endDate}`
+                      : `Repeats (${recurring}) from ${date} to ${endDate}`}
+                  </Text>
+                  <Text style={styles.recurringInfoSub}>
+                    Every occurrence in this period will automatically be generated in the church calendar. Attendance is recorded independently for each day.
+                  </Text>
+                  <Text style={styles.recurringInfoTe}>
+                    ఈ కాలంలోని ప్రతి ఈవెంట్ స్వతంత్రంగా క్యాలెండర్‌లో సృష్టించబడుతుంది మరియు ప్రతి దినం హాజరు ప్రత్యేకంగా నమోదు చేయబడుతుంది.
                   </Text>
                 </View>
-              </View>
-              <Text style={styles.recurringInfoHeading}>
-                {recurring === 'Every day'
-                  ? `Repeats Every Day from ${date} to ${endDate}`
-                  : `Repeats (${recurring}) from ${date} to ${endDate}`}
-              </Text>
-              <Text style={styles.recurringInfoSub}>
-                Every day in this period will automatically be generated as its own event occurrence. Attendance is recorded independently for each day.
-              </Text>
-              <Text style={styles.recurringInfoTe}>
-                ఈ కాలంలోని ప్రతి రోజు స్వతంత్ర ఈవెంట్‌గా సృష్టించబడుతుంది మరియు ప్రతి రోజు హాజరు ప్రత్యేకంగా నమోదు చేయబడుతుంది.
-              </Text>
-            </View>
+              )}
+            </>
           )}
         </View>
 
@@ -1494,8 +1544,10 @@ export default function AdminEventEditor() {
           setDate(newDateStr);
           setDatePickerVisibility(false);
           setValidationError(null);
-          if (recurring && recurring !== 'One-time event') {
+          if (isRecurring && recurring !== 'Select Recurrence') {
             setEndDate(addMonthsToDate(newDateStr, recurrenceDuration || 1));
+          } else if (!endDate || endDate === date) {
+            setEndDate(newDateStr);
           }
         }}
         onCancel={() => setDatePickerVisibility(false)}
@@ -2450,6 +2502,54 @@ const styles = StyleSheet.create({
 
   sectionHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8, alignSelf: 'flex-start', marginBottom: 16 },
   sectionHeaderText: { fontFamily: 'Outfit-Bold', fontSize: 14, fontWeight: '700' },
+
+  cadenceSelector: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+    backgroundColor: '#F1F5F9',
+    padding: 4,
+    borderRadius: 12,
+  },
+  cadenceBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 9,
+    backgroundColor: 'transparent',
+  },
+  cadenceBtnActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  cadenceBtnActiveRecurring: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  cadenceBtnTxt: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  cadenceBtnTxtActive: {
+    color: '#0F172A',
+    fontWeight: '700',
+  },
+  cadenceBtnTxtActiveRecurring: {
+    color: '#0D9488',
+    fontWeight: '700',
+  },
 
   recurringInfoCard: {
     backgroundColor: '#F0FDFA',
