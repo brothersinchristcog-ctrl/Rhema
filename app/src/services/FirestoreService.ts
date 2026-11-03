@@ -1964,14 +1964,19 @@ class FirestoreService {
         createdAt: FieldValue.serverTimestamp()
       });
 
-      // Write direct notification to notifications collection to guarantee Admin notification visibility
+      // 1. Write direct notification to notifications collection for Admin in-app visibility
       try {
         const notifCol = await this.getCollection('notifications');
         const excerpt = textVal.length > 80 ? `${textVal.substring(0, 80)}...` : textVal;
+        const pushTitle = data.isPublic
+          ? `🙏 New Public Prayer Request: ${memberNameVal}`
+          : `🙏 New Prayer Request: ${memberNameVal}`;
+        const pushBody = excerpt ? `${memberNameVal} submitted a prayer request: "${excerpt}"` : `${memberNameVal} submitted a new prayer request. Tap to review.`;
+
         await notifCol.add({
           type: 'prayer_request_admin',
-          title: `🙏 New Prayer Request: ${memberNameVal}`,
-          body: excerpt ? `${memberNameVal} submitted a prayer request: "${excerpt}"` : `${memberNameVal} submitted a new prayer request.`,
+          title: pushTitle,
+          body: pushBody,
           memberName: memberNameVal,
           prayerId: docRef.id,
           requestId: docRef.id,
@@ -1985,6 +1990,46 @@ class FirestoreService {
         });
       } catch (notifErr) {
         console.warn('⚠️ Could not write admin notification doc directly:', notifErr);
+      }
+
+      // 2. Dispatch immediate Admin push notification via broadcasts collection
+      try {
+        const churchId = await this.getChurchId();
+        const excerpt = textVal.length > 80 ? `${textVal.substring(0, 80)}...` : textVal;
+        const pushTitle = data.isPublic
+          ? `🙏 New Public Prayer Request: ${memberNameVal}`
+          : `🙏 New Prayer Request: ${memberNameVal}`;
+        const pushBody = excerpt ? `${memberNameVal} submitted a prayer request: "${excerpt}"` : `${memberNameVal} submitted a new prayer request. Tap to review.`;
+
+        const bcastData = {
+          type: 'prayer_request_admin',
+          targetRole: 'admin',
+          title: pushTitle,
+          content: pushBody,
+          body: pushBody,
+          memberName: memberNameVal,
+          prayerId: docRef.id,
+          requestId: docRef.id,
+          targetTab: 'Prayers',
+          screen: 'AdminRoot',
+          requestExcerpt: excerpt,
+          category: data.category || '',
+          isPublic: data.isPublic ?? false,
+          silent: false,
+          createdAt: FieldValue.serverTimestamp()
+        };
+
+        const bcastCol = await this.getCollection('broadcasts');
+        await bcastCol.add(bcastData);
+
+        if (churchId) {
+          try {
+            await firestore().collection('churches').doc(churchId).collection('broadcasts').add(bcastData);
+          } catch (_) {}
+        }
+        console.log('🔔 [submitPrayerRequest] Successfully dispatched admin prayer push broadcast:', docRef.id);
+      } catch (bcastErr) {
+        console.warn('⚠️ Could not write admin prayer push broadcast doc:', bcastErr);
       }
 
       console.log('🙏 [submitPrayerRequest] Successfully submitted prayer request & admin notification:', docRef.id);

@@ -205,7 +205,7 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
         });
       }
     }
-  }, [targetPrayerId, prayers.length]);
+  }, [targetPrayerId, prayers.length, routeParams?.timestamp, route?.params?.timestamp]);
 
   const onRefresh = () => {
     setRefreshing(true);
