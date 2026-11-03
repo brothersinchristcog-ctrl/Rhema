@@ -1164,7 +1164,7 @@ export default function AdminEventEditor() {
                 )}
               </View>
 
-              {recurring !== 'Select Recurrence' && (
+              {isRecurring && recurring && recurring !== 'Select Recurrence' && recurring !== 'One-time event' && (
                 <View style={styles.recurringInfoCard}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
                     <Repeat size={14} color="#0D9488" style={{ marginRight: 6 }} />
@@ -1177,7 +1177,7 @@ export default function AdminEventEditor() {
                   <Text style={styles.recurringInfoHeading}>
                     {recurring === 'Every day'
                       ? `Repeats Every Day from ${date} to ${endDate}`
-                      : `Repeats (${recurring}) from ${date} to ${endDate}`}
+                      : `Repeats (${RECURRING_OPTIONS.find((t: any) => t.value === recurring)?.label || recurring}) from ${date} to ${endDate}`}
                   </Text>
                   <Text style={styles.recurringInfoSub}>
                     Every occurrence in this period will automatically be generated in the church calendar. Attendance is recorded independently for each day.
