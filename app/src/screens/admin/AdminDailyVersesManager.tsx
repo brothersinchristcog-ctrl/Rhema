@@ -1,7 +1,7 @@
 import React, { useContext } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ChevronLeft } from 'lucide-react-native';
+import { ChevronLeft , ArrowLeft } from 'lucide-react-native';
 import { AdminTabContext } from '../../context/AdminTabContext';
 import SuperAdminVersesManager from './SuperAdminVersesManager';
 
@@ -19,7 +19,7 @@ export default function AdminDailyVersesManager() {
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           activeOpacity={0.8}
         >
-          <ChevronLeft size={22} color="#F8FAFC" />
+          <ArrowLeft size={20} color="#F8FAFC" strokeWidth={2.2} />
         </TouchableOpacity>
         <View style={styles.headerTitleWrap}>
           <Text style={styles.headerTitle}>Daily Verses Manager</Text>
@@ -36,6 +36,21 @@ export default function AdminDailyVersesManager() {
 }
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   safeArea: {
     flex: 1,
     backgroundColor: '#0B1120',
@@ -50,9 +65,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#0B1120',
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#1E293B',
     justifyContent: 'center',
     alignItems: 'center',

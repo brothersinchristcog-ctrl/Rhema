@@ -1347,18 +1347,21 @@ export default function AdminAttendance() {
   if (selectedEvent) {
     return (
       <View style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="#1A2D5A" />
+        <StatusBar barStyle="dark-content" />
 
         {/* ── Hero Header (Consistent with AdminTabs like AdminEventList, AdminMembers) ── */}
         <View style={[styles.hero, { paddingTop: Math.max(insets.top, 12) }]}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', flex: 1, marginRight: 8 }}>
-              <TouchableOpacity onPress={() => setSelectedEvent(null)} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
-                <ChevronLeft size={20} color="#fff" style={{ marginLeft: -6, marginRight: 4 }} />
-                <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Back</Text>
+              <TouchableOpacity
+                onPress={() => setSelectedEvent(null)}
+                style={styles.circularBackBtn}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
               </TouchableOpacity>
-              <Text style={[styles.heroTitle, { marginHorizontal: 10, opacity: 0.4 }]}>|</Text>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, marginLeft: 12 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                   <Text style={styles.heroTitle} numberOfLines={1}>{selectedEvent.title}</Text>
                   {selectedEvent.recurringGroupId && (
@@ -1691,12 +1694,15 @@ export default function AdminAttendance() {
       <View style={[styles.hero, { paddingTop: Math.max(insets.top, 12) }]}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-            <TouchableOpacity onPress={() => setActiveTab(0)} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
-              <ChevronLeft size={20} color="#fff" style={{ marginLeft: -6, marginRight: 4 }} />
-              <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Back</Text>
+            <TouchableOpacity
+              onPress={() => setActiveTab(0)}
+              style={styles.circularBackBtn}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
             </TouchableOpacity>
-            <Text style={[styles.heroTitle, { marginHorizontal: 12, opacity: 0.4 }]}>|</Text>
-            <View>
+            <View style={{ marginLeft: 12 }}>
               <Text style={styles.heroTitle}>Attendance</Text>
               <Text style={[styles.heroSub, { marginTop: 2 }]}>{eventsList.length} total · Reports & Stats</Text>
             </View>
@@ -1967,6 +1973,21 @@ export default function AdminAttendance() {
 }
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: COLORS.bg,
@@ -1993,9 +2014,9 @@ const styles = StyleSheet.create({
 
   // ── Hero Header (Consistent with AdminTabs like AdminEventList, AdminMembers) ──
   hero: {
-    backgroundColor: '#1a2d5a',
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
+    backgroundColor: 'transparent',
+    
+    
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 12,
@@ -2004,15 +2025,13 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   heroTitleRow: { flexDirection: 'row', alignItems: 'center' },
-  heroTitle: {
-    color: '#fff',
+  heroTitle: { color: '#1a2d5a',
     fontSize: 20,
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
     fontWeight: '600',
     letterSpacing: -0.5,
   },
-  heroSub: {
-    color: '#AEB8D4',
+  heroSub: { color: '#64748b',
     fontSize: 13,
   },
   newBtn: { 
@@ -2036,12 +2055,14 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   heroRefreshBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    alignItems: 'center',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     justifyContent: 'center',
+    alignItems: 'center',
   },
 
   // ── Event Card Actions (Event QR, View Report, Delete) ──

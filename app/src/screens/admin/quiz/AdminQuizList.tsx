@@ -39,7 +39,7 @@ import {
   Eye,
   PauseCircle,
   Send,
-} from 'lucide-react-native';
+  ArrowLeft } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import { BibleQuiz, QuizStatus, QuizAttempt } from '../../../types/Quiz';
 import { QuizService } from '../../../services/QuizService';
@@ -998,12 +998,10 @@ export default function AdminQuizList() {
       <View style={styles.hero}>
         <View style={styles.heroTitleRow}>
           <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1, paddingRight: 6 }}>
-            <TouchableOpacity onPress={handleGoBack} style={styles.heroBackBtn} activeOpacity={0.7}>
-              <ChevronLeft size={20} color="#fff" style={{ marginLeft: -4, marginRight: 2 }} />
-              <Text style={styles.heroBackTxt}>Back</Text>
+            <TouchableOpacity onPress={handleGoBack} style={styles.circularBackBtn} activeOpacity={0.7}>
+              <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
             </TouchableOpacity>
-            <Text style={styles.heroDivider}>|</Text>
-            <Text style={styles.heroTitle} numberOfLines={1}>Bible Quizzes</Text>
+            <Text style={[styles.heroTitle, { marginLeft: 12 }]} numberOfLines={1}>Bible Quizzes</Text>
           </View>
 
           <TouchableOpacity
@@ -1362,14 +1360,29 @@ export default function AdminQuizList() {
 }
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: '#EDE8DC',
   },
   hero: {
-    backgroundColor: '#1a2d5a',
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
+    backgroundColor: 'transparent',
+    
+    
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 12,

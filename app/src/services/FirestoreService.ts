@@ -2040,7 +2040,7 @@ class FirestoreService {
     }
   }
 
-  async markAsAnswered(id: string, responseText?: string, adminName?: string, isPublic?: boolean) {
+  async markAsAnswered(id: string, responseText?: string, adminName?: string, isPublic?: boolean, verseInfo?: { reference?: string; referenceTe?: string; text?: string; textTe?: string }) {
     try {
       const col = await this.getCollection('prayerRequests');
       const docRef = col.doc(id);
@@ -2062,6 +2062,13 @@ class FirestoreService {
         updateData.lastAdminResponse = responseText.trim();
         updateData.lastAdminName = adminName || 'Pastor';
       }
+      if (verseInfo && verseInfo.reference && verseInfo.reference.trim()) {
+        updateData.bibleVerse = verseInfo.reference.trim();
+        updateData.verseReference = verseInfo.reference.trim();
+        if (verseInfo.referenceTe) updateData.verseReferenceTe = verseInfo.referenceTe.trim();
+        if (verseInfo.text) updateData.verseText = verseInfo.text.trim();
+        if (verseInfo.textTe) updateData.verseTextTe = verseInfo.textTe.trim();
+      }
       await docRef.update(updateData);
 
       // Targeted notification strictly for the specific member who submitted this prayer request
@@ -2075,11 +2082,13 @@ class FirestoreService {
       const finalIsPublic = typeof isPublic === 'boolean' ? isPublic : (existing.isPublic ?? false);
       const notifTitle = finalIsPublic ? '🙏 Prayer Request Approved' : '🙏 Pastoral Prayer Response';
       const cleanComment = responseText && responseText.trim();
+      const verseRef = verseInfo?.reference ? verseInfo.reference.trim() : (existing.bibleVerse || existing.verseReference || '');
+      const verseSnippet = verseRef ? ` 📖 ${verseRef}` : '';
       const notifBody = cleanComment
-        ? `Pastor has responded to your prayer request: "${cleanComment.length > 90 ? cleanComment.substring(0, 87) + '...' : cleanComment}"`
+        ? `Pastor has responded to your prayer request: "${cleanComment.length > 80 ? cleanComment.substring(0, 77) + '...' : cleanComment}"${verseSnippet}`
         : finalIsPublic
-        ? `Dear ${memberName}, your prayer request has been approved and our pastoral team is praying for you.`
-        : `Dear ${memberName}, your prayer request has been received and our pastoral team has prayed for you.`;
+        ? `Dear ${memberName}, your prayer request has been approved.${verseSnippet}`
+        : `Dear ${memberName}, your prayer request has been received and prayed for.${verseSnippet}`;
 
       if (memberId || memberPhone) {
         // 1. In-app notification document targeted to this member only
@@ -2095,6 +2104,8 @@ class FirestoreService {
             prayerId: id,
             requestId: id,
             isPublic: finalIsPublic,
+            bibleVerse: verseRef || null,
+            verseText: verseInfo?.text || existing.verseText || null,
             read: false,
             createdAt: FieldValue.serverTimestamp()
           });
@@ -2114,6 +2125,7 @@ class FirestoreService {
             targetPhone: memberPhone,
             targetMemberId: memberId,
             targetUid: memberId,
+            bibleVerse: verseRef || null,
             silent: false,
             createdAt: FieldValue.serverTimestamp()
           });

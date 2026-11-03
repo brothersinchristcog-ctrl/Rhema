@@ -11,7 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { Phone, Mail, MapPin, Save, ChevronLeft, Plus, Trash2, RefreshCw, Edit2, Eye, Link } from 'lucide-react-native';
+import { Phone, Mail, MapPin, Save, ChevronLeft, Plus, Trash2, RefreshCw, Edit2, Eye, Link , ArrowLeft } from 'lucide-react-native';
 import Svg, { Path, Rect, Circle } from 'react-native-svg';
 import firestore from '@react-native-firebase/firestore';
 import { AdminTabContext } from '../../context/AdminTabContext';
@@ -159,11 +159,10 @@ export default function AdminContactUsEditor() {
 
                 {/* ── Fixed Header ── */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={goBack} style={styles.backBtn}>
-            <ChevronLeft size={22} color="#fff" />
-            <Text style={styles.backBtnTxt}>Back</Text>
+          <TouchableOpacity onPress={goBack} style={styles.circularBackBtn} activeOpacity={0.7}>
+            <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
           </TouchableOpacity>
-          <View style={[styles.heroTitles, { borderLeftWidth: 1, borderLeftColor: 'rgba(255,255,255,0.2)', paddingLeft: 12 }]}>
+          <View style={[styles.heroTitles, { marginLeft: 12 }]}>
             <Text style={[styles.headerTitle, { fontSize: 20 }]} numberOfLines={1}>Contact Us</Text>
             <Text style={styles.headerSub}>CHURCH COMPANION</Text>
           </View>
@@ -171,7 +170,7 @@ export default function AdminContactUsEditor() {
                     {/* Right: Refresh + single Edit/View toggle */}
           <View style={styles.headerRight}>
             <TouchableOpacity onPress={fetchData} style={styles.iconBtn}>
-              <RefreshCw size={16} color="#F3EAD9" />
+              <RefreshCw size={16} color="#1a2d5a" />
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.editToggleBtn}
@@ -371,17 +370,32 @@ export default function AdminContactUsEditor() {
 }
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: { flex: 1, backgroundColor: '#FAF8F0' },
   loadingContainer: { flex: 1, backgroundColor: '#FAF8F0', justifyContent: 'center', alignItems: 'center', gap: 12 },
   loadingText: { color: '#64748B', fontSize: 14 },
 
   header: { 
-    backgroundColor: '#1a2d5a', 
+    backgroundColor: 'transparent', 
     paddingTop: 8,
     paddingHorizontal: 16,
     paddingBottom: 12,
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
+    
+    
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -394,7 +408,16 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 20, fontWeight: '800', color: '#fff' },
   headerSub: { fontSize: 11, color: '#F3EAD9', marginTop: 2, letterSpacing: 1.5, fontWeight: '800' },
   headerRight: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
-  iconBtn: { padding: 6 },
+  iconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   editToggleBtn: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
   editToggleTxt: { color: '#BE9A3A', fontSize: 13, fontWeight: '700' },
 

@@ -4,7 +4,7 @@ import Share from 'react-native-share';
 import * as Clipboard from 'expo-clipboard';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
-import { Gift, Heart, PlusCircle, ChevronLeft } from 'lucide-react-native';
+import { Gift, Heart, PlusCircle, ChevronLeft , ArrowLeft } from 'lucide-react-native';
 import FirestoreService from '../../services/FirestoreService';
 import Theme from '../../theme/Theme';
 import ChurchService from '../../services/ChurchService';
@@ -555,11 +555,10 @@ export default function AdminCelebrations({ navigation }: any) {
       
       {/* ── Fixed Header ── */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => setActiveTab(0)}>
-          <ChevronLeft size={22} color="#fff" />
-          <Text style={styles.backBtnTxt}>Back</Text>
+        <TouchableOpacity style={styles.circularBackBtn} onPress={() => setActiveTab(0)} activeOpacity={0.7}>
+          <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
         </TouchableOpacity>
-        <View style={styles.heroTitles}>
+        <View style={[styles.heroTitles, { borderLeftWidth: 0, paddingLeft: 0, marginLeft: 12 }]}>
           <Text style={styles.headerTitle}>Celebrations</Text>
           <Text style={styles.headerSub}>Manage birthdays & anniversaries</Text>
         </View>
@@ -655,6 +654,21 @@ const THEMES = [
 ];
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: '#FAF8F0', // Ivory deep
@@ -670,12 +684,12 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   header: { 
-    backgroundColor: '#1a2d5a', 
+    backgroundColor: 'transparent', 
     paddingTop: 8,
     paddingHorizontal: 16,
     paddingBottom: 12,
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
+    
+    
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -686,10 +700,10 @@ const styles = StyleSheet.create({
   backBtn: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 2, paddingVertical: 4, paddingHorizontal: 2 },
   backBtnTxt: { fontSize: 13, fontWeight: '700', color: '#fff' },
   heroTitles: { flex: 1, borderLeftWidth: 1, borderLeftColor: 'rgba(255,255,255,0.2)', paddingLeft: 12 },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: '#fff' },
-  headerSub: { fontSize: 11, color: '#F3EAD9', marginTop: 2 },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: '#1a2d5a' },
+  headerSub: { fontSize: 11, color: '#64748b', marginTop: 2 },
   heroCard: {
-    backgroundColor: '#162057', // Deep navy
+    backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0',
     borderRadius: 16,
     padding: 16,
     marginHorizontal: 16,
@@ -703,14 +717,14 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   heroTitle: {
-    color: '#FFFFFF',
+    color: '#1a2d5a',
     fontSize: 22,
     fontWeight: '700',
     lineHeight: 28,
     marginBottom: 8,
   },
   heroDesc: {
-    color: '#8B96C3',
+    color: '#64748b',
     fontSize: 13,
     lineHeight: 18,
     marginBottom: 16,

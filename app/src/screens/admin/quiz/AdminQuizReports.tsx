@@ -21,7 +21,7 @@ import {
   BookOpen,
   X,
   Trash2,
-} from 'lucide-react-native';
+  ArrowLeft } from 'lucide-react-native';
 import { QuizAnalyticsReport, QuizAttempt } from '../../../types/Quiz';
 import { QuizService } from '../../../services/QuizService';
 import { useChurch } from '../../../context/ChurchContext';
@@ -104,9 +104,8 @@ export default function AdminQuizReports({ quizId, onBack }: Props) {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.headerBackBtn}>
-          <ChevronLeft size={22} color="#1e293b" />
-          <Text style={styles.headerBackTxt}>Back</Text>
+        <TouchableOpacity onPress={onBack} style={styles.circularBackBtn} activeOpacity={0.7}>
+          <ArrowLeft size={20} color="#1e293b" strokeWidth={2.2} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Quiz Analytics & Report</Text>
         <View style={{ width: 40 }} />
@@ -352,6 +351,21 @@ export default function AdminQuizReports({ quizId, onBack }: Props) {
 }
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: '#FAF7F2',

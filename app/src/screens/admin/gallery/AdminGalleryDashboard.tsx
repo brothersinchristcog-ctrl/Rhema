@@ -4,7 +4,7 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, ActivityIndi
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Plus, MoreVertical, Sparkles, Globe, Calendar, Image as ImageIcon, Trash2, ChevronLeft, CheckCircle } from 'lucide-react-native';
+import { Plus, MoreVertical, Sparkles, Globe, Calendar, Image as ImageIcon, Trash2, ChevronLeft, CheckCircle , ArrowLeft } from 'lucide-react-native';
 import { AdminGalleryStackParamList } from './AdminGalleryNavigator';
 import { AdminTabContext } from '../../../context/AdminTabContext';
 import GalleryService, { GalleryAlbum } from '../../../services/GalleryService';
@@ -119,8 +119,8 @@ export default function AdminGalleryDashboard() {
             } else {
               (adminContext as any)?.setTabByName?.('Dashboard');
             }
-          }} style={styles.menuButton}>
-            <ChevronLeft color="#fff" size={26} />
+          }} style={styles.circularBackBtn} activeOpacity={0.7}>
+            <ArrowLeft color="#1a2d5a" size={20} strokeWidth={2.2} />
           </TouchableOpacity>
           <View style={[styles.badgeContainer, { marginBottom: 0, alignSelf: 'center' }]}>
             <Sparkles size={16} color="#FCD34D" />
@@ -281,6 +281,21 @@ export default function AdminGalleryDashboard() {
 }
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: '#0b141a',
@@ -297,9 +312,9 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   topCard: {
-    backgroundColor: '#1a2d5a',
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
+    backgroundColor: 'transparent',
+    
+    
     paddingTop: 8,
     paddingHorizontal: 16,
     paddingBottom: 18,

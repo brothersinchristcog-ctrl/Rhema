@@ -286,13 +286,13 @@ export default function AdminOnlineMeetings() {
                 setActiveTab(0);
               }
             }} 
-            style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 0 }}
+            style={styles.circularBackBtn}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <ChevronLeft size={20} color="#fff" style={{ marginLeft: -4, marginRight: 2 }} />
-            <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Back</Text>
+            <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
           </TouchableOpacity>
-          <Text style={[styles.heroTitle, { marginHorizontal: 12, opacity: 0.4 }]}>|</Text>
-          <Text style={styles.heroTitle} numberOfLines={1}>Online Meetings</Text>
+          <Text style={[styles.heroTitle, { marginLeft: 12 }]} numberOfLines={1}>Online Meetings</Text>
         </View>
       </View>
 
@@ -703,14 +703,29 @@ export default function AdminOnlineMeetings() {
 }
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: { flex: 1, backgroundColor: colors.parchment },
   scroll: { paddingBottom: 140 },
   
   // Hero
   hero: { 
     backgroundColor: colors.ink, 
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
+    
+    
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 12,
@@ -720,7 +735,7 @@ const styles = StyleSheet.create({
     position: 'relative'
   },
   heroTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', marginBottom: 0 },
-  heroTitle: { color: '#fff', fontSize: 20, fontFamily: serifFont, fontWeight: '600', letterSpacing: -0.5, marginBottom: 0 },
+  heroTitle: { color: '#1a2d5a', fontSize: 20, fontFamily: serifFont, fontWeight: '600', letterSpacing: -0.5, marginBottom: 0 },
   newBtn: { backgroundColor: '#FCD34D', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 3 },
   newBtnTxt: { color: colors.ink, fontSize: 12, fontWeight: '700' },
 

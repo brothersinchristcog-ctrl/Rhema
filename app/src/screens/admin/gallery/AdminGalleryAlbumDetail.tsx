@@ -175,9 +175,8 @@ export default function AdminGalleryAlbumDetail() {
 
   const renderHeader = () => (
     <View style={styles.header}>
-      <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.goBack()}>
-        <ArrowLeft size={20} color="#fff" />
-        <Text style={styles.backText}>Back</Text>
+      <TouchableOpacity style={styles.circularBackBtn} onPress={() => navigation.goBack()} activeOpacity={0.7}>
+        <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
       </TouchableOpacity>
     </View>
   );
@@ -453,6 +452,21 @@ export default function AdminGalleryAlbumDetail() {
 }
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: '#070D15',

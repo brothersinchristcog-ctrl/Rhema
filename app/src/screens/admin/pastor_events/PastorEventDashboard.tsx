@@ -15,7 +15,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { ChevronLeft, Plus } from 'lucide-react-native';
+import { ChevronLeft, Plus , ArrowLeft } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { colors, spacing, radius, typography, shadow } from '../../../theme/Theme';
 import { PastorEvent } from '../../../types/event';
@@ -447,18 +447,21 @@ export const PastorEventDashboard = ({ navigation }: { navigation: any }) => {
       <View style={[styles.hero, { paddingTop: insets.top }]}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', flex: 1, marginRight: 10 }}>
-            <TouchableOpacity onPress={() => {
-              if (navigation.canGoBack()) {
-                navigation.goBack();
-              } else {
-                setAdminActiveTab(0);
-              }
-            }} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, flexShrink: 0 }}>
-              <ChevronLeft size={20} color="#fff" style={{ marginLeft: -6, marginRight: 4 }} />
-              <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Back</Text>
+            <TouchableOpacity
+              onPress={() => {
+                if (navigation.canGoBack()) {
+                  navigation.goBack();
+                } else {
+                  setAdminActiveTab(0);
+                }
+              }}
+              style={styles.circularBackBtn}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
             </TouchableOpacity>
-            <Text style={[styles.heroTitle, { marginHorizontal: 12, opacity: 0.4, flexShrink: 0 }]}>|</Text>
-            <View style={{ flex: 1, minWidth: 0 }}>
+            <View style={{ flex: 1, minWidth: 0, marginLeft: 12 }}>
               <Text style={styles.heroTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>Pastor Events</Text>
               <Text style={[styles.heroSub, { marginTop: 2 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>Manage schedule & travel</Text>
             </View>
@@ -588,7 +591,7 @@ export const PastorEventDashboard = ({ navigation }: { navigation: any }) => {
       </View>
 
       {/* ── Stats Dashboard ── */}
-      <View style={[styles.statsGrid, { backgroundColor: '#1a2d5a', borderRadius: 16, padding: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', elevation: 4, shadowColor: '#1a2d5a', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8 }]}>
+      <View style={[styles.statsGrid, { backgroundColor: 'transparent', borderRadius: 16, padding: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', elevation: 4, shadowColor: '#1a2d5a', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8 }]}>
         <View style={{ alignItems: 'center', flex: 1 }}>
           <Text style={{ color: '#aac4e8', fontSize: 11, fontWeight: '600', marginBottom: 4, textTransform: 'uppercase' }}>Total Events</Text>
           <Text style={{ fontSize: 24, fontWeight: '800', color: '#fff' }}>{totalEvents}</Text>
@@ -648,16 +651,31 @@ export const PastorEventDashboard = ({ navigation }: { navigation: any }) => {
 };
 
 const styles = StyleSheet.create({
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   container: { flex: 1, backgroundColor: '#EDE8DC' },
   hero: {
     backgroundColor: '#1a2d5a',
     paddingHorizontal: 16,
     paddingBottom: 14,
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
+    
+    
   },
-  heroTitle: { color: '#fff', fontSize: 20, fontWeight: '700' },
-  heroSub: { color: '#aac4e8', fontSize: 13, fontWeight: '500' },
+  heroTitle: { color: '#1a2d5a', fontSize: 20, fontWeight: '700' },
+  heroSub: { color: '#64748b', fontSize: 13, fontWeight: '500' },
   heroIconBtn: { padding: 6, backgroundColor: '#fff', borderRadius: 20 },
   newBtn: {
     backgroundColor: '#FCD34D',
