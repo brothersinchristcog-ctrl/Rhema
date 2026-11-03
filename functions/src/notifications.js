@@ -1881,11 +1881,13 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
     const combinedRef = (refTeText && refEnText && refTeText !== refEnText)
         ? `${refTeText} | ${refEnText}`
         : (refTeText || refEnText);
-    if (verseTeText && verseEnText && verseTeText !== verseEnText) {
-        unifiedBody = `"${verseTeText}"\n\n"${verseEnText}"\n\n${combinedRef}`;
+    const cleanVerseTe = (verseTeText || '').replace(/^["“”']+|["“”']+$/g, '').trim();
+    const cleanVerseEn = (verseEnText || '').replace(/^["“”']+|["“”']+$/g, '').trim();
+    if (cleanVerseTe && cleanVerseEn && cleanVerseTe !== cleanVerseEn) {
+        unifiedBody = `${cleanVerseTe}\n\n${cleanVerseEn}\n\n${combinedRef}`;
     }
     else {
-        unifiedBody = `"${verseTeText || verseEnText}"\n\n${combinedRef}`;
+        unifiedBody = `${cleanVerseTe || cleanVerseEn}\n\n${combinedRef}`;
     }
     try {
         const topicMessage = {
