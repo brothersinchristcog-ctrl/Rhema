@@ -2551,7 +2551,7 @@ class FirestoreService {
       }
 
       const buildEventQRPayload = (eventId: string, eventTitle: string) => JSON.stringify({
-        action: 'WeChristian_Attendance',
+        action: 'Rhema_Attendance',
         churchId,
         churchName,
         churchCode,
