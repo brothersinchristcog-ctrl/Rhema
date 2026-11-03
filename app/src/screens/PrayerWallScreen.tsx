@@ -24,7 +24,8 @@ import {
   Trash2,
   ChevronDown,
   ChevronUp,
-  Heart
+  Heart,
+  BookOpen
 } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -405,6 +406,37 @@ export default function PrayerWallScreen({ navigation, route }: any) {
           {/* Prayer Text */}
           <Text style={[styles.prayerText, { color: colors.text }]}>{item.text}</Text>
 
+          {/* Attached Bible Verse from Pastor */}
+          {(item.bibleVerse || item.verseReference) ? (
+            <View style={{
+              backgroundColor: '#fffbeb',
+              borderRadius: 10,
+              padding: 10,
+              marginBottom: 10,
+              borderLeftWidth: 3,
+              borderLeftColor: '#d97706',
+              borderWidth: 1,
+              borderColor: '#fef3c7'
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                <BookOpen size={14} color="#b45309" />
+                <Text style={{ fontSize: 13, fontWeight: '800', color: '#b45309' }}>
+                  {item.bibleVerse || item.verseReference}
+                </Text>
+              </View>
+              {item.verseText ? (
+                <Text style={{ fontSize: 12, fontStyle: 'italic', color: '#78350f', lineHeight: 17 }}>
+                  "{item.verseText}"
+                </Text>
+              ) : null}
+              {item.verseTextTe && item.verseTextTe.trim() !== (item.verseText || '').trim() ? (
+                <Text style={{ fontSize: 11, fontStyle: 'italic', color: '#92400e', marginTop: 3, lineHeight: 16 }}>
+                  "{item.verseTextTe}"
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+
           {/* Button Row: Pray btn + Chevron */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 }}>
             <TouchableOpacity
@@ -481,6 +513,37 @@ export default function PrayerWallScreen({ navigation, route }: any) {
 
         {/* Prayer Text */}
         <Text style={styles.prayerText}>{item.text}</Text>
+
+        {/* Attached Bible Verse from Pastor */}
+        {(item.bibleVerse || item.verseReference) ? (
+          <View style={{
+            backgroundColor: '#fffbeb',
+            borderRadius: 12,
+            padding: 12,
+            marginTop: 10,
+            borderLeftWidth: 3,
+            borderLeftColor: '#d97706',
+            borderWidth: 1,
+            borderColor: '#fef3c7'
+          }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              <BookOpen size={14} color="#b45309" />
+              <Text style={{ fontSize: 13, fontWeight: '800', color: '#b45309' }}>
+                {item.bibleVerse || item.verseReference}
+              </Text>
+            </View>
+            {item.verseText ? (
+              <Text style={{ fontSize: 13, fontStyle: 'italic', color: '#78350f', lineHeight: 18 }}>
+                "{item.verseText}"
+              </Text>
+            ) : null}
+            {item.verseTextTe && item.verseTextTe.trim() !== (item.verseText || '').trim() ? (
+              <Text style={{ fontSize: 12, fontStyle: 'italic', color: '#92400e', marginTop: 4, lineHeight: 17 }}>
+                "{item.verseTextTe}"
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
 
         {/* Admin Response */}
         {item.isAnswered && item.replies && item.replies.length > 0 && (

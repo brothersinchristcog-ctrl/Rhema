@@ -67,6 +67,13 @@ export interface PrayerRequest {
   prayedByNames?: string[]; // List of names
   response?: string; // Pastor's response
   isAnswered: boolean;
+  bibleVerse?: string;
+  verseReference?: string;
+  verseReferenceTe?: string;
+  verseText?: string;
+  verseTextTe?: string;
+  lastAdminResponse?: string;
+  lastAdminName?: string;
   isClosed?: boolean;
   isAnonymous?: boolean;
   testimony?: string;

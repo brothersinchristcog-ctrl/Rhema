@@ -35,8 +35,13 @@ import {
   MoreVertical,
   Megaphone,
   ChevronLeft,
-  FileDown
+  FileDown,
+  BookOpen,
+  Sparkles,
+  Share2,
+  MessageCircle
 } from 'lucide-react-native';
+import PrayerVerseService, { PrayerVerse, SuggestedResponse } from '../../services/PrayerVerseService';
 import FirestoreService from '../../services/FirestoreService';
 import Theme from '../../theme/Theme';
 import { useAuth } from '../../context/AuthContext';
@@ -94,6 +99,11 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
   const [selectedMember, setSelectedMember] = useState<any>(null);
   const [searchingMembers, setSearchingMembers] = useState(false);
   const [adminResponses, setAdminResponses] = useState<{[key: string]: string}>({});
+  const [selectedVerses, setSelectedVerses] = useState<{ [id: string]: { reference: string; referenceTe?: string; text: string; textTe?: string } }>({});
+  const [aiVerseSuggestions, setAiVerseSuggestions] = useState<{ [id: string]: PrayerVerse[] }>({});
+  const [loadingAiVerses, setLoadingAiVerses] = useState<{ [id: string]: boolean }>({});
+  const [aiResponseSuggestions, setAiResponseSuggestions] = useState<{ [id: string]: SuggestedResponse[] }>({});
+  const [loadingAiResponses, setLoadingAiResponses] = useState<{ [id: string]: boolean }>({});
   const [successModalData, setSuccessModalData] = useState<{ visible: boolean; title: string; sub: string }>({ visible: false, title: '', sub: '' });
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [closeConfirmId, setCloseConfirmId] = useState<string | null>(null);
@@ -190,7 +200,7 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
         setDetailModalVisible(true);
         scrollViewRef.current?.scrollTo({ y: 0, animated: true });
       } else {
-        FirestoreService.getPrayerRequestById(targetPrayerId).then(fetched => {
+        FirestoreService.getPrayerRequestById(targetPrayerId).then((fetched: any) => {
           if (fetched && (fetched.text || fetched.request || fetched.requestEn || fetched.name || fetched.memberName)) {
             setDetailPrayer(fetched);
             setDetailModalVisible(true);
@@ -212,48 +222,450 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
     fetchPrayers(true);
   };
 
-  const handleApprove = async (id: string, responseText?: string) => {
+  const handleApprove = async (id: string, responseText?: string, verseParam?: any) => {
     try {
+      const verse = verseParam !== undefined ? verseParam : selectedVerses[id];
       if (responseText && responseText.trim()) {
         await FirestoreService.addPrayerComment(id, responseText.trim(), adminName);
       }
-      await FirestoreService.markAsAnswered(id, responseText, adminName, true);
+      await FirestoreService.markAsAnswered(id, responseText, adminName, true, verse);
       
       setAdminResponses(prev => {
+        const next = {...prev};
+        delete next[id];
+        return next;
+      });
+      setSelectedVerses(prev => {
         const next = {...prev};
         delete next[id];
         return next;
       });
       
       // Immediately update local state to move to 'Processed'
-      setPrayers(prev => prev.map(p => p.id === id ? { ...p, isAnswered: true, isPublic: true } : p));
+      setPrayers(prev => prev.map(p => p.id === id ? {
+        ...p,
+        isAnswered: true,
+        isPublic: true,
+        bibleVerse: verse?.reference || p.bibleVerse,
+        verseReference: verse?.reference || p.verseReference,
+        verseText: verse?.text || p.verseText,
+        verseTextTe: verse?.textTe || p.verseTextTe
+      } : p));
       
-      triggerSuccess('Approved!', 'Prayer request approved and made public.');
+      triggerSuccess('Approved!', 'Prayer request approved with biblical encouragement.');
     } catch (err) {
       Alert.alert('Error', 'Failed to update status.');
     }
   };
 
-  const handleRespondPrivately = async (id: string, responseText?: string) => {
+  const handleRespondPrivately = async (id: string, responseText?: string, verseParam?: any) => {
     try {
+      const verse = verseParam !== undefined ? verseParam : selectedVerses[id];
       if (responseText && responseText.trim()) {
         await FirestoreService.addPrayerComment(id, responseText.trim(), adminName);
       }
-      await FirestoreService.markAsAnswered(id, responseText, adminName, false);
+      await FirestoreService.markAsAnswered(id, responseText, adminName, false, verse);
       
       setAdminResponses(prev => {
         const next = {...prev};
         delete next[id];
         return next;
       });
+      setSelectedVerses(prev => {
+        const next = {...prev};
+        delete next[id];
+        return next;
+      });
       
       // Mark answered but keep private (isPublic stays false)
-      setPrayers(prev => prev.map(p => p.id === id ? { ...p, isAnswered: true } : p));
+      setPrayers(prev => prev.map(p => p.id === id ? {
+        ...p,
+        isAnswered: true,
+        bibleVerse: verse?.reference || p.bibleVerse,
+        verseReference: verse?.reference || p.verseReference,
+        verseText: verse?.text || p.verseText,
+        verseTextTe: verse?.textTe || p.verseTextTe
+      } : p));
       
-      triggerSuccess('Responded! 🙏', 'Your private response has been sent to the member.');
+      triggerSuccess('Responded! 🙏', 'Your private response & verse have been sent to the member.');
     } catch (err) {
       Alert.alert('Error', 'Failed to send response.');
     }
+  };
+
+  // ── Verse & Response Helper Methods ──
+  const getVersesForRequest = (req: any): PrayerVerse[] => {
+    if (!req) return [];
+    const reqId = req.id;
+    if (aiVerseSuggestions[reqId] && aiVerseSuggestions[reqId].length > 0) {
+      return aiVerseSuggestions[reqId];
+    }
+    const text = req.text || req.request || req.requestEn || '';
+    return PrayerVerseService.getInstantSuggestedVerses(text, req.category);
+  };
+
+  const handleFetchAIVerses = async (req: any) => {
+    if (!req?.id) return;
+    const reqId = req.id;
+    setLoadingAiVerses(prev => ({ ...prev, [reqId]: true }));
+    try {
+      const text = req.text || req.request || req.requestEn || '';
+      const verses = await PrayerVerseService.fetchAIVerseSuggestions(text, req.category);
+      if (verses && verses.length > 0) {
+        setAiVerseSuggestions(prev => ({ ...prev, [reqId]: verses }));
+      }
+    } catch (err) {
+      console.warn('AI verse suggestion error:', err);
+    } finally {
+      setLoadingAiVerses(prev => ({ ...prev, [reqId]: false }));
+    }
+  };
+
+  const getResponsesForRequest = (req: any): SuggestedResponse[] => {
+    if (!req) return [];
+    const reqId = req.id;
+    if (aiResponseSuggestions[reqId] && aiResponseSuggestions[reqId].length > 0) {
+      return aiResponseSuggestions[reqId];
+    }
+    const memberName = req.name || req.authorName || req.memberName || 'Beloved Member';
+    const verse = selectedVerses[reqId];
+    return PrayerVerseService.getInstantSuggestedResponses(memberName, req.category, verse?.reference);
+  };
+
+  const handleFetchAIResponses = async (req: any) => {
+    if (!req?.id) return;
+    const reqId = req.id;
+    setLoadingAiResponses(prev => ({ ...prev, [reqId]: true }));
+    try {
+      const text = req.text || req.request || req.requestEn || '';
+      const memberName = req.name || req.authorName || req.memberName || 'Beloved Member';
+      const verse = selectedVerses[reqId];
+      const responses = await PrayerVerseService.fetchAIResponseSuggestions(
+        text,
+        memberName,
+        req.category,
+        verse ? { reference: verse.reference, referenceTe: verse.referenceTe, verseEn: verse.text, verseTe: verse.textTe, theme: 'Scripture' } : undefined
+      );
+      if (responses && responses.length > 0) {
+        setAiResponseSuggestions(prev => ({ ...prev, [reqId]: responses }));
+      }
+    } catch (err) {
+      console.warn('AI response suggestion error:', err);
+    } finally {
+      setLoadingAiResponses(prev => ({ ...prev, [reqId]: false }));
+    }
+  };
+
+  const handleSelectVerse = (reqId: string, verse: PrayerVerse) => {
+    setSelectedVerses(prev => {
+      if (prev[reqId]?.reference === verse.reference) {
+        const next = { ...prev };
+        delete next[reqId];
+        return next;
+      }
+      return {
+        ...prev,
+        [reqId]: {
+          reference: verse.reference,
+          referenceTe: verse.referenceTe,
+          text: verse.verseEn,
+          textTe: verse.verseTe,
+        }
+      };
+    });
+  };
+
+  const handleSelectResponse = (reqId: string, resp: SuggestedResponse) => {
+    setAdminResponses(prev => ({
+      ...prev,
+      [reqId]: resp.body
+    }));
+  };
+
+  const handleShareMotivationalVerse = async (req: any, preferredChannel: 'whatsapp' | 'native' = 'whatsapp') => {
+    if (!req) return;
+    const reqId = req.id;
+    let verse = selectedVerses[reqId] || (req.bibleVerse ? { reference: req.bibleVerse, text: req.verseText, textTe: req.verseTextTe } : null);
+
+    if (!verse || !verse.reference) {
+      const suggestions = getVersesForRequest(req);
+      if (suggestions && suggestions.length > 0) {
+        const top = suggestions[0];
+        verse = { reference: top.reference, referenceTe: top.referenceTe, text: top.verseEn, textTe: top.verseTe };
+        setSelectedVerses(prev => ({ ...prev, [reqId]: verse! }));
+      }
+    }
+
+    if (!verse || !verse.reference) {
+      Alert.alert('Verse Required', 'Please enter or select a Bible verse to share encouragement.');
+      return;
+    }
+
+    const pastoralText = adminResponses[reqId] || req.lastAdminResponse || '';
+    const memberName = req.name || req.authorName || req.memberName || 'Beloved Member';
+    const prayerText = req.text || req.request || req.requestEn || '';
+    const formattedMsg = PrayerVerseService.formatMotivationalMessage(
+      memberName,
+      prayerText,
+      verse,
+      pastoralText,
+      churchName
+    );
+
+    const phone = req.phone || req.contactPhone;
+    if (preferredChannel === 'whatsapp' && phone) {
+      await PrayerVerseService.shareViaWhatsApp(phone, formattedMsg);
+    } else {
+      await PrayerVerseService.shareNative('Encouraging Scripture & Prayer Blessing', formattedMsg);
+    }
+  };
+
+  const renderModerationWorkflow = (item: any, isDetailModal = false) => {
+    if (!item?.id) return null;
+    const reqId = item.id;
+    const isPublic = item.isPublic;
+    const verseList = getVersesForRequest(item);
+    const respList = getResponsesForRequest(item);
+    const currentVerse = selectedVerses[reqId];
+    const currentReply = adminResponses[reqId] || '';
+    const phone = item.phone || item.contactPhone;
+
+    return (
+      <View style={[styles.workflowContainer, isDetailModal && { backgroundColor: '#FFFFFF', borderWidth: 0, padding: 0 }]}>
+        {isPublic && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+            <Megaphone size={14} color="#D97706" />
+            <Text style={{ fontSize: 12, fontWeight: '700', color: '#D97706' }}>
+              User requested this prayer to be PUBLIC
+            </Text>
+          </View>
+        )}
+
+        {/* ── 1. Bible Verse Entry & AI Suggestions ── */}
+        <View style={styles.sectionBox}>
+          <View style={styles.sectionHeaderRow}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <BookOpen size={15} color="#92400E" />
+              <Text style={styles.sectionTitle}>1. Bible Verse (Scripture)</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.aiPillBtn}
+              onPress={() => handleFetchAIVerses(item)}
+              disabled={loadingAiVerses[reqId]}
+            >
+              {loadingAiVerses[reqId] ? (
+                <ActivityIndicator size="small" color="#7C3AED" />
+              ) : (
+                <>
+                  <Sparkles size={13} color="#7C3AED" />
+                  <Text style={styles.aiPillBtnTxt}>AI Verses</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Quick Curated & AI Verse Chips */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 8, paddingVertical: 4 }}
+          >
+            {verseList.map((v, idx) => {
+              const isSelected = currentVerse?.reference === v.reference;
+              return (
+                <TouchableOpacity
+                  key={v.reference + idx}
+                  style={[styles.verseChip, isSelected && styles.verseChipSelected]}
+                  onPress={() => handleSelectVerse(reqId, v)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.verseChipRef, isSelected && styles.verseChipRefSelected]}>
+                    {v.reference}
+                  </Text>
+                  {v.theme ? (
+                    <Text style={[styles.verseChipTheme, isSelected && styles.verseChipThemeSelected]}>
+                      · {v.theme}
+                    </Text>
+                  ) : null}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          {/* Scripture Reference Input */}
+          <View style={styles.inputWrap}>
+            <Text style={styles.inputFieldLabel}>Scripture Reference</Text>
+            <TextInput
+              style={styles.singleLineInput}
+              placeholder="e.g. Jeremiah 17:14 or యిర్మియా 17:14"
+              placeholderTextColor="#94A3B8"
+              value={currentVerse?.reference || ''}
+              onChangeText={(txt) => setSelectedVerses(prev => ({
+                ...prev,
+                [reqId]: { ...(prev[reqId] || { text: '' }), reference: txt }
+              }))}
+            />
+          </View>
+
+          {/* Scripture Verse Text Input (optional / editable) */}
+          {currentVerse?.reference ? (
+            <View style={[styles.inputWrap, { marginTop: 8 }]}>
+              <Text style={styles.inputFieldLabel}>Scripture Verse Words</Text>
+              <TextInput
+                style={styles.multiLineVerseInput}
+                placeholder="Type or edit verse text..."
+                placeholderTextColor="#94A3B8"
+                multiline
+                value={currentVerse?.text || ''}
+                onChangeText={(txt) => setSelectedVerses(prev => ({
+                  ...prev,
+                  [reqId]: { ...(prev[reqId] || { reference: '' }), text: txt }
+                }))}
+              />
+              {currentVerse?.textTe && currentVerse.textTe.trim() !== (currentVerse.text || '').trim() ? (
+                <Text style={styles.teluguVersePreview}>
+                  Telugu: "{currentVerse.textTe}"
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+        </View>
+
+        {/* ── 2. Suggested Responses ── */}
+        <View style={[styles.sectionBox, { marginTop: 12 }]}>
+          <View style={styles.sectionHeaderRow}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <MessageSquare size={14} color="#1D4ED8" />
+              <Text style={[styles.sectionTitle, { color: '#1D4ED8' }]}>2. Suggested Responses</Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.aiPillBtn, { borderColor: '#BFDBFE', backgroundColor: '#EFF6FF' }]}
+              onPress={() => handleFetchAIResponses(item)}
+              disabled={loadingAiResponses[reqId]}
+            >
+              {loadingAiResponses[reqId] ? (
+                <ActivityIndicator size="small" color="#1D4ED8" />
+              ) : (
+                <>
+                  <Sparkles size={13} color="#1D4ED8" />
+                  <Text style={[styles.aiPillBtnTxt, { color: '#1D4ED8' }]}>AI Response</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Quick Response Chips */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 8, paddingVertical: 4 }}
+          >
+            {respList.map((resp) => {
+              const isApplied = currentReply.includes(resp.title) || currentReply === resp.body;
+              return (
+                <TouchableOpacity
+                  key={resp.id}
+                  style={[styles.responseChip, isApplied && styles.responseChipApplied]}
+                  onPress={() => handleSelectResponse(reqId, resp)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.responseChipTxt, isApplied && styles.responseChipTxtApplied]}>
+                    {resp.title}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          {/* Response Text Input */}
+          <View style={[styles.inputWrap, { marginTop: 8 }]}>
+            <Text style={styles.inputFieldLabel}>Pastoral Response Message</Text>
+            <TextInput
+              style={[styles.adminReplyInput, { minHeight: 74, backgroundColor: '#FFFFFF' }]}
+              placeholder="Write a prayer message or response to this member..."
+              placeholderTextColor="#94A3B8"
+              value={currentReply}
+              onChangeText={(txt) => setAdminResponses(prev => ({ ...prev, [reqId]: txt }))}
+              multiline
+            />
+          </View>
+        </View>
+
+        {/* ── 3. Motivational Sharing & Submit Actions ── */}
+        <View style={{ marginTop: 14, gap: 10 }}>
+          {/* Share Motivational Verse Row */}
+          {(currentVerse?.reference || currentReply.trim() || item.bibleVerse) && (
+            <View style={styles.shareRow}>
+              {phone ? (
+                <TouchableOpacity
+                  style={styles.shareWaBtn}
+                  onPress={() => handleShareMotivationalVerse(item, 'whatsapp')}
+                  activeOpacity={0.8}
+                >
+                  <MessageCircle size={15} color="#FFFFFF" />
+                  <Text style={styles.shareWaBtnTxt}>WhatsApp Motivational Verse</Text>
+                </TouchableOpacity>
+              ) : null}
+
+              <TouchableOpacity
+                style={styles.shareNativeBtn}
+                onPress={() => handleShareMotivationalVerse(item, 'native')}
+                activeOpacity={0.8}
+              >
+                <Share2 size={14} color="#334155" />
+                <Text style={styles.shareNativeBtnTxt}>Share Encouragement</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Primary Action Button */}
+          {isPublic ? (
+            <TouchableOpacity
+              style={styles.approvePublicBtn}
+              onPress={async () => {
+                await handleApprove(reqId, currentReply, currentVerse);
+                if (isDetailModal) {
+                  setDetailPrayer((prev: any) => ({
+                    ...prev,
+                    isAnswered: true,
+                    isPublic: true,
+                    bibleVerse: currentVerse?.reference,
+                    verseText: currentVerse?.text,
+                    verseTextTe: currentVerse?.textTe
+                  }));
+                  setTimeout(() => setDetailModalVisible(false), 800);
+                }
+              }}
+              activeOpacity={0.8}
+            >
+              <CheckCircle2 size={18} color="#FFFFFF" />
+              <Text style={styles.approvePublicBtnTxt}>Approve & Make Public</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.respondPrivateBtn}
+              onPress={async () => {
+                await handleRespondPrivately(reqId, currentReply, currentVerse);
+                if (isDetailModal) {
+                  setDetailPrayer((prev: any) => ({
+                    ...prev,
+                    isAnswered: true,
+                    bibleVerse: currentVerse?.reference,
+                    verseText: currentVerse?.text,
+                    verseTextTe: currentVerse?.textTe
+                  }));
+                  setTimeout(() => setDetailModalVisible(false), 800);
+                }
+              }}
+              activeOpacity={0.8}
+            >
+              <CheckCircle2 size={18} color="#FFFFFF" />
+              <Text style={styles.respondPrivateBtnTxt}>Send Private Response</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    );
   };
 
   const handleClose = (id: string) => {
@@ -622,45 +1034,39 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
         </View>
       </View>
 
-      {!isAnswered && (
-        <View style={{ marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#e2e8f0' }}>
-          {item.isPublic && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-              <Megaphone size={14} color="#d97706" />
-              <Text style={{ fontSize: 12, fontWeight: '700', color: '#d97706' }}>User requested this to be PUBLIC</Text>
+      {/* Attached Bible Verse for Answered Requests */}
+      {isAnswered && (item.bibleVerse || item.verseReference) && (
+        <View style={styles.answeredVerseBox}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <BookOpen size={14} color="#854D0E" />
+              <Text style={{ fontSize: 13, fontWeight: '800', color: '#854D0E' }}>
+                {item.bibleVerse || item.verseReference}
+              </Text>
             </View>
-          )}
-          <TextInput
-            style={styles.adminReplyInput}
-            placeholder="Write a prayer response (optional)..."
-            placeholderTextColor="#94a3b8"
-            value={adminResponses[item.id] || ''}
-            onChangeText={(txt) => setAdminResponses(prev => ({ ...prev, [item.id]: txt }))}
-            multiline
-          />
-          <View style={[styles.pActions, { marginTop: 12, justifyContent: 'flex-end' }]}>
-            {item.isPublic ? (
-              // Public request → Approve & Make Public
-              <TouchableOpacity
-                style={[styles.pActionBtn, { backgroundColor: '#F0FDF4', paddingHorizontal: 16, paddingVertical: 10 }]}
-                onPress={() => handleApprove(item.id, adminResponses[item.id])}
-              >
-                <CheckCircle2 size={16} color="#15803D" />
-                <Text style={[styles.pActionBtnTxt, { color: '#15803D', fontWeight: '800', fontSize: 13 }]}>Approve & Make Public</Text>
-              </TouchableOpacity>
-            ) : (
-              // Personal request → Respond Privately only
-              <TouchableOpacity
-                style={[styles.pActionBtn, { backgroundColor: '#EFF6FF', paddingHorizontal: 16, paddingVertical: 10 }]}
-                onPress={() => handleRespondPrivately(item.id, adminResponses[item.id])}
-              >
-                <CheckCircle2 size={16} color="#2563EB" />
-                <Text style={[styles.pActionBtnTxt, { color: '#2563EB', fontWeight: '800', fontSize: 13 }]}>Respond Privately</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              style={styles.answeredShareBtn}
+              onPress={() => handleShareMotivationalVerse(item, item.phone ? 'whatsapp' : 'native')}
+            >
+              <Share2 size={12} color="#854D0E" />
+              <Text style={{ fontSize: 11, fontWeight: '700', color: '#854D0E' }}>Share Verse</Text>
+            </TouchableOpacity>
           </View>
+          {item.verseText ? (
+            <Text style={{ fontSize: 13, fontStyle: 'italic', color: '#713F12', lineHeight: 18 }}>
+              "{item.verseText}"
+            </Text>
+          ) : null}
+          {item.verseTextTe && item.verseTextTe.trim() !== (item.verseText || '').trim() ? (
+            <Text style={{ fontSize: 12, fontStyle: 'italic', color: '#854D0E', marginTop: 3 }}>
+              "{item.verseTextTe}"
+            </Text>
+          ) : null}
         </View>
       )}
+
+      {/* Moderation Workflow: Bible Verse Entry, AI Suggestions, Suggested Responses & Share */}
+      {!isAnswered && renderModerationWorkflow(item)}
     </TouchableOpacity>
   );
   };
@@ -858,52 +1264,41 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
                 </View>
               )}
 
-              {/* Admin Reply & Action Section */}
-              {!detailPrayer?.isAnswered && (
-                <View style={{ backgroundColor: '#FAF5FF', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#DDD6FE', marginBottom: 20 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '800', color: '#6B21A8', marginBottom: 8 }}>
-                    ✍️ Send Pastoral Prayer Response
-                  </Text>
-                  <TextInput
-                    style={[styles.adminReplyInput, { backgroundColor: '#FFFFFF', minHeight: 80 }]}
-                    placeholder="Write a prayer message or response to this member..."
-                    placeholderTextColor="#94a3b8"
-                    value={detailPrayer?.id ? (adminResponses[detailPrayer.id] || '') : ''}
-                    onChangeText={(txt) => { if (detailPrayer?.id) setAdminResponses(prev => ({ ...prev, [detailPrayer.id]: txt })); }}
-                    multiline
-                  />
-
-                  <View style={{ marginTop: 14, gap: 10 }}>
-                    {detailPrayer.isPublic ? (
-                      <TouchableOpacity
-                        style={{ backgroundColor: '#15803D', paddingVertical: 14, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
-                        onPress={async () => {
-                          const id = detailPrayer?.id;
-                          if (!id) return;
-                          await handleApprove(id, adminResponses[id]);
-                          setDetailPrayer((prev: any) => ({ ...prev, isAnswered: true, isPublic: true }));
-                          setTimeout(() => setDetailModalVisible(false), 800);
-                        }}
-                      >
-                        <CheckCircle2 size={18} color="#FFFFFF" />
-                        <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 15 }}>Approve & Make Public</Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity
-                        style={{ backgroundColor: '#2563EB', paddingVertical: 14, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
-                        onPress={async () => {
-                          const id = detailPrayer?.id;
-                          if (!id) return;
-                          await handleRespondPrivately(id, adminResponses[id]);
-                          setDetailPrayer((prev: any) => ({ ...prev, isAnswered: true }));
-                          setTimeout(() => setDetailModalVisible(false), 800);
-                        }}
-                      >
-                        <CheckCircle2 size={18} color="#FFFFFF" />
-                        <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 15 }}>Send Private Response</Text>
-                      </TouchableOpacity>
-                    )}
+              {/* Attached Bible Verse for Answered Requests in Detail Modal */}
+              {detailPrayer?.isAnswered && (detailPrayer?.bibleVerse || detailPrayer?.verseReference) && (
+                <View style={{ backgroundColor: '#FEF3C7', padding: 14, borderRadius: 14, borderWidth: 1, borderColor: '#FDE68A', marginBottom: 16 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <BookOpen size={16} color="#854D0E" />
+                      <Text style={{ fontSize: 14, fontWeight: '800', color: '#854D0E' }}>
+                        {detailPrayer.bibleVerse || detailPrayer.verseReference}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={{ backgroundColor: '#FDE68A', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 5 }}
+                      onPress={() => handleShareMotivationalVerse(detailPrayer, detailPrayer.phone ? 'whatsapp' : 'native')}
+                    >
+                      <Share2 size={13} color="#854D0E" />
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#854D0E' }}>Share Verse</Text>
+                    </TouchableOpacity>
                   </View>
+                  {detailPrayer.verseText ? (
+                    <Text style={{ fontSize: 14, fontStyle: 'italic', color: '#713F12', lineHeight: 20 }}>
+                      "{detailPrayer.verseText}"
+                    </Text>
+                  ) : null}
+                  {detailPrayer.verseTextTe && detailPrayer.verseTextTe.trim() !== (detailPrayer.verseText || '').trim() ? (
+                    <Text style={{ fontSize: 13, fontStyle: 'italic', color: '#854D0E', marginTop: 4 }}>
+                      "{detailPrayer.verseTextTe}"
+                    </Text>
+                  ) : null}
+                </View>
+              )}
+
+              {/* Admin Reply & Action Section in Detail Modal */}
+              {!detailPrayer?.isAnswered && (
+                <View style={{ marginBottom: 20 }}>
+                  {renderModerationWorkflow(detailPrayer, true)}
                 </View>
               )}
 
@@ -1368,5 +1763,216 @@ const styles = StyleSheet.create({
   replyAuthor: { fontSize: 12, fontWeight: '800', color: COLORS.ink, fontFamily: FONTS.serif },
   replyDate: { fontSize: 11, color: COLORS.inkSoft, fontWeight: '600' },
 
-  replyBody: { fontSize: 14, color: COLORS.ink2, lineHeight: 22, fontFamily: FONTS.serif }
+  replyBody: { fontSize: 14, color: COLORS.ink2, lineHeight: 22, fontFamily: FONTS.serif },
+
+  // ── Moderation Workflow Styles ──
+  workflowContainer: {
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  sectionBox: {
+    backgroundColor: '#FAF5FF',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#6B21A8',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  aiPillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EDE9FE',
+    borderWidth: 1,
+    borderColor: '#C4B5FD',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  aiPillBtnTxt: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#7C3AED',
+  },
+  verseChip: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  verseChipSelected: {
+    backgroundColor: '#7C3AED',
+    borderColor: '#7C3AED',
+  },
+  verseChipRef: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#5B21B6',
+  },
+  verseChipRefSelected: {
+    color: '#FFFFFF',
+  },
+  verseChipTheme: {
+    fontSize: 11,
+    color: '#7C3AED',
+  },
+  verseChipThemeSelected: {
+    color: '#DDD6FE',
+  },
+  inputWrap: {
+    marginTop: 6,
+  },
+  inputFieldLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+    marginBottom: 4,
+  },
+  singleLineInput: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 13,
+    color: '#1E293B',
+  },
+  multiLineVerseInput: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 12,
+    color: '#1E293B',
+    minHeight: 50,
+  },
+  teluguVersePreview: {
+    fontSize: 11,
+    fontStyle: 'italic',
+    color: '#6D28D9',
+    marginTop: 4,
+  },
+  responseChip: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  responseChipApplied: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
+  },
+  responseChipTxt: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1D4ED8',
+  },
+  responseChipTxtApplied: {
+    color: '#FFFFFF',
+  },
+  shareRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  shareWaBtn: {
+    backgroundColor: '#16A34A',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  shareWaBtnTxt: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  shareNativeBtn: {
+    backgroundColor: '#F1F5F9',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  shareNativeBtnTxt: {
+    color: '#334155',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  approvePublicBtn: {
+    backgroundColor: '#15803D',
+    borderRadius: 12,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  approvePublicBtnTxt: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  respondPrivateBtn: {
+    backgroundColor: '#2563EB',
+    borderRadius: 12,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  respondPrivateBtnTxt: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  answeredVerseBox: {
+    marginTop: 12,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  answeredShareBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FDE68A',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  }
 });
