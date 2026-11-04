@@ -33,9 +33,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isSigningOutRef = useRef<boolean>(false);
 
   const KNOWN_SUPER_ADMIN_UIDS = [
-    'q43NWXEu8iTiFE0B7RDa7O8yq2o2', // Sakibanda Sunil Babu (+918374331432)
     'sXjfTqNTkKOT6dYVxkpbhjritCi2', // Prabhakar Yeddula (+919392723536)
-    'LtbLZnTmhWMaCASSTmSC5ad0ST33', // Jayanthi Admin (+919398501975)
   ];
 
   const checkSuperAdminStatus = async (targetUid: string): Promise<boolean> => {
@@ -48,100 +46,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     try {
-      // 1. Primary check: 'Rhema Church/rhema/Platform Admin' subcollection -> {targetUid} -> 'Role'
-      const churchRoleSnap = await firestore()
-        .collection('Rhema Church')
-        .doc(RHEMA_CHURCH_ID)
-        .collection('Platform Admin')
-        .doc(targetUid)
-        .collection('Role')
-        .get()
-        .catch(() => null);
-
-      if (churchRoleSnap && !churchRoleSnap.empty) {
-        const hasSuperAdminRole = churchRoleSnap.docs.some((d) => {
-          const data = d.data();
-          return (
-            data?.superadmin === true ||
-            String(data?.role || '').toLowerCase().replace(/\s+/g, '') === 'superadmin' ||
-            String(data?.role || '').toLowerCase().includes('super')
-          );
-        });
-        if (hasSuperAdminRole) {
-          AsyncStorage.setItem('@cached_is_super_admin', JSON.stringify(true)).catch(() => {});
-          return true;
-        }
-      }
-
-      // 2. Direct doc in Rhema Church/rhema/Platform Admin/{targetUid}
-      const churchDirectDoc = await firestore()
-        .collection('Rhema Church')
-        .doc(RHEMA_CHURCH_ID)
-        .collection('Platform Admin')
-        .doc(targetUid)
-        .get()
-        .catch(() => null);
-      if (churchDirectDoc && churchDirectDoc.exists) {
-        const d = churchDirectDoc.data();
-        if (
-          d?.superadmin === true ||
-          String(d?.role || '').toLowerCase().replace(/\s+/g, '') === 'superadmin' ||
-          String(d?.role || '').toLowerCase().includes('super')
-        ) {
-          AsyncStorage.setItem('@cached_is_super_admin', JSON.stringify(true)).catch(() => {});
-          return true;
-        }
-      }
-
-      // 3. Fallback: root Platform Admin collection Role subcollection
-      const rootRoleSnap = await firestore()
-        .collection('Platform Admin')
-        .doc(targetUid)
-        .collection('Role')
-        .get()
-        .catch(() => null);
-
-      if (rootRoleSnap && !rootRoleSnap.empty) {
-        const hasSuper = rootRoleSnap.docs.some((d: any) => {
-          const data = d.data();
-          return (
-            data?.superadmin === true ||
-            String(data?.role || '').toLowerCase().replace(/\s+/g, '') === 'superadmin' ||
-            String(data?.role || '').toLowerCase().includes('super')
-          );
-        });
-        if (hasSuper) {
-          AsyncStorage.setItem('@cached_is_super_admin', JSON.stringify(true)).catch(() => {});
-          return true;
-        }
-      }
-
-      // 4. Fallback: root Platform Admin direct doc
-      const rootDoc = await firestore()
-        .collection('Platform Admin')
-        .doc(targetUid)
-        .get()
-        .catch(() => null);
-      if (rootDoc && rootDoc.exists) {
-        const d = rootDoc.data();
-        if (
-          d?.superadmin === true ||
-          String(d?.role || '').toLowerCase().replace(/\s+/g, '') === 'superadmin' ||
-          String(d?.role || '').toLowerCase().includes('super')
-        ) {
-          AsyncStorage.setItem('@cached_is_super_admin', JSON.stringify(true)).catch(() => {});
-          return true;
-        }
-      }
-
-      // 5. Fallback: root platform_admins
-      const legacyDoc = await firestore()
+      // 1. Check root platform_admins collection
+      const adminDoc = await firestore()
         .collection('platform_admins')
         .doc(targetUid)
         .get()
         .catch(() => null);
-      if (legacyDoc && legacyDoc.exists) {
-        const d = legacyDoc.data();
+      if (adminDoc && adminDoc.exists) {
+        const d = adminDoc.data();
         if (
           d?.superadmin === true ||
           String(d?.role || '').toLowerCase().replace(/\s+/g, '') === 'superadmin' ||
@@ -310,25 +222,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 notifSvc.subscribeToSuperAdminTopic().catch(() => {});
               }
 
-              // Set up live listener for Platform Admin changes
+              // Set up live listener for platform_admins changes
               if (superAdminListenerRef.current) superAdminListenerRef.current();
               superAdminListenerRef.current = firestore()
-                .collection('Rhema Church')
-                .doc(RHEMA_CHURCH_ID)
-                .collection('Platform Admin')
+                .collection('platform_admins')
                 .doc(userState.uid)
-                .collection('Role')
                 .onSnapshot(
                   (snap) => {
-                    if (snap && !snap.empty) {
-                      const hasSuper = snap.docs.some((d) => {
-                        const data = d.data();
-                        return (
-                          data?.superadmin === true ||
-                          String(data?.role || '').toLowerCase().replace(/\s+/g, '') === 'superadmin' ||
-                          String(data?.role || '').toLowerCase().includes('super')
-                        );
-                      });
+                    if (snap && snap.exists) {
+                      const data = snap.data();
+                      const hasSuper = (
+                        data?.superadmin === true ||
+                        String(data?.role || '').toLowerCase().replace(/\s+/g, '') === 'superadmin' ||
+                        String(data?.role || '').toLowerCase().includes('super')
+                      );
                       setIsPlatformSuperAdmin(hasSuper);
                     }
                   },

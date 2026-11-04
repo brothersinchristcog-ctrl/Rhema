@@ -13,24 +13,9 @@ service cloud.firestore {
       return request.auth.uid == userId;
     }
 
-    // Helper: Is this user an admin globally?
-        // Helper: Is this user a platform Super Admin using Platform Admin collection & UID
+    // Helper: Is this user a platform Super Admin using platform_admins collection & UID
     function isSuperAdmin() {
       return request.auth != null && (
-        (exists(path('/databases/' + database + '/documents/Rhema Church/rhema/Platform Admin/' + request.auth.uid + '/Role/default')) &&
-         get(path('/databases/' + database + '/documents/Rhema Church/rhema/Platform Admin/' + request.auth.uid + '/Role/default')).data.superadmin == true) ||
-        (exists(path('/databases/' + database + '/documents/Rhema Church/rhema/Platform Admin/' + request.auth.uid + '/Role/Super Admin')) &&
-         get(path('/databases/' + database + '/documents/Rhema Church/rhema/Platform Admin/' + request.auth.uid + '/Role/Super Admin')).data.superadmin == true) ||
-        (exists(path('/databases/' + database + '/documents/Rhema Church/rhema/Platform Admin/' + request.auth.uid + '/Role/' + request.auth.uid)) &&
-         get(path('/databases/' + database + '/documents/Rhema Church/rhema/Platform Admin/' + request.auth.uid + '/Role/' + request.auth.uid)).data.superadmin == true) ||
-        (exists(path('/databases/' + database + '/documents/Rhema Church/rhema/Platform Admin/' + request.auth.uid)) &&
-         get(path('/databases/' + database + '/documents/Rhema Church/rhema/Platform Admin/' + request.auth.uid)).data.superadmin == true) ||
-        (exists(path('/databases/' + database + '/documents/Platform Admin/' + request.auth.uid + '/Role/default')) &&
-         get(path('/databases/' + database + '/documents/Platform Admin/' + request.auth.uid + '/Role/default')).data.superadmin == true) ||
-        (exists(path('/databases/' + database + '/documents/Platform Admin/' + request.auth.uid + '/Role/Super Admin')) &&
-         get(path('/databases/' + database + '/documents/Platform Admin/' + request.auth.uid + '/Role/Super Admin')).data.superadmin == true) ||
-        (exists(path('/databases/' + database + '/documents/Platform Admin/' + request.auth.uid)) &&
-         get(path('/databases/' + database + '/documents/Platform Admin/' + request.auth.uid)).data.superadmin == true) ||
         (exists(path('/databases/' + database + '/documents/platform_admins/' + request.auth.uid)) &&
          get(path('/databases/' + database + '/documents/platform_admins/' + request.auth.uid)).data.superadmin == true) ||
         (exists(path('/databases/' + database + '/documents/Rhema Church/rhema/members/' + request.auth.uid)) &&
@@ -50,9 +35,9 @@ service cloud.firestore {
     // --- TOP-LEVEL COLLECTIONS ---
 
     // Platform Admin root collections
-    match /{platformAdminCol}/{document=**} {
-      allow read: if platformAdminCol in ['Platform Admin', 'platform_admins'] && isAuthenticated();
-      allow write: if platformAdminCol in ['Platform Admin', 'platform_admins'] && isSuperAdmin();
+    match /platform_admins/{document=**} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin();
     }
 
 
@@ -423,9 +408,9 @@ service cloud.firestore {
 
       
       // Platform Admin church subcollections
-      match /{platformSubCol}/{document=**} {
-        allow read: if platformSubCol in ['Platform Admin', 'platform_admins'] && isAuthenticated();
-        allow write: if platformSubCol in ['Platform Admin', 'platform_admins'] && isSuperAdmin();
+      match /platform_admins/{document=**} {
+        allow read: if isAuthenticated();
+        allow write: if isSuperAdmin();
       }
 
       // Church Finance - Strictly Super Admin Only
