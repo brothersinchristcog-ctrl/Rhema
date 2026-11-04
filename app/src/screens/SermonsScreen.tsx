@@ -823,7 +823,7 @@ export default function SermonsScreen({ navigation }: any) {
     try {
       setLoading(true);
       const [data, serverCats] = await Promise.all([
-        FirestoreService.getSermons(64),
+        FirestoreService.getSermons(100),
         FirestoreService.getSermonCategories().catch(() => [])
       ]);
       const visible = (data || []).filter((s: any) => isSermonVisibleToMembers(s));
@@ -910,11 +910,33 @@ export default function SermonsScreen({ navigation }: any) {
     return o;
   }, [sermons, y, m, activeCategory]);
 
-  // Filtered list
+  // Filtered list: when members click "All" (All dates and/or All categories), display up to 40 sermons
   const list = useMemo(() => {
-    return sermons
-      .filter((s) => inMonth(s) && (day === null || pd(s.date).getDate() === day) && catOK(s))
+    // 1. If Day is "All" (day === null)
+    if (day === null) {
+      if (activeCategory === 'All') {
+        // Both All dates and All categories: return up to 40 newest sermons
+        return [...sermons]
+          .sort((a, b) => pd(b.date).getTime() - pd(a.date).getTime())
+          .slice(0, 40);
+      } else {
+        // Specific category across all dates: return up to 40 sermons
+        return sermons
+          .filter(catOK)
+          .sort((a, b) => pd(b.date).getTime() - pd(a.date).getTime())
+          .slice(0, 40);
+      }
+    }
+
+    // 2. Specific day selected
+    const filtered = sermons
+      .filter((s) => inMonth(s) && pd(s.date).getDate() === day && catOK(s))
       .sort((a, b) => pd(b.date).getTime() - pd(a.date).getTime());
+
+    if (activeCategory === 'All') {
+      return filtered.slice(0, 40);
+    }
+    return filtered;
   }, [sermons, y, m, day, activeCategory]);
 
   const daysInMonth = new Date(y, m + 1, 0).getDate();
