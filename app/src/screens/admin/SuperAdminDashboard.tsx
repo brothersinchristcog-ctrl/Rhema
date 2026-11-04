@@ -17,12 +17,7 @@ export default function SuperAdminDashboard({ navigation }: any) {
   const isSuper =
     isPlatformSuperAdmin ||
     String(member?.userType || '').toUpperCase().includes('SUPER') ||
-    Boolean(
-      user?.uid &&
-        [
-          'q43NWXEu8iTiFE0B7RDa7O8yq2o2',
-        ].includes(user.uid)
-    );
+    Boolean((member as any)?.isSuperAdmin);
 
   const [activeTab, setActiveTab] = useState<'verses' | 'daily_quiz' | 'super_admins'>('verses');
   const [searchQuery, setSearchQuery] = useState('');

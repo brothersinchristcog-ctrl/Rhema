@@ -34,8 +34,6 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
 
-const PRIMARY_SUPER_ADMIN_UID = 'q43NWXEu8iTiFE0B7RDa7O8yq2o2'; // Sakibanda Sunil Babu
-
 interface SuperAdminItem {
   id: string;
   name: string;
@@ -233,25 +231,19 @@ export default function SuperAdminRoleManager({ searchQuery: externalQuery = '' 
     );
   };
 
-  // 4. Delete / Revoke Super Admin Access (Only promoter or Primary Super Admin can delete)
+  // 4. Delete Super Admin Access (Only promoter can delete)
   const handleDeleteSuperAdmin = (admin: SuperAdminItem) => {
     if (admin.id === user?.uid) {
       Alert.alert('Notice', 'You cannot delete your own Super Admin access.');
       return;
     }
 
-    if (admin.id === PRIMARY_SUPER_ADMIN_UID) {
-      Alert.alert('Protected', 'The Primary Master Super Admin cannot be deleted.');
-      return;
-    }
-
     const isPromotedByMe = admin.grantedBy === user?.uid;
-    const amIPrimary = user?.uid === PRIMARY_SUPER_ADMIN_UID;
 
-    if (!amIPrimary && !isPromotedByMe) {
+    if (admin.grantedBy && !isPromotedByMe) {
       Alert.alert(
         'Permission Denied',
-        'Only the Super Admin who promoted this user (or the Primary Super Admin) has the authority to delete their Super Admin access.'
+        `Only the Super Admin who promoted this user (${admin.grantedByName || 'the promoter'}) has the authority to delete their Super Admin access.`
       );
       return;
     }
@@ -353,35 +345,26 @@ export default function SuperAdminRoleManager({ searchQuery: externalQuery = '' 
         }
         renderItem={({ item }) => {
           const isCurrentUser = item.id === user?.uid;
-          const isPrimary = item.id === PRIMARY_SUPER_ADMIN_UID;
           const isPromotedByMe = item.grantedBy === user?.uid;
-          const amIPrimary = user?.uid === PRIMARY_SUPER_ADMIN_UID;
-          const canDelete = !isCurrentUser && !isPrimary && (amIPrimary || isPromotedByMe);
+          const canDelete = !isCurrentUser && (isPromotedByMe || !item.grantedBy);
           const isProcessing = processingId === item.id;
 
           let roleSubtitle = 'Full privileges: Church Settings, App Admin, Care Cells';
-          if (isPrimary) {
-            roleSubtitle = 'Permanent Master Super Admin (Cannot be deleted)';
-          } else if (isPromotedByMe) {
+          if (isPromotedByMe) {
             roleSubtitle = 'Promoted by you • You can delete this Super Admin';
           } else if (item.grantedByName) {
             roleSubtitle = `Promoted by ${item.grantedByName}`;
           }
 
           return (
-            <View style={[styles.adminCard, isPrimary && styles.primaryAdminCard]}>
+            <View style={styles.adminCard}>
               <View style={styles.cardHeader}>
-                <View style={[styles.avatarCircle, isPrimary && styles.avatarCirclePrimary]}>
-                  <Crown size={20} color={isPrimary ? '#fbbf24' : '#f0b429'} />
+                <View style={styles.avatarCircle}>
+                  <Crown size={20} color="#f0b429" />
                 </View>
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     <Text style={styles.adminName}>{item.name}</Text>
-                    {isPrimary && (
-                      <View style={styles.primaryBadge}>
-                        <Text style={styles.primaryBadgeTxt}>PRIMARY</Text>
-                      </View>
-                    )}
                     {isCurrentUser && (
                       <View style={styles.youBadge}>
                         <Text style={styles.youBadgeTxt}>YOU</Text>
@@ -394,7 +377,7 @@ export default function SuperAdminRoleManager({ searchQuery: externalQuery = '' 
                       <Text style={styles.phoneTxt}>{item.phone}</Text>
                     </View>
                   ) : null}
-                  {item.grantedByName && !isPrimary ? (
+                  {item.grantedByName ? (
                     <Text style={styles.grantedByTxt}>
                       Promoted by {item.grantedByName} {isPromotedByMe ? '(You)' : ''}
                     </Text>
@@ -402,11 +385,9 @@ export default function SuperAdminRoleManager({ searchQuery: externalQuery = '' 
                 </View>
 
                 {/* Role Badge */}
-                <View style={[styles.superBadge, isPrimary && styles.superBadgePrimary]}>
-                  <ShieldCheck size={13} color={isPrimary ? '#fbbf24' : '#f0b429'} style={{ marginRight: 4 }} />
-                  <Text style={[styles.superBadgeTxt, isPrimary && styles.superBadgeTxtPrimary]}>
-                    {isPrimary ? 'Master Admin' : 'Super Admin'}
-                  </Text>
+                <View style={styles.superBadge}>
+                  <ShieldCheck size={13} color="#f0b429" style={{ marginRight: 4 }} />
+                  <Text style={styles.superBadgeTxt}>Super Admin</Text>
                 </View>
               </View>
 
@@ -432,11 +413,11 @@ export default function SuperAdminRoleManager({ searchQuery: externalQuery = '' 
                     )}
                   </TouchableOpacity>
                 )}
-                {!canDelete && !isCurrentUser && !isPrimary && (
+                {!canDelete && !isCurrentUser && item.grantedByName && (
                   <View style={styles.lockedBadge}>
                     <Lock size={11} color="#64748b" style={{ marginRight: 4 }} />
                     <Text style={styles.lockedBadgeTxt}>
-                      Only promoter can delete
+                      Only {item.grantedByName} can delete
                     </Text>
                   </View>
                 )}
