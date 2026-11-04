@@ -2544,11 +2544,20 @@ export default function HomeScreen() {
     },
     {
       id: 'youtube',
-      title: 'YouTube',
+      title: t('home.quickYoutubeLive') || 'YouTube Live',
       icon: require('../../assets/3d_youtube.png'),
       onPress: () => {
-        const yUrl = activeChurch?.socialLinks?.youtube?.trim() || 'https://www.youtube.com/@RhemaGlobalMinistries';
-        Linking.openURL(yUrl).catch(() => {});
+        const yUrl = activeChurch?.socialLinks?.youtube?.trim();
+        if (yUrl) {
+          navigation.navigate('YouTubeLive', { channelUrl: yUrl });
+        } else {
+          setAlertConfig({
+            visible: true,
+            title: 'Link Not Configured',
+            message: 'No YouTube Live link has been configured for this church. Please go to Church Settings and set the YouTube Live link.',
+            type: 'info'
+          });
+        }
       },
     },
   ];
