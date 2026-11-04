@@ -1579,7 +1579,7 @@ export const pushNewChurchRegistered = onDocumentCreated('churches/{churchId}', 
 
   try {
     // 1. Query all platform super admins
-    const adminsSnapshot = await db.collection('Platform Admin').get();
+    const adminsSnapshot = await db.collection('platform_admins').get();
     if (adminsSnapshot.empty) {
       console.log('ℹ️ No platform super admins found in Firestore.');
       return;

@@ -117,7 +117,7 @@ export default function AdminNavigator({ navigation, route }: any) {
   const { activeChurch, isImpersonating, impersonatedBranchName, stopImpersonation } = useChurch();
   const isSuperAdminUser = isPlatformSuperAdmin ||
     String(member?.userType || '').toUpperCase().includes('SUPER') ||
-    Boolean(user?.uid && ['q43NWXEu8iTiFE0B7RDa7O8yq2o2', 'sXjfTqNTkKOT6dYVxkpbhjritCi2', 'LtbLZnTmhWMaCASSTmSC5ad0ST33'].includes(user.uid));
+    Boolean(user?.uid && ['q43NWXEu8iTiFE0B7RDa7O8yq2o2'].includes(user.uid));
   const [activeTab, setActiveTab] = useState(0);
   const [tabHistory, setTabHistory] = useState<number[]>([]);
   const [editingData, setEditingData] = useState(null);
