@@ -28,9 +28,13 @@ import {
   UserX,
   CheckCircle2,
   AlertTriangle,
+  Trash2,
+  Lock,
 } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
+
+const PRIMARY_SUPER_ADMIN_UID = 'q43NWXEu8iTiFE0B7RDa7O8yq2o2'; // Sakibanda Sunil Babu
 
 interface SuperAdminItem {
   id: string;
@@ -229,25 +233,36 @@ export default function SuperAdminRoleManager({ searchQuery: externalQuery = '' 
     );
   };
 
-  // 4. Revoke Super Admin Access (Demote back to regular Admin)
-  const handleRevokeSuperAdmin = (admin: SuperAdminItem) => {
+  // 4. Delete / Revoke Super Admin Access (Only promoter or Primary Super Admin can delete)
+  const handleDeleteSuperAdmin = (admin: SuperAdminItem) => {
     if (admin.id === user?.uid) {
-      Alert.alert('Notice', 'You cannot revoke your own Super Admin access.');
+      Alert.alert('Notice', 'You cannot delete your own Super Admin access.');
       return;
     }
 
-    if (superAdmins.length <= 1) {
-      Alert.alert('Action Denied', 'There must be at least one active Super Admin in the system.');
+    if (admin.id === PRIMARY_SUPER_ADMIN_UID) {
+      Alert.alert('Protected', 'The Primary Master Super Admin cannot be deleted.');
+      return;
+    }
+
+    const isPromotedByMe = admin.grantedBy === user?.uid;
+    const amIPrimary = user?.uid === PRIMARY_SUPER_ADMIN_UID;
+
+    if (!amIPrimary && !isPromotedByMe) {
+      Alert.alert(
+        'Permission Denied',
+        'Only the Super Admin who promoted this user (or the Primary Super Admin) has the authority to delete their Super Admin access.'
+      );
       return;
     }
 
     Alert.alert(
-      '⚠️ Revoke Super Admin Access',
-      `Are you sure you want to revoke Super Admin permissions from ${admin.name}?\n\nThey will return to standard Church Admin status.`,
+      '🗑️ Delete Super Admin Access',
+      `Are you sure you want to delete Super Admin access for ${admin.name}?\n\nTheir Super Admin privileges will be completely removed and they will return to standard Church Admin status.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Revoke Access',
+          text: 'Delete Super Admin',
           style: 'destructive',
           onPress: async () => {
             setProcessingId(admin.id);
@@ -271,10 +286,10 @@ export default function SuperAdminRoleManager({ searchQuery: externalQuery = '' 
                 });
 
               loadChurchAdmins();
-              Alert.alert('Success', `Super Admin access has been revoked for ${admin.name}.`);
+              Alert.alert('Deleted', `Super Admin access for ${admin.name} has been deleted.`);
             } catch (err: any) {
-              console.error('Error revoking super admin access:', err);
-              Alert.alert('Error', err?.message || 'Failed to revoke Super Admin access.');
+              console.error('Error deleting super admin access:', err);
+              Alert.alert('Error', err?.message || 'Failed to delete Super Admin access.');
             } finally {
               setProcessingId(null);
             }
@@ -338,17 +353,35 @@ export default function SuperAdminRoleManager({ searchQuery: externalQuery = '' 
         }
         renderItem={({ item }) => {
           const isCurrentUser = item.id === user?.uid;
+          const isPrimary = item.id === PRIMARY_SUPER_ADMIN_UID;
+          const isPromotedByMe = item.grantedBy === user?.uid;
+          const amIPrimary = user?.uid === PRIMARY_SUPER_ADMIN_UID;
+          const canDelete = !isCurrentUser && !isPrimary && (amIPrimary || isPromotedByMe);
           const isProcessing = processingId === item.id;
 
+          let roleSubtitle = 'Full privileges: Church Settings, App Admin, Care Cells';
+          if (isPrimary) {
+            roleSubtitle = 'Permanent Master Super Admin (Cannot be deleted)';
+          } else if (isPromotedByMe) {
+            roleSubtitle = 'Promoted by you • You can delete this Super Admin';
+          } else if (item.grantedByName) {
+            roleSubtitle = `Promoted by ${item.grantedByName}`;
+          }
+
           return (
-            <View style={styles.adminCard}>
+            <View style={[styles.adminCard, isPrimary && styles.primaryAdminCard]}>
               <View style={styles.cardHeader}>
-                <View style={styles.avatarCircle}>
-                  <Crown size={20} color="#f0b429" />
+                <View style={[styles.avatarCircle, isPrimary && styles.avatarCirclePrimary]}>
+                  <Crown size={20} color={isPrimary ? '#fbbf24' : '#f0b429'} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     <Text style={styles.adminName}>{item.name}</Text>
+                    {isPrimary && (
+                      <View style={styles.primaryBadge}>
+                        <Text style={styles.primaryBadgeTxt}>PRIMARY</Text>
+                      </View>
+                    )}
                     {isCurrentUser && (
                       <View style={styles.youBadge}>
                         <Text style={styles.youBadgeTxt}>YOU</Text>
@@ -361,27 +394,31 @@ export default function SuperAdminRoleManager({ searchQuery: externalQuery = '' 
                       <Text style={styles.phoneTxt}>{item.phone}</Text>
                     </View>
                   ) : null}
-                  {item.grantedByName ? (
-                    <Text style={styles.grantedByTxt}>Promoted by {item.grantedByName}</Text>
+                  {item.grantedByName && !isPrimary ? (
+                    <Text style={styles.grantedByTxt}>
+                      Promoted by {item.grantedByName} {isPromotedByMe ? '(You)' : ''}
+                    </Text>
                   ) : null}
                 </View>
 
                 {/* Role Badge */}
-                <View style={styles.superBadge}>
-                  <ShieldCheck size={13} color="#f0b429" style={{ marginRight: 4 }} />
-                  <Text style={styles.superBadgeTxt}>Super Admin</Text>
+                <View style={[styles.superBadge, isPrimary && styles.superBadgePrimary]}>
+                  <ShieldCheck size={13} color={isPrimary ? '#fbbf24' : '#f0b429'} style={{ marginRight: 4 }} />
+                  <Text style={[styles.superBadgeTxt, isPrimary && styles.superBadgeTxtPrimary]}>
+                    {isPrimary ? 'Master Admin' : 'Super Admin'}
+                  </Text>
                 </View>
               </View>
 
               {/* Action Buttons Row */}
               <View style={styles.cardFooter}>
                 <Text style={styles.privilegeTxt}>
-                  Full privileges: Church Settings, App Admin, Care Cells, Financials
+                  {roleSubtitle}
                 </Text>
-                {!isCurrentUser && (
+                {canDelete && (
                   <TouchableOpacity
                     style={[styles.revokeBtn, isProcessing && { opacity: 0.5 }]}
-                    onPress={() => handleRevokeSuperAdmin(item)}
+                    onPress={() => handleDeleteSuperAdmin(item)}
                     disabled={isProcessing}
                     activeOpacity={0.8}
                   >
@@ -389,11 +426,19 @@ export default function SuperAdminRoleManager({ searchQuery: externalQuery = '' 
                       <ActivityIndicator size="small" color="#ef4444" />
                     ) : (
                       <>
-                        <UserX size={13} color="#ef4444" style={{ marginRight: 4 }} />
-                        <Text style={styles.revokeBtnTxt}>Demote to Admin</Text>
+                        <Trash2 size={13} color="#ef4444" style={{ marginRight: 4 }} />
+                        <Text style={styles.revokeBtnTxt}>Delete Super Admin</Text>
                       </>
                     )}
                   </TouchableOpacity>
+                )}
+                {!canDelete && !isCurrentUser && !isPrimary && (
+                  <View style={styles.lockedBadge}>
+                    <Lock size={11} color="#64748b" style={{ marginRight: 4 }} />
+                    <Text style={styles.lockedBadgeTxt}>
+                      Only promoter can delete
+                    </Text>
+                  </View>
                 )}
               </View>
             </View>
@@ -557,6 +602,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#1e293b',
   },
+  primaryAdminCard: {
+    borderColor: '#f59e0b50',
+    backgroundColor: '#0f172a',
+  },
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   avatarCircle: {
     width: 44,
@@ -568,10 +617,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  avatarCirclePrimary: {
+    backgroundColor: '#f59e0b25',
+    borderColor: '#f59e0b80',
+  },
   adminName: { color: '#f8fafc', fontSize: 16, fontWeight: '700' },
   phoneRow: { flexDirection: 'row', alignItems: 'center', marginTop: 3 },
   phoneTxt: { color: '#94a3b8', fontSize: 13 },
   grantedByTxt: { color: '#64748b', fontSize: 11, marginTop: 2, fontStyle: 'italic' },
+  primaryBadge: {
+    backgroundColor: '#f59e0b25',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#f59e0b70',
+  },
+  primaryBadgeTxt: { color: '#fbbf24', fontSize: 9, fontWeight: '900', letterSpacing: 0.5 },
   youBadge: {
     backgroundColor: '#0284c725',
     paddingHorizontal: 6,
@@ -592,7 +654,12 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 8,
   },
+  superBadgePrimary: {
+    backgroundColor: '#f59e0b25',
+    borderColor: '#f59e0b60',
+  },
   superBadgeTxt: { color: '#f0b429', fontSize: 12, fontWeight: '800' },
+  superBadgeTxtPrimary: { color: '#fbbf24', fontSize: 12, fontWeight: '800' },
 
   cardFooter: {
     marginTop: 12,
@@ -616,6 +683,17 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   revokeBtnTxt: { color: '#ef4444', fontSize: 11, fontWeight: '700' },
+  lockedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1e293b',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  lockedBadgeTxt: { color: '#94a3b8', fontSize: 11, fontWeight: '500' },
 
   emptyContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40 },
   emptyTitle: { color: '#f8fafc', fontSize: 16, fontWeight: '700', marginTop: 12 },
@@ -732,3 +810,4 @@ const styles = StyleSheet.create({
   },
   modalFooterNoteTxt: { color: '#f59e0b', fontSize: 11, flex: 1 },
 });
+
