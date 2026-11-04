@@ -1655,6 +1655,12 @@ let cachedLatestSermons: Sermon[] = [];
 let cachedLatestPrayer: any | null = null;
 let cachedPrayerCount: number = 0;
 let cachedTodayFourVerses: DailyVerse[] = [];
+let cachedTodayFourVersesDateStr: string = '';
+
+export const clearHomeScreenVersesCache = () => {
+  cachedTodayFourVerses = [];
+  cachedTodayFourVersesDateStr = '';
+};
 
 const AnimatedParticle = ({ left, size, duration, delay, color, opacity }: any) => {
   const translateY = React.useRef(new Animated.Value(0)).current;
@@ -1800,33 +1806,11 @@ export interface LocalizedVerseDisplay {
 }
 
 export const getSynchronousVersesForToday = (date: Date = new Date()): DailyVerse[] => {
-  try {
-    const thematic = require('../../assets/thematic_daily_verses.json');
-    if (thematic && thematic.Morning && thematic.Afternoon && thematic.Evening && thematic.Night) {
-      const EPOCH = new Date('2026-10-30T00:00:00Z');
-      const localDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-      const epochDate = new Date(EPOCH.getFullYear(), EPOCH.getMonth(), EPOCH.getDate());
-      const daysSinceEpoch = Math.floor((localDate.getTime() - epochDate.getTime()) / (1000 * 60 * 60 * 24));
-      const PERIODS = ['Morning', 'Afternoon', 'Evening', 'Night'] as const;
-
-      return PERIODS.map((period, pIdx) => {
-        const list = thematic[period];
-        const vIdx = ((daysSinceEpoch % list.length) + list.length) % list.length;
-        const bv = list[vIdx];
-        const bgUrl = bv.backgroundUrl || getVerseBackgroundUrl(bv, period, vIdx);
-        return {
-          id: `thematic_${period.toLowerCase()}_${daysSinceEpoch}`,
-          index: vIdx,
-          verseEn: bv.verseEn || '',
-          verseTe: bv.verseTe || '',
-          referenceEn: bv.referenceEn || '',
-          referenceTe: bv.referenceTe || '',
-          backgroundUrl: bgUrl,
-          churchId: 'rhema',
-        };
-      });
-    }
-  } catch (_) {}
+  const dateStr = date.toDateString();
+  if (cachedTodayFourVerses && cachedTodayFourVerses.length >= 4 && cachedTodayFourVersesDateStr === dateStr) {
+    return cachedTodayFourVerses;
+  }
+  cachedTodayFourVersesDateStr = dateStr;
   try {
     const list = VerseNotificationService.getSynchronousInitialVerses(0);
     if (list && list[0]?.verses && list[0].verses.length >= 4) {
@@ -1839,23 +1823,12 @@ export const getSynchronousVersesForToday = (date: Date = new Date()): DailyVers
     const PERIODS = ['Morning', 'Afternoon', 'Evening', 'Night'];
     const indices = VerseNotificationService.getIndicesForDate(date, total, 'rhema');
     return indices.map((idx, pIdx) => {
-      let finalIdx = idx;
-      let hops = 0;
-      // Skip long passages: find nearest short verse (<= 130 chars) limited to 2 lines per language
-      while (hops < 10) {
-        const candidate = bulk[finalIdx];
-        if (candidate && candidate.verseEn && candidate.verseEn.length <= 130 && candidate.verseTe && candidate.verseTe.length <= 130) {
-          break;
-        }
-        finalIdx = (finalIdx + 1) % total;
-        hops++;
-      }
-      const bv = bulk[finalIdx] || bulk[idx] || {};
+      const bv = bulk[idx] || {};
       const period = PERIODS[pIdx];
-      const bgUrl = bv.backgroundUrl || getVerseBackgroundUrl(bv, period, finalIdx);
+      const bgUrl = bv.backgroundUrl || getVerseBackgroundUrl(bv, period, idx);
       return {
-        id: `today_verse_${finalIdx}_${pIdx}`,
-        index: finalIdx,
+        id: `today_verse_${idx}_${pIdx}`,
+        index: idx,
         verseEn: bv.verseEn || '',
         verseTe: bv.verseTe || '',
         referenceEn: bv.referenceEn || '',
@@ -2052,14 +2025,14 @@ const DailyVerseCard = ({ verse, period, onPress }: { verse: DailyVerse | null; 
           {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
         </Text>
       </View>
-      <Text numberOfLines={2} ellipsizeMode="tail" style={{
+      <Text style={{
         color: '#fff', fontSize: 16, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
         fontWeight: '700', lineHeight: 24, marginBottom: loc.secondaryVerse && loc.secondaryVerse !== loc.primaryVerse ? 6 : 10,
       }}>
         {loc.primaryVerse}
       </Text>
       {loc.secondaryVerse && loc.secondaryVerse !== loc.primaryVerse ? (
-        <Text numberOfLines={2} ellipsizeMode="tail" style={{
+        <Text style={{
           color: 'rgba(255,255,255,0.92)', fontSize: 15, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
           fontStyle: 'italic', lineHeight: 22, fontWeight: '500', marginBottom: 10,
         }}>
@@ -2167,7 +2140,7 @@ export default function HomeScreen() {
   useEffect(() => {
     const period = getCurrentPeriod();
     setTodayPeriod(period);
-    VerseNotificationService.getVerseForDate(new Date(), period).then(async v => {
+    VerseNotificationService.getVerseForDate(new Date(), period, true).then(async v => {
       if (v) {
         if (language !== 'en') {
           const lv = await VerseNotificationService.localizeVerse(v, language as any);
@@ -2271,6 +2244,33 @@ export default function HomeScreen() {
         if (fresh && fresh.length > 0) {
           cachedLatestSermons = fresh;
           setLatestSermons(fresh);
+        }
+      }).catch(() => {});
+
+      // Always re-fetch today's 4 daily verses on screen focus to guarantee immediate sync
+      VerseNotificationService.getTodayVerses(true).then((freshVerses) => {
+        if (freshVerses && freshVerses.length >= 4) {
+          cachedTodayFourVerses = freshVerses;
+          setTodayFourVerses(freshVerses);
+          if (language !== 'en') {
+            VerseNotificationService.localizeVerses(freshVerses, language as any).then(lv => {
+              if (lv) {
+                cachedTodayFourVerses = lv;
+                setTodayFourVerses(lv);
+              }
+            }).catch(() => {});
+          }
+        }
+      }).catch(() => {});
+
+      const curPeriod = getCurrentPeriod();
+      VerseNotificationService.getVerseForDate(new Date(), curPeriod, true).then(v => {
+        if (v) {
+          if (language !== 'en') {
+            VerseNotificationService.localizeVerse(v, language as any).then(lv => setTodayVerse(lv));
+          } else {
+            setTodayVerse(v);
+          }
         }
       }).catch(() => {});
 
@@ -2694,8 +2694,8 @@ export default function HomeScreen() {
         }
       }).catch(() => {});
 
-      // 3b. Fetch Today's 4 Verses for Carousel
-      VerseNotificationService.getTodayVerses(false).then((verses: DailyVerse[]) => {
+      // 3b. Fetch Today's 4 Verses for Carousel (Force refresh from Firestore to prevent stale verses)
+      VerseNotificationService.getTodayVerses(true).then((verses: DailyVerse[]) => {
         if (verses && verses.length > 0) {
           cachedTodayFourVerses = verses;
           setTodayFourVerses(verses);
@@ -2880,14 +2880,15 @@ export default function HomeScreen() {
     }, 7000);
   };
 
-  // Load 4 verses on mount and whenever church changes
+  // Load 4 verses on mount and listen to Firestore in real-time for immediate synchronization
   useEffect(() => {
-    VerseNotificationService.getTodayVerses(false).then(verses => {
-      if (verses && verses.length > 0) {
-        cachedTodayFourVerses = verses;
-        setTodayFourVerses(verses);
+    // 1. Initial force-refresh fetch to get latest Firestore verses immediately
+    VerseNotificationService.getTodayVerses(true).then(freshVerses => {
+      if (freshVerses && freshVerses.length > 0) {
+        cachedTodayFourVerses = freshVerses;
+        setTodayFourVerses(freshVerses);
         if (language !== 'en') {
-          VerseNotificationService.localizeVerses(verses, language as any).then(lv => {
+          VerseNotificationService.localizeVerses(freshVerses, language as any).then(lv => {
             if (lv) {
               cachedTodayFourVerses = lv;
               setTodayFourVerses(lv);
@@ -2895,22 +2896,121 @@ export default function HomeScreen() {
           }).catch(() => {});
         }
       }
-      // Silently refresh in background to ensure latest Unsplash images are synced
-      VerseNotificationService.getTodayVerses(true).then(freshVerses => {
-        if (freshVerses && freshVerses.length > 0) {
-          cachedTodayFourVerses = freshVerses;
-          setTodayFourVerses(freshVerses);
-          if (language !== 'en') {
-            VerseNotificationService.localizeVerses(freshVerses, language as any).then(lv => {
-              if (lv) {
-                cachedTodayFourVerses = lv;
-                setTodayFourVerses(lv);
-              }
-            }).catch(() => {});
-          }
-        }
-      }).catch(() => {});
     }).catch(() => {});
+
+    // 2. Real-time Firestore listener for today's daily verses
+    const todayIndices = VerseNotificationService.getIndicesForDate(new Date(), 5863, 'rhema');
+    const unsubDailyVerses = firestore()
+      .collection('daily_verses')
+      .where('index', 'in', todayIndices)
+      .onSnapshot(
+        async (snapshot) => {
+          if (!snapshot || snapshot.empty) return;
+          try {
+            const PERIODS = ['Morning', 'Afternoon', 'Evening', 'Night'];
+            const docs = snapshot.docs.map(d => ({ ...(d.data() as any), id: d.id } as DailyVerse));
+
+            // Map by index, sorting to ensure the latest updatedAt wins in case of duplicate index docs
+            const map: Record<number, DailyVerse> = {};
+            docs.forEach(d => {
+              if (d.index !== undefined) {
+                const existing = map[d.index];
+                if (!existing) {
+                  map[d.index] = d;
+                } else {
+                  const tExisting = existing.updatedAt?.toMillis ? existing.updatedAt.toMillis() : (existing.updatedAt || existing.createdAt || 0);
+                  const tCurrent = d.updatedAt?.toMillis ? d.updatedAt.toMillis() : (d.updatedAt || d.createdAt || 0);
+                  if (tCurrent >= tExisting) {
+                    map[d.index] = d;
+                  }
+                }
+              }
+            });
+
+            const freshList: DailyVerse[] = [];
+            for (let i = 0; i < 4; i++) {
+              const idx = todayIndices[i];
+              if (map[idx]) {
+                const v = { ...map[idx] };
+                if (!v.backgroundUrl) {
+                  v.backgroundUrl = getVerseBackgroundUrl(v, PERIODS[i], idx);
+                }
+                freshList.push(v);
+              }
+            }
+
+            if (freshList.length >= 4) {
+              cachedTodayFourVersesDateStr = new Date().toDateString();
+              cachedTodayFourVerses = freshList;
+              setTodayFourVerses(freshList);
+
+              // Synchronize todayVerse for current period
+              const currentPeriod = getCurrentPeriod();
+              const periodOrder: Record<string, number> = { Morning: 0, Afternoon: 1, Evening: 2, Night: 3 };
+              const currentIdx = periodOrder[currentPeriod] ?? 0;
+              const matchingVerse = freshList[currentIdx] || freshList[0];
+              if (matchingVerse) {
+                if (language !== 'en') {
+                  VerseNotificationService.localizeVerse(matchingVerse, language as any).then(lv => {
+                    setTodayVerse(lv);
+                  }).catch(() => setTodayVerse(matchingVerse));
+                } else {
+                  setTodayVerse(matchingVerse);
+                }
+              }
+
+              // Localize all 4 if language != 'en'
+              if (language !== 'en') {
+                VerseNotificationService.localizeVerses(freshList, language as any).then(lv => {
+                  if (lv) {
+                    cachedTodayFourVerses = lv;
+                    setTodayFourVerses(lv);
+                  }
+                }).catch(() => {});
+              }
+
+              // Persist in local storage cache
+              VerseNotificationService.updateCacheWithVerses(freshList);
+            }
+          } catch (e) {
+            console.warn('[HomeScreen] Error processing real-time daily verses snapshot:', e);
+          }
+        },
+        (err) => {
+          console.warn('[HomeScreen] daily_verses snapshot listener error:', err);
+        }
+      );
+
+    // 3. Listen to metadata changes (e.g. admin reassigned schedule or bumped lastUpdatedAt)
+    const unsubMeta = firestore()
+      .collection('daily_verses_meta')
+      .doc('metadata')
+      .onSnapshot(
+        async (metaSnap) => {
+          if (!metaSnap || !metaSnap.exists) return;
+          try {
+            await VerseNotificationService.invalidateCache();
+            const fresh = await VerseNotificationService.getTodayVerses(true);
+            if (fresh && fresh.length >= 4) {
+              cachedTodayFourVerses = fresh;
+              setTodayFourVerses(fresh);
+              if (language !== 'en') {
+                const lv = await VerseNotificationService.localizeVerses(fresh, language as any);
+                if (lv) {
+                  cachedTodayFourVerses = lv;
+                  setTodayFourVerses(lv);
+                }
+              }
+            }
+          } catch (_) {}
+        },
+        () => {}
+      );
+
+    return () => {
+      unsubDailyVerses();
+      unsubMeta();
+    };
   }, [activeChurch?.id, language]);
 
   // Carousel auto-slide logic (supports progressive verses when ON, or church promise & thumbnail when OFF, plus service timings)
@@ -3182,6 +3282,34 @@ export default function HomeScreen() {
   const onRefresh = async () => {
     (global as any).hasShownCelebration = false;
     setRefreshing(true);
+    try {
+      await VerseNotificationService.invalidateCache();
+      VerseNotificationService.getTodayVerses(true).then((freshVerses) => {
+        if (freshVerses && freshVerses.length >= 4) {
+          cachedTodayFourVerses = freshVerses;
+          setTodayFourVerses(freshVerses);
+          if (language !== 'en') {
+            VerseNotificationService.localizeVerses(freshVerses, language as any).then(lv => {
+              if (lv) {
+                cachedTodayFourVerses = lv;
+                setTodayFourVerses(lv);
+              }
+            }).catch(() => {});
+          }
+        }
+      }).catch(() => {});
+
+      const curPeriod = getCurrentPeriod();
+      VerseNotificationService.getVerseForDate(new Date(), curPeriod, true).then(v => {
+        if (v) {
+          if (language !== 'en') {
+            VerseNotificationService.localizeVerse(v, language as any).then(lv => setTodayVerse(lv));
+          } else {
+            setTodayVerse(v);
+          }
+        }
+      }).catch(() => {});
+    } catch (_) {}
     fetchData();
   };
 
@@ -3579,11 +3707,11 @@ export default function HomeScreen() {
                       <View style={styles.vdVerseTextContainer}>
                         <Text style={[styles.vdTopRightQuote, { color: screenTheme.promiseQuote }]} pointerEvents="none">”</Text>
                         {promise?.verseTelugu ? (
-                          <Text style={[styles.vdVerseTe, { color: screenTheme.promiseVerseTe }]} numberOfLines={2} ellipsizeMode="tail" maxFontSizeMultiplier={1.15}>
+                          <Text style={[styles.vdVerseTe, { color: screenTheme.promiseVerseTe }]} maxFontSizeMultiplier={1.15}>
                             {stripHtml(promise.verseTelugu)}
                           </Text>
                         ) : null}
-                        <Text style={[styles.vdVerseEn, { color: screenTheme.promiseVerseEn }]} numberOfLines={2} ellipsizeMode="tail" maxFontSizeMultiplier={1.15}>
+                        <Text style={[styles.vdVerseEn, { color: screenTheme.promiseVerseEn }]} maxFontSizeMultiplier={1.15}>
                           {promise ? stripHtml(promise.verse) : ''}
                         </Text>
                         <View style={styles.vdReferenceRow}>
@@ -3702,8 +3830,6 @@ export default function HomeScreen() {
                                     { color: screenTheme.promiseVerseTe },
                                     !loc.secondaryVerse && { fontSize: 17, lineHeight: 26 }
                                   ]} 
-                                  numberOfLines={2}
-                                  ellipsizeMode="tail"
                                   maxFontSizeMultiplier={1.15}
                                 >
                                   {stripHtml(loc.primaryVerse)}
@@ -3711,7 +3837,7 @@ export default function HomeScreen() {
 
                                 {/* Secondary verse (English) if distinct */}
                                 {loc.secondaryVerse && loc.secondaryVerse !== loc.primaryVerse ? (
-                                  <Text style={[styles.vdVerseEn, { color: screenTheme.promiseVerseEn }]} numberOfLines={2} ellipsizeMode="tail" maxFontSizeMultiplier={1.15}>
+                                  <Text style={[styles.vdVerseEn, { color: screenTheme.promiseVerseEn }]} maxFontSizeMultiplier={1.15}>
                                     {stripHtml(loc.secondaryVerse)}
                                   </Text>
                                 ) : null}
@@ -6201,8 +6327,8 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     overflow: 'hidden',
     backgroundColor: '#527C78',
-    padding: 20,
-    minHeight: 270,
+    padding: 18,
+    minHeight: 285,
     justifyContent: 'space-between',
   },
   vdWatermarkCircle: {
@@ -6260,7 +6386,7 @@ const styles = StyleSheet.create({
   },
   vdVerseBlock: {
     flexDirection: 'row',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   vdVerticalLine: {
     width: 3.5,
@@ -6285,20 +6411,20 @@ const styles = StyleSheet.create({
   },
   vdVerseTe: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 15.5,
     fontWeight: '700',
-    lineHeight: 26,
-    marginBottom: 10,
-    paddingRight: 24,
+    lineHeight: 24,
+    marginBottom: 8,
+    paddingRight: 20,
   },
   vdVerseEn: {
     color: 'rgba(255, 255, 255, 0.92)',
-    fontSize: 15,
+    fontSize: 14,
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
     fontWeight: '400',
     fontStyle: 'italic',
-    lineHeight: 23,
-    marginBottom: 12,
+    lineHeight: 21,
+    marginBottom: 10,
   },
   vdReferenceRow: {
     flexDirection: 'row',
@@ -7718,6 +7844,51 @@ const styles = StyleSheet.create({
   },
   latestSermonGoldenHeader: {
     zIndex: 2,
+  },
+  sermonSilhouetteCircleBig: {
+    position: 'absolute',
+    top: -20,
+    right: -20,
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    opacity: 0.35,
+  },
+  sermonSilhouettePeach1: {
+    position: 'absolute',
+    bottom: -15,
+    left: 20,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    opacity: 0.25,
+  },
+  sermonSilhouettePeach2: {
+    position: 'absolute',
+    top: 30,
+    right: 40,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    opacity: 0.2,
+  },
+  sermonSilhouetteShoulderLeft: {
+    position: 'absolute',
+    bottom: -30,
+    left: -20,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    opacity: 0.3,
+  },
+  sermonSilhouetteShoulderRight: {
+    position: 'absolute',
+    bottom: -20,
+    right: -10,
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    opacity: 0.3,
   },
   latestSermonGoldenText: {
     color: '#F6BD38',
