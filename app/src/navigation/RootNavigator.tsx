@@ -60,6 +60,7 @@ import AboutUsScreen from '../screens/AboutUsScreen';
 import AppearanceScreen from '../screens/AppearanceScreen';
 import ContactUsScreen from '../screens/ContactUsScreen';
 import AttendanceScreen from '../screens/AttendanceScreen';
+import CareCellScreen from '../screens/care_cells/CareCellScreen';
 import EventAttendeesScreen from '../screens/admin/EventAttendeesScreen';
 import PastorEventDetail from '../screens/admin/pastor_events/PastorEventDetail';
 import CreatePastorEvent from '../screens/admin/pastor_events/CreatePastorEvent';
@@ -765,6 +766,18 @@ function Navigation() {
             });
           } else if (type === 'prayer_request_public') {
             navigationRef.navigate('PrayerWall', { tab: 'public_requests' });
+          } else if (type === 'youtube_live') {
+            const liveUrl = data.url || 'https://www.youtube.com/@Brothersinchristfellowship/live';
+            const videoId = data.videoId || '';
+            const title = data.title || '';
+            const targetChurchId = data.churchId || 'rhema';
+            console.log('🎥 [RootNavigator] Routing directly to YouTubeLive screen from notification payload:', { liveUrl, videoId, title, churchId: targetChurchId });
+            navigationRef.navigate('YouTubeLive', {
+              url: liveUrl,
+              videoId,
+              title,
+              churchId: targetChurchId,
+            });
           } else {
             NotificationService.handleNotificationNavigation({ data }, navigationRef);
           }
@@ -889,6 +902,7 @@ function Navigation() {
         const hasPermission = await NotificationService.requestUserPermission();
         if (hasPermission) {
           await NotificationService.getFcmToken();
+          await NotificationService.setupCategoriesAndChannels();
         }
         
         // Initialize Daily Verses Background Sync & Local Notifications
@@ -981,6 +995,8 @@ function Navigation() {
             <Stack.Screen name="Celebration" component={renderPremium(CelebrationScreen)} />
             <Stack.Screen name="Attendance" component={renderPremium(AttendanceScreen)} />
             <Stack.Screen name="AttendanceScreen" component={renderPremium(AttendanceScreen)} />
+            <Stack.Screen name="CareCell" component={renderPremium(CareCellScreen)} />
+            <Stack.Screen name="CareCellScreen" component={renderPremium(CareCellScreen)} />
             <Stack.Screen name="DailyVideo" component={renderPremium(DailyVideoScreen)} />
             <Stack.Screen name="SermonVideo" component={renderPremium(SermonVideoScreen)} />
             <Stack.Screen name="Events" component={renderPremium(EventsScreen)} />

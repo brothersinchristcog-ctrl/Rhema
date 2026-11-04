@@ -14,9 +14,32 @@ service cloud.firestore {
     }
 
     // Helper: Is this user an admin globally?
+        // Helper: Is this user a platform Super Admin using Platform Admin collection & UID
+    function isSuperAdmin() {
+      return request.auth != null && (
+        (exists(path('/databases/' + database + '/documents/Rhema Church/rhema/Platform Admin/' + request.auth.uid + '/Role/default')) &&
+         get(path('/databases/' + database + '/documents/Rhema Church/rhema/Platform Admin/' + request.auth.uid + '/Role/default')).data.superadmin == true) ||
+        (exists(path('/databases/' + database + '/documents/Rhema Church/rhema/Platform Admin/' + request.auth.uid + '/Role/Super Admin')) &&
+         get(path('/databases/' + database + '/documents/Rhema Church/rhema/Platform Admin/' + request.auth.uid + '/Role/Super Admin')).data.superadmin == true) ||
+        (exists(path('/databases/' + database + '/documents/Rhema Church/rhema/Platform Admin/' + request.auth.uid + '/Role/' + request.auth.uid)) &&
+         get(path('/databases/' + database + '/documents/Rhema Church/rhema/Platform Admin/' + request.auth.uid + '/Role/' + request.auth.uid)).data.superadmin == true) ||
+        (exists(path('/databases/' + database + '/documents/Rhema Church/rhema/Platform Admin/' + request.auth.uid)) &&
+         get(path('/databases/' + database + '/documents/Rhema Church/rhema/Platform Admin/' + request.auth.uid)).data.superadmin == true) ||
+        (exists(path('/databases/' + database + '/documents/Platform Admin/' + request.auth.uid + '/Role/default')) &&
+         get(path('/databases/' + database + '/documents/Platform Admin/' + request.auth.uid + '/Role/default')).data.superadmin == true) ||
+        (exists(path('/databases/' + database + '/documents/Platform Admin/' + request.auth.uid + '/Role/Super Admin')) &&
+         get(path('/databases/' + database + '/documents/Platform Admin/' + request.auth.uid + '/Role/Super Admin')).data.superadmin == true) ||
+        (exists(path('/databases/' + database + '/documents/Platform Admin/' + request.auth.uid)) &&
+         get(path('/databases/' + database + '/documents/Platform Admin/' + request.auth.uid)).data.superadmin == true) ||
+        (exists(path('/databases/' + database + '/documents/platform_admins/' + request.auth.uid)) &&
+         get(path('/databases/' + database + '/documents/platform_admins/' + request.auth.uid)).data.superadmin == true) ||
+        (exists(path('/databases/' + database + '/documents/Rhema Church/rhema/members/' + request.auth.uid)) &&
+         get(path('/databases/' + database + '/documents/Rhema Church/rhema/members/' + request.auth.uid)).data.get('userType', '') in ['Super Admin', 'super_admin', 'superadmin'])
+      );
+    }
+
     function isAdminGlobally() {
-      let isPlatformAdmin = exists(/databases/$(database)/documents/platform_admins/$(request.auth.uid));
-      return isAuthenticated() && isPlatformAdmin;
+      return isAuthenticated() && isSuperAdmin();
     }
 
     // Legacy fallback for top-level collections
@@ -25,6 +48,13 @@ service cloud.firestore {
     }
 
     // --- TOP-LEVEL COLLECTIONS ---
+
+    // Platform Admin root collections
+    match /{platformAdminCol}/{document=**} {
+      allow read: if platformAdminCol in ['Platform Admin', 'platform_admins'] && isAuthenticated();
+      allow write: if platformAdminCol in ['Platform Admin', 'platform_admins'] && isSuperAdmin();
+    }
+
 
     // Collection Group queries for members, attendance, and bibleQuizzes
     match /{path=**}/members/{memberId} {
@@ -199,9 +229,7 @@ service cloud.firestore {
           let hasParentMemberDoc = parentId != null && exists(/databases/$(database)/documents/$(churchCollection)/$(parentId)/members/$(request.auth.uid));
           let isParentAdmin = hasParentMemberDoc && get(/databases/$(database)/documents/$(churchCollection)/$(parentId)/members/$(request.auth.uid)).data.get('userType', '') in ['admin', 'super_admin', 'Admin', 'Super Admin'];
 
-          let isPlatformAdmin = exists(/databases/$(database)/documents/platform_admins/$(request.auth.uid));
-
-          return isAuthenticated() && (isMemberAdmin || isParentAdmin || isPlatformAdmin);
+          return isAuthenticated() && (isMemberAdmin || isParentAdmin || isSuperAdmin());
         }
 
       // Church info is public — allow lookup by code even before login (needed during signup).
@@ -390,6 +418,76 @@ service cloud.firestore {
 
       // Quiz Attempts (members can create their own attempts, everyone can read leaderboard)
       match /quizAttempts/{attemptId} {
+        allow read, write: if isAuthenticated();
+      }
+
+      
+      // Platform Admin church subcollections
+      match /{platformSubCol}/{document=**} {
+        allow read: if platformSubCol in ['Platform Admin', 'platform_admins'] && isAuthenticated();
+        allow write: if platformSubCol in ['Platform Admin', 'platform_admins'] && isSuperAdmin();
+      }
+
+      // Church Finance - Strictly Super Admin Only
+      match /expenses/{expenseId} {
+        allow read, write: if isSuperAdmin();
+      }
+
+      match /donations/{donationId} {
+        allow read: if isSuperAdmin() || (isAuthenticated() && (resource.data.phone == request.auth.token.phone_number || resource.data.donorPhone == request.auth.token.phone_number));
+        allow write: if isSuperAdmin();
+      }
+
+      // Care Cells Management Module
+      match /careCells/{cellId} {
+        allow read: if isAuthenticated() && (
+          isSuperAdmin() ||
+          (resource.data.assignedAdminIds != null && request.auth.uid in resource.data.assignedAdminIds) ||
+          resource.data.leaderId == request.auth.uid ||
+          resource.data.assistantLeaderId == request.auth.uid ||
+          resource.data.status == 'Active'
+        );
+        allow create: if isSuperAdmin();
+        allow update: if isSuperAdmin() || (
+          isAuthenticated() && (
+            (resource.data.assignedAdminIds != null && request.auth.uid in resource.data.assignedAdminIds) ||
+            resource.data.leaderId == request.auth.uid ||
+            resource.data.assistantLeaderId == request.auth.uid
+          )
+        );
+        allow delete: if isSuperAdmin();
+      }
+
+      match /careCellMemberships/{membershipId} {
+        allow read: if isAuthenticated();
+        allow write: if isChurchAdmin();
+      }
+
+      match /careCellMeetings/{meetingId} {
+        allow read: if isAuthenticated();
+        allow write: if isChurchAdmin();
+      }
+
+      match /careCellAttendance/{attendanceId} {
+        allow read, write: if isAuthenticated();
+      }
+
+      match /careCellPrayerRequests/{requestId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated();
+        allow update, delete: if isChurchAdmin() || (isAuthenticated() && resource.data.memberId == request.auth.uid);
+      }
+
+      match /careCellFollowups/{followupId} {
+        allow read, write: if isAuthenticated();
+      }
+
+      match /careCellAnnouncements/{announcementId} {
+        allow read: if isAuthenticated();
+        allow write: if isChurchAdmin();
+      }
+
+      match /careCellMeetingReports/{reportId} {
         allow read, write: if isAuthenticated();
       }
 

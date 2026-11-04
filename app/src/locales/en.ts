@@ -328,6 +328,7 @@ export const en = {
     featuredTeaching: 'Featured Teaching',
     mainSpeaker: 'Main Speaker',
     subscribe: 'Subscribe',
+    subscribed: 'Subscribed',
     shareThisMessage: 'Share this message',
     pastSermons: 'PAST SERMONS',
     noPastSermons: 'No other past video sermons available.',

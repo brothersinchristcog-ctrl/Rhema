@@ -293,7 +293,7 @@ class ChurchService {
       const body = `"${details.name}" was registered on ${dateTimeStr}.${details.pastorName ? ` Pastor/Admin: ${details.pastorName}` : ''}`;
 
       // 1. Fetch all Super Admins from platform_admins collection
-      const adminsSnapshot = await firestore().collection('platform_admins').get();
+      const adminsSnapshot = await firestore().collection('Platform Admin').get();
       if (adminsSnapshot.empty) {
         console.log('ℹ️ No platform super admins found in Firestore to notify.');
         return;

@@ -330,6 +330,7 @@ export const te: TranslationSchema = {
     featuredTeaching: 'ముఖ్యమైన బోధన',
     mainSpeaker: 'ప్రధాన వక్త',
     subscribe: 'సబ్‌స్క్రైబ్',
+    subscribed: 'సబ్‌స్క్రయిబ్డ్',
     shareThisMessage: 'ఈ వాక్యాన్ని పంచుకోండి',
     pastSermons: 'గత ప్రసంగాలు',
     noPastSermons: 'మరే ఇతర వీడియో ప్రసంగాలు అందుబాటులో లేవు.',

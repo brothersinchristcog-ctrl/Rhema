@@ -42,6 +42,8 @@ import {
   User
 } from 'lucide-react-native';
 import FirestoreService from '../services/FirestoreService';
+import firestore from '@react-native-firebase/firestore';
+import { useAuth } from '../context/AuthContext';
 import { useChurch } from '../context/ChurchContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
@@ -103,10 +105,11 @@ const injectedGviewCSS = `
 `;
 
 export default function SermonVideoScreen({ navigation, route }: any) {
+  const { user } = useAuth();
   const sermonDataParam = route?.params?.sermonData;
   const [videos, setVideos] = useState<any[]>([]);
   const [loading, setLoading] = useState(!sermonDataParam);
-  const [playing, setPlaying] = useState(false);
+  const [playing, setPlaying] = useState(true);
   const [activeVideo, setActiveVideo] = useState<any | null>(() => {
     if (sermonDataParam && (sermonDataParam.youtubeId || sermonDataParam.id)) {
       return {
@@ -133,6 +136,7 @@ export default function SermonVideoScreen({ navigation, route }: any) {
   const [isNotesExpanded, setIsNotesExpanded] = useState(false);
   const [showFullscreenNotes, setShowFullscreenNotes] = useState(false);
   const [readerKey, setReaderKey] = useState(0);
+  const playerRef = useRef<any>(null);
   const scrollViewRef = useRef<ScrollView>(null);
   const { activeChurch } = useChurch();
   const { t } = useLanguage();
@@ -164,21 +168,67 @@ export default function SermonVideoScreen({ navigation, route }: any) {
     outputRange: ['-20deg', '0deg', '20deg'],
   });
 
-  // Load persistent subscription state
+  // Check persistent subscription state before displaying button
   useEffect(() => {
-    AsyncStorage.getItem('@rhema_youtube_subscribed').then((val) => {
-      if (val === 'true') {
-        setIsSubscribed(true);
+    let isCancelled = false;
+    const checkSub = async () => {
+      const sermonId = activeVideo?.id;
+      if (!sermonId) {
+        const globalSub = await AsyncStorage.getItem('@rhema_youtube_subscribed').catch(() => null);
+        if (!isCancelled && globalSub === 'true') {
+          setIsSubscribed(true);
+        }
+        return;
       }
-    }).catch(() => {});
-  }, []);
+
+      // 1. Check local persistent storage specifically for this sermon
+      const localSermonSub = await AsyncStorage.getItem(`@rhema_sermon_sub_${sermonId}`).catch(() => null);
+      if (localSermonSub === 'true') {
+        if (!isCancelled) setIsSubscribed(true);
+        return;
+      }
+      if (localSermonSub === 'false') {
+        if (!isCancelled) setIsSubscribed(false);
+        return;
+      }
+
+      // 2. Check global channel subscription fallback
+      const globalSub = await AsyncStorage.getItem('@rhema_youtube_subscribed').catch(() => null);
+      if (globalSub === 'true') {
+        if (!isCancelled) setIsSubscribed(true);
+        return;
+      }
+
+      // 3. If signed in, check Firestore member subscription
+      if (user?.uid) {
+        try {
+          const doc = await firestore()
+            .collection('members')
+            .doc(user.uid)
+            .collection('sermon_subscriptions')
+            .doc(String(sermonId))
+            .get();
+          if (!isCancelled && doc.exists) {
+            setIsSubscribed(true);
+            AsyncStorage.setItem(`@rhema_sermon_sub_${sermonId}`, 'true').catch(() => {});
+            return;
+          }
+        } catch (_) {}
+      }
+
+      if (!isCancelled) setIsSubscribed(false);
+    };
+
+    checkSub();
+    return () => { isCancelled = true; };
+  }, [activeVideo?.id, user?.uid]);
 
   // Initial load from params or fetch
   useEffect(() => {
     let isCancelled = false;
     const init = async () => {
       setLoading(true);
-      const promiseData = await FirestoreService.getSermons(50);
+      const promiseData = await FirestoreService.getSermons(100);
       const data: any[] = promiseData
         .filter(p => p.youtubeId && p.youtubeId.trim() !== '' && p.youtubeId !== 'mock')
         .map(p => ({
@@ -313,6 +363,7 @@ export default function SermonVideoScreen({ navigation, route }: any) {
   };
 
   const handleSubscribeToggle = async () => {
+    const sermonId = activeVideo?.id;
     if (isSubscribed) {
       setShowUnsubModal(true);
     } else {
@@ -323,19 +374,67 @@ export default function SermonVideoScreen({ navigation, route }: any) {
         console.error('Failed to open YouTube channel:', err);
       }
       setIsSubscribed(true);
+      if (sermonId) {
+        await AsyncStorage.setItem(`@rhema_sermon_sub_${sermonId}`, 'true').catch(() => {});
+      }
       await AsyncStorage.setItem('@rhema_youtube_subscribed', 'true').catch(() => {});
+      if (user?.uid && sermonId) {
+        try {
+          await firestore()
+            .collection('members')
+            .doc(user.uid)
+            .collection('sermon_subscriptions')
+            .doc(String(sermonId))
+            .set({
+              sermonId: String(sermonId),
+              title: activeVideo?.title || 'Sermon',
+              youtubeId: activeVideo?.youtubeId || '',
+              subscribedAt: firestore.FieldValue.serverTimestamp(),
+            }, { merge: true });
+        } catch (_) {}
+      }
     }
   };
 
   const confirmUnsubscribe = async () => {
+    const sermonId = activeVideo?.id;
     setShowUnsubModal(false);
     setIsSubscribed(false);
+    if (sermonId) {
+      await AsyncStorage.setItem(`@rhema_sermon_sub_${sermonId}`, 'false').catch(() => {});
+    }
     await AsyncStorage.setItem('@rhema_youtube_subscribed', 'false').catch(() => {});
+    if (user?.uid && sermonId) {
+      try {
+        await firestore()
+          .collection('members')
+          .doc(user.uid)
+          .collection('sermon_subscriptions')
+          .doc(String(sermonId))
+          .delete();
+      } catch (_) {}
+    }
     const channelUrl = 'https://www.youtube.com/@RhemaGlobalMinistries';
     try {
       await Linking.openURL(channelUrl);
     } catch (err) {
       console.error('Failed to open YouTube channel:', err);
+    }
+  };
+
+  const getSubscribeLabel = () => {
+    if (isSubscribed) {
+      const val = t('sermons.subscribed');
+      if (!val || val.includes('.') || val.toLowerCase().includes('sermon')) {
+        return 'Subscribed';
+      }
+      return val;
+    } else {
+      const val = t('sermons.subscribe');
+      if (!val || val.includes('.') || val.toLowerCase().includes('sermon')) {
+        return 'Subscribe';
+      }
+      return val;
     }
   };
 
@@ -424,11 +523,17 @@ export default function SermonVideoScreen({ navigation, route }: any) {
         <View style={styles.playerSection}>
           {hasValidVideo ? (
             <YoutubePlayer
+              ref={playerRef}
+              key={`yt_${finalVideoId}`}
               width={playerWidth}
               height={playerHeight}
               play={playing}
               videoId={finalVideoId}
               onChangeState={onStateChange}
+              onReady={() => {
+                setPlaying(true);
+              }}
+              forceAndroidAutoplay={true}
               initialPlayerParams={{
                 preventFullScreen: false,
                 controls: true,
@@ -437,6 +542,8 @@ export default function SermonVideoScreen({ navigation, route }: any) {
               }}
               webViewProps={{
                 androidLayerType: 'hardware',
+                mediaPlaybackRequiresUserAction: false,
+                allowsInlineMediaPlayback: true,
                 injectedJavaScriptBeforeContentLoaded: `
                   (function() {
                     const hideCSS = \`
@@ -484,6 +591,21 @@ export default function SermonVideoScreen({ navigation, route }: any) {
                     };
                     hideWatchOnYT();
                     setInterval(hideWatchOnYT, 600);
+
+                    const triggerAutoplay = () => {
+                      try {
+                        if (window.player && typeof window.player.playVideo === 'function') {
+                          window.player.playVideo();
+                        }
+                        const playBtn = document.querySelector('.ytp-large-play-button, button.ytp-play-button');
+                        if (playBtn) {
+                          playBtn.click();
+                        }
+                      } catch(e) {}
+                    };
+                    setTimeout(triggerAutoplay, 300);
+                    setTimeout(triggerAutoplay, 800);
+                    setTimeout(triggerAutoplay, 1500);
                   })();
                   true;
                 `,
@@ -559,7 +681,7 @@ export default function SermonVideoScreen({ navigation, route }: any) {
                 <View style={[styles.unsubBtn, { backgroundColor: isDark ? '#27272A' : '#F4F4F5', borderColor: isDark ? '#3F3F46' : '#E4E4E7' }]}>
                   <Bell size={13} color={isDark ? '#A1A1AA' : '#71717A'} fill={isDark ? '#A1A1AA' : '#71717A'} style={{ marginRight: 5 }} />
                   <Text style={[styles.unsubBtnTxt, { color: isDark ? '#D4D4D8' : '#52525B' }]}>
-                    {t('sermons.subscribed') || 'Subscribed'}
+                    {getSubscribeLabel()}
                   </Text>
                 </View>
               ) : (
@@ -573,7 +695,7 @@ export default function SermonVideoScreen({ navigation, route }: any) {
                     <Bell size={13} color="#FFFFFF" fill="#FFFFFF" />
                   </Animated.View>
                   <Text style={styles.subBtnTxt}>
-                    {t('sermons.subscribe') || 'Subscribe'}
+                    {getSubscribeLabel()}
                   </Text>
                 </LinearGradient>
               )}
@@ -733,7 +855,7 @@ export default function SermonVideoScreen({ navigation, route }: any) {
               <Text style={{ color: '#9CA3AF', fontSize: 12, fontStyle: 'italic' }}>{t('sermons.noPastSermons')}</Text>
             </View>
           ) : (
-            videos.filter(v => v.id !== activeVideo?.id).map((video) => {
+            videos.filter(v => v.id !== activeVideo?.id).slice(0, 40).map((video) => {
               const formattedDate = video.date ? formatSermonDate(video.date) : '';
               const formattedDuration = video.duration && formatSermonDuration(video.duration) ? formatSermonDuration(video.duration) : '';
               const metaString = [formattedDate, formattedDuration].filter(Boolean).join(' · ');
@@ -744,6 +866,7 @@ export default function SermonVideoScreen({ navigation, route }: any) {
                   style={[styles.archiveItem, { borderBottomColor: isDark ? 'rgba(255,255,255,0.08)' : '#f3f4f6' }]}
                   onPress={() => {
                     setActiveVideo(video);
+                    setPlaying(true);
                     scrollViewRef.current?.scrollTo({ y: 0, animated: true });
                   }}
                   activeOpacity={0.7}

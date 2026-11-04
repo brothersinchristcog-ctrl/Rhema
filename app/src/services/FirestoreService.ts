@@ -1324,7 +1324,7 @@ class FirestoreService {
     }
   }
 
-  async getSermons(limit = 50): Promise<Sermon[]> {
+  async getSermons(limit = 200): Promise<Sermon[]> {
     this.autoPublishDueScheduledSermons().catch(() => {});
     try {
       const col = await this.getCollection('sermons');
@@ -2782,7 +2782,7 @@ class FirestoreService {
               }
 
               const eventTitle = cleanData.titleEn || cleanData.title || cleanData.name || 'Event';
-              const occurrenceQr = buildEventQRPayload(docRef.id, eventTitle);
+              const occurrenceQr = buildEventQRPayload(docRef.id, String(eventTitle));
               const instanceData = { 
                 ...cleanData, 
                 id: docRef.id, 
@@ -2807,7 +2807,7 @@ class FirestoreService {
         } else {
           const docRef = col.doc();
           const eventTitle = cleanData.titleEn || cleanData.title || cleanData.name || 'Event';
-          const singleQr = buildEventQRPayload(docRef.id, eventTitle);
+          const singleQr = buildEventQRPayload(docRef.id, String(eventTitle));
           await docRef.set({ 
             ...cleanData, 
             id: docRef.id,

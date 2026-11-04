@@ -17,6 +17,7 @@ interface AuthContextType {
   viewMode: 'admin' | 'member';
   setViewMode: (mode: 'admin' | 'member') => void;
   isPlatformSuperAdmin: boolean;
+  refreshSuperAdminStatus: () => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -28,7 +29,164 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [viewMode, setViewMode] = useState<'admin' | 'member'>('member');
   const [isPlatformSuperAdmin, setIsPlatformSuperAdmin] = useState(false);
   const memberListenerRef = useRef<(() => void) | null>(null);
+  const superAdminListenerRef = useRef<(() => void) | null>(null);
   const isSigningOutRef = useRef<boolean>(false);
+
+  const KNOWN_SUPER_ADMIN_UIDS = [
+    'q43NWXEu8iTiFE0B7RDa7O8yq2o2', // Sakibanda Sunil Babu (+918374331432)
+    'sXjfTqNTkKOT6dYVxkpbhjritCi2', // Prabhakar Yeddula (+919392723536)
+    'LtbLZnTmhWMaCASSTmSC5ad0ST33', // Jayanthi Admin (+919398501975)
+  ];
+
+  const checkSuperAdminStatus = async (targetUid: string): Promise<boolean> => {
+    if (!targetUid) return false;
+
+    // Fast-path 1: Known UID
+    if (KNOWN_SUPER_ADMIN_UIDS.includes(targetUid)) {
+      AsyncStorage.setItem('@cached_is_super_admin', JSON.stringify(true)).catch(() => {});
+      return true;
+    }
+
+    try {
+      // 1. Primary check: 'Rhema Church/rhema/Platform Admin' subcollection -> {targetUid} -> 'Role'
+      const churchRoleSnap = await firestore()
+        .collection('Rhema Church')
+        .doc(RHEMA_CHURCH_ID)
+        .collection('Platform Admin')
+        .doc(targetUid)
+        .collection('Role')
+        .get()
+        .catch(() => null);
+
+      if (churchRoleSnap && !churchRoleSnap.empty) {
+        const hasSuperAdminRole = churchRoleSnap.docs.some((d) => {
+          const data = d.data();
+          return (
+            data?.superadmin === true ||
+            String(data?.role || '').toLowerCase().replace(/\s+/g, '') === 'superadmin' ||
+            String(data?.role || '').toLowerCase().includes('super')
+          );
+        });
+        if (hasSuperAdminRole) {
+          AsyncStorage.setItem('@cached_is_super_admin', JSON.stringify(true)).catch(() => {});
+          return true;
+        }
+      }
+
+      // 2. Direct doc in Rhema Church/rhema/Platform Admin/{targetUid}
+      const churchDirectDoc = await firestore()
+        .collection('Rhema Church')
+        .doc(RHEMA_CHURCH_ID)
+        .collection('Platform Admin')
+        .doc(targetUid)
+        .get()
+        .catch(() => null);
+      if (churchDirectDoc && churchDirectDoc.exists) {
+        const d = churchDirectDoc.data();
+        if (
+          d?.superadmin === true ||
+          String(d?.role || '').toLowerCase().replace(/\s+/g, '') === 'superadmin' ||
+          String(d?.role || '').toLowerCase().includes('super')
+        ) {
+          AsyncStorage.setItem('@cached_is_super_admin', JSON.stringify(true)).catch(() => {});
+          return true;
+        }
+      }
+
+      // 3. Fallback: root Platform Admin collection Role subcollection
+      const rootRoleSnap = await firestore()
+        .collection('Platform Admin')
+        .doc(targetUid)
+        .collection('Role')
+        .get()
+        .catch(() => null);
+
+      if (rootRoleSnap && !rootRoleSnap.empty) {
+        const hasSuper = rootRoleSnap.docs.some((d: any) => {
+          const data = d.data();
+          return (
+            data?.superadmin === true ||
+            String(data?.role || '').toLowerCase().replace(/\s+/g, '') === 'superadmin' ||
+            String(data?.role || '').toLowerCase().includes('super')
+          );
+        });
+        if (hasSuper) {
+          AsyncStorage.setItem('@cached_is_super_admin', JSON.stringify(true)).catch(() => {});
+          return true;
+        }
+      }
+
+      // 4. Fallback: root Platform Admin direct doc
+      const rootDoc = await firestore()
+        .collection('Platform Admin')
+        .doc(targetUid)
+        .get()
+        .catch(() => null);
+      if (rootDoc && rootDoc.exists) {
+        const d = rootDoc.data();
+        if (
+          d?.superadmin === true ||
+          String(d?.role || '').toLowerCase().replace(/\s+/g, '') === 'superadmin' ||
+          String(d?.role || '').toLowerCase().includes('super')
+        ) {
+          AsyncStorage.setItem('@cached_is_super_admin', JSON.stringify(true)).catch(() => {});
+          return true;
+        }
+      }
+
+      // 5. Fallback: root platform_admins
+      const legacyDoc = await firestore()
+        .collection('platform_admins')
+        .doc(targetUid)
+        .get()
+        .catch(() => null);
+      if (legacyDoc && legacyDoc.exists) {
+        const d = legacyDoc.data();
+        if (
+          d?.superadmin === true ||
+          String(d?.role || '').toLowerCase().replace(/\s+/g, '') === 'superadmin' ||
+          String(d?.role || '').toLowerCase().includes('super')
+        ) {
+          AsyncStorage.setItem('@cached_is_super_admin', JSON.stringify(true)).catch(() => {});
+          return true;
+        }
+      }
+
+      // 6. Member document check in Rhema Church
+      const memberDoc = await firestore()
+        .collection('Rhema Church')
+        .doc(RHEMA_CHURCH_ID)
+        .collection('members')
+        .doc(targetUid)
+        .get()
+        .catch(() => null);
+      if (memberDoc && memberDoc.exists) {
+        const d = memberDoc.data();
+        if (
+          d?.superadmin === true ||
+          d?.isSuperAdmin === true ||
+          String(d?.userType || '').toLowerCase().includes('super') ||
+          String(d?.role || '').toLowerCase().includes('super')
+        ) {
+          AsyncStorage.setItem('@cached_is_super_admin', JSON.stringify(true)).catch(() => {});
+          return true;
+        }
+      }
+
+      return false;
+    } catch (err) {
+      console.warn('⚠️ [Auth] checkSuperAdminStatus error:', err);
+      return false;
+    }
+  };
+
+  const refreshSuperAdminStatus = async (): Promise<boolean> => {
+    if (!user?.uid) return false;
+    const isSuper = await checkSuperAdminStatus(user.uid);
+    setIsPlatformSuperAdmin(isSuper);
+    return isSuper;
+  };
+
 
   const updateMember = (newMember: AppMember | null) => {
     setMember(newMember);
@@ -45,19 +203,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       let cachedUserObj: any = null;
       let cachedMemberObj: AppMember | null = null;
       try {
-        const [cachedMemberStr, cachedUserStr] = await Promise.all([
+        const [cachedMemberStr, cachedUserStr, cachedSuperStr] = await Promise.all([
           AsyncStorage.getItem('@cached_member'),
           AsyncStorage.getItem('@cached_user'),
+          AsyncStorage.getItem('@cached_is_super_admin'),
         ]);
+        if (cachedSuperStr) {
+          try {
+            const isSuper = JSON.parse(cachedSuperStr);
+            if (isSuper === true) setIsPlatformSuperAdmin(true);
+          } catch (_) {}
+        }
         if (cachedMemberStr) {
           cachedMemberObj = JSON.parse(cachedMemberStr);
           console.log('👤 [Auth] Loaded cached member:', cachedMemberObj?.name);
           setMember(cachedMemberObj);
+          if (String(cachedMemberObj?.userType || '').toUpperCase().includes('SUPER')) {
+            setIsPlatformSuperAdmin(true);
+          }
         }
         if (cachedUserStr) {
           cachedUserObj = JSON.parse(cachedUserStr);
           console.log('🔑 [Auth] Restored persistent user session:', cachedUserObj?.uid);
           setUser(cachedUserObj as FirebaseAuthTypes.User);
+          if (cachedUserObj?.uid) {
+            if (KNOWN_SUPER_ADMIN_UIDS.includes(cachedUserObj.uid)) {
+              setIsPlatformSuperAdmin(true);
+            }
+            checkSuperAdminStatus(cachedUserObj.uid).then((isSuper) => {
+              setIsPlatformSuperAdmin(isSuper);
+            }).catch(() => {});
+          }
         }
       } catch (e) {
         // Ignore cache read errors
@@ -97,6 +273,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (cachedUserObj && !cachedUserObj.isAnonymous && !isSigningOutRef.current) {
             console.log('🛡️ [Auth] Preserving persistent user session while Firebase Auth is null/offline.');
             setUser(cachedUserObj as FirebaseAuthTypes.User);
+            if (cachedUserObj?.uid) {
+              checkSuperAdminStatus(cachedUserObj.uid).then(setIsPlatformSuperAdmin).catch(() => {});
+            }
             setLoading(false);
             return;
           }
@@ -122,16 +301,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           try {
             console.log('🔐 [Auth] User Logged In:', userState.uid);
 
-            // Check Super Admin Status
+            // Check Super Admin Status via 'Platform Admin' collection and 'Role' subcollection
             try {
-              const adminDoc = await firestore().collection('platform_admins').doc(userState.uid).get();
-              const isAdmin = typeof (adminDoc as any).exists === 'function' ? (adminDoc as any).exists() : Boolean((adminDoc as any).exists);
-              setIsPlatformSuperAdmin(isAdmin);
-              if (isAdmin) {
+              const isSuper = await checkSuperAdminStatus(userState.uid);
+              setIsPlatformSuperAdmin(isSuper);
+              if (isSuper) {
                 const notifSvc = require('../services/NotificationService').default;
                 notifSvc.subscribeToSuperAdminTopic().catch(() => {});
               }
+
+              // Set up live listener for Platform Admin changes
+              if (superAdminListenerRef.current) superAdminListenerRef.current();
+              superAdminListenerRef.current = firestore()
+                .collection('Rhema Church')
+                .doc(RHEMA_CHURCH_ID)
+                .collection('Platform Admin')
+                .doc(userState.uid)
+                .collection('Role')
+                .onSnapshot(
+                  (snap) => {
+                    if (snap && !snap.empty) {
+                      const hasSuper = snap.docs.some((d) => {
+                        const data = d.data();
+                        return (
+                          data?.superadmin === true ||
+                          String(data?.role || '').toLowerCase().replace(/\s+/g, '') === 'superadmin' ||
+                          String(data?.role || '').toLowerCase().includes('super')
+                        );
+                      });
+                      setIsPlatformSuperAdmin(hasSuper);
+                    }
+                  },
+                  () => {}
+                );
             } catch (err) {
+              console.warn('⚠️ [Auth] Error verifying Super Admin status:', err);
               setIsPlatformSuperAdmin(false);
             }
 
@@ -233,6 +437,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               if (isAdminUser) {
                 require('../services/NotificationService').default.subscribeToChurchAdminTopic(targetChurchId);
               }
+
+              const isSuperRole =
+                String(combinedMember?.userType || '').toUpperCase().includes('SUPER') ||
+                KNOWN_SUPER_ADMIN_UIDS.includes(userState.uid);
+              if (isSuperRole) {
+                setIsPlatformSuperAdmin(true);
+                AsyncStorage.setItem('@cached_is_super_admin', JSON.stringify(true)).catch(() => {});
+              }
             }
 
             // Real-time listener on member profile (updates role/profile changes live, NEVER auto-logs out)
@@ -292,6 +504,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       if (subscriber) subscriber();
       if (memberListenerRef.current) memberListenerRef.current();
+      if (superAdminListenerRef.current) superAdminListenerRef.current();
     };
   }, []);
 
@@ -313,7 +526,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         memberListenerRef.current();
         memberListenerRef.current = null;
       }
-      await AsyncStorage.multiRemove(['@cached_member', '@cached_user', '@guest_intent']);
+      if (superAdminListenerRef.current) {
+        superAdminListenerRef.current();
+        superAdminListenerRef.current = null;
+      }
+      await AsyncStorage.multiRemove(['@cached_member', '@cached_user', '@guest_intent', '@cached_is_super_admin']);
       setMember(null);
       setUser(null);
       setIsPlatformSuperAdmin(false);
@@ -328,7 +545,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, member, loading, signInAnonymously, signOut, setMember: updateMember, viewMode, setViewMode, isPlatformSuperAdmin }}>
+    <AuthContext.Provider value={{ user, member, loading, signInAnonymously, signOut, setMember: updateMember, viewMode, setViewMode, isPlatformSuperAdmin, refreshSuperAdminStatus }}>
       {children}
     </AuthContext.Provider>
   );

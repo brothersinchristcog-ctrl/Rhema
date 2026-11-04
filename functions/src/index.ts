@@ -1354,9 +1354,8 @@ export const checkYouTubeLive = onSchedule('*/5 * * * *', async (event) => {
     if (isLive && !prevState?.isLive) {
       console.log('🚨 YouTube Live Stream detected! Sending notifications...');
       
-      const churchName = cData?.name || 'Rhema Church';
-      const pushTitle = `🔴 ${churchName} is LIVE on YouTube!`;
-      const pushBody = 'Join our live worship service now! Tap to watch inside the app. 🎥🙏';
+      const pushTitle = '🔴 We Are LIVE Now!';
+      const pushBody = "Join us for a time of worship, prayer and God's Word. Our live service is now streaming on YouTube. Be blessed!";
       const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
 
       // 1. Add to existing broadcasts collection
@@ -1371,32 +1370,35 @@ export const checkYouTubeLive = onSchedule('*/5 * * * *', async (event) => {
         createdAt: FieldValue.serverTimestamp()
       });
       
-      // 2. Send topic push to all church members
+      // 2. Send topic push to all church members with "Join Live Now" category
       await getMsg().send({
-        notification: {
-          title: pushTitle,
-          body: pushBody
-        },
         data: {
           type: 'youtube_live',
           url: liveUrl,
           videoId: videoId || '',
           churchId: 'rhema',
           title: pushTitle,
+          pushTitle: pushTitle,
+          pushBody: pushBody,
           id: docRef.id
         },
         topic: 'church_rhema',
         android: {
-          priority: 'high',
-          notification: {
-            sound: 'default',
-            priority: 'max',
-            channelId: 'church_alerts'
-          }
+          priority: 'high'
         },
         apns: {
           headers: { 'apns-priority': '10' },
-          payload: { aps: { sound: 'default', badge: 1 } }
+          payload: {
+            aps: {
+              alert: {
+                title: pushTitle,
+                body: pushBody,
+              },
+              sound: 'default',
+              badge: 1,
+              category: 'youtube_live',
+            }
+          }
         }
       }).catch((e: any) => console.error('Error sending topic push:', e));
     }
@@ -1413,8 +1415,8 @@ export const triggerTestYouTubeLive = onCall({ invoker: 'public' }, async (reque
     // Save to Firestore first
     const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
     const docRef = await db.collection('churches').doc(DEFAULT_CHURCH_ID).collection('broadcasts').add({
-      title: '🎥 YouTube Live Stream Started!',
-      content: 'Brothers in Christ Fellowship is now LIVE on YouTube. Click to join the stream and worship with us! 🎥🙏',
+      title: '🔴 We Are LIVE Now!',
+      content: "Join us for a time of worship, prayer and God's Word. Our live service is now streaming on YouTube. Be blessed!",
       date: dateStr,
       type: 'youtube_live',
       url: liveUrl,
@@ -1422,32 +1424,35 @@ export const triggerTestYouTubeLive = onCall({ invoker: 'public' }, async (reque
       createdAt: FieldValue.serverTimestamp()
     });
     
-    // Send topic push to all church members
+    // Send topic push to all church members with "Join Live Now" category
     await getMsg().send({
-      notification: {
-        title: '🔴 We are Live on YouTube!',
-        body: 'Brothers in Christ Fellowship is now live! Tap to watch inside the app. 🎥🙏'
-      },
       data: {
         type: 'youtube_live',
         url: liveUrl,
         videoId: '',
         churchId: DEFAULT_CHURCH_ID,
         title: 'Brothers in Christ Fellowship Live Stream',
+        pushTitle: '🔴 We Are LIVE Now!',
+        pushBody: "Join us for a time of worship, prayer and God's Word. Our live service is now streaming on YouTube. Be blessed!",
         id: docRef.id
       },
       topic: `church_${DEFAULT_CHURCH_ID}`,
       android: {
-        priority: 'high',
-        notification: {
-          sound: 'default',
-          priority: 'max',
-          channelId: 'church_alerts'
-        }
+        priority: 'high'
       },
       apns: {
         headers: { 'apns-priority': '10' },
-        payload: { aps: { sound: 'default', badge: 1 } }
+        payload: {
+          aps: {
+            alert: {
+              title: '🔴 We Are LIVE Now!',
+              body: "Join us for a time of worship, prayer and God's Word. Our live service is now streaming on YouTube. Be blessed!",
+            },
+            sound: 'default',
+            badge: 1,
+            category: 'youtube_live',
+          }
+        }
       }
     }).catch((e: any) => console.error('Error sending test topic push:', e));
 
@@ -1758,5 +1763,8 @@ export {
   onPrayerRequestCreatedAdminLegacy,
   onPrayerRequestProcessedMember,
   onPrayerRequestProcessedMemberLegacy,
-  pushPrayerRequestApproved
+  pushPrayerRequestApproved,
+  pushCareCellAnnouncement,
+  pushCareCellMeeting,
+  pushCareCellPrayerRequest,
 } from './notifications.js';

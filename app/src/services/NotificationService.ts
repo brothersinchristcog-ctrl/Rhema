@@ -1,4 +1,5 @@
 import { Platform, PermissionsAndroid, Linking, Alert } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { messaging, firestore, auth } from './firebaseConfig';
 
 class NotificationService {
@@ -67,6 +68,79 @@ class NotificationService {
       }
     } catch (err) {
       console.error('❌ Firestore Token Save Error:', err);
+    }
+  }
+
+  async setupCategoriesAndChannels() {
+    try {
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('church_alerts', {
+          name: 'Church Live & Updates',
+          importance: Notifications.AndroidImportance.MAX,
+          sound: 'default',
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#E02424',
+          enableLights: true,
+          enableVibrate: true,
+          showBadge: true,
+        });
+      }
+
+      await Notifications.setNotificationCategoryAsync('youtube_live', [
+        {
+          identifier: 'join_live_now',
+          buttonTitle: '📺 Join Live Now',
+          options: {
+            opensAppToForeground: true,
+          },
+        },
+      ]);
+
+      await Notifications.setNotificationCategoryAsync('youtube_live_category', [
+        {
+          identifier: 'join_live_now',
+          buttonTitle: '📺 Join Live Now',
+          options: {
+            opensAppToForeground: true,
+          },
+        },
+      ]);
+      console.log('✅ [NotificationService] Registered YouTube Live category with "📺 Join Live Now" action button');
+    } catch (e) {
+      console.warn('⚠️ [NotificationService] setupCategoriesAndChannels notice:', e);
+    }
+  }
+
+  async displayLiveNotification(data: any, title?: string, body?: string) {
+    try {
+      await this.setupCategoriesAndChannels();
+      const pushTitle = title || data?.pushTitle || data?.title || '🔴 We Are LIVE Now!';
+      const pushBody = body || data?.pushBody || data?.body || "Join us for a time of worship, prayer and God's Word. Our live service is now streaming on YouTube. Be blessed!";
+
+      const liveUrl = (data && data.url) || 'https://www.youtube.com/@Brothersinchristfellowship/live';
+      const videoId = (data && data.videoId) || '';
+      const churchId = (data && data.churchId) || 'rhema';
+
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: pushTitle,
+          body: pushBody,
+          data: {
+            type: 'youtube_live',
+            url: liveUrl,
+            videoId: videoId,
+            churchId: churchId,
+            title: pushTitle,
+          },
+          categoryIdentifier: 'youtube_live',
+          sound: 'default',
+          color: '#E02424',
+        },
+        trigger: Platform.OS === 'android' ? { channelId: 'church_alerts' } : null,
+      });
+      console.log('✅ [NotificationService] Posted YouTube Live notification with "Join Live Now" button to device notification panel');
+    } catch (err) {
+      console.error('❌ [NotificationService] Failed to post live notification to panel:', err);
     }
   }
 
@@ -166,10 +240,12 @@ class NotificationService {
           break;
         }
         case 'youtube_live': {
-          const liveUrl = remoteMessage.data && remoteMessage.data.url ? remoteMessage.data.url : 'https://www.youtube.com/@Brothersinchristfellowship/live';
+          const liveUrl = (remoteMessage?.data && remoteMessage.data.url) || rawData?.url || 'https://www.youtube.com/@Brothersinchristfellowship/live';
           const videoId = rawData.videoId || (remoteMessage?.data && remoteMessage.data.videoId) || '';
           const title = rawData.title || (remoteMessage?.notification && remoteMessage.notification.title) || '';
-          nav.navigate('YouTubeLive', { url: liveUrl, videoId, title, churchId: rawData.churchId });
+          const targetChurchId = rawData.churchId || (remoteMessage?.data && remoteMessage.data.churchId) || 'rhema';
+          console.log('🎥 [NotificationService] Routing directly to YouTubeLive screen:', { liveUrl, videoId, title, churchId: targetChurchId });
+          nav.navigate('YouTubeLive', { url: liveUrl, videoId, title, churchId: targetChurchId });
           break;
         }
         case 'LIVE_CELEBRATION':
@@ -213,6 +289,13 @@ class NotificationService {
           } else {
             nav.navigate('ChurchQuizzes');
           }
+          break;
+        }
+        case 'care_cell':
+        case 'care_cell_announcement':
+        case 'care_cell_meeting':
+        case 'care_cell_prayer': {
+          nav.navigate('CareCell');
           break;
         }
         default:

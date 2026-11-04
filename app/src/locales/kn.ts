@@ -330,6 +330,7 @@ export const kn: TranslationSchema = {
     featuredTeaching: 'ವಿಶೇಷ ಬೋಧನೆ',
     mainSpeaker: 'ಮುಖ್ಯ ವಕ್ತಾರರು',
     subscribe: 'ಸಬ್‌ಸ್ಕ್ರೈಬ್',
+    subscribed: 'ಚಂದಾದಾರರಾಗಲಾಗಿದೆ',
     shareThisMessage: 'ಈ ಸಂದೇಶವನ್ನು ಹಂಚಿಕೊಳ್ಳಿ',
     pastSermons: 'ಹಿಂದಿನ ಉಪದೇಶಗಳು',
     noPastSermons: 'ಇತರ ಯಾವುದೇ ವೀಡಿಯೊ ಉಪದೇಶಗಳು ಲಭ್ಯವಿಲ್ಲ.',
