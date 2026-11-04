@@ -171,7 +171,11 @@ export default function App() {
       const rawData = remoteMessage?.data || {};
       const password = rawData.password || (body.match(/Passcode:\s*([A-Za-z0-9]+)/i)?.[1]) || '';
       
-      setNotification({ title, body, password, remoteMessage });
+      const isLive = rawData.type === 'youtube_live';
+      setNotification({ title, body, password, remoteMessage, isLive });
+      if (isLive) {
+        NotificationService.displayLiveNotification(rawData, title, body).catch(e => console.warn(e));
+      }
       
       Animated.sequence([
         Animated.timing(slideAnim, {
@@ -227,6 +231,23 @@ export default function App() {
             <View style={styles.toastContent}>
               <Text style={styles.toastTitle} numberOfLines={1}>{notification.title}</Text>
               <Text style={styles.toastBody} numberOfLines={2}>{notification.body}</Text>
+              {notification.isLive ? (
+                <TouchableOpacity 
+                  style={styles.toastLiveBtn} 
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    const msg = notification.remoteMessage;
+                    if (msg && navigationRef.isReady()) {
+                      NotificationService.handleNotificationNavigation(msg, navigationRef);
+                    }
+                    Animated.timing(slideAnim, { toValue: -150, duration: 250, useNativeDriver: true }).start(() => {
+                      setNotification(null);
+                    });
+                  }}
+                >
+                  <Text style={styles.toastLiveBtnTxt}>📺 Join Live Now</Text>
+                </TouchableOpacity>
+              ) : null}
               {notification.password ? (
                 <TouchableOpacity 
                   style={styles.toastCopyBtn} 
@@ -379,6 +400,22 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     alignSelf: 'flex-start',
     marginTop: 6,
+  },
+  toastLiveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E02424',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginTop: 8,
+  },
+  toastLiveBtnTxt: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   toastCopyBtnTxt: {
     color: '#1a2d5a',

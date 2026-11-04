@@ -63,6 +63,7 @@ const CARD_BACKGROUNDS: Record<string, any> = {
   'Church Settings': require('../../../assets/admin_cards/church_settings.png'),
   'Church Branches': require('../../../assets/admin_cards/church_branches.jpg'),
   'Attendance': require('../../../assets/admin_cards/attendance.png'),
+  'Care Cells': require('../../../assets/admin_cards/members.png'),
   'Online Meetings': require('../../../assets/admin_cards/online_meetings.jpg'),
   'New Online Meeting': require('../../../assets/admin_cards/new_online_meeting.png'),
   'App Admin': require('../../../assets/admin_cards/app_admin.png'),
@@ -82,7 +83,7 @@ const CATEGORIES = [
     title: 'Community & Members',
     icon: Users,
     color: '#581C87', // Deep Royal Purple/Eggplant for excellent contrast
-    keywords: ['Member', 'Attendance', 'Prayer']
+    keywords: ['Member', 'Attendance', 'Prayer', 'Care Cell', 'Care Cells']
   },
   {
     title: 'Events & Celebrations',

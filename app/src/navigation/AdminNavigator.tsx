@@ -1,3 +1,4 @@
+import firestore from '@react-native-firebase/firestore';
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, Image, Dimensions, Alert, BackHandler } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -85,6 +86,9 @@ import AdminBaptism from '../screens/admin/AdminBaptism';
 import ChurchService from '../services/ChurchService';
 import AdminServicePlanner from '../screens/admin/AdminServicePlanner';
 import AdminDailyVersesManager from '../screens/admin/AdminDailyVersesManager';
+import AdminCareCellsHub from '../screens/admin/care_cells/AdminCareCellsHub';
+import CareCellService from '../services/CareCellService';
+import { RHEMA_CHURCH_ID } from '../constants/ChurchConfig';
 
 const { width } = Dimensions.get('window');
 
@@ -111,9 +115,53 @@ const DotGridIcon = ({ color, size }: { color: string; size: number }) => {
 export default function AdminNavigator({ navigation, route }: any) {
   const { signOut, user, member, setViewMode, isPlatformSuperAdmin } = useAuth();
   const { activeChurch, isImpersonating, impersonatedBranchName, stopImpersonation } = useChurch();
+  const isSuperAdminUser = isPlatformSuperAdmin ||
+    String(member?.userType || '').toUpperCase().includes('SUPER') ||
+    Boolean(user?.uid && ['q43NWXEu8iTiFE0B7RDa7O8yq2o2', 'sXjfTqNTkKOT6dYVxkpbhjritCi2', 'LtbLZnTmhWMaCASSTmSC5ad0ST33'].includes(user.uid));
   const [activeTab, setActiveTab] = useState(0);
   const [tabHistory, setTabHistory] = useState<number[]>([]);
   const [editingData, setEditingData] = useState(null);
+
+  const [hasCareCellAccess, setHasCareCellAccess] = useState(false);
+
+  useEffect(() => {
+    if (isSuperAdminUser) {
+      setHasCareCellAccess(true);
+      return;
+    }
+    if (!user?.uid) {
+      setHasCareCellAccess(false);
+      return;
+    }
+
+    const churchId = activeChurch?.id || RHEMA_CHURCH_ID;
+
+    // Initial check
+    CareCellService.checkAdminHasCareCellAccess(churchId, user.uid)
+      .then(hasAccess => setHasCareCellAccess(hasAccess))
+      .catch(() => setHasCareCellAccess(false));
+
+    // Real-time listener for cell assignments
+    const unsubscribe = firestore()
+      .collection('Rhema Church')
+      .doc(churchId)
+      .collection('careCells')
+      .onSnapshot((snap) => {
+        if (snap) {
+          const matching = snap.docs.some(doc => {
+            const d = doc.data();
+            const assigned = Array.isArray(d.assignedAdminIds) ? d.assignedAdminIds : [];
+            return assigned.includes(user.uid) || d.leaderId === user.uid || d.assistantLeaderId === user.uid;
+          });
+          setHasCareCellAccess(matching);
+        }
+      }, (err) => {
+        console.warn('⚠️ [AdminNavigator] Care Cells access listener error:', err);
+      });
+
+    return () => unsubscribe();
+  }, [user?.uid, isSuperAdminUser, activeChurch?.id]);
+
   const [dashboardScrollY, setDashboardScrollY] = useState(0);
   const [alertConfig, setAlertConfig] = useState<{
     visible: boolean;
@@ -226,7 +274,7 @@ export default function AdminNavigator({ navigation, route }: any) {
     { name: 'Promises', icon: BookOpen, component: AdminPromiseList },
     { name: 'New Promise', icon: BookPlus, component: AdminPromiseEditor },
     { name: 'Schedule', icon: CalendarClock, component: AdminPromiseCalendar },
-    { name: 'Daily Verses', icon: Sparkles, component: AdminDailyVersesManager },
+    ...(isSuperAdminUser ? [{ name: 'Daily Verses', icon: Sparkles, component: AdminDailyVersesManager }] : []),
     { name: 'Sermons', icon: Mic, component: AdminSermonList },
     { name: 'New Sermon', icon: Video, component: AdminSermonEditor },
     { name: 'Songs', icon: Music, component: AdminSongEditor },
@@ -236,6 +284,7 @@ export default function AdminNavigator({ navigation, route }: any) {
     { name: 'Pastor Event', icon: Briefcase, component: PastorEventDashboard },
     { name: 'Prayers', icon: Heart, component: AdminPrayerModeration },
     { name: 'Attendance', icon: ClipboardCheck, component: AdminAttendance },
+    ...(isSuperAdminUser || hasCareCellAccess ? [{ name: 'Care Cells', icon: HeartHandshake, component: AdminCareCellsHub }] : []),
     { name: 'Service Roster', icon: ClipboardCheck, component: AdminServicePlanner },
     { name: 'Members', icon: Users, component: AdminMembers },
     { name: 'Celebrations', icon: Gift, component: AdminCelebrations },
@@ -245,17 +294,19 @@ export default function AdminNavigator({ navigation, route }: any) {
     { name: 'Contact Us', icon: PhoneCall, component: AdminContactUsEditor },
     { name: 'Support Team', icon: Headset, component: AdminSupportTeam },
     { name: 'Church Settings', icon: Sliders, component: AdminChurchSettings },
-    { name: 'Expense', icon: Wallet, component: AdminFinanceDashboard },
-    { name: 'Donations', icon: HeartHandshake, component: DonationsDashboard },
-
+    ...(isSuperAdminUser ? [
+      { name: 'Expense', icon: Wallet, component: AdminFinanceDashboard },
+      { name: 'Donations', icon: HeartHandshake, component: DonationsDashboard },
+    ] : []),
     { name: 'Online Meetings', icon: VideoIcon, component: AdminOnlineMeetings },
     { name: 'New Online Meeting', icon: VideoIcon, component: AdminOnlineMeetingEditor },
     { name: 'Bible Quiz', icon: Award, component: AdminQuizList },
     { name: 'Baptism', icon: Droplets, component: AdminBaptism },
-    ...(isPlatformSuperAdmin ? [{ name: 'App Admin', icon: Shield, component: SuperAdminDashboard }] : []),
+    ...(isSuperAdminUser ? [{ name: 'App Admin', icon: Shield, component: SuperAdminDashboard }] : []),
   ];
 
-  const ActiveComponent = tabs[activeTab].component as any;
+  const safeActiveTab = (activeTab >= 0 && activeTab < tabs.length) ? activeTab : 0;
+  const ActiveComponent = (tabs[safeActiveTab] || tabs[0]).component as any;
   const today = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
   const isHomeActive = activeTab === 0;

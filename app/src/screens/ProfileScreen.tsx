@@ -607,6 +607,14 @@ export default function ProfileScreen({ navigation }: any) {
           </Text>
 
           <MenuItem 
+            icon={<Heart size={22} color={colors.text} strokeWidth={1.8} />} 
+            title="Care Cells" 
+            sub="My fellowship group and house visits" 
+            onPress={() => navigation.navigate('CareCell')} 
+            textColor={colors.text} 
+            subColor={colors.textSecondary} 
+          />
+          <MenuItem 
             icon={<Info size={22} color={colors.text} strokeWidth={1.8} />} 
             title={t('home.aboutUs') || t('profile.aboutChurch') || 'About Us'} 
             sub={t('home.aboutUsSub') || 'Our mission'} 

@@ -136,6 +136,7 @@ export default function SermonVideoScreen({ navigation, route }: any) {
   const [isNotesExpanded, setIsNotesExpanded] = useState(false);
   const [showFullscreenNotes, setShowFullscreenNotes] = useState(false);
   const [readerKey, setReaderKey] = useState(0);
+  const playerRef = useRef<any>(null);
   const scrollViewRef = useRef<ScrollView>(null);
   const { activeChurch } = useChurch();
   const { t } = useLanguage();
@@ -424,10 +425,16 @@ export default function SermonVideoScreen({ navigation, route }: any) {
   const getSubscribeLabel = () => {
     if (isSubscribed) {
       const val = t('sermons.subscribed');
-      return (!val || val === 'sermons.subscribed') ? 'Subscribed' : val;
+      if (!val || val.includes('.') || val.toLowerCase().includes('sermon')) {
+        return 'Subscribed';
+      }
+      return val;
     } else {
       const val = t('sermons.subscribe');
-      return (!val || val === 'sermons.subscribe') ? 'Subscribe' : val;
+      if (!val || val.includes('.') || val.toLowerCase().includes('sermon')) {
+        return 'Subscribe';
+      }
+      return val;
     }
   };
 
@@ -516,13 +523,17 @@ export default function SermonVideoScreen({ navigation, route }: any) {
         <View style={styles.playerSection}>
           {hasValidVideo ? (
             <YoutubePlayer
+              ref={playerRef}
               key={`yt_${finalVideoId}`}
               width={playerWidth}
               height={playerHeight}
               play={playing}
               videoId={finalVideoId}
               onChangeState={onStateChange}
-              onReady={() => setPlaying(true)}
+              onReady={() => {
+                setPlaying(true);
+              }}
+              forceAndroidAutoplay={true}
               initialPlayerParams={{
                 preventFullScreen: false,
                 controls: true,
@@ -580,6 +591,21 @@ export default function SermonVideoScreen({ navigation, route }: any) {
                     };
                     hideWatchOnYT();
                     setInterval(hideWatchOnYT, 600);
+
+                    const triggerAutoplay = () => {
+                      try {
+                        if (window.player && typeof window.player.playVideo === 'function') {
+                          window.player.playVideo();
+                        }
+                        const playBtn = document.querySelector('.ytp-large-play-button, button.ytp-play-button');
+                        if (playBtn) {
+                          playBtn.click();
+                        }
+                      } catch(e) {}
+                    };
+                    setTimeout(triggerAutoplay, 300);
+                    setTimeout(triggerAutoplay, 800);
+                    setTimeout(triggerAutoplay, 1500);
                   })();
                   true;
                 `,

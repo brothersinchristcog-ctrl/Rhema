@@ -4,33 +4,121 @@
 const YOUTUBE_API_KEY = 'AIzaSyBGkm7DNk_jpM-XKJI0JPk_vJlufS4Q7-Q';
 
 // Cache channelId per handle so we don't fetch it every time
-const channelIdCache: Record<string, string> = {};
+const channelIdCache: Record<string, string> = {
+  '@Brothersinchristfellowship': 'UC3J_2zP2bIuCwEia_ASvghw',
+  '@Brothersinchhristfellowship': 'UC3J_2zP2bIuCwEia_ASvghw',
+};
 
 /**
- * Resolves the YouTube channel ID from the channel handle.
- * Result is cached in memory for the app session.
+ * Sanitizes input handles or URLs, fixing common user typos
  */
-export async function getChannelId(channelHandle: string): Promise<string | null> {
-  if (!channelHandle) return null;
-  if (channelIdCache[channelHandle]) return channelIdCache[channelHandle];
+export function sanitizeYoutubeInput(input?: string): {
+  handle: string | null;
+  channelId: string | null;
+  videoId: string | null;
+  cleanUrl: string | null;
+} {
+  if (!input || typeof input !== 'string') return { handle: null, channelId: null, videoId: null, cleanUrl: null };
+  let s = input.trim();
 
+  // Fix common domain typos
+  s = s.replace(/https?:\/\/(www\w*)\.youtube\.com/i, 'https://www.youtube.com');
+  s = s.replace(/https?:\/\/(www\w*)\.yyoutube\.com/i, 'https://www.youtube.com');
+  s = s.replace(/https?:\/\/yyoutube\.com/i, 'https://www.youtube.com');
+  s = s.replace(/https?:\/\/youube\.com/i, 'https://www.youtube.com');
+
+  // Fix common handle typos (e.g. double 'h' in Brothers In Christ Fellowship)
+  s = s.replace(/Brothersinchhristfellowship/gi, 'Brothersinchristfellowship');
+
+  // Direct video ID from watch or embed link
+  const vMatch = s.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/i);
+  if (vMatch && !s.includes('/live')) {
+    return { videoId: vMatch[1], handle: null, channelId: null, cleanUrl: `https://www.youtube.com/watch?v=${vMatch[1]}` };
+  }
+
+  // Channel ID
+  let channelId: string | null = null;
+  if (s.includes('/channel/')) {
+    channelId = s.split('/channel/')[1].split('/')[0].split('?')[0];
+  } else if (/^UC[\w-]{22}$/.test(s)) {
+    channelId = s;
+  }
+
+  // Handle
+  let handle: string | null = null;
+  if (s.includes('@')) {
+    const rawHandle = s.split('@')[1].split('/')[0].split('?')[0];
+    handle = '@' + rawHandle;
+  } else if (/^[\w-]+$/.test(s) && !channelId) {
+    handle = '@' + s;
+  }
+
+  const cleanUrl = channelId 
+    ? `https://www.youtube.com/channel/${channelId}` 
+    : handle 
+    ? `https://www.youtube.com/${handle}` 
+    : s;
+
+  return { handle, channelId, videoId: null, cleanUrl };
+}
+
+/**
+ * Resolves the YouTube channel ID from the channel handle or URL.
+ * Uses direct page metadata extraction first (0 quota cost, immune to 429 quota exhaustion),
+ * falling back to YouTube Data API if needed.
+ */
+export async function getChannelId(channelHandleOrUrl: string): Promise<string | null> {
+  if (!channelHandleOrUrl) return null;
+
+  const { handle, channelId: directCId } = sanitizeYoutubeInput(channelHandleOrUrl);
+  if (directCId) return directCId;
+
+  const targetHandle = handle || (channelHandleOrUrl.startsWith('@') ? channelHandleOrUrl : '@' + channelHandleOrUrl);
+  if (channelIdCache[targetHandle]) return channelIdCache[targetHandle];
+
+  // Method 1: Direct HTML scrape (Zero quota cost, immune to 429 quota exhaustion)
   try {
-    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(channelHandle)}&type=channel&key=${YOUTUBE_API_KEY}`;
+    const scrapeUrl = `https://www.youtube.com/${targetHandle.startsWith('@') ? targetHandle : '@' + targetHandle}`;
+    const res = await fetch(scrapeUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    });
+    if (res.ok) {
+      const html = await res.text();
+      const m = html.match(/channel_id=([a-zA-Z0-9_-]+)/) ||
+                html.match(/"channelId":"([a-zA-Z0-9_-]+)"/) ||
+                html.match(/<meta itemprop="identifier" content="([a-zA-Z0-9_-]+)">/) ||
+                html.match(/<meta itemprop="channelId" content="([a-zA-Z0-9_-]+)">/);
+      if (m && m[1]) {
+        channelIdCache[targetHandle] = m[1];
+        console.log('✅ [YouTubeService] Channel ID resolved via direct lookup:', m[1]);
+        return m[1];
+      }
+    }
+  } catch (scrapeErr) {
+    // Continue to API fallback
+  }
+
+  // Method 2: YouTube API search fallback (when quota is available)
+  try {
+    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(targetHandle)}&type=channel&key=${YOUTUBE_API_KEY}`;
     const response = await fetch(url);
     const data = await response.json();
 
     if (data.items && data.items.length > 0) {
       const id = data.items[0].id.channelId;
-      channelIdCache[channelHandle] = id;
-      console.log('✅ [YouTubeService] Channel ID resolved:', id);
+      channelIdCache[targetHandle] = id;
+      console.log('✅ [YouTubeService] Channel ID resolved via API:', id);
       return id;
     }
-    console.warn('⚠️ [YouTubeService] Could not resolve channel ID from handle:', channelHandle);
-    return null;
   } catch (error) {
-    console.error('❌ [YouTubeService] getChannelId error:', error);
-    return null;
+    console.error('❌ [YouTubeService] getChannelId API error:', error);
   }
+
+  console.warn('⚠️ [YouTubeService] Could not resolve channel ID from handle:', channelHandleOrUrl);
+  return null;
 }
 
 /**
@@ -201,55 +289,98 @@ export async function findEventVideo(
 }
 
 /**
- * Searches the church's YouTube channel for an active live broadcast.
- * Returns { videoId, title } if live, or null if no stream is currently live.
+ * Searches the church's YouTube channel for an active live broadcast or recent stream.
+ * Returns { videoId, title, isLiveNow } if found, or null if no stream is active.
+ * Uses direct HTML inspection first to bypass API quota limits (HTTP 429).
  */
 export async function findActiveLiveStream(
   channelHandleOrUrl?: string
-): Promise<{ videoId: string; title: string } | null> {
+): Promise<{ videoId: string; title: string; isLiveNow?: boolean } | null> {
   if (!channelHandleOrUrl) return null;
   try {
-    let channelId: string | null = null;
-    const clean = channelHandleOrUrl.trim();
+    const { handle, channelId: directCId, videoId: directVideoId } = sanitizeYoutubeInput(channelHandleOrUrl);
 
-    if (clean.includes('/channel/')) {
-      const parts = clean.split('/channel/')[1].split('/')[0].split('?')[0];
-      channelId = parts;
-    } else if (clean.includes('@')) {
-      const handle = clean.startsWith('@') ? clean : '@' + clean.split('@')[1].split('/')[0].split('?')[0];
-      channelId = await getChannelId(handle);
-    } else if (clean.startsWith('UC') && clean.length > 20) {
-      channelId = clean;
-    } else {
-      channelId = await getChannelId(clean);
+    if (directVideoId) {
+      return { videoId: directVideoId, title: 'Live Broadcast', isLiveNow: true };
     }
 
-    if (!channelId) {
-      console.warn('⚠️ [YouTubeService] Could not resolve channelId for live search:', channelHandleOrUrl);
-      return null;
-    }
+    const channelId = directCId || (handle ? await getChannelId(handle) : null);
+    const targetPath = handle ? handle : (channelId ? `channel/${channelId}` : null);
 
-    const searchUrl =
-      `https://www.googleapis.com/youtube/v3/search` +
-      `?part=snippet` +
-      `&channelId=${channelId}` +
-      `&eventType=live` +
-      `&type=video` +
-      `&maxResults=1` +
-      `&key=${YOUTUBE_API_KEY}`;
+    // Method 1: Direct Live URL Check (Zero API quota cost, bypasses 429 quota limit)
+    if (targetPath) {
+      try {
+        const liveUrl = `https://www.youtube.com/${targetPath}/live`;
+        const liveRes = await fetch(liveUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9',
+          },
+          redirect: 'follow',
+        });
+        const finalUrl = liveRes.url || '';
+        const html = await liveRes.text();
 
-    const res = await fetch(searchUrl);
-    const data = await res.json();
+        const v1 = finalUrl.match(/watch\?v=([a-zA-Z0-9_-]{11})/);
+        const v2 = html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
+        const v3 = html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})"/);
+        const liveVideoId = v1?.[1] || v2?.[1] || v3?.[1];
 
-    if (data.items && data.items.length > 0) {
-      const item = data.items[0];
-      const videoId = item?.id?.videoId;
-      const title = item?.snippet?.title || 'Church Live Stream';
-      if (videoId) {
-        console.log(`🔴 [YouTubeService] Active live stream found: ${videoId} ("${title}")`);
-        return { videoId, title };
+        if (liveVideoId) {
+          const isLiveNow = html.includes('"isLive":true') ||
+                            html.includes('"isLiveBroadcast":true') ||
+                            html.includes('LIVE NOW') ||
+                            html.includes('LIVE_STREAM') ||
+                            html.includes('"status":"LIVE"') ||
+                            html.includes('"isLiveNow":true');
+
+          const isLiveContent = html.includes('"isLiveContent":true');
+
+          const titleMatch = html.match(/<title>([^<]+)<\/title>/);
+          const title = titleMatch 
+            ? titleMatch[1].replace(/ - YouTube$/i, '').trim() 
+            : 'Church Live Stream';
+
+          // If stream is live or active live content is found
+          if (isLiveNow || isLiveContent) {
+            console.log(`🔴 [YouTubeService] Live stream resolved directly: ${liveVideoId} ("${title}") [isLiveNow: ${isLiveNow}]`);
+            return { videoId: liveVideoId, title, isLiveNow };
+          }
+        }
+      } catch (scrapeLiveErr) {
+        console.warn('⚠️ [YouTubeService] Direct live check notice:', scrapeLiveErr);
       }
     }
+
+    // Method 2: YouTube API search fallback
+    if (channelId) {
+      try {
+        const searchUrl =
+          `https://www.googleapis.com/youtube/v3/search` +
+          `?part=snippet` +
+          `&channelId=${channelId}` +
+          `&eventType=live` +
+          `&type=video` +
+          `&maxResults=1` +
+          `&key=${YOUTUBE_API_KEY}`;
+
+        const res = await fetch(searchUrl);
+        const data = await res.json();
+
+        if (data.items && data.items.length > 0) {
+          const item = data.items[0];
+          const videoId = item?.id?.videoId;
+          const title = item?.snippet?.title || 'Church Live Stream';
+          if (videoId) {
+            console.log(`🔴 [YouTubeService] Active live stream found via API: ${videoId} ("${title}")`);
+            return { videoId, title, isLiveNow: true };
+          }
+        }
+      } catch (apiErr) {
+        // Ignored
+      }
+    }
+
     return null;
   } catch (err) {
     console.error('❌ [YouTubeService] findActiveLiveStream error:', err);
