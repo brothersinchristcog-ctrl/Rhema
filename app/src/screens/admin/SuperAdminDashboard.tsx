@@ -19,7 +19,7 @@ export default function SuperAdminDashboard({ navigation }: any) {
     Boolean(
       user?.uid &&
         [
-          'sXjfTqNTkKOT6dYVxkpbhjritCi2',
+          'q43NWXEu8iTiFE0B7RDa7O8yq2o2',
         ].includes(user.uid)
     );
 

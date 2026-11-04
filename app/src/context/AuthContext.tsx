@@ -33,7 +33,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isSigningOutRef = useRef<boolean>(false);
 
   const KNOWN_SUPER_ADMIN_UIDS = [
-    'sXjfTqNTkKOT6dYVxkpbhjritCi2', // Prabhakar Yeddula (+919392723536)
+    'q43NWXEu8iTiFE0B7RDa7O8yq2o2', // Sakibanda Sunil Babu (+918374331432)
   ];
 
   const checkSuperAdminStatus = async (targetUid: string): Promise<boolean> => {
