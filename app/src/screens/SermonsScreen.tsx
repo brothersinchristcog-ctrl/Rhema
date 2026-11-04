@@ -122,6 +122,27 @@ const formatTabCategory = (cat: string): string => {
   return trimmed;
 };
 
+const normalizeCategory = (cat: string): string => {
+  if (!cat) return '';
+  return cat
+    .toLowerCase()
+    .replace(/[\u2018\u2019'`]/g, '')
+    .replace(/[-_]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+const isCategoryMatch = (sermonCat: string, filterCat: string): boolean => {
+  const normS = normalizeCategory(sermonCat);
+  const normF = normalizeCategory(filterCat);
+  if (!normS || !normF) return false;
+  if (normS === normF) return true;
+  // Handle women vs womens and singular vs plural
+  const canonicalS = normS.replace(/^women\b/, 'womens').replace(/s$/, '');
+  const canonicalF = normF.replace(/^women\b/, 'womens').replace(/s$/, '');
+  return canonicalS === canonicalF;
+};
+
 const C = {
   lime: '#c9e8a3',
   ink: '#16213f',
@@ -374,8 +395,10 @@ const MonthSheet = ({
   visible,
   year,
   month,
+  isMonthFiltered,
   onClose,
   onPick,
+  onPickAll,
   sermons,
   colors,
   isDark,
@@ -383,8 +406,10 @@ const MonthSheet = ({
   visible: boolean;
   year: number;
   month: number;
+  isMonthFiltered: boolean;
   onClose: () => void;
   onPick: (year: number, month: number) => void;
+  onPickAll?: () => void;
   sermons: SermonItemData[];
   colors: any;
   isDark: boolean;
@@ -409,6 +434,37 @@ const MonthSheet = ({
           style={[styles.sheet, { backgroundColor: colors.surface, borderColor: colors.border }]}
           onPress={(e) => e.stopPropagation()}
         >
+          {/* Header row with Sheet Title and All Months button */}
+          <View style={styles.sheetHeaderRow}>
+            <Text style={[styles.sheetTitle, { color: colors.text }]}>Select Month & Year</Text>
+            {onPickAll && (
+              <TouchableOpacity
+                onPress={onPickAll}
+                style={[
+                  styles.allMonthsBtn,
+                  {
+                    backgroundColor: !isMonthFiltered
+                      ? C.lime
+                      : (isDark ? 'rgba(255,255,255,0.08)' : colors.background),
+                    borderColor: !isMonthFiltered ? C.lime : colors.border,
+                    borderWidth: 1,
+                  },
+                ]}
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={[
+                    styles.allMonthsTxt,
+                    { color: !isMonthFiltered ? C.ink : colors.text },
+                    !isMonthFiltered && { fontWeight: '800' },
+                  ]}
+                >
+                  All Months
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
           <View style={styles.yr}>
             <TouchableOpacity
               style={[
@@ -445,7 +501,7 @@ const MonthSheet = ({
               <View key={rIdx} style={styles.mRow}>
                 {row.map((i) => {
                   const n = MON[i];
-                  const on = sy === year && i === month;
+                  const on = isMonthFiltered && sy === year && i === month;
                   return (
                     <TouchableOpacity
                       key={n}
@@ -583,6 +639,7 @@ const SermonItem = ({
   onDotsPress,
   colors,
   isDark,
+  activeCategory,
 }: {
   s: SermonItemData;
   onOpen: (s: SermonItemData) => void;
@@ -590,6 +647,7 @@ const SermonItem = ({
   onDotsPress: (s: SermonItemData) => void;
   colors: any;
   isDark: boolean;
+  activeCategory?: string;
 }) => {
   const d = pd(s.date);
   const cardDef = getSermonCardColor(index);
@@ -601,6 +659,10 @@ const SermonItem = ({
   const iconPillBg = isLight ? 'rgba(15, 23, 42, 0.08)' : 'rgba(255, 255, 255, 0.18)';
   const dividerColor = isDark ? 'rgba(255, 255, 255, 0.25)' : '#94A3B8';
   const metaColor = isDark ? 'rgba(255, 255, 255, 0.75)' : '#64748B';
+
+  const displayCategory = (activeCategory && activeCategory !== 'All' && activeCategory !== 'Uncategorized')
+    ? activeCategory
+    : (s.cat || 'Sunday Service');
 
   const a = useRef(new Animated.Value(0)).current;
 
@@ -653,7 +715,7 @@ const SermonItem = ({
             <View style={{ flexDirection: 'row', alignItems: 'flex-end', flex: 1 }}>
               <View style={[styles.tab, { backgroundColor: cardColor }]}>
                 <Text numberOfLines={1} style={[styles.tabTxt, { color: titleColor }]}>
-                  {formatTabCategory(s.cat)}
+                  {formatTabCategory(displayCategory)}
                 </Text>
               </View>
               {/* Inverted corner connecting tab to card body seamlessly */}
@@ -689,6 +751,11 @@ const SermonItem = ({
                 <Text numberOfLines={1} style={[styles.sp, { color: subColor }]}>
                   {s.spk}
                 </Text>
+                {!!s.verse && (
+                  <Text numberOfLines={1} style={[styles.vs, { color: subColor, opacity: 0.95 }]}>
+                    📖 {s.verse}
+                  </Text>
+                )}
               </View>
               <TouchableOpacity
                 activeOpacity={0.7}
@@ -737,6 +804,7 @@ export default function SermonsScreen({ navigation }: any) {
   const [m, setM] = useState(now.getMonth());
   const [day, setDay] = useState<number | null>(null); // null = All days
   const [sheet, setSheet] = useState(false);
+  const [isMonthFiltered, setIsMonthFiltered] = useState(false);
 
   // Card Options Modal
   const [actionSermon, setActionSermon] = useState<SermonItemData | null>(null);
@@ -787,11 +855,18 @@ export default function SermonsScreen({ navigation }: any) {
     const sAny = s as any;
     let catsArray: string[] = [];
     if (typeof s.categories === 'string' && s.categories.trim()) {
-      catsArray = s.categories.split(';').map((c: string) => c.trim()).filter(Boolean);
+      catsArray = s.categories.split(/[;,|]/).map((c: string) => c.trim()).filter(Boolean);
     } else if (Array.isArray(sAny.categories)) {
       catsArray = sAny.categories.map((c: any) => typeof c === 'string' ? c.trim() : '').filter(Boolean);
     } else if (sAny.category) {
       catsArray = [String(sAny.category).trim()];
+    }
+
+    if (sAny.category && typeof sAny.category === 'string') {
+      const singleCat = sAny.category.trim();
+      if (singleCat && !catsArray.includes(singleCat)) {
+        catsArray.push(singleCat);
+      }
     }
 
     const sermonCat = catsArray[0] || 'Sunday Service';
@@ -823,7 +898,7 @@ export default function SermonsScreen({ navigation }: any) {
     try {
       setLoading(true);
       const [data, serverCats] = await Promise.all([
-        FirestoreService.getSermons(100),
+        FirestoreService.getSermons(250),
         FirestoreService.getSermonCategories().catch(() => [])
       ]);
       const visible = (data || []).filter((s: any) => isSermonVisibleToMembers(s));
@@ -834,7 +909,7 @@ export default function SermonsScreen({ navigation }: any) {
       const sermonCats: string[] = [];
       visible.forEach((s: any) => {
         if (typeof s.categories === 'string' && s.categories.trim()) {
-          s.categories.split(';').forEach((c: string) => {
+          s.categories.split(/[;,|]/).forEach((c: string) => {
             const trimmed = c.trim();
             if (trimmed && !sermonCats.includes(trimmed)) sermonCats.push(trimmed);
           });
@@ -843,6 +918,9 @@ export default function SermonsScreen({ navigation }: any) {
             const trimmed = typeof c === 'string' ? c.trim() : '';
             if (trimmed && !sermonCats.includes(trimmed)) sermonCats.push(trimmed);
           });
+        } else if (s.category && typeof s.category === 'string') {
+          const trimmed = s.category.trim();
+          if (trimmed && !sermonCats.includes(trimmed)) sermonCats.push(trimmed);
         }
       });
 
@@ -889,8 +967,12 @@ export default function SermonsScreen({ navigation }: any) {
 
   const catOK = (s: SermonItemData) => {
     if (activeCategory === 'All') return true;
-    if (activeCategory === 'Uncategorized') return s.categoriesList.length === 0;
-    return s.categoriesList.includes(activeCategory);
+    if (activeCategory === 'Uncategorized') return !s.categoriesList || s.categoriesList.length === 0;
+    if (isCategoryMatch(s.cat, activeCategory)) return true;
+    if (s.categoriesList && s.categoriesList.some((c) => isCategoryMatch(c, activeCategory))) {
+      return true;
+    }
+    return false;
   };
 
   const inMonth = (s: SermonItemData) => {
@@ -910,34 +992,39 @@ export default function SermonsScreen({ navigation }: any) {
     return o;
   }, [sermons, y, m, activeCategory]);
 
-  // Filtered list: when members click "All" (All dates and/or All categories), display up to 40 sermons
+  // Filtered list:
+  // - Category filters display ALL matching sermons with complete details (NO 40 limit)
+  // - Month and Year filters display ALL sermons for the selected period (NO 40 limit)
+  // - The 40-sermon limit applies STRICTLY to the general "All" section
   const list = useMemo(() => {
-    // 1. If Day is "All" (day === null)
-    if (day === null) {
-      if (activeCategory === 'All') {
-        // Both All dates and All categories: return up to 40 newest sermons
-        return [...sermons]
-          .sort((a, b) => pd(b.date).getTime() - pd(a.date).getTime())
-          .slice(0, 40);
-      } else {
-        // Specific category across all dates: return up to 40 sermons
-        return sermons
-          .filter(catOK)
-          .sort((a, b) => pd(b.date).getTime() - pd(a.date).getTime())
-          .slice(0, 40);
-      }
+    // 1. Explicit Month/Year filter is ACTIVE:
+    if (isMonthFiltered) {
+      return sermons
+        .filter((s) => inMonth(s) && (day === null || pd(s.date).getDate() === day) && catOK(s))
+        .sort((a, b) => pd(b.date).getTime() - pd(a.date).getTime());
     }
 
-    // 2. Specific day selected
-    const filtered = sermons
-      .filter((s) => inMonth(s) && pd(s.date).getDate() === day && catOK(s))
-      .sort((a, b) => pd(b.date).getTime() - pd(a.date).getTime());
-
-    if (activeCategory === 'All') {
-      return filtered.slice(0, 40);
+    // 2. Specific day filter without month filter:
+    if (day !== null) {
+      return sermons
+        .filter((s) => inMonth(s) && pd(s.date).getDate() === day && catOK(s))
+        .sort((a, b) => pd(b.date).getTime() - pd(a.date).getTime());
     }
-    return filtered;
-  }, [sermons, y, m, day, activeCategory]);
+
+    // 3. Specific Category filter is ACTIVE:
+    // Display ALL matching sermons with complete details (NO 40 limit)
+    if (activeCategory !== 'All') {
+      return sermons
+        .filter(catOK)
+        .sort((a, b) => pd(b.date).getTime() - pd(a.date).getTime());
+    }
+
+    // 4. General "All" Section (activeCategory === 'All' and no month/day filter):
+    // The 40-sermon limit applies STRICTLY to the All section
+    return [...sermons]
+      .sort((a, b) => pd(b.date).getTime() - pd(a.date).getTime())
+      .slice(0, 40);
+  }, [sermons, y, m, day, activeCategory, isMonthFiltered]);
 
   const daysInMonth = new Date(y, m + 1, 0).getDate();
 
@@ -959,7 +1046,7 @@ export default function SermonsScreen({ navigation }: any) {
         date: s.date,
         duration: s.dur,
         scripture: s.verse,
-        categories: s.cat,
+        categories: s.categoriesList && s.categoriesList.length > 0 ? s.categoriesList.join(';') : s.cat,
         youtubeId: s.youtubeId,
         thumbnailUrl: s.thumb,
         imageUrl: s.thumb,
@@ -1043,16 +1130,36 @@ export default function SermonsScreen({ navigation }: any) {
         }
       >
         {/* ── Month & Year Selector ── */}
-        <Pressable style={styles.mon} onPress={() => setSheet(true)}>
-          <Text style={[styles.monTxt, { color: isAshTop ? '#FFFFFF' : colors.text }]}>
-            {MON[m]} {y}
-          </Text>
-          <Icon
-            name="down"
-            size={22}
-            color={isAshTop ? '#CBD5E1' : (isDark ? C.lime : (colors.accent || '#2563EB'))}
-          />
-        </Pressable>
+        <View style={styles.monContainer}>
+          <Pressable style={styles.mon} onPress={() => setSheet(true)}>
+            <Text style={[styles.monTxt, { color: isAshTop ? '#FFFFFF' : colors.text }]}>
+              {isMonthFiltered ? `${MON[m]} ${y}` : 'All Months'}
+            </Text>
+            <Icon
+              name="down"
+              size={22}
+              color={isAshTop ? '#CBD5E1' : (isDark ? C.lime : (colors.accent || '#2563EB'))}
+            />
+          </Pressable>
+
+          {isMonthFiltered && (
+            <TouchableOpacity
+              style={[
+                styles.clearFilterBtn,
+                { backgroundColor: isAshTop ? 'rgba(255,255,255,0.18)' : (isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.07)') },
+              ]}
+              onPress={() => {
+                setIsMonthFiltered(false);
+                setDay(null);
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.clearFilterTxt, { color: isAshTop ? '#FFFFFF' : colors.textSecondary }]}>
+                Show All ✕
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
         {/* ── Horizontal Date Strip ── */}
         <ScrollView
@@ -1079,7 +1186,10 @@ export default function SermonsScreen({ navigation }: any) {
               sub={WK[new Date(y, m, d).getDay()]}
               on={day === d}
               dot={!!withSermon[d]}
-              onPress={() => setDay(d)}
+              onPress={() => {
+                setIsMonthFiltered(true);
+                setDay(d);
+              }}
               colors={colors}
               isDark={isDark}
               isAshTop={isAshTop}
@@ -1157,7 +1267,11 @@ export default function SermonsScreen({ navigation }: any) {
               {list.length} {list.length === 1 ? 'sermon' : 'sermons'}
             </Text>
             <Text style={[styles.sumD, { color: colors.textSecondary }]}>
-              {day === null ? 'All dates' : `${day} ${MON[m].slice(0, 3)} ${y}`}
+              {day !== null
+                ? `${day} ${MON[m].slice(0, 3)} ${y}`
+                : isMonthFiltered
+                ? `${MON[m]} ${y}`
+                : 'All dates'}
             </Text>
           </View>
 
@@ -1176,8 +1290,30 @@ export default function SermonsScreen({ navigation }: any) {
               <Text style={[styles.emptyS, { color: colors.textSecondary }]}>
                 {sermons.length === 0
                   ? 'No sermons have been published yet.'
+                  : isMonthFiltered
+                  ? `No sermons found for ${MON[m]} ${y}. Try choosing another month or tap "Show All".`
                   : 'Try selecting another date, month or category.'}
               </Text>
+              {isMonthFiltered && (
+                <TouchableOpacity
+                  style={{
+                    marginTop: 14,
+                    paddingHorizontal: 16,
+                    paddingVertical: 8,
+                    borderRadius: 20,
+                    backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)',
+                  }}
+                  onPress={() => {
+                    setIsMonthFiltered(false);
+                    setDay(null);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text }}>
+                    Show All Months
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
           ) : (
             list.map((s, i) => (
@@ -1189,6 +1325,7 @@ export default function SermonsScreen({ navigation }: any) {
                 onDotsPress={(item) => setActionSermon(item)}
                 colors={colors}
                 isDark={isDark}
+                activeCategory={activeCategory}
               />
             ))
           )}
@@ -1200,14 +1337,21 @@ export default function SermonsScreen({ navigation }: any) {
         visible={sheet}
         year={y}
         month={m}
+        isMonthFiltered={isMonthFiltered}
         sermons={sermons}
         colors={colors}
         isDark={isDark}
         onClose={() => setSheet(false)}
+        onPickAll={() => {
+          setIsMonthFiltered(false);
+          setDay(null);
+          setSheet(false);
+        }}
         onPick={(yy, mm) => {
           setY(yy);
           setM(mm);
           setDay(null);
+          setIsMonthFiltered(true);
           setSheet(false);
         }}
       />
@@ -1362,6 +1506,7 @@ export default function SermonsScreen({ navigation }: any) {
               ]}
               onPress={() => {
                 setHeaderMenuVisible(false);
+                setIsMonthFiltered(false);
                 setDay(null);
                 setActiveCategory('All');
               }}
@@ -1416,14 +1561,29 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
     textAlign: 'center',
   },
+  monContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginTop: 10,
+  },
   mon: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    marginTop: 10,
   },
   monTxt: { fontSize: 25, fontWeight: '700', letterSpacing: -0.3 },
+  clearFilterBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  clearFilterTxt: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
 
   dates: {
     alignItems: 'center',
@@ -1541,6 +1701,7 @@ const styles = StyleSheet.create({
   ti: { fontSize: 15, fontWeight: '800', letterSpacing: -0.2 },
   te: { fontSize: 12.5, fontWeight: '700', marginTop: 1 },
   sp: { fontSize: 11.5, fontWeight: '600', marginTop: 2 },
+  vs: { fontSize: 11, fontWeight: '600', marginTop: 2 },
   mn: {
     alignSelf: 'center',
     width: 26,
@@ -1566,6 +1727,26 @@ const styles = StyleSheet.create({
     paddingBottom: 36,
     borderWidth: 1,
     borderBottomWidth: 0,
+  },
+  sheetHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  sheetTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  allMonthsBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  allMonthsTxt: {
+    fontSize: 13,
   },
   yr: {
     flexDirection: 'row',

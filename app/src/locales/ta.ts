@@ -330,6 +330,7 @@ export const ta: TranslationSchema = {
     featuredTeaching: 'சிறப்பு போதனை',
     mainSpeaker: 'முதன்மை பேச்சாளர்',
     subscribe: 'சப்ஸ்கிரைப்',
+    subscribed: 'சந்தா பெறப்பட்டது',
     shareThisMessage: 'இந்த செய்தியைப் பகிருங்கள்',
     pastSermons: 'முந்தைய பிரசங்கங்கள்',
     noPastSermons: 'வேறு முந்தைய வீடியோ பிரசங்கங்கள் இல்லை.',
