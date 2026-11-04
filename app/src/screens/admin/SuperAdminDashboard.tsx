@@ -7,6 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Shield, X, Search, ChevronLeft } from 'lucide-react-native';
 import SuperAdminVersesManager from './SuperAdminVersesManager';
 import SuperAdminDailyQuizManager from './SuperAdminDailyQuizManager';
+import SuperAdminRoleManager from './SuperAdminRoleManager';
 import { AdminTabContext } from '../../context/AdminTabContext';
 
 export default function SuperAdminDashboard({ navigation }: any) {
@@ -23,7 +24,7 @@ export default function SuperAdminDashboard({ navigation }: any) {
         ].includes(user.uid)
     );
 
-  const [activeTab, setActiveTab] = useState<'verses' | 'daily_quiz'>('verses');
+  const [activeTab, setActiveTab] = useState<'verses' | 'daily_quiz' | 'super_admins'>('verses');
   const [searchQuery, setSearchQuery] = useState('');
 
   const handleAdminBack = () => {
@@ -73,7 +74,7 @@ export default function SuperAdminDashboard({ navigation }: any) {
             </View>
           </View>
 
-          {/* Tab Bar: Daily Verse & Church Quiz */}
+          {/* Tab Bar: Daily Verse, Church Quiz & Super Admins */}
           <View style={styles.tabBar}>
             <TouchableOpacity
               style={[styles.tab, activeTab === 'verses' && styles.tabActive]}
@@ -102,6 +103,20 @@ export default function SuperAdminDashboard({ navigation }: any) {
                 Church Quiz
               </Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'super_admins' && styles.tabActive]}
+              onPress={() => setActiveTab('super_admins')}
+            >
+              <Text
+                style={[styles.tabText, activeTab === 'super_admins' && styles.tabTextActive]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+              >
+                Super Admins
+              </Text>
+            </TouchableOpacity>
           </View>
 
           {/* Search Bar */}
@@ -112,7 +127,9 @@ export default function SuperAdminDashboard({ navigation }: any) {
               placeholder={
                 activeTab === 'verses'
                   ? 'Search daily verses...'
-                  : 'Search church quizzes, date, scripture...'
+                  : activeTab === 'daily_quiz'
+                  ? 'Search church quizzes, date, scripture...'
+                  : 'Search super admins by name or phone...'
               }
               placeholderTextColor="#64748b"
               value={searchQuery}
@@ -129,8 +146,10 @@ export default function SuperAdminDashboard({ navigation }: any) {
         {/* Tab Content */}
         {activeTab === 'verses' ? (
           <SuperAdminVersesManager searchQuery={searchQuery} />
-        ) : (
+        ) : activeTab === 'daily_quiz' ? (
           <SuperAdminDailyQuizManager searchQuery={searchQuery} />
+        ) : (
+          <SuperAdminRoleManager searchQuery={searchQuery} />
         )}
       </View>
     </View>
