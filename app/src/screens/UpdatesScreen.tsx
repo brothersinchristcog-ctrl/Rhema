@@ -139,7 +139,19 @@ export default function UpdatesScreen({ navigation, route }: any) {
 
   useEffect(() => {
     const combined = [...broadcastsList, ...meetingsList].sort((a, b) => (b.rawDate || 0) - (a.rawDate || 0));
-    setDynamicUpdates(combined);
+    // Deduplicate live stream broadcasts so members only see the single latest active live alert
+    const seenLiveStreams = new Set<string>();
+    const deduplicated = combined.filter(item => {
+      if (item.type === 'youtube_live') {
+        const streamKey = item.videoId || 'active_stream';
+        if (seenLiveStreams.has(streamKey)) {
+          return false;
+        }
+        seenLiveStreams.add(streamKey);
+      }
+      return true;
+    });
+    setDynamicUpdates(deduplicated);
   }, [broadcastsList, meetingsList]);
   const [selectedUpdate, setSelectedUpdate] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
@@ -378,15 +390,39 @@ export default function UpdatesScreen({ navigation, route }: any) {
               dateStr = formatDateDisplay(rawDate);
             }
 
+            let itemTitle = data.title || t('updates.announcement');
+            let itemContent = stripHtml(data.content || '');
+
+            if (resolvedType === 'youtube_live') {
+              if (
+                !itemTitle ||
+                itemTitle.includes('LIVE on YouTube') ||
+                itemTitle.includes('Rhema Global Ministries is LIVE') ||
+                itemTitle.includes('🔴 Rhema')
+              ) {
+                itemTitle = '🔴 We Are LIVE Now!';
+              }
+              if (
+                !itemContent ||
+                itemContent.includes('Want to watch this again later') ||
+                itemContent.includes('Sign in to add this') ||
+                itemContent.includes('Tap to watch inside the app') ||
+                itemContent.trim().toLowerCase() === 'youtube'
+              ) {
+                itemContent = "Join us for a time of worship, prayer and God's Word. Our live service is now streaming on YouTube. Be blessed!";
+              }
+            }
+
             return {
               id: doc.id,
-              title: data.title || t('updates.announcement'),
-              content: stripHtml(data.content || ''),
+              title: itemTitle,
+              content: itemContent,
               date: dateStr,
               type: resolvedType,
               icon: icon,
               color: color,
               url: data.url || '',
+              videoId: data.videoId || null,
               imageUrl: data.imageUrl || null,
               sermonId: data.sermonId || (resolvedType === 'sermon' && data.id && !String(data.id).startsWith('sermon_') ? data.id : null) || data.relatedId || (resolvedType === 'sermon' ? doc.id.replace(/^sermon_/, '') : null),
               relatedId: data.quizId || data.relatedId || null,

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, TextInput, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, TextInput, Platform, BackHandler } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { StatusBar } from 'expo-status-bar';
@@ -10,7 +10,7 @@ import SuperAdminDailyQuizManager from './SuperAdminDailyQuizManager';
 import { AdminTabContext } from '../../context/AdminTabContext';
 
 export default function SuperAdminDashboard({ navigation }: any) {
-  const { setTabByName } = React.useContext(AdminTabContext);
+  const { setTabByName, goBack } = React.useContext(AdminTabContext) || {};
   const insets = useSafeAreaInsets();
   const { member, isPlatformSuperAdmin, user } = useAuth();
   const isSuper =
@@ -28,10 +28,29 @@ export default function SuperAdminDashboard({ navigation }: any) {
   const [activeTab, setActiveTab] = useState<'verses' | 'daily_quiz'>('verses');
   const [searchQuery, setSearchQuery] = useState('');
 
+  const handleAdminBack = () => {
+    if (setTabByName) {
+      setTabByName('Dashboard');
+    } else if (goBack) {
+      goBack();
+    } else if (navigation?.canGoBack?.()) {
+      navigation.goBack();
+    }
+  };
+
+  useEffect(() => {
+    const backAction = () => {
+      handleAdminBack();
+      return true;
+    };
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+    return () => backHandler.remove();
+  }, [setTabByName, goBack]);
+
   useEffect(() => {
     if (!isSuper) {
       Alert.alert('Access Denied', 'You do not have permission to view this screen.');
-      navigation.navigate('Dashboard');
+      handleAdminBack();
     }
   }, [isSuper]);
 
@@ -44,13 +63,7 @@ export default function SuperAdminDashboard({ navigation }: any) {
           <View style={styles.header}>
             <View style={styles.headerLeft}>
               <TouchableOpacity
-                onPress={() => {
-                  if (navigation.canGoBack()) {
-                    navigation.goBack();
-                  } else if (setTabByName) {
-                    setTabByName('Dashboard');
-                  }
-                }}
+                onPress={handleAdminBack}
                 style={{ marginRight: 8 }}
               >
                 <ChevronLeft size={28} color="#f4f6fb" />
