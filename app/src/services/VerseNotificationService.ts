@@ -90,12 +90,6 @@ class VerseNotificationService {
     return finalStatus === 'granted';
   }
 
-  private scheduleStartDate: Date | null = null;
-
-  async setScheduleStartDate(date: Date | null) {
-    this.scheduleStartDate = date;
-  }
-
   /**
    * Invalidate local verses cache so that newly created/updated verses are pulled fresh from Firestore
    */
@@ -130,20 +124,19 @@ class VerseNotificationService {
 
   /**
    * Calculates which indices a given date needs (Morning, Afternoon, Evening, Night).
-   * Aligns 100% with SuperAdminVersesManager and AdminDailyVersesManager:
-   * Today is Day 0 (indices 0, 1, 2, 3) unless scheduleStartDate is set in Firestore daily_verses_meta.
+   * Aligns 100% with SuperAdminVersesManager and HomeScreen:
+   * Today at local midnight is Day 0 (indices 0, 1, 2, 3: Morning, Afternoon, Evening, Night).
+   * Future days are offset by +4 per day. Past days wrap smoothly backwards.
    */
   getIndicesForDate(date: Date, totalVerses: number = 5863, churchId: string = 'rhema'): number[] {
     if (totalVerses === 0) return [0, 1, 2, 3];
     
-    // Calculate days since schedule start based on local timezone date
-    const localDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    const epochDate = this.scheduleStartDate 
-      ? new Date(this.scheduleStartDate.getFullYear(), this.scheduleStartDate.getMonth(), this.scheduleStartDate.getDate())
-      : localDate; // default to local date so today maps to index 0, 1, 2, 3
-    
-    const daysSinceEpoch = Math.max(0, Math.floor((localDate.getTime() - epochDate.getTime()) / (1000 * 60 * 60 * 24)));
-    const base = daysSinceEpoch * 4;
+    // Anchor strictly to today at local midnight
+    const now = new Date();
+    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const targetMidnight = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+    const daysFromToday = Math.round((targetMidnight - todayMidnight) / (1000 * 60 * 60 * 24));
+    const base = daysFromToday * 4;
     
     return [
       ((base + 0) % totalVerses + totalVerses) % totalVerses,
@@ -255,9 +248,6 @@ class VerseNotificationService {
       if (!metaExists) return;
       const mData = metaDoc.data();
       const totalVerses = mData?.totalVerses || 0;
-      if (mData?.scheduleStartDate) {
-        this.scheduleStartDate = new Date(mData.scheduleStartDate);
-      }
       if (totalVerses === 0) return;
 
       // 7. Calculate which verse indices are required
@@ -417,9 +407,6 @@ class VerseNotificationService {
         if (metaExists) {
           const mData = metaDoc.data();
           totalVerses = mData?.totalVerses || 5863;
-          if (mData?.scheduleStartDate) {
-            this.scheduleStartDate = new Date(mData.scheduleStartDate);
-          }
         }
       } catch (_) {}
 
@@ -529,9 +516,6 @@ class VerseNotificationService {
           if (metaExists) {
             const mData = metaDoc.data();
             totalVerses = mData?.totalVerses || 0;
-            if (mData?.scheduleStartDate) {
-              this.scheduleStartDate = new Date(mData.scheduleStartDate);
-            }
             await AsyncStorage.setItem('@rhema_verses_meta', totalVerses.toString());
           }
         } catch (mErr) {

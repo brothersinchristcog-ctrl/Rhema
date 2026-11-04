@@ -1655,6 +1655,12 @@ let cachedLatestSermons: Sermon[] = [];
 let cachedLatestPrayer: any | null = null;
 let cachedPrayerCount: number = 0;
 let cachedTodayFourVerses: DailyVerse[] = [];
+let cachedTodayFourVersesDateStr: string = '';
+
+export const clearHomeScreenVersesCache = () => {
+  cachedTodayFourVerses = [];
+  cachedTodayFourVersesDateStr = '';
+};
 
 const AnimatedParticle = ({ left, size, duration, delay, color, opacity }: any) => {
   const translateY = React.useRef(new Animated.Value(0)).current;
@@ -1800,9 +1806,11 @@ export interface LocalizedVerseDisplay {
 }
 
 export const getSynchronousVersesForToday = (date: Date = new Date()): DailyVerse[] => {
-  if (cachedTodayFourVerses && cachedTodayFourVerses.length >= 4) {
+  const dateStr = date.toDateString();
+  if (cachedTodayFourVerses && cachedTodayFourVerses.length >= 4 && cachedTodayFourVersesDateStr === dateStr) {
     return cachedTodayFourVerses;
   }
+  cachedTodayFourVersesDateStr = dateStr;
   try {
     const list = VerseNotificationService.getSynchronousInitialVerses(0);
     if (list && list[0]?.verses && list[0].verses.length >= 4) {
@@ -2017,14 +2025,14 @@ const DailyVerseCard = ({ verse, period, onPress }: { verse: DailyVerse | null; 
           {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
         </Text>
       </View>
-      <Text numberOfLines={2} ellipsizeMode="tail" style={{
+      <Text style={{
         color: '#fff', fontSize: 16, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
         fontWeight: '700', lineHeight: 24, marginBottom: loc.secondaryVerse && loc.secondaryVerse !== loc.primaryVerse ? 6 : 10,
       }}>
         {loc.primaryVerse}
       </Text>
       {loc.secondaryVerse && loc.secondaryVerse !== loc.primaryVerse ? (
-        <Text numberOfLines={2} ellipsizeMode="tail" style={{
+        <Text style={{
           color: 'rgba(255,255,255,0.92)', fontSize: 15, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
           fontStyle: 'italic', lineHeight: 22, fontWeight: '500', marginBottom: 10,
         }}>
@@ -2932,6 +2940,7 @@ export default function HomeScreen() {
             }
 
             if (freshList.length >= 4) {
+              cachedTodayFourVersesDateStr = new Date().toDateString();
               cachedTodayFourVerses = freshList;
               setTodayFourVerses(freshList);
 
@@ -3698,11 +3707,11 @@ export default function HomeScreen() {
                       <View style={styles.vdVerseTextContainer}>
                         <Text style={[styles.vdTopRightQuote, { color: screenTheme.promiseQuote }]} pointerEvents="none">”</Text>
                         {promise?.verseTelugu ? (
-                          <Text style={[styles.vdVerseTe, { color: screenTheme.promiseVerseTe }]} numberOfLines={2} ellipsizeMode="tail" maxFontSizeMultiplier={1.15}>
+                          <Text style={[styles.vdVerseTe, { color: screenTheme.promiseVerseTe }]} maxFontSizeMultiplier={1.15}>
                             {stripHtml(promise.verseTelugu)}
                           </Text>
                         ) : null}
-                        <Text style={[styles.vdVerseEn, { color: screenTheme.promiseVerseEn }]} numberOfLines={2} ellipsizeMode="tail" maxFontSizeMultiplier={1.15}>
+                        <Text style={[styles.vdVerseEn, { color: screenTheme.promiseVerseEn }]} maxFontSizeMultiplier={1.15}>
                           {promise ? stripHtml(promise.verse) : ''}
                         </Text>
                         <View style={styles.vdReferenceRow}>
@@ -3821,8 +3830,6 @@ export default function HomeScreen() {
                                     { color: screenTheme.promiseVerseTe },
                                     !loc.secondaryVerse && { fontSize: 17, lineHeight: 26 }
                                   ]} 
-                                  numberOfLines={2}
-                                  ellipsizeMode="tail"
                                   maxFontSizeMultiplier={1.15}
                                 >
                                   {stripHtml(loc.primaryVerse)}
@@ -3830,7 +3837,7 @@ export default function HomeScreen() {
 
                                 {/* Secondary verse (English) if distinct */}
                                 {loc.secondaryVerse && loc.secondaryVerse !== loc.primaryVerse ? (
-                                  <Text style={[styles.vdVerseEn, { color: screenTheme.promiseVerseEn }]} numberOfLines={2} ellipsizeMode="tail" maxFontSizeMultiplier={1.15}>
+                                  <Text style={[styles.vdVerseEn, { color: screenTheme.promiseVerseEn }]} maxFontSizeMultiplier={1.15}>
                                     {stripHtml(loc.secondaryVerse)}
                                   </Text>
                                 ) : null}
@@ -6320,8 +6327,8 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     overflow: 'hidden',
     backgroundColor: '#527C78',
-    padding: 20,
-    minHeight: 270,
+    padding: 18,
+    minHeight: 285,
     justifyContent: 'space-between',
   },
   vdWatermarkCircle: {
@@ -6379,7 +6386,7 @@ const styles = StyleSheet.create({
   },
   vdVerseBlock: {
     flexDirection: 'row',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   vdVerticalLine: {
     width: 3.5,
@@ -6404,20 +6411,20 @@ const styles = StyleSheet.create({
   },
   vdVerseTe: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 15.5,
     fontWeight: '700',
-    lineHeight: 26,
-    marginBottom: 10,
-    paddingRight: 24,
+    lineHeight: 24,
+    marginBottom: 8,
+    paddingRight: 20,
   },
   vdVerseEn: {
     color: 'rgba(255, 255, 255, 0.92)',
-    fontSize: 15,
+    fontSize: 14,
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
     fontWeight: '400',
     fontStyle: 'italic',
-    lineHeight: 23,
-    marginBottom: 12,
+    lineHeight: 21,
+    marginBottom: 10,
   },
   vdReferenceRow: {
     flexDirection: 'row',
@@ -7837,6 +7844,51 @@ const styles = StyleSheet.create({
   },
   latestSermonGoldenHeader: {
     zIndex: 2,
+  },
+  sermonSilhouetteCircleBig: {
+    position: 'absolute',
+    top: -20,
+    right: -20,
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    opacity: 0.35,
+  },
+  sermonSilhouettePeach1: {
+    position: 'absolute',
+    bottom: -15,
+    left: 20,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    opacity: 0.25,
+  },
+  sermonSilhouettePeach2: {
+    position: 'absolute',
+    top: 30,
+    right: 40,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    opacity: 0.2,
+  },
+  sermonSilhouetteShoulderLeft: {
+    position: 'absolute',
+    bottom: -30,
+    left: -20,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    opacity: 0.3,
+  },
+  sermonSilhouetteShoulderRight: {
+    position: 'absolute',
+    bottom: -20,
+    right: -10,
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    opacity: 0.3,
   },
   latestSermonGoldenText: {
     color: '#F6BD38',

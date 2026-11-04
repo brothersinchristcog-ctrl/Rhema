@@ -196,7 +196,24 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
         } catch (_) {}
       }
 
-      // Sort chronologically starting from Today (index 0, 1, 2...)
+      // Sort chronologically starting from Today (index 0, 1, 2...) and deduplicate by index
+      const indexMap = new Map<number, any>();
+      for (const item of fetched) {
+        const idx = typeof item.index === 'number' ? item.index : -1;
+        if (idx >= 0) {
+          const existing = indexMap.get(idx);
+          if (!existing) {
+            indexMap.set(idx, item);
+          } else {
+            const tExisting = existing.updatedAt?.toMillis ? existing.updatedAt.toMillis() : (existing.updatedAt || existing.createdAt || 0);
+            const tItem = item.updatedAt?.toMillis ? item.updatedAt.toMillis() : (item.updatedAt || item.createdAt || 0);
+            if (tItem >= tExisting) {
+              indexMap.set(idx, item);
+            }
+          }
+        }
+      }
+      fetched = Array.from(indexMap.values());
       fetched.sort((a, b) => a.index - b.index);
 
       cachedUpcomingVerses = fetched;
@@ -405,7 +422,17 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
       const periodIdx = PERIOD_NAMES.indexOf(newVerse.period);
       const targetIndex = (periodIdx >= 0 ? periodIdx : 0);
 
-      const docRef = firestore().collection('daily_verses').doc();
+      // Check if a document already exists with this index to prevent duplicates
+      const existingSnap = await firestore().collection('daily_verses').where('index', '==', targetIndex).get();
+      const docRef = !existingSnap.empty ? existingSnap.docs[0].ref : firestore().collection('daily_verses').doc();
+
+      // If multiple duplicate docs exist for this index in Firestore, clean up the redundant ones
+      if (existingSnap.docs.length > 1) {
+        for (let i = 1; i < existingSnap.docs.length; i++) {
+          await existingSnap.docs[i].ref.delete().catch(() => {});
+        }
+      }
+
       const versePayload: any = {
         id: docRef.id,
         index: targetIndex,
@@ -431,11 +458,11 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
       }, { merge: true }).catch(() => {});
       await VerseNotificationService.invalidateCache();
 
-      const prependList = (list: any[]) => [versePayload, ...list.filter(v => v.id !== docRef.id)];
-      setUpcomingVerses(prev => prependList(prev));
-      setAllVerses(prev => prependList(prev));
-      if (cachedUpcomingVerses) cachedUpcomingVerses = prependList(cachedUpcomingVerses);
-      if (cachedAllVerses) cachedAllVerses = prependList(cachedAllVerses);
+      const updateList = (list: any[]) => [versePayload, ...list.filter(v => v.index !== targetIndex && v.id !== docRef.id)].sort((a, b) => a.index - b.index);
+      setUpcomingVerses(prev => updateList(prev));
+      setAllVerses(prev => updateList(prev));
+      if (cachedUpcomingVerses) cachedUpcomingVerses = updateList(cachedUpcomingVerses);
+      if (cachedAllVerses) cachedAllVerses = updateList(cachedAllVerses);
 
       Alert.alert('Success', 'New Daily Verse created and scheduled successfully!');
       setShowCreateModal(false);
