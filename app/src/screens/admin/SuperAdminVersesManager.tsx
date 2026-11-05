@@ -711,12 +711,12 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
       const firstVerse = upcomingVerses[0] || allVerses[0];
       const success = await VerseNotificationService.triggerTestPair(firstVerse);
       if (success) {
-        Alert.alert('Notifications Sent', 'Sent 2 test notifications simultaneously:\n• 1 in English (✝️ Good Morning)\n• 1 in Telugu (✝️ శుభోదయం)\n\nCheck your notification drawer!');
+        Alert.alert('Notification Sent', 'Sent 1 combined bilingual notification containing both Telugu and English verses.\n\nCheck your notification drawer!');
       } else {
-        Alert.alert('Error', 'Failed to trigger test notifications.');
+        Alert.alert('Error', 'Failed to trigger test notification.');
       }
     } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Failed to trigger test notifications');
+      Alert.alert('Error', e?.message || 'Failed to trigger test notification');
     }
   };
 
@@ -977,7 +977,7 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
                 activeOpacity={0.8}
               >
                 <Bell size={15} color="#FFF" />
-                <Text style={styles.toolBtnText}>Test Dual Push</Text>
+                <Text style={styles.toolBtnText}>Test Verse Push</Text>
               </TouchableOpacity>
             </View>
 

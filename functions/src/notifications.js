@@ -1979,27 +1979,27 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
     const PERIOD_SLOTS = {
         Morning: {
             index: 0,
-            title: "Good Morning\nToday's Verse (నేటి వాక్యం)",
+            title: "✝️ Good Morning · శుభోదయం",
             titleEn: "Good Morning",
-            titleTe: "Today's Verse (నేటి వాక్యం)",
+            titleTe: "శుభోదయం",
         },
         Afternoon: {
             index: 1,
-            title: "Blessed Afternoon\nDaily Peace (అనుదిన శాంతి)",
-            titleEn: "Blessed Afternoon",
-            titleTe: "Daily Peace (అనుదిన శాంతి)",
+            title: "✝️ Good Afternoon · శుభ మధ్యాహ్నం",
+            titleEn: "Good Afternoon",
+            titleTe: "శుభ మధ్యాహ్నం",
         },
         Evening: {
             index: 2,
-            title: "Evening Prayer\nFaith & Grace (విశ్వాసం - కృప)",
-            titleEn: "Evening Prayer",
-            titleTe: "Faith & Grace (విశ్వాసం - కృప)",
+            title: "✝️ Good Evening · శుభ సాయంత్రం",
+            titleEn: "Good Evening",
+            titleTe: "శుభ సాయంత్రం",
         },
         Night: {
             index: 3,
-            title: "Good Night\nGod's Protection (దేవుని కాపుదల)",
+            title: "✝️ Good Night · శుభరాత్రి",
             titleEn: "Good Night",
-            titleTe: "God's Protection (దేవుని కాపుదల)",
+            titleTe: "శుభరాత్రి",
         },
     };
     const nowIst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
@@ -2058,94 +2058,73 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
         }
         console.log(`🔑 [DailyVerse] Lock acquired for slot ${slotLockKey}. Dispatching notification...`);
     }
-    // 2. Compute today's verse index
-    let totalVerses = 5863;
-    try {
-        const metaDoc = await db.collection('daily_verses_meta').doc('metadata').get();
-        if (metaDoc.exists) {
-            totalVerses = metaDoc.data()?.totalVerses || 5863;
-        }
-    }
-    catch (_) { }
-    const EPOCH = new Date('2026-10-30T00:00:00Z');
-    const todayLocal = new Date(nowIst.getFullYear(), nowIst.getMonth(), nowIst.getDate());
-    const epochDate = new Date(EPOCH.getFullYear(), EPOCH.getMonth(), EPOCH.getDate());
-    const daysSinceEpoch = Math.floor((todayLocal.getTime() - epochDate.getTime()) / (1000 * 60 * 60 * 24));
-    // RHEMA has its own independent Scripture offset so it never displays the same verses as WeChristian
-    const RHEMA_DAILY_VERSE_OFFSET = 2931;
-    const offset = targetChurchId === 'rhema' ? RHEMA_DAILY_VERSE_OFFSET : 0;
-    const targetIndex = (daysSinceEpoch * 4 + slotInfo.index + offset) % totalVerses;
-    console.log(`[sendDailyVersePushInternal] Target verse index: ${targetIndex} (total: ${totalVerses}, offset: ${offset})`);
-    // 3. Priority: Curated Thematic Daily Verses strictly matched to time of day & <= 130 chars:
-    // - Morning: New beginnings, hope, strength, God's guidance
-    // - Afternoon: Encouragement, wisdom, patience, staying strong
-    // - Evening: Peace, gratitude, protection, trusting God
-    // - Night: Rest, comfort, safety, God's care
+    // 2. Resolve today's verse index
+    // 100% synchronized with SuperAdminVersesManager, HomeScreen, and VerseOfTheDayScreen:
+    // Today's 4 slots are strictly indexed: 0 (Morning), 1 (Afternoon), 2 (Evening), 3 (Night)
+    const targetIndex = slotInfo.index;
+    console.log(`[sendDailyVersePushInternal] Target verse index: ${targetIndex} for slot ${slot}`);
     let verseDocData = null;
-    let verseId = `thematic_${slot.toLowerCase()}_${daysSinceEpoch}`;
+    let verseId = `verse_${targetIndex}`;
+    // 1. Primary Source of Truth: Firestore 'daily_verses' collection (as configured in SuperAdminVersesManager & shown on HomeScreen)
     try {
-        const fsMod = await import('fs');
-        const pathMod = await import('path');
-        const candidates = [
-            pathMod.join(process.cwd(), 'thematic_daily_verses.json'),
-            pathMod.join(process.cwd(), 'src/thematic_daily_verses.json'),
-            pathMod.join(process.cwd(), 'functions/thematic_daily_verses.json'),
-            pathMod.join(process.cwd(), 'functions/src/thematic_daily_verses.json'),
-            pathMod.join(process.cwd(), 'app/assets/thematic_daily_verses.json'),
-            pathMod.join(process.cwd(), '../app/assets/thematic_daily_verses.json'),
-        ];
-        for (const p of candidates) {
-            if (fsMod.existsSync(p)) {
-                const raw = fsMod.readFileSync(p, 'utf-8');
-                const data = JSON.parse(raw);
-                const slotList = data[slot] || data.Morning;
-                if (slotList && slotList.length > 0) {
-                    const slotIdx = ((daysSinceEpoch % slotList.length) + slotList.length) % slotList.length;
-                    verseDocData = slotList[slotIdx];
-                    console.log(`✨ [sendDailyVersePushInternal] Selected curated thematic verse for slot '${slot}': ${verseDocData.referenceEn} - ${verseDocData.theme || ''}`);
-                    break;
+        const snap = await db.collection('daily_verses')
+            .where('index', '==', targetIndex)
+            .get();
+        if (!snap.empty && snap.docs.length > 0) {
+            let bestDoc = snap.docs[0];
+            let bestTime = 0;
+            snap.docs.forEach((doc) => {
+                const d = doc.data();
+                const t = d.updatedAt?.toMillis ? d.updatedAt.toMillis() : (d.updatedAt || d.createdAt?.toMillis?.() || d.createdAt || 0);
+                if (t >= bestTime) {
+                    bestTime = t;
+                    bestDoc = doc;
                 }
+            });
+            if (bestDoc) {
+                verseDocData = bestDoc.data();
+                verseId = bestDoc.id;
+                console.log(`✨ [sendDailyVersePushInternal] Loaded verse from daily_verses for slot '${slot}' (index ${targetIndex}): ${verseDocData.referenceEn || verseDocData.referenceTe}`);
             }
         }
     }
-    catch (tErr) {
-        console.warn('[sendDailyVersePushInternal] Could not load thematic verses:', tErr);
+    catch (err) {
+        console.warn('[sendDailyVersePushInternal] Could not query daily_verses by index:', err);
     }
-    // Fallback: Query Firestore if thematic list not loaded
-    try {
-        const rhemaSnap = await db.collection('Rhema Church').doc('rhema').collection('daily_verses').where('index', '==', targetIndex).limit(1).get();
-        if (!rhemaSnap.empty) {
-            verseDocData = rhemaSnap.docs[0]?.data();
-            verseId = rhemaSnap.docs[0]?.id || verseId;
-        }
-    }
-    catch (_) { }
+    // 2. Secondary fallback: Rhema Church/rhema/daily_verses
     if (!verseDocData) {
         try {
-            const snap = await db.collection('daily_verses').where('index', '==', targetIndex).limit(1).get();
-            if (!snap.empty) {
-                verseDocData = snap.docs[0]?.data();
-                verseId = snap.docs[0]?.id || verseId;
+            const rhemaSnap = await db.collection('Rhema Church')
+                .doc(targetChurchId)
+                .collection('daily_verses')
+                .where('index', '==', targetIndex)
+                .limit(1)
+                .get();
+            if (!rhemaSnap.empty) {
+                verseDocData = rhemaSnap.docs[0]?.data();
+                verseId = rhemaSnap.docs[0]?.id || verseId;
             }
         }
         catch (_) { }
     }
-    // Fallback to bulk_verses.json if not found in Firestore
+    // 3. Third fallback: bulk_verses.json bundled asset
     if (!verseDocData) {
         try {
-            const fs = await import('fs');
-            const path = await import('path');
+            const fsMod = await import('fs');
+            const pathMod = await import('path');
             const candidates = [
-                path.join(process.cwd(), 'bulk_verses.json'),
-                path.join(process.cwd(), '../bulk_verses.json'),
-                path.join(process.cwd(), 'app/assets/bulk_verses.json'),
+                pathMod.join(process.cwd(), 'bulk_verses.json'),
+                pathMod.join(process.cwd(), '../bulk_verses.json'),
+                pathMod.join(process.cwd(), 'app/assets/bulk_verses.json'),
+                pathMod.join(process.cwd(), '../app/assets/bulk_verses.json'),
             ];
             for (const p of candidates) {
-                if (fs.existsSync(p)) {
-                    const raw = fs.readFileSync(p, 'utf-8');
+                if (fsMod.existsSync(p)) {
+                    const raw = fsMod.readFileSync(p, 'utf-8');
                     const list = JSON.parse(raw);
                     if (list && list[targetIndex]) {
                         verseDocData = list[targetIndex];
+                        verseId = `bulk_${targetIndex}`;
                         break;
                     }
                 }
@@ -2157,44 +2136,10 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
         console.warn(`[sendDailyVersePushInternal] No verse found for index ${targetIndex}`);
         return { success: false, error: `Verse not found for index ${targetIndex}` };
     }
-    // Feature requirement: Daily Bible Verses must be short (<= 130 chars) and fit within 2 lines
-    // If the verse is a lengthy passage, select the nearest concise, inspiring verse
-    if (verseDocData && ((verseDocData.verseEn && verseDocData.verseEn.length > 130) || (verseDocData.verseTe && verseDocData.verseTe.length > 130))) {
-        try {
-            const fsMod = await import('fs');
-            const pathMod = await import('path');
-            const candidates = [
-                pathMod.join(process.cwd(), 'bulk_verses.json'),
-                pathMod.join(process.cwd(), '../bulk_verses.json'),
-                pathMod.join(process.cwd(), 'app/assets/bulk_verses.json'),
-            ];
-            for (const p of candidates) {
-                if (fsMod.existsSync(p)) {
-                    const raw = fsMod.readFileSync(p, 'utf-8');
-                    const list = JSON.parse(raw);
-                    if (list && list.length > 0) {
-                        let hops = 0;
-                        let curr = targetIndex;
-                        while (hops < 15) {
-                            curr = (curr + 1) % list.length;
-                            if (list[curr] && list[curr].verseEn && list[curr].verseEn.length <= 130 && list[curr].verseTe && list[curr].verseTe.length <= 130) {
-                                verseDocData = list[curr];
-                                verseId = `verse_${curr}`;
-                                break;
-                            }
-                            hops++;
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-        catch (_) { }
-    }
-    const verseEnText = verseDocData.verseEn || '';
-    const refEnText = verseDocData.referenceEn || '';
-    const verseTeText = verseDocData.verseTe || verseEnText;
-    const refTeText = verseDocData.referenceTe || refEnText;
+    const verseEnText = (verseDocData.verseEn || '').trim();
+    const refEnText = (verseDocData.referenceEn || '').trim();
+    const verseTeText = (verseDocData.verseTe || verseDocData.verse || '').trim();
+    const refTeText = (verseDocData.referenceTe || verseDocData.reference || '').trim();
     // 4. Collect member device FCM tokens
     const tokenSet = new Set();
     try {
@@ -2221,23 +2166,22 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
     console.log(`[sendDailyVersePushInternal] Collected ${tokens.length} FCM tokens for dispatch.`);
     let enSuccess = 0;
     let teSuccess = 0;
-    // 4. Send EXACTLY ONE Unified Notification to the Church Topic (church_rhema)
-    // Using Android 'tag' and 'collapseKey' guarantees that Android OS displays EXACTLY ONE banner.
+    // 4. Format EXACTLY ONE combined bilingual notification (Telugu + English)
     const unifiedTitle = slotInfo.title;
     let unifiedBody = '';
-    const combinedRef = (refTeText && refEnText && refTeText !== refEnText)
-        ? `${refTeText} | ${refEnText}`
-        : (refTeText || refEnText);
-    const cleanVerseTe = (verseTeText || '').replace(/^["“”']+|["“”']+$/g, '').trim();
-    const cleanVerseEn = (verseEnText || '').replace(/^["“”']+|["“”']+$/g, '').trim();
-    // Android notification shade collapses empty newlines unless there is a character.
-    // Using '\n \n' guarantees a visible vertical gap below verses on Android and iOS.
-    const GAP = '\n \n';
+    const cleanVerseTe = (verseTeText || '').replace(/^["“”'‘]+|["“”'‘]+$/g, '').trim();
+    const cleanVerseEn = (verseEnText || '').replace(/^["“”'‘]+|["“”'‘]+$/g, '').trim();
+    const cleanRefTe = (refTeText || '').trim();
+    const cleanRefEn = (refEnText || '').trim();
     if (cleanVerseTe && cleanVerseEn && cleanVerseTe !== cleanVerseEn) {
-        unifiedBody = `${cleanVerseTe}${GAP}${cleanVerseEn}${GAP}${combinedRef}`;
+        const tePart = `"${cleanVerseTe}" — ${cleanRefTe || cleanRefEn}`;
+        const enPart = `"${cleanVerseEn}" — ${cleanRefEn || cleanRefTe}`;
+        unifiedBody = `${tePart}\n\n${enPart}`;
     }
     else {
-        unifiedBody = `${cleanVerseTe || cleanVerseEn}${GAP}${combinedRef}`;
+        const singleVerse = cleanVerseTe || cleanVerseEn;
+        const singleRef = cleanRefTe || cleanRefEn;
+        unifiedBody = `"${singleVerse}" — ${singleRef}`;
     }
     try {
         const topicMessage = {
@@ -2248,26 +2192,43 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
             },
             data: {
                 type: 'daily_verse',
-                verseId: verseId,
+                verseId: String(verseId),
                 period: slot,
                 churchId: targetChurchId,
+                title: unifiedTitle,
+                body: unifiedBody,
+                verseTe: cleanVerseTe,
+                refTe: cleanRefTe,
+                verseEn: cleanVerseEn,
+                refEn: cleanRefEn,
             },
             android: {
                 priority: 'high',
-                collapseKey: `daily_verse_${slot}`,
+                collapseKey: 'daily_verse',
                 notification: {
                     sound: 'default',
                     priority: 'max',
                     channelId: 'daily_verse',
-                    tag: `daily_verse_${slot}`,
+                    tag: 'daily_verse',
+                    defaultSound: true,
+                    defaultVibrateTimings: true,
                 },
             },
             apns: {
                 headers: {
                     'apns-priority': '10',
-                    'apns-collapse-id': `daily_verse_${slot}`,
+                    'apns-collapse-id': 'daily_verse',
                 },
-                payload: { aps: { sound: 'default', badge: 1 } },
+                payload: {
+                    aps: {
+                        sound: 'default',
+                        badge: 1,
+                        alert: {
+                            title: unifiedTitle,
+                            body: unifiedBody,
+                        },
+                    },
+                },
             },
         };
         await messaging.send(topicMessage);
@@ -2286,18 +2247,26 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
                     },
                     data: {
                         type: 'daily_verse',
-                        verseId: verseId,
+                        verseId: String(verseId),
                         period: slot,
                         churchId: targetChurchId,
+                        title: unifiedTitle,
+                        body: unifiedBody,
+                        verseTe: cleanVerseTe,
+                        refTe: cleanRefTe,
+                        verseEn: cleanVerseEn,
+                        refEn: cleanRefEn,
                     },
                     android: {
                         priority: 'high',
-                        collapseKey: `daily_verse_${slot}`,
+                        collapseKey: 'daily_verse',
                         notification: {
                             sound: 'default',
                             priority: 'max',
                             channelId: 'daily_verse',
-                            tag: `daily_verse_${slot}`,
+                            tag: 'daily_verse',
+                            defaultSound: true,
+                            defaultVibrateTimings: true,
                         },
                     },
                     tokens: batchTokens,
