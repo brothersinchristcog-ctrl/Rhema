@@ -107,6 +107,7 @@ const DURATION_OPTIONS = [
 const PUBLISH_STATUS_OPTIONS = [
   { label: 'Draft — not visible to members', value: 'Draft' },
   { label: 'Publish now — visible to all members', value: 'Published' },
+  { label: 'Completed — event has ended', value: 'Completed' },
   { label: 'Schedule — auto-publish on a specific date/time', value: 'Scheduled' }
 ];
 
@@ -532,7 +533,7 @@ export default function AdminEventEditor() {
     });
   };
 
-  const handleSave = async (status: 'Published' | 'Draft') => {
+  const handleSave = async (status: 'Published' | 'Draft' | 'Completed') => {
     if (!titleEn || !titleEn.trim()) {
       reportError('Required Field', 'అవసరమైన వివరాలు', 'Please enter an event title in English.', 'దయచేసి కార్యక్రమం పేరును నమోదు చేయండి.');
       return;
@@ -1668,6 +1669,27 @@ export default function AdminEventEditor() {
               <Text style={styles.btnDraftTxt}>Save as Draft</Text>
             )}
           </TouchableOpacity>
+          {editingData ? (
+            <TouchableOpacity
+              style={[
+                styles.btnDraft,
+                {
+                  borderColor: '#94A3B8',
+                  backgroundColor: publishStatus === 'Completed' ? '#E2E8F0' : '#F8FAFC',
+                },
+              ]}
+              onPress={() => handleSave(publishStatus === 'Completed' ? 'Published' : 'Completed')}
+              disabled={loading}
+            >
+              {loading && publishStatus === 'Completed' ? (
+                <ActivityIndicator color="#1a2d5a" size="small" />
+              ) : (
+                <Text style={[styles.btnDraftTxt, { color: '#334155' }]}>
+                  {publishStatus === 'Completed' ? 'Reopen Event' : 'Mark Completed ✓'}
+                </Text>
+              )}
+            </TouchableOpacity>
+          ) : null}
           <TouchableOpacity style={styles.btnSave} onPress={() => handleSave('Published')} disabled={loading}>
             {loading && publishStatus === 'Published' ? (
               <ActivityIndicator color="#fff" size="small" />

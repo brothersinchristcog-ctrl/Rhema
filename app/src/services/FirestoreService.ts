@@ -2464,8 +2464,11 @@ class FirestoreService {
       const snapshot = await col.where('date', '==', todayStr).get();
       let events = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ScheduleEvent));
       
-      // Filter out events that have already ended based on time
+      // Filter out events that have already ended based on time or status
       events = events.filter(ev => {
+        if (String((ev as any).status || '').toLowerCase() === 'completed') {
+          return false;
+        }
         const timeToCompare = ev.endTime || ev.time;
         if (timeToCompare) {
            try {
@@ -2510,8 +2513,11 @@ class FirestoreService {
       
       let events = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ScheduleEvent));
       
-      // Filter out events from TODAY that have already ended based on time
+      // Filter out events that have completed or from TODAY that have already ended based on time
       events = events.filter(ev => {
+        if (String((ev as any).status || '').toLowerCase() === 'completed') {
+          return false;
+        }
         if (ev.date === todayStr) {
           // Compare end time or start time against current time
           const timeToCompare = ev.endTime || ev.time;

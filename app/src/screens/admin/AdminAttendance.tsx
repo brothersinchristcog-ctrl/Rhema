@@ -454,7 +454,9 @@ export default function AdminAttendance() {
         const evDateOnly = dateObj.toISOString().split('T')[0];
 
         let status: 'Today' | 'Upcoming' | 'Past' = 'Past';
-        if (evDateOnly === todayStr) {
+        if (String(ev.status || '').toLowerCase() === 'completed') {
+          status = 'Past';
+        } else if (evDateOnly === todayStr) {
           status = 'Today';
         } else if (dateObj >= startOfToday) {
           status = 'Upcoming';

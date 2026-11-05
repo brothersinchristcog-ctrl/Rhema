@@ -136,6 +136,7 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
               if (liveState.title) setStreamTitle(liveState.title);
             } else if (!paramVideoId) {
               setIsLive(false);
+              setActiveVideoId('');
             }
           }
         },
@@ -226,7 +227,7 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
           }
 
           const liveResult = await findActiveLiveStream(targetUrl);
-          if (liveResult?.videoId) {
+          if (liveResult?.videoId && liveResult?.isLiveNow) {
             setActiveVideoId(liveResult.videoId);
             setStreamTitle(liveResult.title);
             setIsLive(true);
@@ -242,6 +243,7 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
         }
 
         setIsLive(false);
+        setActiveVideoId('');
       } catch (err) {
         console.warn('[YouTubeLiveScreen] resolveLiveStream error:', err);
       } finally {
@@ -351,7 +353,7 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
                 Connecting to Live Stream...
               </Text>
             </View>
-          ) : activeVideoId ? (
+          ) : isLive && activeVideoId ? (
             <View style={styles.playerFrame}>
               <YoutubePlayer
                 height={VIDEO_HEIGHT}
