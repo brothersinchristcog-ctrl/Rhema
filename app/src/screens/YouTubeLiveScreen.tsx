@@ -15,17 +15,15 @@ import {
   Animated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import YoutubePlayer from 'react-native-youtube-iframe';
 import { WebView } from 'react-native-webview';
 import {
-  ChevronLeft,
+  ArrowLeft,
   Radio,
   Share2,
   RefreshCw,
   Play,
   Heart,
-  BookOpen,
   Video,
   ShieldCheck,
   Tv,
@@ -33,6 +31,7 @@ import {
 import firestore from '@react-native-firebase/firestore';
 import { useChurch } from '../context/ChurchContext';
 import { useLanguage } from '../context/LanguageContext';
+import { useAdminTheme, createAdminThemedStyles } from '../utils/adminThemeHelper';
 import { findActiveLiveStream, getChannelId } from '../services/YouTubeService';
 
 const { width } = Dimensions.get('window');
@@ -71,6 +70,15 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
   const { activeChurch } = useChurch();
   const { t } = useLanguage();
+  const {
+    isDark,
+    screenBg,
+    cardSurface,
+    secondarySurface,
+    primaryText,
+    secondaryText,
+    borderColor: adminBorderColor,
+  } = useAdminTheme();
 
   const churchId = route?.params?.churchId || activeChurch?.id || 'rhema';
   const churchName = activeChurch?.name || 'Rhema Fellowship';
@@ -114,7 +122,6 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
    * Listen to real-time live status in Firestore for this church
    */
   useEffect(() => {
-    // Listen directly to Rhema Church/rhema document for live status
     const unsubscribeChurch = firestore()
       .collection('Rhema Church')
       .doc(churchId || 'rhema')
@@ -135,7 +142,6 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
         (err) => console.warn('[YouTubeLiveScreen] church snapshot notice:', err)
       );
 
-    // Also check if there's an active online_meeting
     const unsubscribeMeetings = firestore()
       .collection('Rhema Church')
       .doc(churchId || 'rhema')
@@ -173,7 +179,6 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
       else setLoading(true);
 
       try {
-        // Step 1: If an explicit videoId was passed in route params, honor it
         if (paramVideoId) {
           setActiveVideoId(paramVideoId);
           setIsLive(true);
@@ -184,7 +189,6 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
         }
 
         const targetChurchId = churchId || 'rhema';
-        // Step 2: Check live state directly from Rhema Church/rhema document
         const churchDoc = await firestore()
           .collection('Rhema Church')
           .doc(targetChurchId)
@@ -203,10 +207,8 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
           }
         }
 
-        // Step 3: Check channel handle or URL using YouTubeService search API
         const targetUrl = paramUrl || configuredChannelUrl;
         if (targetUrl) {
-          // Try to extract videoId if URL points to a specific video
           const directId = extractYoutubeVideoId(targetUrl);
           if (directId) {
             setActiveVideoId(directId);
@@ -216,7 +218,6 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
             return;
           }
 
-          // Search for active live broadcast via YouTube Data API
           const liveResult = await findActiveLiveStream(targetUrl);
           if (liveResult?.videoId) {
             setActiveVideoId(liveResult.videoId);
@@ -227,14 +228,12 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
             return;
           }
 
-          // Resolve channel ID for embed fallback
           const cId = await getChannelId(targetUrl);
           if (cId) {
             setResolvedChannelId(cId);
           }
         }
 
-        // No active live stream found
         setIsLive(false);
       } catch (err) {
         console.warn('[YouTubeLiveScreen] resolveLiveStream error:', err);
@@ -275,53 +274,43 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
     : null;
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B111A" />
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={screenBg}
+      />
 
       {/* ── TOP HEADER ── */}
-      <View style={[styles.header, { paddingTop: Math.max(insets.top, 12) }]}>
+      <View
+        style={[
+          styles.header,
+          {
+            paddingTop:
+              Math.max(
+                insets.top,
+                Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 28
+              ) + 12,
+            backgroundColor: screenBg,
+          },
+        ]}
+      >
         <TouchableOpacity
-          style={styles.backButton}
+          style={[
+            styles.backButton,
+            { backgroundColor: cardSurface, borderColor: adminBorderColor, borderWidth: 1 },
+          ]}
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          activeOpacity={0.7}
+          activeOpacity={0.8}
         >
-          <ChevronLeft size={22} color="#FFFFFF" strokeWidth={2.5} />
+          <ArrowLeft size={20} color={primaryText} strokeWidth={2.4} />
         </TouchableOpacity>
 
-        <View style={styles.headerTitleWrap}>
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            YouTube Live
-          </Text>
-          <Text style={styles.headerSubtitle} numberOfLines={1}>
-            {churchName}
-          </Text>
-        </View>
+        <Text style={[styles.headerTitle, { color: primaryText }]} numberOfLines={1}>
+          YouTube Live
+        </Text>
 
-        {/* Live indicator badge */}
-        <View
-          style={[
-            styles.headerLiveBadge,
-            { backgroundColor: isLive ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 255, 255, 0.08)' },
-          ]}
-        >
-          {isLive && (
-            <Animated.View
-              style={[
-                styles.livePulseDot,
-                { opacity: pulseAnim, backgroundColor: '#EF4444' },
-              ]}
-            />
-          )}
-          <Text
-            style={[
-              styles.headerLiveBadgeTxt,
-              { color: isLive ? '#EF4444' : '#94A3B8' },
-            ]}
-          >
-            {isLive ? 'LIVE' : 'OFFLINE'}
-          </Text>
-        </View>
+        <View style={styles.headerRightSpacer} />
       </View>
 
       <ScrollView
@@ -338,14 +327,24 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
         }
       >
         {/* ── VIDEO PLAYER SECTION ── */}
-        <View style={styles.playerContainer}>
+        <View
+          style={[
+            styles.playerContainer,
+            {
+              backgroundColor: cardSurface,
+              borderColor: adminBorderColor,
+              borderWidth: 1,
+            },
+          ]}
+        >
           {loading ? (
-            <View style={styles.playerPlaceholder}>
+            <View style={[styles.playerPlaceholder, { backgroundColor: cardSurface }]}>
               <ActivityIndicator size="large" color="#EF4444" />
-              <Text style={styles.placeholderTxt}>Connecting to Live Stream...</Text>
+              <Text style={[styles.placeholderTxt, { color: secondaryText }]}>
+                Connecting to Live Stream...
+              </Text>
             </View>
           ) : activeVideoId ? (
-            // Native YouTube IFrame Player (In-App)
             <View style={styles.playerFrame}>
               <YoutubePlayer
                 height={VIDEO_HEIGHT}
@@ -356,9 +355,7 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
                   allowsFullscreenVideo: true,
                   androidLayerType: 'hardware',
                   scrollEnabled: false,
-                  // STRICT: Prevent any redirect to external YouTube app or browser
                   onShouldStartLoadWithRequest: (req) => {
-                    // Only allow requests that stay inside youtube iframe/embed
                     if (
                       req.url.includes('youtube.com/embed') ||
                       req.url.includes('googlevideo.com') ||
@@ -372,7 +369,6 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
               />
             </View>
           ) : isLive && channelEmbedUri ? (
-            // Embedded Channel Live Stream WebView (In-App)
             <View style={styles.playerFrame}>
               <WebView
                 source={{ uri: channelEmbedUri }}
@@ -396,19 +392,24 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
             </View>
           ) : (
             // Stream Offline / Waiting Placeholder
-            <LinearGradient
-              colors={['#182333', '#0F1722', '#0A0E17']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.offlineBox}
-            >
-              <View style={styles.offlineIconRing}>
-                <Radio size={36} color="#94A3B8" />
+            <View style={[styles.offlineBox, { backgroundColor: cardSurface }]}>
+              <View
+                style={[
+                  styles.offlineIconRing,
+                  {
+                    backgroundColor: secondarySurface,
+                    borderColor: adminBorderColor,
+                  },
+                ]}
+              >
+                <Radio size={36} color={secondaryText} />
               </View>
-              <Text style={styles.offlineTitle}>Stream is Not Currently Live</Text>
-              <Text style={styles.offlineDesc}>
-                {churchName} is not broadcasting live on YouTube at this moment.
-                You will automatically receive a push notification as soon as the live stream begins.
+              <Text style={[styles.offlineTitle, { color: primaryText }]}>
+                Stream is Not Currently Live
+              </Text>
+              <Text style={[styles.offlineDesc, { color: secondaryText }]}>
+                {churchName} is not broadcasting live on YouTube at this moment. You will
+                automatically receive a push notification as soon as the live stream begins.
               </Text>
               <TouchableOpacity
                 style={styles.refreshPill}
@@ -418,38 +419,66 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
                 <RefreshCw size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
                 <Text style={styles.refreshPillTxt}>Check Again</Text>
               </TouchableOpacity>
-            </LinearGradient>
+            </View>
           )}
         </View>
 
         {/* ── STREAM DETAILS CARD ── */}
-        <View style={styles.detailsCard}>
+        <View
+          style={[
+            styles.detailsCard,
+            {
+              backgroundColor: cardSurface,
+              borderColor: adminBorderColor,
+            },
+          ]}
+        >
           {/* Status pill & share */}
           <View style={styles.detailsTopRow}>
             <View
               style={[
                 styles.liveTag,
-                { backgroundColor: isLive ? '#DC2626' : '#334155' },
+                {
+                  backgroundColor: isLive ? '#DC2626' : secondarySurface,
+                  borderWidth: isLive ? 0 : 1,
+                  borderColor: adminBorderColor,
+                },
               ]}
             >
-              <Radio size={12} color="#FFFFFF" style={{ marginRight: 4 }} />
-              <Text style={styles.liveTagTxt}>
+              <Radio
+                size={12}
+                color={isLive ? '#FFFFFF' : primaryText}
+                style={{ marginRight: 4 }}
+              />
+              <Text
+                style={[
+                  styles.liveTagTxt,
+                  { color: isLive ? '#FFFFFF' : primaryText },
+                ]}
+              >
                 {isLive ? 'LIVE NOW' : 'STREAM WAITING'}
               </Text>
             </View>
 
             <TouchableOpacity
-              style={styles.shareBtn}
+              style={[
+                styles.shareBtn,
+                {
+                  backgroundColor: secondarySurface,
+                  borderWidth: 1,
+                  borderColor: adminBorderColor,
+                },
+              ]}
               onPress={handleShare}
               activeOpacity={0.8}
             >
-              <Share2 size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
-              <Text style={styles.shareBtnTxt}>Share Stream</Text>
+              <Share2 size={15} color={primaryText} style={{ marginRight: 6 }} />
+              <Text style={[styles.shareBtnTxt, { color: primaryText }]}>Share Stream</Text>
             </TouchableOpacity>
           </View>
 
           {/* Title */}
-          <Text style={styles.streamTitle}>
+          <Text style={[styles.streamTitle, { color: primaryText }]}>
             {streamTitle ||
               (isLive
                 ? `${churchName} Live Worship Service`
@@ -457,7 +486,7 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
           </Text>
 
           {/* Church Author Row */}
-          <View style={styles.churchRow}>
+          <View style={[styles.churchRow, { borderTopColor: adminBorderColor }]}>
             <View style={styles.churchAvatarBox}>
               {churchAvatar ? (
                 <Image
@@ -466,7 +495,12 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
                   resizeMode="cover"
                 />
               ) : (
-                <View style={styles.churchAvatarPlaceholder}>
+                <View
+                  style={[
+                    styles.churchAvatarPlaceholder,
+                    { backgroundColor: isDark ? '#27272A' : '#000000' },
+                  ]}
+                >
                   <Text style={styles.churchAvatarLetter}>
                     {churchName.charAt(0).toUpperCase()}
                   </Text>
@@ -475,12 +509,14 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
             </View>
             <View style={{ flex: 1, marginLeft: 12 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Text style={styles.churchNameTxt} numberOfLines={1}>
+                <Text style={[styles.churchNameTxt, { color: primaryText }]} numberOfLines={1}>
                   {churchName}
                 </Text>
-                <ShieldCheck size={14} color="#3B82F6" style={{ marginLeft: 5 }} />
+                <ShieldCheck size={14} color={primaryText} style={{ marginLeft: 5 }} />
               </View>
-              <Text style={styles.churchSubTxt}>Official Church Live Broadcast</Text>
+              <Text style={[styles.churchSubTxt, { color: secondaryText }]}>
+                Official Church Live Broadcast
+              </Text>
             </View>
           </View>
         </View>
@@ -493,16 +529,21 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
             onPress={() => navigation.navigate('Sermons')}
             activeOpacity={0.85}
           >
-            <LinearGradient
-              colors={['#1E293B', '#0F172A']}
-              style={styles.quickTileGrad}
+            <View
+              style={[
+                styles.quickTileGrad,
+                {
+                  backgroundColor: cardSurface,
+                  borderColor: adminBorderColor,
+                },
+              ]}
             >
               <View style={[styles.quickTileIconBox, { backgroundColor: '#7C3AED22' }]}>
                 <Video size={18} color="#A78BFA" />
               </View>
-              <Text style={styles.quickTileTitle}>Past Sermons</Text>
-              <Text style={styles.quickTileSub}>Watch recordings</Text>
-            </LinearGradient>
+              <Text style={[styles.quickTileTitle, { color: primaryText }]}>Past Sermons</Text>
+              <Text style={[styles.quickTileSub, { color: secondaryText }]}>Watch recordings</Text>
+            </View>
           </TouchableOpacity>
 
           {/* Daily Devotional */}
@@ -511,16 +552,21 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
             onPress={() => navigation.navigate('DailyVideo')}
             activeOpacity={0.85}
           >
-            <LinearGradient
-              colors={['#1E293B', '#0F172A']}
-              style={styles.quickTileGrad}
+            <View
+              style={[
+                styles.quickTileGrad,
+                {
+                  backgroundColor: cardSurface,
+                  borderColor: adminBorderColor,
+                },
+              ]}
             >
               <View style={[styles.quickTileIconBox, { backgroundColor: '#DC262622' }]}>
                 <Play size={18} color="#F87171" />
               </View>
-              <Text style={styles.quickTileTitle}>Devotional</Text>
-              <Text style={styles.quickTileSub}>Daily message</Text>
-            </LinearGradient>
+              <Text style={[styles.quickTileTitle, { color: primaryText }]}>Devotional</Text>
+              <Text style={[styles.quickTileSub, { color: secondaryText }]}>Daily message</Text>
+            </View>
           </TouchableOpacity>
 
           {/* Prayer Wall */}
@@ -529,25 +575,40 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
             onPress={() => navigation.navigate('PrayerWall')}
             activeOpacity={0.85}
           >
-            <LinearGradient
-              colors={['#1E293B', '#0F172A']}
-              style={styles.quickTileGrad}
+            <View
+              style={[
+                styles.quickTileGrad,
+                {
+                  backgroundColor: cardSurface,
+                  borderColor: adminBorderColor,
+                },
+              ]}
             >
-              <View style={[styles.quickTileIconBox, { backgroundColor: '#0284C722' }]}>
-                <Heart size={18} color="#38BDF8" />
+              <View style={[styles.quickTileIconBox, { backgroundColor: secondarySurface }]}>
+                <Heart size={18} color="#EF4444" />
               </View>
-              <Text style={styles.quickTileTitle}>Prayer Wall</Text>
-              <Text style={styles.quickTileSub}>Ask for prayer</Text>
-            </LinearGradient>
+              <Text style={[styles.quickTileTitle, { color: primaryText }]}>Prayer Wall</Text>
+              <Text style={[styles.quickTileSub, { color: secondaryText }]}>Ask for prayer</Text>
+            </View>
           </TouchableOpacity>
         </View>
 
         {/* ── IN-APP STREAMING PROMISE ── */}
-        <View style={styles.infoBanner}>
-          <Tv size={18} color="#60A5FA" style={{ marginRight: 10, marginTop: 2 }} />
+        <View
+          style={[
+            styles.infoBanner,
+            {
+              backgroundColor: cardSurface,
+              borderColor: adminBorderColor,
+            },
+          ]}
+        >
+          <Tv size={18} color={primaryText} style={{ marginRight: 10, marginTop: 2 }} />
           <View style={{ flex: 1 }}>
-            <Text style={styles.infoBannerTitle}>Seamless In-App Worship</Text>
-            <Text style={styles.infoBannerDesc}>
+            <Text style={[styles.infoBannerTitle, { color: primaryText }]}>
+              Seamless In-App Worship
+            </Text>
+            <Text style={[styles.infoBannerDesc, { color: secondaryText }]}>
               This live stream plays directly inside the Rhema app so you can worship,
               follow scripture, and engage without switching to external apps.
             </Text>
@@ -558,63 +619,41 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles({
   container: {
     flex: 1,
-    backgroundColor: '#0B111A',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
     paddingBottom: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
-    backgroundColor: '#0B111A',
     zIndex: 10,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  headerTitleWrap: {
-    flex: 1,
-    marginHorizontal: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
   },
   headerTitle: {
-    fontSize: 17,
+    flex: 1,
+    fontSize: 20,
     fontWeight: '800',
-    color: '#FFFFFF',
+    textAlign: 'center',
     letterSpacing: -0.3,
+    paddingHorizontal: 12,
   },
-  headerSubtitle: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#94A3B8',
-    marginTop: 1,
-  },
-  headerLiveBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 14,
-  },
-  livePulseDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    marginRight: 5,
-  },
-  headerLiveBadgeTxt: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.5,
+  headerRightSpacer: {
+    width: 42,
+    height: 42,
   },
   scroll: {
     flex: 1,
@@ -627,12 +666,11 @@ const styles = StyleSheet.create({
     marginTop: 12,
     borderRadius: 16,
     overflow: 'hidden',
-    backgroundColor: '#000000',
     minHeight: VIDEO_HEIGHT,
     elevation: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.15,
     shadowRadius: 8,
   },
   playerFrame: {
@@ -646,10 +684,8 @@ const styles = StyleSheet.create({
     height: VIDEO_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#0F172A',
   },
   placeholderTxt: {
-    color: '#94A3B8',
     fontSize: 13,
     fontWeight: '600',
     marginTop: 12,
@@ -665,9 +701,7 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
@@ -675,14 +709,12 @@ const styles = StyleSheet.create({
   offlineTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#FFFFFF',
     marginBottom: 6,
     textAlign: 'center',
   },
   offlineDesc: {
     fontSize: 12.5,
     lineHeight: 18,
-    color: '#94A3B8',
     textAlign: 'center',
     marginBottom: 14,
   },
@@ -704,9 +736,7 @@ const styles = StyleSheet.create({
     marginTop: 14,
     padding: 16,
     borderRadius: 16,
-    backgroundColor: '#111927',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
   },
   detailsTopRow: {
     flexDirection: 'row',
@@ -722,7 +752,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   liveTagTxt: {
-    color: '#FFFFFF',
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.4,
@@ -733,17 +762,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
   },
   shareBtnTxt: {
-    color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '600',
   },
   streamTitle: {
     fontSize: 18,
     fontWeight: '800',
-    color: '#FFFFFF',
     lineHeight: 24,
     marginBottom: 14,
     letterSpacing: -0.3,
@@ -753,7 +779,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255, 255, 255, 0.08)',
   },
   churchAvatarBox: {
     width: 40,
@@ -768,7 +793,6 @@ const styles = StyleSheet.create({
   churchAvatarPlaceholder: {
     width: 40,
     height: 40,
-    backgroundColor: '#2563EB',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -780,11 +804,9 @@ const styles = StyleSheet.create({
   churchNameTxt: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#FFFFFF',
   },
   churchSubTxt: {
     fontSize: 11.5,
-    color: '#94A3B8',
     marginTop: 1,
   },
   quickTilesRow: {
@@ -804,7 +826,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
   quickTileIconBox: {
     width: 36,
@@ -815,13 +836,11 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   quickTileTitle: {
-    color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '700',
     textAlign: 'center',
   },
   quickTileSub: {
-    color: '#94A3B8',
     fontSize: 10,
     marginTop: 2,
     textAlign: 'center',
@@ -832,20 +851,15 @@ const styles = StyleSheet.create({
     marginTop: 14,
     padding: 14,
     borderRadius: 14,
-    backgroundColor: 'rgba(37, 99, 235, 0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(37, 99, 235, 0.2)',
   },
   infoBannerTitle: {
-    color: '#93C5FD',
     fontSize: 13,
     fontWeight: '700',
     marginBottom: 3,
   },
   infoBannerDesc: {
-    color: '#94A3B8',
     fontSize: 11.5,
     lineHeight: 16,
   },
 });
-

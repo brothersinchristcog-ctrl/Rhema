@@ -53,6 +53,7 @@ import { AdminTabContext } from '../../context/AdminTabContext';
 import { AppAlert } from '../../components/CustomAlert';
 
 import FirestoreService, { WorshipSong, EventServiceItem } from '../../services/FirestoreService';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const { width, height } = Dimensions.get('window');
 
@@ -108,6 +109,7 @@ const PUBLISH_STATUS_OPTIONS = [
 ];
 
 export default function AdminEventEditor() {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { setActiveTab, editingData, setEditingData, setTabByName } = useContext(AdminTabContext);
   const [loading, setLoading] = useState(false);
   const [isUploadingBanner, setIsUploadingBanner] = useState(false);
@@ -1879,7 +1881,7 @@ export default function AdminEventEditor() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -2679,4 +2681,4 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     marginTop: 2,
   },
-});
+}));

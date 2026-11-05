@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { Check, Home, ChevronLeft , ArrowLeft } from 'lucide-react-native';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 export default function AdminCelebrationsConfirm({ 
   member,
@@ -11,6 +12,7 @@ export default function AdminCelebrationsConfirm({
   category: string,
   onDone: () => void 
 }) {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const scaleAnim = useRef(new Animated.Value(0.4)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
@@ -73,7 +75,7 @@ export default function AdminCelebrationsConfirm({
 );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -189,4 +191,4 @@ const styles = StyleSheet.create({
     color: '#475569',
     textAlign: 'center',
   },
-});
+}));

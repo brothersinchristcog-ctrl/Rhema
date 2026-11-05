@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, Image, 
 import { Edit2, ChevronLeft , ArrowLeft } from 'lucide-react-native';
 import Svg, { Defs, LinearGradient, Stop, Rect, Circle, G, Path } from 'react-native-svg';
 import ViewShot from 'react-native-view-shot';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const ICONS = {
   whatsapp: (
@@ -43,6 +44,7 @@ export default function AdminCelebrationsWhatsAppPreview({
   onSendWhatsApp: (imageUri?: string) => Promise<void>,
   onSendPush: (imageUri: string) => Promise<void>
 }) {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const [isSendingWhatsApp, setIsSendingWhatsApp] = useState(false);
   const [isSendingPush, setIsSendingPush] = useState(false);
   
@@ -224,7 +226,7 @@ export default function AdminCelebrationsWhatsAppPreview({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -478,4 +480,4 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#FFFFFF',
   }
-});
+}));

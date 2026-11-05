@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Platform } from 'react-native';
 import { ChevronLeft, ChevronRight, Eye, Image as ImageIcon, Book , ArrowLeft } from 'lucide-react-native';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 export default function AdminCelebrationsPersonalize({ 
   member, 
@@ -41,6 +42,7 @@ export default function AdminCelebrationsPersonalize({
   onChooseVerse?: () => void,
   onPreview?: () => void
 }) {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   // Overlays are now hoisted to parent state
 
   const getOrdinal = (n: number) => {
@@ -183,7 +185,7 @@ export default function AdminCelebrationsPersonalize({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -341,4 +343,4 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   }
-});
+}));

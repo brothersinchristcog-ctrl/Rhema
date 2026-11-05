@@ -6,8 +6,10 @@ import { useAuth } from '../../context/AuthContext';
 import ChurchService, { ChurchDetails } from '../../services/ChurchService';
 import FirestoreService from '../../services/FirestoreService';
 import { AdminTabContext } from '../../context/AdminTabContext';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 export default function AdminOrganization({ navigation }: any) {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { activeChurch, startImpersonation } = useChurch();
   const { setActiveTab, setDashboardScrollY } = useContext(AdminTabContext);
   const { member, user } = useAuth();
@@ -426,7 +428,7 @@ export default function AdminOrganization({ navigation }: any) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -534,4 +536,4 @@ const styles = StyleSheet.create({
   alertOkBtnTxt: { color: '#fff', fontSize: 16, fontWeight: '700' },
   alertCancelBtn: { paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12, marginRight: 12, backgroundColor: '#f1f5f9' },
   alertCancelBtnTxt: { color: '#475569', fontSize: 16, fontWeight: '700' }
-});
+}));

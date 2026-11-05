@@ -6,6 +6,7 @@ import { useChurch } from '../../context/ChurchContext';
 import firestore from '@react-native-firebase/firestore';
 import { openZoomMeeting } from '../../utils/ZoomLauncher';
 import { YouTubeLiveService, YouTubeChannelStatus } from '../../services/YouTubeLiveService';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const colors = {
   ink: '#1a2d5a',
@@ -29,6 +30,7 @@ const serifFont = Platform.OS === 'ios' ? 'Georgia' : 'serif';
 const SHOW_YOUTUBE_LIVE = false;
 
 export default function AdminOnlineMeetings() {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { setActiveTab, setTabByName, setEditingData } = useContext(AdminTabContext);
   const { activeChurch } = useChurch();
   const [activeBottomTab, setActiveBottomTab] = useState('dashboard');
@@ -702,7 +704,7 @@ export default function AdminOnlineMeetings() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -1165,4 +1167,4 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.5,
   },
-});
+}));

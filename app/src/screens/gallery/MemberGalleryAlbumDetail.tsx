@@ -1,9 +1,32 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, Image, Dimensions, ActivityIndicator, Alert, Modal, SafeAreaView, Animated, TouchableWithoutFeedback, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  FlatList,
+  Image,
+  Dimensions,
+  ActivityIndicator,
+  Alert,
+  Modal,
+  SafeAreaView,
+  Animated,
+  TouchableWithoutFeedback,
+  Platform,
+  StatusBar,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ArrowLeft, Share2, Download, X, ChevronLeft, ChevronRight, CheckCircle, Image as ImageIcon } from 'lucide-react-native';
+import {
+  ArrowLeft,
+  Share2,
+  Download,
+  X,
+  ChevronLeft,
+  ChevronRight,
+  CheckCircle,
+} from 'lucide-react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as MediaLibrary from 'expo-media-library';
@@ -11,14 +34,18 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MemberGalleryStackParamList } from './MemberGalleryNavigator';
 import GalleryService, { GalleryPhoto } from '../../services/GalleryService';
 import { useTheme } from '../../context/ThemeContext';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 import { useLanguage } from '../../context/LanguageContext';
 
 const { width } = Dimensions.get('window');
 const COLUMN_COUNT = 2;
 const SPACING = 10;
-const ITEM_WIDTH = (width - (SPACING * (COLUMN_COUNT + 1))) / COLUMN_COUNT;
+const ITEM_WIDTH = (width - SPACING * (COLUMN_COUNT + 1)) / COLUMN_COUNT;
 
-type NavigationProp = NativeStackNavigationProp<MemberGalleryStackParamList, 'MemberGalleryAlbumDetail'>;
+type NavigationProp = NativeStackNavigationProp<
+  MemberGalleryStackParamList,
+  'MemberGalleryAlbumDetail'
+>;
 type RouteProps = RouteProp<MemberGalleryStackParamList, 'MemberGalleryAlbumDetail'>;
 
 export default function MemberGalleryAlbumDetail() {
@@ -26,17 +53,24 @@ export default function MemberGalleryAlbumDetail() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RouteProps>();
   const { albumId, albumName, albumDescription } = route.params;
-  const { isDark, colors } = useTheme();
+  const { isDark } = useTheme();
+  const {
+    screenBg,
+    cardSurface,
+    primaryText,
+    secondaryText,
+    borderColor: adminBorderColor,
+  } = useAdminTheme();
   const { t } = useLanguage();
 
   const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   // Image Viewer State
   const [isViewerVisible, setIsViewerVisible] = useState(false);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
   const viewerListRef = useRef<FlatList>(null);
-  
+
   // Toast State
   const toastOpacity = useRef(new Animated.Value(0)).current;
   const [toastMessage, setToastMessage] = useState('');
@@ -79,7 +113,7 @@ export default function MemberGalleryAlbumDetail() {
         toValue: 0,
         duration: 300,
         useNativeDriver: true,
-      })
+      }),
     ]).start();
   };
 
@@ -91,11 +125,11 @@ export default function MemberGalleryAlbumDetail() {
         Alert.alert(t('gallery.alerts.permissionTitle'), t('gallery.alerts.permissionMsg'));
         return;
       }
-      
+
       const filename = `gallery_photo_${Date.now()}.jpg`;
       const fileUri = `${FileSystem.cacheDirectory}${filename}`;
       const downloadRes = await FileSystem.downloadAsync(url, fileUri);
-      
+
       await MediaLibrary.saveToLibraryAsync(downloadRes.uri);
       showToast(t('gallery.toasts.savedSuccess'));
     } catch (err) {
@@ -114,10 +148,10 @@ export default function MemberGalleryAlbumDetail() {
         return;
       }
       const filename = `gallery_photo_${Date.now()}.jpg`;
-      
+
       const fileUri = `${FileSystem.cacheDirectory}${filename}`;
       const downloadRes = await FileSystem.downloadAsync(url, fileUri);
-      
+
       await Sharing.shareAsync(downloadRes.uri);
     } catch (err) {
       console.error(err);
@@ -130,78 +164,74 @@ export default function MemberGalleryAlbumDetail() {
   const renderHeader = () => (
     <View
       style={[
-        styles.headerCardWrapper,
-        { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 6 }
+        styles.headerRow,
+        { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8 },
       ]}
     >
-      <LinearGradient
-        colors={['#527C78', '#355B56']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.header}
+      <TouchableOpacity
+        style={[
+          styles.circularBackBtn,
+          { backgroundColor: cardSurface, borderColor: adminBorderColor },
+        ]}
+        onPress={() => navigation.goBack()}
+        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        activeOpacity={0.8}
       >
-        <View style={styles.headerDecoCircle1} pointerEvents="none" />
-        <View style={styles.headerDecoCircle2} pointerEvents="none" />
+        <ArrowLeft size={20} color={primaryText} strokeWidth={2.4} />
+      </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => navigation.goBack()}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          activeOpacity={0.8}
-        >
-          <ArrowLeft size={20} color="#355B56" />
-        </TouchableOpacity>
+      <Text style={[styles.headerTitleText, { color: primaryText }]} numberOfLines={1}>
+        {albumName}
+      </Text>
 
-        <View style={styles.headerCenterTitleWrap} pointerEvents="none">
-          <Text style={styles.headerTitle} numberOfLines={1} maxFontSizeMultiplier={1.15}>
-            {albumName}
-          </Text>
-          <View style={styles.headerTitleAccentBar} />
-        </View>
-
-        <View style={styles.headerRightIconBadge}>
-          <ImageIcon size={18} color="#355B56" />
-        </View>
-      </LinearGradient>
+      <View style={styles.headerRightSpacer} />
     </View>
   );
 
   const renderTitleArea = () => (
     <View style={styles.titleArea}>
-      <Text style={styles.categoryText}>{t('gallery.albumBadge')}</Text>
-      <Text style={[styles.mainTitle, { color: colors.text }]}>{albumName}</Text>
+      <Text style={[styles.categoryText, { color: secondaryText }]}>
+        {t('gallery.albumBadge')}
+      </Text>
+      <Text style={[styles.mainTitle, { color: primaryText }]}>{albumName}</Text>
       {albumDescription ? (
-        <Text style={[styles.descText, { color: isDark ? '#CBD5E1' : '#64748B' }]}>{albumDescription}</Text>
+        <Text style={[styles.descText, { color: secondaryText }]}>{albumDescription}</Text>
       ) : null}
-      <Text style={[styles.metaText, { color: '#94A3B8' }]}>{photos.length} {t('gallery.photosCount')}</Text>
+      <Text style={[styles.metaText, { color: secondaryText }]}>
+        {photos.length} {t('gallery.photosCount')}
+      </Text>
     </View>
   );
 
   const renderPhoto = ({ item, index }: { item: GalleryPhoto; index: number }) => {
     const isTall = index % 3 === 0;
-    
+
     return (
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.photoContainer}
         activeOpacity={0.8}
         onPress={() => openViewer(index)}
       >
-        <Image 
-          source={{ uri: item.url }} 
-          style={[styles.photo, { height: isTall ? 250 : 200 }]} 
-          resizeMode="cover" 
+        <Image
+          source={{ uri: item.url }}
+          style={[styles.photo, { height: isTall ? 250 : 200 }]}
+          resizeMode="cover"
         />
       </TouchableOpacity>
     );
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={screenBg}
+      />
       {renderHeader()}
-      
+
       <FlatList
         data={photos}
-        keyExtractor={item => item.id}
+        keyExtractor={(item) => item.id}
         renderItem={renderPhoto}
         numColumns={2}
         ListHeaderComponent={renderTitleArea}
@@ -210,14 +240,16 @@ export default function MemberGalleryAlbumDetail() {
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           !loading ? (
-            <Text style={styles.emptyText}>{t('gallery.empty.noPhotos')}</Text>
+            <Text style={[styles.emptyText, { color: secondaryText }]}>
+              {t('gallery.empty.noPhotos')}
+            </Text>
           ) : null
         }
       />
-      
+
       {loading && photos.length === 0 && (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#FCD34D" />
+          <ActivityIndicator size="large" color={primaryText} />
         </View>
       )}
 
@@ -236,7 +268,7 @@ export default function MemberGalleryAlbumDetail() {
                 <Text style={styles.viewerAlbumTitle}>{albumName}</Text>
               </View>
               <View style={styles.viewerHeaderRight}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.viewerIconBtn}
                   onPress={() => setIsViewerVisible(false)}
                 >
@@ -250,7 +282,7 @@ export default function MemberGalleryAlbumDetail() {
               <FlatList
                 ref={viewerListRef}
                 data={photos}
-                keyExtractor={item => item.id}
+                keyExtractor={(item) => item.id}
                 horizontal
                 pagingEnabled
                 showsHorizontalScrollIndicator={false}
@@ -264,13 +296,21 @@ export default function MemberGalleryAlbumDetail() {
                   offset: width * index,
                   index,
                 })}
-                renderItem={({ item, index }) => (
-                  <TouchableWithoutFeedback onPress={() => setControlsVisible(!controlsVisible)}>
-                    <View style={{ width, flex: 1, justifyContent: 'center', paddingBottom: 60 }}>
+                renderItem={({ item }) => (
+                  <TouchableWithoutFeedback
+                    onPress={() => setControlsVisible(!controlsVisible)}
+                  >
+                    <View
+                      style={{
+                        width,
+                        flex: 1,
+                        justifyContent: 'center',
+                        paddingBottom: 60,
+                      }}
+                    >
                       <View style={styles.instaCard}>
-                        {/* Image Area */}
-                        <Image 
-                          source={{ uri: item.url }} 
+                        <Image
+                          source={{ uri: item.url }}
                           style={styles.instaImage}
                           resizeMode="contain"
                         />
@@ -282,7 +322,7 @@ export default function MemberGalleryAlbumDetail() {
 
               {/* Left Arrow */}
               {controlsVisible && currentPhotoIndex > 0 && (
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.navArrow, { left: 20 }]}
                   onPress={() => {
                     const newIdx = currentPhotoIndex - 1;
@@ -296,7 +336,7 @@ export default function MemberGalleryAlbumDetail() {
 
               {/* Right Arrow */}
               {controlsVisible && currentPhotoIndex < photos.length - 1 && (
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.navArrow, { right: 20 }]}
                   onPress={() => {
                     const newIdx = currentPhotoIndex + 1;
@@ -318,7 +358,7 @@ export default function MemberGalleryAlbumDetail() {
                     style={styles.gradientBorder}
                   >
                     <View style={styles.badgeContainer}>
-                      <TouchableOpacity 
+                      <TouchableOpacity
                         style={styles.badgeBtn}
                         onPress={() => handleDownload(photos[currentPhotoIndex].url)}
                         disabled={isDownloading}
@@ -333,7 +373,7 @@ export default function MemberGalleryAlbumDetail() {
 
                       <View style={styles.badgeDivider} />
 
-                      <TouchableOpacity 
+                      <TouchableOpacity
                         style={styles.badgeBtn}
                         onPress={() => handleShare(photos[currentPhotoIndex].url)}
                         disabled={isSharing}
@@ -350,11 +390,13 @@ export default function MemberGalleryAlbumDetail() {
                 </View>
               )}
             </View>
-
           </SafeAreaView>
-          
+
           {/* Stylish Toast overlay (Inside Viewer) */}
-          <Animated.View style={[styles.toastContainer, { opacity: toastOpacity }]} pointerEvents="none">
+          <Animated.View
+            style={[styles.toastContainer, { opacity: toastOpacity }]}
+            pointerEvents="none"
+          >
             <CheckCircle size={20} color="#10B981" />
             <Text style={styles.toastText}>{toastMessage}</Text>
           </Animated.View>
@@ -362,7 +404,10 @@ export default function MemberGalleryAlbumDetail() {
       </Modal>
 
       {/* Stylish Toast overlay */}
-      <Animated.View style={[styles.toastContainer, { opacity: toastOpacity }]} pointerEvents="none">
+      <Animated.View
+        style={[styles.toastContainer, { opacity: toastOpacity }]}
+        pointerEvents="none"
+      >
         <CheckCircle size={20} color="#10B981" />
         <Text style={styles.toastText}>{toastMessage}</Text>
       </Animated.View>
@@ -370,7 +415,7 @@ export default function MemberGalleryAlbumDetail() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles({
   container: {
     flex: 1,
   },
@@ -379,94 +424,51 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerCardWrapper: {
-    paddingHorizontal: 16,
-    paddingBottom: 10,
-  },
-  header: {
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    borderRadius: 24,
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    overflow: 'hidden',
-    position: 'relative',
+    paddingHorizontal: 18,
+    paddingBottom: 12,
+  },
+  circularBackBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    justifyContent: 'center',
+    alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(228, 238, 234, 0.25)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  headerDecoCircle1: {
-    position: 'absolute',
-    width: 130,
-    height: 130,
-    borderRadius: 65,
-    backgroundColor: 'rgba(228, 238, 234, 0.10)',
-    top: -50,
-    right: -25,
-  },
-  headerDecoCircle2: {
-    position: 'absolute',
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: 'rgba(228, 238, 234, 0.08)',
-    bottom: -40,
-    left: 35,
-  },
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    backgroundColor: '#E4EEEA',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  headerCenterTitleWrap: {
+  headerTitleText: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-  },
-  headerTitle: {
-    color: '#FFFFFF',
     fontSize: 20,
     fontWeight: '800',
-    letterSpacing: 0.5,
     textAlign: 'center',
+    letterSpacing: -0.3,
+    paddingHorizontal: 12,
   },
-  headerTitleAccentBar: {
-    width: 28,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: '#E4EEEA',
-    marginTop: 5,
-    opacity: 0.85,
-  },
-  headerRightIconBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    backgroundColor: '#E4EEEA',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
+  headerRightSpacer: {
+    width: 42,
+    height: 42,
   },
   titleArea: {
     paddingHorizontal: 15,
     marginBottom: 20,
   },
   categoryText: {
-    color: '#FCD34D',
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 1.5,
     marginBottom: 6,
   },
   mainTitle: {
-    fontSize: 32,
-    fontWeight: '700',
-    fontFamily: 'serif',
+    fontSize: 28,
+    fontWeight: '800',
     marginBottom: 6,
   },
   descText: {
@@ -496,7 +498,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(150,150,150,0.1)',
   },
   emptyText: {
-    color: '#94A3B8',
     textAlign: 'center',
     marginTop: 40,
     fontSize: 16,
@@ -525,7 +526,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 24,
     fontWeight: '700',
-    fontFamily: 'serif',
   },
   viewerHeaderRight: {
     flexDirection: 'row',
@@ -621,5 +621,5 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     marginLeft: 8,
-  }
+  },
 });

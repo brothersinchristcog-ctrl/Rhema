@@ -25,6 +25,7 @@ export const loadTeluguFonts = async (): Promise<boolean> => {
           'Borel-Regular': require('../../assets/fonts/Borel-Regular.ttf'),
           Satisfy: require('../../assets/fonts/Satisfy-Regular.ttf'),
           'Satisfy-Regular': require('../../assets/fonts/Satisfy-Regular.ttf'),
+          DancingScript_700Bold: require('../../assets/fonts/Satisfy-Regular.ttf'),
           CaveatBrush: require('../../assets/fonts/CaveatBrush-Regular.ttf'),
           'CaveatBrush-Regular': require('../../assets/fonts/CaveatBrush-Regular.ttf'),
           Yellowtail: require('../../assets/fonts/Yellowtail-Regular.ttf'),

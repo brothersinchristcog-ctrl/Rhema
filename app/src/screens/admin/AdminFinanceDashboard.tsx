@@ -49,6 +49,7 @@ import firestore from '@react-native-firebase/firestore';
 import ViewShot from 'react-native-view-shot';
 import * as MediaLibrary from 'expo-media-library';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const { width } = Dimensions.get('window');
 
@@ -62,6 +63,7 @@ const EXPENSE_GROUPS: Record<string, string[]> = {
 };
 
 export default function AdminFinanceDashboard({ navigation, routeParams }: any) {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const insets = useSafeAreaInsets();
   const { setActiveTab } = useContext(AdminTabContext);
   const { member } = useAuth();
@@ -1019,7 +1021,7 @@ const openAddExpense = () => {
                           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                             <TouchableOpacity 
                               onPress={() => openEditExpense(exp)}
-                              style={{ padding: 8, backgroundColor: '#f4efe6', borderRadius: 8, marginRight: 8 }}
+                              style={{ padding: 8, backgroundColor: screenBg, borderRadius: 8, marginRight: 8 }}
                             >
                               <Pencil size={14} color="#1b2a4a" />
                             </TouchableOpacity>
@@ -1042,7 +1044,7 @@ const openAddExpense = () => {
                 )}
                 
                 {expenses.filter(e => e.category === selectedCategoryView).length > 0 && (
-                  <View style={{ backgroundColor: '#f4efe6', borderRadius: 16, padding: 16, marginTop: 6, marginBottom: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: '#c9973f' }}>
+                  <View style={{ backgroundColor: screenBg, borderRadius: 16, padding: 16, marginTop: 6, marginBottom: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: '#c9973f' }}>
                     <Text style={{ fontFamily: FONTS.serif, fontSize: 18, color: '#141d33', fontWeight: '700' }}>Category Total</Text>
                     <Text style={{ fontFamily: FONTS.mono, fontSize: 22, color: '#141d33', fontWeight: '700' }}>
                       ₹{expenses.filter(e => e.category === selectedCategoryView).reduce((sum, e) => sum + e.amount, 0).toLocaleString('en-IN')}
@@ -1513,7 +1515,7 @@ const openAddExpense = () => {
                         );
                       })}
                       {addingItemToGroup === groupName ? (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#f4efe6', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: screenBg, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
                           <TextInput 
                             value={newItemName}
                             onChangeText={setNewItemName}
@@ -1573,7 +1575,7 @@ const openAddExpense = () => {
                         </View>
                       ) : (
                         <TouchableOpacity 
-                          style={[styles.expChip, { backgroundColor: '#f4efe6', borderColor: '#c9973f', borderStyle: 'dashed' }]}
+                          style={[styles.expChip, { backgroundColor: screenBg, borderColor: '#c9973f', borderStyle: 'dashed' }]}
                           onPress={() => setAddingItemToGroup(groupName)}
                         >
                           <Text style={{ fontSize: 12, color: '#c9973f', fontWeight: '700' }}>+ New Item</Text>
@@ -2212,7 +2214,7 @@ const openAddExpense = () => {
                   )}
 
                   {selectedExpenseForView.notes ? (
-                    <View style={{ padding: 12, backgroundColor: '#f4efe6', borderRadius: 8 }}>
+                    <View style={{ padding: 12, backgroundColor: screenBg, borderRadius: 8 }}>
                       <Text style={{ fontSize: 11, color: '#645d54', textTransform: 'uppercase', marginBottom: 4 }}>Notes</Text>
                       <Text style={{ fontFamily: FONTS.sans, fontSize: 13, color: '#241f1a' }}>{selectedExpenseForView.notes}</Text>
                     </View>
@@ -2233,7 +2235,7 @@ const FONTS = {
   mono: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
 };
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -2598,4 +2600,4 @@ const styles = StyleSheet.create({
   saveBtnTxt: {
     fontFamily: FONTS.sans, fontSize: 15, fontWeight: '700', color: '#ffffff'
   }
-});
+}));

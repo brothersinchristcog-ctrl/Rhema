@@ -17,6 +17,7 @@ import { AdminTabContext } from '../../context/AdminTabContext';
 import firestoreService from '../../services/FirestoreService';
 import { useChurch } from '../../context/ChurchContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 interface AboutUsData {
   churchName: string;
@@ -36,6 +37,7 @@ const DEFAULT_ABOUT: AboutUsData = {
 };
 
 export default function AdminAboutUsEditor() {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { goBack } = useContext(AdminTabContext);
   const { activeChurch } = useChurch();
   const insets = useSafeAreaInsets();
@@ -288,7 +290,7 @@ export default function AdminAboutUsEditor() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -369,4 +371,4 @@ const styles = StyleSheet.create({
   saveBtn: { flex: 2, backgroundColor: '#BE9A3A', borderRadius: 16, paddingVertical: 16, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 8, shadowColor: '#BE9A3A', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 6 },
   btnDisabled: { opacity: 0.6 },
   saveTxt: { color: '#162057', fontWeight: '800', fontSize: 15 },
-});
+}));

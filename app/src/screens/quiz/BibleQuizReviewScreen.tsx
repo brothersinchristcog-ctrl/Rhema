@@ -21,6 +21,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { QuizAttempt, BibleQuiz } from '../../types/Quiz';
 import { useQuizLanguage } from '../../context/QuizLanguageContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 import {
   getQuizStrings,
   localizeBibleReference,
@@ -28,6 +29,7 @@ import {
 import { getLocalizedDailyQuestion } from '../../constants/DailyQuizTranslations';
 
 export default function BibleQuizReviewScreen() {
+  const { isDark: _adminIsDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
@@ -44,10 +46,10 @@ export default function BibleQuizReviewScreen() {
         style={[
           styles.container,
           styles.center,
-          { backgroundColor: isDark ? '#0b1120' : '#FAF7F2' },
+          { backgroundColor: screenBg },
         ]}
       >
-        <Text style={[styles.errorTxt, { color: isDark ? '#94a3b8' : '#64748B' }]}>
+        <Text style={[styles.errorTxt, { color: secondaryText }]}>
           No review data found.
         </Text>
         <TouchableOpacity
@@ -66,8 +68,8 @@ export default function BibleQuizReviewScreen() {
       : Math.max(insets.bottom, 16) + 20;
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0b1120' : '#FAF7F2' }]}>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#0b1120' : '#FAF7F2'} />
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={screenBg} />
 
       {/* Top Floating Header Card */}
       <View
@@ -117,15 +119,15 @@ export default function BibleQuizReviewScreen() {
           style={[
             styles.summaryBar,
             {
-              backgroundColor: isDark ? '#141d2e' : '#ffffff',
-              borderColor: isDark ? '#26354a' : '#E2E8F0',
+              backgroundColor: cardSurface,
+              borderColor: adminBorderColor,
             },
           ]}
         >
           <Text
             style={[
               styles.summaryBarTxt,
-              { color: isDark ? '#f8fafc' : '#1E293B' },
+              { color: primaryText },
             ]}
           >
             {ui.summaryBar(
@@ -158,8 +160,8 @@ export default function BibleQuizReviewScreen() {
               style={[
                 styles.reviewCard,
                 {
-                  backgroundColor: isDark ? '#141d2e' : '#ffffff',
-                  borderColor: isDark ? '#26354a' : '#E2E8F0',
+                  backgroundColor: cardSurface,
+                  borderColor: adminBorderColor,
                 },
               ]}
             >
@@ -191,7 +193,7 @@ export default function BibleQuizReviewScreen() {
                 <Text
                   style={[
                     styles.marksEarned,
-                    { color: isDark ? '#94a3b8' : '#64748B' },
+                    { color: secondaryText },
                   ]}
                 >
                   +{ans.marksAwarded} / {ans.possibleMarks} pt
@@ -201,7 +203,7 @@ export default function BibleQuizReviewScreen() {
               <Text
                 style={[
                   styles.questionText,
-                  { color: isDark ? '#f8fafc' : '#0F172A' },
+                  { color: primaryText },
                 ]}
               >
                 Q{idx + 1}. {displayedQuestion}
@@ -229,7 +231,7 @@ export default function BibleQuizReviewScreen() {
                 <Text
                   style={[
                     styles.answerLabel,
-                    { color: isDark ? '#cbd5e1' : '#475569' },
+                    { color: secondaryText },
                   ]}
                 >
                   {ui.yourAnswer}
@@ -264,7 +266,7 @@ export default function BibleQuizReviewScreen() {
                   <Text
                     style={[
                       styles.answerLabel,
-                      { color: isDark ? '#cbd5e1' : '#475569' },
+                      { color: secondaryText },
                     ]}
                   >
                     {ui.correctAnswer}
@@ -318,7 +320,7 @@ export default function BibleQuizReviewScreen() {
                       backgroundColor: isDark
                         ? 'rgba(30, 41, 59, 0.7)'
                         : '#F8FAFC',
-                      borderColor: isDark ? '#334155' : '#E2E8F0',
+                      borderColor: adminBorderColor,
                     },
                   ]}
                 >
@@ -333,7 +335,7 @@ export default function BibleQuizReviewScreen() {
                   <Text
                     style={[
                       styles.explanationTxt,
-                      { color: isDark ? '#cbd5e1' : '#475569' },
+                      { color: secondaryText },
                     ]}
                   >
                     {displayedExp}
@@ -348,7 +350,7 @@ export default function BibleQuizReviewScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   container: {
     flex: 1,
   },
@@ -551,4 +553,4 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
-});
+}));

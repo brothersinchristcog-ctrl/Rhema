@@ -4,6 +4,7 @@ import { ChevronLeft, Search, CheckCircle2, SlidersHorizontal, Gift, Send, Info,
 import FirestoreService from '../../services/FirestoreService';
 import { useChurch } from '../../context/ChurchContext';
 import Theme from '../../theme/Theme';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const { width } = Dimensions.get('window');
 
@@ -35,6 +36,7 @@ const MemberAvatar = ({ member, initials, styles, bgColor }: any) => {
 };
 
 export default function AdminCelebrationsList({ category, activeTab, onSelectMember }: { category: string, activeTab: string, onSelectMember: (member: any) => void }) {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { activeChurch } = useChurch();
   const [loading, setLoading] = useState(true);
   const [isSendingAll, setIsSendingAll] = useState(false);
@@ -340,7 +342,7 @@ export default function AdminCelebrationsList({ category, activeTab, onSelectMem
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FAF8F0',
@@ -628,4 +630,4 @@ const styles = StyleSheet.create({
     right: 16,
     padding: 8,
   }
-});
+}));

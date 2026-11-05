@@ -16,6 +16,7 @@ import Svg, { Path, Rect, Circle } from 'react-native-svg';
 import firestore from '@react-native-firebase/firestore';
 import { AdminTabContext } from '../../context/AdminTabContext';
 import firestoreService from '../../services/FirestoreService';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 interface ContactData {
   churchName: string;
@@ -72,6 +73,7 @@ const WaIcon = () => (
 );
 
 export default function AdminContactUsEditor() {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { goBack } = useContext(AdminTabContext);
 
   const [data, setData] = useState<ContactData>(DEFAULT_CONTACT);
@@ -369,7 +371,7 @@ export default function AdminContactUsEditor() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -462,4 +464,4 @@ const styles = StyleSheet.create({
   saveBtn: { flex: 2, backgroundColor: '#BE9A3A', borderRadius: 16, paddingVertical: 16, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 8, shadowColor: '#BE9A3A', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 6 },
   btnDisabled: { opacity: 0.6 },
   saveTxt: { color: '#162057', fontWeight: '800', fontSize: 15 },
-});
+}));

@@ -34,6 +34,7 @@ import { useChurch } from '../../context/ChurchContext';
 import HexagonDate from '../../components/HexagonDate';
 import { AdminTabContext } from '../../context/AdminTabContext';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme, FONT_STYLE_OPTIONS } from '../../context/ThemeContext';
 
 
 const CARD_BACKGROUNDS: Record<string, any> = {
@@ -76,48 +77,56 @@ const CATEGORIES = [
     title: 'Content Management',
     icon: BookOpen,
     color: '#0F766E', // Teal
+    darkColor: '#2DD4BF',
     keywords: ['Promise', 'Sermons', 'New Sermon', 'Song']
   },
   {
     title: 'Community & Members',
     icon: Users,
     color: '#581C87', // Deep Royal Purple/Eggplant for excellent contrast
+    darkColor: '#C084FC',
     keywords: ['Member', 'Attendance', 'Prayer']
   },
   {
     title: 'Events & Celebrations',
     icon: Calendar,
     color: '#831843', // Deep Ruby/Berry for a festive, elegant look with high contrast
+    darkColor: '#F472B6',
     keywords: ['Event', 'Celebration']
   },
   {
     title: 'Communication',
     icon: Bell,
     color: '#78350F', // Rich Deep Bronze/Chocolate for excellent warm contrast
+    darkColor: '#FBBF24',
     keywords: ['Notification', 'WhatsApp', 'Baptism']
   },
   {
     title: 'Church Ledger',
     icon: DollarSign,
     color: '#206A5D', // Deep green
+    darkColor: '#34D399',
     keywords: ['Expense', 'Donation', 'Subscription']
   },
   {
     title: 'Online Meeting Management',
     icon: Video,
     color: '#4F46E5', // Indigo for a professional look
+    darkColor: '#818CF8',
     keywords: ['Online Meeting', 'Gallery']
   },
   {
     title: 'Administration',
     icon: Settings,
     color: '#1E3A8A', // Deep Navy for maximum contrast
+    darkColor: '#60A5FA',
     keywords: ['Daily Verses', 'Verse', 'Service Roster', 'Church Setting', 'Church Branch', 'App Admin', 'About', 'Contact', 'Schedule', 'Quiz', 'Bible Quiz']
   },
   {
     title: 'Support',
     icon: Headset,
     color: '#0284C7', // Sky blue for trust
+    darkColor: '#38BDF8',
     keywords: ['Support']
   },
 ];
@@ -179,6 +188,11 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
   const { setActiveTab, dashboardScrollY, setDashboardScrollY } = useContext(AdminTabContext);
   const { member, user, signOut, setViewMode } = useAuth();
   const { activeChurch } = useChurch();
+  const { isDark, colors, fontStyle, scaleFont } = useTheme();
+  const appFontFamily = FONT_STYLE_OPTIONS.find(o => o.id === fontStyle)?.family || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
+  const screenBg = isDark ? '#000000' : (colors.background || '#FAF7F2');
+  const cardSurface = isDark ? '#18181B' : (colors.surface || '#FFFFFF');
+  const primaryText = isDark ? '#FFFFFF' : (colors.text || '#1E293B');
   
   const scrollRef = React.useRef<ScrollView>(null);
 
@@ -243,8 +257,8 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
   const cardBorderRadius = isSmallDevice ? 16 : 18;
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F4F0EA" />
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
+      <StatusBar barStyle={colors.barStyle || (isDark ? 'light-content' : 'dark-content')} backgroundColor={screenBg} />
       <ScrollView 
         ref={scrollRef}
         onScroll={handleScroll}
@@ -253,9 +267,9 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
         contentContainerStyle={styles.scroll}
       >
         {/* Responsive Admin Dashboard Top Hero / Topper Card */}
-        <View style={{ zIndex: 10, backgroundColor: '#F4F0EA', paddingHorizontal: horizontalPadding, paddingTop: 8, paddingBottom: 8 }}>
+        <View style={{ zIndex: 10, backgroundColor: screenBg, paddingHorizontal: horizontalPadding, paddingTop: 8, paddingBottom: 8 }}>
           <View style={[styles.heroSection, { 
-            borderColor: '#000000', 
+            borderColor: isDark ? '#27272A' : '#000000', 
             borderWidth: 1, 
             paddingHorizontal: 0, 
             paddingVertical: 0, 
@@ -304,9 +318,10 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
                   <Text 
                     style={{ 
                       color: '#1a2d5a', 
-                      fontSize: isSmallDevice ? 14.5 : 16.5, 
+                      fontSize: scaleFont(isSmallDevice ? 14.5 : 16.5), 
                       fontWeight: '800',
-                      lineHeight: isSmallDevice ? 19 : 21,
+                      lineHeight: scaleFont(isSmallDevice ? 19 : 21),
+                      fontFamily: appFontFamily,
                     }}
                     numberOfLines={3}
                   >
@@ -320,10 +335,10 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
                 <Text 
                   style={{ 
                     color: '#b45309', 
-                    fontSize: isSmallDevice ? 22 : 26, 
+                    fontSize: scaleFont(isSmallDevice ? 22 : 26), 
                     fontWeight: '600', 
                     marginBottom: 6, 
-                    fontFamily: FONTS.serif, 
+                    fontFamily: appFontFamily, 
                     fontStyle: 'italic' 
                   }}
                   numberOfLines={1}
@@ -344,21 +359,23 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
           {CATEGORIES.map((category, catIdx) => {
             const tabsInCategory = categorizedTabs[category.title];
             if (!tabsInCategory || tabsInCategory.length === 0) return null;
+            const catColor = isDark ? category.darkColor : category.color;
 
             return (
               <View key={catIdx} style={[styles.categoryBlock, { marginBottom: isSmallDevice ? 18 : 24 }]}>
                 
                 {/* Elegant Category Header */}
                 <View style={[styles.categoryHeader, { marginBottom: isSmallDevice ? 12 : 15 }]}>
-                  <View style={[styles.categoryIconBg, { backgroundColor: `${category.color}20`, width: isSmallDevice ? 24 : 26, height: isSmallDevice ? 24 : 26 }]}>
-                    <category.icon size={isSmallDevice ? 15 : 17} color={category.color} strokeWidth={2.5} />
+                  <View style={[styles.categoryIconBg, { backgroundColor: `${catColor}20`, width: isSmallDevice ? 24 : 26, height: isSmallDevice ? 24 : 26 }]}>
+                    <category.icon size={isSmallDevice ? 15 : 17} color={catColor} strokeWidth={2.5} />
                   </View>
                   <Text 
                     style={[
                       styles.categoryTitle, 
                       { 
-                        color: category.color,
-                        fontSize: isSmallDevice ? 15.5 : 17,
+                        color: catColor,
+                        fontSize: scaleFont(isSmallDevice ? 15.5 : 17),
+                        fontFamily: appFontFamily,
                         flexShrink: 1,
                       }
                     ]}
@@ -368,7 +385,7 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
                   >
                     {category.title}
                   </Text>
-                  <View style={[styles.categoryLine, { backgroundColor: `${category.color}40`, marginLeft: isSmallDevice ? 10 : 14 }]} />
+                  <View style={[styles.categoryLine, { backgroundColor: `${catColor}40`, marginLeft: isSmallDevice ? 10 : 14 }]} />
                 </View>
 
                 {/* Hybrid Responsive Grid of Modules */}
@@ -386,11 +403,11 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
                               width: isFullWidth ? '100%' : halfCardWidth,
                               height: isFullWidth ? fullCardHeight : halfCardHeight,
                               borderRadius: cardBorderRadius,
-                              shadowColor: category.color,
-                              borderColor: `${category.color}25`,
+                              shadowColor: catColor,
+                              borderColor: isDark ? '#27272A' : `${catColor}25`,
                               overflow: CARD_BACKGROUNDS[tab.name] ? 'hidden' : 'visible',
                               padding: CARD_BACKGROUNDS[tab.name] ? 0 : cardPadding,
-                              backgroundColor: tab.name === 'Subscription' ? '#F2EAE0' : (tab.name === 'Church Settings' ? 'rgb(202, 221, 236)' : (tab.name === 'Members' ? 'rgb(244, 224, 217)' : (tab.name === 'Promises' ? '#000000' : '#ffffff'))),
+                              backgroundColor: tab.name === 'Subscription' ? '#F2EAE0' : (tab.name === 'Church Settings' ? 'rgb(202, 221, 236)' : (tab.name === 'Members' ? 'rgb(244, 224, 217)' : (tab.name === 'Promises' ? '#000000' : cardSurface))),
                             }
                           ]}
                           onPress={() => setActiveTab(tab.index)}
@@ -423,9 +440,9 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
                                   left: isSmallDevice ? 12 : 14,
                                   right: isSmallDevice ? 12 : 14,
                                   color: '#ffffff',
-                                  fontSize: isSmallDevice ? 18 : isMediumDevice ? 20 : 21,
+                                  fontSize: scaleFont(isSmallDevice ? 18 : isMediumDevice ? 20 : 21),
                                   fontWeight: '800',
-                                  fontFamily: FONTS.sans,
+                                  fontFamily: appFontFamily,
                                   textShadowColor: 'rgba(0,0,0,0.85)',
                                   textShadowOffset: { width: 0, height: 1 },
                                   textShadowRadius: 4,
@@ -450,15 +467,15 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
                             ]}>
                               <View style={[styles.moduleLeftRow, CARD_BACKGROUNDS[tab.name] && { alignItems: 'flex-end' }]}>
                                 {!CARD_BACKGROUNDS[tab.name] && (
-                                  <View style={[styles.moduleIconWrapperFull, { backgroundColor: `${category.color}15`, width: isSmallDevice ? 34 : 38, height: isSmallDevice ? 34 : 38, borderRadius: isSmallDevice ? 17 : 19 }]}>
-                                    <tab.icon size={isSmallDevice ? 18 : 20} color={category.color} strokeWidth={2.5} />
+                                  <View style={[styles.moduleIconWrapperFull, { backgroundColor: `${catColor}15`, width: isSmallDevice ? 34 : 38, height: isSmallDevice ? 34 : 38, borderRadius: isSmallDevice ? 17 : 19 }]}>
+                                    <tab.icon size={isSmallDevice ? 18 : 20} color={catColor} strokeWidth={2.5} />
                                   </View>
                                 )}
                                 <Text 
                                   style={[
                                     styles.moduleTitleFull,
-                                    { fontSize: isSmallDevice ? 13.5 : 14.5 },
-                                    CARD_BACKGROUNDS[tab.name] && { color: '#ffffff', textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4, fontSize: isSmallDevice ? 18 : 21, marginLeft: CARD_BACKGROUNDS[tab.name] ? 0 : undefined }
+                                    { fontSize: scaleFont(isSmallDevice ? 13.5 : 14.5), color: primaryText, fontFamily: appFontFamily },
+                                    CARD_BACKGROUNDS[tab.name] && { color: '#ffffff', textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4, fontSize: scaleFont(isSmallDevice ? 18 : 21), marginLeft: CARD_BACKGROUNDS[tab.name] ? 0 : undefined }
                                   ]}
                                   numberOfLines={1}
                                   adjustsFontSizeToFit
@@ -468,8 +485,8 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
                                 </Text>
                               </View>
                               {!CARD_BACKGROUNDS[tab.name] && (
-                                <View style={[styles.chevronWrapper, { backgroundColor: `${category.color}10` }]}>
-                                  <ChevronRight size={18} color={category.color} />
+                                <View style={[styles.chevronWrapper, { backgroundColor: `${catColor}10` }]}>
+                                  <ChevronRight size={18} color={catColor} />
                                 </View>
                               )}
                             </View>
@@ -481,8 +498,8 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
                               CARD_BACKGROUNDS[tab.name] && { padding: cardPadding, justifyContent: 'flex-end' }
                             ]}>
                               {!CARD_BACKGROUNDS[tab.name] && (
-                                <View style={[styles.moduleIconWrapper, { backgroundColor: `${category.color}15`, width: isSmallDevice ? 32 : 36, height: isSmallDevice ? 32 : 36, borderRadius: isSmallDevice ? 16 : 18, marginBottom: 6 }]}>
-                                  <tab.icon size={isSmallDevice ? 17 : 19} color={category.color} strokeWidth={2.5} />
+                                <View style={[styles.moduleIconWrapper, { backgroundColor: `${catColor}15`, width: isSmallDevice ? 32 : 36, height: isSmallDevice ? 32 : 36, borderRadius: isSmallDevice ? 16 : 18, marginBottom: 6 }]}>
+                                  <tab.icon size={isSmallDevice ? 17 : 19} color={catColor} strokeWidth={2.5} />
                                 </View>
                               )}
                               <Text 
@@ -490,8 +507,10 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
                                   styles.moduleTitle,
                                   {
                                     width: '100%',
-                                    fontSize: isSmallDevice ? 12.5 : isMediumDevice ? 13.5 : 14,
-                                    lineHeight: isSmallDevice ? 15.5 : isMediumDevice ? 16.5 : 17,
+                                    fontSize: scaleFont(isSmallDevice ? 12.5 : isMediumDevice ? 13.5 : 14),
+                                    lineHeight: scaleFont(isSmallDevice ? 15.5 : isMediumDevice ? 16.5 : 17),
+                                    color: primaryText,
+                                    fontFamily: appFontFamily,
                                   },
                                   CARD_BACKGROUNDS[tab.name] && { color: '#ffffff', textShadowColor: 'rgba(0,0,0,0.85)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 }
                                 ]} 
@@ -548,7 +567,7 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
           >
             <LogOut size={isSmallDevice ? 16 : 18} color="#fff" />
             <Text 
-              style={{ color: '#fff', fontSize: isSmallDevice ? 12.5 : 13.5, fontWeight: '800', letterSpacing: 0.4 }}
+              style={{ color: '#fff', fontSize: scaleFont(isSmallDevice ? 12.5 : 13.5), fontWeight: '800', letterSpacing: 0.4, fontFamily: appFontFamily }}
               numberOfLines={1}
               adjustsFontSizeToFit
               minimumFontScale={0.85}
@@ -587,7 +606,7 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
           >
             <Smartphone size={isSmallDevice ? 16 : 18} color="#FCD34D" />
             <Text 
-              style={{ color: '#fff', fontSize: isSmallDevice ? 12.5 : 13.5, fontWeight: '800', letterSpacing: 0.4 }}
+              style={{ color: '#fff', fontSize: scaleFont(isSmallDevice ? 12.5 : 13.5), fontWeight: '800', letterSpacing: 0.4, fontFamily: appFontFamily }}
               numberOfLines={1}
               adjustsFontSizeToFit
               minimumFontScale={0.85}

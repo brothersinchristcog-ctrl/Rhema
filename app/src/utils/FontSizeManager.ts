@@ -34,7 +34,7 @@ const ICON_FONT_FAMILIES = /ionicons|material|feather|font-?awesome|glyph|entypo
 
 // Decorative script/cursive fonts (like signature Pacifico greeting in HomeScreen)
 // These should NEVER be overridden by the global font style picker
-const PRESERVED_DECORATIVE_FONTS = /pacifico|snell|alexbrush|borel|caveat|damion|sacramento|satisfy|yellowtail|applehello/i;
+const PRESERVED_DECORATIVE_FONTS = /pacifico|snell|alexbrush|borel|caveat|damion|sacramento|satisfy|yellowtail|applehello|dancingscript|mrdafoe/i;
 
 export const setGlobalFontScale = (scale: number) => {
   currentScale = scale;
@@ -58,7 +58,7 @@ export const scaleFontSize = (fontSize: number, scale: number = currentScale): n
 };
 
 /**
- * Intercepts React Native Text rendering globally.
+ * Intercepts React Native Text & TextInput rendering globally.
  * Applies font size scaling AND font family override across the entire app.
  */
 export const installGlobalFontScaling = () => {
@@ -176,6 +176,68 @@ export const installGlobalFontScaling = () => {
     try {
       (OriginalText as any).render = PatchedText;
     } catch (_) {}
+
+    // ── Patch TextInput so all inputs also follow app font style & size ──
+    const OriginalTextInput = ReactNative.TextInput;
+    if (OriginalTextInput) {
+      const PatchedTextInput = React.forwardRef<any, any>(function ScaledTextInput(props: any, ref: any) {
+        const mergedProps = ref !== undefined ? { ...props, ref } : props;
+        if (!props || props.skipFontScaling) {
+          return React.createElement(OriginalTextInput, mergedProps);
+        }
+
+        const flatStyle = StyleSheet.flatten(props.style) as TextStyle | undefined;
+        const overrides: Record<string, any> = {};
+
+        if (currentFontFamily) {
+          const isPreserved = flatStyle?.fontFamily && PRESERVED_DECORATIVE_FONTS.test(flatStyle.fontFamily);
+          if (!isPreserved) {
+            overrides.fontFamily = currentFontFamily;
+          }
+        }
+
+        const isFixedSize = props.fixedFontSize || props.skipFontSizeScaling || props.allowFontScaling === false;
+        if (!isFixedSize && currentScale !== 1.0 && flatStyle && typeof flatStyle.fontSize === 'number') {
+          if (flatStyle.fontSize > 10.5) {
+            let effectiveScale = currentScale;
+            if (flatStyle.fontSize >= 28 && currentScale > 1.0) {
+              effectiveScale = 1.0 + (currentScale - 1.0) * 0.55;
+            }
+            overrides.fontSize = Math.round(flatStyle.fontSize * effectiveScale);
+          }
+        }
+
+        const { fixedFontSize, skipFontSizeScaling, ...cleanProps } = mergedProps;
+        if (Object.keys(overrides).length === 0) {
+          return React.createElement(OriginalTextInput, cleanProps);
+        }
+
+        const newStyle = Array.isArray(props.style)
+          ? [...props.style, overrides]
+          : [props.style, overrides];
+
+        return React.createElement(OriginalTextInput, { ...cleanProps, style: newStyle });
+      });
+
+      (PatchedTextInput as any).displayName = 'TextInput';
+      Object.assign(PatchedTextInput, OriginalTextInput);
+
+      try {
+        Object.defineProperty(ReactNative, 'TextInput', {
+          configurable: true,
+          enumerable: true,
+          get: () => PatchedTextInput,
+          set: (v) => { (ReactNative as any)._TextInput = v; },
+        });
+      } catch (_) {
+        (ReactNative as any).TextInput = PatchedTextInput;
+      }
+
+      try {
+        const TextInputModule = require('react-native/Libraries/Components/TextInput/TextInput');
+        if (TextInputModule) TextInputModule.default = PatchedTextInput;
+      } catch (_) {}
+    }
 
   } catch (err) {
     console.warn('installGlobalFontScaling failed:', err);

@@ -9,12 +9,14 @@ import { AdminGalleryStackParamList } from './AdminGalleryNavigator';
 import { AdminTabContext } from '../../../context/AdminTabContext';
 import GalleryService, { GalleryAlbum } from '../../../services/GalleryService';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
 
 const { width } = Dimensions.get('window');
 
 type NavigationProp = NativeStackNavigationProp<AdminGalleryStackParamList, 'AdminGalleryDashboard'>;
 
 export default function AdminGalleryDashboard() {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const navigation = useNavigation<NavigationProp>();
   const adminContext = useContext(AdminTabContext);
   const insets = useSafeAreaInsets();
@@ -280,7 +282,7 @@ export default function AdminGalleryDashboard() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -585,4 +587,4 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-});
+}));

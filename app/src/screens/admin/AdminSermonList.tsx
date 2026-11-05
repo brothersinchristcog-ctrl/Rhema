@@ -30,6 +30,7 @@ import { AdminTabContext } from '../../context/AdminTabContext';
 import FirestoreService, { Sermon } from '../../services/FirestoreService';
 import { Linking } from 'react-native';
 import { formatSermonDuration, formatDateDisplay, formatDateTimeDisplay } from '../../utils/DateUtils';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const { width } = Dimensions.get('window');
 
@@ -41,6 +42,7 @@ const extractYoutubeId = (url: string) => {
 };
 
 export default function AdminSermonList() {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { setActiveTab, setEditingData, setTabByName } = useContext(AdminTabContext);
   const [sermons, setSermons] = useState<Sermon[]>([]);
   const [loading, setLoading] = useState(true);
@@ -392,7 +394,7 @@ export default function AdminSermonList() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -554,4 +556,4 @@ const styles = StyleSheet.create({
   successActionTxt: { color: '#fff', fontSize: 13, fontWeight: '800' },
   successSecBtn: { height: 48, borderRadius: 12, width: '100%', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', backgroundColor: '#F8FAFC' },
   successSecTxt: { color: '#1a2d5a', fontSize: 13, fontWeight: '800' }
-});
+}));

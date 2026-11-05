@@ -49,8 +49,10 @@ import { AdminTabContext } from '../../../context/AdminTabContext';
 import AdminQuizEditor from './AdminQuizEditor';
 import AdminQuizReports from './AdminQuizReports';
 import { formatQuizTime } from '../../../utils/QuizScheduleUtils';
+import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
 
 export default function AdminQuizList() {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const navigation = useNavigation<any>();
   const adminTabCtx = useContext(AdminTabContext);
   const { activeChurch } = useChurch();
@@ -1359,7 +1361,7 @@ export default function AdminQuizList() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -2573,4 +2575,4 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
-});
+}));

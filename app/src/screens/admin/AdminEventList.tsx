@@ -23,6 +23,7 @@ import { useNavigation } from '@react-navigation/native';
 import { AdminTabContext } from '../../context/AdminTabContext';
 
 import FirestoreService from '../../services/FirestoreService';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const { width } = Dimensions.get('window');
 
@@ -49,6 +50,7 @@ const FONTS = {
 };
 
 export default function AdminEventList() {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const navigation = useNavigation<any>();
   const { setActiveTab, setEditingData, setTabByName } = useContext(AdminTabContext);
   const [events, setEvents] = useState<any[]>([]);
@@ -481,7 +483,7 @@ export default function AdminEventList() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -731,5 +733,5 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
   }
-});
+}));
 

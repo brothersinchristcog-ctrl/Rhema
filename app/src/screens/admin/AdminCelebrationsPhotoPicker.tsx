@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Alert, Image } from 'react-native';
 import { ArrowLeft, Image as ImageIcon } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const { width } = Dimensions.get('window');
 
@@ -14,6 +15,7 @@ export default function AdminCelebrationsPhotoPicker({
   onBack: () => void, 
   onSelectPhoto: (uri: string) => void 
 }) {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   
   const handleUpload = async () => {
     try {
@@ -79,7 +81,7 @@ export default function AdminCelebrationsPhotoPicker({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8F7F4',
@@ -161,4 +163,4 @@ const styles = StyleSheet.create({
     color: '#162057',
     marginLeft: 8,
   }
-});
+}));
