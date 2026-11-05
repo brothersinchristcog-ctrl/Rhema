@@ -120,7 +120,7 @@ export default function CareCellsOverviewTab({
       id: 'members',
       title: 'Assigned Members',
       value: stats.totalAssignedMembers,
-      sub: 'Enrolled in fellowship roster',
+      sub: 'Enrolled cell members',
       icon: Users,
       color: '#7C3AED',
       bgColor: '#F5F3FF',
@@ -317,35 +317,43 @@ export default function CareCellsOverviewTab({
 
           {/* Quick Leadership Actions */}
           <Text style={styles.sectionHeading}>DIRECT ACTIONS</Text>
-          <View style={styles.actionsRow}>
+          <View style={styles.actionsContainer}>
             {isPlatformSuperAdmin && (
               <TouchableOpacity
-                style={styles.actionBtnPrimary}
+                style={styles.actionBtnPrimaryFull}
                 onPress={onOpenCreateCell}
                 activeOpacity={0.85}
               >
-                <PlusCircle size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
-                <Text style={styles.actionBtnPrimaryTxt}>New Care Cell</Text>
+                <PlusCircle size={18} color="#FFFFFF" strokeWidth={2.4} style={{ marginRight: 8 }} />
+                <Text style={styles.actionBtnPrimaryTxt} numberOfLines={1}>
+                  New Care Cell
+                </Text>
               </TouchableOpacity>
             )}
 
-            <TouchableOpacity
-              style={styles.actionBtnSecondary}
-              onPress={onOpenCreateMeeting}
-              activeOpacity={0.85}
-            >
-              <CalendarPlus size={18} color="#1A2D5A" style={{ marginRight: 8 }} />
-              <Text style={styles.actionBtnSecondaryTxt}>Schedule Meeting</Text>
-            </TouchableOpacity>
+            <View style={styles.actionsSubRow}>
+              <TouchableOpacity
+                style={styles.actionBtnSecondaryHalf}
+                onPress={onOpenCreateMeeting}
+                activeOpacity={0.85}
+              >
+                <CalendarPlus size={17} color="#1A2D5A" strokeWidth={2.2} style={{ marginRight: 7 }} />
+                <Text style={styles.actionBtnSecondaryTxt} numberOfLines={1}>
+                  Schedule Meeting
+                </Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.actionBtnTertiary}
-              onPress={() => onNavigateTab(4)}
-              activeOpacity={0.85}
-            >
-              <ClipboardCheck size={18} color="#059669" style={{ marginRight: 8 }} />
-              <Text style={styles.actionBtnTertiaryTxt}>Mark Attendance</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.actionBtnTertiaryHalf}
+                onPress={() => onNavigateTab(4)}
+                activeOpacity={0.85}
+              >
+                <ClipboardCheck size={17} color="#059669" strokeWidth={2.2} style={{ marginRight: 7 }} />
+                <Text style={styles.actionBtnTertiaryTxt} numberOfLines={1}>
+                  Mark Attendance
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Guidelines Banner */}
@@ -665,65 +673,86 @@ const styles = StyleSheet.create({
     color: '#64748B',
     letterSpacing: 0.8,
     marginBottom: 10,
+    marginTop: 4,
   },
-  actionsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 18,
+  actionsContainer: {
+    gap: 10,
+    marginBottom: 20,
   },
-  actionBtnPrimary: {
-    flex: 1,
+  actionBtnPrimaryFull: {
+    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#1A2D5A',
     borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
+    paddingVertical: 13,
+    paddingHorizontal: 16,
+    overflow: 'hidden',
     shadowColor: '#1A2D5A',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.18,
     shadowRadius: 4,
-    elevation: 3,
+    elevation: 2.5,
   },
   actionBtnPrimaryTxt: {
     color: '#FFFFFF',
-    fontSize: 12.5,
+    fontSize: 13,
     fontWeight: '800',
+    letterSpacing: 0.2,
   },
-  actionBtnSecondary: {
+  actionsSubRow: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+  },
+  actionBtnSecondaryHalf: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
+    paddingVertical: 12.5,
+    paddingHorizontal: 10,
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    overflow: 'hidden',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
   },
   actionBtnSecondaryTxt: {
     color: '#1A2D5A',
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '800',
+    flexShrink: 1,
   },
-  actionBtnTertiary: {
+  actionBtnTertiaryHalf: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#ECFDF5',
     borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
+    paddingVertical: 12.5,
+    paddingHorizontal: 10,
     borderWidth: 1,
     borderColor: '#A7F3D0',
+    overflow: 'hidden',
+    shadowColor: '#059669',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
   },
   actionBtnTertiaryTxt: {
     color: '#065F46',
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '800',
+    flexShrink: 1,
   },
   guidelineBanner: {
     flexDirection: 'row',
