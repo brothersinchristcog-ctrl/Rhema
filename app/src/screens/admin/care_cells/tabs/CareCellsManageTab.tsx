@@ -29,6 +29,11 @@ import {
   User,
   Shield,
   ArrowRight,
+  CheckCircle2,
+  X,
+  AlertTriangle,
+  Building2,
+  Sparkles,
 } from 'lucide-react-native';
 import CareCellService from '../../../../services/CareCellService';
 import { useAuth } from '../../../../context/AuthContext';
@@ -425,6 +430,205 @@ export default function CareCellsManageTab({
         }}
         onSaved={onRefreshCells}
       />
+
+      {/* ── Custom Delete Confirmation Modal ── */}
+      <Modal
+        visible={!!cellToDelete}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!isDeletingCell) setCellToDelete(null);
+        }}
+      >
+        <View style={styles.modalOverlayScrim}>
+          <View style={styles.customConfirmCard}>
+            <TouchableOpacity
+              style={styles.modalCloseIconBtn}
+              onPress={() => setCellToDelete(null)}
+              disabled={isDeletingCell}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <X size={18} color="#64748B" />
+            </TouchableOpacity>
+
+            <View style={styles.deleteWarningRingOuter}>
+              <View style={styles.deleteWarningRingInner}>
+                <Trash2 size={26} color="#DC2626" strokeWidth={2.4} />
+              </View>
+            </View>
+
+            <Text style={styles.deleteConfirmTitle}>Delete Care Cell?</Text>
+            <Text style={styles.deleteConfirmSubtitle}>
+              Are you sure you want to permanently delete this fellowship group?
+            </Text>
+
+            {cellToDelete && (
+              <View style={styles.deleteCellPreviewBox}>
+                <View style={styles.deleteCellHeaderRow}>
+                  <Building2 size={15} color="#1A2D5A" style={{ marginRight: 6 }} />
+                  <Text style={styles.deleteCellNameTxt} numberOfLines={1}>
+                    {cellToDelete.name}
+                  </Text>
+                  <View style={styles.deleteCellCodeBadge}>
+                    <Text style={styles.deleteCellCodeTxt}>{cellToDelete.cellCode}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.deleteDivider} />
+
+                <View style={styles.deleteMetaRow}>
+                  <User size={13} color="#1A2D5A" style={{ marginRight: 6 }} />
+                  <Text style={styles.deleteMetaLabel}>Leader:</Text>
+                  <Text style={styles.deleteMetaVal} numberOfLines={1}>
+                    {cellToDelete.leaderName || 'Assigned Leader'}
+                  </Text>
+                </View>
+
+                {(cellToDelete.location || cellToDelete.meetingLocation) ? (
+                  <View style={styles.deleteMetaRow}>
+                    <MapPin size={13} color="#64748B" style={{ marginRight: 6 }} />
+                    <Text style={styles.deleteMetaLabel}>Location:</Text>
+                    <Text style={styles.deleteMetaVal} numberOfLines={1}>
+                      {cellToDelete.location || cellToDelete.meetingLocation}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            )}
+
+            <View style={styles.deletePermanentWarningBox}>
+              <AlertTriangle size={15} color="#DC2626" style={{ marginRight: 8, marginTop: 1 }} />
+              <Text style={styles.deletePermanentWarningTxt}>
+                This action is permanent. All assigned members will be unlinked.
+              </Text>
+            </View>
+
+            <View style={styles.deleteActionsBtnRow}>
+              <TouchableOpacity
+                style={styles.deleteCancelActionBtn}
+                onPress={() => setCellToDelete(null)}
+                disabled={isDeletingCell}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.deleteCancelActionBtnTxt}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.deleteConfirmActionBtn}
+                onPress={confirmDeleteCell}
+                disabled={isDeletingCell}
+                activeOpacity={0.85}
+              >
+                {isDeletingCell ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Trash2 size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.deleteConfirmActionBtnTxt}>Delete Permanently</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Custom Delete Success Card Modal ── */}
+      <Modal
+        visible={deleteSuccessModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setDeleteSuccessModalVisible(false);
+          setDeletedCellSummary(null);
+        }}
+      >
+        <View style={styles.modalOverlayScrim}>
+          <View style={styles.deleteSuccessCard}>
+            <TouchableOpacity
+              style={styles.modalCloseIconBtn}
+              onPress={() => {
+                setDeleteSuccessModalVisible(false);
+                setDeletedCellSummary(null);
+              }}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <X size={18} color="#64748B" />
+            </TouchableOpacity>
+
+            <View style={styles.deleteSuccessRingOuter}>
+              <View style={styles.deleteSuccessRingInner}>
+                <CheckCircle2 size={36} color="#059669" strokeWidth={2.5} />
+              </View>
+            </View>
+
+            <View style={styles.deleteSuccessPill}>
+              <Sparkles size={12} color="#059669" style={{ marginRight: 5 }} />
+              <Text style={styles.deleteSuccessPillTxt}>CARE CELL PERMANENTLY REMOVED</Text>
+            </View>
+
+            <Text style={styles.deleteSuccessMainTitle}>Care Cell Deleted Successfully! 🗑️</Text>
+            <Text style={styles.deleteSuccessMainSubtitle}>
+              The fellowship group has been completely removed from the church roster and all linked members have been unlinked.
+            </Text>
+
+            {deletedCellSummary && (
+              <View style={styles.deleteSuccessDetailsBox}>
+                <View style={styles.deleteCellHeaderRow}>
+                  <Building2 size={16} color="#1A2D5A" style={{ marginRight: 6 }} />
+                  <Text style={styles.deleteCellNameTxt} numberOfLines={1}>
+                    {deletedCellSummary.name}
+                  </Text>
+                  <View style={styles.deleteCellCodeBadge}>
+                    <Text style={styles.deleteCellCodeTxt}>{deletedCellSummary.code}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.deleteDivider} />
+
+                {deletedCellSummary.leaderName ? (
+                  <View style={styles.deleteMetaRow}>
+                    <User size={13} color="#1A2D5A" style={{ marginRight: 6 }} />
+                    <Text style={styles.deleteMetaLabel}>Leader:</Text>
+                    <Text style={styles.deleteMetaVal} numberOfLines={1}>
+                      {deletedCellSummary.leaderName}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {deletedCellSummary.location ? (
+                  <View style={styles.deleteMetaRow}>
+                    <MapPin size={13} color="#64748B" style={{ marginRight: 6 }} />
+                    <Text style={styles.deleteMetaLabel}>Location:</Text>
+                    <Text style={styles.deleteMetaVal} numberOfLines={1}>
+                      {deletedCellSummary.location}
+                    </Text>
+                  </View>
+                ) : null}
+
+                <View style={styles.deleteMetaRow}>
+                  <Users size={13} color="#059669" style={{ marginRight: 6 }} />
+                  <Text style={styles.deleteMetaLabel}>Members:</Text>
+                  <Text style={[styles.deleteMetaVal, { color: '#059669', fontWeight: '800' }]}>
+                    All members safely unlinked
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={styles.deleteSuccessDoneBtn}
+              onPress={() => {
+                setDeleteSuccessModalVisible(false);
+                setDeletedCellSummary(null);
+              }}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.deleteSuccessDoneBtnTxt}>Done & Return to Care Cells</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
