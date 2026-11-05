@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -42,7 +42,10 @@ import RNShare from 'react-native-share';
 import ViewShot from 'react-native-view-shot';
 
 import { findEventVideo } from '../services/YouTubeService';
+import { useAuth } from '../context/AuthContext';
 import { useChurch } from '../context/ChurchContext';
+import EventRsvpPollCard from '../components/EventRsvpPollCard';
+import EventRsvpAnalyticsModal from './admin/EventRsvpAnalyticsModal';
 import { useTheme } from '../context/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FirestoreService, { WorshipSong, EventServiceItem } from '../services/FirestoreService';
@@ -93,6 +96,12 @@ export default function EventDetailsScreen({ route, navigation }: any) {
   }
   const [eventData, setEventData] = useState<any>(initialEvent);
   const { activeChurch } = useChurch();
+  const { user, member } = useAuth();
+  const [showRsvpAnalytics, setShowRsvpAnalytics] = useState(false);
+  const isAdmin = useMemo(() => {
+    const role = ((member as any)?.role || member?.userType || '').toLowerCase();
+    return role.includes('admin') || role.includes('pastor') || role.includes('leader') || (member as any)?.isAdmin === true;
+  }, [member]);
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
 
@@ -644,6 +653,26 @@ export default function EventDetailsScreen({ route, navigation }: any) {
             </View>
           </View>
 
+          {/* ── MEMBER RSVP PARTICIPATION POLL ── */}
+          {event?.rsvpEnabled === true && (
+            <EventRsvpPollCard
+              eventId={event.id}
+              churchId={activeChurch?.id}
+              eventTitle={event.title || event.name || 'Church Event'}
+              eventDate={formatDate(event.date)}
+              rsvpDeadline={event.rsvpDeadline}
+              currentUser={{
+                id: member?.id || user?.uid || '',
+                name: member?.name || (member as any)?.fullName || user?.displayName || 'Member',
+                phone: member?.phone || (member as any)?.phoneNumber || user?.phoneNumber || '',
+                photo: (member as any)?.photoUrl || (member as any)?.profilePicture || (member as any)?.photo || user?.photoURL || '',
+              }}
+              isAdmin={isAdmin}
+              onViewAnalytics={() => setShowRsvpAnalytics(true)}
+              isDark={isDark}
+            />
+          )}
+
           {/* ── WORSHIP SERVICES & SONGS SECTION ── */}
           {Array.isArray(event.services) && event.services.length > 0 && (
             <View style={styles.section}>
@@ -1057,6 +1086,19 @@ export default function EventDetailsScreen({ route, navigation }: any) {
           visible={!!selectedEventSong}
           song={selectedEventSong}
           onClose={() => setSelectedEventSong(null)}
+          isDark={isDark}
+        />
+      )}
+
+      {/* ── Admin RSVP Participation Modal ── */}
+      {isAdmin && (
+        <EventRsvpAnalyticsModal
+          visible={showRsvpAnalytics}
+          onClose={() => setShowRsvpAnalytics(false)}
+          eventId={event.id}
+          eventTitle={event.title || event.name || 'Church Event'}
+          eventDate={formatDate(event.date)}
+          churchId={activeChurch?.id}
           isDark={isDark}
         />
       )}
