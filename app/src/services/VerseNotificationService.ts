@@ -573,20 +573,23 @@ class VerseNotificationService {
       }
 
       const period = 'Morning';
-      const title = '✝️ Good Morning · శుభోదయం';
+      const title = "Good Morning\nToday's Verse (నేటి వాక్యం)";
 
       const teVerse = (targetVerse.verseTe || targetVerse.verseEn || '').replace(/^["“”'‘]+|["“”'‘]+$/g, '').trim();
       const teRef = (targetVerse.referenceTe || targetVerse.referenceEn || '').trim();
       const enVerse = (targetVerse.verseEn || '').replace(/^["“”'‘]+|["“”'‘]+$/g, '').trim();
       const enRef = (targetVerse.referenceEn || '').trim();
 
+      const combinedRef = (teRef && enRef && teRef !== enRef)
+        ? `${teRef} | ${enRef}`
+        : (teRef || enRef);
+
+      const GAP = '\n \n';
       let body = '';
       if (teVerse && enVerse && teVerse !== enVerse) {
-        body = `"${teVerse}" — ${teRef || enRef}\n\n"${enVerse}" — ${enRef || teRef}`;
+        body = `${teVerse}${GAP}${enVerse}${GAP}${combinedRef}`;
       } else {
-        const v = teVerse || enVerse;
-        const r = teRef || enRef;
-        body = `"${v}" — ${r}`;
+        body = `${teVerse || enVerse}${GAP}${combinedRef}`;
       }
 
       // Schedule exactly ONE combined notification

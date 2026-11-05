@@ -1979,27 +1979,27 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
     const PERIOD_SLOTS = {
         Morning: {
             index: 0,
-            title: "✝️ Good Morning · శుభోదయం",
+            title: "Good Morning\nToday's Verse (నేటి వాక్యం)",
             titleEn: "Good Morning",
-            titleTe: "శుభోదయం",
+            titleTe: "Today's Verse (నేటి వాక్యం)",
         },
         Afternoon: {
             index: 1,
-            title: "✝️ Good Afternoon · శుభ మధ్యాహ్నం",
-            titleEn: "Good Afternoon",
-            titleTe: "శుభ మధ్యాహ్నం",
+            title: "Blessed Afternoon\nDaily Peace (అనుదిన శాంతి)",
+            titleEn: "Blessed Afternoon",
+            titleTe: "Daily Peace (అనుదిన శాంతి)",
         },
         Evening: {
             index: 2,
-            title: "✝️ Good Evening · శుభ సాయంత్రం",
-            titleEn: "Good Evening",
-            titleTe: "శుభ సాయంత్రం",
+            title: "Evening Prayer\nFaith & Grace (విశ్వాసం - కృప)",
+            titleEn: "Evening Prayer",
+            titleTe: "Faith & Grace (విశ్వాసం - కృప)",
         },
         Night: {
             index: 3,
-            title: "✝️ Good Night · శుభరాత్రి",
+            title: "Good Night\nGod's Protection (దేవుని కాపుదల)",
             titleEn: "Good Night",
-            titleTe: "శుభరాత్రి",
+            titleTe: "God's Protection (దేవుని కాపుదల)",
         },
     };
     const nowIst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
@@ -2167,21 +2167,24 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
     let enSuccess = 0;
     let teSuccess = 0;
     // 4. Format EXACTLY ONE combined bilingual notification (Telugu + English)
+    // Perfectly matches the layout shown in the user's notification drawer screenshot
     const unifiedTitle = slotInfo.title;
     let unifiedBody = '';
     const cleanVerseTe = (verseTeText || '').replace(/^["“”'‘]+|["“”'‘]+$/g, '').trim();
     const cleanVerseEn = (verseEnText || '').replace(/^["“”'‘]+|["“”'‘]+$/g, '').trim();
     const cleanRefTe = (refTeText || '').trim();
     const cleanRefEn = (refEnText || '').trim();
+    const combinedRef = (cleanRefTe && cleanRefEn && cleanRefTe !== cleanRefEn)
+        ? `${cleanRefTe} | ${cleanRefEn}`
+        : (cleanRefTe || cleanRefEn);
+    // Android notification shade collapses empty newlines unless there is a character.
+    // Using '\n \n' guarantees a visible vertical gap below verses on Android and iOS.
+    const GAP = '\n \n';
     if (cleanVerseTe && cleanVerseEn && cleanVerseTe !== cleanVerseEn) {
-        const tePart = `"${cleanVerseTe}" — ${cleanRefTe || cleanRefEn}`;
-        const enPart = `"${cleanVerseEn}" — ${cleanRefEn || cleanRefTe}`;
-        unifiedBody = `${tePart}\n\n${enPart}`;
+        unifiedBody = `${cleanVerseTe}${GAP}${cleanVerseEn}${GAP}${combinedRef}`;
     }
     else {
-        const singleVerse = cleanVerseTe || cleanVerseEn;
-        const singleRef = cleanRefTe || cleanRefEn;
-        unifiedBody = `"${singleVerse}" — ${singleRef}`;
+        unifiedBody = `${cleanVerseTe || cleanVerseEn}${GAP}${combinedRef}`;
     }
     try {
         const topicMessage = {
