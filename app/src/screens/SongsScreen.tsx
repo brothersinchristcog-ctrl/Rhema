@@ -395,11 +395,85 @@ export default function SongsScreen({ navigation, route }: any) {
     } catch { /* ignore */ }
   };
 
+  // ── Helper: Check if event is active or upcoming (filters out completed events) ──
+  const isEventActiveOrUpcoming = (event: any): boolean => {
+    if (!event) return false;
+
+    // 1. Status check: Completed, Cancelled, and Draft events are excluded
+    const status = String(event.status || event.publishStatus || '').toLowerCase().trim();
+    if (status === 'completed' || status === 'cancelled' || status === 'draft') {
+      return false;
+    }
+
+    // 2. Active recurring events remain active
+    const recurring = String(event.recurring || '').toLowerCase().trim();
+    const isRec = event.isRecurring === true || (recurring && recurring !== 'one-time event' && recurring !== 'none');
+    if (isRec) {
+      return true;
+    }
+
+    // 3. For one-time events, check date and time against current timestamp
+    const rawDate = String(event.endDate || event.date || '').trim();
+    if (!rawDate) return false;
+
+    // Normalize date to YYYY-MM-DD
+    let normalizedDate = rawDate;
+    if (rawDate.includes('-')) {
+      const parts = rawDate.split('-');
+      if (parts[0].length === 2 && parts[2]?.length === 4) {
+        normalizedDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+      }
+    }
+
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+    if (normalizedDate < todayStr) {
+      return false; // Ended on a past day
+    }
+
+    // If the event ends today, check whether the end time has already elapsed
+    if (normalizedDate === todayStr) {
+      const timeToCompare = event.endTime || event.time || event.startTime;
+      if (timeToCompare) {
+        try {
+          let hour = 0;
+          let min = 0;
+          if (typeof timeToCompare === 'string' && timeToCompare.includes('T')) {
+            const t = new Date(timeToCompare);
+            hour = t.getHours();
+            min = t.getMinutes();
+          } else if (typeof timeToCompare === 'string') {
+            const clean = timeToCompare.toUpperCase().replace(/\s+/g, '');
+            const isPM = clean.includes('PM');
+            const isAM = clean.includes('AM');
+            const timePart = clean.replace('AM', '').replace('PM', '');
+            const parts = timePart.split(':');
+            hour = parseInt(parts[0], 10) || 0;
+            min = parseInt(parts[1], 10) || 0;
+            if (isPM && hour < 12) hour += 12;
+            if (isAM && hour === 12) hour = 0;
+          }
+
+          const nowHour = now.getHours();
+          const nowMin = now.getMinutes();
+          if (hour < nowHour || (hour === nowHour && min < nowMin)) {
+            return false; // Ended earlier today
+          }
+        } catch {
+          // If time comparison cannot be parsed, keep active for today
+        }
+      }
+    }
+
+    return true;
+  };
+
   // ── Load Setlists / Worship Services ─────────────
   const loadSetlists = async () => {
     try {
       const [upcomingRes, allRes] = await Promise.all([
-        FirestoreService.getUpcomingEvents(30).catch(() => []),
+        FirestoreService.getUpcomingEvents(50).catch(() => []),
         FirestoreService.getEvents().catch(() => [])
       ]);
 
@@ -407,18 +481,18 @@ export default function SongsScreen({ navigation, route }: any) {
       // Deduplicate events by id
       const uniqueEvents = Array.from(new Map(combinedEvents.map(e => [e.id, e])).values());
 
-      // Sort: prioritize events with songs, then date
-      uniqueEvents.sort((a, b) => {
-        const countA = (a.services || []).reduce((acc: number, s: any) => acc + (s.songs?.length || 0), 0);
-        const countB = (b.services || []).reduce((acc: number, s: any) => acc + (s.songs?.length || 0), 0);
-        if (countA !== countB) return countB - countA;
+      // Filter STRICTLY for upcoming or active events (completed/past events are excluded)
+      const activeUpcomingEvents = uniqueEvents.filter(isEventActiveOrUpcoming);
+
+      // Sort upcoming events chronologically (earliest event first)
+      activeUpcomingEvents.sort((a, b) => {
         const dateA = a.date || '';
         const dateB = b.date || '';
-        return dateB.localeCompare(dateA);
+        return dateA.localeCompare(dateB);
       });
 
-      // Find events that have services with songs
-      const eventsWithSongs = uniqueEvents.filter(
+      // Find active/upcoming events that have services with songs
+      const eventsWithSongs = activeUpcomingEvents.filter(
         (ev: any) => ev && Array.isArray(ev.services) && ev.services.length > 0 && ev.services.some((s: any) => s && Array.isArray(s.songs) && s.songs.length > 0)
       );
 
@@ -428,49 +502,21 @@ export default function SongsScreen({ navigation, route }: any) {
         const srvs = primaryEvent.services || [];
         setWorshipServices(srvs);
         setHasActiveEventSongs(true);
-        // Default to 'all' so all songs of the event are shown
+        // Default to 'all' so all songs of the event are shown, or the single service
         setActiveServiceId(srvs.length > 1 ? 'all' : (srvs[0]?.id || 'all'));
       } else {
-        const anyEventWithServices = uniqueEvents.find((ev: any) => ev && Array.isArray(ev.services) && ev.services.length > 0);
-        if (anyEventWithServices) {
-          setActiveEvent(anyEventWithServices);
-          const srvs = anyEventWithServices.services || [];
-          setWorshipServices(srvs);
-          setActiveServiceId(srvs.length > 1 ? 'all' : (srvs[0]?.id || 'all'));
-        } else if (uniqueEvents.length > 0) {
-          const ev = uniqueEvents[0];
-          setActiveEvent(ev);
-          const defaultSrv = {
-            id: 'service-default',
-            name: ev.title || 'Sunday Worship Service',
-            category: ev.category || 'Sunday Service',
-            date: ev.date || '',
-            time: ev.time || '10:00 AM',
-            songs: []
-          };
-          setWorshipServices([defaultSrv]);
-          setActiveServiceId('service-default');
-        } else {
-          setActiveEvent({
-            id: 'default-worship',
-            title: activeChurch?.name ? `${activeChurch.name} Worship` : 'Sunday Worship Service',
-            category: 'Sunday Service',
-            location: 'Church Main Sanctuary',
-          });
-          setWorshipServices([{
-            id: 'service-default',
-            name: 'Sunday Worship Service',
-            category: 'Sunday Service',
-            time: '10:00 AM',
-            songs: []
-          }]);
-          setActiveServiceId('service-default');
-        }
-        setHasActiveEventSongs(true);
+        // No active or upcoming events with songs!
+        setActiveEvent(null);
+        setWorshipServices([]);
+        setHasActiveEventSongs(false);
+        setActiveServiceId('');
       }
     } catch (e) {
       console.warn('Failed to load event songs:', e);
-      setHasActiveEventSongs(true);
+      setActiveEvent(null);
+      setWorshipServices([]);
+      setHasActiveEventSongs(false);
+      setActiveServiceId('');
     }
   };
 
@@ -976,10 +1022,10 @@ export default function SongsScreen({ navigation, route }: any) {
             <CalendarDays size={28} color={isDark ? '#FFFFFF' : '#0F172A'} />
           </View>
           <Text style={{ fontSize: 17, fontWeight: '800', color: isDark ? '#FFFFFF' : '#0F172A', textAlign: 'center' }}>
-            No Services Scheduled Yet
+            No Upcoming Event Songs
           </Text>
-          <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', marginTop: 6, lineHeight: 19, maxWidth: 280 }}>
-            Your worship team has not published any church services or song sets yet. Please check back soon!
+          <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', marginTop: 6, lineHeight: 19, maxWidth: 300 }}>
+            Completed events and their songs are closed. When worship songs are scheduled for an upcoming event, they will appear here.
           </Text>
         </View>
       );
@@ -1533,17 +1579,19 @@ export default function SongsScreen({ navigation, route }: any) {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? '#FFFFFF' : '#0F172A'} />}
           ListHeaderComponent={renderEventCardHeader()}
           ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <Music size={44} color="#cbd5e1" />
-              <Text style={[styles.emptyTitle, { color: isDark ? '#E4E4E7' : '#0F172A' }]}>
-                {eventSongItems.length === 0 ? 'No Songs in this Service' : t('songs.noSongsFound')}
-              </Text>
-              <Text style={styles.emptySub}>
-                {eventSongItems.length === 0 
-                  ? `The song arrangement for ${activeService?.name || 'this service'} will appear here once published.` 
-                  : t('songs.tryDifferentCategory')}
-              </Text>
-            </View>
+            (!activeService || validServices.length === 0) ? null : (
+              <View style={styles.emptyState}>
+                <Music size={44} color="#cbd5e1" />
+                <Text style={[styles.emptyTitle, { color: isDark ? '#E4E4E7' : '#0F172A' }]}>
+                  {eventSongItems.length === 0 ? 'No Songs in this Service' : t('songs.noSongsFound')}
+                </Text>
+                <Text style={styles.emptySub}>
+                  {eventSongItems.length === 0 
+                    ? `The song arrangement for ${activeService?.name || 'this service'} will appear here once published.` 
+                    : t('songs.tryDifferentCategory')}
+                </Text>
+              </View>
+            )
           }
         />
       )}

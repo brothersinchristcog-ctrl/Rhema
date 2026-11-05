@@ -349,7 +349,7 @@ export default function AdminEventEditor() {
     const newService: EventServiceItem = {
       id: 'srv_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 6),
       name: defaultName,
-      time: startTime ? `${startTime} - ${endTime}` : '',
+      time: '',
       songLeader: '',
       songs: []
     };
@@ -547,6 +547,19 @@ export default function AdminEventEditor() {
     if (!endTime || !endTime.trim()) {
       reportError('Required Field', 'అవసరమైన వివరాలు', 'Please select an End Time.', 'దయచేసి ముగింపు సమయాన్ని ఎంచుకోండి.');
       return;
+    }
+
+    if (eventServices.length > 0) {
+      const unnamedIdx = eventServices.findIndex(s => !s.name || !s.name.trim());
+      if (unnamedIdx !== -1) {
+        reportError(
+          'Service Name Required',
+          'సర్వీస్ పేరు అవసరం',
+          `Please enter a Service Name for Service #${unnamedIdx + 1}.`,
+          `దయచేసి సర్వీస్ #${unnamedIdx + 1} కొరకు పేరును నమోదు చేయండి.`
+        );
+        return;
+      }
     }
 
     const cleanDate = (date || '').trim();
@@ -1337,51 +1350,62 @@ export default function AdminEventEditor() {
               padding: 14,
               marginBottom: 14
             }}>
-              {/* Service Card Header */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-                  <View style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+              {/* Service Card Header: Service Name (Required) */}
+              <View style={{ marginBottom: 12 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: '#1a2d5a', letterSpacing: 0.4 }}>SERVICE NAME</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '800', color: '#DC2626' }}>*</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => handleRemoveService(service.id)}
+                    style={{ paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6, backgroundColor: '#FEE2E2', flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Trash2 size={13} color="#DC2626" />
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#DC2626' }}>Remove</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <View style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center' }}>
                     <Text style={{ color: '#fff', fontSize: 12, fontWeight: '900' }}>{sIndex + 1}</Text>
                   </View>
                   <TextInput
-                    style={{ flex: 1, fontSize: 15, fontWeight: '800', color: '#1a2d5a', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}
+                    style={{
+                      flex: 1,
+                      fontSize: 14,
+                      fontWeight: '700',
+                      color: '#1a2d5a',
+                      backgroundColor: '#FFFFFF',
+                      borderWidth: 1,
+                      borderColor: !service.name?.trim() ? '#EF4444' : '#CBD5E1',
+                      borderRadius: 8,
+                      paddingHorizontal: 10,
+                      paddingVertical: 7
+                    }}
                     value={service.name}
                     onChangeText={(val) => handleUpdateServiceName(service.id, val)}
-                    placeholder="e.g. English Service, Sthuthi Aradhana..."
+                    placeholder="e.g. English Service, Morning Worship (Required)"
                     placeholderTextColor="#94A3B8"
                   />
                 </View>
-                <TouchableOpacity
-                  onPress={() => handleRemoveService(service.id)}
-                  style={{ marginLeft: 8, padding: 6, borderRadius: 8, backgroundColor: '#FEE2E2' }}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Trash2 size={16} color="#DC2626" />
-                </TouchableOpacity>
+                {!service.name?.trim() && (
+                  <Text style={{ fontSize: 11, color: '#DC2626', fontWeight: '600', marginTop: 4, marginLeft: 36 }}>
+                    Service Name is required
+                  </Text>
+                )}
               </View>
 
-              {/* Service Timing & Song Leader */}
-              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 10, fontWeight: '800', color: '#64748B', marginBottom: 4, letterSpacing: 0.5 }}>SERVICE TIME</Text>
-                  <TextInput
-                    style={{ fontSize: 12, fontWeight: '600', color: '#1a2d5a', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}
-                    value={service.time || ''}
-                    onChangeText={(val) => handleUpdateServiceTime(service.id, val)}
-                    placeholder="e.g. 08:30 AM - 10:30 AM"
-                    placeholderTextColor="#94A3B8"
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 10, fontWeight: '800', color: '#64748B', marginBottom: 4, letterSpacing: 0.5 }}>SONG LEADER (OPTIONAL)</Text>
-                  <TextInput
-                    style={{ fontSize: 12, fontWeight: '600', color: '#1a2d5a', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}
-                    value={service.songLeader || ''}
-                    onChangeText={(val) => handleUpdateServiceLeader(service.id, val)}
-                    placeholder="e.g. Bro. David"
-                    placeholderTextColor="#94A3B8"
-                  />
-                </View>
+              {/* Song Leader (Optional) - Service Time removed */}
+              <View style={{ marginBottom: 12 }}>
+                <Text style={{ fontSize: 10, fontWeight: '800', color: '#64748B', marginBottom: 4, letterSpacing: 0.5 }}>SONG LEADER (OPTIONAL)</Text>
+                <TextInput
+                  style={{ fontSize: 12, fontWeight: '600', color: '#1a2d5a', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7 }}
+                  value={service.songLeader || ''}
+                  onChangeText={(val) => handleUpdateServiceLeader(service.id, val)}
+                  placeholder="e.g. Bro. David"
+                  placeholderTextColor="#94A3B8"
+                />
               </View>
 
               {/* Scheduled Songs for this Service */}
