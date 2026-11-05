@@ -9,6 +9,9 @@ import {
   Image,
   Alert,
   Dimensions,
+  Platform,
+  ActivityIndicator,
+  Modal,
 } from 'react-native';
 import {
   Search,
@@ -57,6 +60,17 @@ export default function CareCellsManageTab({
   const { isPlatformSuperAdmin } = useAuth();
   const [grantAccessCell, setGrantAccessCell] = useState<CareCell | null>(null);
   const [grantAccessModalVisible, setGrantAccessModalVisible] = useState(false);
+
+  // Custom Delete Confirmation & Success Modal States
+  const [cellToDelete, setCellToDelete] = useState<CareCell | null>(null);
+  const [isDeletingCell, setIsDeletingCell] = useState(false);
+  const [deletedCellSummary, setDeletedCellSummary] = useState<{
+    name: string;
+    code: string;
+    leaderName?: string;
+    location?: string;
+  } | null>(null);
+  const [deleteSuccessModalVisible, setDeleteSuccessModalVisible] = useState(false);
 
 
   // Status counts
@@ -109,28 +123,31 @@ export default function CareCellsManageTab({
   };
 
   const handleDeleteCell = (cell: CareCell) => {
-    Alert.alert(
-      'Delete Care Cell',
-      `Are you sure you want to permanently delete "${cell.name}" (${cell.cellCode})?\n\nThis will remove the Care Cell fellowship group and unlink its assigned members. This action cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete Permanently',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const churchId = await CareCellService.getChurchId();
-              await CareCellService.deleteCareCell(churchId, cell.id);
-              Alert.alert('Deleted', `Care Cell "${cell.name}" has been permanently deleted.`);
-              onRefreshCells();
-            } catch (err: any) {
-              console.error('Error deleting Care Cell:', err);
-              Alert.alert('Error', err.message || 'Failed to delete Care Cell.');
-            }
-          },
-        },
-      ]
-    );
+    setCellToDelete(cell);
+  };
+
+  const confirmDeleteCell = async () => {
+    if (!cellToDelete) return;
+    setIsDeletingCell(true);
+    try {
+      const churchId = await CareCellService.getChurchId();
+      await CareCellService.deleteCareCell(churchId, cellToDelete.id);
+      const summary = {
+        name: cellToDelete.name,
+        code: cellToDelete.cellCode,
+        leaderName: cellToDelete.leaderName,
+        location: cellToDelete.location || cellToDelete.meetingLocation,
+      };
+      setCellToDelete(null);
+      setDeletedCellSummary(summary);
+      setDeleteSuccessModalVisible(true);
+      onRefreshCells();
+    } catch (err: any) {
+      console.error('Error deleting Care Cell:', err);
+      Alert.alert('Error', err.message || 'Failed to delete Care Cell.');
+    } finally {
+      setIsDeletingCell(false);
+    }
   };
 
   const handleArchiveCell = (cell: CareCell) => {
@@ -692,5 +709,282 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     textAlign: 'center',
     marginTop: 4,
+  },
+
+  /* ── Custom Delete Confirmation & Success Styles ── */
+  modalOverlayScrim: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  customConfirmCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    paddingHorizontal: 22,
+    paddingTop: 24,
+    paddingBottom: 22,
+    width: '100%',
+    maxWidth: 420,
+    alignItems: 'center',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  modalCloseIconBtn: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  deleteWarningRingOuter: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#FEF2F2',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  deleteWarningRingInner: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#FEE2E2',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  deleteConfirmTitle: {
+    fontSize: 19,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+    marginBottom: 4,
+    letterSpacing: -0.3,
+  },
+  deleteConfirmSubtitle: {
+    fontSize: 12.5,
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 8,
+    lineHeight: 18,
+  },
+  deleteCellPreviewBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    borderWidth: 1.2,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    width: '100%',
+    marginBottom: 14,
+  },
+  deleteCellHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  deleteCellNameTxt: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#1A2D5A',
+    marginRight: 6,
+  },
+  deleteCellCodeBadge: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  deleteCellCodeTxt: {
+    fontSize: 10,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontWeight: '700',
+    color: '#1E3A8A',
+  },
+  deleteDivider: {
+    height: 1,
+    backgroundColor: '#E2E8F0',
+    marginVertical: 8,
+  },
+  deleteMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 5,
+  },
+  deleteMetaLabel: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#64748B',
+    width: 62,
+  },
+  deleteMetaVal: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  deletePermanentWarningBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    width: '100%',
+    marginBottom: 18,
+  },
+  deletePermanentWarningTxt: {
+    flex: 1,
+    fontSize: 11.5,
+    color: '#991B1B',
+    fontWeight: '600',
+    lineHeight: 16,
+  },
+  deleteActionsBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+  },
+  deleteCancelActionBtn: {
+    flex: 1,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteCancelActionBtnTxt: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  deleteConfirmActionBtn: {
+    flex: 1.4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#DC2626',
+    borderRadius: 12,
+    paddingVertical: 12,
+    shadowColor: '#DC2626',
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  deleteConfirmActionBtnTxt: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+
+  /* Delete Success Card */
+  deleteSuccessCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    paddingHorizontal: 22,
+    paddingTop: 24,
+    paddingBottom: 22,
+    width: '100%',
+    maxWidth: 420,
+    alignItems: 'center',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  deleteSuccessRingOuter: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#ECFDF5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  deleteSuccessRingInner: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: '#D1FAE5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  deleteSuccessPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    marginBottom: 8,
+  },
+  deleteSuccessPillTxt: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#065F46',
+    letterSpacing: 0.5,
+  },
+  deleteSuccessMainTitle: {
+    fontSize: 19,
+    fontWeight: '800',
+    color: '#1A2D5A',
+    textAlign: 'center',
+    marginBottom: 4,
+    letterSpacing: -0.3,
+  },
+  deleteSuccessMainSubtitle: {
+    fontSize: 12.5,
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 8,
+    lineHeight: 18,
+  },
+  deleteSuccessDetailsBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    borderWidth: 1.2,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    width: '100%',
+    marginBottom: 18,
+  },
+  deleteSuccessDoneBtn: {
+    width: '100%',
+    backgroundColor: '#1A2D5A',
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#1A2D5A',
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  deleteSuccessDoneBtnTxt: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
 });

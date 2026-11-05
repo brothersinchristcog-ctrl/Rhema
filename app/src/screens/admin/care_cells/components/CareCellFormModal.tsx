@@ -13,7 +13,7 @@ import {
   Alert,
   Image,
 } from 'react-native';
-import { X, UserPlus, MapPin, Shield, Calendar, Clock, Users, CheckCircle2, ChevronDown, User, Sparkles, Check, AlertCircle, Building2, Trash2 } from 'lucide-react-native';
+import { X, UserPlus, MapPin, Shield, Calendar, Clock, Users, CheckCircle2, ChevronDown, User, Sparkles, Check, AlertCircle, Building2, Trash2, AlertTriangle } from 'lucide-react-native';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import FirestoreService from '../../../../services/FirestoreService';
 import CareCellService, { isMemberInLocation } from '../../../../services/CareCellService';
@@ -87,34 +87,48 @@ export default function CareCellFormModal({
     isEditing: boolean;
   } | null>(null);
 
+  // Delete confirmation and success state in modal
+  const [showDeleteConfirmInModal, setShowDeleteConfirmInModal] = useState(false);
+  const [showDeleteSuccessInModal, setShowDeleteSuccessInModal] = useState(false);
+  const [deletedSummaryInModal, setDeletedSummaryInModal] = useState<{
+    name: string;
+    code: string;
+    leaderName?: string;
+    location?: string;
+  } | null>(null);
+
   const handleDelete = () => {
     if (!cellToEdit) return;
-    Alert.alert(
-      'Delete Care Cell',
-      `Are you sure you want to permanently delete "${cellToEdit.name}" (${cellToEdit.cellCode})?\n\nThis action cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete Permanently',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setSaving(true);
-              const churchId = await CareCellService.getChurchId();
-              await CareCellService.deleteCareCell(churchId, cellToEdit.id);
-              Alert.alert('Deleted', `Care Cell "${cellToEdit.name}" has been permanently deleted.`);
-              onSaved();
-              onClose();
-            } catch (err: any) {
-              console.error('Error deleting Care Cell:', err);
-              Alert.alert('Error', err.message || 'Failed to delete Care Cell.');
-            } finally {
-              setSaving(false);
-            }
-          },
-        },
-      ]
-    );
+    setShowDeleteConfirmInModal(true);
+  };
+
+  const confirmDeleteInModal = async () => {
+    if (!cellToEdit) return;
+    try {
+      setSaving(true);
+      const churchId = await CareCellService.getChurchId();
+      await CareCellService.deleteCareCell(churchId, cellToEdit.id);
+      setDeletedSummaryInModal({
+        name: cellToEdit.name,
+        code: cellToEdit.cellCode,
+        leaderName: cellToEdit.leaderName,
+        location: cellToEdit.location || cellToEdit.meetingLocation,
+      });
+      setShowDeleteConfirmInModal(false);
+      setShowDeleteSuccessInModal(true);
+    } catch (err: any) {
+      console.error('Error deleting Care Cell:', err);
+      Alert.alert('Error', err.message || 'Failed to delete Care Cell.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteSuccessDoneInModal = () => {
+    setShowDeleteSuccessInModal(false);
+    setDeletedSummaryInModal(null);
+    onSaved();
+    onClose();
   };
 
   const handleSuccessDone = () => {
@@ -825,6 +839,198 @@ export default function CareCellFormModal({
         </View>
       </Modal>
 
+      {/* ── Custom Delete Confirmation Modal (In Form) ── */}
+      <Modal
+        visible={showDeleteConfirmInModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!saving) setShowDeleteConfirmInModal(false);
+        }}
+      >
+        <View style={styles.successModalOverlay}>
+          <View style={styles.deleteConfirmModalCard}>
+            {/* Top Close Button */}
+            <TouchableOpacity
+              style={styles.successModalCloseBtn}
+              onPress={() => setShowDeleteConfirmInModal(false)}
+              disabled={saving}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <X size={18} color="#64748B" />
+            </TouchableOpacity>
+
+            {/* Warning Ring */}
+            <View style={styles.deleteWarningRingOuter}>
+              <View style={styles.deleteWarningRingInner}>
+                <Trash2 size={26} color="#DC2626" strokeWidth={2.4} />
+              </View>
+            </View>
+
+            <Text style={styles.deleteConfirmTitle}>Delete Care Cell?</Text>
+            <Text style={styles.deleteConfirmSubtitle}>
+              Are you sure you want to permanently delete this fellowship group?
+            </Text>
+
+            {cellToEdit && (
+              <View style={styles.deleteCellPreviewBox}>
+                <View style={styles.summaryHeaderRow}>
+                  <Building2 size={15} color="#1A2D5A" style={{ marginRight: 6 }} />
+                  <Text style={styles.summaryCellName} numberOfLines={1}>
+                    {cellToEdit.name}
+                  </Text>
+                  <View style={styles.summaryCodeBadge}>
+                    <Text style={styles.summaryCodeTxt}>{cellToEdit.cellCode}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.summaryDivider} />
+
+                <View style={styles.summaryRow}>
+                  <User size={13} color="#1A2D5A" style={styles.summaryIcon} />
+                  <Text style={styles.summaryLabel}>Leader:</Text>
+                  <Text style={styles.summaryVal} numberOfLines={1}>
+                    {cellToEdit.leaderName || 'Assigned Leader'}
+                  </Text>
+                </View>
+
+                {cellToEdit.location ? (
+                  <View style={styles.summaryRow}>
+                    <MapPin size={13} color="#64748B" style={styles.summaryIcon} />
+                    <Text style={styles.summaryLabel}>Location:</Text>
+                    <Text style={styles.summaryVal} numberOfLines={1}>
+                      {cellToEdit.location}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            )}
+
+            <View style={styles.deletePermanentWarningBox}>
+              <AlertTriangle size={15} color="#DC2626" style={{ marginRight: 8, marginTop: 1 }} />
+              <Text style={styles.deletePermanentWarningTxt}>
+                This action is permanent. All assigned members will be unlinked.
+              </Text>
+            </View>
+
+            <View style={styles.deleteActionsBtnRow}>
+              <TouchableOpacity
+                style={styles.deleteCancelActionBtn}
+                onPress={() => setShowDeleteConfirmInModal(false)}
+                disabled={saving}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.deleteCancelActionBtnTxt}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.deleteConfirmActionBtn}
+                onPress={confirmDeleteInModal}
+                disabled={saving}
+                activeOpacity={0.85}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Trash2 size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.deleteConfirmActionBtnTxt}>Delete Permanently</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Custom Delete Success Card Modal (In Form) ── */}
+      <Modal
+        visible={showDeleteSuccessInModal}
+        transparent
+        animationType="fade"
+        onRequestClose={handleDeleteSuccessDoneInModal}
+      >
+        <View style={styles.successModalOverlay}>
+          <View style={styles.successModalCard}>
+            <TouchableOpacity
+              style={styles.successModalCloseBtn}
+              onPress={handleDeleteSuccessDoneInModal}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <X size={18} color="#64748B" />
+            </TouchableOpacity>
+
+            <View style={styles.successIconRingOuter}>
+              <View style={styles.successIconRingInner}>
+                <CheckCircle2 size={36} color="#059669" strokeWidth={2.5} />
+              </View>
+            </View>
+
+            <View style={styles.successPill}>
+              <Sparkles size={12} color="#059669" style={{ marginRight: 5 }} />
+              <Text style={styles.successPillTxt}>CARE CELL PERMANENTLY REMOVED</Text>
+            </View>
+
+            <Text style={styles.successTitle}>Care Cell Deleted Successfully! 🗑️</Text>
+            <Text style={styles.successSubtitle}>
+              The fellowship group has been completely removed from the church roster and all linked members have been unlinked.
+            </Text>
+
+            {deletedSummaryInModal && (
+              <View style={styles.successSummaryBox}>
+                <View style={styles.summaryHeaderRow}>
+                  <Building2 size={16} color="#1A2D5A" style={{ marginRight: 6 }} />
+                  <Text style={styles.summaryCellName} numberOfLines={1}>
+                    {deletedSummaryInModal.name}
+                  </Text>
+                  <View style={styles.summaryCodeBadge}>
+                    <Text style={styles.summaryCodeTxt}>{deletedSummaryInModal.code}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.summaryDivider} />
+
+                {deletedSummaryInModal.leaderName ? (
+                  <View style={styles.summaryRow}>
+                    <User size={13} color="#1A2D5A" style={styles.summaryIcon} />
+                    <Text style={styles.summaryLabel}>Leader:</Text>
+                    <Text style={styles.summaryVal} numberOfLines={1}>
+                      {deletedSummaryInModal.leaderName}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {deletedSummaryInModal.location ? (
+                  <View style={styles.summaryRow}>
+                    <MapPin size={13} color="#64748B" style={styles.summaryIcon} />
+                    <Text style={styles.summaryLabel}>Location:</Text>
+                    <Text style={styles.summaryVal} numberOfLines={1}>
+                      {deletedSummaryInModal.location}
+                    </Text>
+                  </View>
+                ) : null}
+
+                <View style={styles.summaryRow}>
+                  <Users size={13} color="#059669" style={styles.summaryIcon} />
+                  <Text style={styles.summaryLabel}>Members:</Text>
+                  <Text style={[styles.summaryVal, { color: '#059669', fontWeight: '800' }]}>
+                    All members safely unlinked
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={styles.successDoneBtn}
+              onPress={handleDeleteSuccessDoneInModal}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.successDoneBtnTxt}>Done & Return to Care Cells</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* ── Redesigned Care Cell Creation / Update Success Card Modal ── */}
       <Modal
         visible={showSuccessModal}
@@ -1472,6 +1678,119 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontWeight: '700',
     color: '#DC2626',
+  },
+  deleteConfirmModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    paddingHorizontal: 22,
+    paddingTop: 24,
+    paddingBottom: 22,
+    width: '100%',
+    maxWidth: 420,
+    alignItems: 'center',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  deleteWarningRingOuter: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#FEF2F2',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  deleteWarningRingInner: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#FEE2E2',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  deleteConfirmTitle: {
+    fontSize: 19,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+    marginBottom: 4,
+    letterSpacing: -0.3,
+  },
+  deleteConfirmSubtitle: {
+    fontSize: 12.5,
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 8,
+    lineHeight: 18,
+  },
+  deleteCellPreviewBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    borderWidth: 1.2,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    width: '100%',
+    marginBottom: 14,
+  },
+  deletePermanentWarningBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    width: '100%',
+    marginBottom: 18,
+  },
+  deletePermanentWarningTxt: {
+    flex: 1,
+    fontSize: 11.5,
+    color: '#991B1B',
+    fontWeight: '600',
+    lineHeight: 16,
+  },
+  deleteActionsBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+  },
+  deleteCancelActionBtn: {
+    flex: 1,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteCancelActionBtnTxt: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  deleteConfirmActionBtn: {
+    flex: 1.4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#DC2626',
+    borderRadius: 12,
+    paddingVertical: 12,
+    shadowColor: '#DC2626',
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  deleteConfirmActionBtnTxt: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
   submitBtnTxt: {
     fontSize: 14,
