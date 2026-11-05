@@ -56,6 +56,7 @@ export interface CareCellVisit {
   declinedCount?: number;
   pendingCount?: number;
   responses?: Record<string, CareCellVisitMemberResponse>;
+  targetMemberIds?: string[];
 }
 
 export interface CareCell {

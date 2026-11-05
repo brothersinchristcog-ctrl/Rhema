@@ -676,7 +676,8 @@ class CareCellService {
     churchId: string | undefined,
     data: Omit<CareCellMeeting, 'id' | 'createdAt' | 'updatedAt'>
   ): Promise<string> {
-    const col = await this.getMeetingsRef(churchId);
+    const activeChurchId = churchId || (await this.getChurchId());
+    const col = await this.getMeetingsRef(activeChurchId);
     const docRef = col.doc();
     await docRef.set(
       sanitizeForFirestore({
@@ -685,6 +686,51 @@ class CareCellService {
         updatedAt: firestore.FieldValue.serverTimestamp(),
       })
     );
+
+    // Dispatch in-app notifications strictly to members of this specific Care Cell
+    try {
+      const cellMembers = await this.getActiveCellMemberships(activeChurchId, data.cellId);
+      const notifBatch = firestore().batch();
+      let notifCount = 0;
+
+      for (const mem of cellMembers) {
+        if (!mem.memberId) continue;
+        const memberNotifRef = firestore()
+          .collection(RHEMA_ROOT_COLLECTION)
+          .doc(activeChurchId)
+          .collection('members')
+          .doc(mem.memberId)
+          .collection('notifications')
+          .doc();
+
+        notifBatch.set(
+          memberNotifRef,
+          sanitizeForFirestore({
+            id: memberNotifRef.id,
+            type: 'care_cell_meeting',
+            title: `🤝 ${data.cellName || 'Care Cell'} Gathering`,
+            body: `${data.title} on ${data.date} at ${data.startTime}${data.endTime ? ` – ${data.endTime}` : ''}${data.location ? ` at ${data.location}` : ''}. Tap to view Scripture & location!`,
+            meetingId: docRef.id,
+            cellId: data.cellId,
+            cellName: data.cellName || '',
+            date: data.date,
+            startTime: data.startTime,
+            endTime: data.endTime || '',
+            location: data.location || '',
+            read: false,
+            createdAt: firestore.FieldValue.serverTimestamp(),
+          })
+        );
+        notifCount++;
+      }
+
+      if (notifCount > 0) {
+        await notifBatch.commit();
+      }
+    } catch (notifErr) {
+      console.warn('⚠️ Non-fatal error delivering in-app meeting notifications:', notifErr);
+    }
+
     return docRef.id;
   }
 
@@ -1210,6 +1256,7 @@ class CareCellService {
       visitors: string;
       createdBy: string;
       createdByName?: string;
+      targetMemberIds?: string[];
     }
   ): Promise<string> {
     const activeChurchId = churchId || (await this.getChurchId());
@@ -1217,11 +1264,16 @@ class CareCellService {
     const docRef = col.doc();
 
     // 1. Fetch all active members assigned to this specific Care Cell
-    const cellMembers = await this.getActiveCellMemberships(activeChurchId, data.cellId);
+    const allCellMembers = await this.getActiveCellMemberships(activeChurchId, data.cellId);
 
-    // 2. Initialize each member's availability response as 'Pending'
+    // Filter to selected members if specific members were selected
+    const targetMembers = data.targetMemberIds && data.targetMemberIds.length > 0
+      ? allCellMembers.filter((mem) => data.targetMemberIds!.includes(mem.memberId))
+      : allCellMembers;
+
+    // 2. Initialize each target member's availability response as 'Pending'
     const responses: Record<string, CareCellVisitMemberResponse> = {};
-    for (const mem of cellMembers) {
+    for (const mem of targetMembers) {
       responses[mem.memberId] = {
         memberId: mem.memberId,
         memberName: mem.memberName,
@@ -1247,23 +1299,24 @@ class CareCellService {
       notificationSent: false,
       createdBy: data.createdBy,
       createdByName: data.createdByName || '',
-      totalMembersCount: cellMembers.length,
+      totalMembersCount: targetMembers.length,
       acceptedCount: 0,
       declinedCount: 0,
-      pendingCount: cellMembers.length,
+      pendingCount: targetMembers.length,
       responses,
+      targetMemberIds: data.targetMemberIds && data.targetMemberIds.length > 0 ? data.targetMemberIds : undefined,
       createdAt: firestore.FieldValue.serverTimestamp(),
       updatedAt: firestore.FieldValue.serverTimestamp(),
     };
 
     await docRef.set(sanitizeForFirestore(payload));
 
-    // 3. Dispatch in-app notifications to all assigned members of this specific Care Cell
+    // 3. Dispatch in-app notifications strictly to target members
     try {
       const notifBatch = firestore().batch();
       let notifCount = 0;
 
-      for (const mem of cellMembers) {
+      for (const mem of targetMembers) {
         if (!mem.memberId) continue;
         const memberNotifRef = firestore()
           .collection(RHEMA_ROOT_COLLECTION)
