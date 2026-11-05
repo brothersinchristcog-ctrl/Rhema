@@ -1034,15 +1034,44 @@ export default function SongsScreen({ navigation, route }: any) {
       );
     }
 
-    // Format display date: handles start & end date range if present
+    // Format display date in DD Month YYYY format (e.g., 07 November 2026)
     const displayServiceDate = (() => {
-      if (activeService?.startDate && activeService?.endDate && activeService.startDate !== activeService.endDate) {
-        return `${activeService.startDate} – ${activeService.endDate}`;
-      }
-      return activeService?.date || (activeEvent ? (activeEvent.date || '') : '');
-    })();
+      const formatDDMonthYYYY = (dateStr: string): string => {
+        if (!dateStr) return '';
+        try {
+          const clean = dateStr.trim().split(' ')[0].split('T')[0];
+          const parts = clean.split('-');
+          let y = 0, m = 0, d = 0;
+          if (parts.length === 3) {
+            if (parts[0].length === 4) {
+              y = parseInt(parts[0], 10);
+              m = parseInt(parts[1], 10) - 1;
+              d = parseInt(parts[2], 10);
+            } else if (parts[2].length === 4) {
+              d = parseInt(parts[0], 10);
+              m = parseInt(parts[1], 10) - 1;
+              y = parseInt(parts[2], 10);
+            }
+          }
+          if (y && !isNaN(m) && d) {
+            const months = [
+              'January', 'February', 'March', 'April', 'May', 'June',
+              'July', 'August', 'September', 'October', 'November', 'December'
+            ];
+            const dayStr = String(d).padStart(2, '0');
+            const monthStr = months[m] || '';
+            return `${dayStr} ${monthStr} ${y}`;
+          }
+        } catch {}
+        return dateStr;
+      };
 
-    const displayServiceTime = activeService?.time || activeEvent?.time || '';
+      if (activeService?.startDate && activeService?.endDate && activeService.startDate !== activeService.endDate) {
+        return `${formatDDMonthYYYY(activeService.startDate)} – ${formatDDMonthYYYY(activeService.endDate)}`;
+      }
+      const rawDate = activeService?.date || (activeEvent ? (activeEvent.date || '') : '');
+      return formatDDMonthYYYY(rawDate);
+    })();
 
     const displayTitle = activeService
       ? (activeService.name || activeEvent?.title || 'Church Service Flow')
@@ -1078,26 +1107,15 @@ export default function SongsScreen({ navigation, route }: any) {
                 </Text>
               ) : null}
 
-              {/* Date and Time stacked vertically without borders */}
-              {(displayServiceDate || displayServiceTime) ? (
-                <View style={{ marginTop: 8, gap: 5 }}>
-                  {displayServiceDate ? (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <CalendarDays size={13} color={isDark ? '#FBBF24' : '#D97706'} />
-                      <Text style={{ fontSize: 12.5, color: isDark ? '#D4D4D8' : '#334155', fontWeight: '600' }}>
-                        {displayServiceDate}
-                      </Text>
-                    </View>
-                  ) : null}
-
-                  {displayServiceTime ? (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Clock size={13} color={isDark ? '#38BDF8' : '#0284C7'} />
-                      <Text style={{ fontSize: 12.5, color: isDark ? '#D4D4D8' : '#334155', fontWeight: '600' }}>
-                        {displayServiceTime}
-                      </Text>
-                    </View>
-                  ) : null}
+              {/* Date in DD Month YYYY format below service name (Service Timing removed) */}
+              {displayServiceDate ? (
+                <View style={{ marginTop: 8 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <CalendarDays size={13} color={isDark ? '#FBBF24' : '#D97706'} />
+                    <Text style={{ fontSize: 12.5, color: isDark ? '#D4D4D8' : '#334155', fontWeight: '600' }}>
+                      {displayServiceDate}
+                    </Text>
+                  </View>
                 </View>
               ) : null}
             </View>
