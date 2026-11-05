@@ -181,13 +181,34 @@ export default function EventDetailsScreen({ route, navigation }: any) {
   const [liveStreamChannelId, setLiveStreamChannelId] = useState<string | null>(null);
   const [liveStreamLoading, setLiveStreamLoading] = useState<boolean>(false);
 
-  // Dynamic live stream embed URL for WebView fallback
-  const liveChannelEmbedUri = useMemo(() => {
-    if (liveStreamChannelId) {
-      return `https://www.youtube-nocookie.com/embed/live_stream?channel=${liveStreamChannelId}&autoplay=1&playsinline=1`;
-    }
-    return null;
-  }, [liveStreamChannelId]);
+  // HTML5 Live Stream Embed - passes strict-origin headers to completely prevent YouTube Error 153
+  const htmlLiveEmbed = useMemo(() => {
+    const embedSrc = liveStreamVideoId
+      ? `https://www.youtube-nocookie.com/embed/${liveStreamVideoId}?autoplay=1&playsinline=1&rel=0&modestbranding=1`
+      : `https://www.youtube-nocookie.com/embed/live_stream?channel=${liveStreamChannelId || 'UC3J_2zP2bIuCwEia_ASvghw'}&autoplay=1&playsinline=1&rel=0&modestbranding=1`;
+
+    return `<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <style>
+      * { margin:0; padding:0; box-sizing:border-box; }
+      html, body { width:100%; height:100%; background:#000000; overflow:hidden; }
+      iframe { width:100%; height:100%; border:none; display:block; }
+    </style>
+  </head>
+  <body>
+    <iframe
+      src="${embedSrc}"
+      frameborder="0"
+      referrerpolicy="strict-origin-when-cross-origin"
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+      allowfullscreen>
+    </iframe>
+  </body>
+</html>`;
+  }, [liveStreamVideoId, liveStreamChannelId]);
 
   // Resolve live stream video ID / channel ID when status is live
   useEffect(() => {
@@ -1038,72 +1059,34 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                       <Text style={styles.liveVideoSearchingText}>Connecting to Live Stream...</Text>
                       <Text style={styles.liveVideoSearchingSubText}>లైవ్ స్ట్రీమ్ లోడ్ అవుతోంది...</Text>
                     </View>
-                  ) : liveStreamVideoId ? (
-                    <View style={styles.videoContainer}>
-                      <YoutubePlayer
-                        key={liveStreamVideoId}
-                        height={width * 0.55}
-                        play={true}
-                        videoId={liveStreamVideoId}
-                        webViewProps={{
-                          allowsFullscreenVideo: true,
-                          androidLayerType: 'hardware',
-                          scrollEnabled: false,
-                        }}
-                      />
-                    </View>
-                  ) : liveChannelEmbedUri ? (
-                    <View style={styles.videoContainer}>
-                      <WebView
-                        source={{ uri: liveChannelEmbedUri }}
-                        style={{ width: '100%', height: width * 0.55, backgroundColor: '#000' }}
-                        allowsInlineMediaPlayback={true}
-                        mediaPlaybackRequiresUserAction={false}
-                        javaScriptEnabled={true}
-                        domStorageEnabled={true}
-                        allowsFullscreenVideo={true}
-                      />
-                    </View>
                   ) : (
-                    // Fallback to direct stream webview or channel stream
                     <View style={styles.videoContainer}>
                       <WebView
                         source={{
-                          uri: (event.liveUrl || activeChurch?.socialLinks?.youtube || 'https://www.youtube.com/@Brothersinchristfellowship/live')
+                          html: htmlLiveEmbed,
+                          baseUrl: 'https://www.youtube.com',
                         }}
-                        style={{ width: '100%', height: width * 0.55, backgroundColor: '#000' }}
+                        style={{ width: '100%', height: width * 0.55, backgroundColor: '#000000' }}
+                        originWhitelist={['*']}
                         allowsInlineMediaPlayback={true}
                         mediaPlaybackRequiresUserAction={false}
                         javaScriptEnabled={true}
                         domStorageEnabled={true}
                         allowsFullscreenVideo={true}
+                        onShouldStartLoadWithRequest={(req) => {
+                          if (
+                            req.url.includes('youtube') ||
+                            req.url.includes('googlevideo') ||
+                            req.url.includes('about:blank') ||
+                            req.url.startsWith('data:')
+                          ) {
+                            return true;
+                          }
+                          return false;
+                        }}
                       />
                     </View>
                   )}
-
-                  {/* Player footer banner with quick action to open YouTube Live screen */}
-                  <View style={styles.livePlayerFooter}>
-                    <View style={styles.livePlayerFooterLeft}>
-                      <View style={styles.liveDotPill}>
-                        <View style={styles.liveDotInner} />
-                        <Text style={styles.liveDotPillText}>LIVE STREAM</Text>
-                      </View>
-                      {churchYoutubeHandle ? (
-                        <Text style={[styles.liveHandleText, { color: '#94A3B8' }]} numberOfLines={1}>
-                          {churchYoutubeHandle}
-                        </Text>
-                      ) : null}
-                    </View>
-
-                    <TouchableOpacity
-                      style={styles.openLiveScreenBtn}
-                      onPress={handleJoinLiveStream}
-                      activeOpacity={0.8}
-                    >
-                      <Radio size={13} color="#DC2626" style={{ marginRight: 5 }} />
-                      <Text style={styles.openLiveScreenBtnText}>Open in Live Tab</Text>
-                    </TouchableOpacity>
-                  </View>
                 </View>
               </View>
             )}
@@ -1123,6 +1106,13 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                     height={width * 0.55}
                     play={false}
                     videoId={youtubeId}
+                    initialPlayerParams={{
+                      preventFullScreen: false,
+                    }}
+                    webViewProps={{
+                      allowsFullscreenVideo: true,
+                      androidLayerType: 'hardware',
+                    }}
                   />
                 </View>
               ) : (
@@ -1704,62 +1694,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#94A3B8',
     fontWeight: '500',
-  },
-  livePlayerFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#1E293B',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomLeftRadius: 16,
-    borderBottomRightRadius: 16,
-  },
-  livePlayerFooterLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flex: 1,
-    marginRight: 8,
-  },
-  liveDotPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(220, 38, 38, 0.2)',
-    borderWidth: 1,
-    borderColor: '#DC2626',
-    paddingHorizontal: 7,
-    paddingVertical: 2.5,
-    borderRadius: 8,
-    gap: 5,
-  },
-  liveDotInner: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#EF4444',
-  },
-  liveDotPillText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#F87171',
-    letterSpacing: 0.4,
-  },
-  liveHandleText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  openLiveScreenBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  openLiveScreenBtnText: {
-    fontSize: 11.5,
-    fontWeight: '800',
-    color: '#DC2626',
   },
 });
