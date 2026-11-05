@@ -12,6 +12,10 @@ import {
   Alert,
   StatusBar,
   Dimensions,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -88,6 +92,104 @@ export default function CareCellScreen({ navigation, route }: any) {
   // Care Cell Visits
   const [cellVisits, setCellVisits] = useState<(CareCellVisit & { myResponse?: CareCellVisitMemberResponse })[]>([]);
   const [respondingVisitId, setRespondingVisitId] = useState<string | null>(null);
+
+  // Preferred Visit Time Modal State
+  const [visitModalVisible, setVisitModalVisible] = useState(false);
+  const [selectedVisitForResponse, setSelectedVisitForResponse] = useState<(CareCellVisit & { myResponse?: CareCellVisitMemberResponse }) | null>(null);
+  const [visitResponseStatus, setVisitResponseStatus] = useState<MemberVisitResponseStatus>('Accepted');
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>('scheduled');
+  const [customTimeSlotText, setCustomTimeSlotText] = useState<string>('');
+  const [visitNotesText, setVisitNotesText] = useState<string>('');
+
+  const openVisitResponseModal = (
+    visit: CareCellVisit & { myResponse?: CareCellVisitMemberResponse },
+    initialStatus: MemberVisitResponseStatus = 'Accepted'
+  ) => {
+    setSelectedVisitForResponse(visit);
+    setVisitResponseStatus(initialStatus);
+
+    const prevPref = visit.myResponse?.preferredTime || (memberId && visit.responses?.[memberId]?.preferredTime) || '';
+    if (prevPref) {
+      if (['Morning (10:00 AM – 12:00 PM)', 'Afternoon (2:00 PM – 4:00 PM)', 'Evening (5:00 PM – 7:00 PM)', 'Night (7:00 PM – 9:00 PM)'].includes(prevPref)) {
+        setSelectedTimeSlot(prevPref);
+        setCustomTimeSlotText('');
+      } else if (prevPref === `Scheduled Time (${visit.visitTime})` || prevPref === visit.visitTime) {
+        setSelectedTimeSlot('scheduled');
+        setCustomTimeSlotText('');
+      } else {
+        setSelectedTimeSlot('custom');
+        setCustomTimeSlotText(prevPref);
+      }
+    } else {
+      setSelectedTimeSlot('scheduled');
+      setCustomTimeSlotText('');
+    }
+
+    setVisitNotesText(visit.myResponse?.notes || (memberId && visit.responses?.[memberId]?.notes) || '');
+    setVisitModalVisible(true);
+  };
+
+  const handleConfirmVisitResponse = async () => {
+    if (!selectedVisitForResponse || !memberId) return;
+
+    let finalPreferredTime = '';
+    if (visitResponseStatus === 'Accepted') {
+      if (selectedTimeSlot === 'scheduled') {
+        finalPreferredTime = `Scheduled Time (${selectedVisitForResponse.visitTime})`;
+      } else if (selectedTimeSlot === 'custom') {
+        finalPreferredTime = customTimeSlotText.trim() || `Scheduled Time (${selectedVisitForResponse.visitTime})`;
+      } else {
+        finalPreferredTime = selectedTimeSlot;
+      }
+    }
+
+    try {
+      setRespondingVisitId(selectedVisitForResponse.id);
+      const churchId = await CareCellService.getChurchId();
+      await CareCellService.respondToVisit(
+        churchId,
+        selectedVisitForResponse.id,
+        memberId,
+        visitResponseStatus,
+        visitNotesText.trim() || undefined,
+        finalPreferredTime || undefined
+      );
+
+      // Optimistic local state update
+      setCellVisits((prev) =>
+        prev.map((v) => {
+          if (v.id === selectedVisitForResponse.id) {
+            return {
+              ...v,
+              myResponse: {
+                memberId,
+                memberName: member?.name || '',
+                response: visitResponseStatus,
+                respondedAt: new Date().toISOString(),
+                notes: visitNotesText.trim() || undefined,
+                preferredTime: finalPreferredTime || undefined,
+              },
+            };
+          }
+          return v;
+        })
+      );
+
+      setVisitModalVisible(false);
+
+      Alert.alert(
+        visitResponseStatus === 'Accepted' ? 'Availability Confirmed! 🎉' : 'Response Recorded',
+        visitResponseStatus === 'Accepted'
+          ? `Thank you! Your Pastor and Cell Leader have been notified that your preferred visit time is "${finalPreferredTime}".`
+          : 'Thank you for letting us know. Your Cell Leader has been updated.'
+      );
+    } catch (e: any) {
+      console.error('Error confirming visit response:', e);
+      Alert.alert('Error', e.message || 'Failed to submit response.');
+    } finally {
+      setRespondingVisitId(null);
+    }
+  };
 
   // Tab State
   const [isLeader, setIsLeader] = useState(false);
@@ -447,7 +549,7 @@ export default function CareCellScreen({ navigation, route }: any) {
                   <View style={styles.visitActionButtonsRow}>
                     <TouchableOpacity
                       style={styles.visitAcceptBtn}
-                      onPress={() => handleRespondToVisit(pendingVisits[0].id, 'Accepted')}
+                      onPress={() => openVisitResponseModal(pendingVisits[0], 'Accepted')}
                       disabled={respondingVisitId === pendingVisits[0].id}
                       activeOpacity={0.85}
                     >
@@ -456,14 +558,14 @@ export default function CareCellScreen({ navigation, route }: any) {
                       ) : (
                         <>
                           <CheckCircle2 size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
-                          <Text style={styles.visitAcceptBtnTxt}>Accept (Available)</Text>
+                          <Text style={styles.visitAcceptBtnTxt}>Accept & Choose Time</Text>
                         </>
                       )}
                     </TouchableOpacity>
 
                     <TouchableOpacity
                       style={styles.visitDeclineBtn}
-                      onPress={() => handleRespondToVisit(pendingVisits[0].id, 'Declined')}
+                      onPress={() => openVisitResponseModal(pendingVisits[0], 'Declined')}
                       disabled={respondingVisitId === pendingVisits[0].id}
                       activeOpacity={0.85}
                     >
@@ -708,12 +810,12 @@ export default function CareCellScreen({ navigation, route }: any) {
                         {isPending && (
                           <>
                             <Text style={styles.confirmPromptTxt}>
-                              Please confirm whether you will be available for this visit:
+                              Please confirm your availability & preferred visit time:
                             </Text>
                             <View style={styles.memberResponseActionsRow}>
                               <TouchableOpacity
                                 style={styles.visitAcceptBtn}
-                                onPress={() => handleRespondToVisit(v.id, 'Accepted')}
+                                onPress={() => openVisitResponseModal(v, 'Accepted')}
                                 disabled={isResponding}
                                 activeOpacity={0.85}
                               >
@@ -722,14 +824,14 @@ export default function CareCellScreen({ navigation, route }: any) {
                                 ) : (
                                   <>
                                     <CheckCircle2 size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
-                                    <Text style={styles.visitAcceptBtnTxt}>Accept (Available)</Text>
+                                    <Text style={styles.visitAcceptBtnTxt}>Accept & Choose Time</Text>
                                   </>
                                 )}
                               </TouchableOpacity>
 
                               <TouchableOpacity
                                 style={styles.visitDeclineBtn}
-                                onPress={() => handleRespondToVisit(v.id, 'Declined')}
+                                onPress={() => openVisitResponseModal(v, 'Declined')}
                                 disabled={isResponding}
                                 activeOpacity={0.85}
                               >
@@ -748,15 +850,30 @@ export default function CareCellScreen({ navigation, route }: any) {
                                 You accepted this visit (Available)
                               </Text>
                             </View>
+                            {v.myResponse?.preferredTime ? (
+                              <View style={styles.myPreferredTimeBadge}>
+                                <Clock size={12} color="#1A2D5A" style={{ marginRight: 5 }} />
+                                <Text style={styles.myPreferredTimeLabel}>Preferred Visit Time:</Text>
+                                <Text style={styles.myPreferredTimeVal}>{v.myResponse.preferredTime}</Text>
+                              </View>
+                            ) : null}
                             <Text style={styles.responseConfirmedSub}>
                               Your Pastor and Cell Leader have been notified that you will be available.
                             </Text>
-                            <TouchableOpacity
-                              onPress={() => handleRespondToVisit(v.id, 'Declined')}
-                              style={styles.changeResponseBtn}
-                            >
-                              <Text style={styles.changeResponseBtnTxt}>Change to Unavailable (Decline)</Text>
-                            </TouchableOpacity>
+                            <View style={{ flexDirection: 'row', gap: 14, marginTop: 6, flexWrap: 'wrap' }}>
+                              <TouchableOpacity
+                                onPress={() => openVisitResponseModal(v, 'Accepted')}
+                                style={styles.changeResponseBtn}
+                              >
+                                <Text style={styles.changeResponseBtnTxtPreferred}>Change Preferred Time</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                onPress={() => openVisitResponseModal(v, 'Declined')}
+                                style={styles.changeResponseBtn}
+                              >
+                                <Text style={styles.changeResponseBtnTxt}>Mark Unavailable (Decline)</Text>
+                              </TouchableOpacity>
+                            </View>
                           </View>
                         )}
 
@@ -772,10 +889,10 @@ export default function CareCellScreen({ navigation, route }: any) {
                               Your Cell Leader has been updated that you cannot attend.
                             </Text>
                             <TouchableOpacity
-                              onPress={() => handleRespondToVisit(v.id, 'Accepted')}
+                              onPress={() => openVisitResponseModal(v, 'Accepted')}
                               style={styles.changeResponseBtn}
                             >
-                              <Text style={styles.changeResponseBtnTxtAccepted}>Change to Available (Accept)</Text>
+                              <Text style={styles.changeResponseBtnTxtAccepted}>Change to Available (Accept & Set Time)</Text>
                             </TouchableOpacity>
                           </View>
                         )}
@@ -1105,6 +1222,240 @@ export default function CareCellScreen({ navigation, route }: any) {
           }}
         />
       )}
+      {/* ── Preferred Visit Time & Availability Modal ── */}
+      <Modal
+        visible={visitModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setVisitModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.timeModalBackdrop}
+        >
+          <View style={styles.timeModalSheet}>
+            {/* Header */}
+            <View style={styles.timeModalHeader}>
+              <View>
+                <Text style={styles.timeModalTitle}>House Visit Response</Text>
+                <Text style={styles.timeModalSubtitle}>Set your preferred visit window</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setVisitModalVisible(false)}
+                style={styles.timeModalCloseBtn}
+              >
+                <XCircle size={22} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: Dimensions.get('window').height * 0.75 }}>
+              {/* Visit Details Card */}
+              {selectedVisitForResponse && (
+                <View style={styles.timeModalVisitCard}>
+                  <Text style={styles.timeModalVisitTitle}>{selectedVisitForResponse.title}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, flexWrap: 'wrap', gap: 10 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <Calendar size={13} color="#1A2D5A" style={{ marginRight: 4 }} />
+                      <Text style={styles.timeModalVisitMeta}>
+                        {formatDateDisplay(selectedVisitForResponse.visitDate)}
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <Clock size={13} color="#C9A84C" style={{ marginRight: 4 }} />
+                      <Text style={styles.timeModalVisitMeta}>
+                        Default: {selectedVisitForResponse.visitTime}
+                      </Text>
+                    </View>
+                  </View>
+                  {selectedVisitForResponse.visitors ? (
+                    <Text style={styles.timeModalVisitorsTxt}>
+                      Visitors: {selectedVisitForResponse.visitors}
+                    </Text>
+                  ) : null}
+                </View>
+              )}
+
+              {/* Status Toggle */}
+              <Text style={styles.timeModalSectionLabel}>YOUR AVAILABILITY</Text>
+              <View style={styles.availToggleRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.availToggleBtn,
+                    visitResponseStatus === 'Accepted' && styles.availToggleBtnActiveAccepted,
+                  ]}
+                  onPress={() => setVisitResponseStatus('Accepted')}
+                  activeOpacity={0.85}
+                >
+                  <CheckCircle2
+                    size={16}
+                    color={visitResponseStatus === 'Accepted' ? '#FFFFFF' : '#059669'}
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text
+                    style={[
+                      styles.availToggleBtnTxt,
+                      visitResponseStatus === 'Accepted' && styles.availToggleBtnTxtActive,
+                    ]}
+                  >
+                    I am Available
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.availToggleBtn,
+                    visitResponseStatus === 'Declined' && styles.availToggleBtnActiveDeclined,
+                  ]}
+                  onPress={() => setVisitResponseStatus('Declined')}
+                  activeOpacity={0.85}
+                >
+                  <XCircle
+                    size={16}
+                    color={visitResponseStatus === 'Declined' ? '#FFFFFF' : '#DC2626'}
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text
+                    style={[
+                      styles.availToggleBtnTxt,
+                      visitResponseStatus === 'Declined' && styles.availToggleBtnTxtActive,
+                    ]}
+                  >
+                    Unavailable
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* If Accepted: Preferred Time Slot Selector */}
+              {visitResponseStatus === 'Accepted' && selectedVisitForResponse && (
+                <>
+                  <View style={styles.preferredTimeHeaderWrap}>
+                    <Text style={styles.timeModalSectionLabel}>PREFERRED VISIT TIME</Text>
+                    <Text style={styles.timeModalSectionSub}>
+                      Select the time slot that is most convenient for your family:
+                    </Text>
+                  </View>
+
+                  <View style={styles.timeSlotsGrid}>
+                    {[
+                      {
+                        key: 'scheduled',
+                        label: `Scheduled Time (${selectedVisitForResponse.visitTime})`,
+                        sub: 'As planned by Cell Leader',
+                      },
+                      {
+                        key: 'Morning (10:00 AM – 12:00 PM)',
+                        label: 'Morning (10:00 AM – 12:00 PM)',
+                        sub: 'Best for morning visits',
+                      },
+                      {
+                        key: 'Afternoon (2:00 PM – 4:00 PM)',
+                        label: 'Afternoon (2:00 PM – 4:00 PM)',
+                        sub: 'Post-lunch quiet window',
+                      },
+                      {
+                        key: 'Evening (5:00 PM – 7:00 PM)',
+                        label: 'Evening (5:00 PM – 7:00 PM)',
+                        sub: 'Standard fellowship hours',
+                      },
+                      {
+                        key: 'Night (7:00 PM – 9:00 PM)',
+                        label: 'Night (7:00 PM – 9:00 PM)',
+                        sub: 'After office / dinner',
+                      },
+                      {
+                        key: 'custom',
+                        label: 'Custom Specific Time...',
+                        sub: 'Specify your exact available time',
+                      },
+                    ].map((slot) => {
+                      const isSelected = selectedTimeSlot === slot.key;
+                      return (
+                        <TouchableOpacity
+                          key={slot.key}
+                          style={[
+                            styles.timeSlotPill,
+                            isSelected && styles.timeSlotPillSelected,
+                          ]}
+                          onPress={() => setSelectedTimeSlot(slot.key)}
+                          activeOpacity={0.8}
+                        >
+                          <Clock
+                            size={14}
+                            color={isSelected ? '#4338CA' : '#64748B'}
+                            style={{ marginRight: 8 }}
+                          />
+                          <View style={{ flex: 1 }}>
+                            <Text
+                              style={[
+                                styles.timeSlotPillTxt,
+                                isSelected && styles.timeSlotPillTxtSelected,
+                              ]}
+                            >
+                              {slot.label}
+                            </Text>
+                            <Text style={styles.timeSlotPillSub}>{slot.sub}</Text>
+                          </View>
+                          {isSelected && (
+                            <CheckCircle2 size={16} color="#4338CA" style={{ marginLeft: 6 }} />
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  {/* Custom Time Slot Input */}
+                  {selectedTimeSlot === 'custom' && (
+                    <View style={styles.customTimeInputWrap}>
+                      <Clock size={16} color="#4338CA" style={{ marginRight: 8 }} />
+                      <TextInput
+                        style={styles.customTimeInput}
+                        placeholder="e.g. 6:30 PM to 7:30 PM, or Saturday 11 AM"
+                        placeholderTextColor="#94A3B8"
+                        value={customTimeSlotText}
+                        onChangeText={setCustomTimeSlotText}
+                        autoFocus
+                      />
+                    </View>
+                  )}
+
+                  {/* Optional Note / Prayer Request for the visit */}
+                  <Text style={styles.timeModalSectionLabel}>SPECIAL NOTES OR PRAYER REQUEST (OPTIONAL)</Text>
+                  <TextInput
+                    style={styles.visitNotesInput}
+                    placeholder="e.g. Please pray for healing / Please visit after children finish study..."
+                    placeholderTextColor="#94A3B8"
+                    value={visitNotesText}
+                    onChangeText={setVisitNotesText}
+                    multiline
+                  />
+                </>
+              )}
+
+              {/* Submit Button */}
+              <TouchableOpacity
+                style={styles.confirmVisitResponseBtn}
+                onPress={handleConfirmVisitResponse}
+                disabled={respondingVisitId !== null}
+                activeOpacity={0.85}
+              >
+                {respondingVisitId ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <CheckCircle2 size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
+                    <Text style={styles.confirmVisitResponseBtnTxt}>
+                      {visitResponseStatus === 'Accepted'
+                        ? 'Confirm Visit & Preferred Time'
+                        : 'Submit Unavailable Response'}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              <View style={{ height: 24 }} />
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -2214,6 +2565,223 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#059669',
     textDecorationLine: 'underline',
+  },
+  changeResponseBtnTxtPreferred: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#4338CA',
+    textDecorationLine: 'underline',
+  },
+  myPreferredTimeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    marginVertical: 6,
+    alignSelf: 'flex-start',
+  },
+  myPreferredTimeLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#4338CA',
+    marginRight: 4,
+  },
+  myPreferredTimeVal: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#1E1B4B',
+  },
+  timeModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'flex-end',
+  },
+  timeModalSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 24,
+    maxHeight: '85%',
+  },
+  timeModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    marginBottom: 14,
+  },
+  timeModalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#1A2D5A',
+  },
+  timeModalSubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  timeModalCloseBtn: {
+    padding: 4,
+  },
+  timeModalVisitCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 16,
+  },
+  timeModalVisitTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#1A2D5A',
+  },
+  timeModalVisitMeta: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  timeModalVisitorsTxt: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginTop: 6,
+  },
+  timeModalSectionLabel: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.6,
+    marginBottom: 6,
+  },
+  timeModalSectionSub: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginBottom: 10,
+  },
+  availToggleRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 16,
+  },
+  availToggleBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+  },
+  availToggleBtnActiveAccepted: {
+    backgroundColor: '#059669',
+    borderColor: '#059669',
+  },
+  availToggleBtnActiveDeclined: {
+    backgroundColor: '#DC2626',
+    borderColor: '#DC2626',
+  },
+  availToggleBtnTxt: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  availToggleBtnTxtActive: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+  preferredTimeHeaderWrap: {
+    marginBottom: 4,
+  },
+  timeSlotsGrid: {
+    gap: 8,
+    marginBottom: 10,
+  },
+  timeSlotPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  timeSlotPillSelected: {
+    backgroundColor: '#EEF2FF',
+    borderColor: '#4338CA',
+  },
+  timeSlotPillTxt: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  timeSlotPillTxtSelected: {
+    color: '#312E81',
+    fontWeight: '800',
+  },
+  timeSlotPillSub: {
+    fontSize: 10.5,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  customTimeInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#C7D2FE',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 44,
+    marginBottom: 12,
+  },
+  customTimeInput: {
+    flex: 1,
+    fontSize: 13,
+    color: '#1A2D5A',
+    fontWeight: '600',
+  },
+  visitNotesInput: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 12.5,
+    color: '#1A2D5A',
+    minHeight: 52,
+    textAlignVertical: 'top',
+    marginBottom: 18,
+  },
+  confirmVisitResponseBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1A2D5A',
+    borderRadius: 14,
+    paddingVertical: 14,
+    shadowColor: '#1A2D5A',
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  confirmVisitResponseBtnTxt: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
   },
 });
 

@@ -1228,6 +1228,7 @@ class CareCellService {
         memberPhone: mem.memberPhone || '',
         memberPhoto: mem.memberPhoto || '',
         response: 'Pending',
+        preferredTime: mem.preferredVisitTime || '',
       };
     }
 
@@ -1278,7 +1279,7 @@ class CareCellService {
             id: memberNotifRef.id,
             type: 'care_cell_visit',
             title: `🏡 Care Cell Visit: ${data.title}`,
-            body: `${data.cellName || 'Care Cell'} visit scheduled on ${data.visitDate} at ${data.visitTime} by ${data.visitors}. Please confirm if you will be available!`,
+            body: `${data.cellName || 'Care Cell'} visit scheduled on ${data.visitDate} at ${data.visitTime} by ${data.visitors}. Please confirm your availability and preferred visit time!`,
             visitId: docRef.id,
             cellId: data.cellId,
             cellName: data.cellName || '',
@@ -1353,7 +1354,8 @@ class CareCellService {
     visitId: string,
     memberId: string,
     response: MemberVisitResponseStatus,
-    notes?: string
+    notes?: string,
+    preferredTime?: string
   ): Promise<void> {
     const col = await this.getVisitsRef(churchId);
     const visitDoc = await col.doc(visitId).get();
@@ -1377,7 +1379,8 @@ class CareCellService {
       ...responses[memberId],
       response,
       respondedAt: new Date().toISOString(),
-      notes: notes || responses[memberId].notes || '',
+      notes: notes !== undefined ? notes : responses[memberId].notes || '',
+      preferredTime: preferredTime !== undefined ? preferredTime : responses[memberId].preferredTime || '',
     };
 
     // Recalculate response counters

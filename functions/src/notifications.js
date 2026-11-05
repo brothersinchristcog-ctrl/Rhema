@@ -2679,7 +2679,7 @@ export const pushCareCellVisit = onDocumentCreated({ document: 'Rhema Church/{ch
         }
         if (tokens.length > 0) {
             const notifTitle = `🏡 ${cellName}: ${title}`;
-            const notifBody = `Visit on ${visitDate} at ${visitTime} by ${visitors}. Tap to confirm your availability!`;
+            const notifBody = `Visit on ${visitDate} at ${visitTime} by ${visitors}. Tap to confirm your availability & preferred visit time!`;
             const messagePayload = {
                 notification: {
                     title: notifTitle,
