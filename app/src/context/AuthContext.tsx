@@ -261,33 +261,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             // FCM Setup
             try {
-              const authStatus = await messaging().requestPermission();
-              const enabled =
-                authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-                authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+              const NotificationService = require('../services/NotificationService').default;
+              await NotificationService.requestUserPermission().catch(() => {});
+              const token = await messaging().getToken().catch(() => null);
+              if (token) {
+                await require('../services/firebaseConfig').firestore()
+                  .collection('Rhema Church').doc(targetChurchId)
+                  .collection('members').doc(userState.uid).set({
+                    fcmToken: token
+                  }, { merge: true });
 
-              if (enabled) {
-                const token = await messaging().getToken();
-                if (token) {
-                  await require('../services/firebaseConfig').firestore()
-                    .collection('Rhema Church').doc(targetChurchId)
-                    .collection('members').doc(userState.uid).set({
-                      fcmToken: token
-                    }, { merge: true });
-
-                  await require('../services/NotificationService').default.subscribeToChurchTopic(targetChurchId);
-                }
-
-                messaging().onTokenRefresh(async (newToken) => {
-                  await require('../services/firebaseConfig').firestore()
-                    .collection('Rhema Church').doc(targetChurchId)
-                    .collection('members').doc(userState.uid).set({
-                      fcmToken: newToken
-                    }, { merge: true });
-
-                  await require('../services/NotificationService').default.subscribeToChurchTopic(targetChurchId);
-                });
+                await NotificationService.subscribeToChurchTopic(targetChurchId);
               }
+
+              messaging().onTokenRefresh(async (newToken) => {
+                await require('../services/firebaseConfig').firestore()
+                  .collection('Rhema Church').doc(targetChurchId)
+                  .collection('members').doc(userState.uid).set({
+                    fcmToken: newToken
+                  }, { merge: true });
+
+                await NotificationService.subscribeToChurchTopic(targetChurchId);
+              });
             } catch (err) {
               console.log('❌ [FCM] Error setting up notifications:', err);
             }

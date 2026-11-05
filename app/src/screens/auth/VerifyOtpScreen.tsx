@@ -127,6 +127,24 @@ export default function VerifyOtpScreen({ route, navigation }: VerifyOtpScreenPr
         }
       }
 
+      // Safety fallback: if contactId was not passed but this phone matches an invited member
+      if (result?.user && !hasLinked && !isSignUp) {
+        const userPhone = result.user.phoneNumber || phoneNumber;
+        if (userPhone) {
+          try {
+            const contactCheck = await FirestoreService.checkContactExists(userPhone, activeChurchId || 'rhema', true);
+            if (contactCheck?.exists && contactCheck.member) {
+              const targetChurch = contactCheck.member.churchId || activeChurchId || 'rhema';
+              setStatus('Linking church profile...');
+              await FirestoreService.syncMember(targetChurch, contactCheck.member.id, result.user.uid);
+              hasLinked = true;
+            }
+          } catch (fallbackErr) {
+            console.warn('Fallback contact sync in VerifyOtp:', fallbackErr);
+          }
+        }
+      }
+
       // After OTP confirmed: if user has no primaryChurchId yet
       if (result?.user && !hasLinked) {
         const globalUser = await FirestoreService.getGlobalUser(result.user.uid);

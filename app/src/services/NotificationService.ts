@@ -333,22 +333,35 @@ class NotificationService {
   async subscribeToChurchTopic(churchId: string) {
     if (!churchId) return;
     try {
-      // Check permission first to prevent silent failures on fresh installs (especially iOS APNS)
-      const authStatus = await messaging().hasPermission();
-      const enabled =
-        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
-        
-      if (!enabled) {
-        console.log(`⚠️ Cannot subscribe to church_${churchId} yet: Permissions not granted.`);
-        return;
+      if (Platform.OS === 'ios') {
+        const authStatus = await messaging().hasPermission();
+        const enabled =
+          authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+          authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+          
+        if (!enabled) {
+          const granted = await this.requestUserPermission();
+          if (!granted) {
+            console.log(`⚠️ Cannot subscribe to church_${churchId} yet: Permissions not granted on iOS.`);
+            return;
+          }
+        }
+      } else if (Platform.OS === 'android' && Platform.Version >= 33) {
+        // On Android 13+, check POST_NOTIFICATIONS and request if needed without blocking topic subscription
+        PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS)
+          .then(granted => {
+            if (!granted) {
+              this.requestUserPermission().catch(() => {});
+            }
+          })
+          .catch(() => {});
       }
 
       const topicName = `church_${churchId}`;
       await messaging().subscribeToTopic(topicName);
       console.log(`📡 Subscribed to FCM topic: ${topicName}`);
-    } catch (error) {
-      console.error(`❌ Failed to subscribe to topic church_${churchId}:`, error);
+    } catch (error: any) {
+      console.warn(`Failed to subscribe to topic church_${churchId}:`, error?.message || error);
     }
   }
 

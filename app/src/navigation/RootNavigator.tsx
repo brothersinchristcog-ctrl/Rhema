@@ -25,6 +25,7 @@ import * as Notifications from 'expo-notifications';
 import VerseOfTheDayScreen from '../screens/VerseOfTheDayScreen';
 import VerseNotificationService from '../services/VerseNotificationService';
 import DailyQuizNotificationService from '../services/DailyQuizNotificationService';
+import FirestoreService from '../services/FirestoreService';
 
 // Auth & Onboarding
 import AuthNavigator from './AuthNavigator';
@@ -911,7 +912,8 @@ function Navigation() {
         // Initialize Daily Bible Quiz 5:00 AM Automated Notifications
         DailyQuizNotificationService.initialize();
 
-
+        const targetChurchId = (await FirestoreService.getChurchId()) || 'rhema';
+        await NotificationService.subscribeToChurchTopic(targetChurchId);
       };
       initNotifications();
     }
@@ -977,10 +979,18 @@ function Navigation() {
     return isChurchExpired ? LockedFeatureScreen : Component;
   };
 
+  const initialRouteName = !user 
+    ? "Auth" 
+    : !onboardingComplete 
+    ? "Onboarding" 
+    : (showAdminView && isAdmin) 
+    ? "AdminRoot" 
+    : "Tabs";
+
   return (
     <Stack.Navigator
       id="root-navigator"
-      initialRouteName={showAdminView ? "AdminRoot" : "Tabs"}
+      initialRouteName={initialRouteName}
       screenOptions={{ headerShown: false, animation: 'none' }}
     >
       {user ? (
