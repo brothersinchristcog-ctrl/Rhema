@@ -1007,7 +1007,7 @@ export default function SongsScreen({ navigation, route }: any) {
 
   // ── Render Event Card Header ─────────────────────
   const renderEventCardHeader = () => {
-    if (!activeService || validServices.length === 0) {
+    if (!activeEvent || validServices.length === 0) {
       return (
         <View style={{ paddingHorizontal: 20, paddingTop: 36, paddingBottom: 24, alignItems: 'center' }}>
           <View style={{
@@ -1040,6 +1040,8 @@ export default function SongsScreen({ navigation, route }: any) {
       }
       return activeService?.date || (activeEvent ? (activeEvent.date || '') : '');
     })();
+
+    const displayServiceTime = activeService?.time || activeEvent?.time || '';
 
     const displayTitle = activeService
       ? (activeService.name || activeEvent?.title || 'Church Service Flow')
@@ -1076,7 +1078,7 @@ export default function SongsScreen({ navigation, route }: any) {
               ) : null}
 
               {/* Date and Time stacked vertically without borders */}
-              {(displayServiceDate || activeService?.time) ? (
+              {(displayServiceDate || displayServiceTime) ? (
                 <View style={{ marginTop: 8, gap: 5 }}>
                   {displayServiceDate ? (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -1087,11 +1089,11 @@ export default function SongsScreen({ navigation, route }: any) {
                     </View>
                   ) : null}
 
-                  {activeService?.time ? (
+                  {displayServiceTime ? (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                       <Clock size={13} color={isDark ? '#38BDF8' : '#0284C7'} />
                       <Text style={{ fontSize: 12.5, color: isDark ? '#D4D4D8' : '#334155', fontWeight: '600' }}>
-                        {activeService.time}
+                        {displayServiceTime}
                       </Text>
                     </View>
                   ) : null}
@@ -1623,17 +1625,7 @@ export default function SongsScreen({ navigation, route }: any) {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? '#FFFFFF' : '#0F172A'} />}
           ListHeaderComponent={renderEventCardHeader()}
           ListEmptyComponent={
-            !activeEvent ? (
-              <View style={styles.emptyState}>
-                <CalendarDays size={44} color="#cbd5e1" />
-                <Text style={[styles.emptyTitle, { color: isDark ? '#E4E4E7' : '#0F172A' }]}>
-                  No Upcoming Event Songs
-                </Text>
-                <Text style={styles.emptySub}>
-                  When worship songs are scheduled for an upcoming event, they will appear here.
-                </Text>
-              </View>
-            ) : !activeServiceId ? (
+            (!activeEvent || validServices.length === 0) ? null : !activeServiceId ? (
               <View style={[styles.emptyState, { paddingTop: 36, paddingBottom: 60, paddingHorizontal: 24 }]}>
                 <View style={{
                   width: 60,
