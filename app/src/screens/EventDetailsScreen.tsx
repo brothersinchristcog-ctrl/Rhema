@@ -62,13 +62,33 @@ const { width, height } = Dimensions.get('window');
  *  - 'completed': event date+endTime is in the past
  */
 function getEventStatus(event: any): 'upcoming' | 'live' | 'completed' {
+  if (event?.status === 'completed') return 'completed';
+  if (event?.status === 'cancelled') return 'completed';
+
   const today = new Date();
 
-  // Parse date string like "2026-06-10"
-  const dateParts = (event?.date || '').split('-');
-  const eventYear = parseInt(dateParts[0]) || today.getFullYear();
-  const eventMonth = parseInt(dateParts[1]) - 1 || 0;
-  const eventDay = parseInt(dateParts[2]) || today.getDate();
+  // Parse date string like "2026-06-10" or "10-06-2026"
+  const rawDate = event?.date || '';
+  let eventYear = today.getFullYear();
+  let eventMonth = today.getMonth();
+  let eventDay = today.getDate();
+
+  if (rawDate.includes('-')) {
+    const parts = rawDate.split('T')[0].split('-');
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        // YYYY-MM-DD
+        eventYear = parseInt(parts[0], 10);
+        eventMonth = parseInt(parts[1], 10) - 1;
+        eventDay = parseInt(parts[2], 10);
+      } else {
+        // DD-MM-YYYY
+        eventDay = parseInt(parts[0], 10);
+        eventMonth = parseInt(parts[1], 10) - 1;
+        eventYear = parseInt(parts[2], 10);
+      }
+    }
+  }
 
   const parseTime = (timeStr: string) => {
     if (!timeStr) return null;
@@ -86,7 +106,18 @@ function getEventStatus(event: any): 'upcoming' | 'live' | 'completed' {
   }
 
   if (today < startDt) return 'upcoming';
-  if (endDt && today > endDt) return 'completed';
+
+  if (endDt) {
+    if (today > endDt) return 'completed';
+    return 'live';
+  }
+
+  // If no explicit endTime, assume 3 hours duration or end of day
+  const defaultEndDt = new Date(startDt.getTime() + 3 * 60 * 60 * 1000);
+  const endOfDay = new Date(eventYear, eventMonth, eventDay, 23, 59, 59);
+  const effectiveEndDt = defaultEndDt > endOfDay ? endOfDay : defaultEndDt;
+
+  if (today > effectiveEndDt) return 'completed';
   return 'live';
 }
 
@@ -832,14 +863,15 @@ export default function EventDetailsScreen({ route, navigation }: any) {
             </View>
           </View>
 
-          {/* ── MEMBER RSVP PARTICIPATION POLL ── */}
-          {event?.rsvpEnabled === true && (
+          {/* ── MEMBER RSVP PARTICIPATION POLL (Active for Upcoming/Live events; hidden once Completed) ── */}
+          {event?.rsvpEnabled === true && status !== 'completed' && (
             <EventRsvpPollCard
               eventId={event.id}
               churchId={activeChurch?.id}
               eventTitle={event.title || event.name || 'Church Event'}
               eventDate={formatDate(event.date)}
               rsvpDeadline={event.rsvpDeadline}
+              isCompleted={false}
               currentUser={{
                 id: member?.id || user?.uid || '',
                 name: member?.name || (member as any)?.fullName || user?.displayName || 'Member',
