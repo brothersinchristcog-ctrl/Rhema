@@ -34,6 +34,8 @@ import {
 } from 'lucide-react-native';
 import { openZoomMeeting } from '../utils/ZoomLauncher';
 import YoutubePlayer from 'react-native-youtube-iframe';
+import { WebView } from 'react-native-webview';
+import firestore from '@react-native-firebase/firestore';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -41,7 +43,7 @@ import * as Clipboard from 'expo-clipboard';
 import RNShare from 'react-native-share';
 import ViewShot from 'react-native-view-shot';
 
-import { findEventVideo } from '../services/YouTubeService';
+import { findEventVideo, findActiveLiveStream, getChannelId } from '../services/YouTubeService';
 import { useAuth } from '../context/AuthContext';
 import { useChurch } from '../context/ChurchContext';
 import EventRsvpPollCard from '../components/EventRsvpPollCard';
@@ -86,6 +88,21 @@ function getEventStatus(event: any): 'upcoming' | 'live' | 'completed' {
   if (today < startDt) return 'upcoming';
   if (endDt && today > endDt) return 'completed';
   return 'live';
+}
+
+function extractYoutubeVideoId(urlOrId?: string): string {
+  if (!urlOrId || typeof urlOrId !== 'string') return '';
+  const clean = urlOrId.trim();
+  if (/^[\w-]{11}$/.test(clean)) return clean;
+  const liveMatch = clean.match(/\/live\/([\w-]{11})/);
+  if (liveMatch) return liveMatch[1];
+  const watchMatch = clean.match(/[?&]v=([\w-]{11})/);
+  if (watchMatch) return watchMatch[1];
+  const shortMatch = clean.match(/youtu\.be\/([\w-]{11})/);
+  if (shortMatch) return shortMatch[1];
+  const embedMatch = clean.match(/\/embed\/([\w-]{11})/);
+  if (embedMatch) return embedMatch[1];
+  return '';
 }
 
 export default function EventDetailsScreen({ route, navigation }: any) {
@@ -140,7 +157,6 @@ export default function EventDetailsScreen({ route, navigation }: any) {
         uri,
         (w, h) => {
           if (w > 0 && h > 0) {
-            // Keep aspect ratio within practical mobile bounds [0.75 (tall portrait flyer) to 2.2 (wide banner)]
             const r = Math.max(0.75, Math.min(2.2, w / h));
             setImageAspectRatio(r);
           }
@@ -160,10 +176,118 @@ export default function EventDetailsScreen({ route, navigation }: any) {
     }
   }, [event.id, status, manualYoutubeId, churchYoutubeHandle]);
 
+  // Live Stream state for inline playback & tab navigation
+  const [liveStreamVideoId, setLiveStreamVideoId] = useState<string | null>(null);
+  const [liveStreamChannelId, setLiveStreamChannelId] = useState<string | null>(null);
+  const [liveStreamLoading, setLiveStreamLoading] = useState<boolean>(false);
+
+  // Dynamic live stream embed URL for WebView fallback
+  const liveChannelEmbedUri = useMemo(() => {
+    if (liveStreamChannelId) {
+      return `https://www.youtube-nocookie.com/embed/live_stream?channel=${liveStreamChannelId}&autoplay=1&playsinline=1`;
+    }
+    return null;
+  }, [liveStreamChannelId]);
+
+  // Resolve live stream video ID / channel ID when status is live
+  useEffect(() => {
+    let isMounted = true;
+    const churchId = activeChurch?.id || 'rhema';
+
+    // 1. Direct video ID check in event fields
+    const directId = extractYoutubeVideoId(event.youtubeId || event.liveUrl || event.livestreamUrl);
+    if (directId) {
+      setLiveStreamVideoId(directId);
+      return;
+    }
+
+    // 2. Real-time listener for church youtubeLiveState (broadcast from pastor/admin)
+    const unsubChurch = firestore()
+      .collection('Rhema Church')
+      .doc(churchId)
+      .onSnapshot(
+        (doc) => {
+          if (!isMounted) return;
+          if (doc.exists) {
+            const lData = doc.data()?.youtubeLiveState;
+            const liveVid = lData?.videoId || lData?.lastNotifiedVideoId;
+            if (lData?.isLive && liveVid) {
+              setLiveStreamVideoId(liveVid);
+            }
+          }
+        },
+        () => {}
+      );
+
+    // 3. Resolve channel or live URL via YouTubeService
+    const targetUrl =
+      event.liveUrl ||
+      event.livestreamUrl ||
+      activeChurch?.socialLinks?.youtube ||
+      churchYoutubeHandle ||
+      '@Brothersinchristfellowship';
+
+    if (targetUrl) {
+      setLiveStreamLoading(true);
+      findActiveLiveStream(targetUrl)
+        .then((res) => {
+          if (!isMounted) return;
+          if (res?.videoId) {
+            setLiveStreamVideoId(res.videoId);
+          } else {
+            getChannelId(targetUrl).then((cId) => {
+              if (isMounted && cId) {
+                setLiveStreamChannelId(cId);
+              }
+            });
+          }
+        })
+        .catch(() => {
+          getChannelId(targetUrl).then((cId) => {
+            if (isMounted && cId) {
+              setLiveStreamChannelId(cId);
+            }
+          });
+        })
+        .finally(() => {
+          if (isMounted) setLiveStreamLoading(false);
+        });
+    }
+
+    return () => {
+      isMounted = false;
+      unsubChurch();
+    };
+  }, [event.id, event.liveUrl, event.livestreamUrl, event.youtubeId, status, activeChurch?.id, churchYoutubeHandle]);
+
   const youtubeId = manualYoutubeId || autoYoutubeId;
-  const liveUrl = event.liveUrl || event.youtubeId
-    ? `https://www.youtube.com/watch?v=${manualYoutubeId}`
-    : churchYoutubeHandle ? `https://www.youtube.com/${churchYoutubeHandle}/streams` : '';
+  const liveUrl = event.liveUrl || event.livestreamUrl || (manualYoutubeId ? `https://www.youtube.com/watch?v=${manualYoutubeId}` : '') || (churchYoutubeHandle ? `https://www.youtube.com/${churchYoutubeHandle}/streams` : '');
+
+  // Navigate directly to the in-app YouTube Live Tab
+  const handleJoinLiveStream = () => {
+    const rawTarget =
+      event.liveUrl ||
+      event.livestreamUrl ||
+      (manualYoutubeId ? `https://www.youtube.com/watch?v=${manualYoutubeId}` : '') ||
+      activeChurch?.socialLinks?.youtube ||
+      'https://www.youtube.com/@Brothersinchristfellowship/live';
+
+    if (rawTarget.includes('zoom.us')) {
+      openZoomMeeting({
+        meetingLink: rawTarget,
+        password: event?.passcode || event?.password,
+        userName: undefined,
+      });
+      return;
+    }
+
+    navigation.navigate('YouTubeLive', {
+      url: rawTarget,
+      videoId: liveStreamVideoId || manualYoutubeId || undefined,
+      title: event.title || event.name || 'Live Service',
+      churchId: activeChurch?.id,
+    });
+  };
 
   const formatTime = (timeStr: string) => {
     if (!timeStr) return '--:--';
@@ -898,27 +1022,89 @@ export default function EventDetailsScreen({ route, navigation }: any) {
               </View>
             )}
 
-            {/* LIVE — show the live stream button */}
+            {/* LIVE — show embedded live stream player window */}
             {status === 'live' && (
               <View>
                 <View style={styles.liveBanner}>
                   <Radio size={18} color="#fff" />
-                  <Text style={styles.liveBannerText}>This event is happening RIGHT NOW!</Text>
+                  <Text style={styles.liveBannerText}>This event is happening RIGHT NOW! · లైవ్ ప్రసారం అవుతోంది</Text>
                 </View>
-                <TouchableOpacity
-                  style={styles.liveBtn}
-                  onPress={() => Linking.openURL(
-                    manualYoutubeId
-                      ? `https://www.youtube.com/watch?v=${manualYoutubeId}`
-                      : liveUrl || 'https://www.youtube.com'
+
+                {/* ── EMBEDDED LIVE STREAM PLAYER WINDOW ── */}
+                <View style={styles.liveStreamPlayerContainer}>
+                  {liveStreamLoading && !liveStreamVideoId && !liveStreamChannelId ? (
+                    <View style={styles.liveVideoSearching}>
+                      <ActivityIndicator size="large" color="#dc2626" />
+                      <Text style={styles.liveVideoSearchingText}>Connecting to Live Stream...</Text>
+                      <Text style={styles.liveVideoSearchingSubText}>లైవ్ స్ట్రీమ్ లోడ్ అవుతోంది...</Text>
+                    </View>
+                  ) : liveStreamVideoId ? (
+                    <View style={styles.videoContainer}>
+                      <YoutubePlayer
+                        key={liveStreamVideoId}
+                        height={width * 0.55}
+                        play={true}
+                        videoId={liveStreamVideoId}
+                        webViewProps={{
+                          allowsFullscreenVideo: true,
+                          androidLayerType: 'hardware',
+                          scrollEnabled: false,
+                        }}
+                      />
+                    </View>
+                  ) : liveChannelEmbedUri ? (
+                    <View style={styles.videoContainer}>
+                      <WebView
+                        source={{ uri: liveChannelEmbedUri }}
+                        style={{ width: '100%', height: width * 0.55, backgroundColor: '#000' }}
+                        allowsInlineMediaPlayback={true}
+                        mediaPlaybackRequiresUserAction={false}
+                        javaScriptEnabled={true}
+                        domStorageEnabled={true}
+                        allowsFullscreenVideo={true}
+                      />
+                    </View>
+                  ) : (
+                    // Fallback to direct stream webview or channel stream
+                    <View style={styles.videoContainer}>
+                      <WebView
+                        source={{
+                          uri: (event.liveUrl || activeChurch?.socialLinks?.youtube || 'https://www.youtube.com/@Brothersinchristfellowship/live')
+                        }}
+                        style={{ width: '100%', height: width * 0.55, backgroundColor: '#000' }}
+                        allowsInlineMediaPlayback={true}
+                        mediaPlaybackRequiresUserAction={false}
+                        javaScriptEnabled={true}
+                        domStorageEnabled={true}
+                        allowsFullscreenVideo={true}
+                      />
+                    </View>
                   )}
-                >
-                  <Radio size={22} color="#fff" />
-                  <View>
-                    <Text style={styles.liveBtnText}>Watch Live Stream</Text>
-                    {churchYoutubeHandle ? <Text style={styles.liveBtnSub}>{churchYoutubeHandle}</Text> : null}
+
+                  {/* Player footer banner with quick action to open YouTube Live screen */}
+                  <View style={styles.livePlayerFooter}>
+                    <View style={styles.livePlayerFooterLeft}>
+                      <View style={styles.liveDotPill}>
+                        <View style={styles.liveDotInner} />
+                        <Text style={styles.liveDotPillText}>LIVE STREAM</Text>
+                      </View>
+                      {churchYoutubeHandle ? (
+                        <Text style={[styles.liveHandleText, { color: '#94A3B8' }]} numberOfLines={1}>
+                          {churchYoutubeHandle}
+                        </Text>
+                      ) : null}
+                    </View>
+
+                    <TouchableOpacity
+                      style={styles.openLiveScreenBtn}
+                      onPress={handleJoinLiveStream}
+                      activeOpacity={0.8}
+                    >
+                      <Radio size={13} color="#DC2626" style={{ marginRight: 5 }} />
+                      <Text style={styles.openLiveScreenBtnText}>Open in Live Tab</Text>
+                    </TouchableOpacity>
                   </View>
-                </TouchableOpacity>
+                </View>
               </View>
             )}
 
@@ -959,20 +1145,7 @@ export default function EventDetailsScreen({ route, navigation }: any) {
             {status === 'live' ? (
               <TouchableOpacity
                 style={styles.singleShareBtn}
-                onPress={() => {
-                  const url = manualYoutubeId
-                    ? `https://www.youtube.com/watch?v=${manualYoutubeId}`
-                    : liveUrl || 'https://www.youtube.com';
-                  if (url.includes('zoom.us')) {
-                    openZoomMeeting({
-                      meetingLink: url,
-                      password: event?.passcode || event?.password,
-                      userName: undefined
-                    });
-                  } else {
-                    Linking.openURL(url);
-                  }
-                }}
+                onPress={handleJoinLiveStream}
                 activeOpacity={0.85}
               >
                 <LinearGradient
@@ -1499,5 +1672,94 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     elevation: 8, shadowColor: '#1a2d5a', shadowOpacity: 0.35, shadowRadius: 8
   },
-  mainBtnText: { color: '#fff', fontSize: 14, fontWeight: '900', letterSpacing: 0.5 }
+  mainBtnText: { color: '#fff', fontSize: 14, fontWeight: '900', letterSpacing: 0.5 },
+
+  // ── LIVE STREAM PLAYER WINDOW ──
+  liveStreamPlayerContainer: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  liveVideoSearching: {
+    backgroundColor: '#0F172A',
+    borderRadius: 16,
+    padding: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: width * 0.55,
+  },
+  liveVideoSearchingText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#F8FAFC',
+    marginTop: 6,
+  },
+  liveVideoSearchingSubText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontWeight: '500',
+  },
+  livePlayerFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#1E293B',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+  },
+  livePlayerFooterLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+    marginRight: 8,
+  },
+  liveDotPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(220, 38, 38, 0.2)',
+    borderWidth: 1,
+    borderColor: '#DC2626',
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 8,
+    gap: 5,
+  },
+  liveDotInner: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#EF4444',
+  },
+  liveDotPillText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#F87171',
+    letterSpacing: 0.4,
+  },
+  liveHandleText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  openLiveScreenBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  openLiveScreenBtnText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#DC2626',
+  },
 });
