@@ -24,9 +24,11 @@ import {
   ChevronDown,
   Building2,
   CheckCircle2,
+  Check,
+  UserCheck,
 } from 'lucide-react-native';
 import CareCellService from '../../../../services/CareCellService';
-import { CareCell } from '../../../../types/CareCellTypes';
+import { CareCell, CareCellMembership } from '../../../../types/CareCellTypes';
 
 interface CareCellVisitModalProps {
   visible: boolean;
@@ -65,6 +67,11 @@ export default function CareCellVisitModal({
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // Specific member selection state
+  const [cellMembers, setCellMembers] = useState<CareCellMembership[]>([]);
+  const [visitScope, setVisitScope] = useState<'ALL' | 'SPECIFIC'>('ALL');
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+
   // Set default cell and date when opened
   useEffect(() => {
     if (visible) {
@@ -97,6 +104,7 @@ export default function CareCellVisitModal({
           const churchId = await CareCellService.getChurchId();
           const members = await CareCellService.getActiveCellMemberships(churchId, selectedCellId);
           if (isMounted) {
+            setCellMembers(members);
             setMemberCount(members.length);
           }
         } catch (e) {
@@ -134,6 +142,10 @@ export default function CareCellVisitModal({
       Alert.alert('Required', 'Please specify the visiting team (e.g. Pastor & Cell Leader).');
       return;
     }
+    if (visitScope === 'SPECIFIC' && selectedMemberIds.length === 0) {
+      Alert.alert('Select Member', 'Please select at least one specific cell member to visit.');
+      return;
+    }
 
     setSaving(true);
     try {
@@ -149,11 +161,15 @@ export default function CareCellVisitModal({
         visitors: visitors.trim(),
         createdBy,
         createdByName: createdByName || 'Leader',
+        targetMemberIds: visitScope === 'SPECIFIC' ? selectedMemberIds : undefined,
       });
 
+      const recipientMsg = visitScope === 'SPECIFIC'
+        ? `delivered to the ${selectedMemberIds.length} selected member(s)`
+        : `delivered to all assigned members of ${activeCell?.name || 'this Care Cell'}`;
       Alert.alert(
         'Visit Notification Sent!',
-        `Notification successfully delivered to all assigned members of ${activeCell?.name || 'this Care Cell'}. Members can now respond with Accept or Decline.`
+        `Notification successfully ${recipientMsg}. Members can now respond with Accept or Decline and specify their preferred visit time.`
       );
 
       onSuccess?.();
@@ -227,6 +243,78 @@ export default function CareCellVisitModal({
                   );
                 })}
               </ScrollView>
+            )}
+
+            {/* Visit Recipient Target (All Members vs Specific Member) */}
+            <Text style={styles.fieldLabel}>VISIT RECIPIENTS / TARGET *</Text>
+            <View style={styles.scopeToggleRow}>
+              <TouchableOpacity
+                style={[styles.scopeBtn, visitScope === 'ALL' && styles.scopeBtnActive]}
+                onPress={() => setVisitScope('ALL')}
+                activeOpacity={0.8}
+              >
+                <Users size={14} color={visitScope === 'ALL' ? '#FFFFFF' : '#475569'} style={{ marginRight: 6 }} />
+                <Text style={[styles.scopeBtnTxt, visitScope === 'ALL' && styles.scopeBtnTxtActive]}>
+                  All Members ({memberCount || 0})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.scopeBtn, visitScope === 'SPECIFIC' && styles.scopeBtnActive]}
+                onPress={() => setVisitScope('SPECIFIC')}
+                activeOpacity={0.8}
+              >
+                <UserCheck size={14} color={visitScope === 'SPECIFIC' ? '#FFFFFF' : '#475569'} style={{ marginRight: 6 }} />
+                <Text style={[styles.scopeBtnTxt, visitScope === 'SPECIFIC' && styles.scopeBtnTxtActive]}>
+                  Specific Member{selectedMemberIds.length > 0 ? ` (${selectedMemberIds.length})` : 's'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* If Specific: Member Picker Chips */}
+            {visitScope === 'SPECIFIC' && (
+              <View style={styles.specificMembersBox}>
+                <Text style={styles.specificMembersHelper}>
+                  Tap members to select who should receive this house visit notification:
+                </Text>
+                {loadingMembers ? (
+                  <ActivityIndicator size="small" color="#1A2D5A" style={{ marginVertical: 8 }} />
+                ) : cellMembers.length === 0 ? (
+                  <Text style={styles.noMembersInCellTxt}>No active members in this cell yet.</Text>
+                ) : (
+                  <View style={styles.memberChipsWrap}>
+                    {cellMembers.map((m) => {
+                      const isSelected = selectedMemberIds.includes(m.memberId);
+                      return (
+                        <TouchableOpacity
+                          key={m.memberId}
+                          style={[styles.memberSelectChip, isSelected && styles.memberSelectChipActive]}
+                          onPress={() => {
+                            setSelectedMemberIds((prev) =>
+                              prev.includes(m.memberId)
+                                ? prev.filter((id) => id !== m.memberId)
+                                : [...prev, m.memberId]
+                            );
+                          }}
+                          activeOpacity={0.75}
+                        >
+                          <View style={[styles.miniCheck, isSelected && styles.miniCheckActive]}>
+                            {isSelected && <Check size={10} color="#FFFFFF" strokeWidth={3} />}
+                          </View>
+                          <Text style={[styles.memberSelectChipName, isSelected && styles.memberSelectChipNameActive]}>
+                            {m.memberName}
+                          </Text>
+                          {m.memberPhone ? (
+                            <Text style={[styles.memberSelectChipPhone, isSelected && { color: '#E0E7FF' }]}>
+                              ({m.memberPhone.slice(-4)})
+                            </Text>
+                          ) : null}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
             )}
 
             {/* Title & Quick Presets */}
@@ -613,6 +701,102 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     color: '#FFFFFF',
+  },
+  scopeToggleRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  scopeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.2,
+    borderColor: '#E2E8F0',
+  },
+  scopeBtnActive: {
+    backgroundColor: '#1A2D5A',
+    borderColor: '#1A2D5A',
+  },
+  scopeBtnTxt: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  scopeBtnTxtActive: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+  specificMembersBox: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.2,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 14,
+  },
+  specificMembersHelper: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginBottom: 8,
+  },
+  noMembersInCellTxt: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontStyle: 'italic',
+  },
+  memberChipsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  memberSelectChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.2,
+    borderColor: '#CBD5E1',
+  },
+  memberSelectChipActive: {
+    backgroundColor: '#3730A3',
+    borderColor: '#3730A3',
+  },
+  miniCheck: {
+    width: 14,
+    height: 14,
+    borderRadius: 3,
+    borderWidth: 1.2,
+    borderColor: '#94A3B8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+    backgroundColor: '#FFFFFF',
+  },
+  miniCheckActive: {
+    backgroundColor: '#4F46E5',
+    borderColor: '#4F46E5',
+  },
+  memberSelectChipName: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  memberSelectChipNameActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  memberSelectChipPhone: {
+    fontSize: 10.5,
+    color: '#64748B',
+    marginLeft: 3,
   },
 });
 

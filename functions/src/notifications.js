@@ -2476,43 +2476,88 @@ export const pushCareCellMeeting = onDocumentCreated({ document: 'Rhema Church/{
     const cellName = data.cellName || 'Care Cell';
     const dateStr = data.date || '';
     const timeStr = data.startTime || '7:00 PM';
+    const endTimeStr = data.endTime ? ` – ${data.endTime}` : '';
+    const locationStr = data.location ? ` at ${data.location}` : '';
     const messaging = getMessaging();
-    const notifTitle = `🤝 ${cellName} Gathering`;
-    const notifBody = `${title} on ${dateStr} at ${timeStr}. Tap to view Scripture & location!`;
-    const payload = {
-        notification: {
-            title: notifTitle,
-            body: notifBody,
-        },
-        data: {
-            type: 'care_cell_meeting',
-            title: notifTitle,
-            body: notifBody,
-            meetingId: String(meetingId),
-            churchId: String(churchId),
-            cellId: String(data.cellId || ''),
-            click_action: 'FLUTTER_NOTIFICATION_CLICK',
-        },
-        android: {
-            priority: 'high',
-            notification: {
-                sound: 'default',
-                channelId: 'church_alerts',
-            },
-        },
-        apns: {
-            payload: {
-                aps: {
-                    sound: 'default',
-                    badge: 1,
-                },
-            },
-        },
-        topic: `church_${churchId}`,
-    };
     try {
-        await messaging.send(payload);
-        console.log(`Successfully sent care cell meeting push for ${meetingId}`);
+        // 1. Fetch active members assigned ONLY to this specific Care Cell
+        const membershipsSnap = await db
+            .collection('Rhema Church')
+            .doc(churchId)
+            .collection('careCellMemberships')
+            .where('cellId', '==', data.cellId)
+            .where('membershipStatus', '==', 'Active')
+            .get();
+        let memberIds = membershipsSnap.docs.map((d) => d.data().memberId).filter(Boolean);
+        if (Array.isArray(data.targetMemberIds) && data.targetMemberIds.length > 0) {
+            memberIds = memberIds.filter((id) => data.targetMemberIds.includes(id));
+        }
+        if (memberIds.length === 0) {
+            console.log(`No active members found in care cell ${data.cellId} for meeting push.`);
+            return;
+        }
+        // 2. Collect FCM tokens strictly for these specific members
+        const tokens = [];
+        for (const mId of memberIds) {
+            try {
+                const memDoc = await db
+                    .collection('Rhema Church')
+                    .doc(churchId)
+                    .collection('members')
+                    .doc(mId)
+                    .get();
+                if (memDoc.exists) {
+                    const token = memDoc.data()?.fcmToken;
+                    if (token && typeof token === 'string' && !tokens.includes(token)) {
+                        tokens.push(token);
+                    }
+                }
+            }
+            catch (_) { }
+        }
+        if (tokens.length > 0) {
+            const notifTitle = `🤝 ${cellName} Gathering: ${title}`;
+            const notifBody = `${title} on ${dateStr} at ${timeStr}${endTimeStr}${locationStr}. Tap to view Scripture & location!`;
+            const messagePayload = {
+                notification: {
+                    title: notifTitle,
+                    body: notifBody,
+                },
+                data: {
+                    type: 'care_cell_meeting',
+                    title: notifTitle,
+                    body: notifBody,
+                    meetingId: String(meetingId),
+                    churchId: String(churchId),
+                    cellId: String(data.cellId || ''),
+                    date: String(dateStr),
+                    startTime: String(timeStr),
+                    location: String(data.location || ''),
+                    click_action: 'FLUTTER_NOTIFICATION_CLICK',
+                },
+                android: {
+                    priority: 'high',
+                    notification: {
+                        sound: 'default',
+                        channelId: 'church_alerts',
+                    },
+                },
+                apns: {
+                    payload: {
+                        aps: {
+                            sound: 'default',
+                            badge: 1,
+                        },
+                    },
+                },
+                tokens,
+            };
+            const response = await messaging.sendEachForMulticast(messagePayload);
+            console.log(`Successfully sent Care Cell meeting push to ${response.successCount}/${tokens.length} members for meeting ${meetingId}`);
+        }
+        else {
+            console.log(`No valid FCM tokens found for members in care cell ${data.cellId}`);
+        }
     }
     catch (err) {
         console.error('Error sending care cell meeting notification:', err);

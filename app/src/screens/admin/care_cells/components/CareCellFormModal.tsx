@@ -13,7 +13,7 @@ import {
   Alert,
   Image,
 } from 'react-native';
-import { X, UserPlus, MapPin, Shield, Calendar, Clock, Users, CheckCircle2, ChevronDown, User, Sparkles, Check, AlertCircle } from 'lucide-react-native';
+import { X, UserPlus, MapPin, Shield, Calendar, Clock, Users, CheckCircle2, ChevronDown, User, Sparkles, Check, AlertCircle, Building2, Trash2, AlertTriangle } from 'lucide-react-native';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import FirestoreService from '../../../../services/FirestoreService';
 import CareCellService, { isMemberInLocation } from '../../../../services/CareCellService';
@@ -71,6 +71,72 @@ export default function CareCellFormModal({
   const [churchAdmins, setChurchAdmins] = useState<any[]>([]);
 
   const [timePickerVisible, setTimePickerVisible] = useState(false);
+
+  // Success Card Modal State
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [savedCellSummary, setSavedCellSummary] = useState<{
+    name: string;
+    code: string;
+    leaderName: string;
+    leaderPhone: string;
+    meetingDay: string;
+    meetingTime: string;
+    meetingEndTime?: string;
+    meetingLocation: string;
+    assignedCount: number;
+    isEditing: boolean;
+  } | null>(null);
+
+  // Delete confirmation and success state in modal
+  const [showDeleteConfirmInModal, setShowDeleteConfirmInModal] = useState(false);
+  const [showDeleteSuccessInModal, setShowDeleteSuccessInModal] = useState(false);
+  const [deletedSummaryInModal, setDeletedSummaryInModal] = useState<{
+    name: string;
+    code: string;
+    leaderName?: string;
+    location?: string;
+  } | null>(null);
+
+  const handleDelete = () => {
+    if (!cellToEdit) return;
+    setShowDeleteConfirmInModal(true);
+  };
+
+  const confirmDeleteInModal = async () => {
+    if (!cellToEdit) return;
+    try {
+      setSaving(true);
+      const churchId = await CareCellService.getChurchId();
+      await CareCellService.deleteCareCell(churchId, cellToEdit.id);
+      setDeletedSummaryInModal({
+        name: cellToEdit.name,
+        code: cellToEdit.cellCode,
+        leaderName: cellToEdit.leaderName,
+        location: cellToEdit.location || cellToEdit.meetingLocation,
+      });
+      setShowDeleteConfirmInModal(false);
+      setShowDeleteSuccessInModal(true);
+    } catch (err: any) {
+      console.error('Error deleting Care Cell:', err);
+      Alert.alert('Error', err.message || 'Failed to delete Care Cell.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteSuccessDoneInModal = () => {
+    setShowDeleteSuccessInModal(false);
+    setDeletedSummaryInModal(null);
+    onSaved();
+    onClose();
+  };
+
+  const handleSuccessDone = () => {
+    setShowSuccessModal(false);
+    setSavedCellSummary(null);
+    onSaved();
+    onClose();
+  };
 
   // Church members pool for location matching
   const [allChurchMembers, setAllChurchMembers] = useState<any[]>([]);
@@ -316,13 +382,19 @@ export default function CareCellFormModal({
         );
       }
 
-      const countMsg = assignedList.length > 0
-        ? ` with ${assignedList.length} member(s) assigned from ${location.trim()}`
-        : '';
-      Alert.alert(isEditing ? 'Updated' : 'Created', `Care Cell ${isEditing ? 'updated' : 'created'} successfully${countMsg}!`);
-
-      onSaved();
-      onClose();
+      setSavedCellSummary({
+        name: name.trim(),
+        code: cellCode.trim(),
+        leaderName,
+        leaderPhone: leaderPhone || '',
+        meetingDay,
+        meetingTime: meetingTime.trim(),
+        meetingEndTime: meetingEndTime ? meetingEndTime.trim() : '',
+        meetingLocation: meetingLocation.trim() || location.trim(),
+        assignedCount: assignedList.length,
+        isEditing,
+      });
+      setShowSuccessModal(true);
     } catch (err: any) {
       console.error('Error saving Care Cell:', err);
       Alert.alert('Error', err.message || 'Failed to save Care Cell. Please try again.');
@@ -334,30 +406,36 @@ export default function CareCellFormModal({
   return (
     <>
       <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.overlay}
-        >
-          <View style={styles.sheetContainer}>
-            {/* Sheet Header */}
-            <View style={styles.header}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.headerTitle}>{isEditing ? 'Edit Care Cell' : 'Create Care Cell'}</Text>
-                <Text style={styles.headerSubtitle}>
-                  {isEditing ? 'Modify fellowship group parameters' : 'Establish a new Care Cell fellowship group'}
-                </Text>
+        <View style={styles.overlay}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
+            style={styles.keyboardWrap}
+          >
+            <View style={styles.sheetContainer}>
+              {/* Sheet Header */}
+              <View style={styles.header}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.headerTitle}>{isEditing ? 'Edit Care Cell' : 'Create Care Cell'}</Text>
+                  <Text style={styles.headerSubtitle}>
+                    {isEditing ? 'Modify fellowship group parameters' : 'Establish a new Care Cell fellowship group'}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <X size={20} color="#1E293B" />
+                </TouchableOpacity>
               </View>
-              <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <X size={20} color="#1E293B" />
-              </TouchableOpacity>
-            </View>
 
-            {/* Scrollable Form */}
-            <ScrollView
-              contentContainerStyle={styles.formContent}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-            >
+              {/* Scrollable Form */}
+              <ScrollView
+                style={styles.scrollFlex}
+                contentContainerStyle={styles.formContent}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+                showsVerticalScrollIndicator={true}
+                automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+                bounces={true}
+              >
               {/* Care Cell Name */}
               <View style={styles.fieldGroup}>
                 <Text style={styles.fieldLabel}>Care Cell Name *</Text>
@@ -742,9 +820,330 @@ export default function CareCellFormModal({
                   </Text>
                 )}
               </TouchableOpacity>
+
+              {/* Delete Button (Only when editing) */}
+              {isEditing && cellToEdit && (
+                <TouchableOpacity
+                  style={styles.deleteCellModalBtn}
+                  onPress={handleDelete}
+                  disabled={saving}
+                  activeOpacity={0.8}
+                >
+                  <Trash2 size={16} color="#DC2626" style={{ marginRight: 6 }} />
+                  <Text style={styles.deleteCellModalBtnTxt}>Delete Care Cell</Text>
+                </TouchableOpacity>
+              )}
             </ScrollView>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      {/* ── Custom Delete Confirmation Modal (In Form) ── */}
+      <Modal
+        visible={showDeleteConfirmInModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!saving) setShowDeleteConfirmInModal(false);
+        }}
+      >
+        <View style={styles.successModalOverlay}>
+          <View style={styles.deleteConfirmModalCard}>
+            {/* Top Close Button */}
+            <TouchableOpacity
+              style={styles.successModalCloseBtn}
+              onPress={() => setShowDeleteConfirmInModal(false)}
+              disabled={saving}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <X size={18} color="#64748B" />
+            </TouchableOpacity>
+
+            {/* Warning Ring */}
+            <View style={styles.deleteWarningRingOuter}>
+              <View style={styles.deleteWarningRingInner}>
+                <Trash2 size={26} color="#DC2626" strokeWidth={2.4} />
+              </View>
+            </View>
+
+            <Text style={styles.deleteConfirmTitle}>Delete Care Cell?</Text>
+            <Text style={styles.deleteConfirmSubtitle}>
+              Are you sure you want to permanently delete this fellowship group?
+            </Text>
+
+            {cellToEdit && (
+              <View style={styles.deleteCellPreviewBox}>
+                <View style={styles.summaryHeaderRow}>
+                  <Building2 size={15} color="#1A2D5A" style={{ marginRight: 6 }} />
+                  <Text style={styles.summaryCellName} numberOfLines={1}>
+                    {cellToEdit.name}
+                  </Text>
+                  <View style={styles.summaryCodeBadge}>
+                    <Text style={styles.summaryCodeTxt}>{cellToEdit.cellCode}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.summaryDivider} />
+
+                <View style={styles.summaryRow}>
+                  <User size={13} color="#1A2D5A" style={styles.summaryIcon} />
+                  <Text style={styles.summaryLabel}>Leader:</Text>
+                  <Text style={styles.summaryVal} numberOfLines={1}>
+                    {cellToEdit.leaderName || 'Assigned Leader'}
+                  </Text>
+                </View>
+
+                {cellToEdit.location ? (
+                  <View style={styles.summaryRow}>
+                    <MapPin size={13} color="#64748B" style={styles.summaryIcon} />
+                    <Text style={styles.summaryLabel}>Location:</Text>
+                    <Text style={styles.summaryVal} numberOfLines={1}>
+                      {cellToEdit.location}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            )}
+
+            <View style={styles.deletePermanentWarningBox}>
+              <AlertTriangle size={15} color="#DC2626" style={{ marginRight: 8, marginTop: 1 }} />
+              <Text style={styles.deletePermanentWarningTxt}>
+                This action is permanent. All assigned members will be unlinked.
+              </Text>
+            </View>
+
+            <View style={styles.deleteActionsBtnRow}>
+              <TouchableOpacity
+                style={styles.deleteCancelActionBtn}
+                onPress={() => setShowDeleteConfirmInModal(false)}
+                disabled={saving}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.deleteCancelActionBtnTxt}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.deleteConfirmActionBtn}
+                onPress={confirmDeleteInModal}
+                disabled={saving}
+                activeOpacity={0.85}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Trash2 size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.deleteConfirmActionBtnTxt}>Delete Permanently</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
-        </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      {/* ── Custom Delete Success Card Modal (In Form) ── */}
+      <Modal
+        visible={showDeleteSuccessInModal}
+        transparent
+        animationType="fade"
+        onRequestClose={handleDeleteSuccessDoneInModal}
+      >
+        <View style={styles.successModalOverlay}>
+          <View style={styles.successModalCard}>
+            <TouchableOpacity
+              style={styles.successModalCloseBtn}
+              onPress={handleDeleteSuccessDoneInModal}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <X size={18} color="#64748B" />
+            </TouchableOpacity>
+
+            <View style={styles.successIconRingOuter}>
+              <View style={styles.successIconRingInner}>
+                <CheckCircle2 size={36} color="#059669" strokeWidth={2.5} />
+              </View>
+            </View>
+
+            <View style={styles.successPill}>
+              <Sparkles size={12} color="#059669" style={{ marginRight: 5 }} />
+              <Text style={styles.successPillTxt}>CARE CELL PERMANENTLY REMOVED</Text>
+            </View>
+
+            <Text style={styles.successTitle}>Care Cell Deleted Successfully! 🗑️</Text>
+            <Text style={styles.successSubtitle}>
+              The fellowship group has been completely removed from the church roster and all linked members have been unlinked.
+            </Text>
+
+            {deletedSummaryInModal && (
+              <View style={styles.successSummaryBox}>
+                <View style={styles.summaryHeaderRow}>
+                  <Building2 size={16} color="#1A2D5A" style={{ marginRight: 6 }} />
+                  <Text style={styles.summaryCellName} numberOfLines={1}>
+                    {deletedSummaryInModal.name}
+                  </Text>
+                  <View style={styles.summaryCodeBadge}>
+                    <Text style={styles.summaryCodeTxt}>{deletedSummaryInModal.code}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.summaryDivider} />
+
+                {deletedSummaryInModal.leaderName ? (
+                  <View style={styles.summaryRow}>
+                    <User size={13} color="#1A2D5A" style={styles.summaryIcon} />
+                    <Text style={styles.summaryLabel}>Leader:</Text>
+                    <Text style={styles.summaryVal} numberOfLines={1}>
+                      {deletedSummaryInModal.leaderName}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {deletedSummaryInModal.location ? (
+                  <View style={styles.summaryRow}>
+                    <MapPin size={13} color="#64748B" style={styles.summaryIcon} />
+                    <Text style={styles.summaryLabel}>Location:</Text>
+                    <Text style={styles.summaryVal} numberOfLines={1}>
+                      {deletedSummaryInModal.location}
+                    </Text>
+                  </View>
+                ) : null}
+
+                <View style={styles.summaryRow}>
+                  <Users size={13} color="#059669" style={styles.summaryIcon} />
+                  <Text style={styles.summaryLabel}>Members:</Text>
+                  <Text style={[styles.summaryVal, { color: '#059669', fontWeight: '800' }]}>
+                    All members safely unlinked
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={styles.successDoneBtn}
+              onPress={handleDeleteSuccessDoneInModal}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.successDoneBtnTxt}>Done & Return to Care Cells</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Redesigned Care Cell Creation / Update Success Card Modal ── */}
+      <Modal
+        visible={showSuccessModal}
+        transparent
+        animationType="fade"
+        onRequestClose={handleSuccessDone}
+      >
+        <View style={styles.successModalOverlay}>
+          <View style={styles.successModalCard}>
+            {/* Top Close Button */}
+            <TouchableOpacity
+              style={styles.successModalCloseBtn}
+              onPress={handleSuccessDone}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <X size={18} color="#64748B" />
+            </TouchableOpacity>
+
+            {/* Concentric Success Indicator */}
+            <View style={styles.successIconRingOuter}>
+              <View style={styles.successIconRingInner}>
+                <CheckCircle2 size={36} color="#059669" strokeWidth={2.5} />
+              </View>
+            </View>
+
+            {/* Status Pill */}
+            <View style={styles.successPill}>
+              <Sparkles size={12} color="#059669" style={{ marginRight: 5 }} />
+              <Text style={styles.successPillTxt}>
+                {savedCellSummary?.isEditing ? 'CARE CELL UPDATED' : 'CARE CELL ESTABLISHED'}
+              </Text>
+            </View>
+
+            {/* Main Title & Subtitle */}
+            <Text style={styles.successTitle}>
+              {savedCellSummary?.isEditing ? 'Care Cell Updated! 🎉' : 'Care Cell Created! 🎉'}
+            </Text>
+            <Text style={styles.successSubtitle}>
+              {savedCellSummary?.isEditing
+                ? 'Fellowship group configuration and schedule have been updated.'
+                : 'Fellowship group is now active and ready for meetings and visits.'}
+            </Text>
+
+            {/* Confirmation Details Card (Material Design 3 Surface) */}
+            {savedCellSummary && (
+              <View style={styles.successSummaryBox}>
+                {/* Cell Header Badge */}
+                <View style={styles.summaryHeaderRow}>
+                  <Building2 size={16} color="#1A2D5A" style={{ marginRight: 6 }} />
+                  <Text style={styles.summaryCellName} numberOfLines={1}>
+                    {savedCellSummary.name}
+                  </Text>
+                  <View style={styles.summaryCodeBadge}>
+                    <Text style={styles.summaryCodeTxt}>{savedCellSummary.code}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.summaryDivider} />
+
+                {/* Leader */}
+                <View style={styles.summaryRow}>
+                  <User size={13} color="#1A2D5A" style={styles.summaryIcon} />
+                  <Text style={styles.summaryLabel}>Leader:</Text>
+                  <Text style={styles.summaryVal} numberOfLines={1}>
+                    {savedCellSummary.leaderName || 'Assigned'}
+                    {savedCellSummary.leaderPhone ? ` · ${savedCellSummary.leaderPhone}` : ''}
+                  </Text>
+                </View>
+
+                {/* Schedule */}
+                <View style={styles.summaryRow}>
+                  <Calendar size={13} color="#C9A84C" style={styles.summaryIcon} />
+                  <Text style={styles.summaryLabel}>Gathering:</Text>
+                  <Text style={styles.summaryVal}>
+                    Every {savedCellSummary.meetingDay} at {formatTimeDisplay(savedCellSummary.meetingTime)}
+                    {savedCellSummary.meetingEndTime ? ` – ${formatTimeDisplay(savedCellSummary.meetingEndTime)}` : ''}
+                  </Text>
+                </View>
+
+                {/* Location */}
+                {savedCellSummary.meetingLocation ? (
+                  <View style={styles.summaryRow}>
+                    <MapPin size={13} color="#64748B" style={styles.summaryIcon} />
+                    <Text style={styles.summaryLabel}>Location:</Text>
+                    <Text style={styles.summaryVal} numberOfLines={1}>
+                      {savedCellSummary.meetingLocation}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {/* Assigned Members */}
+                <View style={styles.summaryRow}>
+                  <Users size={13} color="#059669" style={styles.summaryIcon} />
+                  <Text style={styles.summaryLabel}>Members:</Text>
+                  <Text style={[styles.summaryVal, { color: '#059669', fontWeight: '800' }]}>
+                    {savedCellSummary.assignedCount > 0
+                      ? `${savedCellSummary.assignedCount} member(s) linked from ${location.trim() || 'locality'}`
+                      : 'No members assigned yet'}
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Done Action Button */}
+            <TouchableOpacity
+              style={styles.successDoneBtn}
+              onPress={handleSuccessDone}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.successDoneBtnTxt}>Done & View Care Cells</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
 
       {/* Member Lookup for Leader */}
@@ -820,17 +1219,27 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15, 23, 42, 0.65)',
     justifyContent: 'flex-end',
   },
+  keyboardWrap: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'flex-end',
+  },
   sheetContainer: {
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: '92%',
-    paddingBottom: Platform.OS === 'ios' ? 24 : 16,
+    height: Platform.OS === 'ios' ? '90%' : '94%',
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.15,
     shadowRadius: 12,
     elevation: 10,
+  },
+  scrollFlex: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
@@ -866,7 +1275,7 @@ const styles = StyleSheet.create({
   formContent: {
     paddingHorizontal: 20,
     paddingTop: 16,
-    paddingBottom: 36,
+    paddingBottom: Platform.OS === 'ios' ? 70 : 140,
   },
   fieldGroup: {
     marginBottom: 16,
@@ -1254,11 +1663,305 @@ const styles = StyleSheet.create({
   submitBtnDisabled: {
     backgroundColor: '#94A3B8',
   },
+  deleteCellModalBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1.2,
+    borderColor: '#FECACA',
+    borderRadius: 14,
+    paddingVertical: 13,
+    marginTop: 10,
+  },
+  deleteCellModalBtnTxt: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+  deleteConfirmModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    paddingHorizontal: 22,
+    paddingTop: 24,
+    paddingBottom: 22,
+    width: '100%',
+    maxWidth: 420,
+    alignItems: 'center',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  deleteWarningRingOuter: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#FEF2F2',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  deleteWarningRingInner: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#FEE2E2',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  deleteConfirmTitle: {
+    fontSize: 19,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+    marginBottom: 4,
+    letterSpacing: -0.3,
+  },
+  deleteConfirmSubtitle: {
+    fontSize: 12.5,
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 8,
+    lineHeight: 18,
+  },
+  deleteCellPreviewBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    borderWidth: 1.2,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    width: '100%',
+    marginBottom: 14,
+  },
+  deletePermanentWarningBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    width: '100%',
+    marginBottom: 18,
+  },
+  deletePermanentWarningTxt: {
+    flex: 1,
+    fontSize: 11.5,
+    color: '#991B1B',
+    fontWeight: '600',
+    lineHeight: 16,
+  },
+  deleteActionsBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+  },
+  deleteCancelActionBtn: {
+    flex: 1,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteCancelActionBtnTxt: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  deleteConfirmActionBtn: {
+    flex: 1.4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#DC2626',
+    borderRadius: 12,
+    paddingVertical: 12,
+    shadowColor: '#DC2626',
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  deleteConfirmActionBtnTxt: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
   submitBtnTxt: {
     fontSize: 14,
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: 0.5,
+  },
+
+  /* ── Success Card Styles (MD3 Themed) ── */
+  successModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  successModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    paddingHorizontal: 22,
+    paddingTop: 24,
+    paddingBottom: 22,
+    width: '100%',
+    maxWidth: 420,
+    alignItems: 'center',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  successModalCloseBtn: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  successIconRingOuter: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#ECFDF5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  successIconRingInner: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: '#D1FAE5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  successPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    marginBottom: 8,
+  },
+  successPillTxt: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#065F46',
+    letterSpacing: 0.5,
+  },
+  successTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1A2D5A',
+    textAlign: 'center',
+    marginBottom: 4,
+    letterSpacing: -0.3,
+  },
+  successSubtitle: {
+    fontSize: 12.5,
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 16,
+    lineHeight: 18,
+    paddingHorizontal: 8,
+  },
+  successSummaryBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    borderWidth: 1.2,
+    borderColor: '#E2E8F0',
+    padding: 14,
+    width: '100%',
+    marginBottom: 18,
+  },
+  summaryHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  summaryCellName: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#1A2D5A',
+    marginRight: 8,
+  },
+  summaryCodeBadge: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  summaryCodeTxt: {
+    fontSize: 10.5,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontWeight: '700',
+    color: '#1E3A8A',
+  },
+  summaryDivider: {
+    height: 1,
+    backgroundColor: '#E2E8F0',
+    marginVertical: 10,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 7,
+  },
+  summaryIcon: {
+    marginRight: 6,
+  },
+  summaryLabel: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#64748B',
+    width: 72,
+  },
+  summaryVal: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  successDoneBtn: {
+    width: '100%',
+    backgroundColor: '#1A2D5A',
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#1A2D5A',
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  successDoneBtnTxt: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
 });
 

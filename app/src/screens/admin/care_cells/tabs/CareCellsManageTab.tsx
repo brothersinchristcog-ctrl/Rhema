@@ -9,6 +9,9 @@ import {
   Image,
   Alert,
   Dimensions,
+  Platform,
+  ActivityIndicator,
+  Modal,
 } from 'react-native';
 import {
   Search,
@@ -19,12 +22,18 @@ import {
   Users,
   Edit2,
   Archive,
+  Trash2,
   CheckCircle,
   XCircle,
   MoreVertical,
   User,
   Shield,
   ArrowRight,
+  CheckCircle2,
+  X,
+  AlertTriangle,
+  Building2,
+  Sparkles,
 } from 'lucide-react-native';
 import CareCellService from '../../../../services/CareCellService';
 import { useAuth } from '../../../../context/AuthContext';
@@ -56,6 +65,17 @@ export default function CareCellsManageTab({
   const { isPlatformSuperAdmin } = useAuth();
   const [grantAccessCell, setGrantAccessCell] = useState<CareCell | null>(null);
   const [grantAccessModalVisible, setGrantAccessModalVisible] = useState(false);
+
+  // Custom Delete Confirmation & Success Modal States
+  const [cellToDelete, setCellToDelete] = useState<CareCell | null>(null);
+  const [isDeletingCell, setIsDeletingCell] = useState(false);
+  const [deletedCellSummary, setDeletedCellSummary] = useState<{
+    name: string;
+    code: string;
+    leaderName?: string;
+    location?: string;
+  } | null>(null);
+  const [deleteSuccessModalVisible, setDeleteSuccessModalVisible] = useState(false);
 
 
   // Status counts
@@ -105,6 +125,34 @@ export default function CareCellsManageTab({
         },
       ]
     );
+  };
+
+  const handleDeleteCell = (cell: CareCell) => {
+    setCellToDelete(cell);
+  };
+
+  const confirmDeleteCell = async () => {
+    if (!cellToDelete) return;
+    setIsDeletingCell(true);
+    try {
+      const churchId = await CareCellService.getChurchId();
+      await CareCellService.deleteCareCell(churchId, cellToDelete.id);
+      const summary = {
+        name: cellToDelete.name,
+        code: cellToDelete.cellCode,
+        leaderName: cellToDelete.leaderName,
+        location: cellToDelete.location || cellToDelete.meetingLocation,
+      };
+      setCellToDelete(null);
+      setDeletedCellSummary(summary);
+      setDeleteSuccessModalVisible(true);
+      onRefreshCells();
+    } catch (err: any) {
+      console.error('Error deleting Care Cell:', err);
+      Alert.alert('Error', err.message || 'Failed to delete Care Cell.');
+    } finally {
+      setIsDeletingCell(false);
+    }
   };
 
   const handleArchiveCell = (cell: CareCell) => {
@@ -268,13 +316,22 @@ export default function CareCellsManageTab({
             </TouchableOpacity>
           )}
 
-          {/* Edit (Super Admin or Assigned Admin) */}
+          {/* Edit Button */}
           <TouchableOpacity
             style={styles.cardIconBtn}
             onPress={() => onEditCell(item)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Edit2 size={16} color="#64748B" />
+          </TouchableOpacity>
+
+          {/* Delete Button */}
+          <TouchableOpacity
+            style={[styles.cardIconBtn, styles.deleteCardIconBtn]}
+            onPress={() => handleDeleteCell(item)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Trash2 size={16} color="#DC2626" />
           </TouchableOpacity>
 
           {/* Toggle Active / Inactive (Super Admin Only) */}
@@ -373,6 +430,205 @@ export default function CareCellsManageTab({
         }}
         onSaved={onRefreshCells}
       />
+
+      {/* ── Custom Delete Confirmation Modal ── */}
+      <Modal
+        visible={!!cellToDelete}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!isDeletingCell) setCellToDelete(null);
+        }}
+      >
+        <View style={styles.modalOverlayScrim}>
+          <View style={styles.customConfirmCard}>
+            <TouchableOpacity
+              style={styles.modalCloseIconBtn}
+              onPress={() => setCellToDelete(null)}
+              disabled={isDeletingCell}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <X size={18} color="#64748B" />
+            </TouchableOpacity>
+
+            <View style={styles.deleteWarningRingOuter}>
+              <View style={styles.deleteWarningRingInner}>
+                <Trash2 size={26} color="#DC2626" strokeWidth={2.4} />
+              </View>
+            </View>
+
+            <Text style={styles.deleteConfirmTitle}>Delete Care Cell?</Text>
+            <Text style={styles.deleteConfirmSubtitle}>
+              Are you sure you want to permanently delete this fellowship group?
+            </Text>
+
+            {cellToDelete && (
+              <View style={styles.deleteCellPreviewBox}>
+                <View style={styles.deleteCellHeaderRow}>
+                  <Building2 size={15} color="#1A2D5A" style={{ marginRight: 6 }} />
+                  <Text style={styles.deleteCellNameTxt} numberOfLines={1}>
+                    {cellToDelete.name}
+                  </Text>
+                  <View style={styles.deleteCellCodeBadge}>
+                    <Text style={styles.deleteCellCodeTxt}>{cellToDelete.cellCode}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.deleteDivider} />
+
+                <View style={styles.deleteMetaRow}>
+                  <User size={13} color="#1A2D5A" style={{ marginRight: 6 }} />
+                  <Text style={styles.deleteMetaLabel}>Leader:</Text>
+                  <Text style={styles.deleteMetaVal} numberOfLines={1}>
+                    {cellToDelete.leaderName || 'Assigned Leader'}
+                  </Text>
+                </View>
+
+                {(cellToDelete.location || cellToDelete.meetingLocation) ? (
+                  <View style={styles.deleteMetaRow}>
+                    <MapPin size={13} color="#64748B" style={{ marginRight: 6 }} />
+                    <Text style={styles.deleteMetaLabel}>Location:</Text>
+                    <Text style={styles.deleteMetaVal} numberOfLines={1}>
+                      {cellToDelete.location || cellToDelete.meetingLocation}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            )}
+
+            <View style={styles.deletePermanentWarningBox}>
+              <AlertTriangle size={15} color="#DC2626" style={{ marginRight: 8, marginTop: 1 }} />
+              <Text style={styles.deletePermanentWarningTxt}>
+                This action is permanent. All assigned members will be unlinked.
+              </Text>
+            </View>
+
+            <View style={styles.deleteActionsBtnRow}>
+              <TouchableOpacity
+                style={styles.deleteCancelActionBtn}
+                onPress={() => setCellToDelete(null)}
+                disabled={isDeletingCell}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.deleteCancelActionBtnTxt}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.deleteConfirmActionBtn}
+                onPress={confirmDeleteCell}
+                disabled={isDeletingCell}
+                activeOpacity={0.85}
+              >
+                {isDeletingCell ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Trash2 size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.deleteConfirmActionBtnTxt}>Delete Permanently</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Custom Delete Success Card Modal ── */}
+      <Modal
+        visible={deleteSuccessModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setDeleteSuccessModalVisible(false);
+          setDeletedCellSummary(null);
+        }}
+      >
+        <View style={styles.modalOverlayScrim}>
+          <View style={styles.deleteSuccessCard}>
+            <TouchableOpacity
+              style={styles.modalCloseIconBtn}
+              onPress={() => {
+                setDeleteSuccessModalVisible(false);
+                setDeletedCellSummary(null);
+              }}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <X size={18} color="#64748B" />
+            </TouchableOpacity>
+
+            <View style={styles.deleteSuccessRingOuter}>
+              <View style={styles.deleteSuccessRingInner}>
+                <CheckCircle2 size={36} color="#059669" strokeWidth={2.5} />
+              </View>
+            </View>
+
+            <View style={styles.deleteSuccessPill}>
+              <Sparkles size={12} color="#059669" style={{ marginRight: 5 }} />
+              <Text style={styles.deleteSuccessPillTxt}>CARE CELL PERMANENTLY REMOVED</Text>
+            </View>
+
+            <Text style={styles.deleteSuccessMainTitle}>Care Cell Deleted Successfully! 🗑️</Text>
+            <Text style={styles.deleteSuccessMainSubtitle}>
+              The fellowship group has been completely removed from the church roster and all linked members have been unlinked.
+            </Text>
+
+            {deletedCellSummary && (
+              <View style={styles.deleteSuccessDetailsBox}>
+                <View style={styles.deleteCellHeaderRow}>
+                  <Building2 size={16} color="#1A2D5A" style={{ marginRight: 6 }} />
+                  <Text style={styles.deleteCellNameTxt} numberOfLines={1}>
+                    {deletedCellSummary.name}
+                  </Text>
+                  <View style={styles.deleteCellCodeBadge}>
+                    <Text style={styles.deleteCellCodeTxt}>{deletedCellSummary.code}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.deleteDivider} />
+
+                {deletedCellSummary.leaderName ? (
+                  <View style={styles.deleteMetaRow}>
+                    <User size={13} color="#1A2D5A" style={{ marginRight: 6 }} />
+                    <Text style={styles.deleteMetaLabel}>Leader:</Text>
+                    <Text style={styles.deleteMetaVal} numberOfLines={1}>
+                      {deletedCellSummary.leaderName}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {deletedCellSummary.location ? (
+                  <View style={styles.deleteMetaRow}>
+                    <MapPin size={13} color="#64748B" style={{ marginRight: 6 }} />
+                    <Text style={styles.deleteMetaLabel}>Location:</Text>
+                    <Text style={styles.deleteMetaVal} numberOfLines={1}>
+                      {deletedCellSummary.location}
+                    </Text>
+                  </View>
+                ) : null}
+
+                <View style={styles.deleteMetaRow}>
+                  <Users size={13} color="#059669" style={{ marginRight: 6 }} />
+                  <Text style={styles.deleteMetaLabel}>Members:</Text>
+                  <Text style={[styles.deleteMetaVal, { color: '#059669', fontWeight: '800' }]}>
+                    All members safely unlinked
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={styles.deleteSuccessDoneBtn}
+              onPress={() => {
+                setDeleteSuccessModalVisible(false);
+                setDeletedCellSummary(null);
+              }}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.deleteSuccessDoneBtnTxt}>Done & Return to Care Cells</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -628,6 +884,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1A2D5A',
   },
+  deleteCardIconBtn: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+  },
   cardIconBtn: {
     width: 34,
     height: 34,
@@ -653,5 +913,282 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     textAlign: 'center',
     marginTop: 4,
+  },
+
+  /* ── Custom Delete Confirmation & Success Styles ── */
+  modalOverlayScrim: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  customConfirmCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    paddingHorizontal: 22,
+    paddingTop: 24,
+    paddingBottom: 22,
+    width: '100%',
+    maxWidth: 420,
+    alignItems: 'center',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  modalCloseIconBtn: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  deleteWarningRingOuter: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#FEF2F2',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  deleteWarningRingInner: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#FEE2E2',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  deleteConfirmTitle: {
+    fontSize: 19,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+    marginBottom: 4,
+    letterSpacing: -0.3,
+  },
+  deleteConfirmSubtitle: {
+    fontSize: 12.5,
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 8,
+    lineHeight: 18,
+  },
+  deleteCellPreviewBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    borderWidth: 1.2,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    width: '100%',
+    marginBottom: 14,
+  },
+  deleteCellHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  deleteCellNameTxt: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#1A2D5A',
+    marginRight: 6,
+  },
+  deleteCellCodeBadge: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  deleteCellCodeTxt: {
+    fontSize: 10,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontWeight: '700',
+    color: '#1E3A8A',
+  },
+  deleteDivider: {
+    height: 1,
+    backgroundColor: '#E2E8F0',
+    marginVertical: 8,
+  },
+  deleteMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 5,
+  },
+  deleteMetaLabel: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#64748B',
+    width: 62,
+  },
+  deleteMetaVal: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  deletePermanentWarningBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    width: '100%',
+    marginBottom: 18,
+  },
+  deletePermanentWarningTxt: {
+    flex: 1,
+    fontSize: 11.5,
+    color: '#991B1B',
+    fontWeight: '600',
+    lineHeight: 16,
+  },
+  deleteActionsBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+  },
+  deleteCancelActionBtn: {
+    flex: 1,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteCancelActionBtnTxt: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  deleteConfirmActionBtn: {
+    flex: 1.4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#DC2626',
+    borderRadius: 12,
+    paddingVertical: 12,
+    shadowColor: '#DC2626',
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  deleteConfirmActionBtnTxt: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+
+  /* Delete Success Card */
+  deleteSuccessCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    paddingHorizontal: 22,
+    paddingTop: 24,
+    paddingBottom: 22,
+    width: '100%',
+    maxWidth: 420,
+    alignItems: 'center',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  deleteSuccessRingOuter: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#ECFDF5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  deleteSuccessRingInner: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: '#D1FAE5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  deleteSuccessPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    marginBottom: 8,
+  },
+  deleteSuccessPillTxt: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#065F46',
+    letterSpacing: 0.5,
+  },
+  deleteSuccessMainTitle: {
+    fontSize: 19,
+    fontWeight: '800',
+    color: '#1A2D5A',
+    textAlign: 'center',
+    marginBottom: 4,
+    letterSpacing: -0.3,
+  },
+  deleteSuccessMainSubtitle: {
+    fontSize: 12.5,
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 8,
+    lineHeight: 18,
+  },
+  deleteSuccessDetailsBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    borderWidth: 1.2,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    width: '100%',
+    marginBottom: 18,
+  },
+  deleteSuccessDoneBtn: {
+    width: '100%',
+    backgroundColor: '#1A2D5A',
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#1A2D5A',
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  deleteSuccessDoneBtnTxt: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
 });
