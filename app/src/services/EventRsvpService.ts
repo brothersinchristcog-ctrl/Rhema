@@ -2,7 +2,7 @@ import firestore from '@react-native-firebase/firestore';
 import FirestoreService from './FirestoreService';
 import { Share, Platform } from 'react-native';
 
-export type EventRsvpStatus = 'Going' | 'Interested' | 'Not Going';
+export type EventRsvpStatus = 'Going' | 'Interested' | 'Not Going' | 'Not Interested';
 
 export interface EventRsvpRecord {
   id: string; // memberId
@@ -156,7 +156,7 @@ class EventRsvpService {
                 const data = attDoc.data();
                 if (
                   attDoc.exists &&
-                  (data?.isRsvp || ['Going', 'Interested', 'Not Going'].includes(data?.status || data?.rsvpStatus))
+                  (data?.isRsvp || ['Going', 'Interested', 'Not Going', 'Not Interested'].includes(data?.status || data?.rsvpStatus))
                 ) {
                   callback({
                     ...data,
@@ -176,7 +176,7 @@ class EventRsvpService {
               const data = attDoc.data();
               if (
                 attDoc.exists &&
-                (data?.isRsvp || ['Going', 'Interested', 'Not Going'].includes(data?.status || data?.rsvpStatus))
+                (data?.isRsvp || ['Going', 'Interested', 'Not Going', 'Not Interested'].includes(data?.status || data?.rsvpStatus))
               ) {
                 callback({
                   ...data,
@@ -237,7 +237,7 @@ class EventRsvpService {
           const data = typeof d.data === 'function' ? d.data() : d;
           const status = data?.status || data?.rsvpStatus;
           if (status === 'Going') going++;
-          else if (status === 'Interested') interested++;
+          else if (status === 'Interested' || status === 'Not Interested') interested++;
           else if (status === 'Not Going') notGoing++;
         });
 
