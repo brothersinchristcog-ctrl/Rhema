@@ -9,14 +9,12 @@ import {
   Platform,
 } from 'react-native';
 import {
-  CheckCircle2,
+  Check,
   Clock,
   Users,
   Vote,
-  AlertCircle,
   BarChart3,
-  Check,
-  Calendar,
+  Info,
 } from 'lucide-react-native';
 import EventRsvpService, {
   EventRsvpStatus,
@@ -30,6 +28,7 @@ export interface EventRsvpPollCardProps {
   eventTitle: string;
   eventDate?: string;
   rsvpDeadline?: string;
+  rsvpEnabled?: boolean;
   currentUser?: {
     id: string;
     name?: string;
@@ -41,53 +40,67 @@ export interface EventRsvpPollCardProps {
   isDark?: boolean;
 }
 
-const RSVP_OPTIONS: {
+interface WhatsAppPollOptionConfig {
   key: EventRsvpStatus;
   label: string;
-  sub: string;
-  badgeEmoji: string;
-  activeColor: string;
-  activeBgLight: string;
-  activeBgDark: string;
-  activeBorderLight: string;
-  activeBorderDark: string;
-  barColor: string;
-}[] = [
+  emoji: string;
+  accentColor: string;
+  barFillLight: string;
+  barFillDark: string;
+  selectedBarFillLight: string;
+  selectedBarFillDark: string;
+  selectedBgLight: string;
+  selectedBgDark: string;
+  selectedBorderColor: string;
+  trackBgLight: string;
+  trackBgDark: string;
+}
+
+const WHATSAPP_POLL_OPTIONS: WhatsAppPollOptionConfig[] = [
   {
     key: 'Going',
-    label: 'Going',
-    sub: 'I will attend',
-    badgeEmoji: '🟢',
-    activeColor: '#059669',
-    activeBgLight: '#ECFDF5',
-    activeBgDark: 'rgba(5, 150, 105, 0.20)',
-    activeBorderLight: '#10B981',
-    activeBorderDark: '#059669',
-    barColor: '#10B981',
-  },
-  {
-    key: 'Interested',
-    label: 'Interested',
-    sub: 'I may attend',
-    badgeEmoji: '🟡',
-    activeColor: '#D97706',
-    activeBgLight: '#FFFBEB',
-    activeBgDark: 'rgba(217, 119, 6, 0.20)',
-    activeBorderLight: '#F59E0B',
-    activeBorderDark: '#D97706',
-    barColor: '#F59E0B',
+    label: "Yes, I'm Going",
+    emoji: '✅',
+    accentColor: '#059669', // Emerald / WhatsApp Green
+    barFillLight: '#D1FAE5',
+    barFillDark: 'rgba(16, 185, 129, 0.22)',
+    selectedBarFillLight: '#A7F3D0',
+    selectedBarFillDark: 'rgba(16, 185, 129, 0.35)',
+    selectedBgLight: '#F0FDF4',
+    selectedBgDark: 'rgba(5, 150, 105, 0.12)',
+    selectedBorderColor: '#059669',
+    trackBgLight: '#F8FAFC',
+    trackBgDark: '#1E293B',
   },
   {
     key: 'Not Going',
-    label: 'Not Going',
-    sub: 'Cannot attend',
-    badgeEmoji: '🔴',
-    activeColor: '#DC2626',
-    activeBgLight: '#FEF2F2',
-    activeBgDark: 'rgba(220, 38, 38, 0.20)',
-    activeBorderLight: '#EF4444',
-    activeBorderDark: '#DC2626',
-    barColor: '#EF4444',
+    label: "No, I'm Not Going",
+    emoji: '❌',
+    accentColor: '#DC2626', // Crimson
+    barFillLight: '#FEE2E2',
+    barFillDark: 'rgba(239, 68, 68, 0.20)',
+    selectedBarFillLight: '#FECACA',
+    selectedBarFillDark: 'rgba(239, 68, 68, 0.35)',
+    selectedBgLight: '#FEF2F2',
+    selectedBgDark: 'rgba(220, 38, 38, 0.12)',
+    selectedBorderColor: '#DC2626',
+    trackBgLight: '#F8FAFC',
+    trackBgDark: '#1E293B',
+  },
+  {
+    key: 'Not Interested',
+    label: 'Not Interested',
+    emoji: '🤔',
+    accentColor: '#D97706', // Amber
+    barFillLight: '#FEF3C7',
+    barFillDark: 'rgba(245, 158, 11, 0.20)',
+    selectedBarFillLight: '#FDE68A',
+    selectedBarFillDark: 'rgba(245, 158, 11, 0.35)',
+    selectedBgLight: '#FFFBEB',
+    selectedBgDark: 'rgba(217, 119, 6, 0.12)',
+    selectedBorderColor: '#D97706',
+    trackBgLight: '#F8FAFC',
+    trackBgDark: '#1E293B',
   },
 ];
 
@@ -95,13 +108,18 @@ export const EventRsvpPollCard: React.FC<EventRsvpPollCardProps> = ({
   eventId,
   churchId,
   eventTitle,
-  eventDate,
   rsvpDeadline,
+  rsvpEnabled = true,
   currentUser,
   isAdmin = false,
   onViewAnalytics,
   isDark = false,
 }) => {
+  // If RSVP is explicitly disabled for this event, do not render the poll
+  if (rsvpEnabled === false) {
+    return null;
+  }
+
   const [selectedResponse, setSelectedResponse] = useState<EventRsvpStatus | null>(null);
   const [stats, setStats] = useState<EventRsvpStats>({
     goingCount: 0,
@@ -168,7 +186,21 @@ export const EventRsvpPollCard: React.FC<EventRsvpPollCardProps> = ({
 
   const activeResponse = optimisticSelection ?? selectedResponse;
 
-  // Handle Response Selection
+  const isOptionSelected = (optKey: EventRsvpStatus) => {
+    if (!activeResponse) return false;
+    if (activeResponse === optKey) return true;
+    if (optKey === 'Not Interested' && activeResponse === 'Interested') return true;
+    return false;
+  };
+
+  const getOptionVoteCount = (optKey: EventRsvpStatus): number => {
+    if (optKey === 'Going') return stats.goingCount;
+    if (optKey === 'Not Going') return stats.notGoingCount;
+    if (optKey === 'Not Interested') return stats.interestedCount;
+    return 0;
+  };
+
+  // Handle Response Selection (single choice, switchable, prevents duplicate votes)
   const handleSelectOption = async (option: EventRsvpStatus) => {
     if (isDeadlinePassed) {
       Alert.alert(
@@ -186,8 +218,8 @@ export const EventRsvpPollCard: React.FC<EventRsvpPollCardProps> = ({
       return;
     }
 
-    if (activeResponse === option) {
-      // Already selected
+    if (isOptionSelected(option)) {
+      // Already selected this option
       return;
     }
 
@@ -220,11 +252,7 @@ export const EventRsvpPollCard: React.FC<EventRsvpPollCardProps> = ({
     }
   };
 
-  // Percentages for progress bar
   const total = stats.totalResponses || 0;
-  const goingPct = total > 0 ? Math.round((stats.goingCount / total) * 100) : 0;
-  const interestedPct = total > 0 ? Math.round((stats.interestedCount / total) * 100) : 0;
-  const notGoingPct = total > 0 ? Math.max(0, 100 - goingPct - interestedPct) : 0;
 
   return (
     <View
@@ -233,20 +261,11 @@ export const EventRsvpPollCard: React.FC<EventRsvpPollCardProps> = ({
         isDark ? styles.cardDark : styles.cardLight,
       ]}
     >
-      {/* ── Header ── */}
-      <View style={styles.headerRow}>
-        <View style={styles.headerLeft}>
-          <View style={[styles.iconWrap, isDark ? styles.iconWrapDark : styles.iconWrapLight]}>
-            <Vote size={18} color={isDark ? '#A5B4FC' : '#4F46E5'} strokeWidth={2.4} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.headerTitle, isDark ? styles.textDark : styles.textLight]}>
-              RSVP Participation Poll
-            </Text>
-            <Text style={[styles.headerSub, isDark ? styles.subDark : styles.subLight]}>
-              {isDeadlinePassed ? 'Responses closed' : 'Let the leadership know to help us prepare'}
-            </Text>
-          </View>
+      {/* ── Top Bar: WhatsApp-style Poll Tag & Live Status ── */}
+      <View style={styles.topHeaderRow}>
+        <View style={styles.pollTag}>
+          <Vote size={13} color="#059669" strokeWidth={2.5} style={{ marginRight: 5 }} />
+          <Text style={styles.pollTagText}>EVENT POLL</Text>
         </View>
 
         {isDeadlinePassed ? (
@@ -262,26 +281,21 @@ export const EventRsvpPollCard: React.FC<EventRsvpPollCardProps> = ({
         )}
       </View>
 
-      {/* ── Question ── */}
-      <View style={styles.questionBox}>
-        <Text style={[styles.questionText, isDark ? styles.textDark : styles.textLight]}>
+      {/* ── Poll Question (WhatsApp Style) ── */}
+      <View style={styles.questionSection}>
+        <Text style={[styles.questionTitle, isDark ? styles.textDark : styles.textLight]}>
           Are you attending this event?
         </Text>
-        <Text style={[styles.questionSub, isDark ? styles.subDark : styles.subLight]}>
-          మీరు ఈ కార్యక్రమంలో పాల్గొంటున్నారా?
+        <Text style={[styles.questionSubtitle, isDark ? styles.subDark : styles.subLight]}>
+          మీరు ఈ కార్యక్రమంలో పాల్గొంటున్నారా? · Select one
         </Text>
       </View>
 
-      {/* ── Response Options ── */}
-      <View style={styles.optionsRow}>
-        {RSVP_OPTIONS.map((opt) => {
-          const isSelected = activeResponse === opt.key;
-          const count =
-            opt.key === 'Going'
-              ? stats.goingCount
-              : opt.key === 'Interested'
-              ? stats.interestedCount
-              : stats.notGoingCount;
+      {/* ── Three WhatsApp-Style Options with Horizontal Progress Bars ── */}
+      <View style={styles.optionsList}>
+        {WHATSAPP_POLL_OPTIONS.map((opt) => {
+          const isSelected = isOptionSelected(opt.key);
+          const count = getOptionVoteCount(opt.key);
           const pct = total > 0 ? Math.round((count / total) * 100) : 0;
 
           return (
@@ -289,72 +303,87 @@ export const EventRsvpPollCard: React.FC<EventRsvpPollCardProps> = ({
               key={opt.key}
               onPress={() => handleSelectOption(opt.key)}
               disabled={isDeadlinePassed || submitting}
-              activeOpacity={0.8}
+              activeOpacity={0.78}
               style={[
-                styles.optionBtn,
-                isDark ? styles.optionBtnDark : styles.optionBtnLight,
+                styles.pollOptionTrack,
+                isDark ? styles.pollOptionTrackDark : styles.pollOptionTrackLight,
                 isSelected && {
-                  borderColor: isDark ? opt.activeBorderDark : opt.activeBorderLight,
+                  borderColor: opt.selectedBorderColor,
                   borderWidth: 2,
-                  backgroundColor: isDark ? opt.activeBgDark : opt.activeBgLight,
-                  transform: [{ scale: 1.02 }],
+                  backgroundColor: isDark ? opt.selectedBgDark : opt.selectedBgLight,
                 },
                 isDeadlinePassed && !isSelected && { opacity: 0.55 },
               ]}
             >
-              {/* Selected indicator check badge */}
-              {isSelected && (
+              {/* Horizontal Progress Bar Fill (Proportional to % of votes) */}
+              {pct > 0 && (
                 <View
                   style={[
-                    styles.selectedBadge,
-                    { backgroundColor: opt.activeColor },
+                    styles.pollProgressFill,
+                    {
+                      width: `${pct}%`,
+                      backgroundColor: isSelected
+                        ? (isDark ? opt.selectedBarFillDark : opt.selectedBarFillLight)
+                        : (isDark ? opt.barFillDark : opt.barFillLight),
+                    },
                   ]}
-                >
-                  <Check size={11} color="#FFFFFF" strokeWidth={3} />
-                </View>
+                />
               )}
 
-              <Text style={styles.optEmoji}>{opt.badgeEmoji}</Text>
-              <Text
-                style={[
-                  styles.optLabel,
-                  isDark ? styles.textDark : styles.textLight,
-                  isSelected && { color: opt.activeColor, fontWeight: '800' },
-                ]}
-                numberOfLines={1}
-              >
-                {opt.label}
-              </Text>
-              <Text
-                style={[
-                  styles.optSub,
-                  isDark ? styles.subDark : styles.subLight,
-                  isSelected && { color: opt.activeColor },
-                ]}
-                numberOfLines={1}
-              >
-                {opt.sub}
-              </Text>
-
-              {/* Count & % pill */}
-              <View
-                style={[
-                  styles.countPill,
-                  isDark ? styles.countPillDark : styles.countPillLight,
-                  isSelected && {
-                    backgroundColor: opt.activeColor,
-                  },
-                ]}
-              >
-                <Text
+              {/* Foreground Content: Circular Selection Indicator + Option Label + Vote Stats */}
+              <View style={styles.pollOptionContent}>
+                {/* Circular Selection Indicator (WhatsApp style Radio/Check) */}
+                <View
                   style={[
-                    styles.countPillTxt,
-                    isDark ? styles.textDark : styles.textLight,
-                    isSelected && { color: '#FFFFFF', fontWeight: '800' },
+                    styles.circularIndicator,
+                    isDark ? styles.circularIndicatorDark : styles.circularIndicatorLight,
+                    isSelected && {
+                      borderColor: opt.accentColor,
+                      backgroundColor: opt.accentColor,
+                    },
                   ]}
                 >
-                  {count} {total > 0 ? `(${pct}%)` : ''}
-                </Text>
+                  {isSelected && <Check size={12} color="#FFFFFF" strokeWidth={3.5} />}
+                </View>
+
+                {/* Option Text (Emoji + Label) */}
+                <View style={styles.optionLabelWrap}>
+                  <Text style={styles.optionEmoji}>{opt.emoji}</Text>
+                  <Text
+                    style={[
+                      styles.optionLabelText,
+                      isDark ? styles.textDark : styles.textLight,
+                      isSelected && {
+                        color: isDark ? '#FFFFFF' : '#0F172A',
+                        fontWeight: '800',
+                      },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {opt.label}
+                  </Text>
+                </View>
+
+                {/* Vote Count & Percentage (WhatsApp-Style Right End) */}
+                <View style={styles.voteStatsWrap}>
+                  {isSelected && (
+                    <View style={[styles.youVoteBadge, { backgroundColor: opt.accentColor }]}>
+                      <Text style={styles.youVoteBadgeText}>YOU</Text>
+                    </View>
+                  )}
+                  <Text
+                    style={[
+                      styles.voteStatsText,
+                      isDark ? styles.subDark : styles.subLight,
+                      isSelected && {
+                        color: opt.accentColor,
+                        fontWeight: '800',
+                      },
+                    ]}
+                  >
+                    {count} {count === 1 ? 'vote' : 'votes'} · {pct}%
+                  </Text>
+                </View>
               </View>
             </TouchableOpacity>
           );
@@ -364,98 +393,41 @@ export const EventRsvpPollCard: React.FC<EventRsvpPollCardProps> = ({
       {/* Submitting indicator */}
       {submitting && (
         <View style={styles.submittingRow}>
-          <ActivityIndicator size="small" color="#4F46E5" />
+          <ActivityIndicator size="small" color="#059669" />
           <Text style={[styles.submittingTxt, isDark ? styles.subDark : styles.subLight]}>
-            Updating your response...
+            Saving your response in real time...
           </Text>
         </View>
       )}
 
-      {/* ── Participation Progress Bar ── */}
-      <View style={styles.progressContainer}>
-        <View style={styles.progressBarWrapper}>
-          {total === 0 ? (
-            <View
-              style={[
-                styles.emptyBar,
-                { backgroundColor: isDark ? '#3F3F46' : '#E2E8F0' },
-              ]}
-            />
-          ) : (
-            <View style={styles.segmentedBar}>
-              {goingPct > 0 && (
-                <View
-                  style={{
-                    flex: goingPct,
-                    backgroundColor: '#10B981',
-                    height: 8,
-                    borderTopLeftRadius: 4,
-                    borderBottomLeftRadius: 4,
-                    borderTopRightRadius: interestedPct === 0 && notGoingPct === 0 ? 4 : 0,
-                    borderBottomRightRadius: interestedPct === 0 && notGoingPct === 0 ? 4 : 0,
-                  }}
-                />
-              )}
-              {interestedPct > 0 && (
-                <View
-                  style={{
-                    flex: interestedPct,
-                    backgroundColor: '#F59E0B',
-                    height: 8,
-                    borderTopLeftRadius: goingPct === 0 ? 4 : 0,
-                    borderBottomLeftRadius: goingPct === 0 ? 4 : 0,
-                    borderTopRightRadius: notGoingPct === 0 ? 4 : 0,
-                    borderBottomRightRadius: notGoingPct === 0 ? 4 : 0,
-                  }}
-                />
-              )}
-              {notGoingPct > 0 && (
-                <View
-                  style={{
-                    flex: notGoingPct,
-                    backgroundColor: '#EF4444',
-                    height: 8,
-                    borderTopRightRadius: 4,
-                    borderBottomRightRadius: 4,
-                    borderTopLeftRadius: goingPct === 0 && interestedPct === 0 ? 4 : 0,
-                    borderBottomLeftRadius: goingPct === 0 && interestedPct === 0 ? 4 : 0,
-                  }}
-                />
-              )}
-            </View>
-          )}
+      {/* ── Poll Bottom Info: Total Votes & Real-time Indicator ── */}
+      <View style={styles.pollFooterRow}>
+        <View style={styles.totalVotesWrap}>
+          <Users size={14} color={isDark ? '#A7F3D0' : '#059669'} style={{ marginRight: 6 }} />
+          <Text style={[styles.totalVotesText, isDark ? styles.textDark : styles.textLight]}>
+            <Text style={{ fontWeight: '800' }}>{total}</Text> {total === 1 ? 'total vote' : 'total votes'}
+          </Text>
         </View>
 
-        {/* Legend / Stats row */}
-        <View style={styles.legendRow}>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#10B981' }]} />
-            <Text style={[styles.legendTxt, isDark ? styles.subDark : styles.subLight]}>
-              Going: <Text style={{ fontWeight: '700' }}>{stats.goingCount}</Text>
-            </Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#F59E0B' }]} />
-            <Text style={[styles.legendTxt, isDark ? styles.subDark : styles.subLight]}>
-              Interested: <Text style={{ fontWeight: '700' }}>{stats.interestedCount}</Text>
-            </Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#EF4444' }]} />
-            <Text style={[styles.legendTxt, isDark ? styles.subDark : styles.subLight]}>
-              Not Going: <Text style={{ fontWeight: '700' }}>{stats.notGoingCount}</Text>
-            </Text>
-          </View>
-          <View style={[styles.legendItem, { marginLeft: 'auto' }]}>
-            <Users size={12} color={isDark ? '#94A3B8' : '#64748B'} style={{ marginRight: 3 }} />
-            <Text style={[styles.legendTxt, { fontWeight: '800' }, isDark ? styles.textDark : styles.textLight]}>
-              {total} Total
-            </Text>
-          </View>
+        <View style={styles.realtimeWrap}>
+          <View style={styles.realtimeDot} />
+          <Text style={[styles.realtimeText, isDark ? styles.subDark : styles.subLight]}>
+            Real-time poll
+          </Text>
         </View>
       </View>
 
-      {/* Deadline Info Footer */}
+      {/* WhatsApp Hint: Tap to change vote */}
+      <View style={styles.hintRow}>
+        <Info size={12} color={isDark ? '#94A3B8' : '#64748B'} style={{ marginRight: 5, marginTop: 1 }} />
+        <Text style={[styles.hintText, isDark ? styles.subDark : styles.subLight]}>
+          {isDeadlinePassed
+            ? 'Voting has closed. Your final response is recorded above.'
+            : 'Tap any option to vote. You can change your response anytime before the deadline.'}
+        </Text>
+      </View>
+
+      {/* RSVP Deadline Banner if available */}
       {rsvpDeadline && (
         <View
           style={[
@@ -463,7 +435,7 @@ export const EventRsvpPollCard: React.FC<EventRsvpPollCardProps> = ({
             isDark ? styles.deadlineContainerDark : styles.deadlineContainerLight,
           ]}
         >
-          <Clock size={13} color={isDeadlinePassed ? '#EF4444' : isDark ? '#A5B4FC' : '#4F46E5'} />
+          <Clock size={13} color={isDeadlinePassed ? '#EF4444' : isDark ? '#A7F3D0' : '#059669'} />
           <Text
             style={[
               styles.deadlineTxt,
@@ -471,14 +443,14 @@ export const EventRsvpPollCard: React.FC<EventRsvpPollCardProps> = ({
                 color: isDeadlinePassed
                   ? '#EF4444'
                   : isDark
-                  ? '#C7D2FE'
-                  : '#3730A3',
+                  ? '#D1FAE5'
+                  : '#065F46',
               },
             ]}
           >
             {isDeadlinePassed
               ? `RSVP closed on ${rsvpDeadline}`
-              : `RSVP Deadline: ${rsvpDeadline} · You can change your response anytime before deadline.`}
+              : `RSVP Deadline: ${rsvpDeadline}`}
           </Text>
         </View>
       )}
@@ -493,11 +465,11 @@ export const EventRsvpPollCard: React.FC<EventRsvpPollCardProps> = ({
           onPress={onViewAnalytics}
           activeOpacity={0.85}
         >
-          <BarChart3 size={15} color={isDark ? '#A5B4FC' : '#4338CA'} />
+          <BarChart3 size={15} color={isDark ? '#A7F3D0' : '#047857'} />
           <Text
             style={[
               styles.adminAnalyticsBtnTxt,
-              { color: isDark ? '#A5B4FC' : '#4338CA' },
+              { color: isDark ? '#A7F3D0' : '#047857' },
             ]}
           >
             Admin: View Detailed Participation & Member Roster
@@ -512,29 +484,29 @@ export default EventRsvpPollCard;
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 18,
+    borderRadius: 20,
     padding: 16,
     marginVertical: 12,
-    borderWidth: 1.5,
+    borderWidth: 1.2,
   },
   cardLight: {
     backgroundColor: '#FFFFFF',
-    borderColor: '#E0E7FF',
+    borderColor: '#E2E8F0',
     ...Platform.select({
       ios: {
-        shadowColor: '#4F46E5',
+        shadowColor: '#0F172A',
         shadowOpacity: 0.08,
         shadowRadius: 10,
         shadowOffset: { width: 0, height: 4 },
       },
       android: {
-        elevation: 2,
+        elevation: 3,
       },
     }),
   },
   cardDark: {
-    backgroundColor: '#18181B',
-    borderColor: 'rgba(99, 102, 241, 0.35)',
+    backgroundColor: '#1E293B',
+    borderColor: '#334155',
   },
   textLight: {
     color: '#0F172A',
@@ -548,40 +520,29 @@ const styles = StyleSheet.create({
   subDark: {
     color: '#94A3B8',
   },
-  headerRow: {
+
+  /* Top Bar */
+  topHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  headerLeft: {
+  pollTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    flex: 1,
-    marginRight: 8,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    paddingHorizontal: 9,
+    paddingVertical: 3.5,
+    borderRadius: 12,
   },
-  iconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  iconWrapLight: {
-    backgroundColor: '#EEF2FF',
-  },
-  iconWrapDark: {
-    backgroundColor: 'rgba(99, 102, 241, 0.25)',
-  },
-  headerTitle: {
-    fontSize: 15,
+  pollTagText: {
+    fontSize: 10,
     fontWeight: '800',
-    letterSpacing: -0.2,
-  },
-  headerSub: {
-    fontSize: 11,
-    marginTop: 2,
+    color: '#065F46',
+    letterSpacing: 0.6,
   },
   liveBadge: {
     flexDirection: 'row',
@@ -620,156 +581,198 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#92400E',
   },
-  questionBox: {
-    marginBottom: 12,
-    paddingHorizontal: 2,
+
+  /* Question */
+  questionSection: {
+    marginBottom: 14,
   },
-  questionText: {
-    fontSize: 15,
+  questionTitle: {
+    fontSize: 16.5,
     fontWeight: '800',
+    letterSpacing: -0.3,
   },
-  questionSub: {
-    fontSize: 11,
-    marginTop: 2,
+  questionSubtitle: {
+    fontSize: 12,
+    marginTop: 3,
+    fontWeight: '500',
   },
-  optionsRow: {
-    flexDirection: 'row',
-    gap: 8,
+
+  /* Options List (WhatsApp-style full-width rows with progress bars) */
+  optionsList: {
+    gap: 10,
   },
-  optionBtn: {
-    flex: 1,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 6,
-    alignItems: 'center',
-    borderWidth: 1,
+  pollOptionTrack: {
+    height: 56,
+    borderRadius: 14,
     position: 'relative',
+    overflow: 'hidden',
+    borderWidth: 1.2,
+    justifyContent: 'center',
   },
-  optionBtnLight: {
+  pollOptionTrackLight: {
     backgroundColor: '#F8FAFC',
     borderColor: '#E2E8F0',
   },
-  optionBtnDark: {
-    backgroundColor: '#27272A',
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+  pollOptionTrackDark: {
+    backgroundColor: '#1E293B',
+    borderColor: '#334155',
   },
-  selectedBadge: {
+  pollProgressFill: {
     position: 'absolute',
-    top: -6,
-    right: -4,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    left: 0,
+    top: 0,
+    bottom: 0,
+    borderRadius: 12,
+  },
+  pollOptionContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    zIndex: 2,
+  },
+
+  /* Circular Selection Indicator (WhatsApp style Radio/Check) */
+  circularIndicator: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 11,
+  },
+  circularIndicatorLight: {
+    borderColor: '#94A3B8',
+    backgroundColor: 'transparent',
+  },
+  circularIndicatorDark: {
+    borderColor: '#64748B',
+    backgroundColor: 'transparent',
+  },
+
+  /* Option Text */
+  optionLabelWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  optionEmoji: {
+    fontSize: 15,
+    marginRight: 7,
+  },
+  optionLabelText: {
+    fontSize: 14,
+    fontWeight: '600',
+    flexShrink: 1,
+  },
+
+  /* Vote Count & % Stats */
+  voteStatsWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  youVoteBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 3,
-    zIndex: 10,
   },
-  optEmoji: {
-    fontSize: 18,
-    marginBottom: 4,
-  },
-  optLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  optSub: {
+  youVoteBadgeText: {
     fontSize: 9,
-    marginBottom: 8,
-    textAlign: 'center',
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: 0.4,
   },
-  countPill: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-    minWidth: 44,
-    alignItems: 'center',
+  voteStatsText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
-  countPillLight: {
-    backgroundColor: '#E2E8F0',
-  },
-  countPillDark: {
-    backgroundColor: '#3F3F46',
-  },
-  countPillTxt: {
-    fontSize: 10,
-    fontWeight: '700',
-  },
+
+  /* Submitting */
   submittingRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    marginTop: 8,
+    marginTop: 10,
   },
   submittingTxt: {
-    fontSize: 11,
+    fontSize: 11.5,
     fontWeight: '600',
   },
-  progressContainer: {
+
+  /* Footer */
+  pollFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginTop: 14,
     paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
   },
-  progressBarWrapper: {
-    height: 8,
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginBottom: 8,
-  },
-  emptyBar: {
-    height: 8,
-    width: '100%',
-    borderRadius: 4,
-  },
-  segmentedBar: {
-    flexDirection: 'row',
-    height: 8,
-    width: '100%',
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  legendRow: {
+  totalVotesWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 12,
   },
-  legendItem: {
+  totalVotesText: {
+    fontSize: 12.5,
+  },
+  realtimeWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 5,
   },
-  legendDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+  realtimeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
   },
-  legendTxt: {
+  realtimeText: {
     fontSize: 11,
+    fontWeight: '600',
   },
+
+  /* Hint */
+  hintRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: 8,
+  },
+  hintText: {
+    fontSize: 11,
+    lineHeight: 16,
+    flex: 1,
+  },
+
+  /* Deadline */
   deadlineContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    padding: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
     borderRadius: 10,
     marginTop: 10,
   },
   deadlineContainerLight: {
-    backgroundColor: '#EEF2FF',
+    backgroundColor: '#ECFDF5',
   },
   deadlineContainerDark: {
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
   },
   deadlineTxt: {
     fontSize: 11,
     fontWeight: '600',
     flex: 1,
-    lineHeight: 15,
   },
+
+  /* Admin Action */
   adminAnalyticsBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -778,20 +781,19 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingVertical: 10,
     paddingHorizontal: 12,
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
   },
   adminAnalyticsBtnLight: {
-    backgroundColor: '#EEF2FF',
-    borderColor: '#C7D2FE',
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
   },
   adminAnalyticsBtnDark: {
-    backgroundColor: 'rgba(99, 102, 241, 0.20)',
-    borderColor: 'rgba(99, 102, 241, 0.40)',
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderColor: 'rgba(16, 185, 129, 0.35)',
   },
   adminAnalyticsBtnTxt: {
     fontSize: 12,
     fontWeight: '800',
   },
 });
-

@@ -176,7 +176,7 @@ export const EventRsvpAnalyticsModal: React.FC<EventRsvpAnalyticsModalProps> = (
 
     combinedRoster.forEach((m) => {
       if (m.status === 'Going') goingCount++;
-      else if (m.status === 'Interested') interestedCount++;
+      else if (m.status === 'Interested' || (m.status as string) === 'Not Interested') interestedCount++;
       else if (m.status === 'Not Going') notGoingCount++;
       else notRespondedCount++;
     });
@@ -218,10 +218,11 @@ export const EventRsvpAnalyticsModal: React.FC<EventRsvpAnalyticsModalProps> = (
       });
     }
 
-    // Sort: Going first, then Interested, then Not Going, then Not Responded
+    // Sort: Going first, then Interested/Not Interested, then Not Going, then Not Responded
     const order: Record<string, number> = {
       Going: 1,
       Interested: 2,
+      'Not Interested': 2,
       'Not Going': 3,
       'Not Responded': 4,
     };
@@ -293,10 +294,13 @@ export const EventRsvpAnalyticsModal: React.FC<EventRsvpAnalyticsModalProps> = (
           </View>
         );
       case 'Interested':
+      case 'Not Interested' as any:
         return (
           <View style={[styles.badge, styles.badgeInterested, isDark && styles.badgeInterestedDark]}>
             <Clock size={11} color="#D97706" style={{ marginRight: 3 }} />
-            <Text style={[styles.badgeTxt, styles.badgeTxtInterested]}>Interested</Text>
+            <Text style={[styles.badgeTxt, styles.badgeTxtInterested]}>
+              {(status as string) === 'Not Interested' ? 'Not Interested' : 'Interested'}
+            </Text>
           </View>
         );
       case 'Not Going':
