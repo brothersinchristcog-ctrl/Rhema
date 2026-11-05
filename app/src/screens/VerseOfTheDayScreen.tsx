@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Platform, Share, ActivityIndicator, ScrollView, ImageBackground, Image, RefreshControl, Alert, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Platform, Share, ActivityIndicator, ScrollView, ImageBackground, Image, RefreshControl, Alert, StatusBar, Animated } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -200,6 +200,52 @@ export default function VerseOfTheDayScreen() {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [showTelugu, setShowTelugu] = useState(true);
+
+  // Smooth loading animation when opening from a notification tap
+  const isFromNotification = !!(notificationPeriod || verseId || route.params?.fromNotification);
+  const [notifLoading, setNotifLoading] = useState(isFromNotification);
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (isFromNotification) {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.08,
+            duration: 450,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 450,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      pulse.start();
+
+      const timer = setTimeout(() => {
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 350,
+          useNativeDriver: true,
+        }).start(() => {
+          pulse.stop();
+          setNotifLoading(false);
+          const idx = notificationPeriod && PERIOD_INDEX[notificationPeriod] !== undefined
+            ? PERIOD_INDEX[notificationPeriod]
+            : getTargetIndex();
+          todayCarouselRef.current?.scrollTo({ x: idx * width, animated: true });
+        });
+      }, 850);
+
+      return () => {
+        clearTimeout(timer);
+        pulse.stop();
+      };
+    }
+  }, [isFromNotification, notificationPeriod]);
   
   const captureRef = useRef<ViewShot>(null);
   const [captureConfig, setCaptureConfig] = useState<{verse: DailyVerse, period: string, theme: any, periodIndex: number, date: Date} | null>(null);
@@ -410,6 +456,49 @@ export default function VerseOfTheDayScreen() {
   return (
     <View style={[styles.screenContainer, { backgroundColor: colors.background }]}>
       <StatusBar barStyle={colors.barStyle || (isDark ? 'light-content' : 'dark-content')} backgroundColor={colors.background} />
+
+      {/* ── Notification Opening Loading Animation Overlay ── */}
+      {notifLoading && (
+        <Animated.View
+          style={[
+            StyleSheet.absoluteFillObject,
+            {
+              backgroundColor: isDark ? 'rgba(15, 23, 42, 0.96)' : 'rgba(250, 247, 242, 0.96)',
+              justifyContent: 'center',
+              alignItems: 'center',
+              zIndex: 99999,
+              opacity: fadeAnim,
+            },
+          ]}
+        >
+          <Animated.View
+            style={[
+              styles.notifLoadingCard,
+              {
+                backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
+                borderColor: isDark ? '#334155' : '#E2E8F0',
+                transform: [{ scale: pulseAnim }],
+              },
+            ]}
+          >
+            <View style={styles.notifIconContainer}>
+              <BookOpen size={30} color="#F59E0B" strokeWidth={2.3} />
+            </View>
+
+            <ActivityIndicator size="small" color="#F59E0B" style={{ marginVertical: 12 }} />
+
+            <Text style={[styles.notifLoadingTitle, { color: colors.text }]}>
+              {language === 'te' ? 'నేటి వాక్యం సిద్ధమవుతోంది...' : 'Opening Daily Verse...'}
+            </Text>
+
+            <Text style={styles.notifLoadingSub}>
+              {notificationPeriod
+                ? `${notificationPeriod} · Daily Scripture`
+                : "Today's Bible Verse"}
+            </Text>
+          </Animated.View>
+        </Animated.View>
+      )}
 
       {/* ── Page Header ── */}
             {/* ── Screen Header (Clean circular back button & title) ── */}
@@ -1068,6 +1157,41 @@ const getStyles = (isDark: boolean, colors: any) => StyleSheet.create({
     color: 'rgba(255,255,255,0.7)',
     fontSize: 14,
     marginTop: 6,
+    textAlign: 'center',
+  },
+  notifLoadingCard: {
+    paddingHorizontal: 28,
+    paddingVertical: 24,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 16,
+    elevation: 8,
+    minWidth: 240,
+  },
+  notifIconContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  notifLoadingTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  notifLoadingSub: {
+    fontSize: 13,
+    color: '#94A3B8',
+    marginTop: 4,
     textAlign: 'center',
   }
 });
