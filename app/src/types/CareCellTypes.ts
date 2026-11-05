@@ -73,7 +73,8 @@ export interface CareCell {
   assistantLeaderPhone?: string;
   assistantLeaderPhoto?: string;
   meetingDay: string; // e.g. "Friday"
-  meetingTime: string; // e.g. "19:00"
+  meetingTime: string; // e.g. '19:00'
+  meetingEndTime?: string; // e.g. '20:30'
   meetingLocation: string;
   meetingLatitude?: number;
   meetingLongitude?: number;

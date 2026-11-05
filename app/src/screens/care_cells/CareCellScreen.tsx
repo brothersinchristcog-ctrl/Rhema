@@ -452,7 +452,7 @@ export default function CareCellScreen({ navigation, route }: any) {
               </View>
               <View style={styles.heroMetaItem}>
                 <Clock size={14} color="#CBD5E1" style={{ marginRight: 5 }} />
-                <Text style={styles.heroMetaTxt}>{careCell.meetingTime || '19:00'}</Text>
+                <Text style={styles.heroMetaTxt}>{careCell.meetingTime || '19:00'}{careCell.meetingEndTime ? ` – ${careCell.meetingEndTime}` : ''}</Text>
               </View>
               {careCell.location ? (
                 <View style={[styles.heroMetaItem, { flex: 1 }]}>
