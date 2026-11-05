@@ -1767,4 +1767,5 @@ export {
   pushCareCellAnnouncement,
   pushCareCellMeeting,
   pushCareCellPrayerRequest,
+  pushCareCellVisit,
 } from './notifications.js';
