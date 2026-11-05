@@ -13,7 +13,7 @@ import {
   Modal,
   Alert
 } from 'react-native';
-import { MapPin, Clock, Calendar, Trash2, ChevronLeft, Plus, Users, QrCode, Download, Share2, X , ArrowLeft, Vote } from 'lucide-react-native';
+import { MapPin, Clock, Calendar, Trash2, ChevronLeft, ChevronRight, Plus, Users, QrCode, Download, Share2, X , ArrowLeft, Vote } from 'lucide-react-native';
 import EventRsvpAnalyticsModal from './EventRsvpAnalyticsModal';
 import QRCode from 'react-native-qrcode-svg';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -292,86 +292,100 @@ export default function AdminEventList() {
           )
           .map((event, idx) => (
           <View key={event.id} style={[styles.eventItem, idx === 0 && styles.featuredItem]}>
-            <TouchableOpacity style={[styles.eiThumb, { backgroundColor: event.bannerColor || '#1a2d5a' }]} onPress={() => handleEdit(event)}>
-              {event.bannerUrl ? (
-                <Image source={{ uri: event.bannerUrl }} style={styles.eiThumbImg} resizeMode="cover" />
-              ) : (
-                <Text style={styles.eiThumbTxt}>IMG</Text>
-              )}
-            </TouchableOpacity>
-            <View style={styles.eiBody}>
-              <Text style={[styles.eiTitle, { flexShrink: 1 }]} numberOfLines={1}>{event.name || 'No Title'}</Text>
-              <Text style={[styles.eiTe, { flexShrink: 1 }]} numberOfLines={1}>{event.titleTe || ''}</Text>
-              <View style={styles.eiMetaRow}>
-                <Calendar size={11} color="#c0392b" />
-                <Text style={[styles.eiMetaTxt, { color: '#c0392b', fontWeight: '700' }]}>{formatDate(event.date)}</Text>
-              </View>
-              <View style={styles.eiMetaRow}>
-                <Clock size={11} color="#6B7280" />
-                <Text style={[styles.eiMetaTxt, { flexShrink: 1 }]} numberOfLines={1}>
-                  {formatDisplayTime(event.startTime)}
-                  {event.endTime ? ` — ${formatDisplayTime(event.endTime)}` : ''}
-                </Text>
-              </View>
-              <View style={styles.eiMetaRow}>
-                <MapPin size={11} color="#6B7280" />
-                <Text style={[styles.eiMetaTxt, { flexShrink: 1 }]} numberOfLines={1}>{event.venueEn || event.location || 'No Venue'}</Text>
-              </View>
-              <View style={styles.eiFoot}>
-                <View style={[event.status?.toLowerCase().includes('dra') ? styles.badgeDraft : styles.badgePub, { flexShrink: 1 }]}>
-                  <Text style={event.status?.toLowerCase().includes('dra') ? styles.badgeDraftTxt : styles.badgePubTxt} numberOfLines={1}>
-                    {(event.status || 'Published').toUpperCase()}
+            <View style={{ flexDirection: 'row', alignItems: 'stretch', width: '100%' }}>
+              <TouchableOpacity style={[styles.eiThumb, { backgroundColor: event.bannerColor || '#1a2d5a', alignSelf: 'flex-start' }]} onPress={() => handleEdit(event)}>
+                {event.bannerUrl ? (
+                  <Image source={{ uri: event.bannerUrl }} style={styles.eiThumbImg} resizeMode="cover" />
+                ) : (
+                  <Text style={styles.eiThumbTxt}>IMG</Text>
+                )}
+              </TouchableOpacity>
+              <View style={styles.eiBody}>
+                <Text style={styles.eiTitle} numberOfLines={1}>{event.name || 'No Title'}</Text>
+                <Text style={styles.eiTe} numberOfLines={1}>{event.titleTe || ''}</Text>
+                <View style={styles.eiMetaRow}>
+                  <Calendar size={11} color="#c0392b" />
+                  <Text style={[styles.eiMetaTxt, { color: '#c0392b', fontWeight: '700' }]}>{formatDate(event.date)}</Text>
+                </View>
+                <View style={styles.eiMetaRow}>
+                  <Clock size={11} color="#6B7280" />
+                  <Text style={styles.eiMetaTxt} numberOfLines={1}>
+                    {formatDisplayTime(event.startTime)}
+                    {event.endTime ? ` — ${formatDisplayTime(event.endTime)}` : ''}
                   </Text>
                 </View>
-                {event.rsvpEnabled === true && (
-                  <View style={styles.badgeRsvp}>
-                    <Vote size={10} color="#4338CA" style={{ marginRight: 3 }} />
-                    <Text style={styles.badgeRsvpTxt}>RSVP POLL</Text>
+                <View style={styles.eiMetaRow}>
+                  <MapPin size={11} color="#6B7280" />
+                  <Text style={styles.eiMetaTxt} numberOfLines={1}>{event.venueEn || event.location || 'No Venue'}</Text>
+                </View>
+                <View style={styles.eiFoot}>
+                  <View style={event.status?.toLowerCase().includes('dra') ? styles.badgeDraft : styles.badgePub}>
+                    <Text style={event.status?.toLowerCase().includes('dra') ? styles.badgeDraftTxt : styles.badgePubTxt} numberOfLines={1}>
+                      {(event.status || 'Published').toUpperCase()}
+                    </Text>
                   </View>
-                )}
-                {(event.requireEventQR === true || event.requireEventQr === true) && (
-                  <View style={styles.badgeQrReq}>
-                    <QrCode size={10} color="#78350F" style={{ marginRight: 3 }} />
-                    <Text style={styles.badgeQrReqTxt}>QR REQUIRED</Text>
-                  </View>
-                )}
+                  {(event.requireEventQR === true || event.requireEventQr === true) && (
+                    <View style={styles.badgeQrReq}>
+                      <QrCode size={10} color="#78350F" style={{ marginRight: 3 }} />
+                      <Text style={styles.badgeQrReqTxt}>QR REQUIRED</Text>
+                    </View>
+                  )}
+                </View>
               </View>
-            </View>
-            <View style={styles.actionsContainer}>
-              <TouchableOpacity 
-                onPress={() => setSelectedQrEvent(event)} 
-                style={styles.qrAction}
-                activeOpacity={0.7}
-              >
-                <QrCode size={12} color="#1A2D5A" />
-                <Text style={styles.qrActionTxt}>QR</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                onPress={() => navigation.navigate('EventAttendees', { eventId: event.id, eventName: event.name || event.title })} 
-                style={styles.attendeesAction}
-                activeOpacity={0.7}
-              >
-                <Users size={12} color="#047857" />
-                <Text style={styles.attendeesActionTxt}>Attend</Text>
-              </TouchableOpacity>
-              {event.rsvpEnabled === true && (
-                <TouchableOpacity
-                  onPress={() => setSelectedRsvpEvent(event)}
-                  style={styles.rsvpAction}
+              <View style={styles.actionsContainer}>
+                <TouchableOpacity 
+                  onPress={() => setSelectedQrEvent(event)} 
+                  style={styles.qrAction}
                   activeOpacity={0.7}
                 >
-                  <Vote size={12} color="#4338CA" />
-                  <Text style={styles.rsvpActionTxt}>RSVP</Text>
+                  <QrCode size={12} color="#1A2D5A" />
+                  <Text style={styles.qrActionTxt}>QR</Text>
                 </TouchableOpacity>
-              )}
-              <TouchableOpacity onPress={() => handleEdit(event)} style={styles.editAction}>
-                <Text style={styles.editActionTxt}>Edit</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => handleDelete(event)} style={styles.deleteAction}>
-                <Trash2 size={13} color="#DC2626" />
-                <Text style={styles.deleteActionTxt}>Del</Text>
-              </TouchableOpacity>
+                <TouchableOpacity 
+                  onPress={() => navigation.navigate('EventAttendees', { eventId: event.id, eventName: event.name || event.title })} 
+                  style={styles.attendeesAction}
+                  activeOpacity={0.7}
+                >
+                  <Users size={12} color="#047857" />
+                  <Text style={styles.attendeesActionTxt}>Attend</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleEdit(event)} style={styles.editAction}>
+                  <Text style={styles.editActionTxt}>Edit</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleDelete(event)} style={styles.deleteAction}>
+                  <Trash2 size={13} color="#DC2626" />
+                  <Text style={styles.deleteActionTxt}>Del</Text>
+                </TouchableOpacity>
+              </View>
             </View>
+
+            {/* ── Modern RSVP Analytics Banner Across Card ── */}
+            {event.rsvpEnabled === true && (
+              <TouchableOpacity
+                style={[
+                  styles.rsvpCardBanner,
+                  isDark && {
+                    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+                    borderColor: 'rgba(99, 102, 241, 0.35)',
+                  }
+                ]}
+                onPress={() => setSelectedRsvpEvent(event)}
+                activeOpacity={0.8}
+              >
+                <View style={styles.rsvpBannerLeft}>
+                  <View style={[styles.rsvpBannerIcon, isDark && { backgroundColor: 'rgba(99, 102, 241, 0.3)' }]}>
+                    <Vote size={13} color={isDark ? '#A5B4FC' : '#4338CA'} />
+                  </View>
+                  <Text style={[styles.rsvpBannerTitle, isDark && { color: '#E0E7FF' }]}>RSVP Poll Active</Text>
+                </View>
+                <View style={styles.rsvpBannerRight}>
+                  <Text style={[styles.rsvpBannerStats, isDark && { color: '#C7D2FE' }]}>
+                    {event.rsvpStats?.goingCount || 0} Going · View Roster
+                  </Text>
+                  <ChevronRight size={14} color={isDark ? '#A5B4FC' : '#4338CA'} />
+                </View>
+              </TouchableOpacity>
+            )}
           </View>
         ))}
 
@@ -585,7 +599,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   eiMetaRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 5 },
   eiMetaTxt: { fontSize: 11.5, color: '#64748B', marginLeft: 6, flexShrink: 1 },
   
-  eiFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 },
+  eiFoot: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 8 },
   badgePub: { backgroundColor: '#F0FDF4', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   badgePubTxt: { color: '#15803D', fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
   badgeDraft: { backgroundColor: '#F8FAFC', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
@@ -655,6 +669,47 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     color: '#4338CA',
+  },
+  rsvpCardBanner: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    marginTop: 10,
+  },
+  rsvpBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  rsvpBannerIcon: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    backgroundColor: '#E0E7FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rsvpBannerTitle: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#3730A3',
+  },
+  rsvpBannerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  rsvpBannerStats: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#4F46E5',
   },
   badgeQrReq: {
     flexDirection: 'row',
