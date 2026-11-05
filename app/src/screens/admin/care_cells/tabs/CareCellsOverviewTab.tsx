@@ -40,6 +40,29 @@ const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
+const MONTH_QUARTERS = [
+  [
+    { num: 1, name: 'Jan' },
+    { num: 2, name: 'Feb' },
+    { num: 3, name: 'Mar' },
+  ],
+  [
+    { num: 4, name: 'Apr' },
+    { num: 5, name: 'May' },
+    { num: 6, name: 'Jun' },
+  ],
+  [
+    { num: 7, name: 'Jul' },
+    { num: 8, name: 'Aug' },
+    { num: 9, name: 'Sep' },
+  ],
+  [
+    { num: 10, name: 'Oct' },
+    { num: 11, name: 'Nov' },
+    { num: 12, name: 'Dec' },
+  ],
+];
+
 interface CareCellsOverviewTabProps {
   cells: CareCell[];
   onNavigateTab: (tabIndex: number) => void;
@@ -401,14 +424,14 @@ export default function CareCellsOverviewTab({
               </TouchableOpacity>
             </View>
 
-            {/* Year Selector */}
+            {/* Year Selector (Centered, Cohesive Stepper) */}
             <View style={styles.yearRow}>
               <TouchableOpacity
                 style={styles.yearNavBtn}
                 onPress={() => setPickerYear((y) => y - 1)}
                 activeOpacity={0.7}
               >
-                <ChevronLeft size={20} color="#1A2D5A" />
+                <ChevronLeft size={18} color="#1A2D5A" strokeWidth={2.4} />
               </TouchableOpacity>
               <View style={styles.yearDisplay}>
                 <Text style={styles.yearText}>{pickerYear}</Text>
@@ -418,50 +441,54 @@ export default function CareCellsOverviewTab({
                 onPress={() => setPickerYear((y) => y + 1)}
                 activeOpacity={0.7}
               >
-                <ChevronRight size={20} color="#1A2D5A" />
+                <ChevronRight size={18} color="#1A2D5A" strokeWidth={2.4} />
               </TouchableOpacity>
             </View>
 
-            {/* 12 Months Grid (4 rows x 3 columns) */}
+            {/* 12 Months Grid: Guaranteed 4 Quarters x 3 Columns */}
             <View style={styles.monthsGrid}>
-              {MONTH_NAMES.map((mName, mIdx) => {
-                const monthNum = mIdx + 1;
-                const isSelected = selectedMonth === monthNum && selectedYear === pickerYear;
-                const isCurrentCalendarMonth = now.getMonth() + 1 === monthNum && now.getFullYear() === pickerYear;
+              {MONTH_QUARTERS.map((quarter, qIdx) => (
+                <View key={`quarter-${qIdx}`} style={styles.monthQuarterRow}>
+                  {quarter.map((m) => {
+                    const isSelected = selectedMonth === m.num && selectedYear === pickerYear;
+                    const isCurrentCalendarMonth =
+                      now.getMonth() + 1 === m.num && now.getFullYear() === pickerYear;
 
-                return (
-                  <TouchableOpacity
-                    key={mName}
-                    style={[
-                      styles.monthGridItem,
-                      isSelected && styles.monthGridItemSelected,
-                      !isSelected && isCurrentCalendarMonth && styles.monthGridItemCurrent,
-                    ]}
-                    onPress={() => {
-                      setSelectedMonth(monthNum);
-                      setSelectedYear(pickerYear);
-                      setShowDatePickerModal(false);
-                    }}
-                    activeOpacity={0.75}
-                  >
-                    <Text
-                      style={[
-                        styles.monthGridItemTxt,
-                        isSelected && styles.monthGridItemTxtSelected,
-                        !isSelected && isCurrentCalendarMonth && styles.monthGridItemTxtCurrent,
-                      ]}
-                    >
-                      {mName.slice(0, 3)}
-                    </Text>
-                    {isSelected && (
-                      <Check size={13} color="#FFFFFF" strokeWidth={3} style={{ marginLeft: 4 }} />
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
+                    return (
+                      <TouchableOpacity
+                        key={m.num}
+                        style={[
+                          styles.monthItemBtn,
+                          isSelected && styles.monthItemBtnSelected,
+                          !isSelected && isCurrentCalendarMonth && styles.monthItemBtnCurrent,
+                        ]}
+                        onPress={() => {
+                          setSelectedMonth(m.num);
+                          setSelectedYear(pickerYear);
+                          setShowDatePickerModal(false);
+                        }}
+                        activeOpacity={0.75}
+                      >
+                        <Text
+                          style={[
+                            styles.monthItemTxt,
+                            isSelected && styles.monthItemTxtSelected,
+                            !isSelected && isCurrentCalendarMonth && styles.monthItemTxtCurrent,
+                          ]}
+                        >
+                          {m.name}
+                        </Text>
+                        {isSelected && (
+                          <Check size={13} color="#FFFFFF" strokeWidth={3} style={{ marginLeft: 4 }} />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ))}
             </View>
 
-            {/* Quick Actions Footer */}
+            {/* Quick Actions Footer (Balanced Equal Width Buttons) */}
             <View style={styles.modalFooter}>
               <TouchableOpacity
                 style={styles.thisMonthBtn}
@@ -815,99 +842,125 @@ const styles = StyleSheet.create({
   yearRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     backgroundColor: '#F8FAFC',
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    paddingHorizontal: 12,
     paddingVertical: 8,
+    paddingHorizontal: 12,
     marginBottom: 14,
+    gap: 16,
   },
   yearNavBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#CBD5E1',
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   yearDisplay: {
-    paddingHorizontal: 16,
+    minWidth: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   yearText: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '900',
     color: '#1A2D5A',
-    letterSpacing: -0.2,
+    letterSpacing: 0.2,
   },
   monthsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 16,
+    marginBottom: 14,
   },
-  monthGridItem: {
-    width: (360 - 36 - 16) / 3,
-    paddingVertical: 10,
-    borderRadius: 10,
+  monthQuarterRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+  },
+  monthItemBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    flexDirection: 'row',
   },
-  monthGridItemSelected: {
+  monthItemBtnSelected: {
     backgroundColor: '#1A2D5A',
     borderColor: '#1A2D5A',
+    shadowColor: '#1A2D5A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2.5,
   },
-  monthGridItemCurrent: {
+  monthItemBtnCurrent: {
     borderColor: '#2563EB',
     backgroundColor: '#EFF6FF',
   },
-  monthGridItemTxt: {
-    fontSize: 13,
+  monthItemTxt: {
+    fontSize: 13.5,
     fontWeight: '700',
     color: '#334155',
   },
-  monthGridItemTxtSelected: {
+  monthItemTxtSelected: {
     color: '#FFFFFF',
     fontWeight: '800',
   },
-  monthGridItemTxtCurrent: {
+  monthItemTxtCurrent: {
     color: '#2563EB',
     fontWeight: '800',
   },
   modalFooter: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     gap: 10,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
-    paddingTop: 12,
+    paddingTop: 14,
+    marginTop: 2,
   },
   thisMonthBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 10,
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 12,
     backgroundColor: '#EEF2FF',
+    borderWidth: 1,
+    borderColor: '#E0E7FF',
+    gap: 6,
   },
   thisMonthBtnTxt: {
-    fontSize: 12.5,
-    fontWeight: '700',
+    fontSize: 13,
+    fontWeight: '800',
     color: '#1A2D5A',
   },
   applyBtn: {
-    paddingHorizontal: 20,
-    paddingVertical: 9,
-    borderRadius: 10,
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 12,
     backgroundColor: '#1A2D5A',
+    shadowColor: '#1A2D5A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2.5,
   },
   applyBtnTxt: {
     fontSize: 13,
