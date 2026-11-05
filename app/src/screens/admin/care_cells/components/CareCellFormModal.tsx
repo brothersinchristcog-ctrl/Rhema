@@ -13,7 +13,7 @@ import {
   Alert,
   Image,
 } from 'react-native';
-import { X, UserPlus, MapPin, Shield, Calendar, Clock, Users, CheckCircle2, ChevronDown, User, Sparkles, Check, AlertCircle, Building2 } from 'lucide-react-native';
+import { X, UserPlus, MapPin, Shield, Calendar, Clock, Users, CheckCircle2, ChevronDown, User, Sparkles, Check, AlertCircle, Building2, Trash2 } from 'lucide-react-native';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import FirestoreService from '../../../../services/FirestoreService';
 import CareCellService, { isMemberInLocation } from '../../../../services/CareCellService';
@@ -86,6 +86,36 @@ export default function CareCellFormModal({
     assignedCount: number;
     isEditing: boolean;
   } | null>(null);
+
+  const handleDelete = () => {
+    if (!cellToEdit) return;
+    Alert.alert(
+      'Delete Care Cell',
+      `Are you sure you want to permanently delete "${cellToEdit.name}" (${cellToEdit.cellCode})?\n\nThis action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Permanently',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setSaving(true);
+              const churchId = await CareCellService.getChurchId();
+              await CareCellService.deleteCareCell(churchId, cellToEdit.id);
+              Alert.alert('Deleted', `Care Cell "${cellToEdit.name}" has been permanently deleted.`);
+              onSaved();
+              onClose();
+            } catch (err: any) {
+              console.error('Error deleting Care Cell:', err);
+              Alert.alert('Error', err.message || 'Failed to delete Care Cell.');
+            } finally {
+              setSaving(false);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const handleSuccessDone = () => {
     setShowSuccessModal(false);
@@ -776,6 +806,19 @@ export default function CareCellFormModal({
                   </Text>
                 )}
               </TouchableOpacity>
+
+              {/* Delete Button (Only when editing) */}
+              {isEditing && cellToEdit && (
+                <TouchableOpacity
+                  style={styles.deleteCellModalBtn}
+                  onPress={handleDelete}
+                  disabled={saving}
+                  activeOpacity={0.8}
+                >
+                  <Trash2 size={16} color="#DC2626" style={{ marginRight: 6 }} />
+                  <Text style={styles.deleteCellModalBtnTxt}>Delete Care Cell</Text>
+                </TouchableOpacity>
+              )}
             </ScrollView>
             </View>
           </KeyboardAvoidingView>
@@ -1413,6 +1456,22 @@ const styles = StyleSheet.create({
   },
   submitBtnDisabled: {
     backgroundColor: '#94A3B8',
+  },
+  deleteCellModalBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1.2,
+    borderColor: '#FECACA',
+    borderRadius: 14,
+    paddingVertical: 13,
+    marginTop: 10,
+  },
+  deleteCellModalBtnTxt: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#DC2626',
   },
   submitBtnTxt: {
     fontSize: 14,

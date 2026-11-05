@@ -332,6 +332,29 @@ class CareCellService {
     await this.updateCareCell(churchId, cellId, { status: 'Archived' });
   }
 
+  async deleteCareCell(churchId: string | undefined, cellId: string): Promise<void> {
+    const activeChurchId = churchId || (await this.getChurchId());
+    const cellCol = await this.getCareCellsRef(activeChurchId);
+
+    // 1. Delete Care Cell document
+    await cellCol.doc(cellId).delete();
+
+    // 2. Remove associated memberships
+    try {
+      const memCol = await this.getMembershipsRef(activeChurchId);
+      const memSnap = await memCol.where('cellId', '==', cellId).get();
+      if (!memSnap.empty) {
+        const batch = firestore().batch();
+        memSnap.docs.forEach((d) => {
+          batch.delete(d.ref);
+        });
+        await batch.commit();
+      }
+    } catch (e) {
+      console.warn('Non-fatal error cleaning up memberships after care cell deletion:', e);
+    }
+  }
+
   async getCareCells(churchId?: string, statusFilter?: 'All' | 'Active' | 'Inactive' | 'Archived'): Promise<CareCell[]> {
     try {
       const col = await this.getCareCellsRef(churchId);

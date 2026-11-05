@@ -19,6 +19,7 @@ import {
   Users,
   Edit2,
   Archive,
+  Trash2,
   CheckCircle,
   XCircle,
   MoreVertical,
@@ -100,6 +101,31 @@ export default function CareCellsManageTab({
               onRefreshCells();
             } catch (err: any) {
               Alert.alert('Error', err.message || 'Failed to update status.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteCell = (cell: CareCell) => {
+    Alert.alert(
+      'Delete Care Cell',
+      `Are you sure you want to permanently delete "${cell.name}" (${cell.cellCode})?\n\nThis will remove the Care Cell fellowship group and unlink its assigned members. This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Permanently',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const churchId = await CareCellService.getChurchId();
+              await CareCellService.deleteCareCell(churchId, cell.id);
+              Alert.alert('Deleted', `Care Cell "${cell.name}" has been permanently deleted.`);
+              onRefreshCells();
+            } catch (err: any) {
+              console.error('Error deleting Care Cell:', err);
+              Alert.alert('Error', err.message || 'Failed to delete Care Cell.');
             }
           },
         },
@@ -268,13 +294,22 @@ export default function CareCellsManageTab({
             </TouchableOpacity>
           )}
 
-          {/* Edit (Super Admin or Assigned Admin) */}
+          {/* Edit Button */}
           <TouchableOpacity
             style={styles.cardIconBtn}
             onPress={() => onEditCell(item)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Edit2 size={16} color="#64748B" />
+          </TouchableOpacity>
+
+          {/* Delete Button */}
+          <TouchableOpacity
+            style={[styles.cardIconBtn, styles.deleteCardIconBtn]}
+            onPress={() => handleDeleteCell(item)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Trash2 size={16} color="#DC2626" />
           </TouchableOpacity>
 
           {/* Toggle Active / Inactive (Super Admin Only) */}
@@ -627,6 +662,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#1A2D5A',
+  },
+  deleteCardIconBtn: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
   },
   cardIconBtn: {
     width: 34,
