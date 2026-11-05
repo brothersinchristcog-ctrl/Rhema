@@ -37,6 +37,9 @@ import {
   Heart,
   Navigation,
   Map as MapIcon,
+  Home,
+  X,
+  XCircle,
 } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
@@ -50,6 +53,9 @@ import {
   CareCellPrayerRequest,
   CareCellAnnouncement,
   CareCellFollowup,
+  CareCellVisit,
+  CareCellVisitMemberResponse,
+  MemberVisitResponseStatus,
 } from '../../types/CareCellTypes';
 import CareCellPrayerModal from '../admin/care_cells/components/CareCellPrayerModal';
 import CareCellFollowupModal from '../admin/care_cells/components/CareCellFollowupModal';
@@ -58,7 +64,7 @@ import CareCellMapModal from '../admin/care_cells/components/CareCellMapModal';
 
 const { width } = Dimensions.get('window');
 
-export default function CareCellScreen({ navigation }: any) {
+export default function CareCellScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
   const { member, user } = useAuth();
   const { activeChurch } = useChurch();
@@ -79,9 +85,13 @@ export default function CareCellScreen({ navigation }: any) {
   const [cellFollowups, setCellFollowups] = useState<CareCellFollowup[]>([]);
   const [inactiveMembers, setInactiveMembers] = useState<any[]>([]);
 
+  // Care Cell Visits
+  const [cellVisits, setCellVisits] = useState<(CareCellVisit & { myResponse?: CareCellVisitMemberResponse })[]>([]);
+  const [respondingVisitId, setRespondingVisitId] = useState<string | null>(null);
+
   // Tab State
   const [isLeader, setIsLeader] = useState(false);
-  const [activeTab, setActiveTab] = useState<'gatherings' | 'prayers' | 'notices' | 'leader'>('gatherings');
+  const [activeTab, setActiveTab] = useState<'gatherings' | 'visits' | 'prayers' | 'notices' | 'leader'>('gatherings');
 
   // Modals
   const [prayerModalVisible, setPrayerModalVisible] = useState(false);
@@ -91,6 +101,12 @@ export default function CareCellScreen({ navigation }: any) {
   const [mapModalVisible, setMapModalVisible] = useState(false);
 
   const memberId = member?.id || user?.uid;
+
+  useEffect(() => {
+    if (route?.params?.initialTab === 'visits' || route?.params?.visitId) {
+      setActiveTab('visits');
+    }
+  }, [route?.params]);
 
   const loadMemberCellData = useCallback(async () => {
     if (!memberId) {
@@ -110,13 +126,14 @@ export default function CareCellScreen({ navigation }: any) {
         const isLead = cell.leaderId === memberId || cell.assistantLeaderId === memberId;
         setIsLeader(isLead);
 
-        // Fetch fellow members, meetings, personal attendance, prayers, announcements in parallel
-        const [fellows, meetingsList, myAttendance, prayersList, announceList] = await Promise.all([
+        // Fetch fellow members, meetings, personal attendance, prayers, announcements, and visits in parallel
+        const [fellows, meetingsList, myAttendance, prayersList, announceList, visitsList] = await Promise.all([
           CareCellService.getActiveCellMemberships(churchId, cell.id),
           CareCellService.getMeetings(churchId, cell.id, { status: 'Upcoming' }),
           CareCellService.getMemberAttendanceHistory(churchId, memberId),
           CareCellService.getCellPrayerRequests(churchId, cell.id),
           CareCellService.getCellAnnouncements(churchId, cell.id),
+          CareCellService.getMemberUpcomingVisits(churchId, cell.id, memberId),
         ]);
 
         setFellowMembers(fellows);
@@ -124,6 +141,7 @@ export default function CareCellScreen({ navigation }: any) {
         setAttendanceHistory(myAttendance);
         setCellPrayers(prayersList);
         setCellAnnouncements(announceList);
+        setCellVisits(visitsList);
 
         if (isLead) {
           const [inactives, followupsList] = await Promise.all([
@@ -186,6 +204,59 @@ export default function CareCellScreen({ navigation }: any) {
     const rate = total > 0 ? Math.round((present / total) * 100) : 0;
     return { present, total, rate };
   }, [attendanceHistory]);
+
+  const handleRespondToVisit = async (visitId: string, response: MemberVisitResponseStatus) => {
+    if (!memberId) {
+      Alert.alert('Sign In Required', 'Please sign in to respond to Care Cell visit notifications.');
+      return;
+    }
+
+    try {
+      setRespondingVisitId(visitId);
+      const churchId = await CareCellService.getChurchId();
+      await CareCellService.respondToVisit(
+        churchId,
+        visitId,
+        memberId,
+        response,
+        `Member responded ${response} in mobile app`
+      );
+
+      // Optimistic local state update
+      setCellVisits((prev) =>
+        prev.map((v) => {
+          if (v.id === visitId) {
+            return {
+              ...v,
+              myResponse: {
+                memberId,
+                memberName: member?.name || '',
+                response,
+                respondedAt: new Date().toISOString(),
+              },
+            };
+          }
+          return v;
+        })
+      );
+
+      Alert.alert(
+        response === 'Accepted' ? 'Availability Confirmed! 🎉' : 'Response Recorded',
+        response === 'Accepted'
+          ? 'Thank you! Your Pastor and Cell Leader have been notified that you will be available for this visit.'
+          : 'Thank you for letting us know. Your Cell Leader has been updated.'
+      );
+    } catch (e: any) {
+      console.error('Error responding to visit:', e);
+      Alert.alert('Error', e.message || 'Failed to submit response.');
+    } finally {
+      setRespondingVisitId(null);
+    }
+  };
+
+  const pendingVisits = useMemo(() => {
+    return cellVisits.filter((v) => (v.myResponse?.response || 'Pending') === 'Pending');
+  }, [cellVisits]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -304,6 +375,17 @@ export default function CareCellScreen({ navigation }: any) {
             </TouchableOpacity>
 
             <TouchableOpacity
+              style={[styles.memberTabPill, activeTab === 'visits' && styles.memberTabPillActive]}
+              onPress={() => setActiveTab('visits')}
+              activeOpacity={0.8}
+            >
+              <Home size={13} color={activeTab === 'visits' ? '#FFFFFF' : '#64748B'} style={{ marginRight: 5 }} />
+              <Text style={[styles.memberTabPillTxt, activeTab === 'visits' && styles.memberTabPillTxtActive]}>
+                Visits {cellVisits.length > 0 ? `(${cellVisits.length})` : ''}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
               style={[styles.memberTabPill, activeTab === 'prayers' && styles.memberTabPillActive]}
               onPress={() => setActiveTab('prayers')}
               activeOpacity={0.8}
@@ -344,6 +426,54 @@ export default function CareCellScreen({ navigation }: any) {
           {/* ══════════════════════════════════════════════════════════════ */}
           {activeTab === 'gatherings' && (
             <>
+              {/* Pending Visit Action Required Banner */}
+              {pendingVisits.length > 0 && (
+                <View style={styles.visitActionCard}>
+                  <View style={styles.visitActionBadge}>
+                    <Home size={12} color="#1A2D5A" style={{ marginRight: 4 }} />
+                    <Text style={styles.visitActionBadgeTxt}>ACTION REQUIRED · VISIT NOTIFICATION</Text>
+                  </View>
+                  <Text style={styles.visitActionTitle}>{pendingVisits[0].title}</Text>
+                  <Text style={styles.visitActionMeta}>
+                    📅 {formatDateDisplay(pendingVisits[0].visitDate)} at {pendingVisits[0].visitTime} · 👥 {pendingVisits[0].visitors}
+                  </Text>
+                  {pendingVisits[0].purpose ? (
+                    <Text style={styles.visitActionPurpose}>"{pendingVisits[0].purpose}"</Text>
+                  ) : null}
+                  <Text style={styles.visitActionPrompt}>
+                    Will you be available to host or attend this visit?
+                  </Text>
+
+                  <View style={styles.visitActionButtonsRow}>
+                    <TouchableOpacity
+                      style={styles.visitAcceptBtn}
+                      onPress={() => handleRespondToVisit(pendingVisits[0].id, 'Accepted')}
+                      disabled={respondingVisitId === pendingVisits[0].id}
+                      activeOpacity={0.85}
+                    >
+                      {respondingVisitId === pendingVisits[0].id ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <>
+                          <CheckCircle2 size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                          <Text style={styles.visitAcceptBtnTxt}>Accept (Available)</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.visitDeclineBtn}
+                      onPress={() => handleRespondToVisit(pendingVisits[0].id, 'Declined')}
+                      disabled={respondingVisitId === pendingVisits[0].id}
+                      activeOpacity={0.85}
+                    >
+                      <XCircle size={14} color="#E11D48" style={{ marginRight: 6 }} />
+                      <Text style={styles.visitDeclineBtnTxt}>Decline</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
               {/* Cell Leader Contact Card */}
               <View style={styles.leaderCard}>
                 <View style={styles.leaderCardHeader}>
@@ -516,6 +646,145 @@ export default function CareCellScreen({ navigation }: any) {
                 </View>
               </View>
             </>
+          )}
+
+          {/* ══════════════════════════════════════════════════════════════ */}
+          {/* ── TAB: CARE CELL VISITS & CONFIRMATIONS ────────────────────── */}
+          {/* ══════════════════════════════════════════════════════════════ */}
+          {activeTab === 'visits' && (
+            <View style={styles.tabSectionWrap}>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionHeaderTitle}>CARE CELL VISITS & NOTIFICATIONS</Text>
+              </View>
+
+              {cellVisits.length === 0 ? (
+                <View style={styles.emptyVisitsBox}>
+                  <Home size={38} color="#CBD5E1" strokeWidth={1.8} />
+                  <Text style={styles.emptyVisitsTitle}>No Upcoming Visits Scheduled</Text>
+                  <Text style={styles.emptyVisitsSub}>
+                    When your Pastor or Cell Leader schedules a pastoral or fellowship visit for your Care Cell, it will appear here with Accept and Decline buttons so you can confirm your availability.
+                  </Text>
+                </View>
+              ) : (
+                cellVisits.map((v) => {
+                  const resp = v.myResponse?.response || 'Pending';
+                  const isAccepted = resp === 'Accepted';
+                  const isDeclined = resp === 'Declined';
+                  const isPending = resp === 'Pending';
+                  const isResponding = respondingVisitId === v.id;
+
+                  return (
+                    <View key={v.id} style={styles.memberVisitCard}>
+                      <View style={styles.memberVisitCardHeader}>
+                        <View style={styles.memberVisitIconWrap}>
+                          <Home size={18} color="#1A2D5A" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.memberVisitTitle}>{v.title}</Text>
+                          <Text style={styles.memberVisitCellName}>{v.cellName}</Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.memberVisitMetaRow}>
+                        <Calendar size={13} color="#64748B" style={{ marginRight: 5 }} />
+                        <Text style={styles.memberVisitMetaTxt}>
+                          {formatDateDisplay(v.visitDate)} at {v.visitTime}
+                        </Text>
+                      </View>
+
+                      {v.visitors ? (
+                        <View style={styles.memberVisitMetaRow}>
+                          <Users size={13} color="#64748B" style={{ marginRight: 5 }} />
+                          <Text style={styles.memberVisitMetaTxt}>Visiting Team: {v.visitors}</Text>
+                        </View>
+                      ) : null}
+
+                      {v.purpose ? (
+                        <Text style={styles.memberVisitPurpose}>"{v.purpose}"</Text>
+                      ) : null}
+
+                      {/* Member Response Action / Status Section */}
+                      <View style={styles.memberResponseSection}>
+                        {isPending && (
+                          <>
+                            <Text style={styles.confirmPromptTxt}>
+                              Please confirm whether you will be available for this visit:
+                            </Text>
+                            <View style={styles.memberResponseActionsRow}>
+                              <TouchableOpacity
+                                style={styles.visitAcceptBtn}
+                                onPress={() => handleRespondToVisit(v.id, 'Accepted')}
+                                disabled={isResponding}
+                                activeOpacity={0.85}
+                              >
+                                {isResponding ? (
+                                  <ActivityIndicator size="small" color="#FFFFFF" />
+                                ) : (
+                                  <>
+                                    <CheckCircle2 size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
+                                    <Text style={styles.visitAcceptBtnTxt}>Accept (Available)</Text>
+                                  </>
+                                )}
+                              </TouchableOpacity>
+
+                              <TouchableOpacity
+                                style={styles.visitDeclineBtn}
+                                onPress={() => handleRespondToVisit(v.id, 'Declined')}
+                                disabled={isResponding}
+                                activeOpacity={0.85}
+                              >
+                                <XCircle size={15} color="#E11D48" style={{ marginRight: 6 }} />
+                                <Text style={styles.visitDeclineBtnTxt}>Decline</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </>
+                        )}
+
+                        {isAccepted && (
+                          <View style={styles.responseConfirmedBoxAccepted}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                              <CheckCircle2 size={16} color="#059669" style={{ marginRight: 6 }} />
+                              <Text style={styles.responseConfirmedTitleAccepted}>
+                                You accepted this visit (Available)
+                              </Text>
+                            </View>
+                            <Text style={styles.responseConfirmedSub}>
+                              Your Pastor and Cell Leader have been notified that you will be available.
+                            </Text>
+                            <TouchableOpacity
+                              onPress={() => handleRespondToVisit(v.id, 'Declined')}
+                              style={styles.changeResponseBtn}
+                            >
+                              <Text style={styles.changeResponseBtnTxt}>Change to Unavailable (Decline)</Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+
+                        {isDeclined && (
+                          <View style={styles.responseConfirmedBoxDeclined}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                              <XCircle size={16} color="#E11D48" style={{ marginRight: 6 }} />
+                              <Text style={styles.responseConfirmedTitleDeclined}>
+                                You marked unavailable (Declined)
+                              </Text>
+                            </View>
+                            <Text style={styles.responseConfirmedSub}>
+                              Your Cell Leader has been updated that you cannot attend.
+                            </Text>
+                            <TouchableOpacity
+                              onPress={() => handleRespondToVisit(v.id, 'Accepted')}
+                              style={styles.changeResponseBtn}
+                            >
+                              <Text style={styles.changeResponseBtnTxtAccepted}>Change to Available (Accept)</Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+            </View>
           )}
 
           {/* ══════════════════════════════════════════════════════════════ */}
@@ -1703,6 +1972,248 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     color: '#334155',
     marginTop: 4,
+  },
+  // ── Care Cell Visits Styles ──
+  visitActionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#F59E0B',
+    padding: 14,
+    marginBottom: 16,
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  visitActionBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginBottom: 6,
+  },
+  visitActionBadgeTxt: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#92400E',
+    letterSpacing: 0.5,
+  },
+  visitActionTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 4,
+  },
+  visitActionMeta: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+    marginBottom: 4,
+  },
+  visitActionPurpose: {
+    fontSize: 12,
+    color: '#64748B',
+    fontStyle: 'italic',
+    marginBottom: 6,
+  },
+  visitActionPrompt: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginTop: 4,
+    marginBottom: 10,
+  },
+  visitActionButtonsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  visitAcceptBtn: {
+    flex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#059669',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    shadowColor: '#059669',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  visitAcceptBtnTxt: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  visitDeclineBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF1F2',
+    borderWidth: 1,
+    borderColor: '#FECDD3',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+  },
+  visitDeclineBtnTxt: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#E11D48',
+  },
+  visitsTabContainer: {
+    marginTop: 4,
+    marginBottom: 20,
+  },
+  emptyVisitsBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 30,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginTop: 8,
+  },
+  emptyVisitsTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginTop: 12,
+    marginBottom: 6,
+  },
+  emptyVisitsSub: {
+    fontSize: 12,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  memberVisitCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 12,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1.5,
+  },
+  memberVisitCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  memberVisitIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#EEF2FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  memberVisitTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  memberVisitCellName: {
+    fontSize: 11.5,
+    color: '#64748B',
+    fontWeight: '600',
+    marginTop: 1,
+  },
+  memberVisitMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  memberVisitMetaTxt: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  memberVisitPurpose: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    color: '#64748B',
+    marginTop: 4,
+    marginBottom: 10,
+    lineHeight: 16,
+  },
+  memberResponseSection: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  confirmPromptTxt: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 10,
+  },
+  memberResponseActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  responseConfirmedBoxAccepted: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    borderRadius: 10,
+    padding: 10,
+  },
+  responseConfirmedTitleAccepted: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#065F46',
+  },
+  responseConfirmedBoxDeclined: {
+    backgroundColor: '#FFF1F2',
+    borderWidth: 1,
+    borderColor: '#FECDD3',
+    borderRadius: 10,
+    padding: 10,
+  },
+  responseConfirmedTitleDeclined: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#9F1239',
+  },
+  responseConfirmedSub: {
+    fontSize: 11.5,
+    color: '#475569',
+    marginBottom: 6,
+  },
+  changeResponseBtn: {
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  changeResponseBtnTxt: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#E11D48',
+    textDecorationLine: 'underline',
+  },
+  changeResponseBtnTxtAccepted: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#059669',
+    textDecorationLine: 'underline',
   },
 });
 

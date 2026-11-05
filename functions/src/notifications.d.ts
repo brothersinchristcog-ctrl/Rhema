@@ -234,4 +234,12 @@ export declare const pushCareCellPrayerRequest: import("firebase-functions/core"
     churchId: string;
     requestId: string;
 }>>;
+/**
+ * 🏡 CARE CELL VISIT NOTIFICATION PUSH
+ * Sends push notification strictly to members of the selected Care Cell when a visit is scheduled.
+ */
+export declare const pushCareCellVisit: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+    churchId: string;
+    visitId: string;
+}>>;
 //# sourceMappingURL=notifications.d.ts.map

@@ -292,10 +292,14 @@ class NotificationService {
           break;
         }
         case 'care_cell':
+        case 'care_cell_visit':
         case 'care_cell_announcement':
         case 'care_cell_meeting':
         case 'care_cell_prayer': {
-          nav.navigate('CareCell');
+          nav.navigate('CareCell', {
+            visitId: rawData.visitId,
+            initialTab: rawData.type === 'care_cell_visit' ? 'visits' : undefined,
+          });
           break;
         }
         default:
