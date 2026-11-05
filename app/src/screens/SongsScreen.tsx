@@ -1123,27 +1123,16 @@ export default function SongsScreen({ navigation, route }: any) {
           {/* Bottom Event / Service Circle-Capsule Badge */}
           {validServices.length > 0 && (
             <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: isDark ? '#27272A' : '#F1F5F9' }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <Text style={{
-                  fontSize: 11,
-                  fontWeight: '800',
-                  color: isDark ? '#A1A1AA' : '#64748B',
-                  letterSpacing: 0.6,
-                  textTransform: 'uppercase'
-                }}>
-                  {activeServiceId ? 'Selected Service' : 'Select Service to View Songs'}
-                </Text>
-                {activeServiceId ? (
-                  <TouchableOpacity
-                    onPress={() => setActiveServiceId('')}
-                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                  >
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#93C5FD' : '#2563EB' }}>
-                      Clear
-                    </Text>
-                  </TouchableOpacity>
-                ) : null}
-              </View>
+              <Text style={{
+                fontSize: 11,
+                fontWeight: '800',
+                color: isDark ? '#A1A1AA' : '#64748B',
+                letterSpacing: 0.6,
+                textTransform: 'uppercase',
+                marginBottom: 8,
+              }}>
+                {activeServiceId ? 'Selected Service' : 'Select Service to View Songs'}
+              </Text>
 
               <ScrollView
                 horizontal
@@ -1226,7 +1215,7 @@ export default function SongsScreen({ navigation, route }: any) {
           >
             <Search size={19} color={isDark ? '#9CA3AF' : '#334155'} strokeWidth={2.2} />
             <TextInput
-              placeholder={`Search ${activeService?.name || 'service'} songs by name or number...`}
+              placeholder={`Search ${(activeService?.name || 'service').trim()} songs by name or number...`}
               placeholderTextColor={isDark ? '#9CA3AF' : '#64748B'}
               style={[styles.searchInput, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
               value={search}
