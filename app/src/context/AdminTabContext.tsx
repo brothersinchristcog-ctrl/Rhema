@@ -17,6 +17,7 @@ export const AdminTabContext = createContext<AdminTabContextType>({
   editingData: null,
   setEditingData: () => {},
   goBack: () => {},
+  setTabByName: () => {},
   dashboardScrollY: 0,
   setDashboardScrollY: () => {},
 });

@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, ChevronLeft, Search, BookOpen, Globe } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
+import { SupportedLanguage } from '../locales';
 import { BibleService, BIBLE_BOOKS, ALL_BOOKS_BY_LANG } from '../services/BibleService';
 
 const { width } = Dimensions.get('window');
@@ -23,7 +24,8 @@ const { width } = Dimensions.get('window');
 export default function BibleScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const { isDark, colors } = useTheme();
-  const { language, setLanguage, t, languages } = useLanguage();
+  const { language, t, languages } = useLanguage();
+  const [bibleLanguage, setBibleLanguage] = useState<SupportedLanguage>((language as SupportedLanguage) || 'te');
   const [testament, setTestament] = useState<'OT' | 'NT'>('NT');
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -35,6 +37,13 @@ export default function BibleScreen({ navigation }: any) {
     AsyncStorage.getItem('@BibleEnglishVersion').then(v => {
       if (v) setEnglishVersion(v);
     });
+    AsyncStorage.getItem('@BibleSelectedLanguage').then(saved => {
+      if (saved && (saved === 'en' || saved === 'te' || saved === 'hi' || saved === 'ta' || saved === 'mr' || saved === 'ml' || saved === 'kn')) {
+        setBibleLanguage(saved as SupportedLanguage);
+      } else if (language) {
+        setBibleLanguage(language as SupportedLanguage);
+      }
+    });
   }, []);
 
   const handleVersionSelect = (ver: string) => {
@@ -42,7 +51,14 @@ export default function BibleScreen({ navigation }: any) {
     AsyncStorage.setItem('@BibleEnglishVersion', ver);
   };
 
-  const currentBookMap = BIBLE_BOOKS[language] || BIBLE_BOOKS.en;
+  const handleBibleLanguageSelect = (langCode: SupportedLanguage) => {
+    setBibleLanguage(langCode);
+    AsyncStorage.setItem('@BibleSelectedLanguage', langCode);
+    setSearchQuery('');
+    setSuggestions([]);
+  };
+
+  const currentBookMap = BIBLE_BOOKS[bibleLanguage] || BIBLE_BOOKS.en;
   const books = currentBookMap[testament] || currentBookMap.NT;
 
   useEffect(() => {
@@ -53,9 +69,9 @@ export default function BibleScreen({ navigation }: any) {
       }
       
       const isEnglishQuery = /[a-zA-Z]/.test(searchQuery);
-      if (isEnglishQuery && language !== 'en') {
+      if (isEnglishQuery && bibleLanguage !== 'en') {
         try {
-          const inputCode = language === 'te' ? 'te-t-i0-und' : language === 'hi' ? 'hi-t-i0-und' : language === 'ta' ? 'ta-t-i0-und' : null;
+          const inputCode = bibleLanguage === 'te' ? 'te-t-i0-und' : bibleLanguage === 'hi' ? 'hi-t-i0-und' : bibleLanguage === 'ta' ? 'ta-t-i0-und' : null;
           if (inputCode) {
             const transResponse = await fetch(`https://inputtools.google.com/request?text=${encodeURIComponent(searchQuery)}&itc=${inputCode}&num=6`);
             if (transResponse.ok) {
@@ -74,7 +90,7 @@ export default function BibleScreen({ navigation }: any) {
 
     const debounceTimer = setTimeout(fetchSuggestions, 300);
     return () => clearTimeout(debounceTimer);
-  }, [searchQuery, language]);
+  }, [searchQuery, bibleLanguage]);
 
   // Robust reference parser matching Book, Chapter, and optional Verse
   const parseReference = (text: string) => {
@@ -88,14 +104,14 @@ export default function BibleScreen({ navigation }: any) {
     const parsedVerse = match[3] ? parseInt(match[3], 10) : null;
 
     const bookIndex = BibleService.getBookIndex(parsedBook);
-    const bookName = BibleService.getBookName(bookIndex, language);
+    const bookName = BibleService.getBookName(bookIndex, bibleLanguage);
 
     return {
       bookIndex,
       bookName,
       chapter: parsedChapter,
       verse: parsedVerse,
-      lang: language
+      lang: bibleLanguage
     };
   };
 
@@ -111,7 +127,7 @@ export default function BibleScreen({ navigation }: any) {
     }
 
     const q = searchQuery.toLowerCase().trim().replace(/\s+/g, '');
-    const currentLangBooks = ALL_BOOKS_BY_LANG[language] || ALL_BOOKS_BY_LANG.en;
+    const currentLangBooks = ALL_BOOKS_BY_LANG[bibleLanguage] || ALL_BOOKS_BY_LANG.en;
     let matches = currentLangBooks.filter(b => 
       b.toLowerCase().replace(/\s+/g, '').includes(q)
     );
@@ -163,7 +179,7 @@ export default function BibleScreen({ navigation }: any) {
               if (searchQuery.length > 2 && !parsedRef?.chapter) {
                 navigation.navigate('BibleSearch', {
                   initialQuery: searchQuery,
-                  initialLang: language
+                  initialLang: bibleLanguage
                 });
               }
             }}
@@ -183,7 +199,7 @@ export default function BibleScreen({ navigation }: any) {
               if (searchQuery.length > 2 && !parsedRef?.chapter) {
                 navigation.navigate('BibleSearch', {
                   initialQuery: searchQuery,
-                  initialLang: language
+                  initialLang: bibleLanguage
                 });
               }
             }}
@@ -220,7 +236,7 @@ export default function BibleScreen({ navigation }: any) {
       <View style={styles.languageChipsContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.languageChipsScroll}>
           {languages.map((l) => {
-            const isSelected = language === l.code;
+            const isSelected = bibleLanguage === l.code;
             return (
               <TouchableOpacity 
                 key={l.code}
@@ -228,11 +244,7 @@ export default function BibleScreen({ navigation }: any) {
                   styles.langChip, 
                   { backgroundColor: isSelected ? colors.accent : colors.surface, borderColor: colors.border, borderWidth: 1 }
                 ]}
-                onPress={() => {
-                  setLanguage(l.code);
-                  setSearchQuery('');
-                  setSuggestions([]);
-                }}
+                onPress={() => handleBibleLanguageSelect(l.code as SupportedLanguage)}
               >
                 <Globe size={14} color={isSelected ? '#fff' : colors.textSecondary} style={{ marginRight: 6 }} />
                 <Text style={[
@@ -249,7 +261,7 @@ export default function BibleScreen({ navigation }: any) {
       </View>
 
       {/* English Version Selector (When English is active) */}
-      {language === 'en' && !searchQuery && (
+      {bibleLanguage === 'en' && !searchQuery && (
         <View style={{ marginHorizontal: 20, marginBottom: 15 }}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
             {ENGLISH_VERSIONS.map(ver => (
@@ -288,7 +300,7 @@ export default function BibleScreen({ navigation }: any) {
               bookIndex: parsedRef.bookIndex,
               bookName: parsedRef.bookName,
               chapter: parsedRef.chapter,
-              lang: language
+              lang: bibleLanguage
             });
             setSearchQuery('');
           }}
@@ -343,7 +355,7 @@ export default function BibleScreen({ navigation }: any) {
             onPress={() => {
               navigation.navigate('BibleSearch', {
                 initialQuery: searchQuery,
-                initialLang: language
+                initialLang: bibleLanguage
               });
             }}
           >
@@ -381,7 +393,7 @@ export default function BibleScreen({ navigation }: any) {
                     navigation.navigate('BibleChapters', { 
                       bookIndex,
                       bookName: book,
-                      lang: language,
+                      lang: bibleLanguage,
                       testament: bookTestament
                     });
                   }}

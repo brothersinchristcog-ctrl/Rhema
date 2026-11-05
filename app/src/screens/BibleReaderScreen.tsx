@@ -20,6 +20,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Speech from 'expo-speech';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
+import { SupportedLanguage } from '../locales';
 import { BibleService } from '../services/BibleService';
 
 const { width } = Dimensions.get('window');
@@ -29,7 +30,17 @@ export default function BibleReaderScreen({ route, navigation }: any) {
   const { bookName, chapter, lang: paramLang, bookIndex: paramBookIndex, targetVerse } = route.params || {};
   const { isDark, colors } = useTheme();
   const { language, t } = useLanguage();
-  const activeLang = paramLang || language;
+  const [savedBibleLang, setSavedBibleLang] = useState<SupportedLanguage | null>(null);
+
+  React.useEffect(() => {
+    if (!paramLang) {
+      AsyncStorage.getItem('@BibleSelectedLanguage').then(saved => {
+        if (saved) setSavedBibleLang(saved as SupportedLanguage);
+      });
+    }
+  }, [paramLang]);
+
+  const activeLang = (paramLang || savedBibleLang || language) as SupportedLanguage;
 
   const bookIndex = paramBookIndex !== undefined ? paramBookIndex : BibleService.getBookIndex(bookName);
   const localizedBookName = BibleService.getBookName(bookIndex, activeLang);

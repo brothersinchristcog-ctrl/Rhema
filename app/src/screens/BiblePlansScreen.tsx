@@ -20,6 +20,7 @@ import { ArrowLeft, ChevronLeft, Calendar, Award, CheckCircle, Circle, BookOpen,
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
+import { SupportedLanguage } from '../locales';
 import { BibleService } from '../services/BibleService';
 import FirestoreService from '../services/FirestoreService';
 
@@ -140,6 +141,7 @@ export default function BiblePlansScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const { isDark, colors } = useTheme();
   const { language, t } = useLanguage();
+  const [bibleLang, setBibleLang] = useState<SupportedLanguage>((language as SupportedLanguage) || 'te');
   const { member, setMember } = useAuth();
   const [selectedPlanId, setSelectedPlanId] = useState<string>('30_day');
   const [progress, setProgress] = useState<Record<string, string[]>>({});
@@ -151,6 +153,11 @@ export default function BiblePlansScreen({ navigation }: any) {
 
   useEffect(() => {
     loadProgress();
+    AsyncStorage.getItem('@BibleSelectedLanguage').then(saved => {
+      if (saved && (saved === 'en' || saved === 'te' || saved === 'hi' || saved === 'ta' || saved === 'mr' || saved === 'ml' || saved === 'kn')) {
+        setBibleLang(saved as SupportedLanguage);
+      }
+    });
   }, [member]);
 
   const loadProgress = async () => {
@@ -358,10 +365,10 @@ export default function BiblePlansScreen({ navigation }: any) {
                   activeOpacity={0.7}
                   onPress={() => {
                     navigation.navigate('BibleReader', {
-                      bookName: BibleService.getBookName(item.bookIndex, language),
+                      bookName: BibleService.getBookName(item.bookIndex, bibleLang),
                       bookIndex: item.bookIndex,
                       chapter: item.chapter,
-                      lang: language
+                      lang: bibleLang
                     });
                   }}
                 >
@@ -378,7 +385,7 @@ export default function BiblePlansScreen({ navigation }: any) {
                     { color: isDark ? '#fff' : '#1e293b' },
                     isCompleted && styles.completedText
                   ]}>
-                    {`${BibleService.getBookName(item.bookIndex, language)} ${item.chapter}`}
+                    {`${BibleService.getBookName(item.bookIndex, bibleLang)} ${item.chapter}`}
                   </Text>
                 </TouchableOpacity>
               </View>
