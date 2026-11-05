@@ -708,10 +708,22 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
 
   const handleTestNotifications = async () => {
     try {
-      const firstVerse = upcomingVerses[0] || allVerses[0];
-      const success = await VerseNotificationService.triggerTestPair(firstVerse);
+      const h = new Date().getHours();
+      let currentPeriod = 'Night';
+      if (h >= 5 && h < 12) currentPeriod = 'Morning';
+      else if (h >= 12 && h < 17) currentPeriod = 'Afternoon';
+      else if (h >= 17 && h < 21) currentPeriod = 'Evening';
+
+      const periodIndices: Record<string, number> = { Morning: 0, Afternoon: 1, Evening: 2, Night: 3 };
+      const targetIdx = periodIndices[currentPeriod] ?? 3;
+      const targetVerse = upcomingVerses.find(v => v.index === targetIdx) || upcomingVerses[0] || allVerses[0];
+
+      const success = await VerseNotificationService.triggerTestPair(targetVerse, currentPeriod);
       if (success) {
-        Alert.alert('Notification Sent', 'Sent 1 combined bilingual notification containing both Telugu and English verses.\n\nCheck your notification drawer!');
+        Alert.alert(
+          'Notification Sent',
+          `Sent 1 combined bilingual notification for ${currentPeriod}:\n"${targetVerse?.referenceEn || 'Scripture'}"\n\nCheck your notification drawer!`
+        );
       } else {
         Alert.alert('Error', 'Failed to trigger test notification.');
       }
