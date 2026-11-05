@@ -2697,3 +2697,112 @@ export const pushCareCellPrayerRequest = onDocumentCreated(
     }
   }
 );
+
+/**
+ * 🏡 CARE CELL VISIT NOTIFICATION PUSH
+ * Sends push notification strictly to members of the selected Care Cell when a visit is scheduled.
+ */
+export const pushCareCellVisit = onDocumentCreated(
+  { document: 'Rhema Church/{churchId}/careCellVisits/{visitId}', region: 'asia-south1' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+
+    const visitId = event.params.visitId;
+    const churchId = event.params.churchId;
+    const db = getFirestore();
+    const visitRef = snap.ref;
+    const data = snap.data();
+
+    let shouldSend = false;
+    try {
+      shouldSend = await db.runTransaction(async (transaction) => {
+        const freshDoc: any = await transaction.get(visitRef as any);
+        if (!freshDoc.exists) return false;
+        if (freshDoc.data()?.pushNotificationSent === true) return false;
+        transaction.update(visitRef, {
+          pushNotificationSent: true,
+          pushNotificationSentAt: FieldValue.serverTimestamp(),
+        });
+        return true;
+      });
+    } catch (txErr) {
+      console.warn('Transaction error checking pushNotificationSent on careCellVisit:', txErr);
+      if (data?.pushNotificationSent === true) return;
+      shouldSend = true;
+    }
+
+    if (!shouldSend) return;
+
+    const cellId = data.cellId;
+    if (!cellId) return;
+
+    const title = data.title || 'Pastoral Care Cell Visit';
+    const cellName = data.cellName || 'Care Cell';
+    const visitDate = data.visitDate || '';
+    const visitTime = data.visitTime || '';
+    const visitors = data.visitors || 'Cell Leaders';
+    const messaging = getMessaging();
+
+    try {
+      // Fetch active members of THIS specific Care Cell
+      const membershipsSnap = await db
+        .collection('Rhema Church')
+        .doc(churchId)
+        .collection('careCellMemberships')
+        .where('cellId', '==', cellId)
+        .where('membershipStatus', '==', 'Active')
+        .get();
+
+      const memberIds = membershipsSnap.docs.map((d) => d.data().memberId).filter(Boolean);
+      if (memberIds.length === 0) {
+        console.log(`No active members found in care cell ${cellId} for visit push.`);
+        return;
+      }
+
+      // Collect FCM tokens for these members
+      const tokens: string[] = [];
+      for (const mId of memberIds) {
+        try {
+          const memDoc = await db
+            .collection('Rhema Church')
+            .doc(churchId)
+            .collection('members')
+            .doc(mId)
+            .get();
+          if (memDoc.exists) {
+            const token = memDoc.data()?.fcmToken;
+            if (token && typeof token === 'string' && !tokens.includes(token)) {
+              tokens.push(token);
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (tokens.length > 0) {
+        const messagePayload = {
+          notification: {
+            title: `🏡 ${cellName}: ${title}`,
+            body: `Visit on ${visitDate} at ${visitTime} by ${visitors}. Tap to confirm your availability!`,
+          },
+          data: {
+            type: 'care_cell_visit',
+            visitId,
+            cellId,
+            churchId,
+            visitDate,
+            visitTime,
+          },
+          tokens,
+        };
+
+        const response = await messaging.sendEachForMulticast(messagePayload);
+        console.log(`Successfully sent Care Cell visit push to ${response.successCount}/${tokens.length} members for ${visitId}`);
+      } else {
+        console.log(`No valid FCM tokens found for members in care cell ${cellId}`);
+      }
+    } catch (err) {
+      console.error('Error dispatching Care Cell visit push notification:', err);
+    }
+  }
+);

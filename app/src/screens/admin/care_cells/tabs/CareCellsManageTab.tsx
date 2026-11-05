@@ -58,6 +58,16 @@ export default function CareCellsManageTab({
   const [grantAccessModalVisible, setGrantAccessModalVisible] = useState(false);
 
 
+  // Status counts
+  const statusCounts = useMemo(() => {
+    return {
+      All: cells.length,
+      Active: cells.filter(c => c.status === 'Active').length,
+      Inactive: cells.filter(c => c.status === 'Inactive').length,
+      Archived: cells.filter(c => c.status === 'Archived').length,
+    };
+  }, [cells]);
+
   // Filtered cells list
   const filteredCells = useMemo(() => {
     return cells.filter((c) => {
@@ -295,38 +305,41 @@ export default function CareCellsManageTab({
 
   return (
     <View style={styles.container}>
-      {/* Top Search & Filter Bar */}
+      {/* Clean Full-Width Search Bar */}
       <View style={styles.topBar}>
         <View style={styles.searchWrap}>
-          <Search size={16} color="#94A3B8" style={{ marginRight: 8 }} />
+          <Search size={16} color="#64748B" style={{ marginRight: 8 }} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search cells by code, name, leader, location..."
+            placeholder="Search care cells by code, name, leader, location..."
             placeholderTextColor="#94A3B8"
             value={searchQuery}
             onChangeText={setSearchQuery}
+            autoCorrect={false}
           />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity
+              onPress={() => setSearchQuery('')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={styles.clearSearchBtn}
+            >
+              <Text style={styles.clearSearchTxt}>×</Text>
+            </TouchableOpacity>
+          )}
         </View>
-
-        {/* Add Care Cell Button (Super Admin Only) */}
-        {isPlatformSuperAdmin && (
-          <TouchableOpacity style={styles.addBtn} onPress={onOpenCreateCell} activeOpacity={0.85}>
-            <Plus size={18} color="#FFFFFF" style={{ marginRight: 4 }} />
-            <Text style={styles.addBtnTxt}>Create Cell</Text>
-          </TouchableOpacity>
-        )}
       </View>
 
-      {/* Status Filter Chips */}
+      {/* Clean Status Filter Chips */}
       <View style={styles.statusFilterRow}>
         {(['All', 'Active', 'Inactive', 'Archived'] as const).map((st) => (
           <TouchableOpacity
             key={st}
             style={[styles.statusFilterChip, statusFilter === st && styles.statusFilterChipActive]}
             onPress={() => setStatusFilter(st)}
+            activeOpacity={0.75}
           >
             <Text style={[styles.statusFilterChipTxt, statusFilter === st && styles.statusFilterChipTxtActive]}>
-              {st}
+              {st} ({statusCounts[st]})
             </Text>
           </TouchableOpacity>
         ))}
@@ -346,7 +359,7 @@ export default function CareCellsManageTab({
             <Text style={styles.emptySubtitle}>
               {searchQuery
                 ? `No cells match "${searchQuery}".`
-                : 'Tap "Create Cell" above to create your first Care Cell fellowship.'}
+                : 'No care cells found in this category.'}
             </Text>
           </View>
         }
@@ -370,15 +383,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 4,
-    paddingBottom: 8,
-    gap: 10,
+    paddingTop: 8,
+    paddingBottom: 10,
   },
   searchWrap: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
@@ -386,7 +395,12 @@ const styles = StyleSheet.create({
     borderWidth: 1.2,
     borderColor: '#E2E8F0',
     paddingHorizontal: 12,
-    height: 42,
+    height: 44,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
   },
   searchInput: {
     flex: 1,
@@ -394,23 +408,19 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     fontWeight: '500',
   },
-  addBtn: {
-    flexDirection: 'row',
+  clearSearchBtn: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#E2E8F0',
+    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#1A2D5A',
-    paddingHorizontal: 14,
-    height: 42,
-    borderRadius: 12,
-    shadowColor: '#1A2D5A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
   },
-  addBtnTxt: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#FFFFFF',
+  clearSearchTxt: {
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '700',
+    marginTop: -2,
   },
   statusFilterRow: {
     flexDirection: 'row',

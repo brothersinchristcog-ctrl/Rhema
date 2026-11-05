@@ -19,6 +19,43 @@ export type FollowupType =
   | 'WhatsApp Message' 
   | 'Other';
 export type FollowupStatus = 'Pending' | 'Contacted' | 'Completed' | 'Needs Further Follow-up';
+export type VisitStatus = 'Scheduled' | 'Completed' | 'Cancelled';
+export type MemberVisitResponseStatus = 'Pending' | 'Accepted' | 'Declined';
+
+export interface CareCellVisitMemberResponse {
+  memberId: string;
+  memberName: string;
+  memberPhone?: string;
+  memberPhoto?: string;
+  response: MemberVisitResponseStatus;
+  respondedAt?: any;
+  notes?: string;
+}
+
+export interface CareCellVisit {
+  id: string;
+  churchId?: string;
+  cellId: string;
+  cellCode?: string;
+  cellName: string;
+  title: string;
+  purpose?: string;
+  visitDate: string; // "YYYY-MM-DD"
+  visitTime: string; // "HH:mm" e.g. "17:00"
+  visitors: string;
+  status: VisitStatus;
+  notificationSent?: boolean;
+  notificationSentAt?: any;
+  createdBy: string;
+  createdByName?: string;
+  createdAt?: any;
+  updatedAt?: any;
+  totalMembersCount?: number;
+  acceptedCount?: number;
+  declinedCount?: number;
+  pendingCount?: number;
+  responses?: Record<string, CareCellVisitMemberResponse>;
+}
 
 export interface CareCell {
   id: string;
