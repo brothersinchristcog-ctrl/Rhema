@@ -59,6 +59,8 @@ export default function CareCellFormModal({
 
   const [meetingDay, setMeetingDay] = useState('Friday');
   const [meetingTime, setMeetingTime] = useState('19:00');
+  const [meetingEndTime, setMeetingEndTime] = useState('20:30');
+  const [activeTimePickerTarget, setActiveTimePickerTarget] = useState<'start' | 'end'>('start');
   const [meetingLocation, setMeetingLocation] = useState('');
   const [maximumMembers, setMaximumMembers] = useState('20');
   const [status, setStatus] = useState<CareCellStatus>('Active');
@@ -129,6 +131,7 @@ export default function CareCellFormModal({
       setAssistantLeaderPhoto(cellToEdit.assistantLeaderPhoto);
       setMeetingDay(cellToEdit.meetingDay || 'Friday');
       setMeetingTime(cellToEdit.meetingTime || '19:00');
+      setMeetingEndTime(cellToEdit.meetingEndTime || '');
       setMeetingLocation(cellToEdit.meetingLocation || '');
       setMaximumMembers(String(cellToEdit.maximumMembers || 20));
       setStatus(cellToEdit.status || 'Active');
@@ -148,6 +151,7 @@ export default function CareCellFormModal({
       setAssistantLeaderPhoto(undefined);
       setMeetingDay('Friday');
       setMeetingTime('19:00');
+      setMeetingEndTime('20:30');
       setMeetingLocation('');
       setMaximumMembers('20');
       setStatus('Active');
@@ -275,6 +279,7 @@ export default function CareCellFormModal({
         leaderPhone: leaderPhone || '',
         meetingDay,
         meetingTime: meetingTime.trim(),
+        meetingEndTime: meetingEndTime ? meetingEndTime.trim() : '',
         meetingLocation: meetingLocation.trim(),
         maximumMembers: parseInt(maximumMembers, 10) || 20,
         status,
@@ -605,40 +610,74 @@ export default function CareCellFormModal({
                 </TouchableOpacity>
               </View>
 
-              {/* Meeting Schedule Row */}
-              <View style={styles.row}>
-                {/* Meeting Day */}
-                <View style={[styles.fieldGroup, { flex: 1.2, marginRight: 10 }]}>
-                  <Text style={styles.fieldLabel}>Meeting Day *</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.daySelectorScroll}>
-                    {DAYS_OF_WEEK.map((d) => (
+              {/* Meeting Day (Full Width Clean Selector) */}
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>Meeting Day *</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.daySelectorScrollContainer}
+                >
+                  {DAYS_OF_WEEK.map((d) => {
+                    const isSelected = meetingDay === d;
+                    return (
                       <TouchableOpacity
                         key={d}
-                        style={[styles.dayChip, meetingDay === d && styles.dayChipActive]}
+                        style={[styles.dayChip, isSelected && styles.dayChipActive]}
                         onPress={() => setMeetingDay(d)}
+                        activeOpacity={0.8}
                       >
-                        <Text style={[styles.dayChipTxt, meetingDay === d && styles.dayChipTxtActive]}>
+                        <Text style={[styles.dayChipTxt, isSelected && styles.dayChipTxtActive]}>
                           {d.slice(0, 3)}
                         </Text>
                       </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
+                    );
+                  })}
+                </ScrollView>
+              </View>
 
-                {/* Meeting Time Picker Trigger */}
-                <View style={[styles.fieldGroup, { flex: 1.1 }]}>
-                  <Text style={styles.fieldLabel}>Meeting Time *</Text>
+              {/* Meeting Starting Time & Ending Time (Clean 2-Column Row) */}
+              <View style={styles.rowTwoCols}>
+                {/* Meeting Start Time */}
+                <View style={[styles.fieldGroup, { flex: 1, marginRight: 10 }]}>
+                  <Text style={styles.fieldLabel}>Starting Time *</Text>
                   <TouchableOpacity
                     style={styles.timePickerBtn}
-                    onPress={() => setTimePickerVisible(true)}
+                    onPress={() => {
+                      setActiveTimePickerTarget('start');
+                      setTimePickerVisible(true);
+                    }}
                     activeOpacity={0.8}
                   >
-                    <Clock size={16} color="#1A2D5A" style={{ marginRight: 6 }} />
+                    <Clock size={16} color="#1A2D5A" style={{ marginRight: 8 }} />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.timePickerTxt} numberOfLines={1}>
                         {formatTimeDisplay(meetingTime)}
                       </Text>
                       <Text style={styles.timePickerSub}>{meetingTime} (24h)</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Meeting End Time */}
+                <View style={[styles.fieldGroup, { flex: 1 }]}>
+                  <Text style={styles.fieldLabel}>Ending Time</Text>
+                  <TouchableOpacity
+                    style={styles.timePickerBtn}
+                    onPress={() => {
+                      setActiveTimePickerTarget('end');
+                      setTimePickerVisible(true);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Clock size={16} color="#C9A84C" style={{ marginRight: 8 }} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.timePickerTxt} numberOfLines={1}>
+                        {meetingEndTime ? formatTimeDisplay(meetingEndTime) : 'Select End Time'}
+                      </Text>
+                      <Text style={styles.timePickerSub}>
+                        {meetingEndTime ? `${meetingEndTime} (24h)` : 'Optional'}
+                      </Text>
                     </View>
                   </TouchableOpacity>
                 </View>
@@ -657,11 +696,11 @@ export default function CareCellFormModal({
               </View>
 
               {/* Max Members & Status Row */}
-              <View style={styles.row}>
+              <View style={styles.rowTwoCols}>
                 <View style={[styles.fieldGroup, { flex: 1, marginRight: 10 }]}>
                   <Text style={styles.fieldLabel}>Max Members</Text>
                   <TextInput
-                    style={styles.textInput}
+                    style={[styles.textInput, { height: 46 }]}
                     placeholder="20"
                     placeholderTextColor="#94A3B8"
                     keyboardType="numeric"
@@ -687,57 +726,6 @@ export default function CareCellFormModal({
                   </View>
                 </View>
               </View>
-
-
-              {/* Admin Access Delegation (Super Admin Only) */}
-              {isPlatformSuperAdmin && churchAdmins.length > 0 && (
-                <View style={[styles.fieldGroup, { marginTop: 6, marginBottom: 18, backgroundColor: '#F8FAFC', padding: 14, borderRadius: 14, borderWidth: 1, borderColor: '#E2E8F0' }]}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                    <Shield size={16} color="#1E3A8A" style={{ marginRight: 6 }} />
-                    <Text style={[styles.fieldLabel, { marginBottom: 0, color: '#1E3A8A' }]}>
-                      GRANT ADMIN ACCESS (SUPER ADMIN ONLY)
-                    </Text>
-                  </View>
-                  <Text style={{ fontSize: 12, color: '#64748B', marginBottom: 10, lineHeight: 17 }}>
-                    Select church administrators who should have permission to manage this Care Cell in their Admin Dashboard:
-                  </Text>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                    {churchAdmins.map((admin) => {
-                      const isSelected = assignedAdminIds.includes(admin.id);
-                      return (
-                        <TouchableOpacity
-                          key={admin.id}
-                          style={[
-                            {
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                              paddingVertical: 7,
-                              paddingHorizontal: 12,
-                              borderRadius: 20,
-                              backgroundColor: isSelected ? '#EEF2FF' : '#FFFFFF',
-                              borderWidth: 1.2,
-                              borderColor: isSelected ? '#4338CA' : '#CBD5E1',
-                            }
-                          ]}
-                          onPress={() => {
-                            setAssignedAdminIds((prev) =>
-                              prev.includes(admin.id)
-                                ? prev.filter((id) => id !== admin.id)
-                                : [...prev, admin.id]
-                            );
-                          }}
-                          activeOpacity={0.8}
-                        >
-                          <Text style={{ fontSize: 12.5, fontWeight: isSelected ? '700' : '500', color: isSelected ? '#1E3A8A' : '#475569' }}>
-                            {admin.name} ({admin.userType})
-                          </Text>
-                          {isSelected && <Check size={13} color="#1E3A8A" style={{ marginLeft: 6 }} strokeWidth={2.5} />}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </View>
-              )}
 
               {/* Submit Button */}
               <TouchableOpacity
@@ -808,11 +796,16 @@ export default function CareCellFormModal({
       <DateTimePickerModal
         isVisible={timePickerVisible}
         mode="time"
-        date={getTimeDate(meetingTime)}
+        date={getTimeDate(activeTimePickerTarget === 'start' ? meetingTime : (meetingEndTime || '20:30'))}
         onConfirm={(date) => {
           const hours = String(date.getHours()).padStart(2, '0');
           const minutes = String(date.getMinutes()).padStart(2, '0');
-          setMeetingTime(`${hours}:${minutes}`);
+          const formatted = `${hours}:${minutes}`;
+          if (activeTimePickerTarget === 'start') {
+            setMeetingTime(formatted);
+          } else {
+            setMeetingEndTime(formatted);
+          }
           setTimePickerVisible(false);
         }}
         onCancel={() => setTimePickerVisible(false)}
@@ -1021,27 +1014,47 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  rowTwoCols: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  daySelectorScrollContainer: {
+    flexDirection: 'row',
+    paddingVertical: 2,
+    gap: 8,
+  },
   daySelectorScroll: {
     flexDirection: 'row',
     paddingVertical: 2,
   },
   dayChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: '#F1F5F9',
-    marginRight: 6,
+    minWidth: 46,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 10,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.2,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   dayChipActive: {
     backgroundColor: '#1A2D5A',
+    borderColor: '#1A2D5A',
+    shadowColor: '#1A2D5A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 2,
   },
   dayChipTxt: {
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '700',
     color: '#64748B',
   },
   dayChipTxtActive: {
     color: '#FFFFFF',
+    fontWeight: '800',
   },
   statusRow: {
     flexDirection: 'row',

@@ -30,6 +30,7 @@ export interface CareCellVisitMemberResponse {
   response: MemberVisitResponseStatus;
   respondedAt?: any;
   notes?: string;
+  preferredTime?: string; // Preferred visit time specified by the member (e.g. "5:00 PM - 7:00 PM")
 }
 
 export interface CareCellVisit {
@@ -72,7 +73,8 @@ export interface CareCell {
   assistantLeaderPhone?: string;
   assistantLeaderPhoto?: string;
   meetingDay: string; // e.g. "Friday"
-  meetingTime: string; // e.g. "19:00"
+  meetingTime: string; // e.g. '19:00'
+  meetingEndTime?: string; // e.g. '20:30'
   meetingLocation: string;
   meetingLatitude?: number;
   meetingLongitude?: number;
@@ -100,6 +102,7 @@ export interface CareCellMembership {
   latitude?: number;
   longitude?: number;
   membershipStatus: MembershipStatus;
+  preferredVisitTime?: string;
   joinedAt?: any;
   leftAt?: any;
   transferredToCellId?: string;

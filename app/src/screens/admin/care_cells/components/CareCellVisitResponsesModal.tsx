@@ -51,6 +51,8 @@ export default function CareCellVisitResponsesModal({
   const [filter, setFilter] = useState<'ALL' | 'Accepted' | 'Declined' | 'Pending'>('ALL');
   const [search, setSearch] = useState('');
   const [updatingMemberId, setUpdatingMemberId] = useState<string | null>(null);
+  const [editingPreferredMember, setEditingPreferredMember] = useState<CareCellVisitMemberResponse | null>(null);
+  const [leaderCustomTime, setLeaderCustomTime] = useState('');
 
   if (!visit) return null;
 
@@ -92,7 +94,10 @@ export default function CareCellVisitResponsesModal({
       return;
     }
     const clean = r.memberPhone.replace(/[^0-9]/g, '');
-    const msg = `Praise the Lord ${r.memberName}, greetings from ${visit.cellName}! We are following up regarding our upcoming visit scheduled for ${formatDateDisplay(visit.visitDate)} at ${visit.visitTime}. Please let us know if you will be available!`;
+    const timeNote = r.preferredTime 
+      ? ` We noted your preferred visit time as "${r.preferredTime}".` 
+      : ` Scheduled visit time is ${visit.visitTime}.`;
+    const msg = `Praise the Lord ${r.memberName}, greetings from ${visit.cellName}! We are following up regarding our upcoming visit scheduled for ${formatDateDisplay(visit.visitDate)}.${timeNote} Looking forward to fellowshipping with you and your family!`;
     const url = `whatsapp://send?phone=${clean}&text=${encodeURIComponent(msg)}`;
     Linking.openURL(url).catch(() => {
       Alert.alert('WhatsApp Unavailable', 'Please ensure WhatsApp is installed.');
@@ -256,6 +261,22 @@ export default function CareCellVisitResponsesModal({
                           </View>
                         )}
                       </View>
+
+                      {/* Preferred Visit Time Highlight for Leaders */}
+                      {isAccepted && (
+                        <View style={styles.leaderPreferredTimeRow}>
+                          <Clock size={11} color="#047857" style={{ marginRight: 4 }} />
+                          <Text style={styles.leaderPreferredTimeTxt}>
+                            Preferred Time: <Text style={{ fontWeight: '800' }}>{item.preferredTime || `Scheduled (${visit.visitTime})`}</Text>
+                          </Text>
+                        </View>
+                      )}
+
+                      {item.notes ? (
+                        <Text style={styles.memberResponseNotesTxt} numberOfLines={2}>
+                          "{item.notes}"
+                        </Text>
+                      ) : null}
                     </View>
                   </View>
 
@@ -300,6 +321,17 @@ export default function CareCellVisitResponsesModal({
                           >
                             <X size={11} color={isDeclined ? '#FFFFFF' : '#E11D48'} />
                           </TouchableOpacity>
+
+                          <TouchableOpacity
+                            onPress={() => {
+                              setEditingPreferredMember(item);
+                              setLeaderCustomTime(item.preferredTime || '');
+                            }}
+                            style={styles.smallTimeBtn}
+                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                          >
+                            <Clock size={11} color="#1A2D5A" />
+                          </TouchableOpacity>
                         </View>
                       </>
                     )}
@@ -310,6 +342,95 @@ export default function CareCellVisitResponsesModal({
           />
         </View>
       </View>
+
+      {/* Leader Edit Preferred Visit Time Modal */}
+      {editingPreferredMember && (
+        <Modal
+          visible={!!editingPreferredMember}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setEditingPreferredMember(null)}
+        >
+          <View style={styles.leaderEditOverlay}>
+            <View style={styles.leaderEditCard}>
+              <View style={styles.leaderEditHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.leaderEditTitle}>Preferred Visit Time</Text>
+                  <Text style={styles.leaderEditSub}>For {editingPreferredMember.memberName}</Text>
+                </View>
+                <TouchableOpacity onPress={() => setEditingPreferredMember(null)} style={styles.leaderEditCloseBtn}>
+                  <X size={16} color="#64748B" />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.leaderEditSectionLabel}>SELECT OR ENTER PREFERRED TIME</Text>
+              <View style={styles.leaderTimePillsRow}>
+                {[
+                  `Scheduled (${visit.visitTime})`,
+                  'Morning (10:00 AM – 12:00 PM)',
+                  'Afternoon (2:00 PM – 4:00 PM)',
+                  'Evening (5:00 PM – 7:00 PM)',
+                  'Night (7:00 PM – 9:00 PM)',
+                ].map((slot) => (
+                  <TouchableOpacity
+                    key={slot}
+                    style={[styles.leaderTimeSlotPill, leaderCustomTime === slot && styles.leaderTimeSlotPillActive]}
+                    onPress={() => setLeaderCustomTime(slot)}
+                  >
+                    <Text style={[styles.leaderTimeSlotPillTxt, leaderCustomTime === slot && styles.leaderTimeSlotPillTxtActive]}>
+                      {slot}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <TextInput
+                style={styles.leaderTimeInput}
+                placeholder="Or type custom time (e.g. 6:30 PM)"
+                placeholderTextColor="#94A3B8"
+                value={leaderCustomTime}
+                onChangeText={setLeaderCustomTime}
+              />
+
+              <View style={styles.leaderEditActionsRow}>
+                <TouchableOpacity
+                  style={styles.leaderEditCancelBtn}
+                  onPress={() => setEditingPreferredMember(null)}
+                >
+                  <Text style={styles.leaderEditCancelBtnTxt}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.leaderEditSaveBtn}
+                  onPress={async () => {
+                    if (!editingPreferredMember) return;
+                    try {
+                      setUpdatingMemberId(editingPreferredMember.memberId);
+                      const activeChurchId = churchId || (await CareCellService.getChurchId());
+                      await CareCellService.respondToVisit(
+                        activeChurchId,
+                        visit.id,
+                        editingPreferredMember.memberId,
+                        'Accepted',
+                        editingPreferredMember.notes || 'Preferred time updated by leader',
+                        leaderCustomTime.trim() || undefined
+                      );
+                      setEditingPreferredMember(null);
+                      onResponseUpdated?.();
+                    } catch (err: any) {
+                      Alert.alert('Error', err.message || 'Failed to update preferred time.');
+                    } finally {
+                      setUpdatingMemberId(null);
+                    }
+                  }}
+                >
+                  <Text style={styles.leaderEditSaveBtnTxt}>Save Preferred Time</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
     </Modal>
   );
 }
@@ -585,6 +706,151 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#94A3B8',
     marginTop: 8,
+  },
+  leaderPreferredTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    marginTop: 5,
+    alignSelf: 'flex-start',
+  },
+  leaderPreferredTimeTxt: {
+    fontSize: 11,
+    color: '#065F46',
+  },
+  memberResponseNotesTxt: {
+    fontSize: 11,
+    fontStyle: 'italic',
+    color: '#64748B',
+    marginTop: 4,
+  },
+  smallTimeBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  leaderEditOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  leaderEditCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+    width: '100%',
+    maxWidth: 420,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  leaderEditHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  leaderEditTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1A2D5A',
+  },
+  leaderEditSub: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  leaderEditCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  leaderEditSectionLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#1A2D5A',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  leaderTimePillsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 12,
+  },
+  leaderTimeSlotPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  leaderTimeSlotPillActive: {
+    backgroundColor: '#1A2D5A',
+    borderColor: '#1A2D5A',
+  },
+  leaderTimeSlotPillTxt: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  leaderTimeSlotPillTxtActive: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+  leaderTimeInput: {
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 13,
+    color: '#1A2D5A',
+    marginBottom: 16,
+  },
+  leaderEditActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'flex-end',
+  },
+  leaderEditCancelBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+  },
+  leaderEditCancelBtnTxt: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  leaderEditSaveBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#1A2D5A',
+  },
+  leaderEditSaveBtnTxt: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
 });
 

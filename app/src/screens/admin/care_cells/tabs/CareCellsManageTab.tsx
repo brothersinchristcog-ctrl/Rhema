@@ -207,7 +207,7 @@ export default function CareCellsManageTab({
           </View>
           <View style={styles.metaItem}>
             <Clock size={13} color="#64748B" style={{ marginRight: 4 }} />
-            <Text style={styles.metaTxt}>{item.meetingTime || '19:00'}</Text>
+            <Text style={styles.metaTxt}>{item.meetingTime || '19:00'}{item.meetingEndTime ? ` – ${item.meetingEndTime}` : ''}</Text>
           </View>
           {item.location ? (
             <View style={[styles.metaItem, { flex: 1 }]}>
