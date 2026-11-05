@@ -231,9 +231,9 @@ export default function EventDetailsScreen({ route, navigation }: any) {
           if (!isMounted) return;
           if (doc.exists) {
             const lData = doc.data()?.youtubeLiveState;
-            const liveVid = lData?.videoId || lData?.lastNotifiedVideoId;
-            if (lData?.isLive && liveVid) {
-              setLiveStreamVideoId(liveVid);
+            const liveVid = lData?.videoId || lData?.lastNotifiedVideoId || lData?.latestVideoId;
+            if (liveVid) {
+              setLiveStreamVideoId((prev) => prev || liveVid);
             }
           }
         },
@@ -283,6 +283,40 @@ export default function EventDetailsScreen({ route, navigation }: any) {
 
   const youtubeId = manualYoutubeId || autoYoutubeId;
   const liveUrl = event.liveUrl || event.livestreamUrl || (manualYoutubeId ? `https://www.youtube.com/watch?v=${manualYoutubeId}` : '') || (churchYoutubeHandle ? `https://www.youtube.com/${churchYoutubeHandle}/streams` : '');
+
+  const recordingVideoId =
+    youtubeId ||
+    liveStreamVideoId ||
+    extractYoutubeVideoId(event.youtubeId || event.liveUrl || event.livestreamUrl);
+
+  // HTML5 Recording Embed - plays completed event recording directly inside EventDetailsScreen
+  const htmlRecordingEmbed = useMemo(() => {
+    const embedSrc = recordingVideoId
+      ? `https://www.youtube-nocookie.com/embed/${recordingVideoId}?autoplay=0&playsinline=1&rel=0&modestbranding=1`
+      : `https://www.youtube-nocookie.com/embed/live_stream?channel=${liveStreamChannelId || 'UC3J_2zP2bIuCwEia_ASvghw'}&autoplay=0&playsinline=1&rel=0&modestbranding=1`;
+
+    return `<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <style>
+      * { margin:0; padding:0; box-sizing:border-box; }
+      html, body { width:100%; height:100%; background:#000000; overflow:hidden; }
+      iframe { width:100%; height:100%; border:none; display:block; }
+    </style>
+  </head>
+  <body>
+    <iframe
+      src="${embedSrc}"
+      frameborder="0"
+      referrerpolicy="strict-origin-when-cross-origin"
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+      allowfullscreen>
+    </iframe>
+  </body>
+</html>`;
+  }, [recordingVideoId, liveStreamChannelId]);
 
   // Navigate directly to the in-app YouTube Live Tab
   const handleJoinLiveStream = () => {
@@ -1091,41 +1125,41 @@ export default function EventDetailsScreen({ route, navigation }: any) {
               </View>
             )}
 
-            {/* COMPLETED — show recording */}
+            {/* COMPLETED — show event recording directly inside EventDetailsScreen */}
             {status === 'completed' && (
-              videoSearching ? (
+              videoSearching && !recordingVideoId ? (
                 <View style={styles.videoSearching}>
                   <ActivityIndicator size="large" color="#dc2626" />
                   <Text style={styles.videoSearchingText}>Finding event recording...</Text>
                   <Text style={styles.videoSearchingSubText}>వీడియో శోధిస్తున్నాం...</Text>
                 </View>
-              ) : youtubeId ? (
+              ) : (
                 <View style={styles.videoContainer}>
-                  <YoutubePlayer
-                    key={youtubeId}
-                    height={width * 0.55}
-                    play={false}
-                    videoId={youtubeId}
-                    initialPlayerParams={{
-                      preventFullScreen: false,
+                  <WebView
+                    source={{
+                      html: htmlRecordingEmbed,
+                      baseUrl: 'https://www.youtube.com',
                     }}
-                    webViewProps={{
-                      allowsFullscreenVideo: true,
-                      androidLayerType: 'hardware',
+                    style={{ width: '100%', height: width * 0.55, backgroundColor: '#000000' }}
+                    originWhitelist={['*']}
+                    allowsInlineMediaPlayback={true}
+                    mediaPlaybackRequiresUserAction={false}
+                    javaScriptEnabled={true}
+                    domStorageEnabled={true}
+                    allowsFullscreenVideo={true}
+                    onShouldStartLoadWithRequest={(req) => {
+                      if (
+                        req.url.includes('youtube') ||
+                        req.url.includes('googlevideo') ||
+                        req.url.includes('about:blank') ||
+                        req.url.startsWith('data:')
+                      ) {
+                        return true;
+                      }
+                      return false;
                     }}
                   />
                 </View>
-              ) : (
-                <TouchableOpacity
-                  style={styles.youtubeChannelBtn}
-                  onPress={() => Linking.openURL(liveUrl || 'https://www.youtube.com')}
-                >
-                  <Play size={20} color="#fff" fill="#fff" />
-                  <View>
-                    <Text style={styles.youtubeChannelBtnText}>Watch Recording on YouTube</Text>
-                    {churchYoutubeHandle ? <Text style={styles.youtubeChannelBtnSub}>{churchYoutubeHandle}</Text> : null}
-                  </View>
-                </TouchableOpacity>
               )
             )}
           </View>
