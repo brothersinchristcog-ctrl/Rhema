@@ -22,6 +22,7 @@ import EventSuccessCard from '../../../components/EventSuccessCard';
 import FirestoreService from '../../../services/FirestoreService';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
+import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
 
 let globalActiveRecording: Audio.Recording | null = null;
 const parseSafeDate = (dStr: string) => {
@@ -31,6 +32,7 @@ const parseSafeDate = (dStr: string) => {
 };
 
 export default function AIAssistantModal({ navigation }: { navigation: any }) {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<Message[]>([
     { role: 'assistant', content: "🙏 Hello Pastor! I can help you create an event. What are we planning?" }
@@ -676,7 +678,7 @@ export default function AIAssistantModal({ navigation }: { navigation: any }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.bgSecondary
@@ -836,4 +838,4 @@ const styles = StyleSheet.create({
   langButtonTextActive: {
     color: '#fff',
   },
-});
+}));

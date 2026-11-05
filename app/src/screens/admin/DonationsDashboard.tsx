@@ -44,6 +44,7 @@ import { formatDateDisplay } from '../../utils/DateUtils';
 import DateTimePickerModal from "react-native-modal-datetime-picker";
 import { LinearGradient } from 'expo-linear-gradient';
 import firestore from '@react-native-firebase/firestore';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const { width } = Dimensions.get('window');
 
@@ -51,6 +52,7 @@ type FilterPeriod = 'Today' | 'Week' | 'Month' | 'Year' | 'Custom Range' | 'All 
 type SubTab = 'dashboard' | 'donations';
 
 export default function AdminDonationDashboard() {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { setActiveTab } = useContext(AdminTabContext);
   const { member } = useAuth();
   const { activeChurch } = useChurch();
@@ -980,7 +982,7 @@ export default function AdminDonationDashboard() {
                             </TouchableOpacity>
                             <TouchableOpacity 
                               onPress={() => openEditDonation(don)}
-                              style={{ padding: 8, backgroundColor: '#f4efe6', borderRadius: 8, marginRight: 8 }}
+                              style={{ padding: 8, backgroundColor: screenBg, borderRadius: 8, marginRight: 8 }}
                             >
                               <Pencil size={14} color="#1b2a4a" />
                             </TouchableOpacity>
@@ -1004,7 +1006,7 @@ export default function AdminDonationDashboard() {
                 
                 {donations.filter(e => e.category === selectedCategoryView).length > 0 && (
                   <View style={{ marginBottom: 40 }}>
-                    <View style={{ backgroundColor: '#f4efe6', borderRadius: 16, padding: 16, marginTop: 6, marginBottom: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: '#c9973f' }}>
+                    <View style={{ backgroundColor: screenBg, borderRadius: 16, padding: 16, marginTop: 6, marginBottom: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: '#c9973f' }}>
                       <Text style={{ fontFamily: FONTS.serif, fontSize: 18, color: '#141d33', fontWeight: '700' }}>Category Total</Text>
                       <Text style={{ fontFamily: FONTS.mono, fontSize: 22, color: '#141d33', fontWeight: '700' }}>
                         ₹{donations.filter(e => e.category === selectedCategoryView).reduce((sum, e) => sum + e.amount, 0).toLocaleString('en-IN')}
@@ -1822,7 +1824,7 @@ const FONTS = {
   mono: 'JetBrainsMono-Regular'
 };
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -1968,4 +1970,4 @@ const styles = StyleSheet.create({
   grandTotalBlock: { backgroundColor: '#1b2a4a', borderRadius: 12, paddingVertical: 16, paddingHorizontal: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 20 },
   grandTotalLabel: { fontFamily: FONTS.sans, fontSize: 12, fontWeight: '700', color: '#e7ebf3', letterSpacing: 0.5 },
   grandTotalAmt: { fontFamily: FONTS.mono, fontSize: 18, fontWeight: '700', color: '#e6c079' }
-});
+}));

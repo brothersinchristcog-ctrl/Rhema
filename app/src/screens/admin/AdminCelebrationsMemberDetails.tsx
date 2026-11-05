@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, Image, Linking } from 'react-native';
 import { ChevronLeft, Gift , ArrowLeft } from 'lucide-react-native';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const MemberAvatar = ({ member, initials, styles, bgColor }: any) => {
   const [imgError, setImgError] = React.useState(false);
@@ -32,6 +33,7 @@ const MemberAvatar = ({ member, initials, styles, bgColor }: any) => {
 };
 
 export default function AdminCelebrationsMemberDetails({ member, category, onBack, onPrepareWish }: { member: any, category: string, onBack: () => void, onPrepareWish: () => void }) {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   
   const getAvatarColor = (name?: string) => {
     const colors = ['#734062', '#1A4F5B', '#42518E', '#D97736'];
@@ -158,7 +160,7 @@ export default function AdminCelebrationsMemberDetails({ member, category, onBac
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -315,4 +317,4 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   }
-});
+}));

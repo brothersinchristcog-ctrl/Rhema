@@ -273,7 +273,11 @@ export default function SongDetailModal({
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                 activeOpacity={0.8}
               >
-                <Bookmark size={18} color={isSaved ? '#E8C46E' : colors.textSecondary} fill={isSaved ? '#E8C46E' : 'none'} />
+                <Bookmark 
+                  size={18} 
+                  color={isSaved ? (!isDark ? '#0F172A' : '#E8C46E') : colors.textSecondary} 
+                  fill={isSaved ? (!isDark ? '#0F172A' : '#E8C46E') : 'none'} 
+                />
               </TouchableOpacity>
             ) : (
               <View style={styles.headerRightSpacer} />
@@ -291,8 +295,8 @@ export default function SongDetailModal({
                       key={item.code}
                       style={[
                         styles.langPill,
-                        { backgroundColor: isDark ? '#1e293b' : '#f1f5f9', borderColor: isDark ? '#334155' : '#e2e8f0' },
-                        isSelected && { backgroundColor: '#1a2d5a', borderColor: '#1a2d5a' }
+                        { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: isDark ? '#3F3F46' : '#0F172A' },
+                        isSelected && { backgroundColor: isDark ? '#3F3F46' : '#0F172A', borderColor: isDark ? '#52525B' : '#0F172A' }
                       ]}
                       onPress={() => setSelectedLangOverride(item.code)}
                     >
@@ -311,7 +315,7 @@ export default function SongDetailModal({
 
             {/* ── Song Leader / Leading Person ── */}
             {songLead ? (
-              <View style={[styles.leaderCard, { backgroundColor: isDark ? '#1e293b' : '#F0FDF4', borderColor: isDark ? '#334155' : '#BBF7D0' }]}>
+              <View style={[styles.leaderCard, { backgroundColor: isDark ? '#18181B' : '#F0FDF4', borderColor: isDark ? '#27272A' : '#BBF7D0' }]}>
                 <View style={styles.leaderAvatar}>
                   <Text style={styles.leaderAvatarTxt}>{songLead.charAt(0).toUpperCase()}</Text>
                 </View>
@@ -333,6 +337,8 @@ export default function SongDetailModal({
             {(() => {
               const yId = song.youtubeId ? extractYoutubeId(song.youtubeId) : '';
               if (!yId || yId.length !== 11) return null;
+              const playerWidth = Math.min(width - 40, 480);
+              const playerHeight = Math.round((playerWidth * 9) / 16);
               return (
                 <View style={{
                   marginBottom: 16,
@@ -340,12 +346,13 @@ export default function SongDetailModal({
                   overflow: 'hidden',
                   backgroundColor: '#000',
                   borderWidth: 1,
-                  borderColor: isDark ? '#334155' : '#E2E8F0',
+                  borderColor: isDark ? '#27272A' : '#E2E8F0',
                   alignItems: 'center',
+                  height: playerHeight,
                 }}>
                   <YoutubePlayer
-                    height={210}
-                    width={Math.min(width - 40, 480)}
+                    height={playerHeight}
+                    width={playerWidth}
                     videoId={yId}
                     play={false}
                   />
@@ -355,30 +362,30 @@ export default function SongDetailModal({
 
             {/* ── Musical Arrangement Chart ── */}
             {hasArrangement ? (
-              <View style={[styles.chartCard, { backgroundColor: isDark ? '#1e293b' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
+              <View style={[styles.chartCard, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? '#27272A' : '#E2E8F0' }]}>
                 <View style={styles.chartHeaderRow}>
                   <Sliders size={13} color={isDark ? '#94A3B8' : '#1a2d5a'} />
-                  <Text style={[styles.chartHeaderTitle, { color: isDark ? '#94A3B8' : '#1a2d5a' }]}>
+                  <Text style={[styles.chartHeaderTitle, { color: isDark ? '#A1A1AA' : '#0F172A' }]}>
                     MUSICAL ARRANGEMENT
                   </Text>
-                  <View style={{ backgroundColor: isDark ? '#1e3a5f' : '#EFF6FF', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginLeft: 'auto' }}>
+                  <View style={{ backgroundColor: isDark ? '#27272A' : '#EFF6FF', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginLeft: 'auto' }}>
                     <Text style={{ fontSize: 9, fontWeight: '800', color: isDark ? '#93C5FD' : '#1D4ED8' }}>SETLIST CHART</Text>
                   </View>
                 </View>
                 <View style={styles.chartColsRow}>
-                  <View style={[styles.chartCol, { backgroundColor: isDark ? '#0f172a' : '#F1F5F9', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
+                  <View style={[styles.chartCol, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: isDark ? '#27272A' : '#E2E8F0' }]}>
                     <Text style={[styles.chartColLbl, { color: isDark ? '#94A3B8' : '#64748B' }]}>KEY</Text>
                     <Text style={[styles.chartColVal, { color: isDark ? '#38BDF8' : '#0284C7' }]}>{song.key || '—'}</Text>
                   </View>
-                  <View style={[styles.chartCol, { backgroundColor: isDark ? '#0f172a' : '#F1F5F9', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
+                  <View style={[styles.chartCol, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: isDark ? '#27272A' : '#E2E8F0' }]}>
                     <Text style={[styles.chartColLbl, { color: isDark ? '#94A3B8' : '#64748B' }]}>TIME SIG</Text>
                     <Text style={[styles.chartColVal, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>{song.timeSignature || '4/4'}</Text>
                   </View>
-                  <View style={[styles.chartCol, { backgroundColor: isDark ? '#0f172a' : '#F1F5F9', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
+                  <View style={[styles.chartCol, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: isDark ? '#27272A' : '#E2E8F0' }]}>
                     <Text style={[styles.chartColLbl, { color: isDark ? '#94A3B8' : '#64748B' }]}>TEMPO</Text>
                     <Text style={[styles.chartColVal, { color: isDark ? '#FBBF24' : '#D97706' }]}>{song.tempo ? `${song.tempo} BPM` : '—'}</Text>
                   </View>
-                  <View style={[styles.chartCol, { backgroundColor: isDark ? '#0f172a' : '#F1F5F9', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
+                  <View style={[styles.chartCol, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: isDark ? '#27272A' : '#E2E8F0' }]}>
                     <Text style={[styles.chartColLbl, { color: isDark ? '#94A3B8' : '#64748B' }]}>VERSES</Text>
                     <Text style={[styles.chartColVal, { color: isDark ? '#34D399' : '#059669' }]}>{song.verses || '—'}</Text>
                   </View>
@@ -388,8 +395,8 @@ export default function SongDetailModal({
 
             {/* ── Band Arrangement (Prelude & Interlude) ── */}
             {hasBandFlow ? (
-              <View style={[styles.bandCard, { backgroundColor: isDark ? '#1e293b' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
-                <Text style={[styles.bandHeader, { color: isDark ? '#94A3B8' : '#1a2d5a' }]}>BAND ARRANGEMENT</Text>
+              <View style={[styles.bandCard, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? '#27272A' : '#E2E8F0' }]}>
+                <Text style={[styles.bandHeader, { color: isDark ? '#A1A1AA' : '#0F172A' }]}>BAND ARRANGEMENT</Text>
                 <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
                   {song.prelude ? (
                     <View style={{ flex: 1 }}>
@@ -402,7 +409,7 @@ export default function SongDetailModal({
                   {song.interlude ? (
                     <View style={{ flex: 1 }}>
                       <Text style={styles.bandSubLbl}>INTERLUDE</Text>
-                      <View style={{ backgroundColor: isDark ? '#1e3a5f' : '#EFF6FF', borderWidth: 1, borderColor: isDark ? '#1d4ed8' : '#DBEAFE', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}>
+                      <View style={{ backgroundColor: isDark ? '#27272A' : '#EFF6FF', borderWidth: 1, borderColor: isDark ? '#3F3F46' : '#DBEAFE', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}>
                         <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#93c5fd' : '#1D4ED8' }}>{song.interlude}</Text>
                       </View>
                     </View>
@@ -419,20 +426,20 @@ export default function SongDetailModal({
               </View>
             ) : null}
 
-            <Text style={[styles.modalSecHeader, { color: isDark ? '#fff' : '#1a2d5a', marginTop: 12 }]}>
+            <Text style={[styles.modalSecHeader, { color: isDark ? '#FFFFFF' : '#0F172A', marginTop: 12 }]}>
               {t('songs.lyricsAndScripts')}
               {lyricsInfo.langName ? ` · ${lyricsInfo.langName}` : ''}
             </Text>
 
-            <View style={[styles.lyricsBox, { backgroundColor: isDark ? '#1e293b' : '#fff', position: 'relative' }]}>
+            <View style={[styles.lyricsBox, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? '#27272A' : '#E2E8F0', borderWidth: 1, position: 'relative' }]}>
               
               <View style={{ position: 'absolute', top: 16, right: 16, zIndex: 10, flexDirection: 'row', gap: 8 }}>
                 {onEdit && (
                   <TouchableOpacity 
                     style={{ 
                       flexDirection: 'row', alignItems: 'center', gap: 6,
-                      backgroundColor: isDark ? '#334155' : '#f1f5f9',
-                      borderWidth: 1, borderColor: isDark ? '#475569' : '#e2e8f0',
+                      backgroundColor: isDark ? '#27272A' : '#F1F5F9',
+                      borderWidth: 1, borderColor: isDark ? '#3F3F46' : '#E2E8F0',
                       paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12
                     }} 
                     onPress={() => onEdit(song)}
@@ -457,28 +464,13 @@ export default function SongDetailModal({
                     </Text>
                   </TouchableOpacity>
                 )}
-                {onToggleSave && (
-                  <TouchableOpacity 
-                    style={{ 
-                      flexDirection: 'row', alignItems: 'center', gap: 6,
-                      backgroundColor: isSaved ? '#fee2e2' : (isDark ? '#334155' : '#f1f5f9'),
-                      borderWidth: 1, borderColor: isSaved ? '#fecaca' : (isDark ? '#475569' : '#e2e8f0'),
-                      paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12
-                    }} 
-                    onPress={() => onToggleSave(song)}
-                  >
-                    <Bookmark size={14} color={isSaved ? '#c0392b' : (isDark ? '#94a3b8' : '#64748b')} fill={isSaved ? '#c0392b' : 'transparent'} />
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: isSaved ? '#c0392b' : (isDark ? '#94a3b8' : '#64748b') }}>
-                      {isSaved ? t('songs.saved') : t('songs.save')}
-                    </Text>
-                  </TouchableOpacity>
-                )}
+                
               </View>
 
-              <View style={{ marginTop: (onToggleSave || onEdit || onDelete) ? 36 : 0, marginBottom: 12 }}>
+              <View style={{ marginTop: (onEdit || onDelete) ? 36 : 0, marginBottom: 12 }}>
 
                 {lyricsInfo.isFallback && (
-                  <View style={[styles.fallbackNotice, { backgroundColor: isDark ? '#334155' : '#fef3c7', borderColor: isDark ? '#475569' : '#fde68a' }]}>
+                  <View style={[styles.fallbackNotice, { backgroundColor: isDark ? '#27272A' : '#FEF3C7', borderColor: isDark ? '#3F3F46' : '#FDE68A' }]}>
                     <Text style={[styles.fallbackNoticeTxt, { color: isDark ? '#f8fafc' : '#92400e' }]}>
                       ℹ️ {t('songs.originalContentNotice', { lang: lyricsInfo.langName })}
                     </Text>
@@ -496,9 +488,9 @@ export default function SongDetailModal({
 
         {(totalSongs > 0 && onPrev && onNext) && (
           <LinearGradient 
-            colors={colors.headerGradient || bottomBarColors}
+            colors={isDark ? ['#18181B', '#27272A'] : ['#0F172A', '#0F172A']}
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-            style={styles.bottomBar}
+            style={[styles.bottomBar, { borderWidth: 1, borderColor: isDark ? '#3F3F46' : '#E2E8F0' }]}
           >
             <TouchableOpacity 
               style={[styles.barAction, currentSongIndex <= 0 && { opacity: 0.3 }, { backgroundColor: 'transparent' }]} 
@@ -779,7 +771,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 8,
     elevation: 12,
-    shadowColor: '#1a2d5a',
+    shadowColor: '#000',
     shadowOpacity: 0.2,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 5 }

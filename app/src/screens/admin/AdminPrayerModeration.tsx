@@ -54,6 +54,7 @@ import { AdminTabContext } from '../../context/AdminTabContext';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { documentDirectory, copyAsync } from 'expo-file-system/legacy';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const { width } = Dimensions.get('window');
 
@@ -81,6 +82,7 @@ const FONTS = {
 
 
 export default function AdminPrayerModeration({ navigation, route, routeParams }: any) {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { member } = useAuth();
   const { activeChurch } = useChurch();
   const { setActiveTab } = React.useContext(AdminTabContext);
@@ -1920,7 +1922,7 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -2536,4 +2538,4 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#059669',
   }
-});
+}));

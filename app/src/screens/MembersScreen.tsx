@@ -35,6 +35,7 @@ import {
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useAdminTheme, createAdminThemedStyles } from '../utils/adminThemeHelper';
 import { useLanguage } from '../context/LanguageContext';
 import FirestoreService from '../services/FirestoreService';
 
@@ -52,6 +53,7 @@ const SPOUSE_RELATIONS = ['Husband', 'Wife'];
 const KID_RELATIONS = ['Son', 'Daughter', 'Grandson', 'Granddaughter', 'Nephew', 'Niece'];
 
 export default function MembersScreen({ navigation }: any) {
+  const { isDark: _adminIsDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const insets = useSafeAreaInsets();
   const { member } = useAuth();
   const { isDark, colors } = useTheme();
@@ -318,8 +320,8 @@ export default function MembersScreen({ navigation }: any) {
   }, [relatedContacts, searchQuery, language]);
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2' }]}>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#0f172a' : '#FAF7F2'} />
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={screenBg} />
 
       {/* ── Page Header ── */}
             {/* ── Screen Header (Clean circular back button & title) ── */}
@@ -347,18 +349,18 @@ export default function MembersScreen({ navigation }: any) {
 
       {/* ── Optional Search Bar when multiple members exist ── */}
       {!loading && member && relatedContacts.length > 2 && (
-        <View style={[styles.searchBarContainer, { backgroundColor: isDark ? '#1e293b' : '#fff', borderColor: isDark ? '#334155' : '#e2e8f0' }]}>
-          <Search size={18} color={isDark ? '#94a3b8' : '#64748b'} />
+        <View style={[styles.searchBarContainer, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}>
+          <Search size={18} color={secondaryText} />
           <TextInput
             placeholder={t('members.searchPlaceholder')}
             placeholderTextColor={isDark ? '#64748b' : '#94a3b8'}
-            style={[styles.searchInput, { color: isDark ? '#fff' : '#0f172a' }]}
+            style={[styles.searchInput, { color: primaryText }]}
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <X size={16} color={isDark ? '#94a3b8' : '#64748b'} />
+              <X size={16} color={secondaryText} />
             </TouchableOpacity>
           )}
         </View>
@@ -368,13 +370,13 @@ export default function MembersScreen({ navigation }: any) {
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#FCD34D" />
-          <Text style={[styles.loadingText, { color: isDark ? '#94a3b8' : '#64748b' }]}>
+          <Text style={[styles.loadingText, { color: secondaryText }]}>
             {t('members.loading')}
           </Text>
         </View>
       ) : !member ? (
         <View style={styles.emptyContainer}>
-          <Text style={[styles.emptyText, { color: isDark ? '#fff' : '#1a2d5a' }]}>
+          <Text style={[styles.emptyText, { color: primaryText }]}>
             {t('members.signInRequired')}
           </Text>
           <Text style={styles.emptySubText}>
@@ -428,9 +430,9 @@ export default function MembersScreen({ navigation }: any) {
                   style={[
                     styles.memberCard, 
                     { 
-                      backgroundColor: isDark ? '#1e293b' : '#fff',
-                      borderColor: isCurrentUser ? '#FCD34D' : (isDark ? '#334155' : '#e2e8f0'),
-                      borderWidth: isCurrentUser ? 2 : 1
+                      backgroundColor: cardSurface,
+                      borderColor: adminBorderColor,
+                      borderWidth: 1
                     }
                   ]}
                 >
@@ -441,19 +443,19 @@ export default function MembersScreen({ navigation }: any) {
 
                     <View style={styles.memberMeta}>
                       <View style={styles.nameRow}>
-                        <Text style={[styles.memberName, { color: isDark ? '#fff' : '#1a2d5a' }]}>
+                        <Text style={[styles.memberName, { color: primaryText }]}>
                           {contactName}
                         </Text>
                         {isCurrentUser && (
-                          <View style={styles.selfBadge}>
-                            <Text style={styles.selfBadgeTxt}>{t('members.you')}</Text>
+                          <View style={[styles.selfBadge, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}>
+                            <Text style={[styles.selfBadgeTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>{t('members.you')}</Text>
                           </View>
                         )}
                       </View>
 
                       <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', marginTop: 6 }}>
-                        <View style={styles.roleBadge}>
-                          <Text style={styles.roleBadgeTxt}>{displayRole}</Text>
+                        <View style={[styles.roleBadge, { backgroundColor: isDark ? '#27272A' : '#EFF6FF' }]}>
+                          <Text style={[styles.roleBadgeTxt, { color: isDark ? '#E4E4E7' : '#1E40AF' }]}>{displayRole}</Text>
                         </View>
                         {displayRelation ? (
                           <View style={[styles.roleBadge, { backgroundColor: isDark ? '#1e3a5f' : '#f0fdf4' }]}>
@@ -483,7 +485,7 @@ export default function MembersScreen({ navigation }: any) {
                           setShowAddModal(true);
                         }}
                       >
-                        <Edit3 size={20} color={isDark ? '#cbd5e1' : '#64748b'} />
+                        <Edit3 size={20} color={secondaryText} />
                       </TouchableOpacity>
                       {!isCurrentUser && (
                         <TouchableOpacity 
@@ -496,7 +498,7 @@ export default function MembersScreen({ navigation }: any) {
                     </View>
                   </View>
 
-                  <View style={[styles.cardDivider, { backgroundColor: isDark ? '#334155' : '#FAF7F2' }]} />
+                  <View style={[styles.cardDivider, { backgroundColor: secondarySurface }]} />
 
                   <View style={styles.cardDetails}>
                     {contactPhone ? (
@@ -509,7 +511,7 @@ export default function MembersScreen({ navigation }: any) {
                         </View>
                         <View>
                           <Text style={styles.detailLabel}>{t('members.phoneNumber')}</Text>
-                          <Text style={[styles.detailValue, { color: isDark ? '#cbd5e1' : '#334155' }]}>
+                          <Text style={[styles.detailValue, { color: secondaryText }]}>
                             {contactPhone}
                           </Text>
                         </View>
@@ -541,7 +543,7 @@ export default function MembersScreen({ navigation }: any) {
                         </View>
                         <View>
                           <Text style={styles.detailLabel}>{t('members.emailAddress')}</Text>
-                          <Text style={[styles.detailValue, { color: isDark ? '#cbd5e1' : '#334155' }]}>
+                          <Text style={[styles.detailValue, { color: secondaryText }]}>
                             {contactEmail}
                           </Text>
                         </View>
@@ -555,7 +557,7 @@ export default function MembersScreen({ navigation }: any) {
                         </View>
                         <View>
                           <Text style={styles.detailLabel}>{t('members.registeredSince')}</Text>
-                          <Text style={[styles.detailValue, { color: isDark ? '#cbd5e1' : '#334155' }]}>
+                          <Text style={[styles.detailValue, { color: secondaryText }]}>
                             {contactDate.toLocaleDateString(language === 'te' ? 'te-IN' : language === 'hi' ? 'hi-IN' : language === 'ta' ? 'ta-IN' : 'en-US', {
                               month: 'long',
                               year: 'numeric'
@@ -575,11 +577,11 @@ export default function MembersScreen({ navigation }: any) {
       {/* ── Success Modal ── */}
       {showSuccess && (
         <View style={styles.modalOverlayCen}>
-          <View style={[styles.successModal, { backgroundColor: isDark ? '#1e293b' : '#fff' }]}>
+          <View style={[styles.successModal, { backgroundColor: cardSurface }]}>
             <View style={styles.successIconCircle}>
               <UserCheck size={36} color="#15803D" />
             </View>
-            <Text style={[styles.successTitle, { color: isDark ? '#fff' : '#1a2d5a' }]}>{t('common.success')}</Text>
+            <Text style={[styles.successTitle, { color: primaryText }]}>{t('common.success')}</Text>
             <Text style={styles.successSub}>{successMessage}</Text>
             <TouchableOpacity 
               style={styles.successBtn} 
@@ -594,17 +596,17 @@ export default function MembersScreen({ navigation }: any) {
       {/* ── Error Modal ── */}
       {showErrorModal && (
         <View style={styles.modalOverlayCen}>
-          <View style={[styles.successModal, { backgroundColor: isDark ? '#1e293b' : '#fff' }]}>
+          <View style={[styles.successModal, { backgroundColor: cardSurface }]}>
             <View style={[styles.successIconCircle, { backgroundColor: '#fee2e2' }]}>
               <X size={36} color="#ef4444" />
             </View>
-            <Text style={[styles.successTitle, { color: isDark ? '#fff' : '#1a2d5a' }]}>{t('members.duplicateMemberTitle')}</Text>
+            <Text style={[styles.successTitle, { color: primaryText }]}>{t('members.duplicateMemberTitle')}</Text>
             <Text style={styles.successSub}>{errorMessage}</Text>
             <TouchableOpacity 
-              style={[styles.successBtn, { backgroundColor: isDark ? '#334155' : '#FAF7F2' }]} 
+              style={[styles.successBtn, { backgroundColor: secondarySurface }]} 
               onPress={() => setShowErrorModal(false)}
             >
-              <Text style={[styles.successBtnTxt, { color: isDark ? '#fff' : '#334155' }]}>{t('common.close')}</Text>
+              <Text style={[styles.successBtnTxt, { color: primaryText }]}>{t('common.close')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -613,19 +615,19 @@ export default function MembersScreen({ navigation }: any) {
       {/* ── Delete Confirmation Modal ── */}
       {showDeleteConfirm && memberToDelete && (
         <View style={styles.modalOverlayCen}>
-          <View style={[styles.successModal, { backgroundColor: isDark ? '#1e293b' : '#fff' }]}>
+          <View style={[styles.successModal, { backgroundColor: cardSurface }]}>
             <View style={[styles.successIconCircle, { backgroundColor: '#fee2e2' }]}>
               <Trash2 size={36} color="#ef4444" />
             </View>
-            <Text style={[styles.successTitle, { color: isDark ? '#fff' : '#1a2d5a' }]}>{t('members.deleteMemberTitle')}</Text>
+            <Text style={[styles.successTitle, { color: primaryText }]}>{t('members.deleteMemberTitle')}</Text>
             <Text style={styles.successSub}>{t('members.deleteMemberConfirm', { name: memberToDelete.name })}</Text>
             
             <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
               <TouchableOpacity 
-                style={[styles.successBtn, { flex: 1, width: 'auto', paddingHorizontal: 0, backgroundColor: isDark ? '#334155' : '#FAF7F2' }]} 
+                style={[styles.successBtn, { flex: 1, width: 'auto', paddingHorizontal: 0, backgroundColor: secondarySurface }]} 
                 onPress={() => setShowDeleteConfirm(false)}
               >
-                <Text style={[styles.successBtnTxt, { color: isDark ? '#fff' : '#334155' }]}>{t('common.cancel')}</Text>
+                <Text style={[styles.successBtnTxt, { color: primaryText }]}>{t('common.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity 
                 style={[styles.successBtn, { flex: 1, width: 'auto', paddingHorizontal: 0, backgroundColor: '#ef4444' }]} 
@@ -641,9 +643,9 @@ export default function MembersScreen({ navigation }: any) {
       {/* ── Add Family Member Modal ── */}
       {showAddModal && (
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: isDark ? '#1e293b' : '#fff' }]}>
+          <View style={[styles.modalContent, { backgroundColor: cardSurface }]}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: isDark ? '#fff' : '#1a2d5a' }]}>
+              <Text style={[styles.modalTitle, { color: primaryText }]}>
                 {editingMemberId ? t('members.editMember') : t('members.addNewMember')}
               </Text>
               <TouchableOpacity onPress={() => setShowAddModal(false)}>
@@ -655,7 +657,7 @@ export default function MembersScreen({ navigation }: any) {
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>{t('members.firstName')}</Text>
                 <TextInput 
-                  style={[styles.input, { color: isDark ? '#fff' : '#000', borderColor: isDark ? '#334155' : '#e2e8f0', backgroundColor: isDark ? '#0f172a' : '#fff' }]}
+                  style={[styles.input, { color: primaryText, borderColor: adminBorderColor, backgroundColor: secondarySurface }]}
                   placeholder={t('members.firstNamePlaceholder')}
                   placeholderTextColor="#94a3b8"
                   value={newMember.firstName}
@@ -666,7 +668,7 @@ export default function MembersScreen({ navigation }: any) {
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>{t('members.lastName')}</Text>
                 <TextInput 
-                  style={[styles.input, { color: isDark ? '#fff' : '#000', borderColor: isDark ? '#334155' : '#e2e8f0', backgroundColor: isDark ? '#0f172a' : '#fff' }]}
+                  style={[styles.input, { color: primaryText, borderColor: adminBorderColor, backgroundColor: secondarySurface }]}
                   placeholder={t('members.lastNamePlaceholder')}
                   placeholderTextColor="#94a3b8"
                   value={newMember.lastName}
@@ -679,7 +681,7 @@ export default function MembersScreen({ navigation }: any) {
                   {KID_RELATIONS.includes(newMember.relation) ? t('members.mobileNumberKids') : t('members.mobileNumber')}
                 </Text>
                 <TextInput 
-                  style={[styles.input, { color: isDark ? '#fff' : '#000', borderColor: isDark ? '#334155' : '#e2e8f0', backgroundColor: isDark ? '#0f172a' : '#fff' }]}
+                  style={[styles.input, { color: primaryText, borderColor: adminBorderColor, backgroundColor: secondarySurface }]}
                   placeholder={KID_RELATIONS.includes(newMember.relation) ? t('members.phoneKidsPlaceholder') : t('members.phonePlaceholder')}
                   placeholderTextColor="#94a3b8"
                   keyboardType="phone-pad"
@@ -701,13 +703,13 @@ export default function MembersScreen({ navigation }: any) {
                             styles.input,
                             { 
                               flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6,
-                              borderColor: newMember.referencePhone === p.phone ? '#1a2d5a' : (isDark ? '#334155' : '#e2e8f0'),
-                              backgroundColor: newMember.referencePhone === p.phone ? (isDark ? '#1e3a5f' : '#EFF6FF') : (isDark ? '#0f172a' : '#fff')
+                              borderColor: newMember.referencePhone === p.phone ? '#1a2d5a' : (adminBorderColor),
+                              backgroundColor: newMember.referencePhone === p.phone ? (isDark ? '#1e3a5f' : '#EFF6FF') : (secondarySurface)
                             }
                           ]}
                           onPress={() => setNewMember({...newMember, referencePhone: p.phone})}
                         >
-                          <Text style={{ color: isDark ? '#cbd5e1' : '#334155', fontSize: 14, fontWeight: '600' }}>
+                          <Text style={{ color: secondaryText, fontSize: 14, fontWeight: '600' }}>
                             {p.name} ({getRelationLabel(p.relation)}) — {p.phone}
                           </Text>
                           {newMember.referencePhone === p.phone && (
@@ -721,7 +723,7 @@ export default function MembersScreen({ navigation }: any) {
                     </View>
                   ) : (
                     <TextInput 
-                      style={[styles.input, { color: isDark ? '#fff' : '#000', borderColor: isDark ? '#334155' : '#e2e8f0', backgroundColor: isDark ? '#0f172a' : '#fff' }]}
+                      style={[styles.input, { color: primaryText, borderColor: adminBorderColor, backgroundColor: secondarySurface }]}
                       placeholder={t('members.parentPhonePlaceholder')}
                       placeholderTextColor="#94a3b8"
                       keyboardType="phone-pad"
@@ -735,7 +737,7 @@ export default function MembersScreen({ navigation }: any) {
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>{t('members.emailAddress')}</Text>
                 <TextInput 
-                  style={[styles.input, { color: isDark ? '#fff' : '#000', borderColor: isDark ? '#334155' : '#e2e8f0', backgroundColor: isDark ? '#0f172a' : '#fff' }]}
+                  style={[styles.input, { color: primaryText, borderColor: adminBorderColor, backgroundColor: secondarySurface }]}
                   placeholder={t('members.emailPlaceholder')}
                   placeholderTextColor="#94a3b8"
                   keyboardType="email-address"
@@ -748,10 +750,10 @@ export default function MembersScreen({ navigation }: any) {
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>{t('members.relation')}</Text>
                 <TouchableOpacity
-                  style={[styles.input, styles.dateInput, { borderColor: isDark ? '#334155' : '#e2e8f0', backgroundColor: isDark ? '#0f172a' : '#fff' }]}
+                  style={[styles.input, styles.dateInput, { borderColor: adminBorderColor, backgroundColor: secondarySurface }]}
                   onPress={() => setShowRelationPicker(true)}
                 >
-                  <Text style={{ color: isDark ? '#fff' : '#1a2d5a', fontSize: 16, fontWeight: '600' }}>
+                  <Text style={{ color: primaryText, fontSize: 16, fontWeight: '600' }}>
                     {getRelationLabel(newMember.relation) || t('members.selectRelation')}
                   </Text>
                   <ChevronDown size={18} color="#94a3b8" />
@@ -778,10 +780,10 @@ export default function MembersScreen({ navigation }: any) {
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>{t('members.birthdate')}</Text>
                 <TouchableOpacity 
-                  style={[styles.input, styles.dateInput, { borderColor: isDark ? '#334155' : '#e2e8f0', backgroundColor: isDark ? '#0f172a' : '#fff' }]}
+                  style={[styles.input, styles.dateInput, { borderColor: adminBorderColor, backgroundColor: secondarySurface }]}
                   onPress={() => setDatePickerType('birthdate')}
                 >
-                  <Text style={{ color: newMember.dob ? (isDark ? '#fff' : '#000') : '#94a3b8' }}>
+                  <Text style={{ color: newMember.dob ? (primaryText) : '#94a3b8' }}>
                     {newMember.dob || t('members.selectBirthdate')}
                   </Text>
                   <CalendarIcon size={18} color="#94a3b8" />
@@ -792,10 +794,10 @@ export default function MembersScreen({ navigation }: any) {
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>{t('members.anniversaryDate')}</Text>
                   <TouchableOpacity 
-                    style={[styles.input, styles.dateInput, { borderColor: isDark ? '#334155' : '#e2e8f0', backgroundColor: isDark ? '#0f172a' : '#fff' }]}
+                    style={[styles.input, styles.dateInput, { borderColor: adminBorderColor, backgroundColor: secondarySurface }]}
                     onPress={() => setDatePickerType('anniversary')}
                   >
-                    <Text style={{ color: newMember.anniversaryDate ? (isDark ? '#fff' : '#000') : '#94a3b8' }}>
+                    <Text style={{ color: newMember.anniversaryDate ? (primaryText) : '#94a3b8' }}>
                       {newMember.anniversaryDate || t('members.selectAnniversary')}
                     </Text>
                     <CalendarIcon size={18} color="#94a3b8" />
@@ -831,11 +833,11 @@ export default function MembersScreen({ navigation }: any) {
           activeOpacity={1} 
           onPress={() => setShowRelationPicker(false)}
         >
-          <View style={[styles.pickerSheet, { backgroundColor: isDark ? '#1e293b' : '#fff' }]}>
+          <View style={[styles.pickerSheet, { backgroundColor: cardSurface }]}>
             <View style={styles.pickerHeader}>
-              <Text style={[styles.pickerTitle, { color: isDark ? '#fff' : '#1a2d5a' }]}>{t('members.selectRelation')}</Text>
+              <Text style={[styles.pickerTitle, { color: primaryText }]}>{t('members.selectRelation')}</Text>
               <TouchableOpacity onPress={() => setShowRelationPicker(false)}>
-                <X size={22} color={isDark ? '#94a3b8' : '#64748b'} />
+                <X size={22} color={secondaryText} />
               </TouchableOpacity>
             </View>
             <ScrollView showsVerticalScrollIndicator={false}>
@@ -845,7 +847,7 @@ export default function MembersScreen({ navigation }: any) {
                   style={[
                     styles.pickerOption,
                     newMember.relation === option && styles.pickerOptionActive,
-                    { borderColor: isDark ? '#334155' : '#FAF7F2' }
+                    { borderColor: secondarySurface }
                   ]}
                   onPress={() => {
                     setNewMember({ ...newMember, relation: option });
@@ -892,7 +894,7 @@ export default function MembersScreen({ navigation }: any) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   container: { flex: 1 },
     headerRow: {
     flexDirection: 'row',
@@ -1055,15 +1057,15 @@ const styles = StyleSheet.create({
   avatarText: { color: '#fff', fontSize: 20, fontWeight: '800' },
   memberMeta: { flex: 1 },
   nameRow: { flexDirection: 'row', alignItems: 'center' },
-  memberName: { fontSize: 16, fontWeight: '800' },
+  memberName: { fontSize: 16, fontWeight: '800', flexShrink: 1 },
   selfBadge: { 
     backgroundColor: '#FCD34D', 
-    paddingHorizontal: 6, 
-    paddingVertical: 2, 
+    paddingHorizontal: 8, 
+    paddingVertical: 2.5, 
     borderRadius: 6, 
     marginLeft: 8 
   },
-  selfBadgeTxt: { color: '#1a2d5a', fontSize: 10, fontWeight: '800' },
+  selfBadgeTxt: { color: '#FFFFFF', fontSize: 11, fontWeight: '800' },
   roleBadge: { 
     alignSelf: 'flex-start', 
     backgroundColor: '#eff6ff', 
@@ -1223,4 +1225,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center'
   }
-});
+}));

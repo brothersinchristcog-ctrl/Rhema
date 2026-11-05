@@ -310,6 +310,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     accent,
     gold: '#E8C46E',
     background: currentThemeOption.bg,
+    bg: currentThemeOption.bg,
     surface: currentThemeOption.surface,
     text: textColor,
     textSecondary: currentThemeOption.textSecondary,

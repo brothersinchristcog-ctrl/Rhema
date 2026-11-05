@@ -1,12 +1,22 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, ActivityIndicator, Dimensions, Animated, Platform, StatusBar } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  Image,
+  ActivityIndicator,
+  Dimensions,
+  Platform,
+  StatusBar,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Sparkles, Globe, Calendar, Image as ImageIcon, ChevronLeft, ArrowLeft, CheckCircle } from 'lucide-react-native';
+import { Globe, Calendar, Image as ImageIcon, ArrowLeft } from 'lucide-react-native';
 import { MemberGalleryStackParamList } from './MemberGalleryNavigator';
 import GalleryService, { GalleryAlbum } from '../../services/GalleryService';
 import { useTheme } from '../../context/ThemeContext';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLanguage } from '../../context/LanguageContext';
 
@@ -17,9 +27,17 @@ type NavigationProp = NativeStackNavigationProp<MemberGalleryStackParamList, 'Me
 export default function MemberGalleryDashboard() {
   const navigation = useNavigation<NavigationProp>();
   const { isDark, colors } = useTheme();
+  const {
+    screenBg,
+    cardSurface,
+    secondarySurface,
+    primaryText,
+    secondaryText,
+    borderColor: adminBorderColor,
+  } = useAdminTheme();
   const { t } = useLanguage();
   const insets = useSafeAreaInsets();
-  
+
   const [albums, setAlbums] = useState<GalleryAlbum[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalPhotos, setTotalPhotos] = useState(0);
@@ -40,9 +58,9 @@ export default function MemberGalleryDashboard() {
       setLoading(true);
       const data = await GalleryService.getAlbums();
       setAlbums(data);
-      
+
       let photoCount = 0;
-      data.forEach(a => photoCount += (a.photoCount || 0));
+      data.forEach((a) => (photoCount += a.photoCount || 0));
       setTotalPhotos(photoCount);
     } catch (error) {
       console.error(error);
@@ -58,108 +76,159 @@ export default function MemberGalleryDashboard() {
 
   const renderHeader = () => (
     <View style={styles.headerWrapper}>
+      {/* Clean Header: Back Arrow Button + Title Text */}
       <View
         style={[
-          styles.headerCardWrapper,
-          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 6 }
+          styles.headerRow,
+          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8 },
         ]}
       >
-        <LinearGradient 
-          colors={['#527C78', '#355B56']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.topHeaderCard}
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={[
+            styles.circularBackBtn,
+            { backgroundColor: cardSurface, borderColor: adminBorderColor },
+          ]}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          activeOpacity={0.8}
         >
-          <View style={styles.headerDecoCircle1} pointerEvents="none" />
-          <View style={styles.headerDecoCircle2} pointerEvents="none" />
+          <ArrowLeft color={primaryText} size={20} strokeWidth={2.4} />
+        </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={styles.backBtn}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            activeOpacity={0.8}
-          >
-            <ArrowLeft color="#355B56" size={20} />
-          </TouchableOpacity>
+        <Text style={[styles.headerTitleText, { color: primaryText }]} numberOfLines={1}>
+          {t('gallery.title') || 'Gallery'}
+        </Text>
 
-          <View style={styles.headerCenterTitleWrap} pointerEvents="none">
-            <Text style={styles.headerTitle} numberOfLines={1} maxFontSizeMultiplier={1.15}>
-              {t('gallery.title') || 'Gallery'}
-            </Text>
-            <View style={styles.headerTitleAccentBar} />
-          </View>
-
-          <View style={styles.headerRightIconBadge}>
-            <ImageIcon size={18} color="#355B56" />
-          </View>
-        </LinearGradient>
+        <View style={styles.headerRightSpacer} />
       </View>
 
-      <View style={[styles.topCard, { backgroundColor: isDark ? '#1e293b' : '#527C78', marginHorizontal: 16, borderRadius: 22, marginTop: 10 }]}>
+      {/* Three Stat Cards */}
+      <View style={styles.statsContainer}>
         <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{albums.length}</Text>
-            <Text style={styles.statLabel}>{t('gallery.stats.albums')}</Text>
+          <View
+            style={[
+              styles.statCard,
+              {
+                backgroundColor: cardSurface,
+                borderColor: adminBorderColor,
+              },
+            ]}
+          >
+            <Text style={[styles.statValue, { color: primaryText }]}>{albums.length}</Text>
+            <Text style={[styles.statLabel, { color: secondaryText }]}>
+              {t('gallery.stats.albums')}
+            </Text>
           </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{totalPhotos}</Text>
-            <Text style={styles.statLabel}>{t('gallery.stats.photos')}</Text>
+          <View
+            style={[
+              styles.statCard,
+              {
+                backgroundColor: cardSurface,
+                borderColor: adminBorderColor,
+              },
+            ]}
+          >
+            <Text style={[styles.statValue, { color: primaryText }]}>{totalPhotos}</Text>
+            <Text style={[styles.statLabel, { color: secondaryText }]}>
+              {t('gallery.stats.photos')}
+            </Text>
           </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{getLatestTime()}</Text>
-            <Text style={styles.statLabel}>{t('gallery.stats.latest')}</Text>
+          <View
+            style={[
+              styles.statCard,
+              {
+                backgroundColor: cardSurface,
+                borderColor: adminBorderColor,
+              },
+            ]}
+          >
+            <Text style={[styles.statValue, { color: primaryText }]}>{getLatestTime()}</Text>
+            <Text style={[styles.statLabel, { color: secondaryText }]}>
+              {t('gallery.stats.latest')}
+            </Text>
           </View>
         </View>
       </View>
 
       <View style={styles.sectionHeader}>
         <View style={{ flex: 1 }}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>{t('gallery.churchAlbums')}</Text>
-          <Text style={styles.sectionDesc}>{t('gallery.churchAlbumsSub')}</Text>
+          <Text style={[styles.sectionTitle, { color: primaryText }]}>
+            {t('gallery.churchAlbums')}
+          </Text>
+          <Text style={[styles.sectionDesc, { color: secondaryText }]}>
+            {t('gallery.churchAlbumsSub')}
+          </Text>
         </View>
       </View>
     </View>
   );
 
   const renderAlbum = ({ item }: { item: GalleryAlbum }) => (
-    <TouchableOpacity 
-      style={[styles.albumCard, { borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}
+    <TouchableOpacity
+      style={[
+        styles.albumCard,
+        {
+          backgroundColor: cardSurface,
+          borderColor: adminBorderColor,
+        },
+      ]}
       activeOpacity={0.9}
-      onPress={() => navigation.navigate('MemberGalleryAlbumDetail', { albumId: item.id, albumName: item.name, albumDescription: item.description })}
+      onPress={() =>
+        navigation.navigate('MemberGalleryAlbumDetail', {
+          albumId: item.id,
+          albumName: item.name,
+          albumDescription: item.description,
+        })
+      }
     >
       <View style={styles.albumImageContainer}>
         {item.coverPhotoUrl ? (
           <Image source={{ uri: item.coverPhotoUrl }} style={styles.albumCover} />
         ) : (
-          <View style={[styles.albumCover, { backgroundColor: isDark ? '#1E293B' : '#E2E8F0', justifyContent: 'center', alignItems: 'center' }]}>
-            <ImageIcon color="#94A3B8" size={40} />
+          <View
+            style={[
+              styles.albumCover,
+              {
+                backgroundColor: secondarySurface,
+                justifyContent: 'center',
+                alignItems: 'center',
+              },
+            ]}
+          >
+            <ImageIcon color={secondaryText} size={40} />
           </View>
         )}
-        
+
         {/* Visibility Badge */}
         <View style={styles.visibilityBadge}>
           <Globe size={12} color="#fff" style={{ marginRight: 4 }} />
           <Text style={styles.visibilityText}>
-            {item.visibility === 'Public' || !item.visibility ? t('gallery.public') : item.visibility}
+            {item.visibility === 'Public' || !item.visibility
+              ? t('gallery.public')
+              : item.visibility}
           </Text>
         </View>
-        
+
         <View style={styles.albumTitleOverlay}>
           <Text style={styles.albumTitle}>{item.name}</Text>
         </View>
       </View>
-      
+
       <View style={styles.albumDetails}>
         <View style={{ flex: 1 }}>
           <View style={styles.detailRow}>
-            <Calendar size={14} color="#94A3B8" />
-            <Text style={[styles.detailText, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-              {item.createdAt?.toDate ? item.createdAt.toDate().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : (item.date || t('gallery.noDate'))}
+            <Calendar size={14} color={secondaryText} />
+            <Text style={[styles.detailText, { color: secondaryText }]}>
+              {item.createdAt?.toDate
+                ? item.createdAt
+                    .toDate()
+                    .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                : item.date || t('gallery.noDate')}
             </Text>
           </View>
           <View style={styles.detailRow}>
-            <ImageIcon size={14} color="#94A3B8" />
-            <Text style={[styles.detailText, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+            <ImageIcon size={14} color={secondaryText} />
+            <Text style={[styles.detailText, { color: secondaryText }]}>
               {item.photoCount || 0} {t('gallery.photosCount')}
             </Text>
           </View>
@@ -169,15 +238,19 @@ export default function MemberGalleryDashboard() {
   );
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={screenBg}
+      />
       {loading && albums.length === 0 ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#FCD34D" />
+          <ActivityIndicator size="large" color={primaryText} />
         </View>
       ) : (
         <FlatList
           data={albums}
-          keyExtractor={item => item.id}
+          keyExtractor={(item) => item.id}
           renderItem={renderAlbum}
           ListHeaderComponent={renderHeader}
           contentContainerStyle={styles.listContent}
@@ -185,9 +258,19 @@ export default function MemberGalleryDashboard() {
           ListEmptyComponent={
             !loading ? (
               <View style={{ alignItems: 'center', marginTop: 40 }}>
-                <ImageIcon size={48} color="#94A3B8" style={{ marginBottom: 12 }} />
-                <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600' }}>{t('gallery.empty.noAlbums')}</Text>
-                <Text style={{ color: '#94A3B8', fontSize: 14, textAlign: 'center', marginTop: 8, paddingHorizontal: 40 }}>
+                <ImageIcon size={48} color={secondaryText} style={{ marginBottom: 12 }} />
+                <Text style={{ color: primaryText, fontSize: 16, fontWeight: '600' }}>
+                  {t('gallery.empty.noAlbums')}
+                </Text>
+                <Text
+                  style={{
+                    color: secondaryText,
+                    fontSize: 14,
+                    textAlign: 'center',
+                    marginTop: 8,
+                    paddingHorizontal: 40,
+                  }}
+                >
                   {t('gallery.empty.noAlbumsSub')}
                 </Text>
               </View>
@@ -199,7 +282,7 @@ export default function MemberGalleryDashboard() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles({
   container: {
     flex: 1,
   },
@@ -214,175 +297,88 @@ const styles = StyleSheet.create({
   headerWrapper: {
     marginBottom: 10,
   },
-  headerCardWrapper: {
-    paddingHorizontal: 16,
-    paddingBottom: 4,
-  },
-  topHeaderCard: {
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    borderRadius: 24,
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    overflow: 'hidden',
-    position: 'relative',
+    paddingHorizontal: 18,
+    paddingBottom: 12,
+  },
+  circularBackBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    justifyContent: 'center',
+    alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(228, 238, 234, 0.25)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  headerDecoCircle1: {
-    position: 'absolute',
-    width: 130,
-    height: 130,
-    borderRadius: 65,
-    backgroundColor: 'rgba(228, 238, 234, 0.10)',
-    top: -50,
-    right: -25,
-  },
-  headerDecoCircle2: {
-    position: 'absolute',
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: 'rgba(228, 238, 234, 0.08)',
-    bottom: -40,
-    left: 35,
-  },
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    backgroundColor: '#E4EEEA',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  headerCenterTitleWrap: {
+  headerTitleText: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-  },
-  headerTitle: {
-    color: '#FFFFFF',
     fontSize: 20,
     fontWeight: '800',
-    letterSpacing: 0.5,
     textAlign: 'center',
-  },
-  headerTitleAccentBar: {
-    width: 28,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: '#E4EEEA',
-    marginTop: 5,
-    opacity: 0.85,
-  },
-  headerRightIconBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    backgroundColor: '#E4EEEA',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  topCard: {
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    marginBottom: 20,
-  },
-  headerTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 15,
-  },
-  backButton: {
-    position: 'absolute',
-    left: 0,
-    padding: 4,
-  },
-  badgeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(252, 211, 77, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(252, 211, 77, 0.3)',
-    borderRadius: 20,
+    letterSpacing: -0.3,
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginBottom: 15,
   },
-  badgeText: {
-    color: '#FCD34D',
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 6,
+  headerRightSpacer: {
+    width: 42,
+    height: 42,
   },
-  mainTitle: {
-    fontSize: 36,
-    fontWeight: '700',
-    color: '#fff',
-    fontFamily: 'serif',
-    marginBottom: 8,
-  },
-  titleHighlight: {
-    color: '#FCD34D',
-    fontStyle: 'italic',
-  },
-  mainDesc: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: 16,
-    lineHeight: 24,
-    marginBottom: 25,
+  statsContainer: {
+    paddingHorizontal: 16,
+    marginTop: 6,
+    marginBottom: 20,
   },
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    gap: 10,
   },
   statCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 12,
-    padding: 10,
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
     flex: 1,
-    marginHorizontal: 4,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
   },
   statValue: {
-    color: '#fff',
     fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 2,
+    fontWeight: '800',
+    marginBottom: 4,
   },
   statLabel: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: 10,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 20,
+    marginBottom: 16,
     paddingHorizontal: 20,
   },
   sectionTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    fontFamily: 'serif',
+    fontSize: 22,
+    fontWeight: '800',
   },
   sectionDesc: {
-    color: '#94A3B8',
     fontSize: 14,
     marginTop: 4,
     marginRight: 10,
   },
   albumCard: {
-    backgroundColor: 'rgba(255,255,255,0.03)',
     borderWidth: 1,
     borderRadius: 20,
     overflow: 'hidden',

@@ -31,11 +31,13 @@ import { QUIZ_CATEGORIES } from '../../constants/BibleQuizCategories';
 import { useAuth } from '../../context/AuthContext';
 import { useQuizLanguage } from '../../context/QuizLanguageContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 import { getQuizStrings } from '../../constants/BibleQuizTranslations';
 import QuizLanguageModal from './QuizLanguageModal';
 import QuizAlertModal from './QuizAlertModal';
 
 export default function BibleQuizStagesScreen() {
+  const { isDark: _adminIsDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
@@ -146,8 +148,8 @@ export default function BibleQuizStagesScreen() {
   ];
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0b1120' : '#FAF7F2' }]}>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#0b1120' : '#FAF7F2'} />
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={screenBg} />
 
       {/* Header */}
       <View
@@ -270,11 +272,11 @@ export default function BibleQuizStagesScreen() {
 
         {/* Stage section label */}
         <View style={styles.sectionHeaderRow}>
-          <Text style={[styles.sectionTitle, { color: isDark ? '#f8fafc' : '#0f172a' }]}>
+          <Text style={[styles.sectionTitle, { color: primaryText }]}>
             {quizLanguage === 'te' ? 'దశలు ఎంచుకోండి' : 'Select Stage'}
           </Text>
-          <View style={[styles.totalBadge, { backgroundColor: isDark ? '#1e293b' : '#FAF7F2' }]}>
-            <Text style={[styles.totalBadgeTxt, { color: isDark ? '#94a3b8' : '#64748b' }]}>
+          <View style={[styles.totalBadge, { backgroundColor: secondarySurface }]}>
+            <Text style={[styles.totalBadgeTxt, { color: secondaryText }]}>
               {completedCount}/{totalLevels} {ui.done}
             </Text>
           </View>
@@ -284,7 +286,7 @@ export default function BibleQuizStagesScreen() {
         {loading && !progress ? (
           <View style={styles.centerLoading}>
             <ActivityIndicator size="large" color={diffCfg.color} />
-            <Text style={[styles.loadingTxt, { color: isDark ? '#94a3b8' : '#64748b' }]}>
+            <Text style={[styles.loadingTxt, { color: secondaryText }]}>
               {quizLanguage === 'te' ? 'స్థాయిలు లోడ్ అవుతున్నాయి...' : 'Loading levels...'}
             </Text>
           </View>
@@ -335,7 +337,7 @@ export default function BibleQuizStagesScreen() {
                   style={[
                     styles.stageCard,
                     {
-                      backgroundColor: isDark ? '#111927' : '#ffffff',
+                      backgroundColor: cardSurface,
                       borderColor: stageAllDone
                         ? (isDark ? 'rgba(16, 185, 129, 0.5)' : '#10b981')
                         : (isDark ? stageAccent.glow + '40' : stageAccent.glow + '55'),
@@ -364,10 +366,10 @@ export default function BibleQuizStagesScreen() {
                       <Text style={[styles.stageTagMini, { color: stageAccent.glowSub }]}>
                         STAGE {String(stageIdx + 1).padStart(2, '0')}
                       </Text>
-                      <Text style={[styles.stageTitleTxt, { color: isDark ? '#ffffff' : '#0f172a' }]} numberOfLines={1}>
+                      <Text style={[styles.stageTitleTxt, { color: primaryText }]} numberOfLines={1}>
                         {stage.title}
                       </Text>
-                      <Text style={[styles.stageSubTxt, { color: isDark ? '#94a3b8' : '#64748b' }]} numberOfLines={1}>
+                      <Text style={[styles.stageSubTxt, { color: secondaryText }]} numberOfLines={1}>
                         {`${stage.subTitle} · ${stage.range}`}
                       </Text>
                     </View>
@@ -390,7 +392,7 @@ export default function BibleQuizStagesScreen() {
                           {
                             color: stageAllDone
                               ? '#10b981'
-                              : (isDark ? '#e2e8f0' : '#1e293b'),
+                              : (primaryText),
                           },
                         ]}
                       >
@@ -526,7 +528,7 @@ export default function BibleQuizStagesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   container: {
     flex: 1,
   },
@@ -925,4 +927,4 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 3,
   },
-});
+}));

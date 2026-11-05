@@ -46,6 +46,7 @@ import {
 } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
 import { useChurch } from '../context/ChurchContext';
+import { useAdminTheme } from '../utils/adminThemeHelper';
 import Theme from '../theme/Theme';
 import { AdminTabContext } from '../context/AdminTabContext';
 import { CustomAlert } from '../components/CustomAlert';
@@ -115,9 +116,14 @@ const DotGridIcon = ({ color, size }: { color: string; size: number }) => {
 export default function AdminNavigator({ navigation, route }: any) {
   const { signOut, user, member, setViewMode, isPlatformSuperAdmin } = useAuth();
   const { activeChurch, isImpersonating, impersonatedBranchName, stopImpersonation } = useChurch();
+
+
+
+  const { isDark, colors, fontStyle, scaleFont, appFontFamily, screenBg, cardSurface, primaryText, secondaryText } = useAdminTheme();
   const isSuperAdminUser = isPlatformSuperAdmin ||
     String(member?.userType || '').toUpperCase().includes('SUPER') ||
     Boolean((member as any)?.isSuperAdmin);
+
   const [activeTab, setActiveTab] = useState(0);
   const [tabHistory, setTabHistory] = useState<number[]>([]);
   const [editingData, setEditingData] = useState(null);
@@ -350,16 +356,16 @@ export default function AdminNavigator({ navigation, route }: any) {
   // We provide handleSetTab via setActiveTab so child components can push to history
   return (
     <AdminTabContext.Provider value={{ activeTab, setActiveTab: handleSetTab, editingData, setEditingData, goBack: handleBack, setTabByName, dashboardScrollY, setDashboardScrollY }}>
-      <View style={[styles.container, { backgroundColor: isSuperAdminTab ? '#0a0f1e' : '#F4F0EA' }]}>
+      <View style={[styles.container, { backgroundColor: isSuperAdminTab ? '#0a0f1e' : screenBg }]}>
         {!isSuperAdminTab && (
-          <SafeAreaView edges={['top']} style={{ backgroundColor: isSuperAdminTab ? '#0a0f1e' : '#F4F0EA' }} />
+          <SafeAreaView edges={['top']} style={{ backgroundColor: isSuperAdminTab ? '#0a0f1e' : screenBg }} />
         )}
         
         {isImpersonating && (
           <TouchableOpacity 
             activeOpacity={0.8}
             style={{ 
-              backgroundColor: '#1a2d5a', 
+              backgroundColor: isDark ? '#18181B' : '#1a2d5a', 
               marginHorizontal: 16,
               marginTop: 12,
               marginBottom: 4,
@@ -369,6 +375,8 @@ export default function AdminNavigator({ navigation, route }: any) {
               flexDirection: 'row', 
               alignItems: 'center', 
               justifyContent: 'space-between',
+              borderWidth: isDark ? 1 : 0,
+              borderColor: '#27272A',
               shadowColor: '#1a2d5a',
               shadowOffset: { width: 0, height: 6 },
               shadowOpacity: 0.25,
@@ -395,24 +403,24 @@ export default function AdminNavigator({ navigation, route }: any) {
                 <Eye size={18} color="#fff" />
               </View>
               <View style={{ flex: 1, paddingRight: 12, justifyContent: 'center' }}>
-                <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 }}>
+                <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: scaleFont(10), fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2, fontFamily: appFontFamily }}>
                   Viewing Branch
                 </Text>
-                <Text style={{ color: '#fff', fontWeight: '800', fontSize: 14 }}>
+                <Text style={{ color: '#fff', fontWeight: '800', fontSize: scaleFont(14), fontFamily: appFontFamily }}>
                   {impersonatedBranchName}
                 </Text>
               </View>
             </View>
             <View style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 }}>
-              <Text style={{ color: '#ef4444', fontSize: 12, fontWeight: '800' }}>Exit</Text>
+              <Text style={{ color: '#ef4444', fontSize: scaleFont(12), fontWeight: '800', fontFamily: appFontFamily }}>Exit</Text>
             </View>
           </TouchableOpacity>
         )}
 
         {/* Custom Alert Modal */}
         {alertConfig.visible && (
-          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
-            <View style={{ backgroundColor: '#fff', width: '85%', borderRadius: 16, padding: 24, alignItems: 'center' }}>
+          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+            <View style={{ backgroundColor: cardSurface, width: '85%', borderRadius: 16, padding: 24, alignItems: 'center', borderWidth: isDark ? 1 : 0, borderColor: '#27272A' }}>
               <View style={{ width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center', marginBottom: 16, backgroundColor: alertConfig.type === 'error' ? '#fee2e2' : alertConfig.type === 'confirm' ? '#e0e7ff' : alertConfig.type === 'warning' ? '#fef3c7' : alertConfig.type === 'info' ? '#e0f2fe' : '#dcfce7' }}>
                 {alertConfig.type === 'error' ? (
                   <Text style={{fontSize: 24}}>❌</Text>
@@ -426,13 +434,13 @@ export default function AdminNavigator({ navigation, route }: any) {
                   <Text style={{fontSize: 24}}>✅</Text>
                 )}
               </View>
-              <Text style={{ fontSize: 22, fontWeight: '800', color: '#0f172a', marginBottom: 8, textAlign: 'center' }}>{alertConfig.title}</Text>
-              <Text style={{ fontSize: 15, color: '#475569', textAlign: 'center', marginBottom: 24, lineHeight: 22 }}>{alertConfig.message}</Text>
+              <Text style={{ fontSize: scaleFont(22), fontWeight: '800', color: primaryText, marginBottom: 8, textAlign: 'center', fontFamily: appFontFamily }}>{alertConfig.title}</Text>
+              <Text style={{ fontSize: scaleFont(15), color: secondaryText, textAlign: 'center', marginBottom: 24, lineHeight: scaleFont(22), fontFamily: appFontFamily }}>{alertConfig.message}</Text>
               
               <View style={{ flexDirection: 'row', width: '100%', justifyContent: 'center' }}>
                 {alertConfig.type === 'confirm' && (
-                  <TouchableOpacity style={{ paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12, marginRight: 12, backgroundColor: '#f1f5f9' }} onPress={() => setAlertConfig({...alertConfig, visible: false})}>
-                    <Text style={{ color: '#475569', fontSize: 16, fontWeight: '700' }}>Cancel</Text>
+                  <TouchableOpacity style={{ paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12, marginRight: 12, backgroundColor: isDark ? '#27272A' : '#f1f5f9' }} onPress={() => setAlertConfig({...alertConfig, visible: false})}>
+                    <Text style={{ color: primaryText, fontSize: scaleFont(16), fontWeight: '700', fontFamily: appFontFamily }}>Cancel</Text>
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity 
@@ -442,14 +450,14 @@ export default function AdminNavigator({ navigation, route }: any) {
                     if (alertConfig.onConfirm) alertConfig.onConfirm();
                   }}
                 >
-                  <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>{alertConfig.type === 'confirm' ? 'Yes, Return' : 'Got it'}</Text>
+                  <Text style={{ color: '#fff', fontSize: scaleFont(16), fontWeight: '700', fontFamily: appFontFamily }}>{alertConfig.type === 'confirm' ? 'Yes, Return' : 'Got it'}</Text>
                 </TouchableOpacity>
               </View>
             </View>
           </View>
         )}
 
-        <View style={[styles.content, { backgroundColor: activeTab === 0 ? '#F4F0EA' : '#f0f2f7' }]}>
+        <View style={[styles.content, { backgroundColor: screenBg }]}>
           {activeTab === 0 ? (
             <AdminDashboard navigation={navigation} allTabs={tabs} />
           ) : (
@@ -576,7 +584,7 @@ const styles = StyleSheet.create({
   },
   roleTxt: { color: '#fff', fontSize: 10, fontWeight: '700' },
 
-  content: { flex: 1, backgroundColor: '#EDE8DC' },
+  content: { flex: 1 },
 
   // Classic Side Drawer Styles
   drawerOverlay: {

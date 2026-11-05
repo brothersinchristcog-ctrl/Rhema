@@ -24,8 +24,10 @@ import { getStartingLocation } from '../../../utils/locationStore';
 import MapView from 'react-native-maps';
 import * as Speech from 'expo-speech';
 import { SavedLocation } from '../../../utils/locationStore';
+import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
 
 export const PastorEventDetail = ({ route, navigation }: { route: any; navigation: any }) => {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { event, allEvents = [] } = route.params as { event: PastorEvent; allEvents: PastorEvent[] };
   const insets = useSafeAreaInsets();
   const [deleting, setDeleting] = React.useState(false);
@@ -469,7 +471,7 @@ export const PastorEventDetail = ({ route, navigation }: { route: any; navigatio
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -700,6 +702,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 14,
   }
-});
+}));
 
 export default PastorEventDetail;

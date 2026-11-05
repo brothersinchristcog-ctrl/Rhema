@@ -58,6 +58,7 @@ import {
 
 import AttendanceService, { AttendanceRecord } from '../../services/AttendanceService';
 import FirestoreService from '../../services/FirestoreService';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 import { useChurch } from '../../context/ChurchContext';
 import { AdminTabContext } from '../../context/AdminTabContext';
 import firestore from '@react-native-firebase/firestore';
@@ -228,6 +229,7 @@ const formatAdminDisplayTime = (timeRaw?: string, startTime?: any, endTime?: any
 };
 
 export default function AdminAttendance() {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const insets = useSafeAreaInsets();
   const { setActiveTab } = useContext(AdminTabContext);
   const { activeChurch } = useChurch();
@@ -1972,7 +1974,7 @@ export default function AdminAttendance() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -3047,4 +3049,4 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0284C7',
   },
-});
+}));

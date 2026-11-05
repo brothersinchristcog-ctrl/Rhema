@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   StyleSheet,
+  Image,
+  Animated,
   View,
   Text,
   FlatList,
@@ -20,6 +22,7 @@ import {
 // Removed SafeAreaView as padding is handled by the header
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Path } from 'react-native-svg';
 import {
   ArrowLeft,
   ChevronLeft,
@@ -33,6 +36,9 @@ import {
   Sliders,
   Share2,
   CalendarDays,
+  Info,
+  MapPin,
+  Calendar,
   Clock,
   Mic
 } from 'lucide-react-native';
@@ -51,6 +57,252 @@ const { width, height } = Dimensions.get('window');
 const SONGBOOK_KEY = 'cog_my_songbook_ids';
 
 const CATEGORIES = CANONICAL_SONG_CATEGORIES;
+
+/* ───────────── 200 Unique Song Card Colors (Loops every 200 songs) ───────────── */
+export interface SongCardColorDef {
+  name: string;
+  color: string;
+}
+
+export const SONG_CARD_COLORS: SongCardColorDef[] = [
+  { name: 'Cove',            color: '#385A6C' }, // 1
+  { name: 'Velours Noir',    color: '#1C1C1E' }, // 2
+  { name: 'Cognac',          color: '#9E472A' }, // 3
+  { name: 'Charcoal',        color: '#243342' }, // 4
+  { name: 'Cashmere',        color: '#D8C3A5' }, // 5
+  { name: 'Truffle',         color: '#5E4B3E' }, // 6
+  { name: 'Forest',          color: '#22543D' }, // 7
+  { name: 'Gunmetal',        color: '#2C465E' }, // 8
+  { name: 'Moss',            color: '#607D3B' }, // 9
+  { name: 'Deep Burgundy',   color: '#58111A' }, // 10
+  { name: 'Ocean Blue',      color: '#0284C7' }, // 11
+  { name: 'Pumpkin',         color: '#D35400' }, // 12
+  { name: 'Ultra Violet',    color: '#5F4B8B' }, // 13
+  { name: 'Deep Olive',      color: '#4A5320' }, // 14
+  { name: 'Soft Sage',       color: '#A3B899' }, // 15
+  { name: 'Lavender Pink',   color: '#E8AEB7' }, // 16
+  { name: 'Mint Green',      color: '#86EFAC' }, // 17
+  { name: 'Golden Yellow',   color: '#F5B041' }, // 18
+  { name: 'Sage Green',      color: '#5A7A64' }, // 19
+  { name: 'Peach Pink',      color: '#FFB7A5' }, // 20
+  { name: 'Dark Emerald',    color: '#065F46' }, // 21
+  { name: 'Alabaster',       color: '#E7E4DC' }, // 22
+  { name: 'Slate Green',     color: '#2E5F52' }, // 23
+  { name: 'Ivory',           color: '#FAF5E4' }, // 24
+  { name: 'Natural',         color: '#C8B69B' }, // 25
+  { name: 'Apricot',         color: '#FDBA74' }, // 26
+  { name: 'Organic',         color: '#C4AB8E' }, // 27
+  { name: 'Candle',          color: '#FAD02C' }, // 28
+  { name: 'Coral',           color: '#FF6F61' }, // 29
+  { name: 'Leaf',            color: '#4CAF50' }, // 30
+  { name: 'Juniper',         color: '#2E4E4C' }, // 31
+  { name: 'Orange',          color: '#F97316' }, // 32
+  { name: 'Olive Grove',     color: '#6A7B44' }, // 33
+  { name: 'Warm Sand',       color: '#D4B28C' }, // 34
+  { name: 'Merlot Bliss',    color: '#6B1D2F' }, // 35
+  { name: 'Creamy Taupe',    color: '#DFD3C3' }, // 36
+  { name: 'Midnight Luxe',   color: '#121B28' }, // 37
+  { name: 'Soft Ivory',      color: '#F0EAE1' }, // 38
+  { name: 'Royal Sapphire',  color: '#174A7E' }, // 39
+  { name: 'Champagne Gold',  color: '#E5C158' }, // 40
+  { name: 'Antique Bronze',  color: '#705335' }, // 41
+  { name: 'Platinum Silver', color: '#C5C6C7' }, // 42
+  { name: 'Rosewood',        color: '#7B242C' }, // 43
+  { name: 'Midnight Blue',   color: '#1A2B4C' }, // 44
+  { name: 'Imperial Purple', color: '#542A68' }, // 45
+  { name: 'Emerald Luxe',    color: '#0F5257' }, // 46
+  { name: 'Dusty Mauve',     color: '#A77B91' }, // 47
+  { name: 'Royal Plum',      color: '#5B2C6F' }, // 48
+  { name: 'Arctic Blue',     color: '#6BA4B8' }, // 49
+  { name: 'Peacock Teal',    color: '#0A6C74' }, // 50
+  { name: 'Copper Rose',     color: '#B86B64' }, // 51
+  { name: 'Burnished Gold',  color: '#AA8239' }, // 52
+  { name: 'Obsidian',        color: '#232528' }, // 53
+  { name: 'Moonstone',       color: '#A2B2C8' }, // 54
+  { name: 'Blue Lagoon',     color: '#007A87' }, // 55
+  { name: 'Velvet Wine',     color: '#5E192B' }, // 56
+  { name: 'Silver Mist',     color: '#B8C2B9' }, // 57
+  { name: 'Desert Rose',     color: '#C67171' }, // 58
+  { name: 'Honey Amber',     color: '#D97706' }, // 59
+  { name: 'Glacier Blue',    color: '#8EAEC4' }, // 60
+  { name: 'Jade Green',      color: '#2E8B57' }, // 61
+  { name: 'Mulberry',        color: '#701C45' }, // 62
+  { name: 'Smoky Quartz',    color: '#5C4838' }, // 63
+  { name: 'Royal Amethyst',  color: '#6B3FA0' }, // 64
+  { name: 'Ocean Teal',      color: '#006666' }, // 65
+  { name: 'Burnt Sienna',    color: '#C05621' }, // 66
+  { name: 'Tuscan Gold',     color: '#C68B59' }, // 67
+  { name: 'Pearl White',     color: '#ECE8E1' }, // 68
+  { name: 'Midnight Indigo', color: '#1E2050' }, // 69
+  { name: 'Blue Steel',      color: '#46627F' }, // 70
+  { name: 'Eucalyptus',      color: '#4E7764' }, // 71
+  { name: 'Crimson Velvet',  color: '#7E121D' }, // 72
+  { name: 'Antique Rose',    color: '#B0727B' }, // 73
+  { name: 'Copper Clay',     color: '#9C4124' }, // 74
+  { name: 'Imperial Jade',   color: '#0D6848' }, // 75
+  { name: 'Storm Grey',      color: '#5F6B72' }, // 76
+  { name: 'Golden Ochre',    color: '#C68642' }, // 77
+  { name: 'Sapphire Mist',   color: '#5C82A6' }, // 78
+  { name: 'Plum Velvet',     color: '#4A1E34' }, // 79
+  { name: 'Desert Bronze',   color: '#8C6239' }, // 80
+  { name: 'Arctic Mint',     color: '#7EC8B8' }, // 81
+  { name: 'Royal Teal',      color: '#115E59' }, // 82
+  { name: 'Shadow Purple',   color: '#43304A' }, // 83
+  { name: 'Maple Brown',     color: '#7A392B' }, // 84
+  { name: 'Celestial Blue',  color: '#3B82F6' }, // 85
+  { name: 'Garnet Red',      color: '#781D26' }, // 86
+  { name: 'Opal Green',      color: '#88B2A1' }, // 87
+  { name: 'Smoky Lavender',  color: '#736882' }, // 88
+  { name: 'Rich Mahogany',   color: '#4C1D24' }, // 89
+  { name: 'Silver Sage',     color: '#98A89A' }, // 90
+  { name: 'Marigold',        color: '#F59E0B' }, // 91
+  { name: 'Ink Blue',        color: '#152238' }, // 92
+  { name: 'Terracotta',      color: '#D96B43' }, // 93
+  { name: 'Pine Green',      color: '#1E4D2B' }, // 94
+  { name: 'Rose Quartz',     color: '#B87A88' }, // 95
+  { name: 'Espresso Brown',  color: '#2E1E14' }, // 96
+  { name: 'Frosted Silver',  color: '#C8CBD0' }, // 97
+  { name: 'Azure Blue',      color: '#0284C7' }, // 98
+  { name: 'Golden Olive',    color: '#7D7930' }, // 99
+  { name: 'Black Pearl',     color: '#191C20' }, // 100
+  { name: 'Royal Onyx',        color: '#1B1917' }, // 101
+  { name: 'Mystic Teal',       color: '#0E4B56' }, // 102
+  { name: 'Velvet Sapphire',   color: '#1D3557' }, // 103
+  { name: 'Golden Dusk',       color: '#B45309' }, // 104
+  { name: 'Blue Opulence',     color: '#1E40AF' }, // 105
+  { name: 'Scarlet Ember',     color: '#991B1B' }, // 106
+  { name: 'Nordic Frost',      color: '#798E9C' }, // 107
+  { name: 'Imperial Bronze',   color: '#6B4226' }, // 108
+  { name: 'Midnight Orchid',   color: '#4A2040' }, // 109
+  { name: 'Silver Lagoon',     color: '#52796F' }, // 110
+  { name: 'Emerald Shadow',    color: '#144230' }, // 111
+  { name: 'Golden Horizon',    color: '#C59B27' }, // 112
+  { name: 'Mystic Lilac',      color: '#8B6F8A' }, // 113
+  { name: 'Royal Copper',      color: '#A0522D' }, // 114
+  { name: 'Deep Atlantic',     color: '#1B3B6F' }, // 115
+  { name: 'Velvet Moss',       color: '#3D5A38' }, // 116
+  { name: 'Crystal Blue',      color: '#2563EB' }, // 117
+  { name: 'Amber Glow',        color: '#D97706' }, // 118
+  { name: 'Noble Plum',        color: '#581C87' }, // 119
+  { name: 'Arctic Pearl',      color: '#D8DEE9' }, // 120
+  { name: 'Bronze Majesty',    color: '#7B5233' }, // 121
+  { name: 'Twilight Rose',     color: '#A3586D' }, // 122
+  { name: 'Sapphire Night',    color: '#162544' }, // 123
+  { name: 'Golden Fern',       color: '#8C8635' }, // 124
+  { name: 'Mystic Forest',     color: '#1E3A2F' }, // 125
+  { name: 'Royal Garnet',      color: '#6E1A24' }, // 126
+  { name: 'Silver Orchid',     color: '#A69CAC' }, // 127
+  { name: 'Blue Majesty',      color: '#1D4ED8' }, // 128
+  { name: 'Copper Ember',      color: '#A84B2C' }, // 129
+  { name: 'Velvet Indigo',     color: '#2E1A47' }, // 130
+  { name: 'Emerald Dawn',      color: '#1B6A4C' }, // 131
+  { name: 'Lunar Silver',      color: '#BAC2C7' }, // 132
+  { name: 'Crimson Orchid',    color: '#881337' }, // 133
+  { name: 'Golden Nectar',     color: '#D48B28' }, // 134
+  { name: 'Mystic Ocean',      color: '#164E63' }, // 135
+  { name: 'Royal Mahogany',    color: '#4D2323' }, // 136
+  { name: 'Frosted Jade',      color: '#729B89' }, // 137
+  { name: 'Twilight Indigo',   color: '#242F5B' }, // 138
+  { name: 'Amber Velvet',      color: '#A15D1C' }, // 139
+  { name: 'Sapphire Royale',   color: '#1E3A8A' }, // 140
+  { name: 'Opulent Bronze',    color: '#805634' }, // 141
+  { name: 'Celadon Mist',      color: '#8E9B90' }, // 142
+  { name: 'Scarlet Royale',    color: '#85141A' }, // 143
+  { name: 'Lunar Violet',      color: '#4C2A58' }, // 144
+  { name: 'Golden Willow',     color: '#94783E' }, // 145
+  { name: 'Deep Cobalt',       color: '#1A365D' }, // 146
+  { name: 'Velvet Cedar',      color: '#4A3528' }, // 147
+  { name: 'Mystic Amber',      color: '#B87333' }, // 148
+  { name: 'Royal Azure',       color: '#0369A1' }, // 149
+  { name: 'Silver Dusk',       color: '#78828A' }, // 150
+  { name: 'Emerald Crown',     color: '#046A38' }, // 151
+  { name: 'Rosewood Noir',     color: '#3E1C24' }, // 152
+  { name: 'Golden Laurel',     color: '#A08432' }, // 153
+  { name: 'Arctic Sapphire',   color: '#3A6073' }, // 154
+  { name: 'Crimson Dusk',      color: '#6B1D2F' }, // 155
+  { name: 'Imperial Cobalt',   color: '#172554' }, // 156
+  { name: 'Twilight Teal',     color: '#134E4A' }, // 157
+  { name: 'Bronze Horizon',    color: '#8D5B3A' }, // 158
+  { name: 'Velvet Orchid',     color: '#5B2149' }, // 159
+  { name: 'Sapphire Bloom',    color: '#25527E' }, // 160
+  { name: 'Mystic Charcoal',   color: '#292C33' }, // 161
+  { name: 'Golden Cascade',    color: '#C69214' }, // 162
+  { name: 'Royal Cypress',     color: '#224835' }, // 163
+  { name: 'Lunar Sage',        color: '#93A29B' }, // 164
+  { name: 'Deep Cerulean',     color: '#005F73' }, // 165
+  { name: 'Copper Twilight',   color: '#944634' }, // 166
+  { name: 'Emerald Mirage',    color: '#0F5132' }, // 167
+  { name: 'Silver Crown',      color: '#ADB5BD' }, // 168
+  { name: 'Velvet Maroon',     color: '#541212' }, // 169
+  { name: 'Arctic Lagoon',     color: '#4682B4' }, // 170
+  { name: 'Golden Mirage',     color: '#D4A373' }, // 171
+  { name: 'Royal Juniper',     color: '#2B4A3F' }, // 172
+  { name: 'Mystic Burgundy',   color: '#521822' }, // 173
+  { name: 'Blue Royale',       color: '#1B4965' }, // 174
+  { name: 'Bronze Willow',     color: '#7A5C3E' }, // 175
+  { name: 'Crimson Majesty',   color: '#7C1020' }, // 176
+  { name: 'Lunar Ocean',       color: '#23395D' }, // 177
+  { name: 'Emerald Velvet',    color: '#1B4332' }, // 178
+  { name: 'Golden Eclipse',    color: '#A67C1E' }, // 179
+  { name: 'Sapphire Forest',   color: '#1F3A4B' }, // 180
+  { name: 'Twilight Bronze',   color: '#6F4E37' }, // 181
+  { name: 'Royal Celadon',     color: '#6B8E80' }, // 182
+  { name: 'Mystic Sapphire',   color: '#203A60' }, // 183
+  { name: 'Silver Horizon',    color: '#9AA0A6' }, // 184
+  { name: 'Velvet Cypress',    color: '#1D3C2F' }, // 185
+  { name: 'Amber Majesty',     color: '#B45B14' }, // 186
+  { name: 'Imperial Ocean',    color: '#0C4A60' }, // 187
+  { name: 'Golden Monarch',    color: '#C88D26' }, // 188
+  { name: 'Arctic Orchid',     color: '#9D8189' }, // 189
+  { name: 'Crimson Sapphire',  color: '#631726' }, // 190
+  { name: 'Royal Moonstone',   color: '#5C6B73' }, // 191
+  { name: 'Deep Lagoon',       color: '#0A5C5A' }, // 192
+  { name: 'Copper Majesty',    color: '#8B4513' }, // 193
+  { name: 'Velvet Cascade',    color: '#2C4258' }, // 194
+  { name: 'Emerald Twilight',  color: '#194336' }, // 195
+  { name: 'Silver Monarch',    color: '#8E9CA8' }, // 196
+  { name: 'Mystic Pearl',      color: '#C4CCD3' }, // 197
+  { name: 'Golden Dynasty',    color: '#A17A24' }, // 198
+  { name: 'Blue Eclipse',      color: '#0F2137' }, // 199
+  { name: 'Imperial Noir',     color: '#141518' }, // 200
+];
+
+const getSongCardColor = (index: number): SongCardColorDef => {
+  const safeIndex = typeof index === 'number' && !isNaN(index) ? Math.abs(index) : 0;
+  return SONG_CARD_COLORS[safeIndex % SONG_CARD_COLORS.length];
+};
+
+const isColorLight = (hex: string): boolean => {
+  if (!hex || !hex.startsWith('#')) return true;
+  const c = hex.replace('#', '');
+  const r = parseInt(c.substring(0, 2), 16) || 0;
+  const g = parseInt(c.substring(2, 4), 16) || 0;
+  const b = parseInt(c.substring(4, 6), 16) || 0;
+  const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+  return brightness > 155;
+};
+
+const getTimelineStemColor = (hex: string, isDarkTheme: boolean): string => {
+  if (!isDarkTheme || !hex || !hex.startsWith('#')) return hex;
+  const c = hex.replace('#', '');
+  if (c.length !== 6) return hex;
+  let r = parseInt(c.substring(0, 2), 16) || 0;
+  let g = parseInt(c.substring(2, 4), 16) || 0;
+  let b = parseInt(c.substring(4, 6), 16) || 0;
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  if (lum < 0.42) {
+    const isNeutral = Math.max(r, g, b) - Math.min(r, g, b) < 16;
+    if (isNeutral) {
+      return '#A1A1AA'; // Light zinc/silver for dark/black neutrals (like Velours Noir #1C1C1E)
+    }
+    const factor = 0.55 / Math.max(0.08, lum);
+    r = Math.min(255, Math.round(r * factor + (255 - r) * 0.25));
+    g = Math.min(255, Math.round(g * factor + (255 - g) * 0.25));
+    b = Math.min(255, Math.round(b * factor + (255 - b) * 0.25));
+    return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+  }
+  return hex;
+};
 
 export default function SongsScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
@@ -146,9 +398,28 @@ export default function SongsScreen({ navigation, route }: any) {
   // ── Load Setlists / Worship Services ─────────────
   const loadSetlists = async () => {
     try {
-      const upcomingEvents = await FirestoreService.getUpcomingEvents(10);
-      const eventsWithSongs = (upcomingEvents || []).filter(
-        (ev: any) => ev && (ev.hasWorshipServices || (Array.isArray(ev.services) && ev.services.length > 0)) && Array.isArray(ev.services) && ev.services.length > 0
+      const [upcomingRes, allRes] = await Promise.all([
+        FirestoreService.getUpcomingEvents(30).catch(() => []),
+        FirestoreService.getEvents().catch(() => [])
+      ]);
+
+      const combinedEvents = [...(upcomingRes || []), ...(allRes || [])];
+      // Deduplicate events by id
+      const uniqueEvents = Array.from(new Map(combinedEvents.map(e => [e.id, e])).values());
+
+      // Sort: prioritize events with songs, then date
+      uniqueEvents.sort((a, b) => {
+        const countA = (a.services || []).reduce((acc: number, s: any) => acc + (s.songs?.length || 0), 0);
+        const countB = (b.services || []).reduce((acc: number, s: any) => acc + (s.songs?.length || 0), 0);
+        if (countA !== countB) return countB - countA;
+        const dateA = a.date || '';
+        const dateB = b.date || '';
+        return dateB.localeCompare(dateA);
+      });
+
+      // Find events that have services with songs
+      const eventsWithSongs = uniqueEvents.filter(
+        (ev: any) => ev && Array.isArray(ev.services) && ev.services.length > 0 && ev.services.some((s: any) => s && Array.isArray(s.songs) && s.songs.length > 0)
       );
 
       if (eventsWithSongs.length > 0) {
@@ -157,20 +428,49 @@ export default function SongsScreen({ navigation, route }: any) {
         const srvs = primaryEvent.services || [];
         setWorshipServices(srvs);
         setHasActiveEventSongs(true);
-        if (srvs.length > 0) {
-          setActiveServiceId(srvs[0].id);
-        }
+        // Default to 'all' so all songs of the event are shown
+        setActiveServiceId(srvs.length > 1 ? 'all' : (srvs[0]?.id || 'all'));
       } else {
-        setActiveEvent(null);
-        setWorshipServices([]);
-        setActiveServiceId('');
-        setHasActiveEventSongs(false);
-        setActiveTab((currentTab: any) => currentTab === 'eventSongs' ? 'browse' : currentTab);
+        const anyEventWithServices = uniqueEvents.find((ev: any) => ev && Array.isArray(ev.services) && ev.services.length > 0);
+        if (anyEventWithServices) {
+          setActiveEvent(anyEventWithServices);
+          const srvs = anyEventWithServices.services || [];
+          setWorshipServices(srvs);
+          setActiveServiceId(srvs.length > 1 ? 'all' : (srvs[0]?.id || 'all'));
+        } else if (uniqueEvents.length > 0) {
+          const ev = uniqueEvents[0];
+          setActiveEvent(ev);
+          const defaultSrv = {
+            id: 'service-default',
+            name: ev.title || 'Sunday Worship Service',
+            category: ev.category || 'Sunday Service',
+            date: ev.date || '',
+            time: ev.time || '10:00 AM',
+            songs: []
+          };
+          setWorshipServices([defaultSrv]);
+          setActiveServiceId('service-default');
+        } else {
+          setActiveEvent({
+            id: 'default-worship',
+            title: activeChurch?.name ? `${activeChurch.name} Worship` : 'Sunday Worship Service',
+            category: 'Sunday Service',
+            location: 'Church Main Sanctuary',
+          });
+          setWorshipServices([{
+            id: 'service-default',
+            name: 'Sunday Worship Service',
+            category: 'Sunday Service',
+            time: '10:00 AM',
+            songs: []
+          }]);
+          setActiveServiceId('service-default');
+        }
+        setHasActiveEventSongs(true);
       }
     } catch (e) {
       console.warn('Failed to load event songs:', e);
-      setHasActiveEventSongs(false);
-      setWorshipServices([]);
+      setHasActiveEventSongs(true);
     }
   };
 
@@ -283,12 +583,20 @@ export default function SongsScreen({ navigation, route }: any) {
   const getSongCategories = (song: WorshipSong): string[] =>
     (song.category || 'Other').split(';').map(c => c.trim()).filter(Boolean);
 
-  // Search filter helper
-  const matchesSearch = (s: WorshipSong & { displayNumber?: number }, q: string): boolean => {
+  // Search filter helper (handles song numbers, prefixes, Telugu/English titles, artist)
+  const matchesSearch = (s: WorshipSong & { displayNumber?: number; masterIndex?: number }, q: string): boolean => {
     if (!q) return true;
+    const numericQ = q.replace(/[^0-9]/g, '');
+    const searchNum = numericQ ? parseInt(numericQ, 10) : NaN;
+    const isPureNum = !isNaN(searchNum) && /^[#\s0-9]+$/.test(q);
+
+    // When searching by song number, match strictly to that card's display number in the active list
+    if (isPureNum) {
+      return s.displayNumber === searchNum;
+    }
+
     const { primary, secondary } = SongLanguageHelper.getSongTitle(s, language);
     return (
-      (s.displayNumber !== undefined && s.displayNumber.toString() === q) ||
       primary.toLowerCase().includes(q) ||
       (secondary ? secondary.toLowerCase().includes(q) : false) ||
       (s.title && s.title.toLowerCase().includes(q)) ||
@@ -303,16 +611,18 @@ export default function SongsScreen({ navigation, route }: any) {
     );
   };
 
-  // Category matching helper (handling "Stuthi" / "Sthuthi" and "All" / "All Songs")
+  // Category matching helper (robust normalization for Stuthi / Sthuthi / Sthuthi Songs / Offering / etc.)
+  const normalizeCategoryName = (cat: string) => {
+    if (!cat) return '';
+    return cat.toLowerCase().replace(/[^a-z0-9]/g, '').replace(/songs?$/g, '').replace('sthuthi', 'stuthi');
+  };
+
   const categoryMatches = (songCats: string[], targetCat: string): boolean => {
-    if (targetCat === 'All' || targetCat === 'All Songs') return true;
-    const targetLower = targetCat.toLowerCase().trim();
+    if (!targetCat || targetCat === 'All' || targetCat === 'All Songs') return true;
+    const normTarget = normalizeCategoryName(targetCat);
     return songCats.some(c => {
-      const cLower = c.toLowerCase().trim();
-      if (cLower === targetLower) return true;
-      if (targetLower.includes('stuthi') && cLower.includes('sthuthi')) return true;
-      if (targetLower.includes('sthuthi') && cLower.includes('stuthi')) return true;
-      return false;
+      const normC = normalizeCategoryName(c);
+      return normC === normTarget || normC.includes(normTarget) || normTarget.includes(normC);
     });
   };
 
@@ -336,6 +646,20 @@ export default function SongsScreen({ navigation, route }: any) {
     return [...CATEGORIES, ...Array.from(extraCats)];
   }, [songs]);
 
+  // ── Permanent Master Index Map (ensures each song keeps its master color & number across categories) ──
+  const songMasterIndexMap = useMemo(() => {
+    const map = new Map<string, number>();
+    const allBrowse = songs.filter(s => {
+      const cats = getSongCategories(s);
+      if (cats.length === 1 && cats[0] === 'Theme Songs') return false;
+      return true;
+    });
+    allBrowse.forEach((s, idx) => {
+      map.set(s.id, idx + 1);
+    });
+    return map;
+  }, [songs]);
+
   // ── Filtered songs ────────────────────────────────
   const browseBaseList = songs.filter(s => {
     const cats = getSongCategories(s);
@@ -344,13 +668,47 @@ export default function SongsScreen({ navigation, route }: any) {
     return categoryMatches(cats, selectedCategory);
   });
 
-  const filteredBrowse = browseBaseList.map((s, idx) => ({ ...s, displayNumber: idx + 1 })).filter(s => {
+  const filteredBrowse = useMemo(() => {
     const q = search.toLowerCase().trim();
-    return matchesSearch(s, q);
-  });
+
+    // 1. Number the songs in the current category sequentially starting from 1
+    const categoryMatchesList = browseBaseList.map((s, idx) => {
+      const masterNum = songMasterIndexMap.get(s.id) || (idx + 1);
+      return { ...s, displayNumber: idx + 1, masterIndex: masterNum };
+    }).filter(s => matchesSearch(s, q));
+
+    if (!q) {
+      return categoryMatchesList;
+    }
+
+    // If matches found within the selected category, show them
+    if (categoryMatchesList.length > 0) {
+      return categoryMatchesList;
+    }
+
+    // If no match in current category (e.g. searching for a song number from another category),
+    // search across all browse songs seamlessly so the song is found
+    if (selectedCategory !== 'All') {
+      const allBrowseSongs = songs.filter(s => {
+        const cats = getSongCategories(s);
+        if (cats.length === 1 && cats[0] === 'Theme Songs') return false;
+        return true;
+      });
+
+      return allBrowseSongs.map((s, idx) => {
+        const masterNum = songMasterIndexMap.get(s.id) || (idx + 1);
+        return { ...s, displayNumber: masterNum, masterIndex: masterNum };
+      }).filter(s => matchesSearch(s, q));
+    }
+
+    return categoryMatchesList;
+  }, [browseBaseList, search, songs, songMasterIndexMap, selectedCategory, language]);
 
   const savedSongsBase = songs.filter(s => savedIds.includes(s.id));
-  const filteredSongbook = savedSongsBase.map((s, idx) => ({ ...s, displayNumber: idx + 1 })).filter(s => {
+  const filteredSongbook = savedSongsBase.map((s, idx) => {
+    const masterNum = songMasterIndexMap.get(s.id) || (idx + 1);
+    return { ...s, displayNumber: idx + 1, masterIndex: masterNum };
+  }).filter(s => {
     const q = search.toLowerCase().trim();
     return matchesSearch(s, q);
   });
@@ -359,46 +717,15 @@ export default function SongsScreen({ navigation, route }: any) {
     const cats = getSongCategories(s);
     return cats.includes('Theme Songs');
   });
-  const filteredTheme = themeBaseList.map((s, idx) => ({ ...s, displayNumber: idx + 1 })).filter(s => {
+  const filteredTheme = themeBaseList.map((s, idx) => {
+    const masterNum = songMasterIndexMap.get(s.id) || (idx + 1);
+    return { ...s, displayNumber: idx + 1, masterIndex: masterNum };
+  }).filter(s => {
     const q = search.toLowerCase().trim();
     return matchesSearch(s, q);
   });
 
 
-
-  // ── Song Card ─────────────────────────────────────
-  const renderSongCard = ({ item, index }: { item: WorshipSong & { displayNumber?: number }; index: number }) => {
-    const enrichedItem = enrichSongWithSetlist(item);
-    const isSaved = savedIds.includes(item.id);
-    const displayIndex = item.displayNumber !== undefined ? item.displayNumber : index + 1;
-    // Default to Telugu for songs unless user explicitly chose another non-English language
-    const displayLang = (language && language !== 'en') ? language : 'te';
-    const { primary, secondary } = SongLanguageHelper.getSongTitle(enrichedItem, displayLang);
-    const subtitle = secondary ? `${secondary}${enrichedItem.artist ? ` · ${enrichedItem.artist}` : ''}` : (enrichedItem.artist || '');
-
-    return (
-      <TouchableOpacity
-        style={[styles.songCard, { backgroundColor: isDark ? '#1e293b' : '#fff', borderColor: isDark ? '#334155' : '#e5e7eb' }]}
-        onPress={() => setSelectedSong(enrichedItem)}
-        onLongPress={() => toggleSave(item)}
-        delayLongPress={400}
-      >
-        <View style={[styles.indexBox, { backgroundColor: isDark ? '#0f172a' : '#f3f4f6' }]}>
-          <Text style={[styles.indexTxt, { color: isDark ? '#94a3b8' : '#1a2d5a' }]}>{displayIndex}</Text>
-        </View>
-        <View style={styles.info}>
-          <Text style={[styles.title, { color: isDark ? '#fff' : '#111827' }]} numberOfLines={1}>{primary}</Text>
-          {subtitle ? (
-            <Text style={[styles.artist, { color: isDark ? '#94a3b8' : '#6B7280' }]} numberOfLines={1}>
-              {subtitle}
-            </Text>
-          ) : null}
-        </View>
-        {isSaved && <Bookmark size={14} color="#c0392b" style={{ marginRight: 4 }} />}
-        <ChevronRight size={16} color={isDark ? '#475569' : '#D1D5DB'} />
-      </TouchableOpacity>
-    );
-  };
 
   const getServiceCategoryMeta = (categoryName?: string, serviceName?: string) => {
     const categories = [
@@ -433,40 +760,230 @@ export default function SongsScreen({ navigation, route }: any) {
 
   const validServices = Array.isArray(worshipServices) ? worshipServices.filter(Boolean) : [];
   const activeService: any = validServices.find((s: any) => s && s.id === activeServiceId) || (validServices.length > 0 ? validServices[0] : null);
-  const activeSetlist: any[] = activeService?.songs || [];
-  const activeList = activeTab === 'browse' ? filteredBrowse : activeTab === 'songbook' ? filteredSongbook : activeTab === 'theme' ? filteredTheme : activeSetlist;
+  
+  // Return all songs of event if 'all' is selected or only 1 service, otherwise active service's songs
+  const activeSetlist: any[] = useMemo(() => {
+    if (activeServiceId && activeServiceId !== 'all') {
+      const found = validServices.find((s: any) => s && s.id === activeServiceId);
+      if (found) return found.songs || [];
+    }
+    const all: any[] = [];
+    validServices.forEach((srv: any) => {
+      if (srv && Array.isArray(srv.songs)) {
+        all.push(...srv.songs);
+      }
+    });
+    return all;
+  }, [validServices, activeServiceId]);
+
+  const totalEventSongsCount = useMemo(() => {
+    return validServices.reduce((acc: number, s: any) => acc + (s.songs?.length || 0), 0);
+  }, [validServices]);
+
+  // ── Event Songs as full WorshipSong list with 1-based sequential display numbers ──
+  const eventSongItems: (WorshipSong & { displayNumber: number; masterIndex: number })[] = useMemo(() => {
+    return (activeSetlist || []).map((s: any, idx: number) => {
+      const match = songs.find(libSong =>
+        libSong.title?.toLowerCase().trim() === s.title?.toLowerCase().trim()
+      );
+      if (match) {
+        return {
+          ...match,
+          key: s.key || match.key,
+          timeSignature: s.timeSignature || match.timeSignature,
+          tempo: s.tempo || match.tempo,
+          verses: s.verses || match.verses,
+          prelude: s.prelude || match.prelude,
+          interlude: s.interlude || match.interlude,
+          notes: s.notes || match.notes,
+          ledBy: s.ledBy || match.ledBy,
+          isOffertory: s.isOffertory !== undefined ? s.isOffertory : (match as any).isOffertory,
+          displayNumber: idx + 1,
+          masterIndex: idx + 1,
+        };
+      }
+      return {
+        id: s.id || `setlist-song-${idx}`,
+        title: s.title || `Song ${idx + 1}`,
+        titleTe: s.titleTe,
+        titleEn: s.titleEn || s.title,
+        lyrics: s.lyrics || s.verses || `Lyrics for "${s.title}" are being prepared for this service.`,
+        key: s.key,
+        timeSignature: s.timeSignature,
+        tempo: s.tempo,
+        verses: s.verses,
+        prelude: s.prelude,
+        interlude: s.interlude,
+        notes: s.notes,
+        ledBy: s.ledBy,
+        isOffertory: s.isOffertory,
+        displayNumber: idx + 1,
+        masterIndex: idx + 1,
+      } as any;
+    });
+  }, [activeSetlist, songs]);
+
+  const filteredEventSongs = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    if (!q) return eventSongItems;
+    return eventSongItems.filter(s => matchesSearch(s, q));
+  }, [eventSongItems, search]);
+
+  const activeList = activeTab === 'browse' ? filteredBrowse : activeTab === 'songbook' ? filteredSongbook : activeTab === 'theme' ? filteredTheme : filteredEventSongs;
   const currentSongIndex = selectedSong ? activeList.findIndex(s => s.id === selectedSong.id) : -1;
   const totalSongs = activeList.length;
 
-  // ── Setlist Flow UI (Member View) ───────────────────
-  const renderSetlistFlow = () => {
+  // ── Song Card ─────────────────────────────────────
+  const renderSongCard = ({ item, index }: { item: WorshipSong & { displayNumber?: number; masterIndex?: number }; index: number }) => {
+    const enrichedItem = enrichSongWithSetlist(item);
+    const isSaved = savedIds.includes(item.id);
+    const masterNum = item.masterIndex !== undefined ? item.masterIndex : (item.displayNumber !== undefined ? item.displayNumber : (index + 1));
+    const displayIndex = item.displayNumber !== undefined ? item.displayNumber : masterNum;
+    // Default to Telugu for songs unless user explicitly chose another non-English language
+    const displayLang = (language && language !== 'en') ? language : 'te';
+    const { primary, secondary } = SongLanguageHelper.getSongTitle(enrichedItem, displayLang);
+    const subtitle = secondary ? `${secondary}${enrichedItem.artist ? ` · ${enrichedItem.artist}` : ''}` : (enrichedItem.artist || '');
+
+    const colorIndex = masterNum > 0 ? masterNum - 1 : index;
+    const cardDef = getSongCardColor(colorIndex);
+    const cardColor = cardDef.color;
+    const currentTabList = activeTab === 'browse' ? filteredBrowse : (activeTab === 'songbook' ? filteredSongbook : (activeTab === 'eventSongs' ? filteredEventSongs : filteredTheme));
+    const prevItem = index > 0 ? currentTabList[index - 1] : null;
+    const prevMasterNum = prevItem?.masterIndex !== undefined ? prevItem.masterIndex : (prevItem?.displayNumber !== undefined ? prevItem.displayNumber : index);
+    const prevColorIndex = prevMasterNum > 0 ? prevMasterNum - 1 : Math.max(0, index - 1);
+    const prevCardColor = index > 0 ? getSongCardColor(prevColorIndex).color : null;
+    const stemColor = getTimelineStemColor(cardColor, isDark);
+    const prevStemColor = prevCardColor ? getTimelineStemColor(prevCardColor, isDark) : null;
+    const isLight = isColorLight(cardColor);
+
+    const titleColor = isLight ? '#0F172A' : '#FFFFFF';
+    const artistColor = isLight ? '#475569' : 'rgba(255, 255, 255, 0.78)';
+    const chevronColor = isLight ? 'rgba(15, 23, 42, 0.45)' : 'rgba(255, 255, 255, 0.65)';
+    const dividerColor = isDark ? 'rgba(255, 255, 255, 0.35)' : '#64748B';
+
+    const totalCount = currentTabList.length;
+    const isFirst = index === 0;
+    const isLast = totalCount > 0 && index === totalCount - 1;
+    const screenBg = isDark ? '#000000' : (colors.background || '#F8FAFC');
+    const circleBorderColor = isLight ? 'rgba(0, 0, 0, 0.25)' : 'rgba(255, 255, 255, 0.45)';
+    const circleTextColor = isLight ? '#0F172A' : '#FFFFFF';
+    const numFontSize = displayIndex >= 100 ? 10.5 : (displayIndex >= 10 ? 12.5 : 14.5);
+    return (
+      <View style={styles.songItemWrapper}>
+        <View style={styles.songItemRow}>
+          {/* Left Column: Lollipop Song Number circle badge with matching dotted stick */}
+          <View style={styles.songTimeline}>
+            {/* Top dotted stick (coming from previous song lollipop) */}
+            {!isFirst && prevCardColor ? (
+              <View style={styles.timelineTopStick} pointerEvents="none">
+                <Svg width={4} height="100%">
+                  <Path
+                    d="M 2,0 L 2,400"
+                    stroke={prevStemColor}
+                    strokeWidth={2.8}
+                    strokeDasharray="2, 5"
+                    strokeLinecap="round"
+                  />
+                </Svg>
+              </View>
+            ) : null}
+
+            {/* Bottom dotted stick (this song's lollipop stick reaching downwards to next song) */}
+            {!isLast ? (
+              <View style={styles.timelineBottomStick} pointerEvents="none">
+                <Svg width={4} height="100%">
+                  <Path
+                    d="M 2,0 L 2,400"
+                    stroke={stemColor}
+                    strokeWidth={2.8}
+                    strokeDasharray="2, 5"
+                    strokeLinecap="round"
+                  />
+                </Svg>
+              </View>
+            ) : null}
+            {/* Song Number verified badge in song card color */}
+            <View style={styles.songNumBox}>
+              <Svg width={36} height={36} viewBox="0 0 24 24" style={StyleSheet.absoluteFill}>
+                <Path
+                  d="M22.25 12c0-1.43-.88-2.67-2.19-3.34.46-1.39.2-2.9-.81-3.91s-2.52-1.27-3.91-.81c-.67-1.31-1.91-2.19-3.34-2.19s-2.67.88-3.33 2.19c-1.4-.46-2.91-.2-3.92.81s-1.26 2.52-.8 3.91c-1.31.67-2.2 1.91-2.2 3.34s.89 2.67 2.2 3.34c-.46 1.39-.21 2.9.8 3.91s2.52 1.26 3.91.81c.67 1.31 1.91 2.19 3.34 2.19s2.67-.88 3.34-2.19c1.39.45 2.9.2 3.91-.81s1.27-2.52.81-3.91c1.31-.67 2.19-1.91 2.19-3.34z"
+                  fill={cardColor}
+                  stroke={circleBorderColor}
+                  strokeWidth={0.75}
+                />
+              </Svg>
+              <Text style={[styles.songNumText, { color: circleTextColor, fontSize: numFontSize }]}>
+                {displayIndex}
+              </Text>
+            </View>
+          </View>
+
+          {/* Right Column: Colored Song Card (Without index inside) */}
+          <TouchableOpacity
+            style={[
+              styles.songCard,
+              {
+                backgroundColor: cardColor,
+                borderColor: isLight ? 'rgba(0, 0, 0, 0.06)' : 'rgba(255, 255, 255, 0.12)',
+                borderWidth: 1,
+                shadowColor: '#000',
+                shadowOpacity: isLight ? 0.06 : 0.22,
+                shadowRadius: 5,
+                shadowOffset: { width: 0, height: 2 },
+                elevation: 2.5,
+              }
+            ]}
+            onPress={() => setSelectedSong(enrichedItem)}
+            onLongPress={() => toggleSave(item)}
+            delayLongPress={400}
+            activeOpacity={0.85}
+          >
+            <View style={styles.info}>
+              <Text style={[styles.title, { color: titleColor }]} numberOfLines={1}>
+                {primary}
+              </Text>
+              {subtitle ? (
+                <Text style={[styles.artist, { color: artistColor }]} numberOfLines={1}>
+                  {subtitle}
+                </Text>
+              ) : null}
+            </View>
+            {isSaved && <Bookmark size={15} color="#FFFFFF" fill="#FFFFFF" style={{ marginRight: 6 }} />}
+            <ChevronRight size={17} color={chevronColor} strokeWidth={2.4} />
+          </TouchableOpacity>
+        </View>
+
+      </View>
+    );
+  };
+
+  // ── Render Event Card Header ─────────────────────
+  const renderEventCardHeader = () => {
     if (!activeService || validServices.length === 0) {
       return (
-        <View style={{ flex: 1, paddingHorizontal: 24, paddingTop: 60, alignItems: 'center' }}>
+        <View style={{ paddingHorizontal: 20, paddingTop: 36, paddingBottom: 24, alignItems: 'center' }}>
           <View style={{
-            width: 72,
-            height: 72,
-            borderRadius: 36,
-            backgroundColor: isDark ? '#1e293b' : '#EFF6FF',
+            width: 64,
+            height: 64,
+            borderRadius: 32,
+            backgroundColor: isDark ? '#27272A' : '#F1F5F9',
             alignItems: 'center',
             justifyContent: 'center',
-            marginBottom: 16,
+            marginBottom: 14,
             borderWidth: 1,
-            borderColor: isDark ? '#334155' : '#BFDBFE'
+            borderColor: isDark ? '#3F3F46' : '#E2E8F0'
           }}>
-            <CalendarDays size={34} color="#2563EB" />
+            <CalendarDays size={28} color={isDark ? '#FFFFFF' : '#0F172A'} />
           </View>
-          <Text style={{ fontSize: 18, fontWeight: '800', color: isDark ? '#FFFFFF' : '#1a2d5a', textAlign: 'center' }}>
+          <Text style={{ fontSize: 17, fontWeight: '800', color: isDark ? '#FFFFFF' : '#0F172A', textAlign: 'center' }}>
             No Services Scheduled Yet
           </Text>
-          <Text style={{ fontSize: 13, color: isDark ? '#94A3B8' : '#64748B', textAlign: 'center', marginTop: 8, lineHeight: 20, maxWidth: 300 }}>
+          <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', marginTop: 6, lineHeight: 19, maxWidth: 280 }}>
             Your worship team has not published any church services or song sets yet. Please check back soon!
           </Text>
         </View>
       );
     }
-
-    const activeCat = getServiceCategoryMeta(activeService?.category, activeService?.name);
 
     // Format display date: handles start & end date range if present
     const displayServiceDate = (() => {
@@ -476,540 +993,514 @@ export default function SongsScreen({ navigation, route }: any) {
       return activeService?.date || (activeEvent ? (activeEvent.date || '') : '');
     })();
 
+    const displayTitle = activeServiceId === 'all'
+      ? (activeEvent?.title || activeService?.name || 'Church Service Flow')
+      : (activeService?.name || activeEvent?.title || 'Church Service Flow');
+
     return (
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 60 }}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Service Switcher & Header Card */}
+      <View style={{ marginBottom: 8 }}>
+        {/* Compact Event Service Card */}
         <View style={{
-          backgroundColor: isDark ? '#1e293b' : '#FFFFFF',
+          marginHorizontal: 16,
+          marginTop: 4,
+          backgroundColor: isDark ? '#18181B' : '#FFFFFF',
           borderRadius: 16,
-          padding: 16,
-          marginBottom: 16,
+          paddingHorizontal: 16,
+          paddingVertical: 14,
           borderWidth: 1,
-          borderColor: isDark ? '#334155' : '#E2E8F0',
-          borderLeftWidth: 4,
-          borderLeftColor: activeCat.color || '#2563EB',
+          borderColor: isDark ? '#27272A' : '#E2E8F0',
           elevation: 2,
           shadowColor: '#000',
-          shadowOpacity: 0.05,
+          shadowOpacity: isDark ? 0.3 : 0.05,
           shadowRadius: 6,
           shadowOffset: { width: 0, height: 2 }
         }}>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: worshipServices.length > 0 ? 14 : 4 }}>
-            <View style={{ flex: 1, marginRight: 10 }}>
-              {/* Category & Time Pills */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
-                <View style={{
-                  backgroundColor: isDark ? '#334155' : activeCat.bg,
-                  borderColor: isDark ? '#475569' : activeCat.border,
-                  borderWidth: 1,
-                  paddingHorizontal: 8,
-                  paddingVertical: 3,
-                  borderRadius: 6,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 4
-                }}>
-                  <Text style={{ fontSize: 11 }}>{activeCat.icon}</Text>
-                  <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#93C5FD' : activeCat.color }}>
-                    {activeService?.category || activeCat.type}
-                  </Text>
-                </View>
-
-                {activeService?.time ? (
-                  <View style={{
-                    backgroundColor: isDark ? '#0f172a' : '#FAF7F2',
-                    paddingHorizontal: 8,
-                    paddingVertical: 3,
-                    borderRadius: 6,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 4
-                  }}>
-                    <Clock size={11} color={isDark ? '#94A3B8' : '#64748B'} />
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#CBD5E1' : '#475569' }}>
-                      {activeService.time}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-
-              {/* Service Title */}
-              <Text style={{ fontSize: 18, fontWeight: '900', color: isDark ? '#FFFFFF' : '#1a2d5a', letterSpacing: -0.2 }}>
-                {activeService?.name || 'Church Service Flow'}
+          {/* Top Row: Event Title & Circular Share Icon Button */}
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 17, fontWeight: '800', color: isDark ? '#FFFFFF' : '#0F172A', letterSpacing: -0.2, lineHeight: 22 }}>
+                {displayTitle}
               </Text>
+              {activeEvent?.titleTelugu ? (
+                <Text style={{ fontSize: 12.5, fontWeight: '600', color: isDark ? '#A1A1AA' : '#64748B', marginTop: 2 }}>
+                  {activeEvent.titleTelugu}
+                </Text>
+              ) : null}
 
-              {/* Service Date & Song Count */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-                {displayServiceDate ? (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <CalendarDays size={13} color="#2563EB" />
-                    <Text style={{ fontSize: 12, color: isDark ? '#93C5FD' : '#2563EB', fontWeight: '700' }}>
-                      {displayServiceDate}
-                    </Text>
-                  </View>
-                ) : (
-                  <Text style={{ fontSize: 11, color: isDark ? '#94A3B8' : '#64748B', fontWeight: '600' }}>
-                    Order of Service & Band Charts
-                  </Text>
-                )}
+              {/* Date and Time stacked vertically without borders */}
+              {(displayServiceDate || activeService?.time) ? (
+                <View style={{ marginTop: 8, gap: 5 }}>
+                  {displayServiceDate ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <CalendarDays size={13} color={isDark ? '#FBBF24' : '#D97706'} />
+                      <Text style={{ fontSize: 12.5, color: isDark ? '#D4D4D8' : '#334155', fontWeight: '600' }}>
+                        {displayServiceDate}
+                      </Text>
+                    </View>
+                  ) : null}
 
-                {activeSetlist.length > 0 && (
-                  <View style={{ backgroundColor: isDark ? '#334155' : '#E0E7FF', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 }}>
-                    <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? '#C7D2FE' : '#4338CA' }}>
-                      {activeSetlist.length} {activeSetlist.length === 1 ? 'song' : 'songs'}
-                    </Text>
-                  </View>
-                )}
-              </View>
+                  {activeService?.time ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Clock size={13} color={isDark ? '#38BDF8' : '#0284C7'} />
+                      <Text style={{ fontSize: 12.5, color: isDark ? '#D4D4D8' : '#334155', fontWeight: '600' }}>
+                        {activeService.time}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
             </View>
 
-            {/* Share Setlist Button */}
+            {/* Top-Right Circular Share Icon Button Only */}
             <TouchableOpacity
               onPress={handleShareSetlist}
               style={{
-                flexDirection: 'row',
+                width: 36,
+                height: 36,
+                borderRadius: 18,
                 alignItems: 'center',
-                gap: 5,
-                backgroundColor: isDark ? '#334155' : '#EFF6FF',
-                paddingHorizontal: 12,
-                paddingVertical: 8,
-                borderRadius: 10,
+                justifyContent: 'center',
+                backgroundColor: isDark ? '#27272A' : '#F1F5F9',
                 borderWidth: 1,
-                borderColor: isDark ? '#475569' : '#BFDBFE'
+                borderColor: isDark ? '#3F3F46' : '#E2E8F0'
               }}
+              activeOpacity={0.8}
             >
-              <Share2 size={13} color={isDark ? '#93C5FD' : '#1D4ED8'} />
-              <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#93C5FD' : '#1D4ED8' }}>Share</Text>
+              <Share2 size={15} color={isDark ? '#E4E4E7' : '#0F172A'} />
             </TouchableOpacity>
           </View>
 
-          {/* Dynamic Services Switcher Ribbon */}
+          {/* Bottom Event / Service Circle-Capsule Badge */}
           {validServices.length > 0 && (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 8, paddingTop: 6, alignItems: 'center' }}
-            >
-              {validServices.map((srv: any) => {
-                if (!srv) return null;
-                const isSelected = (srv?.id || srv?.name) === (activeService?.id || activeService?.name);
-                const srvCat = getServiceCategoryMeta(srv?.category, srv?.name);
-                const srvDateStr = (srv.startDate && srv.endDate && srv.startDate !== srv.endDate)
-                  ? `${srv.startDate} – ${srv.endDate}`
-                  : (srv.date || '');
+            <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: isDark ? '#27272A' : '#F1F5F9' }}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8, alignItems: 'center' }}
+              >
+                {validServices.map((srv: any) => {
+                  if (!srv) return null;
+                  const isSelected = activeServiceId === srv?.id || (validServices.length === 1 && (!activeServiceId || activeServiceId === 'all')) || ((activeServiceId === 'all' || !activeServiceId) && srv?.id === activeService?.id);
 
-                return (
-                  <TouchableOpacity
-                    key={srv?.id || srv?.name || Math.random().toString()}
-                    style={[{
-                      paddingHorizontal: 12,
-                      paddingVertical: 8,
-                      borderRadius: 12,
-                      backgroundColor: isDark ? '#0f172a' : '#FAF7F2',
-                      borderWidth: 1.5,
-                      borderColor: isDark ? '#334155' : '#E2E8F0',
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 8
-                    }, isSelected && {
-                      backgroundColor: '#1a2d5a',
-                      borderColor: '#1a2d5a',
-                      shadowColor: '#1a2d5a',
-                      shadowOpacity: 0.25,
-                      shadowRadius: 4,
-                      shadowOffset: { width: 0, height: 2 },
-                      elevation: 3
-                    }]}
-                    onPress={() => setActiveServiceId(srv?.id)}
-                  >
-                    <Text style={{ fontSize: 14 }}>{srvCat.icon}</Text>
-                    <View>
-                      <Text style={[{ fontSize: 12, fontWeight: '800', color: isDark ? '#CBD5E1' : '#334155' }, isSelected && { color: '#FFFFFF' }]}>
-                        {srv?.name || 'Service'}
+                  return (
+                    <TouchableOpacity
+                      key={srv?.id || srv?.name || Math.random().toString()}
+                      style={[{
+                        paddingHorizontal: 16,
+                        paddingVertical: 8,
+                        borderRadius: 999,
+                        backgroundColor: isDark ? '#121214' : '#F1F5F9',
+                        borderWidth: 1,
+                        borderColor: isDark ? '#27272A' : '#CBD5E1',
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }, isSelected && {
+                        backgroundColor: '#000000',
+                        borderColor: isDark ? '#3F3F46' : '#000000',
+                      }]}
+                      onPress={() => setActiveServiceId(validServices.length === 1 ? 'all' : srv?.id)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[
+                        { fontSize: 12.5, fontWeight: '700', color: isDark ? '#A1A1AA' : '#475569' },
+                        isSelected && { color: '#FFFFFF', fontWeight: '800' }
+                      ]}>
+                        {srv?.name || activeEvent?.title || 'Service'}
                       </Text>
-                      {srvDateStr ? (
-                        <Text style={[{ fontSize: 10, fontWeight: '600', color: isDark ? '#64748B' : '#94A3B8' }, isSelected && { color: '#93C5FD' }]}>
-                          {srvDateStr}
-                        </Text>
-                      ) : null}
-                    </View>
-                    <View style={{
-                      backgroundColor: isSelected ? 'rgba(255,255,255,0.22)' : (isDark ? '#1e293b' : '#E2E8F0'),
-                      paddingHorizontal: 6,
-                      paddingVertical: 1,
-                      borderRadius: 6,
-                      marginLeft: 2
-                    }}>
-                      <Text style={{ fontSize: 10, fontWeight: '800', color: isSelected ? '#FFFFFF' : (isDark ? '#94A3B8' : '#64748B') }}>
-                        {srv.songs?.length || 0}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
           )}
         </View>
 
-        {/* Setlist Song Items */}
-        {activeSetlist.length === 0 ? (
-          <View style={{ alignItems: 'center', paddingVertical: 50, paddingHorizontal: 20 }}>
-            <Music size={42} color={isDark ? '#475569' : '#cbd5e1'} />
-            <Text style={{ fontSize: 16, fontWeight: '800', color: isDark ? '#94A3B8' : '#1a2d5a', marginTop: 12 }}>
-              No Songs in {activeService?.name || 'this service'}
-            </Text>
-            <Text style={{ fontSize: 13, color: '#94a3b8', textAlign: 'center', marginTop: 6, lineHeight: 18, maxWidth: 280 }}>
-              The song arrangement for {activeService?.name || 'this service'} will appear here once published by your worship team.
-            </Text>
-          </View>
-        ) : (
-          activeSetlist.map((s, idx) => (
+        {/* Search Bar placed directly below the Event Card */}
+        <View
+          style={[
+            styles.searchBar,
+            {
+              marginTop: 12,
+              marginBottom: 4,
+              backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+              borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+              borderWidth: 1.5,
+              shadowColor: '#000',
+              shadowOpacity: isDark ? 0.25 : 0.05,
+              shadowRadius: 6,
+              elevation: 2,
+            }
+          ]}
+        >
+          <Search size={19} color={isDark ? '#9CA3AF' : '#334155'} strokeWidth={2.2} />
+          <TextInput
+            placeholder="Search event songs by name or number..."
+            placeholderTextColor={isDark ? '#9CA3AF' : '#64748B'}
+            style={[styles.searchInput, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
+            value={search}
+            onChangeText={setSearch}
+            autoCorrect={false}
+            autoCapitalize="none"
+          />
+          {search.length > 0 && (
             <TouchableOpacity
-              key={s.id || idx}
-              activeOpacity={0.85}
-              onPress={() => {
-                const match = songs.find(libSong =>
-                  libSong.title.toLowerCase().trim() === s.title.toLowerCase().trim()
-                );
-                if (match) {
-                  setSelectedSong({
-                    ...match,
-                    key: s.key || match.key,
-                    timeSignature: s.timeSignature || match.timeSignature,
-                    tempo: s.tempo || match.tempo,
-                    verses: s.verses || match.verses,
-                    prelude: s.prelude || match.prelude,
-                    interlude: s.interlude || match.interlude,
-                    notes: s.notes || match.notes,
-                    ledBy: s.ledBy || match.ledBy
-                  });
-                } else {
-                  setSelectedSong({
-                    id: s.id || `setlist-${idx}`,
-                    title: s.title,
-                    key: s.key,
-                    timeSignature: s.timeSignature,
-                    tempo: s.tempo,
-                    verses: s.verses,
-                    prelude: s.prelude,
-                    interlude: s.interlude,
-                    notes: s.notes,
-                    ledBy: s.ledBy,
-                    lyrics: `Lyrics for "${s.title}" are being prepared for Sunday Service.`
-                  } as WorshipSong);
-                }
-              }}
+              onPress={() => setSearch('')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               style={{
-                backgroundColor: isDark ? '#1e293b' : '#FFFFFF',
-                borderRadius: 14,
-                padding: 14,
-                marginBottom: 10,
-                borderWidth: 1,
-                borderColor: isDark ? '#334155' : '#E2E8F0',
-                elevation: 1.5,
-                shadowColor: '#000',
-                shadowOpacity: 0.04,
-                shadowRadius: 4,
-                shadowOffset: { width: 0, height: 1 }
+                width: 24,
+                height: 24,
+                borderRadius: 12,
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0',
+                justifyContent: 'center',
+                alignItems: 'center',
               }}
             >
-              {/* Header: Number, Title (English & Telugu), Offertory, Chevron */}
-              <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, flex: 1, marginRight: 8 }}>
-                  <View style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: 14,
-                    backgroundColor: isDark ? '#2563EB' : '#1a2d5a',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    marginTop: 1
-                  }}>
-                    <Text style={{ color: '#fff', fontSize: 12, fontWeight: '900' }}>{idx + 1}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 15, fontWeight: '800', color: isDark ? '#FFFFFF' : '#1a2d5a', lineHeight: 20 }} numberOfLines={2}>
-                      {s.title}
-                    </Text>
-                    {s.titleTe ? (
-                      <Text style={{ fontSize: 13, color: isDark ? '#94A3B8' : '#64748B', marginTop: 2, fontWeight: '600' }} numberOfLines={1}>
-                        {s.titleTe}
-                      </Text>
-                    ) : null}
-                  </View>
-                </View>
-
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  {s.isOffertory ? (
-                    <View style={{ backgroundColor: '#FEF3C7', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#FDE68A' }}>
-                      <Text style={{ fontSize: 9, fontWeight: '900', color: '#B45309' }}>🪙 OFFERTORY</Text>
-                    </View>
-                  ) : null}
-                  <ChevronRight size={16} color={isDark ? '#64748B' : '#94A3B8'} />
-                </View>
-              </View>
-
-              {/* Song Leader */}
-              {s.ledBy ? (
-                <View style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 5,
-                  marginBottom: 8,
-                  backgroundColor: isDark ? '#1e3a5f' : '#EFF6FF',
-                  paddingHorizontal: 8,
-                  paddingVertical: 3,
-                  borderRadius: 6,
-                  alignSelf: 'flex-start',
-                  borderWidth: 0.5,
-                  borderColor: isDark ? '#2563EB' : '#BFDBFE'
-                }}>
-                  <Mic size={11} color={isDark ? '#93C5FD' : '#1D4ED8'} />
-                  <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#93C5FD' : '#1D4ED8' }}>
-                    Lead: {s.ledBy}
-                  </Text>
-                </View>
-              ) : null}
-
-              {/* Musical Arrangement Row */}
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: (s.prelude || s.interlude || s.notes) ? 8 : 0 }}>
-                {s.key ? (
-                  <View style={{
-                    backgroundColor: isDark ? '#1e293b' : '#EFF6FF',
-                    paddingHorizontal: 8,
-                    paddingVertical: 3,
-                    borderRadius: 6,
-                    borderWidth: 1,
-                    borderColor: isDark ? '#3b82f6' : '#BFDBFE'
-                  }}>
-                    <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? '#93C5FD' : '#1D4ED8' }}>
-                      Key: {s.key}
-                    </Text>
-                  </View>
-                ) : null}
-
-                {s.timeSignature ? (
-                  <View style={{
-                    backgroundColor: isDark ? '#0f172a' : '#FAF7F2',
-                    paddingHorizontal: 8,
-                    paddingVertical: 3,
-                    borderRadius: 6,
-                    borderWidth: 1,
-                    borderColor: isDark ? '#334155' : '#E2E8F0'
-                  }}>
-                    <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? '#CBD5E1' : '#475569' }}>
-                      Time: {s.timeSignature}
-                    </Text>
-                  </View>
-                ) : null}
-
-                {s.tempo ? (
-                  <View style={{
-                    backgroundColor: isDark ? '#291e0a' : '#FFFBEB',
-                    paddingHorizontal: 8,
-                    paddingVertical: 3,
-                    borderRadius: 6,
-                    borderWidth: 1,
-                    borderColor: isDark ? '#78350f' : '#FDE68A'
-                  }}>
-                    <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? '#FCD34D' : '#B45309' }}>
-                      ⏱️ {s.tempo} BPM
-                    </Text>
-                  </View>
-                ) : null}
-
-                {s.verses ? (
-                  <View style={{
-                    backgroundColor: isDark ? '#062817' : '#F0FDF4',
-                    paddingHorizontal: 8,
-                    paddingVertical: 3,
-                    borderRadius: 6,
-                    borderWidth: 1,
-                    borderColor: isDark ? '#166534' : '#BBF7D0'
-                  }}>
-                    <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? '#86EFAC' : '#15803D' }}>
-                      {s.verses}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-
-              {/* Prelude & Interlude */}
-              {(s.prelude || s.interlude) ? (
-                <View style={{
-                  flexDirection: 'row',
-                  gap: 8,
-                  paddingTop: 8,
-                  borderTopWidth: 0.5,
-                  borderTopColor: isDark ? '#334155' : '#FAF7F2'
-                }}>
-                  {s.prelude ? (
-                    <View style={{ flex: 1, backgroundColor: isDark ? '#042f2e' : '#F0FDFA', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 0.5, borderColor: isDark ? '#115e59' : '#99F6E4' }}>
-                      <Text style={{ fontSize: 10, color: isDark ? '#5EEAD4' : '#0F766E', fontWeight: '700' }} numberOfLines={1}>
-                        🎵 Prelude: {s.prelude}
-                      </Text>
-                    </View>
-                  ) : null}
-                  {s.interlude ? (
-                    <View style={{ flex: 1, backgroundColor: isDark ? '#172554' : '#EFF6FF', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 0.5, borderColor: isDark ? '#1e40af' : '#BFDBFE' }}>
-                      <Text style={{ fontSize: 10, color: isDark ? '#93C5FD' : '#1D4ED8', fontWeight: '700' }} numberOfLines={1}>
-                        🎸 Interlude: {s.interlude}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
-              ) : null}
-
-              {/* Notes */}
-              {s.notes ? (
-                <View style={{
-                  marginTop: 8,
-                  backgroundColor: isDark ? '#2e2008' : '#FEFCE8',
-                  paddingHorizontal: 9,
-                  paddingVertical: 5,
-                  borderRadius: 6,
-                  borderWidth: 0.5,
-                  borderColor: isDark ? '#713f12' : '#FEF08A'
-                }}>
-                  <Text style={{ fontSize: 11, color: isDark ? '#FDE68A' : '#92400E', fontWeight: '600' }}>
-                    💡 Note: {s.notes}
-                  </Text>
-                </View>
-              ) : null}
+              <X size={13} color={isDark ? '#E5E7EB' : '#334155'} strokeWidth={2.4} />
             </TouchableOpacity>
-          ))
-        )}
-      </ScrollView>
+          )}
+        </View>
+      </View>
     );
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle={colors.barStyle || (isDark ? 'light-content' : 'dark-content')} backgroundColor={colors.background} />
-      
-      <CustomAlert 
-        visible={alertConfig.visible}
-        title={alertConfig.title}
-        message={alertConfig.message}
-        type={alertConfig.type}
-        onClose={() => setAlertConfig(prev => ({ ...prev, visible: false }))}
+    <View style={[styles.container, { backgroundColor: isDark ? '#000000' : colors.background }]}>
+      <StatusBar
+        barStyle="light-content"
+        backgroundColor={isDark ? '#000000' : '#1E293B'}
       />
 
-      {/* ── Header ── */}
-            {/* ── Screen Header (Clean circular back button & title) ── */}
+      
+      
+            {/* ── Top Header Card (Clean square card containing header, tabs, and straight category badges) ── */}
       <View
-        style={[
-          styles.headerRow,
-          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8 }
-        ]}
+        style={{
+          backgroundColor: isDark ? '#121214' : '#1E293B',
+          borderBottomWidth: 1,
+          borderBottomColor: isDark ? '#27272A' : '#334155',
+          overflow: 'hidden',
+          paddingBottom: 14,
+        }}
       >
-        <TouchableOpacity
-          style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          onPress={() => navigation.goBack()}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          activeOpacity={0.8}
+        {!isDark && (
+          <LinearGradient
+            colors={['#1E293B', '#334155', '#475569']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0.35, y: 1 }}
+            style={StyleSheet.absoluteFillObject}
+            pointerEvents="none"
+          />
+        )}
+
+        {/* ── Screen Header (Clean circular back button & title) ── */}
+        <View
+          style={[
+            styles.headerRow,
+            { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8 }
+          ]}
         >
-          <ArrowLeft size={20} color={colors.text} strokeWidth={2.4} />
-        </TouchableOpacity>
-
-        <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
-          {t('songs.worshipAndPraise')}
-        </Text>
-
-        <View style={styles.headerRightSpacer} />
-      </View>
-
-      {/* ── Main Tabs Ribbon ── */}
-      <View style={{ marginTop: 14, marginBottom: 4 }}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 6 }}>
           <TouchableOpacity
-            style={[styles.tabPill, { backgroundColor: isDark ? '#1e293b' : '#E2E8F0' }, activeTab === 'browse' && styles.tabPillActive]}
-            onPress={() => { setActiveTab('browse'); setSearch(''); }}
+            style={[
+              styles.circularBackBtn,
+              {
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(255, 255, 255, 0.16)',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(255, 255, 255, 0.28)',
+              }
+            ]}
+            onPress={() => navigation.goBack()}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            activeOpacity={0.7}
           >
-            <Music size={13} color={activeTab === 'browse' ? '#fff' : (isDark ? '#94a3b8' : '#64748b')} />
-            <Text style={[styles.tabPillTxt, activeTab === 'browse' && styles.tabPillTxtActive]}>
-              {t('songs.allSongs')}
-            </Text>
+            <ArrowLeft size={20} color="#FFFFFF" strokeWidth={2.4} />
           </TouchableOpacity>
 
-          {hasActiveEventSongs && (
+          <Text style={[styles.headerTitleText, { color: '#FFFFFF' }]} numberOfLines={1}>
+            {t('songs.worshipAndPraise')}
+          </Text>
+
+          <View style={styles.headerRightSpacer} />
+        </View>
+
+        {/* ── Main Tabs Ribbon ── */}
+        <View style={{ marginTop: 12, marginBottom: activeTab === 'browse' ? 10 : 2 }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 8, alignItems: 'center' }}>
+            {/* Tab 1: All Songs */}
             <TouchableOpacity
-              style={[styles.tabPill, { backgroundColor: isDark ? '#1e293b' : '#E2E8F0' }, activeTab === 'eventSongs' && styles.tabPillActive]}
-              onPress={() => { setActiveTab('eventSongs'); setSearch(''); }}
+              style={[
+                styles.tabPill,
+                activeTab === 'browse'
+                  ? {
+                      backgroundColor: isDark ? '#c9e8a3' : '#FFFFFF',
+                      borderColor: isDark ? '#c9e8a3' : '#FFFFFF',
+                      borderWidth: 1.5,
+                    }
+                  : {
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(255, 255, 255, 0.16)',
+                      borderColor: isDark ? 'rgba(255, 255, 255, 0.20)' : 'rgba(255, 255, 255, 0.28)',
+                      borderWidth: 1.5,
+                    },
+              ]}
+              onPress={() => { setActiveTab('browse'); setSearch(''); }}
+              activeOpacity={0.75}
             >
-              <Sliders size={13} color={activeTab === 'eventSongs' ? '#fff' : (isDark ? '#94a3b8' : '#64748b')} />
-              <Text style={[styles.tabPillTxt, activeTab === 'eventSongs' && styles.tabPillTxtActive]}>
+              <Music
+                size={13}
+                color={
+                  activeTab === 'browse'
+                    ? (isDark ? '#16213f' : '#0F172A')
+                    : '#FFFFFF'
+                }
+                strokeWidth={2.4}
+              />
+              <Text
+                style={[
+                  styles.tabPillTxt,
+                  {
+                    color: activeTab === 'browse'
+                      ? (isDark ? '#16213f' : '#0F172A')
+                      : '#FFFFFF',
+                  },
+                  activeTab === 'browse' && { fontWeight: '900' },
+                ]}
+              >
+                {t('songs.allSongs')}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Tab: Event Songs (Always visible next to All Songs) */}
+            <TouchableOpacity
+              style={[
+                styles.tabPill,
+                activeTab === 'eventSongs'
+                  ? {
+                      backgroundColor: isDark ? '#c9e8a3' : '#FFFFFF',
+                      borderColor: isDark ? '#c9e8a3' : '#FFFFFF',
+                      borderWidth: 1.5,
+                    }
+                  : {
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(255, 255, 255, 0.16)',
+                      borderColor: isDark ? 'rgba(255, 255, 255, 0.20)' : 'rgba(255, 255, 255, 0.28)',
+                      borderWidth: 1.5,
+                    },
+              ]}
+              onPress={() => { setActiveTab('eventSongs'); setSearch(''); }}
+              activeOpacity={0.75}
+            >
+              <Sliders
+                size={13}
+                color={
+                  activeTab === 'eventSongs'
+                    ? (isDark ? '#16213f' : '#0F172A')
+                    : '#FFFFFF'
+                }
+                strokeWidth={2.4}
+              />
+              <Text
+                style={[
+                  styles.tabPillTxt,
+                  {
+                    color: activeTab === 'eventSongs'
+                      ? (isDark ? '#16213f' : '#0F172A')
+                      : '#FFFFFF',
+                  },
+                  activeTab === 'eventSongs' && { fontWeight: '900' },
+                ]}
+              >
                 Event Songs
               </Text>
             </TouchableOpacity>
-          )}
 
-          <TouchableOpacity
-            style={[styles.tabPill, { backgroundColor: isDark ? '#1e293b' : '#E2E8F0' }, activeTab === 'theme' && styles.tabPillActive]}
-            onPress={() => { setActiveTab('theme'); setSearch(''); }}
+            {/* Tab 2: Theme Songs */}
+            <TouchableOpacity
+              style={[
+                styles.tabPill,
+                activeTab === 'theme'
+                  ? {
+                      backgroundColor: isDark ? '#c9e8a3' : '#FFFFFF',
+                      borderColor: isDark ? '#c9e8a3' : '#FFFFFF',
+                      borderWidth: 1.5,
+                    }
+                  : {
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(255, 255, 255, 0.16)',
+                      borderColor: isDark ? 'rgba(255, 255, 255, 0.20)' : 'rgba(255, 255, 255, 0.28)',
+                      borderWidth: 1.5,
+                    },
+              ]}
+              onPress={() => { setActiveTab('theme'); setSearch(''); }}
+              activeOpacity={0.75}
+            >
+              <Music
+                size={13}
+                color={
+                  activeTab === 'theme'
+                    ? (isDark ? '#16213f' : '#0F172A')
+                    : '#FFFFFF'
+                }
+                strokeWidth={2.4}
+              />
+              <Text
+                style={[
+                  styles.tabPillTxt,
+                  {
+                    color: activeTab === 'theme'
+                      ? (isDark ? '#16213f' : '#0F172A')
+                      : '#FFFFFF',
+                  },
+                  activeTab === 'theme' && { fontWeight: '900' },
+                ]}
+              >
+                {t('songs.theme')}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Tab 3: My Songs */}
+            <TouchableOpacity
+              style={[
+                styles.tabPill,
+                activeTab === 'songbook'
+                  ? {
+                      backgroundColor: isDark ? '#c9e8a3' : '#FFFFFF',
+                      borderColor: isDark ? '#c9e8a3' : '#FFFFFF',
+                      borderWidth: 1.5,
+                    }
+                  : {
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(255, 255, 255, 0.16)',
+                      borderColor: isDark ? 'rgba(255, 255, 255, 0.20)' : 'rgba(255, 255, 255, 0.28)',
+                      borderWidth: 1.5,
+                    },
+              ]}
+              onPress={() => { setActiveTab('songbook'); setSearch(''); }}
+              activeOpacity={0.75}
+            >
+              <BookMarked
+                size={13}
+                color={
+                  activeTab === 'songbook'
+                    ? (isDark ? '#16213f' : '#0F172A')
+                    : '#FFFFFF'
+                }
+                strokeWidth={2.4}
+              />
+              <Text
+                style={[
+                  styles.tabPillTxt,
+                  {
+                    color: activeTab === 'songbook'
+                      ? (isDark ? '#16213f' : '#0F172A')
+                      : '#FFFFFF',
+                  },
+                  activeTab === 'songbook' && { fontWeight: '900' },
+                ]}
+              >
+                {t('songs.mySongs')}{savedIds.length > 0 ? ` (${savedIds.length})` : ''}
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+
+        {/* ── Category Chips Included in Above Card (Straight horizontal row, capsule badges) ── */}
+        {activeTab === 'browse' && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ marginTop: 2, marginBottom: 2 }}
+            contentContainerStyle={{
+              paddingHorizontal: 16,
+              gap: 8,
+              alignItems: 'center',
+            }}
           >
-            <Music size={13} color={activeTab === 'theme' ? '#fff' : (isDark ? '#94a3b8' : '#64748b')} />
-            <Text style={[styles.tabPillTxt, activeTab === 'theme' && styles.tabPillTxtActive]}>
-              {t('songs.theme')}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabPill, { backgroundColor: isDark ? '#1e293b' : '#E2E8F0' }, activeTab === 'songbook' && styles.tabPillActive]}
-            onPress={() => { setActiveTab('songbook'); setSearch(''); }}
-          >
-            <BookMarked size={13} color={activeTab === 'songbook' ? '#fff' : (isDark ? '#94a3b8' : '#64748b')} />
-            <Text style={[styles.tabPillTxt, activeTab === 'songbook' && styles.tabPillTxtActive]}>
-              {t('songs.mySongs')}{savedIds.length > 0 ? ` (${savedIds.length})` : ''}
-            </Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </View>
-
-      {/* ── Category Chips & Search Bar (Non-Setlist Tabs) ── */}
-      {activeTab !== 'eventSongs' && (
-        <>
-          {/* Category Chips (Browse only) */}
-          {activeTab === 'browse' && (
-            <ScrollView
-              horizontal showsHorizontalScrollIndicator={false}
-              style={styles.chipScroll} contentContainerStyle={{ paddingHorizontal: 16, gap: 8, alignItems: 'center' }}>
-              {CATEGORIES.map(cat => (
+            {CATEGORIES.map((cat) => {
+              const isSelected = selectedCategory === cat;
+              return (
                 <TouchableOpacity
                   key={cat}
-                  style={[styles.chip, selectedCategory === cat && styles.chipActive]}
-                  onPress={() => setSelectedCategory(cat)}>
-                  <Text style={[styles.chipTxt, selectedCategory === cat && styles.chipTxtActive]}>
+                  onPress={() => setSelectedCategory(cat)}
+                  style={[
+                    styles.chip,
+                    isSelected
+                      ? {
+                          backgroundColor: isDark ? '#FFFFFF' : '#0F172A',
+                          borderColor: isDark ? '#FFFFFF' : '#0F172A',
+                          borderWidth: 1.5,
+                        }
+                      : {
+                          backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.16)',
+                          borderColor: isDark ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.28)',
+                          borderWidth: 1.5,
+                        },
+                  ]}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[
+                      styles.chipTxt,
+                      {
+                        color: isSelected
+                          ? (isDark ? '#0F172A' : '#FFFFFF')
+                          : '#FFFFFF',
+                      },
+                      isSelected && { fontWeight: '800' },
+                    ]}
+                  >
                     {SongLanguageHelper.getLocalizedCategory(cat, language)}
                   </Text>
                 </TouchableOpacity>
-              ))}
-            </ScrollView>
-          )}
+              );
+            })}
+          </ScrollView>
+        )}
+      </View>
 
+      {/* ── Lower Area (Surfaces beneath the top square card) ── */}
+      <View style={{ flex: 1, backgroundColor: isDark ? '#000000' : colors.background }}>
 
-
-          {/* Search Bar */}
-          <View style={[styles.searchBar, { backgroundColor: isDark ? '#1e293b' : '#fff' }]}>
-            <Search size={18} color={isDark ? '#94a3b8' : '#64748b'} />
-            <TextInput
-              placeholder={
-                activeTab === 'browse' ? t('songs.searchSongs') :
-                activeTab === 'theme' ? t('songs.searchThemeSongs') :
-                t('songs.searchSongbook')
-              }
-              placeholderTextColor={isDark ? '#64748b' : '#94a3b8'}
-              style={[styles.searchInput, { color: isDark ? '#fff' : '#0f172a' }]}
-              value={search} onChangeText={setSearch}
-              autoCorrect={false} autoCapitalize="none"
+      {/* ── Search Bar (Hidden at top on Event Songs tab since it renders below the Event Card) ── */}
+      {activeTab !== 'eventSongs' && (
+        <>
+        <View
+          style={[
+            styles.searchBar,
+            {
+              backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+              borderColor: isDark ? '#6B7280' : '#334155',
+              borderWidth: 1.5,
+              shadowColor: '#000',
+              shadowOpacity: isDark ? 0.25 : 0.06,
+              shadowRadius: 6,
+              elevation: 3,
+            }
+          ]}
+        >
+          <Search size={19} color={isDark ? '#9CA3AF' : '#334155'} strokeWidth={2.2} />
+          <TextInput
+            placeholder={
+              activeTab === 'browse' ? t('songs.searchSongs') :
+              activeTab === 'theme' ? t('songs.searchThemeSongs') :
+              t('songs.searchSongbook')
+            }
+              placeholderTextColor={isDark ? '#9CA3AF' : '#64748B'}
+              style={[styles.searchInput, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
+              value={search}
+              onChangeText={setSearch}
+              autoCorrect={false}
+              autoCapitalize="none"
             />
             {search.length > 0 && (
-              <TouchableOpacity onPress={() => setSearch('')}>
-                <X size={16} color="#94a3b8" />
+              <TouchableOpacity
+                onPress={() => setSearch('')}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: 12,
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+              >
+                <X size={13} color={isDark ? '#E5E7EB' : '#334155'} strokeWidth={2.4} />
               </TouchableOpacity>
             )}
           </View>
@@ -1023,9 +1514,39 @@ export default function SongsScreen({ navigation, route }: any) {
           )}
         </>
       )}
+      {activeTab !== 'eventSongs' ? null : null}
 
       {/* ── Setlist Flow Tab ── */}
-      {activeTab === 'eventSongs' && renderSetlistFlow()}
+      {/* ── Event Songs Flow Tab ── */}
+      {activeTab === 'eventSongs' && (
+        <FlatList
+          style={{ flex: 1 }}
+          data={filteredEventSongs}
+          keyExtractor={(item, idx) => `event-song-${item.id || "song"}-${idx}`}
+          renderItem={renderSongCard}
+          contentContainerStyle={[styles.listContent, { paddingTop: 10 }]}
+          showsVerticalScrollIndicator={false}
+          initialNumToRender={15}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS === 'android'}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? '#FFFFFF' : '#0F172A'} />}
+          ListHeaderComponent={renderEventCardHeader()}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Music size={44} color="#cbd5e1" />
+              <Text style={[styles.emptyTitle, { color: isDark ? '#E4E4E7' : '#0F172A' }]}>
+                {eventSongItems.length === 0 ? 'No Songs in this Service' : t('songs.noSongsFound')}
+              </Text>
+              <Text style={styles.emptySub}>
+                {eventSongItems.length === 0 
+                  ? `The song arrangement for ${activeService?.name || 'this service'} will appear here once published.` 
+                  : t('songs.tryDifferentCategory')}
+              </Text>
+            </View>
+          }
+        />
+      )}
 
       {/* ── Browse List ── */}
       {activeTab === 'browse' && (
@@ -1054,7 +1575,7 @@ export default function SongsScreen({ navigation, route }: any) {
             ListEmptyComponent={
               <View style={styles.emptyState}>
                 <AlertCircle size={44} color="#cbd5e1" />
-                <Text style={[styles.emptyTitle, { color: isDark ? '#94a3b8' : '#1a2d5a' }]}>{t('songs.noSongsFound')}</Text>
+                <Text style={[styles.emptyTitle, { color: isDark ? '#E4E4E7' : '#0F172A' }]}>{t('songs.noSongsFound')}</Text>
                 <Text style={styles.emptySub}>{t('songs.tryDifferentCategory')}</Text>
               </View>
             }
@@ -1081,7 +1602,7 @@ export default function SongsScreen({ navigation, route }: any) {
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <BookMarked size={44} color="#cbd5e1" />
-              <Text style={[styles.emptyTitle, { color: isDark ? '#94a3b8' : '#1a2d5a' }]}>{t('songs.songbookEmpty')}</Text>
+              <Text style={[styles.emptyTitle, { color: isDark ? '#E4E4E7' : '#0F172A' }]}>{t('songs.songbookEmpty')}</Text>
               <Text style={styles.emptySub}>{t('songs.songbookEmptySub')}</Text>
             </View>
           }
@@ -1114,7 +1635,7 @@ export default function SongsScreen({ navigation, route }: any) {
             }
             ListEmptyComponent={
               <View style={styles.emptyState}>
-                <Text style={[styles.emptyTitle, { color: isDark ? '#94a3b8' : '#1a2d5a' }]}>{t('songs.noThemeSongs')}</Text>
+                <Text style={[styles.emptyTitle, { color: isDark ? '#E4E4E7' : '#0F172A' }]}>{t('songs.noThemeSongs')}</Text>
                 <Text style={styles.emptySub}>{t('songs.noThemeSongsSub')}</Text>
               </View>
             }
@@ -1122,47 +1643,7 @@ export default function SongsScreen({ navigation, route }: any) {
         )
       )}
 
-      {/* ── Church Own Songs List ── */}
-      {activeTab === 'churchOwn' && (
-        loading && !refreshing ? (
-          <View style={styles.loadingBox}>
-            <ActivityIndicator size="large" color="#1a2d5a" />
-          </View>
-        ) : (
-          <FlatList
-            style={{ flex: 1 }}
-            data={filteredChurchOwn}
-            keyExtractor={item => item.id}
-            renderItem={renderSongCard}
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-            initialNumToRender={15}
-            maxToRenderPerBatch={10}
-            windowSize={5}
-            removeClippedSubviews={true}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1a2d5a" />}
-            ListHeaderComponent={
-              <Text style={styles.secLbl}>
-                {(selectedChurchCategory === 'All' || selectedChurchCategory === 'All Songs'
-                  ? t('songs.allSongs')
-                  : SongLanguageHelper.getLocalizedCategory(selectedChurchCategory, language)
-                ).toUpperCase()} • {t('songs.songsCount', { count: filteredChurchOwn.length })}
-              </Text>
-            }
-            ListEmptyComponent={
-              <View style={styles.emptyState}>
-                <AlertCircle size={44} color="#cbd5e1" />
-                <Text style={[styles.emptyTitle, { color: isDark ? '#94a3b8' : '#1a2d5a' }]}>
-                  {songs.some(s => s.isChurchOwn) ? t('songs.noSongsFound') : t('songs.noChurchSongs')}
-                </Text>
-                <Text style={styles.emptySub}>
-                  {songs.some(s => s.isChurchOwn) ? t('songs.tryDifferentCategory') : t('songs.noChurchSongsSub')}
-                </Text>
-              </View>
-            }
-          />
-        )
-      )}
+      </View>
 
       {/* ── Lyrics Modal ── */}
       <SongDetailModal
@@ -1176,6 +1657,13 @@ export default function SongsScreen({ navigation, route }: any) {
         totalSongs={totalSongs}
         onNext={() => currentSongIndex < totalSongs - 1 && setSelectedSong(enrichSongWithSetlist(activeList[currentSongIndex + 1]))}
         onPrev={() => currentSongIndex > 0 && setSelectedSong(enrichSongWithSetlist(activeList[currentSongIndex - 1]))}
+      />
+      <CustomAlert 
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        onClose={() => setAlertConfig(prev => ({ ...prev, visible: false }))}
       />
     </View>
   );
@@ -1193,17 +1681,12 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
   },
   circularBackBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
   },
   headerTitleText: {
     fontSize: 20,
@@ -1212,8 +1695,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   headerRightSpacer: {
-    width: 44,
-    height: 44,
+    width: 40,
+    height: 40,
   },
   headerCardWrapper: {
     paddingHorizontal: 16,
@@ -1293,7 +1776,7 @@ const styles = StyleSheet.create({
   // Tabs
   tabBar: { flexDirection: 'row', backgroundColor: '#e2e8f0', marginHorizontal: 16, marginTop: 15, marginBottom: 0, borderRadius: 25, padding: 4 },
   tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, paddingHorizontal: 2, borderRadius: 21, gap: 2, minWidth: 0 },
-  tabActive: { backgroundColor: '#1a2d5a' },
+  tabActive: { backgroundColor: '#0F172A' },
   tabTxt: { fontSize: 10, fontWeight: '700', color: '#64748b', flexShrink: 1, textAlign: 'center' },
   tabTxtActive: { color: '#fff' },
 
@@ -1301,53 +1784,113 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 7,
-    paddingHorizontal: 13,
+    paddingHorizontal: 14,
     borderRadius: 20,
     gap: 6,
-  },
-  tabPillActive: {
-    backgroundColor: '#1a2d5a',
   },
   tabPillTxt: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#64748b',
-  },
-  tabPillTxtActive: {
-    color: '#fff',
   },
 
   // Category chips
   chipScroll: { marginTop: 12, maxHeight: 52 },
-  chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: '#e2e8f0', borderWidth: 1, borderColor: '#e2e8f0' },
-  chipActive: { backgroundColor: '#1a2d5a', borderColor: '#1a2d5a' },
+  chip: { height: 36, paddingHorizontal: 16, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
+  chipActive: { backgroundColor: '#0F172A', borderColor: '#0F172A' },
   chipTxt: { fontSize: 12, fontWeight: '700', color: '#475569' },
   chipTxtActive: { color: '#fff' },
 
   // Search
   searchBar: {
-    flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginTop: 12, marginBottom: 4,
-    borderRadius: 14, paddingHorizontal: 14, height: 46, elevation: 2,
-    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, borderWidth: 1, borderColor: '#e2e8f0'
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginTop: 14,
+    marginBottom: 6,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    height: 48,
   },
-  searchInput: { flex: 1, fontSize: 13, fontWeight: '600', paddingVertical: 8, marginLeft: 8 },
-
-  hint: { fontSize: 10, color: '#94a3b8', textAlign: 'center', marginTop: 4, marginBottom: 8, fontStyle: 'italic' },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    paddingVertical: 8,
+    marginLeft: 10,
+  },
+  hint: {
+    fontSize: 11,
+    color: '#64748B',
+    textAlign: 'center',
+    marginTop: 2,
+    marginBottom: 10,
+    fontStyle: 'italic',
+  },
 
   listContent: { paddingBottom: 40 },
   secLbl: { fontSize: 10, fontWeight: '800', color: '#9CA3AF', letterSpacing: 0.8, marginHorizontal: 16, marginBottom: 10, marginTop: 6 },
 
   // Song Card
+  songItemWrapper: {
+    paddingHorizontal: 16,
+    paddingVertical: 0,
+  },
+  songItemRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 12,
+  },
+  songTimeline: {
+    width: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  timelineTopStick: {
+    position: 'absolute',
+    top: 0,
+    bottom: '50%',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  timelineBottomStick: {
+    position: 'absolute',
+    top: '50%',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  songNumBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+  songNumText: {
+    fontWeight: '800',
+    textAlign: 'center',
+    includeFontPadding: false,
+  },
   songCard: {
-    borderRadius: 14, borderWidth: 0.5, marginHorizontal: 16, marginBottom: 9,
-    flexDirection: 'row', alignItems: 'center', padding: 12,
-    elevation: 2, shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 3
+    flex: 1,
+    marginVertical: 4.5,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 13,
+    paddingHorizontal: 14,
   },
   indexBox: { width: 34, height: 34, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-  indexTxt: { fontSize: 13, fontWeight: '800', color: '#1a2d5a' },
+  indexTxt: { fontSize: 13, fontWeight: '800', color: '#0F172A' },
   info: { flex: 1 },
-  title: { fontSize: 13, fontWeight: '700' },
-  artist: { fontSize: 11, marginTop: 2, fontWeight: '500' },
+  title: { fontSize: 15.5, fontWeight: '700', letterSpacing: -0.2 },
+  artist: { fontSize: 12.5, marginTop: 3, fontWeight: '500' },
   keyBadge: { backgroundColor: '#F0FDF4', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 7, marginRight: 6 },
   keyTxt: { fontSize: 9, color: '#166534', fontWeight: '800' },
 

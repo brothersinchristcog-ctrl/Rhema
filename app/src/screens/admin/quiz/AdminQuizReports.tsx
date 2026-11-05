@@ -25,6 +25,7 @@ import {
 import { QuizAnalyticsReport, QuizAttempt } from '../../../types/Quiz';
 import { QuizService } from '../../../services/QuizService';
 import { useChurch } from '../../../context/ChurchContext';
+import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
 
 interface Props {
   quizId: string;
@@ -32,6 +33,7 @@ interface Props {
 }
 
 export default function AdminQuizReports({ quizId, onBack }: Props) {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { activeChurch } = useChurch();
   const [report, setReport] = useState<QuizAnalyticsReport | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -350,7 +352,7 @@ export default function AdminQuizReports({ quizId, onBack }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -723,4 +725,4 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#dc2626',
   },
-});
+}));

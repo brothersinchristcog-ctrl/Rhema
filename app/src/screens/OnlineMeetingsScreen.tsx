@@ -30,6 +30,7 @@ import {
 } from 'lucide-react-native';
 import firestore from '@react-native-firebase/firestore';
 import { useTheme } from '../context/ThemeContext';
+import { useAdminTheme, createAdminThemedStyles } from '../utils/adminThemeHelper';
 import { useAuth } from '../context/AuthContext';
 import { useChurch } from '../context/ChurchContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -42,6 +43,7 @@ const BRAND = '#1a2d5a';
 const LIVE_COLOR = '#ef4444';
 
 export default function OnlineMeetingsScreen({ navigation }: any) {
+  const { isDark: _adminIsDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const insets = useSafeAreaInsets();
   const { activeChurch } = useChurch();
   const { user, member } = useAuth();
@@ -121,12 +123,12 @@ export default function OnlineMeetingsScreen({ navigation }: any) {
   if (activeTab === 'live') displayList = liveMeetings;
   if (activeTab === 'completed') displayList = pastMeetings;
 
-  const bg = isDark ? '#0f172a' : '#FAF7F2';
-  const cardBg = isDark ? '#1e293b' : '#ffffff';
-  const textPrimary = isDark ? '#f1f5f9' : '#0f172a';
-  const textMuted = isDark ? '#94a3b8' : '#64748b';
-  const border = isDark ? '#334155' : '#e2e8f0';
-  const pillBg = isDark ? '#0f172a' : '#FAF7F2';
+  const bg = screenBg;
+  const cardBg = cardSurface;
+  const textPrimary = primaryText;
+  const textMuted = secondaryText;
+  const border = adminBorderColor;
+  const pillBg = screenBg;
 
   const formatDate = (dt: Date) =>
     dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -381,16 +383,16 @@ export default function OnlineMeetingsScreen({ navigation }: any) {
       </View>
 
       {/* Tab bar — pill style */}
-      <View style={[styles.tabBar, { backgroundColor: cardBg, borderColor: border }]}>
+      <View style={[styles.tabBar, { backgroundColor: cardBg, borderColor: isDark ? border : '#000000', borderWidth: 1 }]}>
         {tabs.map(tab => {
           const isActive = activeTab === tab.key;
           return (
             <TouchableOpacity
               key={tab.key}
-              style={[styles.tabBtn, isActive && { backgroundColor: tab.color }]}
+              style={[styles.tabBtn, isActive && { backgroundColor: primaryText }]}
               onPress={() => setActiveTab(tab.key)}
             >
-              <Text style={[styles.tabLabel, { color: isActive ? '#fff' : textMuted }]}>
+              <Text style={[styles.tabLabel, { color: isActive ? (isDark ? '#000000' : '#FFFFFF') : textMuted }]}>
                 {tab.label}
               </Text>
             </TouchableOpacity>
@@ -434,7 +436,7 @@ export default function OnlineMeetingsScreen({ navigation }: any) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   container: { flex: 1 },
 
     headerRow: {
@@ -653,10 +655,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
-  emptyTitle: { fontSize: 17, fontWeight: '700', marginBottom: 8, textAlign: 'center' },
-  emptySubtitle: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
-});
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32, paddingBottom: 150 },
+  emptyTitle: { width: '100%', fontSize: 17, fontWeight: '700', marginBottom: 8, textAlign: 'center', alignSelf: 'center' },
+  emptySubtitle: { width: '100%', fontSize: 14, textAlign: 'center', lineHeight: 20, alignSelf: 'center' },
+}));
 
 
 

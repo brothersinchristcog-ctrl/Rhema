@@ -5,6 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import storage from '@react-native-firebase/storage';
 import firestore from '@react-native-firebase/firestore';
 import { useChurch } from '../../context/ChurchContext';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const PRESET_COLORS = [
   '#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16', '#22c55e',
@@ -15,6 +16,7 @@ const PRESET_COLORS = [
 ];
 
 export default function AdminCelebrationsCustomTheme({ onBack, onSave }: { onBack: () => void, onSave: (theme: any) => void }) {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { activeChurch } = useChurch();
   const [themeName, setThemeName] = useState('');
   const [backgroundColor, setBackgroundColor] = useState('');
@@ -171,7 +173,7 @@ export default function AdminCelebrationsCustomTheme({ onBack, onSave }: { onBac
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FAF8F0',
@@ -326,4 +328,4 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   }
-});
+}));

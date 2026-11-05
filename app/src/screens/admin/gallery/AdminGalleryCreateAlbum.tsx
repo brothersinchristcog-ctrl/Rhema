@@ -6,10 +6,12 @@ import { X, UploadCloud, ImageIcon } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { AdminGalleryStackParamList } from './AdminGalleryNavigator';
 import GalleryService from '../../../services/GalleryService';
+import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
 
 type NavigationProp = NativeStackNavigationProp<AdminGalleryStackParamList, 'AdminGalleryCreateAlbum'>;
 
 export default function AdminGalleryCreateAlbum() {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const navigation = useNavigation<NavigationProp>();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -129,7 +131,7 @@ export default function AdminGalleryCreateAlbum() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#070D15',
@@ -243,4 +245,4 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
-});
+}));

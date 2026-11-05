@@ -5,6 +5,7 @@ import { Phone, MessageCircle, Mail, ChevronLeft, Globe , ArrowLeft } from 'luci
 import Svg, { Path } from 'react-native-svg';
 import { AdminTabContext } from '../../context/AdminTabContext';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const YouTubeIcon = ({ size = 20, color = '#CC0000' }: { size?: number; color?: string }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
@@ -45,6 +46,7 @@ const SUPPORT_MEMBERS = [
 ];
 
 export default function AdminSupportTeam({ navigation }: any) {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { goBack } = useContext(AdminTabContext) as any;
 
   const handleWhatsApp = (phone: string) => {
@@ -230,7 +232,7 @@ export default function AdminSupportTeam({ navigation }: any) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -462,4 +464,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 19,
   },
-});
+}));

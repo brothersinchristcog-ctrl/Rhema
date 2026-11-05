@@ -52,6 +52,7 @@ import { AppAlert } from '../../components/CustomAlert';
 import { formatDateDisplay } from '../../utils/DateUtils';
 import { AdminTabContext } from '../../context/AdminTabContext';
 import { useChurch } from '../../context/ChurchContext';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 import { 
   loadTeluguFonts, 
   TELUGU_FONT_OPTIONS, 
@@ -362,6 +363,7 @@ const STATUS_OPTIONS = [
 ];
 
 export default function AdminPromiseEditor() {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { setActiveTab, editingData, setEditingData, setTabByName } = useContext(AdminTabContext);
   const { activeChurch } = useChurch();
   const [loading, setLoading] = useState(false);
@@ -1766,7 +1768,7 @@ export default function AdminPromiseEditor() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -3255,4 +3257,4 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
   }
-});
+}));

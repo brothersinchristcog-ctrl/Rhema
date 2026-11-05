@@ -31,6 +31,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useQuizLanguage } from '../../context/QuizLanguageContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 import { useChurch } from '../../context/ChurchContext';
 import { RHEMA_CHURCH_ID } from '../../constants/ChurchConfig';
 import { useAuth } from '../../context/AuthContext';
@@ -65,6 +66,7 @@ function getQuizDateString(quiz: BibleQuiz): string {
 }
 
 export default function ChurchQuizzesScreen() {
+  const { isDark: _adminIsDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const { user } = useAuth();
@@ -269,8 +271,8 @@ export default function ChurchQuizzesScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0b1120' : '#FAF7F2' }]}>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#0b1120' : '#FAF7F2'} />
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={screenBg} />
 
       {/* Header */}
       <View
@@ -401,7 +403,7 @@ export default function ChurchQuizzesScreen() {
 
           return (
             <View style={styles.sectionHeadingRow}>
-              <Text style={[styles.sectionHeading, { color: isDark ? '#f8fafc' : '#0f172a' }]}>
+              <Text style={[styles.sectionHeading, { color: primaryText }]}>
                 {isAllDone ? ui.churchQuizzes : ui.availableQuizzes}
               </Text>
               <View style={[styles.sectionBadgeWrap, isAllDone && styles.sectionBadgeWrapCompleted]}>
@@ -471,7 +473,7 @@ export default function ChurchQuizzesScreen() {
         ) : quizzes.length === 0 ? (
           <View style={[styles.emptyCard, isDark && { backgroundColor: '#111827', borderColor: '#1f2937' }]}>
             <BookOpen size={28} color="#64748b" style={{ marginBottom: 8 }} />
-            <Text style={[styles.emptyTitle, { color: isDark ? '#f8fafc' : '#0f172a' }]}>
+            <Text style={[styles.emptyTitle, { color: primaryText }]}>
               {ui.noQuizzesAvailable}
             </Text>
             <Text style={styles.emptySub}>
@@ -481,7 +483,7 @@ export default function ChurchQuizzesScreen() {
         ) : filteredQuizzes.length === 0 ? (
           <View style={[styles.emptyCard, isDark && { backgroundColor: '#111827', borderColor: '#1f2937' }]}>
             <Calendar size={28} color="#64748b" style={{ marginBottom: 8 }} />
-            <Text style={[styles.emptyTitle, { color: isDark ? '#f8fafc' : '#0f172a' }]}>
+            <Text style={[styles.emptyTitle, { color: primaryText }]}>
               {ui.noQuizzesAvailable}
             </Text>
             <Text style={styles.emptySub}>
@@ -547,13 +549,13 @@ export default function ChurchQuizzesScreen() {
                 </View>
 
                 {/* Title & Description */}
-                <Text style={[styles.quizTitle, { color: isDark ? '#ffffff' : '#0f172a' }]} numberOfLines={2}>
+                <Text style={[styles.quizTitle, { color: primaryText }]} numberOfLines={2}>
                   {quiz.isDailyQuiz && quiz.dailyDate
                     ? getLocalizedDailyQuizTitle(quiz.dailyDate, quizLanguage)
                     : (quiz.translations?.[quizLanguage]?.title || quiz.title)}
                 </Text>
                 {Boolean(quiz.description && quiz.description !== quiz.title) && (
-                  <Text style={[styles.quizDesc, { color: isDark ? '#94a3b8' : '#64748b' }]} numberOfLines={2}>
+                  <Text style={[styles.quizDesc, { color: secondaryText }]} numberOfLines={2}>
                     {quiz.isDailyQuiz && quiz.dailyDate
                       ? getLocalizedDailyQuizDescription(quiz.dailyDate, quizLanguage)
                       : (quiz.translations?.[quizLanguage]?.description || quiz.description)}
@@ -668,7 +670,7 @@ export default function ChurchQuizzesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   container: {
     flex: 1,
   },
@@ -1184,4 +1186,4 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#10b981',
   },
-});
+}));

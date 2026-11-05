@@ -22,10 +22,12 @@ import { QuizDifficulty } from '../../types/Quiz';
 import { QUIZ_CATEGORIES } from '../../constants/BibleQuizCategories';
 import { useQuizLanguage } from '../../context/QuizLanguageContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 import { getQuizStrings } from '../../constants/BibleQuizTranslations';
 import QuizLanguageModal from './QuizLanguageModal';
 
 export default function BibleQuizLevelsScreen() {
+  const { isDark: _adminIsDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
@@ -62,8 +64,8 @@ export default function BibleQuizLevelsScreen() {
   ];
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0b1120' : '#FAF7F2' }]}>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#0b1120' : '#FAF7F2'} />
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={screenBg} />
 
       {/* Header */}
       <View
@@ -145,7 +147,7 @@ export default function BibleQuizLevelsScreen() {
 
         {/* Section Label */}
         <View style={styles.sectionHeaderRow}>
-          <Text style={[styles.sectionTitle, { color: isDark ? '#f8fafc' : '#0f172a' }]}>
+          <Text style={[styles.sectionTitle, { color: primaryText }]}>
             {ui.selectDifficulty}
           </Text>
         </View>
@@ -214,7 +216,7 @@ export default function BibleQuizLevelsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   container: {
     flex: 1,
   },
@@ -416,4 +418,4 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#ffffff',
   },
-});
+}));

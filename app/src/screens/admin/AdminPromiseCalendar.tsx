@@ -15,10 +15,12 @@ import { ChevronLeft , ArrowLeft } from 'lucide-react-native';
 import { AdminTabContext } from '../../context/AdminTabContext';
 
 import FirestoreService from '../../services/FirestoreService';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const { width } = Dimensions.get('window');
 
 export default function AdminPromiseCalendar() {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { setActiveTab, setTabByName, setEditingData } = useContext(AdminTabContext);
   const [loading, setLoading] = useState(true);
   const [promises, setPromises] = useState<any[]>([]);
@@ -182,7 +184,7 @@ function LegendItem({ color, border, label }: any) {
 
 // We use percentage-based flex layouts instead of fixed pixel widths to prevent flexWrap errors on different devices.
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -384,4 +386,4 @@ const styles = StyleSheet.create({
   manualInput: { backgroundColor: '#F9F6F0', borderWidth: 1, borderColor: '#E2DDD5', borderRadius: 10, padding: 12, fontSize: 12, color: '#1a2d5a', height: 120, textAlignVertical: 'top', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
   processBtn: { backgroundColor: '#1a2d5a', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 5 },
   processBtnTxt: { color: '#fff', fontSize: 12, fontWeight: '700' },
-});
+}));

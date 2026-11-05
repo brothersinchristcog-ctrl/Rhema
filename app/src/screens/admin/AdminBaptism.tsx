@@ -50,12 +50,14 @@ import FirestoreService, { BaptismRequest, BaptismHistoryItem } from '../../serv
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import { formatDateDisplay, formatDateTimeDisplay } from '../../utils/DateUtils';
 import { CustomAlert } from '../../components/CustomAlert';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const { width } = Dimensions.get('window');
 
 type StatusType = 'all' | 'pending' | 'under_review' | 'approved' | 'rejected' | 'completed';
 
 export default function AdminBaptism({ navigation, route, routeParams }: any) {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { user, member } = useAuth();
   const { activeChurch } = useChurch();
   const { setActiveTab } = useContext(AdminTabContext) || {};
@@ -955,7 +957,7 @@ export default function AdminBaptism({ navigation, route, routeParams }: any) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -1616,4 +1618,4 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#DC2626'
   }
-});
+}));

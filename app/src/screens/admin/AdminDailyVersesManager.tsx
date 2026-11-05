@@ -4,8 +4,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronLeft , ArrowLeft } from 'lucide-react-native';
 import { AdminTabContext } from '../../context/AdminTabContext';
 import SuperAdminVersesManager from './SuperAdminVersesManager';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 export default function AdminDailyVersesManager() {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { goBack, setTabByName } = useContext(AdminTabContext);
 
   return (
@@ -35,7 +37,7 @@ export default function AdminDailyVersesManager() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -91,4 +93,4 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontWeight: '500',
   },
-});
+}));

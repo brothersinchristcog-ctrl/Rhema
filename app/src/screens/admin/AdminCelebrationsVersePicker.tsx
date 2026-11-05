@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform } from 'react-native';
 import { ArrowLeft } from 'lucide-react-native';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const VERSES: Record<string, {ref: string, text: string}[]> = {
   birthday: [
@@ -200,6 +201,7 @@ const VERSES_TE: Record<string, {ref: string, text: string}[]> = {
 };
 
 export default function AdminCelebrationsVersePicker({ category, selectedVerseRef, onBack, onSelectVerse }: { category: string, selectedVerseRef?: string, onBack: () => void, onSelectVerse: (verse: {ref: string, text: string}) => void }) {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const [language, setLanguage] = React.useState<'en' | 'te'>('en');
   let normalizedCategory = 'birthday';
   if (category.toLowerCase().includes('wedding') || category.toLowerCase().includes('anniversary')) normalizedCategory = 'wedding';
@@ -261,7 +263,7 @@ export default function AdminCelebrationsVersePicker({ category, selectedVerseRe
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FAF8F2',
@@ -389,4 +391,4 @@ const styles = StyleSheet.create({
     color: '#162057',
     letterSpacing: 0.3,
   },
-});
+}));

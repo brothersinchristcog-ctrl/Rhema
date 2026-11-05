@@ -27,9 +27,11 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { QuizAttempt, BibleQuiz, QuizDifficulty } from '../../types/Quiz';
 import { useQuizLanguage } from '../../context/QuizLanguageContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 import { getQuizStrings } from '../../constants/BibleQuizTranslations';
 
 export default function BibleQuizResultScreen() {
+  const { isDark: _adminIsDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
@@ -49,12 +51,12 @@ export default function BibleQuizResultScreen() {
     category && ui.categories[category] ? ui.categories[category] : categoryTitleParam;
 
   // Theme tokens
-  const bg = isDark ? '#0b1120' : '#FAF7F2';
-  const cardBg = isDark ? '#111d31' : '#ffffff';
-  const cardBorder = isDark ? '#1f2e47' : '#e2e8f0';
-  const textPrimary = isDark ? '#f8fafc' : '#0f172a';
-  const textMuted = isDark ? '#94a3b8' : '#64748b';
-  const divider = isDark ? '#1f2e47' : '#e2e8f0';
+  const bg = screenBg;
+  const cardBg = cardSurface;
+  const cardBorder = adminBorderColor;
+  const textPrimary = primaryText;
+  const textMuted = secondaryText;
+  const divider = adminBorderColor;
 
   const isPassed = attempt?.passed;
   const isChurchQuiz = !level;
@@ -266,7 +268,7 @@ export default function BibleQuizResultScreen() {
             >
               {attempt.percentage}%
             </Text>
-            <Text style={[styles.scoreFraction, { color: isDark ? '#cbd5e1' : '#64748b' }]}>
+            <Text style={[styles.scoreFraction, { color: secondaryText }]}>
               {attempt.score} / {attempt.totalMarks} {ui.pointsEarned}
             </Text>
           </View>
@@ -429,7 +431,7 @@ export default function BibleQuizResultScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   flex: { flex: 1 },
   container: { flex: 1 },
   center: { justifyContent: 'center', alignItems: 'center', padding: 20 },
@@ -706,4 +708,4 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     flexShrink: 1,
   },
-});
+}));

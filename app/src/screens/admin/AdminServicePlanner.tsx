@@ -57,6 +57,7 @@ import ServiceRosterService, {
   ServiceDepartment,
   TimetableCategory
 } from '../../services/ServiceRosterService';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const { width } = Dimensions.get('window');
 
@@ -95,6 +96,7 @@ const NOTES_SUGGESTIONS = [
 ];
 
 export default function AdminServicePlanner({ navigation }: any) {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const insets = useSafeAreaInsets();
   const { activeChurch } = useChurch();
   const { setActiveTab } = useContext(AdminTabContext);
@@ -1986,7 +1988,7 @@ export default function AdminServicePlanner({ navigation }: any) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -3237,4 +3239,4 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1D4ED8',
   },
-});
+}));
