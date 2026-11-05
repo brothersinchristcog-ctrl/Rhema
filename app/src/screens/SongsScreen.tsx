@@ -502,8 +502,8 @@ export default function SongsScreen({ navigation, route }: any) {
         const srvs = primaryEvent.services || [];
         setWorshipServices(srvs);
         setHasActiveEventSongs(true);
-        // Default to 'all' so all songs of the event are shown, or the single service
-        setActiveServiceId(srvs.length > 1 ? 'all' : (srvs[0]?.id || 'all'));
+        // Automatically select the first service so its songs are displayed immediately
+        setActiveServiceId(srvs[0]?.id || '');
       } else {
         // No active or upcoming events with songs!
         setActiveEvent(null);
@@ -521,7 +521,16 @@ export default function SongsScreen({ navigation, route }: any) {
   };
 
   const handleShareSetlist = async () => {
-    const activeService: any = worshipServices.find(s => s.id === activeServiceId) || worshipServices[0];
+    const activeService: any = worshipServices.find(s => s.id === activeServiceId) || null;
+    if (!activeService) {
+      setAlertConfig({
+        visible: true,
+        title: 'Select a Service',
+        message: 'Please choose a service above before sharing the worship setlist.',
+        type: 'info'
+      });
+      return;
+    }
     const serviceName = activeService?.name || 'Sunday Service';
     const activeList = activeService?.songs || [];
     const churchTitle = activeEvent ? (activeEvent.titleEn || activeEvent.title || activeChurch?.name) : (activeChurch?.name || 'Sunday Worship Service');
@@ -807,24 +816,18 @@ export default function SongsScreen({ navigation, route }: any) {
   const validServices = Array.isArray(worshipServices) ? worshipServices.filter(Boolean) : [];
   const activeService: any = validServices.find((s: any) => s && s.id === activeServiceId) || (validServices.length > 0 ? validServices[0] : null);
   
-  // Return all songs of event if 'all' is selected or only 1 service, otherwise active service's songs
+  // Return ONLY songs of the selected service. Automatically defaults to the primary service so songs load immediately.
   const activeSetlist: any[] = useMemo(() => {
-    if (activeServiceId && activeServiceId !== 'all') {
-      const found = validServices.find((s: any) => s && s.id === activeServiceId);
-      if (found) return found.songs || [];
-    }
-    const all: any[] = [];
-    validServices.forEach((srv: any) => {
-      if (srv && Array.isArray(srv.songs)) {
-        all.push(...srv.songs);
-      }
-    });
-    return all;
+    const targetId = activeServiceId || validServices[0]?.id;
+    if (!targetId) return [];
+    const found = validServices.find((s: any) => s && s.id === targetId);
+    return (found && Array.isArray(found.songs)) ? found.songs : [];
   }, [validServices, activeServiceId]);
 
   const totalEventSongsCount = useMemo(() => {
-    return validServices.reduce((acc: number, s: any) => acc + (s.songs?.length || 0), 0);
-  }, [validServices]);
+    if (!activeService) return 0;
+    return activeService.songs?.length || 0;
+  }, [activeService]);
 
   // ── Event Songs as full WorshipSong list with 1-based sequential display numbers ──
   const eventSongItems: (WorshipSong & { displayNumber: number; masterIndex: number })[] = useMemo(() => {
@@ -1005,7 +1008,7 @@ export default function SongsScreen({ navigation, route }: any) {
 
   // ── Render Event Card Header ─────────────────────
   const renderEventCardHeader = () => {
-    if (!activeService || validServices.length === 0) {
+    if (!activeEvent || validServices.length === 0) {
       return (
         <View style={{ paddingHorizontal: 20, paddingTop: 36, paddingBottom: 24, alignItems: 'center' }}>
           <View style={{
@@ -1031,17 +1034,48 @@ export default function SongsScreen({ navigation, route }: any) {
       );
     }
 
-    // Format display date: handles start & end date range if present
+    // Format display date in DD Month YYYY format (e.g., 07 November 2026)
     const displayServiceDate = (() => {
+      const formatDDMonthYYYY = (dateStr: string): string => {
+        if (!dateStr) return '';
+        try {
+          const clean = dateStr.trim().split(' ')[0].split('T')[0];
+          const parts = clean.split('-');
+          let y = 0, m = 0, d = 0;
+          if (parts.length === 3) {
+            if (parts[0].length === 4) {
+              y = parseInt(parts[0], 10);
+              m = parseInt(parts[1], 10) - 1;
+              d = parseInt(parts[2], 10);
+            } else if (parts[2].length === 4) {
+              d = parseInt(parts[0], 10);
+              m = parseInt(parts[1], 10) - 1;
+              y = parseInt(parts[2], 10);
+            }
+          }
+          if (y && !isNaN(m) && d) {
+            const months = [
+              'January', 'February', 'March', 'April', 'May', 'June',
+              'July', 'August', 'September', 'October', 'November', 'December'
+            ];
+            const dayStr = String(d).padStart(2, '0');
+            const monthStr = months[m] || '';
+            return `${dayStr} ${monthStr} ${y}`;
+          }
+        } catch {}
+        return dateStr;
+      };
+
       if (activeService?.startDate && activeService?.endDate && activeService.startDate !== activeService.endDate) {
-        return `${activeService.startDate} – ${activeService.endDate}`;
+        return `${formatDDMonthYYYY(activeService.startDate)} – ${formatDDMonthYYYY(activeService.endDate)}`;
       }
-      return activeService?.date || (activeEvent ? (activeEvent.date || '') : '');
+      const rawDate = activeService?.date || (activeEvent ? (activeEvent.date || '') : '');
+      return formatDDMonthYYYY(rawDate);
     })();
 
-    const displayTitle = activeServiceId === 'all'
-      ? (activeEvent?.title || activeService?.name || 'Church Service Flow')
-      : (activeService?.name || activeEvent?.title || 'Church Service Flow');
+    const displayTitle = activeService
+      ? (activeService.name || activeEvent?.title || 'Church Service Flow')
+      : (activeEvent?.title || 'Church Service Flow');
 
     return (
       <View style={{ marginBottom: 8 }}>
@@ -1073,26 +1107,15 @@ export default function SongsScreen({ navigation, route }: any) {
                 </Text>
               ) : null}
 
-              {/* Date and Time stacked vertically without borders */}
-              {(displayServiceDate || activeService?.time) ? (
-                <View style={{ marginTop: 8, gap: 5 }}>
-                  {displayServiceDate ? (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <CalendarDays size={13} color={isDark ? '#FBBF24' : '#D97706'} />
-                      <Text style={{ fontSize: 12.5, color: isDark ? '#D4D4D8' : '#334155', fontWeight: '600' }}>
-                        {displayServiceDate}
-                      </Text>
-                    </View>
-                  ) : null}
-
-                  {activeService?.time ? (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Clock size={13} color={isDark ? '#38BDF8' : '#0284C7'} />
-                      <Text style={{ fontSize: 12.5, color: isDark ? '#D4D4D8' : '#334155', fontWeight: '600' }}>
-                        {activeService.time}
-                      </Text>
-                    </View>
-                  ) : null}
+              {/* Date in DD Month YYYY format below service name (Service Timing removed) */}
+              {displayServiceDate ? (
+                <View style={{ marginTop: 8 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <CalendarDays size={13} color={isDark ? '#FBBF24' : '#D97706'} />
+                    <Text style={{ fontSize: 12.5, color: isDark ? '#D4D4D8' : '#334155', fontWeight: '600' }}>
+                      {displayServiceDate}
+                    </Text>
+                  </View>
                 </View>
               ) : null}
             </View>
@@ -1119,6 +1142,17 @@ export default function SongsScreen({ navigation, route }: any) {
           {/* Bottom Event / Service Circle-Capsule Badge */}
           {validServices.length > 0 && (
             <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: isDark ? '#27272A' : '#F1F5F9' }}>
+              <Text style={{
+                fontSize: 11,
+                fontWeight: '800',
+                color: isDark ? '#A1A1AA' : '#64748B',
+                letterSpacing: 0.6,
+                textTransform: 'uppercase',
+                marginBottom: 8,
+              }}>
+                {activeServiceId ? 'Selected Service' : 'Select Service to View Songs'}
+              </Text>
+
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -1126,7 +1160,8 @@ export default function SongsScreen({ navigation, route }: any) {
               >
                 {validServices.map((srv: any) => {
                   if (!srv) return null;
-                  const isSelected = activeServiceId === srv?.id || (validServices.length === 1 && (!activeServiceId || activeServiceId === 'all')) || ((activeServiceId === 'all' || !activeServiceId) && srv?.id === activeService?.id);
+                  const isSelected = activeServiceId ? activeServiceId === srv?.id : srv?.id === validServices[0]?.id;
+                  const songCount = Array.isArray(srv.songs) ? srv.songs.length : 0;
 
                   return (
                     <TouchableOpacity
@@ -1136,24 +1171,41 @@ export default function SongsScreen({ navigation, route }: any) {
                         paddingVertical: 8,
                         borderRadius: 999,
                         backgroundColor: isDark ? '#121214' : '#F1F5F9',
-                        borderWidth: 1,
+                        borderWidth: 1.5,
                         borderColor: isDark ? '#27272A' : '#CBD5E1',
                         flexDirection: 'row',
                         alignItems: 'center',
                         justifyContent: 'center',
+                        gap: 6,
                       }, isSelected && {
                         backgroundColor: '#000000',
-                        borderColor: isDark ? '#3F3F46' : '#000000',
+                        borderColor: isDark ? '#52525B' : '#000000',
                       }]}
-                      onPress={() => setActiveServiceId(validServices.length === 1 ? 'all' : srv?.id)}
+                      onPress={() => setActiveServiceId(srv?.id)}
                       activeOpacity={0.8}
                     >
                       <Text style={[
                         { fontSize: 12.5, fontWeight: '700', color: isDark ? '#A1A1AA' : '#475569' },
                         isSelected && { color: '#FFFFFF', fontWeight: '800' }
                       ]}>
-                        {srv?.name || activeEvent?.title || 'Service'}
+                        {srv?.name || 'Service'}
                       </Text>
+                      {songCount > 0 && (
+                        <View style={{
+                          paddingHorizontal: 6,
+                          paddingVertical: 1.5,
+                          borderRadius: 8,
+                          backgroundColor: isSelected ? 'rgba(255,255,255,0.22)' : (isDark ? '#27272A' : '#E2E8F0'),
+                        }}>
+                          <Text style={{
+                            fontSize: 10.5,
+                            fontWeight: '700',
+                            color: isSelected ? '#FFFFFF' : (isDark ? '#A1A1AA' : '#64748B'),
+                          }}>
+                            {songCount}
+                          </Text>
+                        </View>
+                      )}
                     </TouchableOpacity>
                   );
                 })}
@@ -1162,50 +1214,52 @@ export default function SongsScreen({ navigation, route }: any) {
           )}
         </View>
 
-        {/* Search Bar placed directly below the Event Card */}
-        <View
-          style={[
-            styles.searchBar,
-            {
-              marginTop: 12,
-              marginBottom: 4,
-              backgroundColor: isDark ? '#18181B' : '#FFFFFF',
-              borderColor: isDark ? '#3F3F46' : '#CBD5E1',
-              borderWidth: 1.5,
-              shadowColor: '#000',
-              shadowOpacity: isDark ? 0.25 : 0.05,
-              shadowRadius: 6,
-              elevation: 2,
-            }
-          ]}
-        >
-          <Search size={19} color={isDark ? '#9CA3AF' : '#334155'} strokeWidth={2.2} />
-          <TextInput
-            placeholder="Search event songs by name or number..."
-            placeholderTextColor={isDark ? '#9CA3AF' : '#64748B'}
-            style={[styles.searchInput, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
-            value={search}
-            onChangeText={setSearch}
-            autoCorrect={false}
-            autoCapitalize="none"
-          />
-          {search.length > 0 && (
-            <TouchableOpacity
-              onPress={() => setSearch('')}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              style={{
-                width: 24,
-                height: 24,
-                borderRadius: 12,
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0',
-                justifyContent: 'center',
-                alignItems: 'center',
-              }}
-            >
-              <X size={13} color={isDark ? '#E5E7EB' : '#334155'} strokeWidth={2.4} />
-            </TouchableOpacity>
-          )}
-        </View>
+        {/* Search Bar placed directly below the Event Card only when a service is selected */}
+        {activeService ? (
+          <View
+            style={[
+              styles.searchBar,
+              {
+                marginTop: 12,
+                marginBottom: 4,
+                backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+                borderWidth: 1.5,
+                shadowColor: '#000',
+                shadowOpacity: isDark ? 0.25 : 0.05,
+                shadowRadius: 6,
+                elevation: 2,
+              }
+            ]}
+          >
+            <Search size={19} color={isDark ? '#9CA3AF' : '#334155'} strokeWidth={2.2} />
+            <TextInput
+              placeholder={`Search ${(activeService?.name || 'service').trim()} songs by name or number...`}
+              placeholderTextColor={isDark ? '#9CA3AF' : '#64748B'}
+              style={[styles.searchInput, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
+              value={search}
+              onChangeText={setSearch}
+              autoCorrect={false}
+              autoCapitalize="none"
+            />
+            {search.length > 0 && (
+              <TouchableOpacity
+                onPress={() => setSearch('')}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: 12,
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+              >
+                <X size={13} color={isDark ? '#E5E7EB' : '#334155'} strokeWidth={2.4} />
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : null}
       </View>
     );
   };
@@ -1579,7 +1633,7 @@ export default function SongsScreen({ navigation, route }: any) {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? '#FFFFFF' : '#0F172A'} />}
           ListHeaderComponent={renderEventCardHeader()}
           ListEmptyComponent={
-            (!activeService || validServices.length === 0) ? null : (
+            (!activeEvent || validServices.length === 0) ? null : (
               <View style={styles.emptyState}>
                 <Music size={44} color="#cbd5e1" />
                 <Text style={[styles.emptyTitle, { color: isDark ? '#E4E4E7' : '#0F172A' }]}>

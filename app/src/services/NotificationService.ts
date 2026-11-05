@@ -413,7 +413,13 @@ class NotificationService {
   // Handle notifications when the app is open (foreground)
   setupForegroundListener(navigation?: any) {
     return messaging().onMessage(async remoteMessage => {
-      console.log('⚡ Foreground push received:', remoteMessage?.notification?.title);
+      const title = remoteMessage?.notification?.title || remoteMessage?.data?.title || remoteMessage?.data?.type || 'Notification';
+      const body = remoteMessage?.notification?.body || remoteMessage?.data?.body || '';
+      console.log('⚡ Foreground push received:', title, {
+        body,
+        data: remoteMessage?.data,
+        hasNotification: !!remoteMessage?.notification,
+      });
       // Foreground notifications are cleanly displayed via the in-app sliding banner in App.js
       // System modal Alert.alert is suppressed to avoid duplicate intrusive popups
     });
