@@ -339,10 +339,13 @@ export async function findActiveLiveStream(
           const titleMatch = html.match(/<title>([^<]+)<\/title>/);
           const title = titleMatch 
             ? titleMatch[1].replace(/ - YouTube$/i, '').trim() 
-            : 'Church Video';
+            : 'Church Live Stream';
 
-          console.log(`🔴 [YouTubeService] Stream / recording resolved directly: ${liveVideoId} ("${title}") [isLiveNow: ${isLiveNow || isLiveContent}]`);
-          return { videoId: liveVideoId, title, isLiveNow: !!(isLiveNow || isLiveContent) };
+          // Only return when the stream is actively broadcasting live
+          if (isLiveNow || isLiveContent) {
+            console.log(`🔴 [YouTubeService] Live stream resolved directly: ${liveVideoId} ("${title}") [isLiveNow: ${isLiveNow}]`);
+            return { videoId: liveVideoId, title, isLiveNow: true };
+          }
         }
       } catch (scrapeLiveErr) {
         console.warn('⚠️ [YouTubeService] Direct live check notice:', scrapeLiveErr);
