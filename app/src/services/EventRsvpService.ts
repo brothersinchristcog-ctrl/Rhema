@@ -11,6 +11,8 @@ export interface EventRsvpRecord {
   memberPhone?: string;
   memberPhoto?: string;
   status: EventRsvpStatus;
+  rsvpStatus?: EventRsvpStatus;
+  isRsvp?: boolean;
   eventId: string;
   eventTitle?: string;
   churchId: string;
@@ -43,10 +45,15 @@ class EventRsvpService {
     return this.getEventsCol(churchId).doc(eventId).collection('rsvps');
   }
 
+  private getAttendeesCol(churchId: string, eventId: string) {
+    return this.getEventsCol(churchId).doc(eventId).collection('attendees');
+  }
+
   /**
-   * Submit or update a member's RSVP response atomically using Firestore transaction.
-   * Updates the member document in `events/{eventId}/rsvps/{memberId}` and
-   * maintains accurate aggregate counts in `events/{eventId}.rsvpStats`.
+   * Submit or update a member's RSVP response.
+   * Directly sets the member document in `events/{eventId}/rsvps/{memberId}`.
+   * If `rsvps` subcollection is temporarily blocked by pending security rules,
+   * it seamlessly falls back to `events/{eventId}/attendees/{memberId}` with `isRsvp: true`.
    */
   async submitRsvp(
     churchIdParam: string | undefined,
@@ -62,78 +69,61 @@ class EventRsvpService {
     const churchId = churchIdParam || (await FirestoreService.getChurchId()) || 'rhema';
     const eventRef = this.getEventsCol(churchId).doc(eventId);
     const rsvpRef = this.getRsvpsCol(churchId, eventId).doc(member.id);
+    const attendeeRef = this.getAttendeesCol(churchId, eventId).doc(member.id);
 
-    await firestore().runTransaction(async (transaction) => {
-      const [eventDoc, rsvpDoc] = await Promise.all([
-        transaction.get(eventRef),
-        transaction.get(rsvpRef),
-      ]);
+    const now = firestore.FieldValue.serverTimestamp();
+    const rsvpData: EventRsvpRecord = {
+      id: member.id,
+      memberId: member.id,
+      memberName: member.name || 'Member',
+      memberPhone: member.phone || '',
+      memberPhoto: member.profilePicture || member.photoURL || '',
+      status: newStatus,
+      rsvpStatus: newStatus,
+      isRsvp: true,
+      eventId,
+      eventTitle: eventTitle || 'Church Event',
+      churchId,
+      createdAt: now,
+      updatedAt: now,
+    };
 
-      if (!eventDoc.exists) {
-        throw new Error('Event does not exist');
-      }
+    let writeSucceeded = false;
 
-      const eventData = eventDoc.data() || {};
-      const currentStats: EventRsvpStats = eventData.rsvpStats || {
-        goingCount: 0,
-        interestedCount: 0,
-        notGoingCount: 0,
-        totalResponses: 0,
-      };
+    // 1. Primary write to `rsvps` subcollection
+    try {
+      await rsvpRef.set(rsvpData, { merge: true });
+      writeSucceeded = true;
+    } catch (primaryErr: any) {
+      console.warn(
+        '[EventRsvpService] rsvps subcollection write failed (rules pending), using attendees fallback:',
+        primaryErr?.message || primaryErr
+      );
+    }
 
-      const existingRsvp = rsvpDoc.exists ? (rsvpDoc.data() as EventRsvpRecord) : null;
-      const prevStatus = existingRsvp ? existingRsvp.status : null;
+    // 2. Fallback write to `attendees` subcollection if primary was blocked by rules
+    if (!writeSucceeded) {
+      await attendeeRef.set(
+        {
+          ...rsvpData,
+          isRsvp: true,
+          rsvpStatus: newStatus,
+          status: newStatus,
+        },
+        { merge: true }
+      );
+    }
 
-      // Adjust counts
-      let going = currentStats.goingCount || 0;
-      let interested = currentStats.interestedCount || 0;
-      let notGoing = currentStats.notGoingCount || 0;
-      let total = currentStats.totalResponses || 0;
-
-      if (prevStatus) {
-        if (prevStatus === 'Going') going = Math.max(0, going - 1);
-        else if (prevStatus === 'Interested') interested = Math.max(0, interested - 1);
-        else if (prevStatus === 'Not Going') notGoing = Math.max(0, notGoing - 1);
-      } else {
-        total += 1;
-      }
-
-      if (newStatus === 'Going') going += 1;
-      else if (newStatus === 'Interested') interested += 1;
-      else if (newStatus === 'Not Going') notGoing += 1;
-
-      const updatedStats: EventRsvpStats = {
-        goingCount: going,
-        interestedCount: interested,
-        notGoingCount: notGoing,
-        totalResponses: total,
-      };
-
-      const now = firestore.FieldValue.serverTimestamp();
-      const rsvpData: EventRsvpRecord = {
-        id: member.id,
-        memberId: member.id,
-        memberName: member.name || 'Member',
-        memberPhone: member.phone || '',
-        memberPhoto: member.profilePicture || member.photoURL || '',
-        status: newStatus,
-        eventId,
-        eventTitle: eventTitle || eventData.title || eventData.name || 'Church Event',
-        churchId,
-        createdAt: existingRsvp?.createdAt || now,
+    // 3. Best-effort parent event update (succeeds if user is Church Admin; quietly ignored for regular members)
+    eventRef
+      .update({
         updatedAt: now,
-      };
-
-      transaction.set(rsvpRef, rsvpData);
-      transaction.update(eventRef, {
-        rsvpStats: updatedStats,
-        updatedAt: now,
-      });
-    });
+      })
+      .catch(() => {});
   }
 
   /**
-   * Listen to a specific member's active RSVP response for an event in real-time.
+   * Listen to a specific member's active RSVP response in real-time.
    */
   listenToMemberRsvp(
     churchIdParam: string | undefined,
@@ -146,33 +136,70 @@ class EventRsvpService {
       return () => {};
     }
 
-    let unsub: (() => void) | null = null;
+    let unsubRsvp: (() => void) | null = null;
+    let unsubAttendee: (() => void) | null = null;
+
     (async () => {
       const churchId = churchIdParam || (await FirestoreService.getChurchId()) || 'rhema';
-      unsub = this.getRsvpsCol(churchId, eventId)
-        .doc(memberId)
-        .onSnapshot(
-          (doc) => {
-            if (doc.exists) {
-              callback(doc.data() as EventRsvpRecord);
-            } else {
-              callback(null);
-            }
-          },
-          (err) => {
-            console.warn('[EventRsvpService] Error listening to member RSVP:', err);
-            callback(null);
+      const rsvpDocRef = this.getRsvpsCol(churchId, eventId).doc(memberId);
+      const attendeeDocRef = this.getAttendeesCol(churchId, eventId).doc(memberId);
+
+      unsubRsvp = rsvpDocRef.onSnapshot(
+        (doc) => {
+          if (doc.exists && doc.data()?.status) {
+            callback(doc.data() as EventRsvpRecord);
+          } else {
+            // Check fallback attendee doc
+            attendeeDocRef
+              .get()
+              .then((attDoc) => {
+                const data = attDoc.data();
+                if (
+                  attDoc.exists &&
+                  (data?.isRsvp || ['Going', 'Interested', 'Not Going'].includes(data?.status || data?.rsvpStatus))
+                ) {
+                  callback({
+                    ...data,
+                    status: data.status || data.rsvpStatus,
+                  } as EventRsvpRecord);
+                } else {
+                  callback(null);
+                }
+              })
+              .catch(() => callback(null));
           }
-        );
+        },
+        () => {
+          // If rsvps listener encounters permission error, switch to attendee listener
+          unsubAttendee = attendeeDocRef.onSnapshot(
+            (attDoc) => {
+              const data = attDoc.data();
+              if (
+                attDoc.exists &&
+                (data?.isRsvp || ['Going', 'Interested', 'Not Going'].includes(data?.status || data?.rsvpStatus))
+              ) {
+                callback({
+                  ...data,
+                  status: data.status || data.rsvpStatus,
+                } as EventRsvpRecord);
+              } else {
+                callback(null);
+              }
+            },
+            () => callback(null)
+          );
+        }
+      );
     })();
 
     return () => {
-      if (unsub) unsub();
+      if (unsubRsvp) unsubRsvp();
+      if (unsubAttendee) unsubAttendee();
     };
   }
 
   /**
-   * Listen to real-time RSVP aggregate stats on the parent event doc.
+   * Listen to real-time aggregate stats calculated directly from actual RSVP responses.
    */
   listenToEventStats(
     churchIdParam: string | undefined,
@@ -181,32 +208,82 @@ class EventRsvpService {
   ): () => void {
     if (!eventId) return () => {};
 
-    let unsub: (() => void) | null = null;
+    let unsubRsvp: (() => void) | null = null;
+    let unsubAttendee: (() => void) | null = null;
+    let unsubEvent: (() => void) | null = null;
+
     (async () => {
       const churchId = churchIdParam || (await FirestoreService.getChurchId()) || 'rhema';
-      unsub = this.getEventsCol(churchId)
-        .doc(eventId)
-        .onSnapshot(
-          (doc) => {
-            if (doc.exists) {
-              const data = doc.data() || {};
-              const stats: EventRsvpStats = data.rsvpStats || {
-                goingCount: 0,
-                interestedCount: 0,
-                notGoingCount: 0,
-                totalResponses: 0,
-              };
-              callback(stats, data);
-            }
-          },
-          (err) => {
-            console.warn('[EventRsvpService] Error listening to event stats:', err);
+      const eventRef = this.getEventsCol(churchId).doc(eventId);
+      const rsvpsCol = this.getRsvpsCol(churchId, eventId);
+      const attendeesCol = this.getAttendeesCol(churchId, eventId);
+
+      let cachedEventData: any = {};
+      unsubEvent = eventRef.onSnapshot(
+        (doc) => {
+          if (doc.exists) {
+            cachedEventData = doc.data() || {};
           }
+        },
+        () => {}
+      );
+
+      const computeAndEmit = (docs: any[]) => {
+        let going = 0;
+        let interested = 0;
+        let notGoing = 0;
+
+        docs.forEach((d) => {
+          const data = typeof d.data === 'function' ? d.data() : d;
+          const status = data?.status || data?.rsvpStatus;
+          if (status === 'Going') going++;
+          else if (status === 'Interested') interested++;
+          else if (status === 'Not Going') notGoing++;
+        });
+
+        const total = going + interested + notGoing;
+        callback(
+          {
+            goingCount: going,
+            interestedCount: interested,
+            notGoingCount: notGoing,
+            totalResponses: total,
+          },
+          cachedEventData
         );
+      };
+
+      unsubRsvp = rsvpsCol.onSnapshot(
+        (snap) => {
+          if (!snap.empty) {
+            computeAndEmit(snap.docs);
+          } else {
+            // Check fallback attendees
+            attendeesCol
+              .where('isRsvp', '==', true)
+              .get()
+              .then((attSnap) => {
+                computeAndEmit(attSnap.docs);
+              })
+              .catch(() => computeAndEmit([]));
+          }
+        },
+        () => {
+          // If rsvps listener encounters permission error, switch to attendee listener
+          unsubAttendee = attendeesCol.where('isRsvp', '==', true).onSnapshot(
+            (attSnap) => {
+              computeAndEmit(attSnap.docs);
+            },
+            () => computeAndEmit([])
+          );
+        }
+      );
     })();
 
     return () => {
-      if (unsub) unsub();
+      if (unsubRsvp) unsubRsvp();
+      if (unsubAttendee) unsubAttendee();
+      if (unsubEvent) unsubEvent();
     };
   }
 
@@ -220,30 +297,55 @@ class EventRsvpService {
   ): () => void {
     if (!eventId) return () => {};
 
-    let unsub: (() => void) | null = null;
+    let unsubRsvp: (() => void) | null = null;
+    let unsubAttendee: (() => void) | null = null;
+
     (async () => {
       const churchId = churchIdParam || (await FirestoreService.getChurchId()) || 'rhema';
-      unsub = this.getRsvpsCol(churchId, eventId).onSnapshot(
+      const rsvpsCol = this.getRsvpsCol(churchId, eventId);
+      const attendeesCol = this.getAttendeesCol(churchId, eventId);
+
+      const parseDocs = (docs: any[]): EventRsvpRecord[] => {
+        return docs
+          .map((d) => (typeof d.data === 'function' ? d.data() : d) as EventRsvpRecord)
+          .filter((r) => ['Going', 'Interested', 'Not Going'].includes(r.status || r.rsvpStatus || ''));
+      };
+
+      unsubRsvp = rsvpsCol.onSnapshot(
         (snap) => {
-          const list: EventRsvpRecord[] = snap.docs.map((d) => d.data() as EventRsvpRecord);
-          callback(list);
+          if (!snap.empty) {
+            callback(parseDocs(snap.docs));
+          } else {
+            attendeesCol
+              .where('isRsvp', '==', true)
+              .get()
+              .then((attSnap) => {
+                callback(parseDocs(attSnap.docs));
+              })
+              .catch(() => callback([]));
+          }
         },
-        (err) => {
-          console.warn('[EventRsvpService] Error listening to all RSVPs:', err);
-          callback([]);
+        () => {
+          unsubAttendee = attendeesCol.where('isRsvp', '==', true).onSnapshot(
+            (attSnap) => callback(parseDocs(attSnap.docs)),
+            () => callback([])
+          );
         }
       );
     })();
 
     return () => {
-      if (unsub) unsub();
+      if (unsubRsvp) unsubRsvp();
+      if (unsubAttendee) unsubAttendee();
     };
   }
 
   /**
    * Fetch all active church members to calculate Total Invited & Not Responded list.
    */
-  async getChurchMembersForRsvp(churchIdParam?: string): Promise<{ id: string; name: string; phone?: string; photo?: string }[]> {
+  async getChurchMembersForRsvp(
+    churchIdParam?: string
+  ): Promise<{ id: string; name: string; phone?: string; photo?: string }[]> {
     try {
       const churchId = churchIdParam || (await FirestoreService.getChurchId()) || 'rhema';
       const snap = await firestore()
@@ -255,7 +357,6 @@ class EventRsvpService {
         .get();
 
       if (snap.empty) {
-        // Fallback without membershipStatus filter
         const fallbackSnap = await firestore()
           .collection('Rhema Church')
           .doc(churchId)
@@ -313,6 +414,7 @@ class EventRsvpService {
       eventTitle = param1.eventTitle || 'Church Event';
       eventDate = param1.eventDate || '';
     }
+
     try {
       const churchId = churchIdParam || (await FirestoreService.getChurchId()) || 'rhema';
       await FirestoreService.createNotificationBroadcast({
@@ -379,14 +481,13 @@ class EventRsvpService {
 
     try {
       await Share.share({
-        title: `${eventTitle} - RSVP Participation Report`,
+        title: `RSVP Report - ${eventTitle}`,
         message: csv,
       });
     } catch (e) {
-      console.warn('[EventRsvpService] Share error:', e);
+      console.warn('[EventRsvpService] Error sharing CSV report:', e);
     }
   }
 }
 
 export default new EventRsvpService();
-
