@@ -1069,7 +1069,10 @@ async function handleBroadcastPushDispatch(data: any, churchIdParam?: string, me
     const targetQuizId = data.quizId || data.relatedId || (data.type === 'quiz' ? data.id : undefined);
     const notificationData: Record<string, string> = {
       type,
-      id: String(data.prayerId || data.requestId || targetQuizId || data.sermonId || messageIdParam || ''),
+      id: String(data.eventId || data.prayerId || data.requestId || targetQuizId || data.sermonId || messageIdParam || ''),
+      title,
+      body: plainBody.length > 200 ? plainBody.substring(0, 197) + '...' : plainBody,
+      ...(data.eventId ? { eventId: String(data.eventId) } : {}),
       ...(data.prayerId ? { prayerId: String(data.prayerId) } : {}),
       ...(data.requestId ? { requestId: String(data.requestId) } : {}),
       ...(data.targetTab ? { targetTab: String(data.targetTab) } : {}),

@@ -181,8 +181,17 @@ class NotificationService {
           break;
         }
         case 'event':
-          nav.navigate('Events');
+        case 'church_event':
+        case 'event_rsvp': {
+          const eventId = rawData.eventId || rawData.id || id;
+          console.log('📅 [NotificationService] Routing to EventDetails:', { eventId });
+          if (eventId) {
+            nav.navigate('EventDetails', { eventId, id: eventId });
+          } else {
+            nav.navigate('Events');
+          }
           break;
+        }
         case 'online_meeting':
           try {
             nav.navigate('OnlineMeetings');

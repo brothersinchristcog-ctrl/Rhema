@@ -51,6 +51,9 @@ service cloud.firestore {
     match /{path=**}/attendees/{attendeeId} {
       allow read, write: if isAuthenticated();
     }
+    match /{path=**}/rsvps/{rsvpId} {
+      allow read, write: if isAuthenticated();
+    }
     match /{path=**}/bibleQuizzes/{quizId} {
       allow read, write: if isAuthenticated();
     }
@@ -89,6 +92,9 @@ service cloud.firestore {
       allow write: if isAdmin();
 
       match /attendees/{attendeeId} {
+        allow read, write: if isAuthenticated();
+      }
+      match /rsvps/{rsvpId} {
         allow read, write: if isAuthenticated();
       }
     }
@@ -245,6 +251,9 @@ service cloud.firestore {
         match /attendees/{attendeeId} {
           allow read, write: if isAuthenticated();
         }
+        match /rsvps/{rsvpId} {
+          allow read, write: if isAuthenticated();
+        }
       }
 
       // Sermons
@@ -358,6 +367,10 @@ service cloud.firestore {
         match /attendees/{attendeeId} {
           allow read: if isAuthenticated();
           allow write: if isAuthenticated() && request.auth.uid == attendeeId;
+        }
+
+        match /rsvps/{rsvpId} {
+          allow read, write: if isAuthenticated();
         }
       }
 

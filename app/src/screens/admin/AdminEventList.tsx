@@ -13,7 +13,8 @@ import {
   Modal,
   Alert
 } from 'react-native';
-import { MapPin, Clock, Calendar, Trash2, ChevronLeft, Plus, Users, QrCode, Download, Share2, X , ArrowLeft } from 'lucide-react-native';
+import { MapPin, Clock, Calendar, Trash2, ChevronLeft, Plus, Users, QrCode, Download, Share2, X , ArrowLeft, Vote } from 'lucide-react-native';
+import EventRsvpAnalyticsModal from './EventRsvpAnalyticsModal';
 import QRCode from 'react-native-qrcode-svg';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -59,6 +60,7 @@ export default function AdminEventList() {
   const [eventToDelete, setEventToDelete] = useState<any>(null);
   const [showDeleteSuccess, setShowDeleteSuccess] = useState(false);
   const [selectedQrEvent, setSelectedQrEvent] = useState<any>(null);
+  const [selectedRsvpEvent, setSelectedRsvpEvent] = useState<any>(null);
   const qrRef = useRef<any>(null);
   const [churchDetails, setChurchDetails] = useState({ id: '', name: 'Rhema Global Ministries', code: 'RHEMA' });
 
@@ -321,6 +323,12 @@ export default function AdminEventList() {
                     {(event.status || 'Published').toUpperCase()}
                   </Text>
                 </View>
+                {event.rsvpEnabled === true && (
+                  <View style={styles.badgeRsvp}>
+                    <Vote size={10} color="#4338CA" style={{ marginRight: 3 }} />
+                    <Text style={styles.badgeRsvpTxt}>RSVP POLL</Text>
+                  </View>
+                )}
                 {(event.requireEventQR === true || event.requireEventQr === true) && (
                   <View style={styles.badgeQrReq}>
                     <QrCode size={10} color="#78350F" style={{ marginRight: 3 }} />
@@ -346,6 +354,16 @@ export default function AdminEventList() {
                 <Users size={12} color="#047857" />
                 <Text style={styles.attendeesActionTxt}>Attend</Text>
               </TouchableOpacity>
+              {event.rsvpEnabled === true && (
+                <TouchableOpacity
+                  onPress={() => setSelectedRsvpEvent(event)}
+                  style={styles.rsvpAction}
+                  activeOpacity={0.7}
+                >
+                  <Vote size={12} color="#4338CA" />
+                  <Text style={styles.rsvpActionTxt}>RSVP</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity onPress={() => handleEdit(event)} style={styles.editAction}>
                 <Text style={styles.editActionTxt}>Edit</Text>
               </TouchableOpacity>
@@ -463,6 +481,18 @@ export default function AdminEventList() {
             </View>
           </View>
         </Modal>
+      )}
+
+      {/* RSVP Participation Analytics Modal */}
+      {selectedRsvpEvent && (
+        <EventRsvpAnalyticsModal
+          visible={!!selectedRsvpEvent}
+          onClose={() => setSelectedRsvpEvent(null)}
+          eventId={selectedRsvpEvent.id}
+          eventTitle={selectedRsvpEvent.name || selectedRsvpEvent.title || 'Event'}
+          eventDate={formatDate(selectedRsvpEvent.date)}
+          churchId={churchDetails.id}
+        />
       )}
 
       {/* Delete Success Modal */}
@@ -594,6 +624,38 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   successSecBtn: { height: 52, borderRadius: 14, width: '100%', justifyContent: 'center', alignItems: 'center', borderWidth: 1.5, borderColor: '#E2E8F0', backgroundColor: '#F8FAFC' },
   successSecTxt: { color: '#475569', fontSize: 14, fontWeight: '800' },
 
+  badgeRsvp: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginLeft: 6,
+  },
+  badgeRsvpTxt: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#4338CA',
+  },
+  rsvpAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+    gap: 4,
+  },
+  rsvpActionTxt: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#4338CA',
+  },
   badgeQrReq: {
     flexDirection: 'row',
     alignItems: 'center',
