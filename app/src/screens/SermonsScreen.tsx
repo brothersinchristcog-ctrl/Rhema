@@ -122,6 +122,27 @@ const formatTabCategory = (cat: string): string => {
   return trimmed;
 };
 
+const normalizeCategory = (cat: string): string => {
+  if (!cat) return '';
+  return cat
+    .toLowerCase()
+    .replace(/[\u2018\u2019'`]/g, '')
+    .replace(/[-_]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+const isCategoryMatch = (sermonCat: string, filterCat: string): boolean => {
+  const normS = normalizeCategory(sermonCat);
+  const normF = normalizeCategory(filterCat);
+  if (!normS || !normF) return false;
+  if (normS === normF) return true;
+  // Handle women vs womens and singular vs plural
+  const canonicalS = normS.replace(/^women\b/, 'womens').replace(/s$/, '');
+  const canonicalF = normF.replace(/^women\b/, 'womens').replace(/s$/, '');
+  return canonicalS === canonicalF;
+};
+
 const C = {
   lime: '#c9e8a3',
   ink: '#16213f',
@@ -409,6 +430,14 @@ const MonthSheet = ({
           style={[styles.sheet, { backgroundColor: colors.surface, borderColor: colors.border }]}
           onPress={(e) => e.stopPropagation()}
         >
+          {/* Header row with Sheet Title and Close */}
+          <View style={styles.sheetHeaderRow}>
+            <Text style={[styles.sheetTitle, { color: colors.text }]}>Select Month & Year</Text>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={{ fontSize: 14, fontWeight: '700', color: isDark ? C.lime : (colors.accent || '#2563EB') }}>Done</Text>
+            </TouchableOpacity>
+          </View>
+
           <View style={styles.yr}>
             <TouchableOpacity
               style={[
@@ -583,6 +612,7 @@ const SermonItem = ({
   onDotsPress,
   colors,
   isDark,
+  activeCategory,
 }: {
   s: SermonItemData;
   onOpen: (s: SermonItemData) => void;
@@ -590,6 +620,7 @@ const SermonItem = ({
   onDotsPress: (s: SermonItemData) => void;
   colors: any;
   isDark: boolean;
+  activeCategory?: string;
 }) => {
   const d = pd(s.date);
   const cardDef = getSermonCardColor(index);
@@ -601,6 +632,10 @@ const SermonItem = ({
   const iconPillBg = isLight ? 'rgba(15, 23, 42, 0.08)' : 'rgba(255, 255, 255, 0.18)';
   const dividerColor = isDark ? 'rgba(255, 255, 255, 0.25)' : '#94A3B8';
   const metaColor = isDark ? 'rgba(255, 255, 255, 0.75)' : '#64748B';
+
+  const displayCategory = (activeCategory && activeCategory !== 'All' && activeCategory !== 'Uncategorized')
+    ? activeCategory
+    : (s.cat || 'Sunday Service');
 
   const a = useRef(new Animated.Value(0)).current;
 
@@ -653,7 +688,7 @@ const SermonItem = ({
             <View style={{ flexDirection: 'row', alignItems: 'flex-end', flex: 1 }}>
               <View style={[styles.tab, { backgroundColor: cardColor }]}>
                 <Text numberOfLines={1} style={[styles.tabTxt, { color: titleColor }]}>
-                  {formatTabCategory(s.cat)}
+                  {formatTabCategory(displayCategory)}
                 </Text>
               </View>
               {/* Inverted corner connecting tab to card body seamlessly */}
@@ -689,6 +724,11 @@ const SermonItem = ({
                 <Text numberOfLines={1} style={[styles.sp, { color: subColor }]}>
                   {s.spk}
                 </Text>
+                {!!s.verse && (
+                  <Text numberOfLines={1} style={[styles.vs, { color: subColor, opacity: 0.95 }]}>
+                    📖 {s.verse}
+                  </Text>
+                )}
               </View>
               <TouchableOpacity
                 activeOpacity={0.7}
@@ -731,11 +771,11 @@ export default function SermonsScreen({ navigation }: any) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Month & Year state: start with current month/year
+  // Month & Year state: By default, show current month and year
   const now = new Date();
   const [y, setY] = useState(now.getFullYear());
   const [m, setM] = useState(now.getMonth());
-  const [day, setDay] = useState<number | null>(null); // null = All days
+  const [day, setDay] = useState<number | null>(null); // null = All days of month
   const [sheet, setSheet] = useState(false);
 
   // Card Options Modal
@@ -787,11 +827,18 @@ export default function SermonsScreen({ navigation }: any) {
     const sAny = s as any;
     let catsArray: string[] = [];
     if (typeof s.categories === 'string' && s.categories.trim()) {
-      catsArray = s.categories.split(';').map((c: string) => c.trim()).filter(Boolean);
+      catsArray = s.categories.split(/[;,|]/).map((c: string) => c.trim()).filter(Boolean);
     } else if (Array.isArray(sAny.categories)) {
       catsArray = sAny.categories.map((c: any) => typeof c === 'string' ? c.trim() : '').filter(Boolean);
     } else if (sAny.category) {
       catsArray = [String(sAny.category).trim()];
+    }
+
+    if (sAny.category && typeof sAny.category === 'string') {
+      const singleCat = sAny.category.trim();
+      if (singleCat && !catsArray.includes(singleCat)) {
+        catsArray.push(singleCat);
+      }
     }
 
     const sermonCat = catsArray[0] || 'Sunday Service';
@@ -823,18 +870,18 @@ export default function SermonsScreen({ navigation }: any) {
     try {
       setLoading(true);
       const [data, serverCats] = await Promise.all([
-        FirestoreService.getSermons(64),
+        FirestoreService.getSermons(250),
         FirestoreService.getSermonCategories().catch(() => [])
       ]);
       const visible = (data || []).filter((s: any) => isSermonVisibleToMembers(s));
       const mapped = visible.map(mapFirestoreSermon);
       setSermons(mapped);
 
-      // Build restored complete category list: All + ALL_CATEGORIES + serverCats + sermonCats + Uncategorized
+      // Collect any custom categories from Firestore
       const sermonCats: string[] = [];
       visible.forEach((s: any) => {
         if (typeof s.categories === 'string' && s.categories.trim()) {
-          s.categories.split(';').forEach((c: string) => {
+          s.categories.split(/[;,|]/).forEach((c: string) => {
             const trimmed = c.trim();
             if (trimmed && !sermonCats.includes(trimmed)) sermonCats.push(trimmed);
           });
@@ -843,6 +890,9 @@ export default function SermonsScreen({ navigation }: any) {
             const trimmed = typeof c === 'string' ? c.trim() : '';
             if (trimmed && !sermonCats.includes(trimmed)) sermonCats.push(trimmed);
           });
+        } else if (s.category && typeof s.category === 'string') {
+          const trimmed = s.category.trim();
+          if (trimmed && !sermonCats.includes(trimmed)) sermonCats.push(trimmed);
         }
       });
 
@@ -858,17 +908,6 @@ export default function SermonsScreen({ navigation }: any) {
       merged.push('Uncategorized');
 
       setCategoryList(merged);
-
-      // If sermons exist, set year & month to the newest sermon's date
-      if (mapped.length > 0) {
-        const sorted = [...mapped].sort((a, b) => pd(b.date).getTime() - pd(a.date).getTime());
-        const latest = sorted[0];
-        if (latest && latest.date) {
-          const ld = pd(latest.date);
-          setY(ld.getFullYear());
-          setM(ld.getMonth());
-        }
-      }
     } catch (err) {
       console.warn('Error fetching sermons from Firestore:', err);
       setSermons([]);
@@ -889,14 +928,69 @@ export default function SermonsScreen({ navigation }: any) {
 
   const catOK = (s: SermonItemData) => {
     if (activeCategory === 'All') return true;
-    if (activeCategory === 'Uncategorized') return s.categoriesList.length === 0;
-    return s.categoriesList.includes(activeCategory);
+    if (activeCategory === 'Uncategorized') return !s.categoriesList || s.categoriesList.length === 0;
+    if (isCategoryMatch(s.cat, activeCategory)) return true;
+    if (s.categoriesList && s.categoriesList.some((c) => isCategoryMatch(c, activeCategory))) {
+      return true;
+    }
+    return false;
   };
 
   const inMonth = (s: SermonItemData) => {
     const d = pd(s.date);
     return d.getFullYear() === y && d.getMonth() === m;
   };
+
+  // Dynamic category filters: computed based on sermons available in the selected month & year
+  const dynamicCategories = useMemo(() => {
+    const monthSermons = sermons.filter(inMonth);
+    const set = new Set<string>();
+
+    monthSermons.forEach((s) => {
+      if (s.categoriesList && s.categoriesList.length > 0) {
+        s.categoriesList.forEach((c) => {
+          if (c && c.trim()) set.add(c.trim());
+        });
+      } else if (s.cat && s.cat.trim()) {
+        set.add(s.cat.trim());
+      }
+    });
+
+    const result: string[] = ['All'];
+
+    if (monthSermons.length > 0) {
+      ALL_CATEGORIES.forEach((cat) => {
+        if (cat !== 'All' && cat !== 'Uncategorized') {
+          if (Array.from(set).some((c) => isCategoryMatch(c, cat))) {
+            result.push(cat);
+          }
+        }
+      });
+
+      set.forEach((c) => {
+        if (!result.some((r) => isCategoryMatch(r, c)) && c !== 'Uncategorized') {
+          result.push(c);
+        }
+      });
+
+      if (monthSermons.some((s) => !s.categoriesList || s.categoriesList.length === 0)) {
+        result.push('Uncategorized');
+      }
+    } else {
+      ALL_CATEGORIES.forEach((cat) => {
+        if (cat !== 'All') result.push(cat);
+      });
+    }
+
+    return result;
+  }, [sermons, y, m]);
+
+  // Keep active category synced if the category is not present in the selected month
+  useEffect(() => {
+    if (activeCategory !== 'All' && !dynamicCategories.some((c) => isCategoryMatch(c, activeCategory))) {
+      setActiveCategory('All');
+    }
+  }, [dynamicCategories, activeCategory]);
 
   // Days with sermons in selected month & category
   const withSermon = useMemo(() => {
@@ -910,7 +1004,11 @@ export default function SermonsScreen({ navigation }: any) {
     return o;
   }, [sermons, y, m, activeCategory]);
 
-  // Filtered list
+  // Filtered list:
+  // Shows only sermons belonging to the selected month and year.
+  // - Category filter: displays only matching sermons for that month/year.
+  // - Day filter: displays only sermons for that day.
+  // - Default selection: initially shows all sermons for current month with All category selected.
   const list = useMemo(() => {
     return sermons
       .filter((s) => inMonth(s) && (day === null || pd(s.date).getDate() === day) && catOK(s))
@@ -937,7 +1035,7 @@ export default function SermonsScreen({ navigation }: any) {
         date: s.date,
         duration: s.dur,
         scripture: s.verse,
-        categories: s.cat,
+        categories: s.categoriesList && s.categoriesList.length > 0 ? s.categoriesList.join(';') : s.cat,
         youtubeId: s.youtubeId,
         thumbnailUrl: s.thumb,
         imageUrl: s.thumb,
@@ -1089,7 +1187,7 @@ export default function SermonsScreen({ navigation }: any) {
             style={{ flexGrow: 0 }}
             contentContainerStyle={{ gap: 8, paddingVertical: 4, alignItems: 'center' }}
           >
-            {categoryList.map((cat) => {
+            {dynamicCategories.map((cat) => {
               const isSelected = activeCategory === cat;
               return (
                 <TouchableOpacity
@@ -1135,7 +1233,7 @@ export default function SermonsScreen({ navigation }: any) {
               {list.length} {list.length === 1 ? 'sermon' : 'sermons'}
             </Text>
             <Text style={[styles.sumD, { color: colors.textSecondary }]}>
-              {day === null ? 'All dates' : `${day} ${MON[m].slice(0, 3)} ${y}`}
+              {day === null ? `${MON[m]} ${y}` : `${day} ${MON[m].slice(0, 3)} ${y}`}
             </Text>
           </View>
 
@@ -1152,9 +1250,9 @@ export default function SermonsScreen({ navigation }: any) {
               <Icon name="video" size={52} color={colors.textSecondary} />
               <Text style={[styles.emptyT, { color: colors.text }]}>No sermons found</Text>
               <Text style={[styles.emptyS, { color: colors.textSecondary }]}>
-                {sermons.length === 0
-                  ? 'No sermons have been published yet.'
-                  : 'Try selecting another date, month or category.'}
+                {activeCategory !== 'All'
+                  ? `No ${getCategoryLabel(activeCategory)} sermons found for ${MON[m]} ${y}.`
+                  : `No sermons found for ${MON[m]} ${y}. Try selecting another month.`}
               </Text>
             </View>
           ) : (
@@ -1167,6 +1265,7 @@ export default function SermonsScreen({ navigation }: any) {
                 onDotsPress={(item) => setActionSermon(item)}
                 colors={colors}
                 isDark={isDark}
+                activeCategory={activeCategory}
               />
             ))
           )}
@@ -1340,12 +1439,15 @@ export default function SermonsScreen({ navigation }: any) {
               ]}
               onPress={() => {
                 setHeaderMenuVisible(false);
+                const cur = new Date();
+                setY(cur.getFullYear());
+                setM(cur.getMonth());
                 setDay(null);
                 setActiveCategory('All');
               }}
             >
               <Icon name="cal" size={18} color={colors.text} />
-              <Text style={[styles.actionBtnTxt, { color: colors.text }]}>Reset All Filters</Text>
+              <Text style={[styles.actionBtnTxt, { color: colors.text }]}>Reset to Current Month</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -1519,6 +1621,7 @@ const styles = StyleSheet.create({
   ti: { fontSize: 15, fontWeight: '800', letterSpacing: -0.2 },
   te: { fontSize: 12.5, fontWeight: '700', marginTop: 1 },
   sp: { fontSize: 11.5, fontWeight: '600', marginTop: 2 },
+  vs: { fontSize: 11, fontWeight: '600', marginTop: 2 },
   mn: {
     alignSelf: 'center',
     width: 26,
@@ -1544,6 +1647,16 @@ const styles = StyleSheet.create({
     paddingBottom: 36,
     borderWidth: 1,
     borderBottomWidth: 0,
+  },
+  sheetHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  sheetTitle: {
+    fontSize: 17,
+    fontWeight: '700',
   },
   yr: {
     flexDirection: 'row',

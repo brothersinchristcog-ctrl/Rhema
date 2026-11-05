@@ -328,6 +328,7 @@ export const en = {
     featuredTeaching: 'Featured Teaching',
     mainSpeaker: 'Main Speaker',
     subscribe: 'Subscribe',
+    subscribed: 'Subscribed',
     shareThisMessage: 'Share this message',
     pastSermons: 'PAST SERMONS',
     noPastSermons: 'No other past video sermons available.',
@@ -596,7 +597,7 @@ export const en = {
     baptismMessage: 'Happy Baptism Anniversary! May you continue to grow in faith and walk in His light. 🙏🕊️',
     celebrationDefault: 'Celebration!',
     baptismBlessing: '"Therefore if any man be in Christ, he is a new creature: old things are passed away; behold, all things are become new." - 2 Cor 5:17',
-    joinLiveStream: 'Join Live Stream',
+    joinLiveStream: 'Join Live Now',
     types: {
       announcement: 'ANNOUNCEMENT',
       emergency: 'EMERGENCY',

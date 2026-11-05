@@ -330,6 +330,7 @@ export const ml: TranslationSchema = {
     featuredTeaching: 'പ്രത്യേക ഉപദേശം',
     mainSpeaker: 'പ്രധാന പ്രാസംഗികൻ',
     subscribe: 'സബ്‌സ്‌ക്രൈബ്',
+    subscribed: 'സബ്‌സ്‌ക്രൈബ് ചെയ്‌തു',
     shareThisMessage: 'ഈ സന്ദേശം പങ്കുവെക്കുക',
     pastSermons: 'കഴിഞ്ഞ പ്രസംഗങ്ങൾ',
     noPastSermons: 'മറ്റ് മുൻകാല വീഡിയോ പ്രസംഗങ്ങൾ ഒന്നും ലഭ്യമല്ല.',

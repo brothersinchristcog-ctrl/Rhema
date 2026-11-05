@@ -210,4 +210,28 @@ export declare function sendDailyVersePushInternal(slotOverride?: string, target
  * 🧪 HTTP endpoint to manually trigger the Daily Verse push (can specify ?slot=Morning/Afternoon/Evening/Night)
  */
 export declare const triggerDailyVersePushHttp: import("firebase-functions/v2/https").HttpsFunction;
+/**
+ * 📢 CARE CELL ANNOUNCEMENT PUSH
+ * Sends push notification when an announcement is posted in a Care Cell or Church-wide.
+ */
+export declare const pushCareCellAnnouncement: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+    churchId: string;
+    announcementId: string;
+}>>;
+/**
+ * 🤝 CARE CELL GATHERING / MEETING PUSH
+ * Sends push notification when a new Care Cell meeting is scheduled.
+ */
+export declare const pushCareCellMeeting: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+    churchId: string;
+    meetingId: string;
+}>>;
+/**
+ * 🙏 CARE CELL PRAYER REQUEST ADMIN PUSH
+ * Alerts leaders and admins when a care cell member posts a prayer need.
+ */
+export declare const pushCareCellPrayerRequest: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+    churchId: string;
+    requestId: string;
+}>>;
 //# sourceMappingURL=notifications.d.ts.map

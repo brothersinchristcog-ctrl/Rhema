@@ -194,11 +194,13 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
           .doc(targetChurchId)
           .get();
 
+        let churchData: any = null;
         if (churchDoc.exists) {
-          const cData = churchDoc.data();
-          const lData = cData?.youtubeLiveState;
-          if (lData?.isLive && lData?.videoId) {
-            setActiveVideoId(lData.videoId);
+          churchData = churchDoc.data();
+          const lData = churchData?.youtubeLiveState;
+          const liveVid = lData?.videoId || lData?.lastNotifiedVideoId;
+          if (lData?.isLive && liveVid) {
+            setActiveVideoId(liveVid);
             setIsLive(true);
             if (lData.title) setStreamTitle(lData.title);
             setLoading(false);
@@ -207,7 +209,12 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
           }
         }
 
-        const targetUrl = paramUrl || configuredChannelUrl;
+
+
+
+        // Step 3: Check channel handle or URL using YouTubeService search API
+        const targetUrl = paramUrl || configuredChannelUrl || churchData?.youtubeLiveUrl || churchData?.youtubeChannelUrl || churchData?.socialLinks?.youtube || '@Brothersinchristfellowship';
+
         if (targetUrl) {
           const directId = extractYoutubeVideoId(targetUrl);
           if (directId) {

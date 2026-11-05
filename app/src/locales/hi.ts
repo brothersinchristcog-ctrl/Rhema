@@ -330,6 +330,7 @@ export const hi: TranslationSchema = {
     featuredTeaching: 'विशेष शिक्षा',
     mainSpeaker: 'मुख्य वक्ता',
     subscribe: 'सब्सक्राइब',
+    subscribed: 'सदस्यता ली गई',
     shareThisMessage: 'यह संदेश साझा करें',
     pastSermons: 'पिछले उपदेश',
     noPastSermons: 'अन्य कोई पिछला वीडियो उपदेश उपलब्ध नहीं है।',

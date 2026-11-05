@@ -1311,11 +1311,25 @@ async function resolveYouTubeChannelId(rawYtUrl: string): Promise<string | null>
  * When a stream starts, immediately dispatches push notification to topic church_{churchId}
  * and adds to broadcasts, saving live state directly on the church document (NO extra documents or subcollections).
  */
+/**
+ * Formats meaningful, uplifting, church-appropriate notification titles and messages for YouTube Live broadcasts.
+ */
+function formatLiveNotification(churchName?: string, rawTitle?: string): { pushTitle: string; pushBody: string } {
+  return {
+    pushTitle: '🔴 We Are LIVE Now!',
+    pushBody: "Join us for a time of worship, prayer and God's Word. Our live service is now streaming on YouTube. Be blessed!",
+  };
+}
+
 async function checkChurchYouTubeLive(churchDoc: any, churchId: string, db: any) {
   if (!churchId || churchId === 'global') return;
 
   const cData = churchDoc.data() || {};
   let rawYtUrl = cData.socialLinks?.youtube?.trim();
+
+  // Fix typos in raw URL
+  rawYtUrl = rawYtUrl.replace(/https?:\/\/(www\w*)\.(?:yyoutube|youtube)\.com/i, 'https://www.youtube.com');
+  rawYtUrl = rawYtUrl.replace(/Brothersinchhristfellowship/gi, 'Brothersinchristfellowship');
 
   // Single-church default fallback
   if (!rawYtUrl && churchId === 'rhema') {
@@ -1381,15 +1395,20 @@ async function checkChurchYouTubeLive(churchDoc: any, churchId: string, db: any)
           ) {
             isLive = true;
             const match =
+              (res.url && res.url.match(/watch\?v=([\w-]{11})/)) ||
+              html.match(/"videoId":"([\w-]{11})"/) ||
+              html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([\w-]{11})">/) ||
               html.match(/"liveStreamability".*?"videoId":"([^"]+)"/) ||
-              html.match(/"videoRenderer".*?"videoId":"([^"]+)"/) ||
-              html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([^"]+)">/);
+              html.match(/"videoRenderer".*?"videoId":"([^"]+)"/);
             if (match && match[1]) videoId = match[1];
 
             const titleMatch =
+              html.match(/<title>([^<]+)<\/title>/) ||
               html.match(/"title":{"runs":\[{"text":"([^"]+)"}\]}/) ||
               html.match(/<meta name="title" content="([^"]+)"/);
-            if (titleMatch && titleMatch[1]) streamTitle = titleMatch[1];
+            if (titleMatch && titleMatch[1]) {
+              streamTitle = titleMatch[1].replace(/ - YouTube$/i, '').trim();
+            }
           }
         }
       } catch (_) {}
@@ -1399,10 +1418,31 @@ async function checkChurchYouTubeLive(churchDoc: any, churchId: string, db: any)
     const liveWatchUrl = videoId ? `https://www.youtube.com/watch?v=${videoId}` : rawYtUrl;
 
     if (isLive) {
-      // Check if we already notified for this stream
+      // Clean up streamTitle if it matched YouTube promo junk
+      if (
+        !streamTitle ||
+        streamTitle.includes('Want to watch this again later') ||
+        streamTitle.includes('Sign in to add this') ||
+        streamTitle.toLowerCase() === 'youtube'
+      ) {
+        streamTitle = 'Join the live worship service now! 🎥🙏';
+      }
+
+      // Check if we already notified for this stream:
+      // 1. Same videoId already notified
+      // 2. Or prevState was already marked as isLive (same ongoing live session)
+      // 3. Or last notification was sent less than 2 hours ago (strict cooldown)
+      const lastNotifiedMillis =
+        prevState?.lastNotifiedAt?.toMillis?.() ||
+        (prevState?.lastNotifiedAt?._seconds ? prevState.lastNotifiedAt._seconds * 1000 : 0);
+      const isWithinCooldown = lastNotifiedMillis > 0 && Date.now() - lastNotifiedMillis < 2 * 60 * 60 * 1000;
+
       const alreadyNotified =
-        prevState?.isLive &&
-        (prevState?.lastNotifiedVideoId === videoId || (!videoId && prevState?.lastNotifiedAt));
+        Boolean(prevState?.isLive) ||
+        isWithinCooldown ||
+        (Boolean(videoId) && prevState?.lastNotifiedVideoId === videoId);
+
+      const resolvedVideoId = videoId || prevState?.videoId || '';
 
       // Save live state directly as a field on the church document (NO extra documents)
       await churchDoc.ref.set(
@@ -1410,49 +1450,47 @@ async function checkChurchYouTubeLive(churchDoc: any, churchId: string, db: any)
           youtubeLiveState: {
             isLive: true,
             url: liveWatchUrl,
-            videoId: videoId || '',
-            title: streamTitle || '',
+            videoId: resolvedVideoId,
+            title: streamTitle || prevState?.title || '',
             lastChecked: FieldValue.serverTimestamp(),
           },
         },
         { merge: true }
       ).catch(() => {});
 
-      if (!alreadyNotified) {
-        const churchName = cData.name || 'Rhema Church';
-        const pushTitle = `🔴 ${churchName} is LIVE on YouTube!`;
-        const pushBody = `${streamTitle || 'Join the live worship service now! 🎥🙏'} Tap to watch inside the app.`;
+      // ONLY dispatch a push notification if NOT already notified AND we have a valid 11-char video ID
+      if (!alreadyNotified && resolvedVideoId && resolvedVideoId.length === 11) {
+        const churchName = cData.name || 'Rhema Global Ministries';
+        const { pushTitle, pushBody } = formatLiveNotification(churchName, streamTitle);
 
         console.log(`🚨 Auto YouTube Live detected for church ${churchId} (${churchName})! Sending push...`);
 
-        // 1. Send push to topic church_{churchId}
+        // 1. Send push to topic church_${churchId} with interactive "Join Live Now" action category
         const topicMessage = {
-          notification: {
-            title: pushTitle,
-            body: pushBody,
-          },
           data: {
             type: 'youtube_live',
-            videoId: videoId || '',
+            videoId: resolvedVideoId,
             url: liveWatchUrl,
             churchId: churchId,
             title: streamTitle || pushTitle,
+            pushTitle: pushTitle,
+            pushBody: pushBody,
           },
           topic: `church_${churchId}`,
           android: {
             priority: 'high' as const,
-            notification: {
-              sound: 'default',
-              priority: 'max' as const,
-              channelId: 'church_alerts',
-            },
           },
           apns: {
             headers: { 'apns-priority': '10' },
             payload: {
               aps: {
+                alert: {
+                  title: pushTitle,
+                  body: pushBody,
+                },
                 sound: 'default',
                 badge: 1,
+                category: 'youtube_live',
               },
             },
           },
@@ -1470,7 +1508,7 @@ async function checkChurchYouTubeLive(churchDoc: any, churchId: string, db: any)
           date: dateStr,
           type: 'youtube_live',
           url: liveWatchUrl,
-          videoId: videoId || '',
+          videoId: resolvedVideoId,
           silent: true,
           createdAt: FieldValue.serverTimestamp(),
         }).catch(() => {});
@@ -1479,7 +1517,7 @@ async function checkChurchYouTubeLive(churchDoc: any, churchId: string, db: any)
         await churchDoc.ref.set(
           {
             youtubeLiveState: {
-              lastNotifiedVideoId: videoId || 'live_active',
+              lastNotifiedVideoId: resolvedVideoId,
               lastNotifiedAt: FieldValue.serverTimestamp(),
             },
           },
@@ -2459,3 +2497,203 @@ export const triggerDailyVersePushHttp = onRequest({ cors: true, timeoutSeconds:
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+
+/**
+ * 📢 CARE CELL ANNOUNCEMENT PUSH
+ * Sends push notification when an announcement is posted in a Care Cell or Church-wide.
+ */
+export const pushCareCellAnnouncement = onDocumentCreated(
+  { document: 'Rhema Church/{churchId}/careCellAnnouncements/{announcementId}', region: 'asia-south1' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+
+    const announcementId = event.params.announcementId;
+    const churchId = event.params.churchId;
+    const db = getFirestore();
+    const announcementRef = snap.ref;
+    const data = snap.data();
+
+    // 1. Atomic deduplication
+    let shouldSend = false;
+    try {
+      shouldSend = await db.runTransaction(async (transaction) => {
+        const freshDoc: any = await transaction.get(announcementRef as any);
+        if (!freshDoc.exists) return false;
+        if (freshDoc.data()?.notificationSent === true) return false;
+        transaction.update(announcementRef, {
+          notificationSent: true,
+          notificationSentAt: FieldValue.serverTimestamp(),
+        });
+        return true;
+      });
+    } catch (txErr) {
+      console.warn('Transaction error checking notificationSent on careCellAnnouncement:', txErr);
+      if (data?.notificationSent === true) return;
+      shouldSend = true;
+    }
+
+    if (!shouldSend) return;
+
+    const title = data.title || 'Care Cell Announcement';
+    const message = data.message || '';
+    const scope = data.scope || 'Cell';
+    const cellName = data.cellName || 'Care Cell';
+    const messaging = getMessaging();
+
+    const notifTitle = scope === 'All_Cells' ? `📢 Church Notice: ${title}` : `📢 ${cellName}: ${title}`;
+    const notifBody = message.length > 120 ? `${message.substring(0, 117)}...` : message;
+
+    const payload = {
+      notification: {
+        title: notifTitle,
+        body: notifBody,
+      },
+      data: {
+        type: 'care_cell_announcement',
+        announcementId,
+        churchId,
+        cellId: data.cellId || '',
+        scope,
+      },
+      topic: `church_${churchId}`,
+    };
+
+    try {
+      await messaging.send(payload);
+      console.log(`Successfully sent care cell announcement push for ${announcementId}`);
+    } catch (err) {
+      console.error('Error sending care cell announcement notification:', err);
+    }
+  }
+);
+
+/**
+ * 🤝 CARE CELL GATHERING / MEETING PUSH
+ * Sends push notification when a new Care Cell meeting is scheduled.
+ */
+export const pushCareCellMeeting = onDocumentCreated(
+  { document: 'Rhema Church/{churchId}/careCellMeetings/{meetingId}', region: 'asia-south1' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+
+    const meetingId = event.params.meetingId;
+    const churchId = event.params.churchId;
+    const db = getFirestore();
+    const meetingRef = snap.ref;
+    const data = snap.data();
+
+    let shouldSend = false;
+    try {
+      shouldSend = await db.runTransaction(async (transaction) => {
+        const freshDoc: any = await transaction.get(meetingRef as any);
+        if (!freshDoc.exists) return false;
+        if (freshDoc.data()?.notificationSent === true) return false;
+        transaction.update(meetingRef, {
+          notificationSent: true,
+          notificationSentAt: FieldValue.serverTimestamp(),
+        });
+        return true;
+      });
+    } catch (txErr) {
+      console.warn('Transaction error checking notificationSent on careCellMeeting:', txErr);
+      if (data?.notificationSent === true) return;
+      shouldSend = true;
+    }
+
+    if (!shouldSend) return;
+
+    const title = data.title || 'Fellowship Gathering';
+    const cellName = data.cellName || 'Care Cell';
+    const dateStr = data.date || '';
+    const timeStr = data.startTime || '7:00 PM';
+    const messaging = getMessaging();
+
+    const payload = {
+      notification: {
+        title: `🤝 ${cellName} Gathering`,
+        body: `${title} on ${dateStr} at ${timeStr}. Tap to view Scripture & location!`,
+      },
+      data: {
+        type: 'care_cell_meeting',
+        meetingId,
+        churchId,
+        cellId: data.cellId || '',
+      },
+      topic: `church_${churchId}`,
+    };
+
+    try {
+      await messaging.send(payload);
+      console.log(`Successfully sent care cell meeting push for ${meetingId}`);
+    } catch (err) {
+      console.error('Error sending care cell meeting notification:', err);
+    }
+  }
+);
+
+/**
+ * 🙏 CARE CELL PRAYER REQUEST ADMIN PUSH
+ * Alerts leaders and admins when a care cell member posts a prayer need.
+ */
+export const pushCareCellPrayerRequest = onDocumentCreated(
+  { document: 'Rhema Church/{churchId}/careCellPrayerRequests/{requestId}', region: 'asia-south1' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+
+    const requestId = event.params.requestId;
+    const churchId = event.params.churchId;
+    const db = getFirestore();
+    const reqRef = snap.ref;
+    const data = snap.data();
+
+    let shouldSend = false;
+    try {
+      shouldSend = await db.runTransaction(async (transaction) => {
+        const freshDoc: any = await transaction.get(reqRef as any);
+        if (!freshDoc.exists) return false;
+        if (freshDoc.data()?.notificationSent === true) return false;
+        transaction.update(reqRef, {
+          notificationSent: true,
+          notificationSentAt: FieldValue.serverTimestamp(),
+        });
+        return true;
+      });
+    } catch (txErr) {
+      console.warn('Transaction error checking notificationSent on careCellPrayer:', txErr);
+      if (data?.notificationSent === true) return;
+      shouldSend = true;
+    }
+
+    if (!shouldSend) return;
+
+    const memberName = data.memberName || 'Cell Member';
+    const cellName = data.cellName || 'Care Cell';
+    const prayerTitle = data.title || 'Prayer Request';
+    const messaging = getMessaging();
+
+    const payload = {
+      notification: {
+        title: `🙏 Care Cell Prayer: ${memberName}`,
+        body: `[${cellName}] ${prayerTitle}`,
+      },
+      data: {
+        type: 'care_cell_prayer',
+        requestId,
+        churchId,
+        cellId: data.cellId || '',
+      },
+      topic: `church_${churchId}_admin`,
+    };
+
+    try {
+      await messaging.send(payload);
+      console.log(`Successfully sent care cell prayer request push for ${requestId}`);
+    } catch (err) {
+      console.error('Error sending care cell prayer notification:', err);
+    }
+  }
+);
