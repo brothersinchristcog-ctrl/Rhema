@@ -29,6 +29,7 @@ export interface EventRsvpPollCardProps {
   eventDate?: string;
   rsvpDeadline?: string;
   rsvpEnabled?: boolean;
+  isCompleted?: boolean;
   currentUser?: {
     id: string;
     name?: string;
@@ -110,13 +111,14 @@ export const EventRsvpPollCard: React.FC<EventRsvpPollCardProps> = ({
   eventTitle,
   rsvpDeadline,
   rsvpEnabled = true,
+  isCompleted = false,
   currentUser,
   isAdmin = false,
   onViewAnalytics,
   isDark = false,
 }) => {
-  // If RSVP is explicitly disabled for this event, do not render the poll
-  if (rsvpEnabled === false) {
+  // If RSVP is explicitly disabled or event is completed, do not render the poll
+  if (rsvpEnabled === false || isCompleted) {
     return null;
   }
 
@@ -202,10 +204,10 @@ export const EventRsvpPollCard: React.FC<EventRsvpPollCardProps> = ({
 
   // Handle Response Selection (single choice, switchable, prevents duplicate votes)
   const handleSelectOption = async (option: EventRsvpStatus) => {
-    if (isDeadlinePassed) {
+    if (isCompleted || isDeadlinePassed) {
       Alert.alert(
         'RSVP Closed',
-        'The RSVP deadline for this event has passed. Responses are now locked.'
+        'This event has completed or the RSVP deadline has passed. Responses are now locked.'
       );
       return;
     }
@@ -302,7 +304,7 @@ export const EventRsvpPollCard: React.FC<EventRsvpPollCardProps> = ({
             <TouchableOpacity
               key={opt.key}
               onPress={() => handleSelectOption(opt.key)}
-              disabled={isDeadlinePassed || submitting}
+              disabled={isCompleted || isDeadlinePassed || submitting}
               activeOpacity={0.78}
               style={[
                 styles.pollOptionTrack,
@@ -312,7 +314,7 @@ export const EventRsvpPollCard: React.FC<EventRsvpPollCardProps> = ({
                   borderWidth: 2,
                   backgroundColor: isDark ? opt.selectedBgDark : opt.selectedBgLight,
                 },
-                isDeadlinePassed && !isSelected && { opacity: 0.55 },
+                (isCompleted || isDeadlinePassed) && !isSelected && { opacity: 0.55 },
               ]}
             >
               {/* Horizontal Progress Bar Fill (Proportional to % of votes) */}

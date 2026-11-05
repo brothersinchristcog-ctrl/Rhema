@@ -34,6 +34,8 @@ import {
 } from 'lucide-react-native';
 import { openZoomMeeting } from '../utils/ZoomLauncher';
 import YoutubePlayer from 'react-native-youtube-iframe';
+import { WebView } from 'react-native-webview';
+import firestore from '@react-native-firebase/firestore';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -41,7 +43,7 @@ import * as Clipboard from 'expo-clipboard';
 import RNShare from 'react-native-share';
 import ViewShot from 'react-native-view-shot';
 
-import { findEventVideo } from '../services/YouTubeService';
+import { findEventVideo, findActiveLiveStream, getChannelId } from '../services/YouTubeService';
 import { useAuth } from '../context/AuthContext';
 import { useChurch } from '../context/ChurchContext';
 import EventRsvpPollCard from '../components/EventRsvpPollCard';
@@ -60,13 +62,33 @@ const { width, height } = Dimensions.get('window');
  *  - 'completed': event date+endTime is in the past
  */
 function getEventStatus(event: any): 'upcoming' | 'live' | 'completed' {
+  if (event?.status === 'completed') return 'completed';
+  if (event?.status === 'cancelled') return 'completed';
+
   const today = new Date();
 
-  // Parse date string like "2026-06-10"
-  const dateParts = (event?.date || '').split('-');
-  const eventYear = parseInt(dateParts[0]) || today.getFullYear();
-  const eventMonth = parseInt(dateParts[1]) - 1 || 0;
-  const eventDay = parseInt(dateParts[2]) || today.getDate();
+  // Parse date string like "2026-06-10" or "10-06-2026"
+  const rawDate = event?.date || '';
+  let eventYear = today.getFullYear();
+  let eventMonth = today.getMonth();
+  let eventDay = today.getDate();
+
+  if (rawDate.includes('-')) {
+    const parts = rawDate.split('T')[0].split('-');
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        // YYYY-MM-DD
+        eventYear = parseInt(parts[0], 10);
+        eventMonth = parseInt(parts[1], 10) - 1;
+        eventDay = parseInt(parts[2], 10);
+      } else {
+        // DD-MM-YYYY
+        eventDay = parseInt(parts[0], 10);
+        eventMonth = parseInt(parts[1], 10) - 1;
+        eventYear = parseInt(parts[2], 10);
+      }
+    }
+  }
 
   const parseTime = (timeStr: string) => {
     if (!timeStr) return null;
@@ -84,8 +106,34 @@ function getEventStatus(event: any): 'upcoming' | 'live' | 'completed' {
   }
 
   if (today < startDt) return 'upcoming';
-  if (endDt && today > endDt) return 'completed';
+
+  if (endDt) {
+    if (today > endDt) return 'completed';
+    return 'live';
+  }
+
+  // If no explicit endTime, assume 3 hours duration or end of day
+  const defaultEndDt = new Date(startDt.getTime() + 3 * 60 * 60 * 1000);
+  const endOfDay = new Date(eventYear, eventMonth, eventDay, 23, 59, 59);
+  const effectiveEndDt = defaultEndDt > endOfDay ? endOfDay : defaultEndDt;
+
+  if (today > effectiveEndDt) return 'completed';
   return 'live';
+}
+
+function extractYoutubeVideoId(urlOrId?: string): string {
+  if (!urlOrId || typeof urlOrId !== 'string') return '';
+  const clean = urlOrId.trim();
+  if (/^[\w-]{11}$/.test(clean)) return clean;
+  const liveMatch = clean.match(/\/live\/([\w-]{11})/);
+  if (liveMatch) return liveMatch[1];
+  const watchMatch = clean.match(/[?&]v=([\w-]{11})/);
+  if (watchMatch) return watchMatch[1];
+  const shortMatch = clean.match(/youtu\.be\/([\w-]{11})/);
+  if (shortMatch) return shortMatch[1];
+  const embedMatch = clean.match(/\/embed\/([\w-]{11})/);
+  if (embedMatch) return embedMatch[1];
+  return '';
 }
 
 export default function EventDetailsScreen({ route, navigation }: any) {
@@ -140,7 +188,6 @@ export default function EventDetailsScreen({ route, navigation }: any) {
         uri,
         (w, h) => {
           if (w > 0 && h > 0) {
-            // Keep aspect ratio within practical mobile bounds [0.75 (tall portrait flyer) to 2.2 (wide banner)]
             const r = Math.max(0.75, Math.min(2.2, w / h));
             setImageAspectRatio(r);
           }
@@ -160,10 +207,173 @@ export default function EventDetailsScreen({ route, navigation }: any) {
     }
   }, [event.id, status, manualYoutubeId, churchYoutubeHandle]);
 
+  // Live Stream state for inline playback & tab navigation
+  const [liveStreamVideoId, setLiveStreamVideoId] = useState<string | null>(null);
+  const [liveStreamChannelId, setLiveStreamChannelId] = useState<string | null>(null);
+  const [liveStreamLoading, setLiveStreamLoading] = useState<boolean>(false);
+
+  // HTML5 Live Stream Embed - passes strict-origin headers to completely prevent YouTube Error 153
+  const htmlLiveEmbed = useMemo(() => {
+    const embedSrc = liveStreamVideoId
+      ? `https://www.youtube-nocookie.com/embed/${liveStreamVideoId}?autoplay=1&playsinline=1&rel=0&modestbranding=1`
+      : `https://www.youtube-nocookie.com/embed/live_stream?channel=${liveStreamChannelId || 'UC3J_2zP2bIuCwEia_ASvghw'}&autoplay=1&playsinline=1&rel=0&modestbranding=1`;
+
+    return `<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <style>
+      * { margin:0; padding:0; box-sizing:border-box; }
+      html, body { width:100%; height:100%; background:#000000; overflow:hidden; }
+      iframe { width:100%; height:100%; border:none; display:block; }
+    </style>
+  </head>
+  <body>
+    <iframe
+      src="${embedSrc}"
+      frameborder="0"
+      referrerpolicy="strict-origin-when-cross-origin"
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+      allowfullscreen>
+    </iframe>
+  </body>
+</html>`;
+  }, [liveStreamVideoId, liveStreamChannelId]);
+
+  // Resolve live stream video ID / channel ID when status is live
+  useEffect(() => {
+    let isMounted = true;
+    const churchId = activeChurch?.id || 'rhema';
+
+    // 1. Direct video ID check in event fields
+    const directId = extractYoutubeVideoId(event.youtubeId || event.liveUrl || event.livestreamUrl);
+    if (directId) {
+      setLiveStreamVideoId(directId);
+      return;
+    }
+
+    // 2. Real-time listener for church youtubeLiveState (broadcast from pastor/admin)
+    const unsubChurch = firestore()
+      .collection('Rhema Church')
+      .doc(churchId)
+      .onSnapshot(
+        (doc) => {
+          if (!isMounted) return;
+          if (doc.exists) {
+            const lData = doc.data()?.youtubeLiveState;
+            const liveVid = lData?.videoId || lData?.lastNotifiedVideoId || lData?.latestVideoId;
+            if (liveVid) {
+              setLiveStreamVideoId((prev) => prev || liveVid);
+            }
+          }
+        },
+        () => {}
+      );
+
+    // 3. Resolve channel or live URL via YouTubeService
+    const targetUrl =
+      event.liveUrl ||
+      event.livestreamUrl ||
+      activeChurch?.socialLinks?.youtube ||
+      churchYoutubeHandle ||
+      '@Brothersinchristfellowship';
+
+    if (targetUrl) {
+      setLiveStreamLoading(true);
+      findActiveLiveStream(targetUrl)
+        .then((res) => {
+          if (!isMounted) return;
+          if (res?.videoId) {
+            setLiveStreamVideoId(res.videoId);
+          } else {
+            getChannelId(targetUrl).then((cId) => {
+              if (isMounted && cId) {
+                setLiveStreamChannelId(cId);
+              }
+            });
+          }
+        })
+        .catch(() => {
+          getChannelId(targetUrl).then((cId) => {
+            if (isMounted && cId) {
+              setLiveStreamChannelId(cId);
+            }
+          });
+        })
+        .finally(() => {
+          if (isMounted) setLiveStreamLoading(false);
+        });
+    }
+
+    return () => {
+      isMounted = false;
+      unsubChurch();
+    };
+  }, [event.id, event.liveUrl, event.livestreamUrl, event.youtubeId, status, activeChurch?.id, churchYoutubeHandle]);
+
   const youtubeId = manualYoutubeId || autoYoutubeId;
-  const liveUrl = event.liveUrl || event.youtubeId
-    ? `https://www.youtube.com/watch?v=${manualYoutubeId}`
-    : churchYoutubeHandle ? `https://www.youtube.com/${churchYoutubeHandle}/streams` : '';
+  const liveUrl = event.liveUrl || event.livestreamUrl || (manualYoutubeId ? `https://www.youtube.com/watch?v=${manualYoutubeId}` : '') || (churchYoutubeHandle ? `https://www.youtube.com/${churchYoutubeHandle}/streams` : '');
+
+  const recordingVideoId =
+    youtubeId ||
+    liveStreamVideoId ||
+    extractYoutubeVideoId(event.youtubeId || event.liveUrl || event.livestreamUrl);
+
+  // HTML5 Recording Embed - plays completed event recording directly inside EventDetailsScreen
+  const htmlRecordingEmbed = useMemo(() => {
+    const embedSrc = recordingVideoId
+      ? `https://www.youtube-nocookie.com/embed/${recordingVideoId}?autoplay=0&playsinline=1&rel=0&modestbranding=1`
+      : `https://www.youtube-nocookie.com/embed/live_stream?channel=${liveStreamChannelId || 'UC3J_2zP2bIuCwEia_ASvghw'}&autoplay=0&playsinline=1&rel=0&modestbranding=1`;
+
+    return `<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <style>
+      * { margin:0; padding:0; box-sizing:border-box; }
+      html, body { width:100%; height:100%; background:#000000; overflow:hidden; }
+      iframe { width:100%; height:100%; border:none; display:block; }
+    </style>
+  </head>
+  <body>
+    <iframe
+      src="${embedSrc}"
+      frameborder="0"
+      referrerpolicy="strict-origin-when-cross-origin"
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+      allowfullscreen>
+    </iframe>
+  </body>
+</html>`;
+  }, [recordingVideoId, liveStreamChannelId]);
+
+  // Navigate directly to the in-app YouTube Live Tab
+  const handleJoinLiveStream = () => {
+    const rawTarget =
+      event.liveUrl ||
+      event.livestreamUrl ||
+      (manualYoutubeId ? `https://www.youtube.com/watch?v=${manualYoutubeId}` : '') ||
+      activeChurch?.socialLinks?.youtube ||
+      'https://www.youtube.com/@Brothersinchristfellowship/live';
+
+    if (rawTarget.includes('zoom.us')) {
+      openZoomMeeting({
+        meetingLink: rawTarget,
+        password: event?.passcode || event?.password,
+        userName: undefined,
+      });
+      return;
+    }
+
+    navigation.navigate('YouTubeLive', {
+      url: rawTarget,
+      videoId: liveStreamVideoId || manualYoutubeId || undefined,
+      title: event.title || event.name || 'Live Service',
+      churchId: activeChurch?.id,
+    });
+  };
 
   const formatTime = (timeStr: string) => {
     if (!timeStr) return '--:--';
@@ -653,14 +863,15 @@ export default function EventDetailsScreen({ route, navigation }: any) {
             </View>
           </View>
 
-          {/* ── MEMBER RSVP PARTICIPATION POLL ── */}
-          {event?.rsvpEnabled === true && (
+          {/* ── MEMBER RSVP PARTICIPATION POLL (Active for Upcoming/Live events; hidden once Completed) ── */}
+          {event?.rsvpEnabled === true && status !== 'completed' && (
             <EventRsvpPollCard
               eventId={event.id}
               churchId={activeChurch?.id}
               eventTitle={event.title || event.name || 'Church Event'}
               eventDate={formatDate(event.date)}
               rsvpDeadline={event.rsvpDeadline}
+              isCompleted={false}
               currentUser={{
                 id: member?.id || user?.uid || '',
                 name: member?.name || (member as any)?.fullName || user?.displayName || 'Member',
@@ -898,58 +1109,89 @@ export default function EventDetailsScreen({ route, navigation }: any) {
               </View>
             )}
 
-            {/* LIVE — show the live stream button */}
+            {/* LIVE — show embedded live stream player window */}
             {status === 'live' && (
               <View>
                 <View style={styles.liveBanner}>
                   <Radio size={18} color="#fff" />
-                  <Text style={styles.liveBannerText}>This event is happening RIGHT NOW!</Text>
+                  <Text style={styles.liveBannerText}>This event is happening RIGHT NOW! · లైవ్ ప్రసారం అవుతోంది</Text>
                 </View>
-                <TouchableOpacity
-                  style={styles.liveBtn}
-                  onPress={() => Linking.openURL(
-                    manualYoutubeId
-                      ? `https://www.youtube.com/watch?v=${manualYoutubeId}`
-                      : liveUrl || 'https://www.youtube.com'
+
+                {/* ── EMBEDDED LIVE STREAM PLAYER WINDOW ── */}
+                <View style={styles.liveStreamPlayerContainer}>
+                  {liveStreamLoading && !liveStreamVideoId && !liveStreamChannelId ? (
+                    <View style={styles.liveVideoSearching}>
+                      <ActivityIndicator size="large" color="#dc2626" />
+                      <Text style={styles.liveVideoSearchingText}>Connecting to Live Stream...</Text>
+                      <Text style={styles.liveVideoSearchingSubText}>లైవ్ స్ట్రీమ్ లోడ్ అవుతోంది...</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.videoContainer}>
+                      <WebView
+                        source={{
+                          html: htmlLiveEmbed,
+                          baseUrl: 'https://www.youtube.com',
+                        }}
+                        style={{ width: '100%', height: width * 0.55, backgroundColor: '#000000' }}
+                        originWhitelist={['*']}
+                        allowsInlineMediaPlayback={true}
+                        mediaPlaybackRequiresUserAction={false}
+                        javaScriptEnabled={true}
+                        domStorageEnabled={true}
+                        allowsFullscreenVideo={true}
+                        onShouldStartLoadWithRequest={(req) => {
+                          if (
+                            req.url.includes('youtube') ||
+                            req.url.includes('googlevideo') ||
+                            req.url.includes('about:blank') ||
+                            req.url.startsWith('data:')
+                          ) {
+                            return true;
+                          }
+                          return false;
+                        }}
+                      />
+                    </View>
                   )}
-                >
-                  <Radio size={22} color="#fff" />
-                  <View>
-                    <Text style={styles.liveBtnText}>Watch Live Stream</Text>
-                    {churchYoutubeHandle ? <Text style={styles.liveBtnSub}>{churchYoutubeHandle}</Text> : null}
-                  </View>
-                </TouchableOpacity>
+                </View>
               </View>
             )}
 
-            {/* COMPLETED — show recording */}
+            {/* COMPLETED — show event recording directly inside EventDetailsScreen */}
             {status === 'completed' && (
-              videoSearching ? (
+              videoSearching && !recordingVideoId ? (
                 <View style={styles.videoSearching}>
                   <ActivityIndicator size="large" color="#dc2626" />
                   <Text style={styles.videoSearchingText}>Finding event recording...</Text>
                   <Text style={styles.videoSearchingSubText}>వీడియో శోధిస్తున్నాం...</Text>
                 </View>
-              ) : youtubeId ? (
+              ) : (
                 <View style={styles.videoContainer}>
-                  <YoutubePlayer
-                    key={youtubeId}
-                    height={width * 0.55}
-                    play={false}
-                    videoId={youtubeId}
+                  <WebView
+                    source={{
+                      html: htmlRecordingEmbed,
+                      baseUrl: 'https://www.youtube.com',
+                    }}
+                    style={{ width: '100%', height: width * 0.55, backgroundColor: '#000000' }}
+                    originWhitelist={['*']}
+                    allowsInlineMediaPlayback={true}
+                    mediaPlaybackRequiresUserAction={false}
+                    javaScriptEnabled={true}
+                    domStorageEnabled={true}
+                    allowsFullscreenVideo={true}
+                    onShouldStartLoadWithRequest={(req) => {
+                      if (
+                        req.url.includes('youtube') ||
+                        req.url.includes('googlevideo') ||
+                        req.url.includes('about:blank') ||
+                        req.url.startsWith('data:')
+                      ) {
+                        return true;
+                      }
+                      return false;
+                    }}
                   />
                 </View>
-              ) : (
-                <TouchableOpacity
-                  style={styles.youtubeChannelBtn}
-                  onPress={() => Linking.openURL(liveUrl || 'https://www.youtube.com')}
-                >
-                  <Play size={20} color="#fff" fill="#fff" />
-                  <View>
-                    <Text style={styles.youtubeChannelBtnText}>Watch Recording on YouTube</Text>
-                    {churchYoutubeHandle ? <Text style={styles.youtubeChannelBtnSub}>{churchYoutubeHandle}</Text> : null}
-                  </View>
-                </TouchableOpacity>
               )
             )}
           </View>
@@ -959,20 +1201,7 @@ export default function EventDetailsScreen({ route, navigation }: any) {
             {status === 'live' ? (
               <TouchableOpacity
                 style={styles.singleShareBtn}
-                onPress={() => {
-                  const url = manualYoutubeId
-                    ? `https://www.youtube.com/watch?v=${manualYoutubeId}`
-                    : liveUrl || 'https://www.youtube.com';
-                  if (url.includes('zoom.us')) {
-                    openZoomMeeting({
-                      meetingLink: url,
-                      password: event?.passcode || event?.password,
-                      userName: undefined
-                    });
-                  } else {
-                    Linking.openURL(url);
-                  }
-                }}
+                onPress={handleJoinLiveStream}
                 activeOpacity={0.85}
               >
                 <LinearGradient
@@ -1499,5 +1728,37 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     elevation: 8, shadowColor: '#1a2d5a', shadowOpacity: 0.35, shadowRadius: 8
   },
-  mainBtnText: { color: '#fff', fontSize: 14, fontWeight: '900', letterSpacing: 0.5 }
+  mainBtnText: { color: '#fff', fontSize: 14, fontWeight: '900', letterSpacing: 0.5 },
+
+  // ── LIVE STREAM PLAYER WINDOW ──
+  liveStreamPlayerContainer: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  liveVideoSearching: {
+    backgroundColor: '#0F172A',
+    borderRadius: 16,
+    padding: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: width * 0.55,
+  },
+  liveVideoSearchingText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#F8FAFC',
+    marginTop: 6,
+  },
+  liveVideoSearchingSubText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontWeight: '500',
+  },
 });
