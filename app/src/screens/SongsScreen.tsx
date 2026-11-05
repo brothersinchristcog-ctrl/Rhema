@@ -502,8 +502,8 @@ export default function SongsScreen({ navigation, route }: any) {
         const srvs = primaryEvent.services || [];
         setWorshipServices(srvs);
         setHasActiveEventSongs(true);
-        // Do not display all event songs by default; require member to select a specific service
-        setActiveServiceId('');
+        // Automatically select the first service so its songs are displayed immediately
+        setActiveServiceId(srvs[0]?.id || '');
       } else {
         // No active or upcoming events with songs!
         setActiveEvent(null);
@@ -814,12 +814,13 @@ export default function SongsScreen({ navigation, route }: any) {
   };
 
   const validServices = Array.isArray(worshipServices) ? worshipServices.filter(Boolean) : [];
-  const activeService: any = validServices.find((s: any) => s && s.id === activeServiceId) || null;
+  const activeService: any = validServices.find((s: any) => s && s.id === activeServiceId) || (validServices.length > 0 ? validServices[0] : null);
   
-  // Return ONLY songs of the selected service. If no service selected, do not display any songs by default.
+  // Return ONLY songs of the selected service. Automatically defaults to the primary service so songs load immediately.
   const activeSetlist: any[] = useMemo(() => {
-    if (!activeServiceId) return [];
-    const found = validServices.find((s: any) => s && s.id === activeServiceId);
+    const targetId = activeServiceId || validServices[0]?.id;
+    if (!targetId) return [];
+    const found = validServices.find((s: any) => s && s.id === targetId);
     return (found && Array.isArray(found.songs)) ? found.songs : [];
   }, [validServices, activeServiceId]);
 
@@ -1141,7 +1142,7 @@ export default function SongsScreen({ navigation, route }: any) {
               >
                 {validServices.map((srv: any) => {
                   if (!srv) return null;
-                  const isSelected = activeServiceId === srv?.id;
+                  const isSelected = activeServiceId ? activeServiceId === srv?.id : srv?.id === validServices[0]?.id;
                   const songCount = Array.isArray(srv.songs) ? srv.songs.length : 0;
 
                   return (
@@ -1162,7 +1163,7 @@ export default function SongsScreen({ navigation, route }: any) {
                         backgroundColor: '#000000',
                         borderColor: isDark ? '#52525B' : '#000000',
                       }]}
-                      onPress={() => setActiveServiceId(isSelected ? '' : srv?.id)}
+                      onPress={() => setActiveServiceId(srv?.id)}
                       activeOpacity={0.8}
                     >
                       <Text style={[
@@ -1196,7 +1197,7 @@ export default function SongsScreen({ navigation, route }: any) {
         </View>
 
         {/* Search Bar placed directly below the Event Card only when a service is selected */}
-        {activeServiceId ? (
+        {activeService ? (
           <View
             style={[
               styles.searchBar,
@@ -1614,29 +1615,7 @@ export default function SongsScreen({ navigation, route }: any) {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? '#FFFFFF' : '#0F172A'} />}
           ListHeaderComponent={renderEventCardHeader()}
           ListEmptyComponent={
-            (!activeEvent || validServices.length === 0) ? null : !activeServiceId ? (
-              <View style={[styles.emptyState, { paddingTop: 36, paddingBottom: 60, paddingHorizontal: 24 }]}>
-                <View style={{
-                  width: 60,
-                  height: 60,
-                  borderRadius: 30,
-                  backgroundColor: isDark ? '#1F2937' : '#EEF2FF',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  marginBottom: 14,
-                  borderWidth: 1,
-                  borderColor: isDark ? '#374151' : '#E0E7FF',
-                }}>
-                  <Music size={26} color={isDark ? '#818CF8' : '#4F46E5'} />
-                </View>
-                <Text style={[styles.emptyTitle, { color: isDark ? '#FFFFFF' : '#0F172A', fontSize: 16, fontWeight: '800' }]}>
-                  Select a Service
-                </Text>
-                <Text style={[styles.emptySub, { maxWidth: 280, textAlign: 'center', marginTop: 6, lineHeight: 20 }]}>
-                  Please choose a service or category above to view its scheduled worship songs.
-                </Text>
-              </View>
-            ) : (
+            (!activeEvent || validServices.length === 0) ? null : (
               <View style={styles.emptyState}>
                 <Music size={44} color="#cbd5e1" />
                 <Text style={[styles.emptyTitle, { color: isDark ? '#E4E4E7' : '#0F172A' }]}>
