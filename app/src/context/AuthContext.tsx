@@ -32,18 +32,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const superAdminListenerRef = useRef<(() => void) | null>(null);
   const isSigningOutRef = useRef<boolean>(false);
 
-  const KNOWN_SUPER_ADMIN_UIDS = [
-    'q43NWXEu8iTiFE0B7RDa7O8yq2o2', // Sakibanda Sunil Babu (+918374331432)
-  ];
-
   const checkSuperAdminStatus = async (targetUid: string): Promise<boolean> => {
     if (!targetUid) return false;
-
-    // Fast-path 1: Known UID
-    if (KNOWN_SUPER_ADMIN_UIDS.includes(targetUid)) {
-      AsyncStorage.setItem('@cached_is_super_admin', JSON.stringify(true)).catch(() => {});
-      return true;
-    }
 
     try {
       // 1. Check root platform_admins collection
@@ -139,9 +129,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.log('🔑 [Auth] Restored persistent user session:', cachedUserObj?.uid);
           setUser(cachedUserObj as FirebaseAuthTypes.User);
           if (cachedUserObj?.uid) {
-            if (KNOWN_SUPER_ADMIN_UIDS.includes(cachedUserObj.uid)) {
-              setIsPlatformSuperAdmin(true);
-            }
             checkSuperAdminStatus(cachedUserObj.uid).then((isSuper) => {
               setIsPlatformSuperAdmin(isSuper);
             }).catch(() => {});
@@ -213,7 +200,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           try {
             console.log('🔐 [Auth] User Logged In:', userState.uid);
 
-            // Check Super Admin Status via 'Platform Admin' collection and 'Role' subcollection
+            // Check Super Admin Status via 'platform_admins' collection
             try {
               const isSuper = await checkSuperAdminStatus(userState.uid);
               setIsPlatformSuperAdmin(isSuper);
@@ -347,7 +334,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
               const isSuperRole =
                 String(combinedMember?.userType || '').toUpperCase().includes('SUPER') ||
-                KNOWN_SUPER_ADMIN_UIDS.includes(userState.uid);
+                Boolean((combinedMember as any)?.isSuperAdmin) ||
+                Boolean((combinedMember as any)?.superadmin);
               if (isSuperRole) {
                 setIsPlatformSuperAdmin(true);
                 AsyncStorage.setItem('@cached_is_super_admin', JSON.stringify(true)).catch(() => {});

@@ -8,8 +8,8 @@ const extractYoutubeId = (url: string) => {
   return cleanUrl;
 };
 import YoutubePlayer from 'react-native-youtube-iframe';
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, Platform, StatusBar, Linking, Alert, Dimensions } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, Platform, StatusBar, Linking, Alert, Dimensions, PanResponder } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft, ChevronLeft, Bookmark, Globe, Sliders, ExternalLink } from 'lucide-react-native';
 import { useLanguage } from '../context/LanguageContext';
@@ -58,9 +58,82 @@ export default function SongDetailModal({
   const { colors, currentThemeOption } = useTheme();
   const [selectedLangOverride, setSelectedLangOverride] = useState<SupportedLanguage | null>(null);
 
+  const scrollRef = useRef<ScrollView>(null);
+  const onNextRef = useRef(onNext);
+  const onPrevRef = useRef(onPrev);
+  const currentSongIndexRef = useRef(currentSongIndex);
+  const totalSongsRef = useRef(totalSongs);
+  const lastSwipeTimeRef = useRef(0);
+
+  useEffect(() => {
+    onNextRef.current = onNext;
+    onPrevRef.current = onPrev;
+    currentSongIndexRef.current = currentSongIndex;
+    totalSongsRef.current = totalSongs;
+  }, [onNext, onPrev, currentSongIndex, totalSongs]);
+
   useEffect(() => {
     setSelectedLangOverride(null);
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
   }, [song?.id]);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onStartShouldSetPanResponderCapture: () => false,
+
+      // Only claim the gesture if the movement is predominantly horizontal
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        const { dx, dy } = gestureState;
+        const isHorizontal = Math.abs(dx) > 18 && Math.abs(dx) > Math.abs(dy) * 1.5;
+        if (!isHorizontal) return false;
+
+        const hasNext = !!onNextRef.current && (totalSongsRef.current <= 0 || currentSongIndexRef.current < totalSongsRef.current - 1);
+        const hasPrev = !!onPrevRef.current && (totalSongsRef.current <= 0 || currentSongIndexRef.current > 0);
+
+        if (dx < -18 && hasNext) return true; // Swiping left -> next song
+        if (dx > 18 && hasPrev) return true;  // Swiping right -> prev song
+        return false;
+      },
+
+      onMoveShouldSetPanResponderCapture: (_, gestureState) => {
+        const { dx, dy } = gestureState;
+        const isHorizontal = Math.abs(dx) > 18 && Math.abs(dx) > Math.abs(dy) * 1.5;
+        if (!isHorizontal) return false;
+
+        const hasNext = !!onNextRef.current && (totalSongsRef.current <= 0 || currentSongIndexRef.current < totalSongsRef.current - 1);
+        const hasPrev = !!onPrevRef.current && (totalSongsRef.current <= 0 || currentSongIndexRef.current > 0);
+
+        if (dx < -18 && hasNext) return true;
+        if (dx > 18 && hasPrev) return true;
+        return false;
+      },
+
+      onPanResponderTerminationRequest: () => false,
+
+      onPanResponderRelease: (_, gestureState) => {
+        const { dx, vx } = gestureState;
+        const now = Date.now();
+        if (now - lastSwipeTimeRef.current < 350) return;
+
+        const hasNext = !!onNextRef.current && (totalSongsRef.current <= 0 || currentSongIndexRef.current < totalSongsRef.current - 1);
+        const hasPrev = !!onPrevRef.current && (totalSongsRef.current <= 0 || currentSongIndexRef.current > 0);
+
+        // Swipe left (finger moves right-to-left): navigate to next song
+        const isSwipeLeft = dx < -40 || (dx < -20 && vx < -0.35);
+        // Swipe right (finger moves left-to-right): navigate to previous song
+        const isSwipeRight = dx > 40 || (dx > 20 && vx > 0.35);
+
+        if (isSwipeLeft && hasNext) {
+          lastSwipeTimeRef.current = now;
+          onNextRef.current?.();
+        } else if (isSwipeRight && hasPrev) {
+          lastSwipeTimeRef.current = now;
+          onPrevRef.current?.();
+        }
+      },
+    })
+  ).current;
 
   if (!visible || !song) return null;
 
@@ -107,8 +180,8 @@ export default function SongDetailModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
-      <View style={[styles.modalCard, { backgroundColor: colors.background }]}>
-        <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} bounces={false}>
+      <View style={[styles.modalCard, { backgroundColor: colors.background }]} {...panResponder.panHandlers}>
+        <ScrollView ref={scrollRef} style={{ flex: 1 }} showsVerticalScrollIndicator={false} bounces={false} keyboardShouldPersistTaps="handled">
                     {/* ── Screen Header (Clean circular back button & title) ── */}
           <View
             style={[
@@ -381,6 +454,9 @@ export default function SongDetailModal({
             <View style={styles.barMain}>
               <Text style={[styles.barMainTxt, { color: '#fff' }]}>
                 {currentSongIndex !== -1 ? `${currentSongIndex + 1} / ${totalSongs}` : ''}
+              </Text>
+              <Text style={styles.barSwipeHintTxt}>
+                ← Swipe to change song →
               </Text>
             </View>
 
@@ -665,6 +741,13 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center'
+  },
+  barSwipeHintTxt: {
+    color: 'rgba(255, 255, 255, 0.75)',
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 2,
+    letterSpacing: 0.2,
   },
   barMainTxt: {
     fontSize: 14,
