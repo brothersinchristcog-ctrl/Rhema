@@ -40,10 +40,10 @@ interface CareCellVisitModalProps {
 
 const TITLE_PRESETS = [
   'Pastoral Home Visit',
-  'Care & Prayer Visit',
-  'Quarterly Family Fellowship',
-  'Sick & Healing Prayer Visit',
-  'New Believer Welcome Visit',
+  'Care & Prayer',
+  'Family Fellowship',
+  'Healing Prayer',
+  'Welcome Visit',
 ];
 
 export default function CareCellVisitModal({
@@ -256,7 +256,7 @@ export default function CareCellVisitModal({
             {/* Date & Time Row */}
             <View style={styles.row}>
               <View style={{ flex: 1, marginRight: 8 }}>
-                <Text style={styles.fieldLabel}>VISIT DATE (YYYY-MM-DD) *</Text>
+                <Text style={styles.fieldLabel}>VISIT DATE *</Text>
                 <View style={styles.iconInputWrap}>
                   <Calendar size={16} color="#64748B" style={styles.inputIcon} />
                   <TextInput
@@ -267,32 +267,35 @@ export default function CareCellVisitModal({
                     onChangeText={setVisitDate}
                   />
                 </View>
-                <View style={styles.shortcutRow}>
-                  <TouchableOpacity onPress={() => handleDateShortcut(0)} style={styles.dateShortcutBtn}>
-                    <Text style={styles.dateShortcutTxt}>Today</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => handleDateShortcut(1)} style={styles.dateShortcutBtn}>
-                    <Text style={styles.dateShortcutTxt}>Tomorrow</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => handleDateShortcut(2)} style={styles.dateShortcutBtn}>
-                    <Text style={styles.dateShortcutTxt}>In 2 Days</Text>
-                  </TouchableOpacity>
-                </View>
               </View>
 
               <View style={{ flex: 1, marginLeft: 8 }}>
-                <Text style={styles.fieldLabel}>TIME (e.g. 17:00 / 5 PM) *</Text>
+                <Text style={styles.fieldLabel}>VISIT TIME *</Text>
                 <View style={styles.iconInputWrap}>
                   <Clock size={16} color="#64748B" style={styles.inputIcon} />
                   <TextInput
                     style={[styles.input, styles.inputWithIcon]}
-                    placeholder="17:00 or 5:00 PM"
+                    placeholder="e.g. 17:00 / 5 PM"
                     placeholderTextColor="#94A3B8"
                     value={visitTime}
                     onChangeText={setVisitTime}
                   />
                 </View>
               </View>
+            </View>
+
+            {/* Quick Date Shortcuts below Date & Time */}
+            <View style={styles.shortcutRow}>
+              <Text style={styles.shortcutMiniLbl}>QUICK DATE:</Text>
+              <TouchableOpacity onPress={() => handleDateShortcut(0)} style={styles.dateShortcutBtn}>
+                <Text style={styles.dateShortcutTxt}>Today</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => handleDateShortcut(1)} style={styles.dateShortcutBtn}>
+                <Text style={styles.dateShortcutTxt}>Tomorrow</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => handleDateShortcut(2)} style={styles.dateShortcutBtn}>
+                <Text style={styles.dateShortcutTxt}>In 2 Days</Text>
+              </TouchableOpacity>
             </View>
 
             {/* Visiting Team */}
@@ -525,17 +528,26 @@ const styles = StyleSheet.create({
   },
   shortcutRow: {
     flexDirection: 'row',
-    gap: 4,
-    marginTop: 6,
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+  },
+  shortcutMiniLbl: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.5,
   },
   dateShortcutBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 4.5,
     borderRadius: 6,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1,
+    borderColor: '#E0E7FF',
   },
   dateShortcutTxt: {
-    fontSize: 10.5,
+    fontSize: 11,
     fontWeight: '700',
     color: '#1A2D5A',
   },

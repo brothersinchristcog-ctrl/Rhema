@@ -159,62 +159,71 @@ export default function CareCellVisitsTab({
     <View style={styles.container}>
       {/* Top Filter & Actions Row */}
       <View style={styles.topBar}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.cellFilterScroll}>
-          <TouchableOpacity
-            style={[styles.cellChip, activeCellId === 'ALL' && styles.cellChipActive]}
-            onPress={() => handleCellSelect('ALL')}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.cellChipTxt, activeCellId === 'ALL' && styles.cellChipTxtActive]}>
-              All Cells ({cells.length})
-            </Text>
-          </TouchableOpacity>
+        <View style={styles.topActionsHeaderRow}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.cellFilterScroll} contentContainerStyle={{ paddingRight: 8 }}>
+            <TouchableOpacity
+              style={[styles.cellChip, activeCellId === 'ALL' && styles.cellChipActive]}
+              onPress={() => handleCellSelect('ALL')}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.cellChipTxt, activeCellId === 'ALL' && styles.cellChipTxtActive]}>
+                All Cells ({cells.length})
+              </Text>
+            </TouchableOpacity>
 
-          {cells.map((c) => {
-            const isSel = c.id === activeCellId;
-            return (
-              <TouchableOpacity
-                key={c.id}
-                style={[styles.cellChip, isSel && styles.cellChipActive]}
-                onPress={() => handleCellSelect(c.id)}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.cellChipTxt, isSel && styles.cellChipTxtActive]}>
-                  {c.cellCode}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+            {cells.map((c) => {
+              const isSel = c.id === activeCellId;
+              return (
+                <TouchableOpacity
+                  key={c.id}
+                  style={[styles.cellChip, isSel && styles.cellChipActive]}
+                  onPress={() => handleCellSelect(c.id)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.cellChipTxt, isSel && styles.cellChipTxtActive]}>
+                    {c.cellCode}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          <TouchableOpacity
+            style={styles.scheduleVisitBtn}
+            onPress={() => setCreateModalVisible(true)}
+            activeOpacity={0.85}
+          >
+            <Plus size={15} color="#FFFFFF" strokeWidth={2.5} style={{ marginRight: 4 }} />
+            <Text style={styles.scheduleVisitBtnTxt}>Schedule</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* KPI Stats & Schedule Visit Action */}
-      <View style={styles.statsActionRow}>
-        <View style={styles.kpiPillGroup}>
-          <View style={styles.kpiPill}>
-            <Text style={styles.kpiPillVal}>{metrics.totalVisits}</Text>
-            <Text style={styles.kpiPillLbl}>Visits</Text>
+      {/* 3 Spacious KPI Metrics Cards */}
+      <View style={styles.kpiCardsRow}>
+        <View style={styles.kpiCard}>
+          <View style={styles.kpiCardTop}>
+            <Home size={14} color="#1A2D5A" />
+            <Text style={styles.kpiCardVal}>{metrics.totalVisits}</Text>
           </View>
-          <View style={[styles.kpiPill, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
-            <CheckCircle2 size={12} color="#059669" style={{ marginRight: 3 }} />
-            <Text style={[styles.kpiPillVal, { color: '#059669' }]}>{metrics.totalAccepted}</Text>
-            <Text style={[styles.kpiPillLbl, { color: '#065F46' }]}>Accepted</Text>
-          </View>
-          <View style={[styles.kpiPill, { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }]}>
-            <Clock size={12} color="#D97706" style={{ marginRight: 3 }} />
-            <Text style={[styles.kpiPillVal, { color: '#D97706' }]}>{metrics.totalPending}</Text>
-            <Text style={[styles.kpiPillLbl, { color: '#92400E' }]}>Pending</Text>
-          </View>
+          <Text style={styles.kpiCardLbl}>Total Visits</Text>
         </View>
 
-        <TouchableOpacity
-          style={styles.scheduleVisitBtn}
-          onPress={() => setCreateModalVisible(true)}
-          activeOpacity={0.85}
-        >
-          <Plus size={15} color="#FFFFFF" strokeWidth={2.5} style={{ marginRight: 4 }} />
-          <Text style={styles.scheduleVisitBtnTxt}>Schedule Visit</Text>
-        </TouchableOpacity>
+        <View style={[styles.kpiCard, styles.kpiCardAccepted]}>
+          <View style={styles.kpiCardTop}>
+            <CheckCircle2 size={14} color="#059669" />
+            <Text style={[styles.kpiCardVal, { color: '#059669' }]}>{metrics.totalAccepted}</Text>
+          </View>
+          <Text style={[styles.kpiCardLbl, { color: '#065F46' }]}>Accepted</Text>
+        </View>
+
+        <View style={[styles.kpiCard, styles.kpiCardPending]}>
+          <View style={styles.kpiCardTop}>
+            <Clock size={14} color="#D97706" />
+            <Text style={[styles.kpiCardVal, { color: '#D97706' }]}>{metrics.totalPending}</Text>
+          </View>
+          <Text style={[styles.kpiCardLbl, { color: '#92400E' }]}>Pending</Text>
+        </View>
       </View>
 
       {/* Status Filter Tabs */}
@@ -448,10 +457,15 @@ const styles = StyleSheet.create({
   topBar: {
     paddingHorizontal: 16,
     paddingTop: 10,
-    paddingBottom: 6,
+    paddingBottom: 4,
+  },
+  topActionsHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   cellFilterScroll: {
-    flexDirection: 'row',
+    flex: 1,
   },
   cellChip: {
     paddingHorizontal: 13,
@@ -474,45 +488,11 @@ const styles = StyleSheet.create({
   cellChipTxtActive: {
     color: '#FFFFFF',
   },
-  statsActionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    gap: 8,
-  },
-  kpiPillGroup: {
-    flexDirection: 'row',
-    gap: 6,
-    flex: 1,
-  },
-  kpiPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  kpiPillVal: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#0F172A',
-    marginRight: 4,
-  },
-  kpiPillLbl: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#64748B',
-  },
   scheduleVisitBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#1A2D5A',
-    paddingHorizontal: 12,
+    paddingHorizontal: 13,
     paddingVertical: 8,
     borderRadius: 10,
     shadowColor: '#1A2D5A',
@@ -522,9 +502,54 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   scheduleVisitBtnTxt: {
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '800',
     color: '#FFFFFF',
+  },
+  kpiCardsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  kpiCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  kpiCardAccepted: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+  },
+  kpiCardPending: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
+  },
+  kpiCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 3,
+  },
+  kpiCardVal: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#0F172A',
+  },
+  kpiCardLbl: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#64748B',
   },
   statusTabsRow: {
     flexDirection: 'row',
