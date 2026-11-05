@@ -573,7 +573,7 @@ class VerseNotificationService {
       }
 
       const period = 'Morning';
-      const title = "Good Morning\nToday's Verse (నేటి వాక్యం)";
+      const title = "Good Morning · Today's Verse (నేటి వాక్యం)";
 
       const teVerse = (targetVerse.verseTe || targetVerse.verseEn || '').replace(/^["“”'‘]+|["“”'‘]+$/g, '').trim();
       const teRef = (targetVerse.referenceTe || targetVerse.referenceEn || '').trim();
