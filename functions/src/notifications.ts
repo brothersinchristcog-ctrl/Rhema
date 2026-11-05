@@ -2552,10 +2552,28 @@ export const pushCareCellAnnouncement = onDocumentCreated(
       },
       data: {
         type: 'care_cell_announcement',
-        announcementId,
-        churchId,
-        cellId: data.cellId || '',
-        scope,
+        title: notifTitle,
+        body: notifBody,
+        announcementId: String(announcementId),
+        churchId: String(churchId),
+        cellId: String(data.cellId || ''),
+        scope: String(scope),
+        click_action: 'FLUTTER_NOTIFICATION_CLICK',
+      },
+      android: {
+        priority: 'high' as const,
+        notification: {
+          sound: 'default',
+          channelId: 'church_alerts',
+        },
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: 'default',
+            badge: 1,
+          },
+        },
       },
       topic: `church_${churchId}`,
     };
@@ -2611,16 +2629,37 @@ export const pushCareCellMeeting = onDocumentCreated(
     const timeStr = data.startTime || '7:00 PM';
     const messaging = getMessaging();
 
+    const notifTitle = `🤝 ${cellName} Gathering`;
+    const notifBody = `${title} on ${dateStr} at ${timeStr}. Tap to view Scripture & location!`;
+
     const payload = {
       notification: {
-        title: `🤝 ${cellName} Gathering`,
-        body: `${title} on ${dateStr} at ${timeStr}. Tap to view Scripture & location!`,
+        title: notifTitle,
+        body: notifBody,
       },
       data: {
         type: 'care_cell_meeting',
-        meetingId,
-        churchId,
-        cellId: data.cellId || '',
+        title: notifTitle,
+        body: notifBody,
+        meetingId: String(meetingId),
+        churchId: String(churchId),
+        cellId: String(data.cellId || ''),
+        click_action: 'FLUTTER_NOTIFICATION_CLICK',
+      },
+      android: {
+        priority: 'high' as const,
+        notification: {
+          sound: 'default',
+          channelId: 'church_alerts',
+        },
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: 'default',
+            badge: 1,
+          },
+        },
       },
       topic: `church_${churchId}`,
     };
@@ -2675,16 +2714,37 @@ export const pushCareCellPrayerRequest = onDocumentCreated(
     const prayerTitle = data.title || 'Prayer Request';
     const messaging = getMessaging();
 
+    const notifTitle = `🙏 Care Cell Prayer: ${memberName}`;
+    const notifBody = `[${cellName}] ${prayerTitle}`;
+
     const payload = {
       notification: {
-        title: `🙏 Care Cell Prayer: ${memberName}`,
-        body: `[${cellName}] ${prayerTitle}`,
+        title: notifTitle,
+        body: notifBody,
       },
       data: {
         type: 'care_cell_prayer',
-        requestId,
-        churchId,
-        cellId: data.cellId || '',
+        title: notifTitle,
+        body: notifBody,
+        requestId: String(requestId),
+        churchId: String(churchId),
+        cellId: String(data.cellId || ''),
+        click_action: 'FLUTTER_NOTIFICATION_CLICK',
+      },
+      android: {
+        priority: 'high' as const,
+        notification: {
+          sound: 'default',
+          channelId: 'church_alerts',
+        },
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: 'default',
+            badge: 1,
+          },
+        },
       },
       topic: `church_${churchId}_admin`,
     };
@@ -2780,18 +2840,39 @@ export const pushCareCellVisit = onDocumentCreated(
       }
 
       if (tokens.length > 0) {
+        const notifTitle = `🏡 ${cellName}: ${title}`;
+        const notifBody = `Visit on ${visitDate} at ${visitTime} by ${visitors}. Tap to confirm your availability!`;
+
         const messagePayload = {
           notification: {
-            title: `🏡 ${cellName}: ${title}`,
-            body: `Visit on ${visitDate} at ${visitTime} by ${visitors}. Tap to confirm your availability!`,
+            title: notifTitle,
+            body: notifBody,
           },
           data: {
             type: 'care_cell_visit',
-            visitId,
-            cellId,
-            churchId,
-            visitDate,
-            visitTime,
+            title: notifTitle,
+            body: notifBody,
+            visitId: String(visitId),
+            cellId: String(cellId),
+            churchId: String(churchId),
+            visitDate: String(visitDate),
+            visitTime: String(visitTime),
+            click_action: 'FLUTTER_NOTIFICATION_CLICK',
+          },
+          android: {
+            priority: 'high' as const,
+            notification: {
+              sound: 'default',
+              channelId: 'church_alerts',
+            },
+          },
+          apns: {
+            payload: {
+              aps: {
+                sound: 'default',
+                badge: 1,
+              },
+            },
           },
           tokens,
         };
