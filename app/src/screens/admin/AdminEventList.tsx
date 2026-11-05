@@ -143,9 +143,111 @@ export default function AdminEventList() {
     }
   };
 
-  const today = new Date().toISOString().split('T')[0];
-  const upcomingCount = events.filter(e => e.date >= today).length;
-  const pastCount = events.filter(e => e.date < today).length;
+  const parseEventDateObj = (dateStr?: string): Date | null => {
+    if (!dateStr || typeof dateStr !== 'string') return null;
+    const clean = dateStr.trim();
+    const datePart = clean.split('T')[0];
+    if (datePart.includes('-')) {
+      const parts = datePart.split('-');
+      if (parts.length === 3) {
+        if (parts[0].length === 4) {
+          // YYYY-MM-DD
+          const y = parseInt(parts[0], 10);
+          const m = parseInt(parts[1], 10) - 1;
+          const d = parseInt(parts[2], 10);
+          return new Date(y, m, d);
+        } else {
+          // DD-MM-YYYY
+          const d = parseInt(parts[0], 10);
+          const m = parseInt(parts[1], 10) - 1;
+          const y = parseInt(parts[2], 10);
+          return new Date(y, m, d);
+        }
+      }
+    }
+    const parsed = new Date(dateStr);
+    return isNaN(parsed.getTime()) ? null : parsed;
+  };
+
+  const isEventCompleted = (ev: any): boolean => {
+    if (!ev) return false;
+    const statusStr = String(ev.status || ev.publishStatus || '').toLowerCase().trim();
+    if (
+      statusStr === 'completed' ||
+      statusStr === 'ended' ||
+      statusStr === 'past' ||
+      statusStr === 'closed' ||
+      statusStr === 'cancelled'
+    ) {
+      return true;
+    }
+
+    const rawDate = ev.endDate || ev.date || ev.startDate || ev.eventDate;
+    const eventDateObj = parseEventDateObj(rawDate);
+    if (!eventDateObj) return false;
+
+    const now = new Date();
+    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+    const eventMidnight = new Date(eventDateObj.getFullYear(), eventDateObj.getMonth(), eventDateObj.getDate(), 0, 0, 0);
+
+    // If event date was strictly before today, it is completed / past
+    if (eventMidnight.getTime() < todayMidnight.getTime()) {
+      return true;
+    }
+
+    // If event date is strictly in the future, it is upcoming
+    if (eventMidnight.getTime() > todayMidnight.getTime()) {
+      return false;
+    }
+
+    // Event is TODAY: check time
+    const timeToCompare = ev.endTime || ev.time || ev.startTime;
+    if (!timeToCompare) {
+      return false;
+    }
+
+    try {
+      let hour = 0;
+      let min = 0;
+      if (String(timeToCompare).includes('T')) {
+        const t = new Date(timeToCompare);
+        hour = t.getHours();
+        min = t.getMinutes();
+      } else if (String(timeToCompare).includes(':')) {
+        const cleanTime = String(timeToCompare).toUpperCase().replace(/\s+/g, '');
+        const isPM = cleanTime.includes('PM');
+        const isAM = cleanTime.includes('AM');
+        const timePart = cleanTime.replace('AM', '').replace('PM', '');
+        const parts = timePart.split(':');
+        hour = parseInt(parts[0], 10) || 0;
+        min = parseInt(parts[1], 10) || 0;
+        if (isPM && hour < 12) hour += 12;
+        if (isAM && hour === 12) hour = 0;
+      }
+
+      const eventTimeToday = new Date(
+        eventDateObj.getFullYear(),
+        eventDateObj.getMonth(),
+        eventDateObj.getDate(),
+        hour,
+        min,
+        0
+      );
+
+      if (ev.endTime) {
+        return now.getTime() > eventTimeToday.getTime();
+      }
+
+      // Default duration: 3 hours after start time
+      const assumedEnd = new Date(eventTimeToday.getTime() + 3 * 60 * 60 * 1000);
+      return now.getTime() > assumedEnd.getTime();
+    } catch {
+      return false;
+    }
+  };
+
+  const upcomingCount = events.filter(e => !isEventCompleted(e)).length;
+  const pastCount = events.filter(e => isEventCompleted(e)).length;
 
   const formatDate = (sfDate: string) => {
     if (!sfDate) return '';
@@ -282,15 +384,23 @@ export default function AdminEventList() {
         {events
           .filter(e => {
             if (filterType === 'Published') {
-              return !e.status || e.status.toLowerCase().includes('pub') || e.status.toLowerCase().includes('act');
+              return (
+                !e.status ||
+                e.status.toLowerCase().includes('pub') ||
+                e.status.toLowerCase().includes('act') ||
+                e.status.toLowerCase().includes('comp')
+              );
             }
-            return filterType === 'Upcoming' ? e.date >= today : e.date < today;
+            return filterType === 'Upcoming' ? !isEventCompleted(e) : isEventCompleted(e);
           })
-          .sort((a, b) => filterType === 'Past' 
-             ? new Date(b.date).getTime() - new Date(a.date).getTime()
-             : new Date(a.date).getTime() - new Date(b.date).getTime()
-          )
-          .map((event, idx) => (
+          .sort((a, b) => {
+            const timeA = parseEventDateObj(a.date)?.getTime() || 0;
+            const timeB = parseEventDateObj(b.date)?.getTime() || 0;
+            return filterType === 'Past' ? timeB - timeA : timeA - timeB;
+          })
+          .map((event, idx) => {
+            const completed = isEventCompleted(event);
+            return (
           <View key={event.id} style={[styles.eventItem, idx === 0 && styles.featuredItem]}>
             <View style={{ flexDirection: 'row', alignItems: 'stretch', width: '100%' }}>
               <TouchableOpacity style={[styles.eiThumb, { backgroundColor: event.bannerColor || '#1a2d5a', alignSelf: 'flex-start' }]} onPress={() => handleEdit(event)}>
@@ -319,9 +429,26 @@ export default function AdminEventList() {
                   <Text style={styles.eiMetaTxt} numberOfLines={1}>{event.venueEn || event.location || 'No Venue'}</Text>
                 </View>
                 <View style={styles.eiFoot}>
-                  <View style={event.status?.toLowerCase().includes('dra') ? styles.badgeDraft : styles.badgePub}>
-                    <Text style={event.status?.toLowerCase().includes('dra') ? styles.badgeDraftTxt : styles.badgePubTxt} numberOfLines={1}>
-                      {(event.status || 'Published').toUpperCase()}
+                  <View
+                    style={
+                      completed
+                        ? styles.badgeCompleted
+                        : event.status?.toLowerCase().includes('dra')
+                        ? styles.badgeDraft
+                        : styles.badgePub
+                    }
+                  >
+                    <Text
+                      style={
+                        completed
+                          ? styles.badgeCompletedTxt
+                          : event.status?.toLowerCase().includes('dra')
+                          ? styles.badgeDraftTxt
+                          : styles.badgePubTxt
+                      }
+                      numberOfLines={1}
+                    >
+                      {completed ? 'COMPLETED' : (event.status || 'Published').toUpperCase()}
                     </Text>
                   </View>
                   {(event.requireEventQR === true || event.requireEventQr === true) && (
@@ -387,7 +514,8 @@ export default function AdminEventList() {
               </TouchableOpacity>
             )}
           </View>
-        ))}
+            );
+          })}
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -604,6 +732,8 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   badgePubTxt: { color: '#15803D', fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
   badgeDraft: { backgroundColor: '#F8FAFC', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   badgeDraftTxt: { color: '#64748B', fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+  badgeCompleted: { backgroundColor: '#F1F5F9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#CBD5E1' },
+  badgeCompletedTxt: { color: '#475569', fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
   
   eiEdit: { position: 'absolute', top: 0, right: 0, padding: 4 },
   
