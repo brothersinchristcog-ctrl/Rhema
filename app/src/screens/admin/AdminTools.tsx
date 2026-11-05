@@ -24,8 +24,10 @@ import {
   ArrowRight
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 export default function AdminTools() {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const navigation = useNavigation<any>();
 
   const SECTIONS = [
@@ -120,7 +122,7 @@ export default function AdminTools() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FAF7F2' },
   
   header: { backgroundColor: '#1a2d5a', paddingTop: Platform.OS === 'ios' ? 60 : 30, paddingHorizontal: 20, paddingBottom: 30, borderBottomLeftRadius: 30, borderBottomRightRadius: 30 },
@@ -146,4 +148,4 @@ const styles = StyleSheet.create({
 
   advancedBtn: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 15 },
   advancedTxt: { fontSize: 12, color: '#6B7280', fontWeight: '600' }
-});
+}));

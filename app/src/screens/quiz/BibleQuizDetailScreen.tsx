@@ -33,6 +33,7 @@ import { QuizService } from '../../services/QuizService';
 import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 import { useQuizLanguage } from '../../context/QuizLanguageContext';
 import QuizLanguageModal from './QuizLanguageModal';
 import { getQuizStrings } from '../../constants/BibleQuizTranslations';
@@ -48,6 +49,7 @@ import {
 import QuizAlertModal from './QuizAlertModal';
 
 export default function BibleQuizDetailScreen() {
+  const { isDark: _adminIsDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
@@ -185,9 +187,9 @@ export default function BibleQuizDetailScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.center, { backgroundColor: isDark ? '#0b1120' : '#FAF7F2' }]}>
+      <View style={[styles.container, styles.center, { backgroundColor: screenBg }]}>
         <ActivityIndicator size="large" color="#2563eb" />
-        <Text style={[styles.loadingTxt, { color: isDark ? '#94a3b8' : '#64748b' }]}>
+        <Text style={[styles.loadingTxt, { color: secondaryText }]}>
           Loading quiz details...
         </Text>
       </View>
@@ -196,14 +198,14 @@ export default function BibleQuizDetailScreen() {
 
   if (notFound || !quiz) {
     return (
-      <View style={[styles.container, styles.center, { padding: 24, backgroundColor: isDark ? '#0b1120' : '#FAF7F2' }]}>
+      <View style={[styles.container, styles.center, { padding: 24, backgroundColor: screenBg }]}>
         <View style={styles.errorIconBox}>
           <AlertCircle size={36} color="#DC2626" />
         </View>
-        <Text style={[styles.errorTitle, { color: isDark ? '#f8fafc' : '#0F172A' }]}>
+        <Text style={[styles.errorTitle, { color: primaryText }]}>
           Quiz Unavailable
         </Text>
-        <Text style={[styles.errorSubtitle, { color: isDark ? '#94a3b8' : '#64748B' }]}>
+        <Text style={[styles.errorSubtitle, { color: secondaryText }]}>
           This quiz could not be loaded or may have been removed.
         </Text>
         <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
@@ -268,8 +270,8 @@ export default function BibleQuizDetailScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0b1120' : '#FAF7F2' }]}>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#0b1120' : '#FAF7F2'} />
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={screenBg} />
 
       {/* Top Floating Header Card */}
       <View
@@ -324,8 +326,8 @@ export default function BibleQuizDetailScreen() {
           style={[
             styles.heroCard,
             {
-              backgroundColor: isDark ? '#141d2e' : '#ffffff',
-              borderColor: isDark ? '#26354a' : '#e2e8f0',
+              backgroundColor: cardSurface,
+              borderColor: adminBorderColor,
             },
           ]}
         >
@@ -375,10 +377,10 @@ export default function BibleQuizDetailScreen() {
 
             return (
               <>
-                <Text style={[styles.quizTitle, { color: isDark ? '#f8fafc' : '#0f172a' }]}>
+                <Text style={[styles.quizTitle, { color: primaryText }]}>
                   {titleTxt}
                 </Text>
-                <Text style={[styles.quizDesc, { color: isDark ? '#94a3b8' : '#475569' }]}>
+                <Text style={[styles.quizDesc, { color: secondaryText }]}>
                   {descTxt}
                 </Text>
               </>
@@ -446,7 +448,7 @@ export default function BibleQuizDetailScreen() {
 
               <View style={styles.attemptInfoCol}>
                 <View style={styles.attemptHeadingRow}>
-                  <Text style={[styles.attemptTitle, { color: isDark ? '#f8fafc' : '#0f172a' }]}>
+                  <Text style={[styles.attemptTitle, { color: primaryText }]}>
                     Previous Score: {priorAttempt.score}/{priorAttempt.totalMarks} ({priorAttempt.percentage}%)
                   </Text>
                   <View
@@ -466,7 +468,7 @@ export default function BibleQuizDetailScreen() {
                   </View>
                 </View>
 
-                <Text style={[styles.attemptSub, { color: isDark ? '#94a3b8' : '#64748b' }]}>
+                <Text style={[styles.attemptSub, { color: secondaryText }]}>
                   {priorAttempt.passed
                     ? 'Excellent job! You successfully passed this quiz.'
                     : 'Quiz completed. Feel free to retry to improve your score!'}
@@ -492,7 +494,7 @@ export default function BibleQuizDetailScreen() {
 
         {/* ─── Quiz Specifications & Rules Card ───────────────────── */}
         <View style={styles.sectionHeaderRow}>
-          <Text style={[styles.sectionHeader, { color: isDark ? '#f8fafc' : '#0f172a' }]}>
+          <Text style={[styles.sectionHeader, { color: primaryText }]}>
             Quiz Overview & Rules
           </Text>
         </View>
@@ -501,8 +503,8 @@ export default function BibleQuizDetailScreen() {
           style={[
             styles.specCard,
             {
-              backgroundColor: isDark ? '#141d2e' : '#ffffff',
-              borderColor: isDark ? '#26354a' : '#e2e8f0',
+              backgroundColor: cardSurface,
+              borderColor: adminBorderColor,
             },
           ]}
         >
@@ -513,10 +515,10 @@ export default function BibleQuizDetailScreen() {
               <View style={[styles.metricIconWrap, { backgroundColor: isDark ? '#1e293b' : '#eff6ff' }]}>
                 <HelpCircle size={18} color="#2563eb" />
               </View>
-              <Text style={[styles.metricVal, { color: isDark ? '#f8fafc' : '#0f172a' }]}>
+              <Text style={[styles.metricVal, { color: primaryText }]}>
                 {totalQuestionsCount} Questions
               </Text>
-              <Text style={[styles.metricLbl, { color: isDark ? '#94a3b8' : '#64748b' }]}>
+              <Text style={[styles.metricLbl, { color: secondaryText }]}>
                 Total Questions
               </Text>
             </View>
@@ -526,10 +528,10 @@ export default function BibleQuizDetailScreen() {
               <View style={[styles.metricIconWrap, { backgroundColor: isDark ? '#1e293b' : '#fef3c7' }]}>
                 <Clock size={18} color="#d97706" />
               </View>
-              <Text style={[styles.metricVal, { color: isDark ? '#f8fafc' : '#0f172a' }]}>
+              <Text style={[styles.metricVal, { color: primaryText }]}>
                 {isTimed ? `${quiz.timeLimitMinutes} Mins` : 'Untimed'}
               </Text>
-              <Text style={[styles.metricLbl, { color: isDark ? '#94a3b8' : '#64748b' }]}>
+              <Text style={[styles.metricLbl, { color: secondaryText }]}>
                 {isTimed ? 'Time Limit' : 'Self-Paced'}
               </Text>
             </View>
@@ -539,10 +541,10 @@ export default function BibleQuizDetailScreen() {
               <View style={[styles.metricIconWrap, { backgroundColor: isDark ? '#1e293b' : '#ecfdf5' }]}>
                 <CheckCircle size={18} color="#059669" />
               </View>
-              <Text style={[styles.metricVal, { color: isDark ? '#f8fafc' : '#0f172a' }]}>
+              <Text style={[styles.metricVal, { color: primaryText }]}>
                 {passingScore}%
               </Text>
-              <Text style={[styles.metricLbl, { color: isDark ? '#94a3b8' : '#64748b' }]}>
+              <Text style={[styles.metricLbl, { color: secondaryText }]}>
                 Passing Score
               </Text>
             </View>
@@ -552,21 +554,21 @@ export default function BibleQuizDetailScreen() {
               <View style={[styles.metricIconWrap, { backgroundColor: isDark ? '#1e293b' : '#f5f3ff' }]}>
                 <Award size={18} color="#7c3aed" />
               </View>
-              <Text style={[styles.metricVal, { color: isDark ? '#f8fafc' : '#0f172a' }]}>
+              <Text style={[styles.metricVal, { color: primaryText }]}>
                 {marksPerQuestion} pt each
               </Text>
-              <Text style={[styles.metricLbl, { color: isDark ? '#94a3b8' : '#64748b' }]}>
+              <Text style={[styles.metricLbl, { color: secondaryText }]}>
                 Score Per Question
               </Text>
             </View>
           </View>
 
           {/* Divider */}
-          <View style={[styles.specDivider, { backgroundColor: isDark ? '#26354a' : '#FAF7F2' }]} />
+          <View style={[styles.specDivider, { backgroundColor: secondarySurface }]} />
 
           {/* Helpful Guidance Bullets */}
           <View style={styles.guidanceWrap}>
-            <Text style={[styles.guidanceTitle, { color: isDark ? '#e2e8f0' : '#1e293b' }]}>
+            <Text style={[styles.guidanceTitle, { color: primaryText }]}>
               Tips & Participation Guidelines
             </Text>
 
@@ -574,7 +576,7 @@ export default function BibleQuizDetailScreen() {
               <View style={styles.bulletDot}>
                 <Check size={11} color="#2563eb" strokeWidth={3} />
               </View>
-              <Text style={[styles.bulletTxt, { color: isDark ? '#94a3b8' : '#475569' }]}>
+              <Text style={[styles.bulletTxt, { color: secondaryText }]}>
                 Read each question and all 4 options thoroughly before submitting.
               </Text>
             </View>
@@ -583,7 +585,7 @@ export default function BibleQuizDetailScreen() {
               <View style={styles.bulletDot}>
                 <Check size={11} color="#2563eb" strokeWidth={3} />
               </View>
-              <Text style={[styles.bulletTxt, { color: isDark ? '#94a3b8' : '#475569' }]}>
+              <Text style={[styles.bulletTxt, { color: secondaryText }]}>
                 Full scripture references and biblical context are revealed upon quiz completion.
               </Text>
             </View>
@@ -592,7 +594,7 @@ export default function BibleQuizDetailScreen() {
               <View style={styles.bulletDot}>
                 <Check size={11} color="#2563eb" strokeWidth={3} />
               </View>
-              <Text style={[styles.bulletTxt, { color: isDark ? '#94a3b8' : '#475569' }]}>
+              <Text style={[styles.bulletTxt, { color: secondaryText }]}>
                 Your answers are saved automatically and recorded for church fellowship progress.
               </Text>
             </View>
@@ -605,8 +607,8 @@ export default function BibleQuizDetailScreen() {
         style={[
           styles.bottomBar,
           {
-            backgroundColor: isDark ? '#0f172a' : '#ffffff',
-            borderTopColor: isDark ? '#1e293b' : '#e2e8f0',
+            backgroundColor: secondarySurface,
+            borderTopColor: secondarySurface,
             paddingBottom: Math.max(insets.bottom, 14),
           },
         ]}
@@ -619,7 +621,7 @@ export default function BibleQuizDetailScreen() {
                 styles.resultsSecondaryBtn,
                 {
                   borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : '#cbd5e1',
-                  backgroundColor: isDark ? '#1e293b' : '#FAF7F2',
+                  backgroundColor: secondarySurface,
                 },
               ]}
               onPress={handleViewResults}
@@ -706,7 +708,7 @@ export default function BibleQuizDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   container: {
     flex: 1,
   },
@@ -1148,4 +1150,4 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: 'hidden',
   },
-});
+}));

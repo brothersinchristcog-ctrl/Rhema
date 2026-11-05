@@ -28,8 +28,10 @@ import { useRoute } from '@react-navigation/native';
 import { openInMaps } from '../../../utils/maps';
 import { AdminTabContext } from '../../../context/AdminTabContext';
 import LiveJourneyTracker from '../../../components/LiveJourneyTracker';
+import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
 
 export const PastorEventDashboard = ({ navigation }: { navigation: any }) => {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const route = useRoute<any>();
   const insets = useSafeAreaInsets();
   const { setActiveTab: setAdminActiveTab } = React.useContext(AdminTabContext);
@@ -650,7 +652,7 @@ export const PastorEventDashboard = ({ navigation }: { navigation: any }) => {
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -898,6 +900,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.primary
   }
-});
+}));
 
 export default PastorEventDashboard;

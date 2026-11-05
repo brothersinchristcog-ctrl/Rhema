@@ -31,6 +31,7 @@ import * as MediaLibrary from 'expo-media-library';
 import AttendanceService, { AttendanceRecord } from '../../services/AttendanceService';
 import { useChurch } from '../../context/ChurchContext';
 import firestore from '@react-native-firebase/firestore';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const { width } = Dimensions.get('window');
 
@@ -45,6 +46,7 @@ interface UnifiedMember {
 }
 
 export default function EventAttendeesScreen({ navigation, route }: any) {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { eventId, eventName, churchId: routeChurchId } = route.params || {};
   const { activeChurch } = useChurch();
 
@@ -476,7 +478,7 @@ export default function EventAttendeesScreen({ navigation, route }: any) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f4f6f8' },
   header: {
     paddingHorizontal: 24,
@@ -709,4 +711,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 60
   }
-});
+}));

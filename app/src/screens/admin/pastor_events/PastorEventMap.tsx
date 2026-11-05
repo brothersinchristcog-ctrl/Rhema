@@ -14,6 +14,7 @@ import { colors, spacing, radius, typography, shadow } from '../../../theme/Them
 import { PastorEvent } from '../../../types/event';
 import EventTypeBadge from '../../../components/EventTypeBadge';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
 
 // Try to safely load react-native-maps
 let MapView: any = null;
@@ -187,6 +188,7 @@ const markerColors = {
 };
 
 export const PastorEventMap = ({ route, navigation }: { route: any; navigation: any }) => {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { events = [] } = route.params as { events: PastorEvent[] };
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const mapRef = useRef<any>(null);
@@ -429,7 +431,7 @@ export const PastorEventMap = ({ route, navigation }: { route: any; navigation: 
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.bgPrimary
@@ -625,6 +627,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: -2
   }
-});
+}));
 
 export default PastorEventMap;

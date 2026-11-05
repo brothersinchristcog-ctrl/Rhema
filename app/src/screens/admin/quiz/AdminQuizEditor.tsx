@@ -43,6 +43,7 @@ import { QuizAIService } from '../../../services/QuizAIService';
 import BibleReferencePickerModal, {
   BiblePickerResult,
 } from './BibleReferencePickerModal';
+import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
 
 interface Props {
   initialQuiz?: Partial<BibleQuiz> | null;
@@ -83,6 +84,7 @@ export default function AdminQuizEditor({
   onBack,
   onSaved,
 }: Props) {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const [quizId] = useState<string | undefined>(initialQuiz?.id);
   const [title, setTitle] = useState<string>(initialQuiz?.title || '');
   const [topic, setTopic] = useState<string>(initialQuiz?.topic || initialQuiz?.category || '');
@@ -1692,7 +1694,7 @@ export default function AdminQuizEditor({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -3017,4 +3019,4 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-});
+}));

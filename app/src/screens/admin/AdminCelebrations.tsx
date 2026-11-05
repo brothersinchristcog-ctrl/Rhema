@@ -24,10 +24,12 @@ import SuccessPopup from '../../components/SuccessPopup';
 
 import { useChurch } from '../../context/ChurchContext';
 import { functions } from '../../services/firebaseConfig';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 type ViewMode = 'dashboard' | 'list' | 'details' | 'personalize' | 'themePicker' | 'customTheme' | 'versePicker' | 'photoPicker' | 'preview' | 'whatsapp' | 'confirm';
 
 export default function AdminCelebrations({ navigation }: any) {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { activeChurch, setActiveChurch } = useChurch();
   const { setActiveTab } = React.useContext(AdminTabContext);
   const [loading, setLoading] = useState(true);
@@ -653,7 +655,7 @@ const THEMES = [
   { id: 'children', title: "Children's Theme", c: ['#7BC9E0', '#F3D98B'] },
 ];
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -818,4 +820,4 @@ const styles = StyleSheet.create({
   filterBtnTxtActive: {
     color: '#FFFFFF'
   }
-});
+}));

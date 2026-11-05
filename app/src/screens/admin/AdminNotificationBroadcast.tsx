@@ -46,6 +46,7 @@ import {
   getDocs, 
   serverTimestamp 
 } from '@react-native-firebase/firestore';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const { width } = Dimensions.get('window');
 
@@ -74,6 +75,7 @@ const FONTS = {
 const LOCATIONS = ['Main Sanctuary', 'Zoom Conference Room', 'Pastor\'s Office', 'Board Room', 'Fellowship Hall'];
 
 export default function AdminNotificationBroadcast() {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { setActiveTab } = React.useContext(AdminTabContext);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -813,7 +815,7 @@ export default function AdminNotificationBroadcast() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -1036,4 +1038,4 @@ const styles = StyleSheet.create({
   successIconInner: { width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center' },
   successTitle: { fontSize: 22, fontWeight: '900', color: '#1a2d5a', marginBottom: 8, textAlign: 'center' },
   successDesc: { fontSize: 14, color: '#64748B', textAlign: 'center', lineHeight: 22 },
-});
+}));

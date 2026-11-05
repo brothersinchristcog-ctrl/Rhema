@@ -11,6 +11,7 @@ import {
 import { Check, X, Globe } from 'lucide-react-native';
 import { useQuizLanguage } from '../../context/QuizLanguageContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 import { SupportedLanguage } from '../../locales';
 import { getQuizStrings } from '../../constants/BibleQuizTranslations';
 
@@ -20,6 +21,7 @@ interface QuizLanguageModalProps {
 }
 
 export default function QuizLanguageModal({ visible, onClose }: QuizLanguageModalProps) {
+  const { isDark: _adminIsDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { quizLanguage, setQuizLanguage, languages } = useQuizLanguage();
   const { isDark } = useTheme();
   const ui = getQuizStrings(quizLanguage);
@@ -43,8 +45,8 @@ export default function QuizLanguageModal({ visible, onClose }: QuizLanguageModa
               style={[
                 styles.modalCard,
                 {
-                  backgroundColor: isDark ? '#141d2e' : '#ffffff',
-                  borderColor: isDark ? '#26354a' : '#e2e8f0',
+                  backgroundColor: cardSurface,
+                  borderColor: adminBorderColor,
                 },
               ]}
             >
@@ -52,7 +54,7 @@ export default function QuizLanguageModal({ visible, onClose }: QuizLanguageModa
               <View
                 style={[
                   styles.headerRow,
-                  { borderBottomColor: isDark ? '#26354a' : '#e2e8f0' },
+                  { borderBottomColor: adminBorderColor },
                 ]}
               >
                 <View style={styles.titleWrap}>
@@ -60,7 +62,7 @@ export default function QuizLanguageModal({ visible, onClose }: QuizLanguageModa
                   <Text
                     style={[
                       styles.title,
-                      { color: isDark ? '#f8fafc' : '#0f172a' },
+                      { color: primaryText },
                     ]}
                   >
                     {ui.selectLanguage}
@@ -70,11 +72,11 @@ export default function QuizLanguageModal({ visible, onClose }: QuizLanguageModa
                   onPress={onClose}
                   style={[
                     styles.closeBtn,
-                    { backgroundColor: isDark ? '#1e293b' : '#FAF7F2' },
+                    { backgroundColor: secondarySurface },
                   ]}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  <X size={16} color={isDark ? '#cbd5e1' : '#64748b'} />
+                  <X size={16} color={secondaryText} />
                 </TouchableOpacity>
               </View>
 
@@ -95,7 +97,7 @@ export default function QuizLanguageModal({ visible, onClose }: QuizLanguageModa
                             : 'transparent',
                           borderColor: isSelected
                             ? '#2563EB'
-                            : isDark ? '#1e293b' : '#FAF7F2',
+                            : secondarySurface,
                         },
                       ]}
                       onPress={() => handleSelect(lang.code)}
@@ -108,9 +110,7 @@ export default function QuizLanguageModal({ visible, onClose }: QuizLanguageModa
                             {
                               color: isSelected
                                 ? '#2563EB'
-                                : isDark
-                                ? '#f8fafc'
-                                : '#0f172a',
+                                : primaryText,
                             },
                           ]}
                         >
@@ -119,7 +119,7 @@ export default function QuizLanguageModal({ visible, onClose }: QuizLanguageModa
                         <Text
                           style={[
                             styles.langEnglish,
-                            { color: isDark ? '#94a3b8' : '#64748b' },
+                            { color: secondaryText },
                           ]}
                         >
                           {lang.name}
@@ -143,7 +143,7 @@ export default function QuizLanguageModal({ visible, onClose }: QuizLanguageModa
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.65)',
@@ -217,4 +217,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-});
+}));

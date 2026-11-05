@@ -27,6 +27,7 @@ import { useAuth } from '../../context/AuthContext';
 import { AdminTabContext } from '../../context/AdminTabContext';
 import storage from '@react-native-firebase/storage';
 import { CustomAlert } from '../../components/CustomAlert';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const PRESET_COLORS = [
   '#1a2d5a', '#c0392b', '#16a34a', '#7c3aed',
@@ -34,6 +35,7 @@ const PRESET_COLORS = [
 ];
 
 export default function AdminChurchSettings({ navigation }: any) {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { member } = useAuth();
   const { churchId, activeChurch, setActiveChurch } = useChurch();
   const { goBack } = React.useContext(AdminTabContext);
@@ -889,7 +891,7 @@ export default function AdminChurchSettings({ navigation }: any) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -1072,4 +1074,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
-});
+}));

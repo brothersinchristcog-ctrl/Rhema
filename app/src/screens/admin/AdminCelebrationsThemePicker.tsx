@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, Dimensi
 import { ArrowLeft, Plus } from 'lucide-react-native';
 import { useChurch } from '../../context/ChurchContext';
 import firestore from '@react-native-firebase/firestore';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const { width } = Dimensions.get('window');
 const cardWidth = (width - 60) / 2; // 20 padding each side, 20 gap between
@@ -21,6 +22,7 @@ const THEMES = [
 ];
 
 export default function AdminCelebrationsThemePicker({ onBack, onSelectTheme, onDeleteSuccess }: { onBack: () => void, onSelectTheme: (themeId: string) => void, onDeleteSuccess?: () => void }) {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { activeChurch, setActiveChurch } = useChurch();
   const customThemes = activeChurch?.customThemes || [];
 
@@ -117,7 +119,7 @@ export default function AdminCelebrationsThemePicker({ onBack, onSelectTheme, on
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FAF8F0',
@@ -227,4 +229,4 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   }
-});
+}));

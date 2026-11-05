@@ -18,8 +18,10 @@ import { detectConflicts } from '../../../utils/conflicts';
 import { saveStartingLocation, getStartingLocation, formatDuration } from '../../../utils/locationStore';
 import TransportToggle from '../../../components/TransportToggle';
 import RouteChain, { RouteStop, RouteLeg } from '../../../components/RouteChain';
+import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
 
 export const PastorEventRoutePlanner = ({ route, navigation }: { route: any; navigation: any }) => {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { events = [] } = route.params as { events: PastorEvent[] };
   const [mode, setMode] = useState<TransportMode>('car');
   const [stops, setStops] = useState<RouteStop[]>([]);
@@ -323,7 +325,7 @@ export const PastorEventRoutePlanner = ({ route, navigation }: { route: any; nav
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.bgSecondary
@@ -460,6 +462,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600'
   }
-});
+}));
 
 export default PastorEventRoutePlanner;

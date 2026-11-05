@@ -26,6 +26,7 @@ import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import { AdminTabContext } from '../../context/AdminTabContext';
 import InviteMembersModal from '../../components/InviteMembersModal';
 import { CHURCH_SKILL_CATEGORIES, ALL_PREDEFINED_SKILLS } from '../../constants/churchSkills';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const { width } = Dimensions.get('window');
 
@@ -72,6 +73,7 @@ const parseSkillsList = (val: any): string[] => {
 };
 
 export default function AdminMembers() {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { activeChurch } = useChurch();
   const { setActiveTab } = React.useContext(AdminTabContext);
   const [members, setMembers] = useState<any[]>([]);
@@ -1341,11 +1343,11 @@ May God bless you abundantly! ❤️`;
 }
 
 // Separate function for dynamic badge styling to keep code clean
-const badgeRowStyles = (isActive: boolean) => StyleSheet.create({
+const badgeRowStyles = (isActive: boolean) => createAdminThemedStyles(StyleSheet.create({
   badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center' }
-});
+}));
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -1677,4 +1679,4 @@ const styles = StyleSheet.create({
   },
 
   footerBranding: { fontSize: 10, color: '#9CA3AF', textAlign: 'center', marginTop: 20 }
-});
+}));

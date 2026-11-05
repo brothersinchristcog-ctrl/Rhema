@@ -8,6 +8,7 @@ import { firestore, functions } from '../../services/firebaseConfig';
 import { useChurch } from '../../context/ChurchContext';
 import { AdminTabContext } from '../../context/AdminTabContext';
 import { useContext } from 'react';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 interface WhatsAppMessage {
   id: string;
@@ -34,6 +35,7 @@ interface Conversation {
 }
 
 export default function AdminWhatsAppInbox() {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { goBack } = useContext(AdminTabContext) as any;
   const { activeChurch } = useChurch();
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -372,13 +374,13 @@ export default function AdminWhatsAppInbox() {
   };
 
     return (
-    <View style={{ flex: 1, backgroundColor: '#FAF8F0' }}>
+    <View style={{ flex: 1, backgroundColor: screenBg }}>
       {selectedConversation ? renderChat() : renderInbox()}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -624,4 +626,4 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-});
+}));

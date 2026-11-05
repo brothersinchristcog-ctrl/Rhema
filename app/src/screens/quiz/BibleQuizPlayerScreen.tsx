@@ -40,6 +40,7 @@ import { useChurch } from '../../context/ChurchContext';
 import { RHEMA_CHURCH_ID } from '../../constants/ChurchConfig';
 import { useQuizLanguage } from '../../context/QuizLanguageContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 import {
   getQuizStrings,
   localizeBibleReference,
@@ -53,6 +54,7 @@ import QuizAlertModal, { QuizAlertModalType } from './QuizAlertModal';
 import { isQuizScheduledLocked, formatQuizTime } from '../../utils/QuizScheduleUtils';
 
 export default function BibleQuizPlayerScreen() {
+  const { isDark: _adminIsDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
@@ -512,11 +514,11 @@ export default function BibleQuizPlayerScreen() {
         style={[
           styles.container,
           styles.center,
-          { backgroundColor: isDark ? '#0b1120' : '#FAF7F2' },
+          { backgroundColor: screenBg },
         ]}
       >
         <ActivityIndicator size="large" color="#3B82F6" />
-        <Text style={[styles.loadingTxt, { color: isDark ? '#94a3b8' : '#64748b' }]}>
+        <Text style={[styles.loadingTxt, { color: secondaryText }]}>
           {quizLanguage === 'te'
             ? 'దేవుని వాక్య ప్రశ్నలు లోడ్ అవుతున్నాయి...'
             : 'Loading Scripture Questions...'}
@@ -559,8 +561,8 @@ export default function BibleQuizPlayerScreen() {
             style={[
               styles.questionCard,
               {
-                backgroundColor: isDark ? '#141d2e' : '#ffffff',
-                borderColor: isDark ? '#26354a' : '#e2e8f0',
+                backgroundColor: cardSurface,
+                borderColor: adminBorderColor,
               },
             ]}
           >
@@ -592,7 +594,7 @@ export default function BibleQuizPlayerScreen() {
             <Text
               style={[
                 styles.questionText,
-                { color: isDark ? '#f8fafc' : '#0f172a' },
+                { color: primaryText },
               ]}
             >
               {displayedQuestionText}
@@ -603,7 +605,7 @@ export default function BibleQuizPlayerScreen() {
           <Text
             style={[
               styles.optionsPrompt,
-              { color: isDark ? '#94a3b8' : '#64748b' },
+              { color: secondaryText },
             ]}
           >
             {ui.selectYourAnswer}
@@ -636,9 +638,7 @@ export default function BibleQuizPlayerScreen() {
                         : '#ffffff',
                       borderColor: isSelected
                         ? '#3b82f6'
-                        : isDark
-                        ? '#26354a'
-                        : '#e2e8f0',
+                        : adminBorderColor,
                     },
                   ]}
                   onPress={() =>
@@ -670,9 +670,7 @@ export default function BibleQuizPlayerScreen() {
                         {
                           color: isSelected
                             ? '#ffffff'
-                            : isDark
-                            ? '#94a3b8'
-                            : '#475569',
+                            : secondaryText,
                         },
                       ]}
                     >
@@ -714,7 +712,7 @@ export default function BibleQuizPlayerScreen() {
               style={[
                 styles.arrowNavBtn,
                 qIndex === 0 && styles.arrowNavBtnDisabled,
-                { backgroundColor: isDark ? '#141d2e' : '#ffffff' },
+                { backgroundColor: cardSurface },
               ]}
               onPress={() => goToQuestion(qIndex - 1)}
               disabled={qIndex === 0}
@@ -737,15 +735,15 @@ export default function BibleQuizPlayerScreen() {
               style={[
                 styles.navCounterPill,
                 {
-                  backgroundColor: isDark ? '#141d2e' : '#ffffff',
-                  borderColor: isDark ? '#26354a' : '#e2e8f0',
+                  backgroundColor: cardSurface,
+                  borderColor: adminBorderColor,
                 },
               ]}
             >
               <Text
                 style={[
                   styles.navCounterTxt,
-                  { color: isDark ? '#f8fafc' : '#0f172a' },
+                  { color: primaryText },
                 ]}
               >
                 {qIndex + 1} / {questions.length}
@@ -767,7 +765,7 @@ export default function BibleQuizPlayerScreen() {
               <TouchableOpacity
                 style={[
                   styles.arrowNavBtn,
-                  { backgroundColor: isDark ? '#141d2e' : '#ffffff' },
+                  { backgroundColor: cardSurface },
                 ]}
                 onPress={() => goToQuestion(qIndex + 1)}
                 hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
@@ -783,8 +781,8 @@ export default function BibleQuizPlayerScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0b1120' : '#FAF7F2' }]}>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#0b1120' : '#FAF7F2'} />
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={screenBg} />
 
       {/* Top Floating Header Card */}
       <View
@@ -853,7 +851,7 @@ export default function BibleQuizPlayerScreen() {
       <View
         style={[
           styles.progressBarTrack,
-          { backgroundColor: isDark ? '#1e293b' : '#e2e8f0' },
+          { backgroundColor: secondarySurface },
         ]}
       >
         <LinearGradient
@@ -912,7 +910,7 @@ export default function BibleQuizPlayerScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   container: {
     flex: 1,
   },
@@ -1181,4 +1179,4 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
   },
-});
+}));

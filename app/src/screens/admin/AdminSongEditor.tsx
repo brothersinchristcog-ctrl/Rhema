@@ -45,6 +45,7 @@ import {
   writeBatch,
   doc
 } from '@react-native-firebase/firestore';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const { width, height } = Dimensions.get('window');
 
@@ -117,6 +118,7 @@ const NOTES_SUGGESTIONS = [
 ];
 
 export default function AdminSongEditor() {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { setActiveTab, setTabByName } = useContext(AdminTabContext);
   const { activeChurch } = useChurch();
 
@@ -1284,7 +1286,7 @@ export default function AdminSongEditor() {
     const displaySongs = memberTab === 'browse' ? browseSongs : themeSongs;
 
     return (
-      <View style={{ flex: 1, backgroundColor: '#EDE8DC' }}>
+      <View style={{ flex: 1, backgroundColor: screenBg }}>
         {/* Member View Header */}
         <View style={{ backgroundColor: 'transparent', paddingVertical: 10, paddingHorizontal: 16 }}>
           <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700', textAlign: 'center', opacity: 0.8 }}>
@@ -6327,7 +6329,7 @@ export default function AdminSongEditor() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -6558,4 +6560,4 @@ const styles = StyleSheet.create({
     padding: 0,
     flex: 1,
   },
-});
+}));

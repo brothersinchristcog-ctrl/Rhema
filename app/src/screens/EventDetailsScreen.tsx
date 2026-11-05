@@ -86,7 +86,11 @@ function getEventStatus(event: any): 'upcoming' | 'live' | 'completed' {
 }
 
 export default function EventDetailsScreen({ route, navigation }: any) {
-  const initialEvent = route?.params?.event || {};
+  const initialEvent = route?.params?.event || route?.params || {};
+  const eventId = route?.params?.eventId || route?.params?.id || initialEvent.id || initialEvent.eventId;
+  if (!initialEvent.id && eventId) {
+    initialEvent.id = eventId;
+  }
   const [eventData, setEventData] = useState<any>(initialEvent);
   const { activeChurch } = useChurch();
   const { colors, isDark } = useTheme();
@@ -94,19 +98,22 @@ export default function EventDetailsScreen({ route, navigation }: any) {
 
   const [imageAspectRatio, setImageAspectRatio] = useState<number>(16 / 9);
   const [isSharing, setIsSharing] = useState(false);
+  const [activeServiceIdx, setActiveServiceIdx] = useState<number>(0);
+  const [selectedEventSong, setSelectedEventSong] = useState<WorshipSong | null>(null);
   const captureEventRef = useRef<ViewShot>(null);
 
   // Sync with fresh server event record if available
   useEffect(() => {
-    if (initialEvent.id) {
+    const idToFind = initialEvent.id || eventId;
+    if (idToFind) {
       FirestoreService.getEvents().then((events) => {
-        const found = events.find(e => e.id === initialEvent.id);
+        const found = events.find(e => e.id === idToFind || (e as any).eventId === idToFind);
         if (found) {
           setEventData((prev: any) => ({ ...prev, ...found }));
         }
       }).catch(() => {});
     }
-  }, [initialEvent.id]);
+  }, [initialEvent.id, eventId]);
 
   const event = eventData;
   const status = getEventStatus(event);
@@ -340,13 +347,25 @@ export default function EventDetailsScreen({ route, navigation }: any) {
   };
 
   // Status badge config
-  const statusConfig = {
-    upcoming: { label: 'UPCOMING', color: '#1a2d5a', bg: '#e0eaff', icon: <Clock size={12} color="#1a2d5a" /> },
-    live:     { label: '● LIVE NOW', color: '#fff',    bg: '#dc2626', icon: <Radio size={12} color="#fff" /> },
-    completed:{ label: 'COMPLETED',  color: '#16a34a', bg: '#dcfce7', icon: <CheckCircle2 size={12} color="#16a34a" /> },
-  }[status];
+  const statusConfig = ({
+    upcoming: { label: 'UPCOMING', color: '#FFFFFF', icon: <Clock size={12} color="#FFFFFF" strokeWidth={2.4} /> },
+    live:     { label: '● LIVE NOW', color: '#FFFFFF', icon: <Radio size={12} color="#FFFFFF" strokeWidth={2.4} /> },
+    completed:{ label: 'COMPLETED',  color: '#FFFFFF', icon: <CheckCircle2 size={12} color="#FFFFFF" strokeWidth={2.4} /> },
+  } as any)[status] || { label: 'UPCOMING', color: '#FFFFFF', icon: <Clock size={12} color="#FFFFFF" strokeWidth={2.4} /> };
 
   const heroImageUri = event.image || event.bannerUrl || 'https://images.unsplash.com/photo-1438232992991-995b7058bbb3?q=80&w=800';
+
+  const startDateFormatted = formatDate(event.date);
+  const startDateTeFormatted = formatTeluguDate(event.date);
+  const endDateValue = event.endDate || event.date;
+  const endDateFormatted = formatDate(endDateValue);
+  const endDateTeFormatted = formatTeluguDate(endDateValue);
+  const displayStartTime = event.startTime
+    ? formatTime(event.startTime)
+    : (event.time ? (event.time.includes('-') ? event.time.split('-')[0].trim() : event.time) : '--:--');
+  const displayEndTime = event.endTime
+    ? formatTime(event.endTime)
+    : (event.time && event.time.includes('-') ? event.time.split('-')[1].trim() : '--:--');
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -368,7 +387,7 @@ export default function EventDetailsScreen({ route, navigation }: any) {
           <ArrowLeft size={20} color={colors.text} strokeWidth={2.4} />
         </TouchableOpacity>
 
-        <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
+        <Text style={[styles.headerTitleText, { color: isDark ? '#FFFFFF' : '#000000' }]} numberOfLines={1}>
           Event Details
         </Text>
 
@@ -383,9 +402,19 @@ export default function EventDetailsScreen({ route, navigation }: any) {
       </View>
       
       <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
-        {/* --- Hero Image Section (Full image displayed with dynamic aspect ratio, no cropping) --- */}
+        {/* --- Hero Image Section (Full image displayed with dynamic aspect ratio, no cropping, wrapped with ash color line) --- */}
         <View style={[styles.heroWrapper, { backgroundColor: colors.background }]}>
-          <View style={[styles.heroContainer, { aspectRatio: imageAspectRatio, backgroundColor: colors.background }]}>
+          <View style={[
+            styles.heroContainer, 
+            { 
+              aspectRatio: imageAspectRatio, 
+              backgroundColor: colors.background,
+              borderRadius: 20,
+              borderWidth: 1.5,
+              borderColor: isDark ? '#52525B' : '#9CA3AF',
+              overflow: 'hidden',
+            }
+          ]}>
             <Image 
               source={{ uri: heroImageUri }}
               style={styles.heroImage}
@@ -398,86 +427,147 @@ export default function EventDetailsScreen({ route, navigation }: any) {
         <View style={[styles.contentCard, { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 }]}>
           <View style={[styles.indicator, { backgroundColor: colors.border }]} />
           
-          {/* Header Badges: Status + Category + Church */}
+          {/* Header Badges: Status + Category + Church (Black badges with bold white text) */}
           <View style={styles.headerBadgeRow}>
-            <View style={[styles.statusPill, { backgroundColor: statusConfig.bg }]}>
+            <View style={[styles.statusPill, styles.blackPill, isDark && styles.blackPillDark]}>
               {statusConfig.icon}
-              <Text style={[styles.statusPillText, { color: statusConfig.color }]}>{statusConfig.label}</Text>
+              <Text style={styles.blackPillText}>{statusConfig.label}</Text>
             </View>
 
             {event.category ? (
-              <View style={styles.categoryPill}>
-                <Text style={styles.categoryPillText}>{event.category.toUpperCase()}</Text>
+              <View style={[styles.categoryPill, styles.blackPill, isDark && styles.blackPillDark]}>
+                <Text style={styles.blackPillText}>{event.category.toUpperCase()}</Text>
               </View>
             ) : null}
 
             {activeChurch?.name ? (
-              <View style={styles.churchPill}>
-                <Text style={styles.churchPillText} numberOfLines={1}>{activeChurch.name}</Text>
+              <View style={[styles.churchPill, styles.blackPill, isDark && styles.blackPillDark]}>
+                <Text style={styles.blackPillText} numberOfLines={1}>{activeChurch.name}</Text>
               </View>
             ) : null}
           </View>
 
           {/* Title Area */}
           <View style={styles.titleSection}>
-            <Text style={[styles.titleEn, { color: colors.text }]}>{event.title || event.name}</Text>
+            <Text style={[styles.titleEn, { color: isDark ? '#F2F0E8' : '#000000' }]}>{event.title || event.name}</Text>
             {(event.titleTelugu || event.titleTe) ? (
-              <Text style={[styles.titleTe, { color: colors.textSecondary }]}>{event.titleTelugu || event.titleTe}</Text>
+              <Text style={[styles.titleTe, { color: isDark ? 'rgba(242, 240, 232, 0.75)' : '#4B5563' }]}>{event.titleTelugu || event.titleTe}</Text>
             ) : null}
           </View>
 
-          {/* Schedule Badges: Start Date, End Date, Start Time, and End Time */}
+          {/* Schedule Card: Unified Event Dates & Timing Window in One Card */}
           <View style={styles.badgeRow}>
-            {/* Dates Card */}
-            <View style={[styles.scheduleCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[
+              styles.scheduleCard, 
+              isDark 
+                ? { backgroundColor: '#18181B', borderColor: 'rgba(255, 255, 255, 0.12)' }
+                : { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' }
+            ]}>
+              {/* ── Section 1: Event Dates ── */}
               <View style={styles.scheduleCardHeader}>
-                <View style={styles.badgeIconCircle}>
-                  <Calendar size={18} color="#1a2d5a" />
+                <View style={[
+                  styles.badgeIconCircle, 
+                  { 
+                    backgroundColor: isDark ? 'rgba(184, 165, 214, 0.18)' : 'rgba(107, 33, 168, 0.1)',
+                    borderColor: isDark ? 'rgba(184, 165, 214, 0.35)' : 'rgba(107, 33, 168, 0.22)',
+                    borderWidth: 1,
+                  }
+                ]}>
+                  <Calendar size={17} color={isDark ? '#B8A5D6' : '#6B21A8'} strokeWidth={2.2} />
                 </View>
-                <Text style={[styles.scheduleCardTitle, { color: colors.text }]}>EVENT DATES · ప్రారంభం & ముగింపు తేదీలు</Text>
+                <Text style={[
+                  styles.scheduleCardTitle, 
+                  { color: isDark ? '#B8A5D6' : '#6B21A8' }
+                ]}>
+                  EVENT DATES · ప్రారంభం & ముగింపు తేదీలు
+                </Text>
               </View>
 
-              <View style={[styles.scheduleGrid, { backgroundColor: colors.background }]}>
-                <View style={styles.scheduleCol}>
-                  <Text style={styles.scheduleLabel}>START DATE · ప్రారంభ తేదీ</Text>
-                  <Text style={styles.scheduleValue}>{formatDate(event.date)}</Text>
-                  {formatTeluguDate(event.date) ? (
-                    <Text style={styles.scheduleSubValue}>{formatTeluguDate(event.date)}</Text>
+              {/* Start Date */}
+              <View style={styles.dateBlock}>
+                <Text style={[styles.fieldMiniLabel, isDark && styles.fieldMiniLabelDark]}>
+                  START DATE · ప్రారంభ తేదీ
+                </Text>
+                <View style={styles.dateSingleRow}>
+                  <Text style={[styles.dateTextMain, isDark && styles.dateTextMainDark]}>
+                    {startDateFormatted}
+                  </Text>
+                  {startDateTeFormatted ? (
+                    <>
+                      <Text style={[styles.dateDotSeparator, isDark && styles.dateDotSeparatorDark]}>·</Text>
+                      <Text style={[styles.dateTextTelugu, isDark && styles.dateTextTeluguDark]}>
+                        {startDateTeFormatted}
+                      </Text>
+                    </>
                   ) : null}
                 </View>
+              </View>
 
-                <View style={styles.scheduleDivider} />
+              {/* Subtle divider between Start Date & End Date */}
+              <View style={[styles.dateRowDivider, isDark && styles.dateRowDividerDark]} />
 
-                <View style={styles.scheduleCol}>
-                  <Text style={styles.scheduleLabel}>END DATE · ముగింపు తేదీ</Text>
-                  <Text style={styles.scheduleValue}>{formatDate(event.endDate || event.date)}</Text>
-                  {formatTeluguDate(event.endDate || event.date) ? (
-                    <Text style={styles.scheduleSubValue}>{formatTeluguDate(event.endDate || event.date)}</Text>
+              {/* End Date */}
+              <View style={styles.dateBlock}>
+                <Text style={[styles.fieldMiniLabel, isDark && styles.fieldMiniLabelDark]}>
+                  END DATE · ముగింపు తేదీ
+                </Text>
+                <View style={styles.dateSingleRow}>
+                  <Text style={[styles.dateTextMain, isDark && styles.dateTextMainDark]}>
+                    {endDateFormatted}
+                  </Text>
+                  {endDateTeFormatted ? (
+                    <>
+                      <Text style={[styles.dateDotSeparator, isDark && styles.dateDotSeparatorDark]}>·</Text>
+                      <Text style={[styles.dateTextTelugu, isDark && styles.dateTextTeluguDark]}>
+                        {endDateTeFormatted}
+                      </Text>
+                    </>
                   ) : null}
                 </View>
               </View>
-            </View>
 
-            {/* Times Card */}
-            <View style={[styles.scheduleCard, { backgroundColor: '#fef2f2', borderColor: '#fee2e2' }]}>
+              {/* ── Mid-Card Divider between Dates & Timings ── */}
+              <View style={[styles.scheduleSectionDivider, isDark && styles.scheduleSectionDividerDark]} />
+
+              {/* ── Section 2: Timing Window ── */}
               <View style={styles.scheduleCardHeader}>
-                <View style={[styles.badgeIconCircle, { backgroundColor: '#fee2e2' }]}>
-                  <Clock size={18} color="#dc2626" />
+                <View style={[
+                  styles.badgeIconCircle, 
+                  { 
+                    backgroundColor: isDark ? 'rgba(184, 165, 214, 0.18)' : 'rgba(107, 33, 168, 0.1)',
+                    borderColor: isDark ? 'rgba(184, 165, 214, 0.35)' : 'rgba(107, 33, 168, 0.22)',
+                    borderWidth: 1,
+                  }
+                ]}>
+                  <Clock size={17} color={isDark ? '#B8A5D6' : '#6B21A8'} strokeWidth={2.2} />
                 </View>
-                <Text style={[styles.scheduleCardTitle, { color: '#991b1b' }]}>TIMING WINDOW · సమయం</Text>
+                <Text style={[
+                  styles.scheduleCardTitle, 
+                  { color: isDark ? '#B8A5D6' : '#6B21A8' }
+                ]}>
+                  TIMING WINDOW · సమయం
+                </Text>
               </View>
 
-              <View style={styles.scheduleGrid}>
-                <View style={styles.scheduleCol}>
-                  <Text style={[styles.scheduleLabel, { color: colors.accent }]}>START TIME · ప్రారంభం</Text>
-                  <Text style={[styles.scheduleTimeValue, { color: colors.accent }]}>{formatTime(event.startTime)}</Text>
+              <View style={styles.timeScheduleRow}>
+                <View style={styles.timeCol}>
+                  <Text style={[styles.fieldMiniLabel, isDark && styles.fieldMiniLabelDark]}>
+                    START TIME · ప్రారంభం
+                  </Text>
+                  <Text style={[styles.timeTextMain, isDark && styles.timeTextMainDark]}>
+                    {displayStartTime}
+                  </Text>
                 </View>
 
-                <View style={[styles.scheduleDivider, { backgroundColor: '#fecaca' }]} />
+                <View style={[styles.timeVerticalDivider, isDark && styles.timeVerticalDividerDark]} />
 
-                <View style={styles.scheduleCol}>
-                  <Text style={[styles.scheduleLabel, { color: '#991b1b' }]}>END TIME · ముగింపు</Text>
-                  <Text style={[styles.scheduleTimeValue, { color: '#dc2626' }]}>{formatTime(event.endTime)}</Text>
+                <View style={styles.timeCol}>
+                  <Text style={[styles.fieldMiniLabel, isDark && styles.fieldMiniLabelDark]}>
+                    END TIME · ముగింపు
+                  </Text>
+                  <Text style={[styles.timeTextMain, isDark && styles.timeTextMainDark]}>
+                    {displayEndTime}
+                  </Text>
                 </View>
               </View>
             </View>
@@ -486,32 +576,53 @@ export default function EventDetailsScreen({ route, navigation }: any) {
           {/* Location Section with Directions Button */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <View style={styles.iconCircle}>
-                <MapPin size={18} color="#1a2d5a" />
+              <View style={[styles.iconCircle, { backgroundColor: isDark ? 'rgba(185, 200, 189, 0.15)' : 'rgba(49, 92, 80, 0.12)' }]}>
+                <MapPin size={18} color={isDark ? '#B9C8BD' : '#315C50'} />
               </View>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>LOCATION · స్థలం</Text>
+              <Text style={[styles.sectionTitle, { color: isDark ? '#B9C8BD' : '#315C50', flex: 1 }]}>Location · స్థలం</Text>
             </View>
             <View style={[styles.locCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Text style={[styles.locName, { color: colors.text }]}>{event.location || event.address || 'Church Main Hall'}</Text>
               {event.location && event.address && event.location !== event.address ? (
-                <Text style={[styles.locSub, { color: colors.textSecondary }]}>{event.address}</Text>
+                <Text style={[styles.locSub, { color: colors.textSecondary, fontWeight: '600' }]}>{event.address}</Text>
               ) : null}
-              <TouchableOpacity style={styles.mapBtn} onPress={handleOpenMaps} activeOpacity={0.8}>
-                <Navigation size={15} color="#1a2d5a" />
-                <Text style={styles.mapBtnText}>Get Directions / Open in Maps</Text>
+              <TouchableOpacity 
+                style={styles.mapBtnTouchable} 
+                onPress={handleOpenMaps} 
+                activeOpacity={0.85}
+              >
+                <LinearGradient
+                  colors={['#227FFF', '#62B2FF']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  style={styles.mapBtnGradient}
+                >
+                  <Navigation size={14} color="#FFFFFF" strokeWidth={2.4} />
+                  <Text style={styles.mapBtnGradientText}>Get Directions / Open in Maps</Text>
+                </LinearGradient>
               </TouchableOpacity>
             </View>
           </View>
 
           {/* QR Code Requirement Notice */}
           {(event.requireEventQR === true || (event as any).requireEventQr === true) && (
-            <View style={styles.qrReqBanner}>
-              <View style={styles.qrReqIconBox}>
-                <QrCode size={18} color="#92400E" />
+            <View style={[
+              styles.qrReqBanner,
+              isDark 
+                ? { backgroundColor: '#18181B', borderColor: 'rgba(255, 255, 255, 0.12)' }
+                : { backgroundColor: '#FFFFFF', borderColor: '#E2E8F0' }
+            ]}>
+              <View style={[
+                styles.qrReqIconBox,
+                { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.18)' : '#FEF3C7' }
+              ]}>
+                <QrCode size={18} color={isDark ? '#FBBF24' : '#B45309'} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.qrReqTitle}>Event QR Code Required for Check-In</Text>
-                <Text style={styles.qrReqSub}>
+                <Text style={[styles.qrReqTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                  Event QR Code Required for Check-In
+                </Text>
+                <Text style={[styles.qrReqSub, { color: isDark ? '#94A3B8' : '#64748B' }]}>
                   Attendance marking is restricted to this event's unique QR code. Please scan the QR code displayed at the entrance to check in.
                 </Text>
               </View>
@@ -521,10 +632,10 @@ export default function EventDetailsScreen({ route, navigation }: any) {
           {/* Description Section */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <View style={[styles.iconCircle, { backgroundColor: '#f5f3ff' }]}>
-                <Info size={18} color="#7C3AED" />
+              <View style={[styles.iconCircle, { backgroundColor: isDark ? 'rgba(198, 166, 107, 0.15)' : 'rgba(152, 113, 61, 0.12)' }]}>
+                <Info size={18} color={isDark ? '#C6A66B' : '#98713D'} />
               </View>
-              <Text style={styles.sectionTitle}>ABOUT EVENT · కార్యక్రమం గురించి</Text>
+              <Text style={[styles.sectionTitle, { color: isDark ? '#C6A66B' : '#98713D', flex: 1 }]}>About Event · కార్యక్రమం గురించి</Text>
             </View>
             <View style={[styles.descCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Text style={[styles.description, { color: colors.text }]}>
@@ -537,15 +648,12 @@ export default function EventDetailsScreen({ route, navigation }: any) {
           {Array.isArray(event.services) && event.services.length > 0 && (
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <View style={[styles.iconCircle, { backgroundColor: '#EEF2FF' }]}>
-                  <Music size={18} color="#4F46E5" />
+                <View style={[styles.iconCircle, { backgroundColor: isDark ? 'rgba(156, 199, 232, 0.15)' : 'rgba(2, 132, 199, 0.12)' }]}>
+                  <Music size={18} color={isDark ? '#9CC7E8' : '#0284C7'} />
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.sectionTitle}>WORSHIP SERVICES & SONGS</Text>
-                  <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600', marginTop: 1 }}>
-                    ఆరాధన గీతాలు మరియు సర్వీస్ వివరాలు
-                  </Text>
-                </View>
+                <Text style={[styles.sectionTitle, { color: isDark ? '#9CC7E8' : '#0284C7', flex: 1 }]}>
+                  Worship Songs · ఆరాధన గీతాలు
+                </Text>
               </View>
 
               {/* Service Tabs if multiple services exist */}
@@ -565,9 +673,13 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                           paddingHorizontal: 12,
                           paddingVertical: 7,
                           borderRadius: 10,
-                          backgroundColor: isSelected ? '#1a2d5a' : '#F1F5F9',
+                          backgroundColor: isSelected 
+                            ? (isDark ? '#2563EB' : '#1a2d5a') 
+                            : (isDark ? '#27272A' : '#F1F5F9'),
                           borderWidth: 1,
-                          borderColor: isSelected ? '#1a2d5a' : '#E2E8F0',
+                          borderColor: isSelected 
+                            ? (isDark ? '#3B82F6' : '#1a2d5a') 
+                            : (isDark ? 'rgba(255,255,255,0.1)' : '#E2E8F0'),
                           flexDirection: 'row',
                           alignItems: 'center',
                           gap: 6
@@ -576,12 +688,14 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                         <Text style={{
                           fontSize: 12,
                           fontWeight: '800',
-                          color: isSelected ? '#FFFFFF' : '#475569'
+                          color: isSelected ? '#FFFFFF' : (isDark ? '#E4E4E7' : '#475569')
                         }}>
                           {srv.name || `Service ${idx + 1}`}
                         </Text>
                         <View style={{
-                          backgroundColor: isSelected ? 'rgba(255,255,255,0.2)' : '#CBD5E1',
+                          backgroundColor: isSelected 
+                            ? 'rgba(255,255,255,0.2)' 
+                            : (isDark ? '#3F3F46' : '#CBD5E1'),
                           paddingHorizontal: 5,
                           paddingVertical: 1,
                           borderRadius: 6
@@ -589,7 +703,7 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                           <Text style={{
                             fontSize: 10,
                             fontWeight: '800',
-                            color: isSelected ? '#FFFFFF' : '#1E293B'
+                            color: isSelected ? '#FFFFFF' : (isDark ? '#FFFFFF' : '#1E293B')
                           }}>
                             {srv.songs?.length || 0}
                           </Text>
@@ -608,29 +722,29 @@ export default function EventDetailsScreen({ route, navigation }: any) {
 
                 return (
                   <View style={{
-                    backgroundColor: '#F8FAFC',
+                    backgroundColor: isDark ? '#18181B' : '#F8FAFC',
                     borderRadius: 14,
                     padding: 12,
                     borderWidth: 1,
-                    borderColor: '#E2E8F0'
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0'
                   }}>
                     {/* Service Header Info */}
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                       <View style={{ flex: 1, marginRight: 8 }}>
-                        <Text style={{ fontSize: 15, fontWeight: '800', color: '#1a2d5a' }}>
+                        <Text style={{ fontSize: 15, fontWeight: '800', color: isDark ? '#FFFFFF' : '#1a2d5a' }}>
                           {currentService.name}
                         </Text>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 }}>
                           {currentService.time ? (
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                              <Clock size={11} color="#64748B" />
-                              <Text style={{ fontSize: 11, fontWeight: '600', color: '#64748B' }}>
+                              <Clock size={11} color={isDark ? '#94A3B8' : '#64748B'} />
+                              <Text style={{ fontSize: 11, fontWeight: '600', color: isDark ? '#94A3B8' : '#64748B' }}>
                                 {currentService.time}
                               </Text>
                             </View>
                           ) : null}
                           {currentService.songLeader ? (
-                            <Text style={{ fontSize: 11, fontWeight: '700', color: '#047857' }}>
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#34D399' : '#047857' }}>
                               🎤 {currentService.songLeader}
                             </Text>
                           ) : null}
@@ -638,12 +752,12 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                       </View>
 
                       <View style={{
-                        backgroundColor: '#EEF2FF',
+                        backgroundColor: isDark ? 'rgba(99, 102, 241, 0.25)' : '#EEF2FF',
                         paddingHorizontal: 8,
                         paddingVertical: 3,
                         borderRadius: 6
                       }}>
-                        <Text style={{ fontSize: 11, fontWeight: '800', color: '#4338CA' }}>
+                        <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#A5B4FC' : '#4338CA' }}>
                           {serviceSongs.length} {serviceSongs.length === 1 ? 'Song' : 'Songs'}
                         </Text>
                       </View>
@@ -652,8 +766,8 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                     {/* Songs List */}
                     {serviceSongs.length === 0 ? (
                       <View style={{ paddingVertical: 18, alignItems: 'center' }}>
-                        <Music size={22} color="#94A3B8" />
-                        <Text style={{ fontSize: 12, color: '#64748B', marginTop: 4 }}>
+                        <Music size={22} color={isDark ? '#71717A' : '#94A3B8'} />
+                        <Text style={{ fontSize: 12, color: isDark ? '#A1A1AA' : '#64748B', marginTop: 4 }}>
                           No songs scheduled for this service.
                         </Text>
                       </View>
@@ -667,12 +781,12 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                             flexDirection: 'row',
                             alignItems: 'center',
                             justifyContent: 'space-between',
-                            backgroundColor: '#FFFFFF',
+                            backgroundColor: isDark ? '#27272A' : '#FFFFFF',
                             borderRadius: 10,
                             padding: 10,
                             marginBottom: 6,
                             borderWidth: 1,
-                            borderColor: '#E2E8F0'
+                            borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0'
                           }}
                         >
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, marginRight: 8 }}>
@@ -680,32 +794,32 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                               width: 22,
                               height: 22,
                               borderRadius: 11,
-                              backgroundColor: '#EEF2FF',
+                              backgroundColor: isDark ? 'rgba(99, 102, 241, 0.25)' : '#EEF2FF',
                               alignItems: 'center',
                               justifyContent: 'center'
                             }}>
-                              <Text style={{ fontSize: 11, fontWeight: '800', color: '#4338CA' }}>
+                              <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#A5B4FC' : '#4338CA' }}>
                                 {songIdx + 1}
                               </Text>
                             </View>
                             <View style={{ flex: 1 }}>
-                              <Text style={{ fontSize: 13, fontWeight: '700', color: '#1a2d5a' }} numberOfLines={1}>
+                              <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? '#FFFFFF' : '#1a2d5a' }} numberOfLines={1}>
                                 {s.title}
                               </Text>
                               {s.titleTe ? (
-                                <Text style={{ fontSize: 11, color: '#64748B' }} numberOfLines={1}>
+                                <Text style={{ fontSize: 11, color: isDark ? '#A1A1AA' : '#64748B' }} numberOfLines={1}>
                                   {s.titleTe}
                                 </Text>
                               ) : null}
                             </View>
                             {s.key ? (
-                              <View style={{ backgroundColor: '#F1F5F9', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
-                                <Text style={{ fontSize: 10, fontWeight: '800', color: '#475569' }}>{s.key}</Text>
+                              <View style={{ backgroundColor: isDark ? '#3F3F46' : '#F1F5F9', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                                <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? '#E4E4E7' : '#475569' }}>{s.key}</Text>
                               </View>
                             ) : null}
                           </View>
 
-                          <Play size={13} color="#2563EB" fill="#2563EB" />
+                          <Play size={13} color={isDark ? '#60A5FA' : '#2563EB'} fill={isDark ? '#60A5FA' : '#2563EB'} />
                         </TouchableOpacity>
                       ))
                     )}
@@ -721,10 +835,10 @@ export default function EventDetailsScreen({ route, navigation }: any) {
               <View style={[styles.iconCircle, { backgroundColor: '#fee2e2' }]}>
                 <Video size={18} color="#dc2626" />
               </View>
-              <Text style={styles.sectionTitle}>
-                {status === 'upcoming' ? 'EVENT VIDEO · వీడియో' :
-                 status === 'live'     ? 'LIVE NOW · లైవ్ ఇప్పుడు' :
-                                        'EVENT RECORDING · కార్యక్రమం వీడియో'}
+              <Text style={[styles.sectionTitle, { color: colors.text, flex: 1 }]}>
+                {status === 'upcoming' ? 'Event Video · వీడియో' :
+                 status === 'live'     ? 'Live Now · లైవ్ ఇప్పుడు' :
+                                        'Event Recording · కార్యక్రమం వీడియో'}
               </Text>
             </View>
 
@@ -811,52 +925,57 @@ export default function EventDetailsScreen({ route, navigation }: any) {
             )}
           </View>
 
-          <View style={{ height: 120 }} />
+          {/* --- Share Button (Placed below Event Recording section, safe from device navigation bar) --- */}
+          <View style={[styles.inlineShareContainer, { paddingBottom: Math.max(insets.bottom, 16) + 16 }]}>
+            {status === 'live' ? (
+              <TouchableOpacity
+                style={styles.singleShareBtn}
+                onPress={() => {
+                  const url = manualYoutubeId
+                    ? `https://www.youtube.com/watch?v=${manualYoutubeId}`
+                    : liveUrl || 'https://www.youtube.com';
+                  if (url.includes('zoom.us')) {
+                    openZoomMeeting({
+                      meetingLink: url,
+                      password: event?.passcode || event?.password,
+                      userName: undefined
+                    });
+                  } else {
+                    Linking.openURL(url);
+                  }
+                }}
+                activeOpacity={0.85}
+              >
+                <LinearGradient
+                  colors={['#EF4444', '#DC2626']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  style={styles.singleShareGradient}
+                >
+                  <Radio size={18} color="#FFFFFF" strokeWidth={2.4} />
+                  <Text style={[styles.singleShareText, { color: '#FFFFFF' }]}>● JOIN LIVE STREAM</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={styles.singleShareBtn}
+                onPress={onShare}
+                activeOpacity={0.85}
+              >
+                <LinearGradient
+                  colors={['#227FFF', '#62B2FF']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  style={styles.singleShareGradient}
+                >
+                  <Share2 size={18} color="#FFFFFF" strokeWidth={2.4} />
+                  <Text style={styles.singleShareText}>SHARE EVENT DETAILS</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       </ScrollView>
-
-      {/* --- Bottom Action Bar with Dual Actions --- */}
-      <View style={styles.bottomBar}>
-        <TouchableOpacity style={styles.shareActionBtn} onPress={onShare} activeOpacity={0.85}>
-          <Share2 size={18} color="#1a2d5a" />
-          <Text style={styles.shareActionBtnText}>Share</Text>
-        </TouchableOpacity>
-
-        {status === 'live' ? (
-          <TouchableOpacity
-            style={[styles.mainBtn, { backgroundColor: '#dc2626' }]}
-            onPress={() => {
-              const url = manualYoutubeId
-                ? `https://www.youtube.com/watch?v=${manualYoutubeId}`
-                : liveUrl || 'https://www.youtube.com';
-              if (url.includes('zoom.us')) {
-                openZoomMeeting({
-                  meetingLink: url,
-                  password: event?.passcode || event?.password,
-                  userName: undefined
-                });
-              } else {
-                Linking.openURL(url);
-              }
-            }}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.mainBtnText}>● JOIN LIVE STREAM</Text>
-          </TouchableOpacity>
-        ) : status === 'completed' ? (
-          <TouchableOpacity
-            style={[styles.mainBtn, { backgroundColor: '#16a34a' }]}
-            onPress={onShare}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.mainBtnText}>SHARE EVENT DETAILS</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity style={styles.mainBtn} onPress={handleRSVP} activeOpacity={0.85}>
-            <Text style={styles.mainBtnText}>I AM INTERESTED</Text>
-          </TouchableOpacity>
-        )}
-      </View>
 
       {/* Sharing Overlay Spinner */}
       {isSharing && (
@@ -932,6 +1051,15 @@ export default function EventDetailsScreen({ route, navigation }: any) {
           </View>
         </ViewShot>
       </View>
+
+      {selectedEventSong && (
+        <SongDetailModal
+          visible={!!selectedEventSong}
+          song={selectedEventSong}
+          onClose={() => setSelectedEventSong(null)}
+          isDark={isDark}
+        />
+      )}
     </View>
   );
 }
@@ -978,7 +1106,7 @@ const styles = StyleSheet.create({
   heroImage: { 
     width: '100%', 
     height: '100%', 
-    borderRadius: 20 
+    borderRadius: 18.5,
   },
   headerActions: {
     position: 'absolute',
@@ -1008,6 +1136,26 @@ const styles = StyleSheet.create({
     width: 40, height: 5, backgroundColor: '#f1f5f9', borderRadius: 3,
     alignSelf: 'center', marginBottom: 20
   },
+  blackPill: {
+    backgroundColor: '#000000',
+    borderWidth: 1,
+    borderColor: '#27272A',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1.5 },
+    shadowOpacity: 0.25,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  blackPillDark: {
+    borderColor: 'rgba(255, 255, 255, 0.22)',
+    shadowOpacity: 0.4,
+  },
+  blackPillText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 11,
+    letterSpacing: 0.4,
+  },
   headerBadgeRow: {
     flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 16
   },
@@ -1018,79 +1166,130 @@ const styles = StyleSheet.create({
   },
   statusPillText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
   categoryPill: {
-    backgroundColor: '#f1f5f9', paddingHorizontal: 10, paddingVertical: 6,
-    borderRadius: 20, borderWidth: 1, borderColor: '#e2e8f0'
+    paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: 20,
   },
-  categoryPillText: { fontSize: 11, fontWeight: '700', color: '#475569', letterSpacing: 0.5 },
+  categoryPillText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   churchPill: {
-    backgroundColor: '#eff6ff', paddingHorizontal: 10, paddingVertical: 6,
-    borderRadius: 20, borderWidth: 1, borderColor: '#dbeafe', maxWidth: 180
+    paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: 20, maxWidth: 180
   },
-  churchPillText: { fontSize: 11, fontWeight: '700', color: '#1d4ed8' },
+  churchPillText: { fontSize: 11, fontWeight: '700' },
 
-  titleSection: { marginBottom: 20 },
-  titleEn: { fontSize: 24, fontWeight: '900', marginBottom: 6, letterSpacing: -0.5 },
-  titleTe: { fontSize: 17, color: '#64748b', fontWeight: '600' },
+  titleSection: { marginBottom: 16 },
+  titleEn: { fontSize: 17, fontWeight: '900', marginBottom: 4, letterSpacing: -0.3 },
+  titleTe: { fontSize: 13, color: '#64748b', fontWeight: '600' },
   
-  badgeRow: { gap: 12, marginBottom: 24 },
+  badgeRow: { marginBottom: 24 },
   scheduleCard: {
-    backgroundColor: '#fffbeb',
-    borderRadius: 18,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#fef3c7',
-    padding: 14,
+    borderColor: '#E2E8F0',
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
   },
   scheduleCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   scheduleCardTitle: {
     fontSize: 11,
     fontWeight: '800',
-    color: '#1a2d5a',
     letterSpacing: 0.8,
   },
-  scheduleGrid: {
+  dateBlock: {
+    paddingVertical: 2,
+  },
+  dateSingleRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: 'rgba(255,255,255,0.7)',
-    borderRadius: 12,
-    padding: 12,
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 7,
+    marginTop: 2,
   },
-  scheduleCol: {
-    flex: 1,
+  dateTextMain: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.2,
   },
-  scheduleDivider: {
-    width: 1,
-    backgroundColor: '#fde68a',
-    marginHorizontal: 10,
-    alignSelf: 'stretch',
+  dateTextMainDark: {
+    color: '#FFFFFF',
   },
-  scheduleLabel: {
+  dateDotSeparator: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#94A3B8',
+  },
+  dateDotSeparatorDark: {
+    color: '#64748B',
+  },
+  dateTextTelugu: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  dateTextTeluguDark: {
+    color: '#E2E8F0',
+  },
+  dateRowDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginVertical: 8,
+  },
+  dateRowDividerDark: {
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  scheduleSectionDivider: {
+    height: 1,
+    backgroundColor: '#E2E8F0',
+    marginVertical: 14,
+  },
+  scheduleSectionDividerDark: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  fieldMiniLabel: {
     fontSize: 9.5,
     fontWeight: '800',
-    color: '#64748b',
+    color: '#64748B',
     letterSpacing: 0.5,
     marginBottom: 3,
   },
-  scheduleValue: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#1a2d5a',
-    lineHeight: 18,
+  fieldMiniLabelDark: {
+    color: '#94A3B8',
   },
-  scheduleSubValue: {
-    fontSize: 10.5,
-    fontWeight: '600',
-    color: '#78716c',
+  timeScheduleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginTop: 2,
   },
-  scheduleTimeValue: {
-    fontSize: 15,
+  timeCol: {
+    flex: 1,
+  },
+  timeTextMain: {
+    fontSize: 16,
     fontWeight: '800',
-    color: '#dc2626',
+    color: '#0F172A',
+    letterSpacing: -0.2,
+  },
+  timeTextMainDark: {
+    color: '#FFFFFF',
+  },
+  timeVerticalDivider: {
+    width: 1,
+    height: 34,
+    backgroundColor: '#E2E8F0',
+    marginHorizontal: 16,
+  },
+  timeVerticalDividerDark: {
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
   },
   dateBadge: { 
     flexDirection: 'row', alignItems: 'center',
@@ -1103,7 +1302,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#f1f5f9', gap: 12
   },
   badgeIconCircle: {
-    width: 38, height: 38, borderRadius: 19,
+    width: 32, height: 32, borderRadius: 16,
     backgroundColor: '#fef3c7', justifyContent: 'center', alignItems: 'center'
   },
   badgeValue: { fontSize: 15, fontWeight: '800', color: '#1a2d5a' },
@@ -1111,52 +1310,63 @@ const styles = StyleSheet.create({
   timeValue: { fontSize: 14, fontWeight: '800', color: '#c0392b' },
   
   section: { marginBottom: 28 },
-  sectionHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginBottom: 15 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
   iconCircle: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#f0f9ff', justifyContent: 'center', alignItems: 'center' },
-  sectionTitle: { fontSize: 11, fontWeight: '800', color: '#1a2d5a', letterSpacing: 1.5 },
+  sectionTitle: { fontSize: 17, fontWeight: '800', color: '#1a2d5a', letterSpacing: -0.2 },
   
   locCard: { backgroundColor: '#f8fafc', borderRadius: 20, padding: 18, borderWidth: 1, borderColor: '#f1f5f9' },
   locName: { fontSize: 16, fontWeight: '700', color: '#1e293b', lineHeight: 22, marginBottom: 4 },
   locSub: { fontSize: 13, color: '#64748b', marginBottom: 8 },
-  mapBtn: { 
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#eff6ff', paddingHorizontal: 12, paddingVertical: 8,
-    borderRadius: 12, alignSelf: 'flex-start', marginTop: 6,
-    borderWidth: 1, borderColor: '#dbeafe'
+  mapBtnTouchable: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    borderRadius: 24,
+    shadowColor: '#227FFF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  mapBtnText: { fontSize: 12, color: '#1a2d5a', fontWeight: '800' },
+  mapBtnGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 24,
+  },
+  mapBtnGradientText: {
+    fontSize: 12,
+    color: '#FFFFFF',
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
 
   descCard: { backgroundColor: '#fff', borderRadius: 20, padding: 18, borderWidth: 1, borderColor: '#f1f5f9' },
   description: { fontSize: 15, color: '#475569', lineHeight: 26, fontWeight: '400' },
   qrReqBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FEF3C7',
-    borderWidth: 1.5,
-    borderColor: '#FDE68A',
     borderRadius: 16,
     padding: 14,
-    marginHorizontal: 16,
-    marginBottom: 16,
+    marginBottom: 20,
+    borderWidth: 1,
     gap: 12,
   },
   qrReqIconBox: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#FDE68A',
     justifyContent: 'center',
     alignItems: 'center',
   },
   qrReqTitle: {
     fontSize: 13,
     fontWeight: '800',
-    color: '#92400E',
     marginBottom: 2,
   },
   qrReqSub: {
     fontSize: 11.5,
-    color: '#78350F',
     lineHeight: 16,
   },
 
@@ -1210,22 +1420,36 @@ const styles = StyleSheet.create({
   videoSearchingText: { fontSize: 14, fontWeight: '700', color: '#dc2626', marginTop: 6 },
   videoSearchingSubText: { fontSize: 12, color: '#94a3b8', fontWeight: '500' },
 
-  bottomBar: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    paddingHorizontal: 20, paddingVertical: 14,
-    paddingBottom: Platform.OS === 'ios' ? 36 : 18,
-    backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#f1f5f9',
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    elevation: 25, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 15
+  inlineShareContainer: {
+    marginTop: 26,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  shareActionBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, paddingVertical: 16, paddingHorizontal: 20,
-    borderRadius: 18, backgroundColor: '#f8fafc',
-    borderWidth: 1, borderColor: '#e2e8f0',
+  singleShareBtn: {
+    width: '100%',
+    borderRadius: 28,
+    overflow: 'hidden',
+    shadowColor: '#227FFF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 6,
   },
-  shareActionBtnText: {
-    fontSize: 14, fontWeight: '800', color: '#1a2d5a'
+  singleShareGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 15,
+    paddingHorizontal: 24,
+    borderRadius: 28,
+  },
+  singleShareText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
   mainBtn: {
     flex: 1,

@@ -17,6 +17,7 @@ const ICONS = {
 
 // Extracted from original stitch code
 import { Path } from 'react-native-svg';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 export default function AdminCelebrationsPreview({ 
   member, 
@@ -47,6 +48,7 @@ export default function AdminCelebrationsPreview({
   onEdit: () => void, 
   onContinue: () => void 
 }) {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const categoryLabel = category.charAt(0).toUpperCase() + category.slice(1);
   const colors = theme?.imageUrl 
     ? ['#000000', '#000000'] 
@@ -131,7 +133,7 @@ export default function AdminCelebrationsPreview({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -317,4 +319,4 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#FFFFFF',
   }
-});
+}));

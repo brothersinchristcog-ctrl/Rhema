@@ -18,6 +18,7 @@ import {
   Hash,
 } from 'lucide-react-native';
 import { BibleService, BIBLE_BOOKS, CHAPTER_COUNTS } from '../../../services/BibleService';
+import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
 
 export interface BiblePickerResult {
   book: string;
@@ -54,6 +55,7 @@ export default function BibleReferencePickerModal({
   onSelectReference,
   onSelectScope,
 }: Props) {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   // Step: 1 = Book, 2 = Chapter, 3 = Verse (only for 'reference' mode)
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [chapterMode, setChapterMode] = useState<'multiple' | 'single'>('multiple');
@@ -618,7 +620,7 @@ export default function BibleReferencePickerModal({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.65)',
@@ -983,4 +985,4 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
-});
+}));

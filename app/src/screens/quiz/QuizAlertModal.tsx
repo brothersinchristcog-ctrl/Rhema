@@ -23,6 +23,7 @@ import {
   Award,
 } from 'lucide-react-native';
 import { useTheme } from '../../context/ThemeContext';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 export type QuizAlertModalType =
   | 'locked'
@@ -67,6 +68,7 @@ export default function QuizAlertModal({
   onClose,
   cancelable = true,
 }: QuizAlertModalProps) {
+  const { isDark: _adminIsDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { isDark } = useTheme();
 
   const scaleAnim = useRef(new Animated.Value(0.85)).current;
@@ -229,7 +231,7 @@ export default function QuizAlertModal({
               style={[
                 styles.modalCard,
                 {
-                  backgroundColor: isDark ? '#0D1527' : '#FFFFFF',
+                  backgroundColor: cardSurface,
                   borderColor: config.cardBorder,
                   transform: [{ scale: scaleAnim }],
                 },
@@ -250,7 +252,7 @@ export default function QuizAlertModal({
                   hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                   activeOpacity={0.7}
                 >
-                  <X size={16} color={isDark ? '#94A3B8' : '#64748B'} />
+                  <X size={16} color={secondaryText} />
                 </TouchableOpacity>
               )}
 
@@ -295,7 +297,7 @@ export default function QuizAlertModal({
               <Text
                 style={[
                   styles.title,
-                  { color: isDark ? '#F8FAFC' : '#0F172A' },
+                  { color: primaryText },
                 ]}
               >
                 {title}
@@ -305,7 +307,7 @@ export default function QuizAlertModal({
               <Text
                 style={[
                   styles.message,
-                  { color: isDark ? '#94A3B8' : '#64748B' },
+                  { color: secondaryText },
                 ]}
               >
                 {message}
@@ -330,7 +332,7 @@ export default function QuizAlertModal({
                     <Star size={15} color="#F59E0B" fill="#F59E0B" />
                   )}
                   {highlightIcon === 'lock' && (
-                    <Lock size={14} color={isDark ? '#94A3B8' : '#64748B'} />
+                    <Lock size={14} color={secondaryText} />
                   )}
                   {highlightIcon === 'award' && (
                     <Award size={15} color="#10B981" />
@@ -341,7 +343,7 @@ export default function QuizAlertModal({
                   <Text
                     style={[
                       styles.highlightText,
-                      { color: isDark ? '#CBD5E1' : '#334155' },
+                      { color: secondaryText },
                     ]}
                   >
                     {highlightText}
@@ -375,7 +377,7 @@ export default function QuizAlertModal({
                     <Text
                       style={[
                         styles.secondaryBtnText,
-                        { color: isDark ? '#E2E8F0' : '#475569' },
+                        { color: primaryText },
                       ]}
                       numberOfLines={1}
                     >
@@ -412,7 +414,7 @@ export default function QuizAlertModal({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(3, 7, 18, 0.78)',
@@ -564,4 +566,4 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.3,
   },
-});
+}));

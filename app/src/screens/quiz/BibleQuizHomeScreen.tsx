@@ -31,6 +31,7 @@ import {
 } from '../../constants/DailyQuizTranslations';
 import { useQuizLanguage } from '../../context/QuizLanguageContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 import { useChurch } from '../../context/ChurchContext';
 import { RHEMA_CHURCH_ID } from '../../constants/ChurchConfig';
 import { useAuth } from '../../context/AuthContext';
@@ -40,6 +41,7 @@ import { BibleQuiz, QuizAttempt } from '../../types/Quiz';
 import QuizLanguageModal from './QuizLanguageModal';
 
 export default function BibleQuizHomeScreen() {
+  const { isDark: _adminIsDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const { user } = useAuth();
@@ -97,8 +99,8 @@ export default function BibleQuizHomeScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0b1120' : '#FAF7F2' }]}>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#0b1120' : '#FAF7F2'} />
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={screenBg} />
 
       {/* Clean Hero Header */}
             {/* ── Screen Header (Clean circular back button & title) ── */}
@@ -176,7 +178,7 @@ export default function BibleQuizHomeScreen() {
 
         {/* ─── FAITH CATEGORIES SECTION (CLEAN & MINIMALIST) ────────────────── */}
         <View style={[styles.sectionHeadingRow, { marginTop: 20 }]}>
-          <Text style={[styles.sectionHeading, { color: isDark ? '#f8fafc' : '#0f172a' }]}>
+          <Text style={[styles.sectionHeading, { color: primaryText }]}>
             Faith Categories
           </Text>
           <View style={styles.sectionBadgeWrap}>
@@ -237,7 +239,7 @@ export default function BibleQuizHomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   container: {
     flex: 1,
   },
@@ -565,4 +567,4 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.35)',
   },
-});
+}));

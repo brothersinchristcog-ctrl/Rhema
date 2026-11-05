@@ -13,13 +13,11 @@ import {
   Dimensions,
   Platform
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { LinearGradient } from 'expo-linear-gradient';
 import { 
   ArrowLeft,
   MoreVertical,
-  ChevronLeft, 
   Plus, 
   Trash2, 
   Edit3, 
@@ -30,7 +28,6 @@ import {
   Calendar,
   CheckSquare,
   Square,
-  CheckCircle2,
   Combine
 } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
@@ -327,11 +324,18 @@ export default function MemberNotesScreen({ navigation, route }: any) {
     return (
       <View style={[
         styles.noteCard, 
-        { backgroundColor: isDark ? '#1e293b' : '#fff', borderColor: isDark ? '#334155' : '#e2e8f0' },
-        isSelectionMode && isSelected && { borderColor: '#1a2d5a', borderWidth: 2 }
+        { 
+          backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+          borderColor: isSelectionMode && isSelected ? (isDark ? '#FFFFFF' : '#0F172A') : (isDark ? '#27272A' : '#E2E8F0'),
+          borderWidth: isSelectionMode && isSelected ? 2 : 1,
+        }
       ]}>
         <TouchableOpacity 
-          style={[styles.noteCardBody, isSelectionMode && { flexDirection: 'row', alignItems: 'center' }]} 
+          style={[
+            styles.noteCardBody, 
+            { borderBottomColor: isDark ? '#27272A' : '#F1F5F9' },
+            isSelectionMode && { flexDirection: 'row', alignItems: 'center' }
+          ]} 
           activeOpacity={0.7}
           onPress={() => isSelectionMode ? toggleSelection(item.id) : openViewMode(item)}
           onLongPress={() => {
@@ -342,49 +346,56 @@ export default function MemberNotesScreen({ navigation, route }: any) {
           }}
         >
           {isSelectionMode && (
-            <View style={{ marginRight: 15 }}>
+            <View style={{ marginRight: 14 }}>
               {isSelected ? (
-                <CheckSquare size={24} color="#1a2d5a" />
+                <CheckSquare size={22} color={isDark ? '#FFFFFF' : '#0F172A'} />
               ) : (
-                <Square size={24} color={isDark ? '#475569' : '#cbd5e1'} />
+                <Square size={22} color={isDark ? '#52525B' : '#CBD5E1'} />
               )}
             </View>
           )}
 
           <View style={{ flex: 1 }}>
             <View style={styles.cardHeaderRow}>
-              <Text style={[styles.noteCardTitle, { color: isDark ? '#fff' : '#0f172a' }]} numberOfLines={1}>
+              <Text style={[styles.noteCardTitle, { color: colors.text }]} numberOfLines={1}>
                 {displayTitle}
               </Text>
-              <View style={styles.dateBadge}>
-                <Calendar size={10} color="#64748b" />
-                <Text style={styles.dateText}>{item.timestamp}</Text>
+              <View style={[styles.dateBadge, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+                <Calendar size={11} color={colors.textSecondary} />
+                <Text style={[styles.dateText, { color: colors.textSecondary }]}>{item.timestamp}</Text>
               </View>
             </View>
             
             {item.category ? (
-              <View style={[styles.categoryBadge, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2' }]}>
-                <Text style={[styles.categoryBadgeTxt, { color: isDark ? '#60a5fa' : '#1a2d5a' }]}>
+              <View style={[styles.categoryBadge, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+                <Text style={[styles.categoryBadgeTxt, { color: colors.text }]}>
                   {getCategoryLabel(item.category)}
                 </Text>
               </View>
             ) : null}
 
-            <Text style={[styles.noteCardSnippet, { color: isDark ? '#94a3b8' : '#475569' }]} numberOfLines={3}>
+            <Text style={[styles.noteCardSnippet, { color: colors.textSecondary }]} numberOfLines={3}>
               {displayContent || t('memberNotes.noAdditionalText')}
             </Text>
           </View>
         </TouchableOpacity>
 
         {!isSelectionMode && (
-          <View style={styles.cardActionsRow}>
+          <View style={[
+            styles.cardActionsRow, 
+            { 
+              backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)',
+              borderTopWidth: 1,
+              borderTopColor: isDark ? '#27272A' : '#F1F5F9'
+            }
+          ]}>
             <TouchableOpacity style={styles.actionBtn} onPress={() => openViewMode(item)}>
-              <Edit3 size={15} color={isDark ? '#60a5fa' : '#1a2d5a'} />
-              <Text style={[styles.actionBtnTxt, { color: isDark ? '#60a5fa' : '#1a2d5a' }]}>{t('memberNotes.view')}</Text>
+              <Edit3 size={14} color={colors.text} />
+              <Text style={[styles.actionBtnTxt, { color: colors.text }]}>{t('memberNotes.view')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.actionBtn} onPress={() => handleDeleteNote(item.id)}>
-              <Trash2 size={15} color="#ef4444" />
-              <Text style={[styles.actionBtnTxt, { color: '#ef4444' }]}>{t('memberNotes.delete')}</Text>
+              <Trash2 size={14} color="#EF4444" />
+              <Text style={[styles.actionBtnTxt, { color: '#EF4444' }]}>{t('memberNotes.delete')}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -393,8 +404,11 @@ export default function MemberNotesScreen({ navigation, route }: any) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2' }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#1a2d5a" />
+    <View style={[styles.container, { backgroundColor: isDark ? '#000000' : (colors.background || '#FAF7F2') }]}>
+      <StatusBar 
+        barStyle={isDark ? 'light-content' : 'dark-content'} 
+        backgroundColor={isDark ? '#000000' : (colors.background || '#FAF7F2')} 
+      />
 
       <CustomAlert 
         visible={alertConfig.visible}
@@ -404,8 +418,7 @@ export default function MemberNotesScreen({ navigation, route }: any) {
         onClose={() => setAlertConfig(prev => ({ ...prev, visible: false }))}
       />
 
-      {/* Header */}
-            {/* ── Screen Header (Clean circular back button & title) ── */}
+      {/* ── Screen Header ── */}
       <View
         style={[
           styles.headerRow,
@@ -413,31 +426,98 @@ export default function MemberNotesScreen({ navigation, route }: any) {
         ]}
       >
         <TouchableOpacity
-          style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          onPress={() => navigation.goBack()}
+          style={[styles.circularBackBtn, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? '#27272A' : '#E2E8F0' }]}
+          onPress={() => {
+            if (isSelectionMode) {
+              setIsSelectionMode(false);
+              setSelectedNoteIds([]);
+            } else {
+              navigation.goBack();
+            }
+          }}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           activeOpacity={0.8}
         >
-          <ArrowLeft size={20} color={colors.text} strokeWidth={2.4} />
+          {isSelectionMode ? (
+            <X size={20} color={colors.text} strokeWidth={2.4} />
+          ) : (
+            <ArrowLeft size={20} color={colors.text} strokeWidth={2.4} />
+          )}
         </TouchableOpacity>
 
         <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
-          {t('memberNotes.title')}
+          {isSelectionMode 
+            ? `${selectedNoteIds.length} ${t('memberNotes.select')}` 
+            : t('memberNotes.title')}
         </Text>
 
-        <View style={styles.headerRightSpacer} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {isSelectionMode ? (
+            <TouchableOpacity
+              style={[
+                styles.selectionToggleBtn,
+                {
+                  backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                  borderColor: isDark ? '#27272A' : '#E2E8F0',
+                  borderWidth: 1
+                }
+              ]}
+              onPress={() => {
+                if (selectedNoteIds.length === notes.length) {
+                  setSelectedNoteIds([]);
+                } else {
+                  setSelectedNoteIds(notes.map(n => n.id));
+                }
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text }}>
+                {selectedNoteIds.length === notes.length ? t('memberNotes.cancel') : t('memberNotes.categories.all')}
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <>
+              <TouchableOpacity
+                style={[styles.circularBackBtn, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? '#27272A' : '#E2E8F0' }]}
+                onPress={openCreateForm}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                activeOpacity={0.8}
+              >
+                <Plus size={20} color={colors.text} strokeWidth={2.4} />
+              </TouchableOpacity>
+
+              {notes.length > 0 && (
+                <TouchableOpacity
+                  style={[styles.circularBackBtn, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? '#27272A' : '#E2E8F0' }]}
+                  onPress={() => setIsMenuOpen(true)}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  activeOpacity={0.8}
+                >
+                  <MoreVertical size={18} color={colors.text} />
+                </TouchableOpacity>
+              )}
+            </>
+          )}
+        </View>
       </View>
 
       {/* Dropdown Menu Modal */}
       <Modal visible={isMenuOpen} transparent animationType="fade" onRequestClose={() => setIsMenuOpen(false)}>
         <TouchableOpacity style={styles.menuOverlay} onPress={() => setIsMenuOpen(false)} activeOpacity={1}>
-          <View style={[styles.menuContainer, { backgroundColor: isDark ? '#1e293b' : '#fff' }]}>
+          <View style={[
+            styles.menuContainer,
+            {
+              backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+              borderColor: isDark ? '#27272A' : '#E2E8F0',
+              borderWidth: 1,
+            }
+          ]}>
             <TouchableOpacity style={styles.menuItem} onPress={() => {
               setIsMenuOpen(false);
               openCreateForm();
             }}>
-              <Plus size={18} color={isDark ? '#e2e8f0' : '#1e293b'} />
-              <Text style={[styles.menuItemText, { color: isDark ? '#e2e8f0' : '#1e293b' }]}>{t('memberNotes.addNote')}</Text>
+              <Plus size={18} color={colors.text} />
+              <Text style={[styles.menuItemText, { color: colors.text }]}>{t('memberNotes.addNote')}</Text>
             </TouchableOpacity>
             {notes.length > 0 && (
               <TouchableOpacity style={styles.menuItem} onPress={() => {
@@ -445,8 +525,8 @@ export default function MemberNotesScreen({ navigation, route }: any) {
                 setIsSelectionMode(true);
                 setSelectedNoteIds([]);
               }}>
-                <CheckSquare size={18} color={isDark ? '#e2e8f0' : '#1e293b'} />
-                <Text style={[styles.menuItemText, { color: isDark ? '#e2e8f0' : '#1e293b' }]}>{t('memberNotes.select')}</Text>
+                <CheckSquare size={18} color={colors.text} />
+                <Text style={[styles.menuItemText, { color: colors.text }]}>{t('memberNotes.select')}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -454,18 +534,28 @@ export default function MemberNotesScreen({ navigation, route }: any) {
       </Modal>
 
       {/* Search Input */}
-      <View style={[styles.searchBarContainer, { backgroundColor: isDark ? '#1e293b' : '#fff' }]}>
-        <Search size={20} color={isDark ? '#94a3b8' : '#64748b'} />
+      <View style={[
+        styles.searchBarContainer,
+        {
+          backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+          borderColor: isDark ? '#27272A' : '#E2E8F0',
+          borderWidth: 1,
+        }
+      ]}>
+        <Search size={19} color={colors.textSecondary} />
         <TextInput
           placeholder={t('memberNotes.searchPlaceholder')}
-          placeholderTextColor={isDark ? '#64748b' : '#94a3b8'}
-          style={[styles.searchInput, { color: isDark ? '#fff' : '#0f172a' }]}
+          placeholderTextColor={colors.textSecondary}
+          style={[styles.searchInput, { color: colors.text }]}
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
         {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.searchClearBtn}>
-            <Text style={styles.searchClearTxt}>×</Text>
+          <TouchableOpacity 
+            onPress={() => setSearchQuery('')} 
+            style={[styles.searchClearBtn, { backgroundColor: isDark ? '#27272A' : '#E2E8F0' }]}
+          >
+            <Text style={[styles.searchClearTxt, { color: colors.textSecondary }]}>×</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -475,49 +565,60 @@ export default function MemberNotesScreen({ navigation, route }: any) {
         data={filteredNotes}
         keyExtractor={(item) => item.id}
         renderItem={renderNoteCard}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingBottom: 100 }]}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={styles.emptyStateContainer}>
-            <FileText size={50} color={isDark ? '#334155' : '#cbd5e1'} />
-            <Text style={[styles.emptyStateTitle, { color: isDark ? '#94a3b8' : '#64748b' }]}>
+            <FileText size={48} color={isDark ? '#3F3F46' : '#CBD5E1'} />
+            <Text style={[styles.emptyStateTitle, { color: colors.text }]}>
               {t('memberNotes.noNotesFound')}
             </Text>
-            <Text style={styles.emptyStateSubtitle}>
+            <Text style={[styles.emptyStateSubtitle, { color: colors.textSecondary }]}>
               {t('memberNotes.emptySubtitle')}
             </Text>
-            <TouchableOpacity style={styles.createFirstBtn} onPress={openCreateForm}>
-              <Plus size={16} color="#fff" style={{ marginRight: 6 }} />
-              <Text style={styles.createFirstBtnTxt}>{t('memberNotes.createFirstNote')}</Text>
+            <TouchableOpacity 
+              style={[
+                styles.createFirstBtn, 
+                { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' }
+              ]} 
+              onPress={openCreateForm}
+              activeOpacity={0.8}
+            >
+              <Plus size={16} color={isDark ? '#000000' : '#FFFFFF'} style={{ marginRight: 6 }} strokeWidth={2.4} />
+              <Text style={[styles.createFirstBtnTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
+                {t('memberNotes.createFirstNote')}
+              </Text>
             </TouchableOpacity>
           </View>
         }
       />
 
+      {/* Floating Action Button (FAB) for Add Note */}
+      {!isSelectionMode && (
+        <TouchableOpacity
+          style={[
+            styles.fabBtn,
+            { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' }
+          ]}
+          onPress={openCreateForm}
+          activeOpacity={0.85}
+        >
+          <Plus size={26} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.4} />
+        </TouchableOpacity>
+      )}
+
       {/* Floating Merge Button */}
       {isSelectionMode && selectedNoteIds.length > 1 && (
         <TouchableOpacity 
-          style={{
-            position: 'absolute',
-            bottom: Platform.OS === 'ios' ? 40 : 30,
-            alignSelf: 'center',
-            backgroundColor: '#1a2d5a',
-            flexDirection: 'row',
-            alignItems: 'center',
-            paddingHorizontal: 24,
-            paddingVertical: 14,
-            borderRadius: 30,
-            gap: 10,
-            elevation: 10,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 6 },
-            shadowOpacity: 0.35,
-            shadowRadius: 10
-          }}
+          style={[
+            styles.floatingMergeBtn,
+            { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' }
+          ]}
           onPress={() => setMergeModalVisible(true)}
+          activeOpacity={0.85}
         >
-          <Combine size={20} color="#FCD34D" />
-          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>
+          <Combine size={18} color={isDark ? '#000000' : '#FFFFFF'} />
+          <Text style={{ color: isDark ? '#000000' : '#FFFFFF', fontSize: 14, fontWeight: '800' }}>
             {t('memberNotes.mergeSelected', { count: selectedNoteIds.length })}
           </Text>
         </TouchableOpacity>
@@ -531,35 +632,68 @@ export default function MemberNotesScreen({ navigation, route }: any) {
         onRequestClose={() => setMergeModalVisible(false)}
       >
         <View style={styles.modalBg}>
-          <View style={[styles.modalCard, { backgroundColor: isDark ? '#1e293b' : '#fff', padding: 24, paddingBottom: 30 }]}>
-            <Text style={[{ fontSize: 18, fontWeight: '800', marginBottom: 15, color: isDark ? '#fff' : '#0f172a' }]}>
+          <View style={[
+            styles.modalCardPrompt,
+            {
+              backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+              borderColor: isDark ? '#27272A' : '#E2E8F0',
+              borderWidth: 1,
+            }
+          ]}>
+            <Text style={[{ fontSize: 18, fontWeight: '800', marginBottom: 8, color: colors.text }]}>
               {t('memberNotes.nameSermonGroup')}
             </Text>
-            <Text style={[{ fontSize: 13, color: isDark ? '#94a3b8' : '#64748b', marginBottom: 20 }]}>
+            <Text style={[{ fontSize: 13, color: colors.textSecondary, marginBottom: 18, lineHeight: 19 }]}>
               {t('memberNotes.mergeSubtitle', { count: selectedNoteIds.length })}
             </Text>
             
             <TextInput
               placeholder={t('memberNotes.mergePlaceholder')}
-              placeholderTextColor={isDark ? '#64748b' : '#94a3b8'}
-              style={[styles.titleInput, { color: isDark ? '#fff' : '#0f172a', borderColor: isDark ? '#334155' : '#cbd5e1', marginBottom: 24 }]}
+              placeholderTextColor={colors.textSecondary}
+              style={[
+                styles.titleInput, 
+                { 
+                  color: colors.text, 
+                  borderColor: colors.border, 
+                  backgroundColor: isDark ? '#27272A' : '#FAF7F2',
+                  marginBottom: 20 
+                }
+              ]}
               value={mergeTitle}
               onChangeText={setMergeTitle}
               maxLength={80}
             />
 
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
               <TouchableOpacity 
-                style={{ flex: 1, paddingVertical: 14, borderRadius: 12, backgroundColor: isDark ? '#334155' : '#FAF7F2', alignItems: 'center' }}
+                style={{ 
+                  flex: 1, 
+                  paddingVertical: 14, 
+                  borderRadius: 14, 
+                  backgroundColor: isDark ? '#27272A' : '#F1F5F9', 
+                  alignItems: 'center' 
+                }}
                 onPress={() => setMergeModalVisible(false)}
+                activeOpacity={0.7}
               >
-                <Text style={{ color: isDark ? '#fff' : '#475569', fontWeight: '700' }}>{t('memberNotes.cancel')}</Text>
+                <Text style={{ color: colors.textSecondary, fontWeight: '700' }}>
+                  {t('memberNotes.cancel')}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity 
-                style={{ flex: 1, paddingVertical: 14, borderRadius: 12, backgroundColor: '#1a2d5a', alignItems: 'center' }}
+                style={{ 
+                  flex: 1, 
+                  paddingVertical: 14, 
+                  borderRadius: 14, 
+                  backgroundColor: isDark ? '#FFFFFF' : '#0F172A', 
+                  alignItems: 'center' 
+                }}
                 onPress={handleMergeNotes}
+                activeOpacity={0.8}
               >
-                <Text style={{ color: '#fff', fontWeight: '700' }}>{t('memberNotes.mergeNotes')}</Text>
+                <Text style={{ color: isDark ? '#000000' : '#FFFFFF', fontWeight: '800' }}>
+                  {t('memberNotes.mergeNotes')}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -574,28 +708,46 @@ export default function MemberNotesScreen({ navigation, route }: any) {
         onRequestClose={() => setModalVisible(false)}
       >
         <View style={styles.modalBg}>
-          <View style={[styles.modalCard, { backgroundColor: isDark ? '#1e293b' : '#fff' }]}>
+          <View style={[
+            styles.modalCard,
+            {
+              backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+              borderTopWidth: 1,
+              borderTopColor: isDark ? '#27272A' : '#E2E8F0'
+            }
+          ]}>
             {/* Modal Header */}
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: isDark ? '#fff' : '#0f172a' }]}>
-                {!editingNoteId ? t('memberNotes.createNote') : isViewMode ? t('memberNotes.viewNote') : t('memberNotes.editNote')}
+            <View style={[styles.modalHeader, { borderBottomColor: isDark ? '#27272A' : '#E2E8F0', borderBottomWidth: 1 }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>
+                {!editingNoteId 
+                  ? t('memberNotes.createNote') 
+                  : isViewMode 
+                    ? t('memberNotes.viewNote') 
+                    : t('memberNotes.editNote')}
               </Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+              <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
                 {/* Edit toggle button when in view mode */}
                 {editingNoteId && isViewMode && (
                   <TouchableOpacity
-                    style={{ backgroundColor: '#1a2d5a', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 7, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}
+                    style={[
+                      styles.modalEditToggleBtn,
+                      { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }
+                    ]}
                     onPress={() => setIsViewMode(false)}
+                    activeOpacity={0.8}
                   >
-                    <Edit3 size={14} color="#FCD34D" />
-                    <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>{t('memberNotes.edit')}</Text>
+                    <Edit3 size={14} color={colors.text} />
+                    <Text style={{ color: colors.text, fontWeight: '700', fontSize: 12 }}>
+                      {t('memberNotes.edit')}
+                    </Text>
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity 
-                  style={[styles.modalCloseBtn, { backgroundColor: isDark ? '#334155' : '#FAF7F2' }]}
+                  style={[styles.modalCloseBtn, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
                   onPress={() => setModalVisible(false)}
+                  activeOpacity={0.8}
                 >
-                  <X size={20} color={isDark ? '#fff' : '#475569'} />
+                  <X size={18} color={colors.text} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -610,28 +762,49 @@ export default function MemberNotesScreen({ navigation, route }: any) {
 
                 return (
                   <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
-                    <Text style={[styles.inputLabel, { marginBottom: 6 }]}>{t('memberNotes.sermonTitle')}</Text>
-                    <View style={[styles.titleInput, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2', borderColor: isDark ? '#334155' : '#e2e8f0', justifyContent: 'center' }]}>
-                      <Text style={{ color: isDark ? '#fff' : '#0f172a', fontSize: 15, fontWeight: '700' }}>{displayTitle}</Text>
+                    <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>{t('memberNotes.sermonTitle')}</Text>
+                    <View style={[
+                      styles.titleInput, 
+                      { 
+                        backgroundColor: isDark ? '#27272A' : '#FAF7F2', 
+                        borderColor: colors.border, 
+                        justifyContent: 'center',
+                        marginBottom: 16
+                      }
+                    ]}>
+                      <Text style={{ color: colors.text, fontSize: 15, fontWeight: '700' }}>{displayTitle}</Text>
                     </View>
 
                     {category ? (
                       <>
-                        <View style={{ height: 12 }} />
-                        <Text style={[styles.inputLabel, { marginBottom: 6 }]}>{t('memberNotes.categoryLabel')}</Text>
-                        <View style={[styles.categoryPill, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2', borderColor: isDark ? '#334155' : '#e2e8f0', alignSelf: 'flex-start' }]}>
-                          <Text style={{ color: isDark ? '#60a5fa' : '#1a2d5a', fontSize: 12, fontWeight: '700' }}>
+                        <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>{t('memberNotes.categoryLabel')}</Text>
+                        <View style={[
+                          styles.categoryPill, 
+                          { 
+                            backgroundColor: isDark ? '#27272A' : '#F1F5F9', 
+                            borderColor: colors.border, 
+                            alignSelf: 'flex-start',
+                            marginBottom: 16
+                          }
+                        ]}>
+                          <Text style={{ color: colors.text, fontSize: 12, fontWeight: '700' }}>
                             {getCategoryLabel(category)}
                           </Text>
                         </View>
                       </>
                     ) : null}
 
-                    <View style={{ height: 15 }} />
-
-                    <Text style={[styles.inputLabel, { marginBottom: 6 }]}>{t('memberNotes.sermonDetails')}</Text>
-                    <View style={[styles.contentInput, { backgroundColor: isDark ? '#0f172a' : '#FAF7F2', borderColor: isDark ? '#334155' : '#e2e8f0', minHeight: 180, height: undefined }]}>
-                      <Text style={{ color: isDark ? '#cbd5e1' : '#334155', fontSize: 14, lineHeight: 22 }}>
+                    <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>{t('memberNotes.sermonDetails')}</Text>
+                    <View style={[
+                      styles.contentInput, 
+                      { 
+                        backgroundColor: isDark ? '#27272A' : '#FAF7F2', 
+                        borderColor: colors.border, 
+                        minHeight: 180, 
+                        height: undefined 
+                      }
+                    ]}>
+                      <Text style={{ color: colors.text, fontSize: 14, lineHeight: 22 }}>
                         {displayContent}
                       </Text>
                     </View>
@@ -643,23 +816,37 @@ export default function MemberNotesScreen({ navigation, route }: any) {
             ) : (
               /* Edit/Create Mode: Editable Inputs */
               <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
-                <Text style={styles.inputLabel}>{t('memberNotes.sermonTitle')}</Text>
+                <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>{t('memberNotes.sermonTitle')}</Text>
                 <TextInput
                   placeholder={t('memberNotes.titlePlaceholder')}
-                  placeholderTextColor={isDark ? '#64748b' : '#94a3b8'}
-                  style={[styles.titleInput, { color: isDark ? '#fff' : '#0f172a', borderColor: isDark ? '#334155' : '#cbd5e1' }]}
+                  placeholderTextColor={colors.textSecondary}
+                  style={[
+                    styles.titleInput, 
+                    { 
+                      color: colors.text, 
+                      borderColor: colors.border,
+                      backgroundColor: isDark ? '#27272A' : '#FAF7F2',
+                      marginBottom: 16
+                    }
+                  ]}
                   value={noteTitle}
                   onChangeText={setNoteTitle}
                   maxLength={80}
                 />
 
-                <View style={{ height: 15 }} />
-
-                <Text style={styles.inputLabel}>{t('memberNotes.sermonDetails')}</Text>
+                <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>{t('memberNotes.sermonDetails')}</Text>
                 <TextInput
                   placeholder={t('memberNotes.contentPlaceholder')}
-                  placeholderTextColor={isDark ? '#64748b' : '#94a3b8'}
-                  style={[styles.contentInput, { color: isDark ? '#fff' : '#0f172a', borderColor: isDark ? '#334155' : '#cbd5e1' }]}
+                  placeholderTextColor={colors.textSecondary}
+                  style={[
+                    styles.contentInput, 
+                    { 
+                      color: colors.text, 
+                      borderColor: colors.border,
+                      backgroundColor: isDark ? '#27272A' : '#FAF7F2',
+                      marginBottom: 24
+                    }
+                  ]}
                   value={noteContent}
                   onChangeText={setNoteContent}
                   multiline={true}
@@ -667,12 +854,17 @@ export default function MemberNotesScreen({ navigation, route }: any) {
                   textAlignVertical="top"
                 />
 
-                <View style={{ height: 30 }} />
-
                 {/* Save Button */}
-                <TouchableOpacity style={styles.saveBtn} onPress={handleCreateOrEditNote}>
-                  <Save size={18} color="#fff" style={{ marginRight: 8 }} />
-                  <Text style={styles.saveBtnTxt}>
+                <TouchableOpacity 
+                  style={[
+                    styles.saveBtn,
+                    { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' }
+                  ]} 
+                  onPress={handleCreateOrEditNote}
+                  activeOpacity={0.85}
+                >
+                  <Save size={18} color={isDark ? '#000000' : '#FFFFFF'} style={{ marginRight: 8 }} />
+                  <Text style={[styles.saveBtnTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
                     {editingNoteId ? t('memberNotes.saveChanges') : t('memberNotes.saveNote')}
                   </Text>
                 </TouchableOpacity>
@@ -687,8 +879,10 @@ export default function MemberNotesScreen({ navigation, route }: any) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-    headerRow: {
+  container: { 
+    flex: 1 
+  },
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -703,10 +897,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
+    shadowOpacity: 0.04,
+    shadowRadius: 5,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
+    elevation: 2,
+  },
+  selectionToggleBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitleText: {
     fontSize: 20,
@@ -714,94 +915,19 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
     textAlign: 'center',
   },
-  headerRightSpacer: {
-    width: 44,
-    height: 44,
-  },
-  headerCardWrapper: {
-    paddingHorizontal: 16,
-    paddingBottom: 4,
-  },
-  header: {
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    borderRadius: 24,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    overflow: 'hidden',
-    position: 'relative',
-    borderWidth: 1,
-    borderColor: 'rgba(228, 238, 234, 0.25)',
-  },
-  headerDecoCircle1: {
-    position: 'absolute',
-    width: 130,
-    height: 130,
-    borderRadius: 65,
-    backgroundColor: 'rgba(228, 238, 234, 0.10)',
-    top: -50,
-    right: -25,
-  },
-  headerDecoCircle2: {
-    position: 'absolute',
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: 'rgba(228, 238, 234, 0.08)',
-    bottom: -40,
-    left: 35,
-  },
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    backgroundColor: '#E4EEEA',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  backText: { color: '#fff', fontSize: 15, fontWeight: '500' },
-  headerCenterTitleWrap: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-  },
-  headerTitle: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-    textAlign: 'center',
-  },
-  headerTitleAccentBar: {
-    width: 28,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: '#E4EEEA',
-    marginTop: 5,
-    opacity: 0.85,
-  },
-  plusBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    backgroundColor: '#E4EEEA',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 10,
-  },
   
   // Menu styles
-  menuOverlay: { flex: 1, backgroundColor: 'transparent' },
+  menuOverlay: { 
+    flex: 1, 
+    backgroundColor: 'transparent' 
+  },
   menuContainer: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 100 : 80,
+    top: Platform.OS === 'ios' ? 104 : 84,
     right: 20,
-    borderRadius: 12,
+    borderRadius: 16,
     paddingVertical: 8,
-    minWidth: 160,
+    minWidth: 170,
     elevation: 10,
     shadowColor: '#000',
     shadowOpacity: 0.1,
@@ -816,7 +942,7 @@ const styles = StyleSheet.create({
     gap: 12
   },
   menuItemText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600'
   },
 
@@ -825,18 +951,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: 16,
-    marginTop: 15,
+    marginTop: 10,
     marginBottom: 10,
     borderRadius: 16,
-    paddingHorizontal: 15,
+    paddingHorizontal: 14,
     height: 48,
-    elevation: 3,
+    elevation: 2,
     shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
   },
   searchInput: {
     flex: 1,
@@ -849,26 +973,25 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#cbd5e1',
     alignItems: 'center',
     justifyContent: 'center',
   },
   searchClearTxt: {
-    color: '#475569',
     fontSize: 14,
     fontWeight: '900',
     lineHeight: 16,
     textAlign: 'center',
   },
 
-  listContent: { padding: 16, paddingBottom: 60 },
+  listContent: { 
+    padding: 16, 
+  },
 
   // Card styles
   noteCard: {
-    borderRadius: 20,
-    borderWidth: 0.5,
-    marginBottom: 15,
-    elevation: 3,
+    borderRadius: 18,
+    marginBottom: 14,
+    elevation: 2,
     shadowColor: '#000',
     shadowOpacity: 0.04,
     shadowRadius: 5,
@@ -877,8 +1000,7 @@ const styles = StyleSheet.create({
   },
   noteCardBody: {
     padding: 16,
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#f1f5f9'
+    borderBottomWidth: 1,
   },
   cardHeaderRow: {
     flexDirection: 'row',
@@ -886,17 +1008,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8
   },
-  noteCardTitle: { fontSize: 15, fontWeight: '800', flex: 1, marginRight: 10 },
+  noteCardTitle: { 
+    fontSize: 15, 
+    fontWeight: '800', 
+    flex: 1, 
+    marginRight: 10 
+  },
   dateBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f1f5f9',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 10,
+    borderRadius: 8,
     gap: 4
   },
-  dateText: { fontSize: 9, color: '#64748b', fontWeight: '700' },
+  dateText: { 
+    fontSize: 10, 
+    fontWeight: '600' 
+  },
   categoryBadge: {
     alignSelf: 'flex-start',
     paddingHorizontal: 8,
@@ -905,8 +1034,8 @@ const styles = StyleSheet.create({
     marginBottom: 6
   },
   categoryBadgeTxt: {
-    fontSize: 10,
-    fontWeight: '800'
+    fontSize: 11,
+    fontWeight: '700'
   },
   categoryPill: {
     paddingHorizontal: 12,
@@ -914,13 +1043,16 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1
   },
-  noteCardSnippet: { fontSize: 13, lineHeight: 18, fontWeight: '500' },
+  noteCardSnippet: { 
+    fontSize: 13, 
+    lineHeight: 19, 
+    fontWeight: '500' 
+  },
   cardActionsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: 'rgba(0,0,0,0.01)'
+    paddingVertical: 10,
   },
   actionBtn: {
     flexDirection: 'row',
@@ -929,67 +1061,176 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 8
   },
-  actionBtnTxt: { fontSize: 12, fontWeight: '700' },
+  actionBtnTxt: { 
+    fontSize: 12, 
+    fontWeight: '700' 
+  },
 
   // Empty State
   emptyStateContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 80,
+    paddingVertical: 70,
     paddingHorizontal: 30
   },
-  emptyStateTitle: { fontSize: 16, fontWeight: '800', marginTop: 15, marginBottom: 8 },
-  emptyStateSubtitle: { fontSize: 13, color: '#94a3b8', textAlign: 'center', lineHeight: 20, marginBottom: 20 },
+  emptyStateTitle: { 
+    fontSize: 16, 
+    fontWeight: '800', 
+    marginTop: 15, 
+    marginBottom: 8 
+  },
+  emptyStateSubtitle: { 
+    fontSize: 13, 
+    textAlign: 'center', 
+    lineHeight: 20, 
+    marginBottom: 20 
+  },
   createFirstBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1a2d5a',
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
     paddingVertical: 12,
-    borderRadius: 25,
-    elevation: 3
+    borderRadius: 24,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
   },
-  createFirstBtnTxt: { color: '#fff', fontSize: 13, fontWeight: '800' },
+  createFirstBtnTxt: { 
+    fontSize: 13, 
+    fontWeight: '800' 
+  },
+
+  // FAB
+  fabBtn: {
+    position: 'absolute',
+    bottom: Platform.OS === 'ios' ? 36 : 28,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 4 },
+  },
+
+  // Floating Merge
+  floatingMergeBtn: {
+    position: 'absolute',
+    bottom: Platform.OS === 'ios' ? 36 : 28,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 22,
+    paddingVertical: 14,
+    borderRadius: 30,
+    gap: 8,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 }
+  },
 
   // Modal styles
-  modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalCard: { borderTopLeftRadius: 25, borderTopRightRadius: 25, height: height * 0.85, padding: 20 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 0.5, borderColor: '#cbd5e1', paddingBottom: 15, marginBottom: 15 },
-  modalTitle: { fontSize: 17, fontWeight: '900' },
-  modalCloseBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  modalScroll: { flex: 1 },
-  inputLabel: { fontSize: 10, fontWeight: '800', color: '#94a3b8', letterSpacing: 0.5, marginBottom: 8 },
+  modalBg: { 
+    flex: 1, 
+    backgroundColor: 'rgba(0,0,0,0.55)', 
+    justifyContent: 'flex-end' 
+  },
+  modalCardPrompt: {
+    marginHorizontal: 16,
+    marginBottom: Platform.OS === 'ios' ? 40 : 24,
+    borderRadius: 24,
+    padding: 24,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  modalCard: { 
+    borderTopLeftRadius: 28, 
+    borderTopRightRadius: 28, 
+    height: height * 0.85, 
+    padding: 20,
+    elevation: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: -3 },
+  },
+  modalHeader: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    paddingBottom: 16, 
+    marginBottom: 16 
+  },
+  modalTitle: { 
+    fontSize: 18, 
+    fontWeight: '800' 
+  },
+  modalEditToggleBtn: {
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6
+  },
+  modalCloseBtn: { 
+    width: 36, 
+    height: 36, 
+    borderRadius: 18, 
+    alignItems: 'center', 
+    justifyContent: 'center' 
+  },
+  modalScroll: { 
+    flex: 1 
+  },
+  inputLabel: { 
+    fontSize: 11, 
+    fontWeight: '700', 
+    letterSpacing: 0.3, 
+    marginBottom: 6 
+  },
   titleInput: {
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     fontSize: 14,
     fontWeight: '700',
-    backgroundColor: 'rgba(0,0,0,0.01)'
   },
   contentInput: {
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '500',
     height: 180,
-    backgroundColor: 'rgba(0,0,0,0.01)'
   },
   saveBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#c0392b',
-    paddingVertical: 14,
-    borderRadius: 15,
+    paddingVertical: 15,
+    borderRadius: 16,
     elevation: 4,
-    shadowColor: '#c0392b',
-    shadowOpacity: 0.25,
-    shadowRadius: 5,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 }
   },
-  saveBtnTxt: { color: '#fff', fontSize: 14, fontWeight: '800' }
+  saveBtnTxt: { 
+    fontSize: 15, 
+    fontWeight: '800' 
+  }
 });

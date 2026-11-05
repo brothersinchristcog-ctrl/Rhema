@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Linking, Activity
 import { MaterialIcons } from '@expo/vector-icons';
 import { Calendar, Clock, User, BookOpen, Radio, ExternalLink, LogOut, Video, Key, Copy } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
+import { useAdminTheme, createAdminThemedStyles } from '../utils/adminThemeHelper';
 import { useAuth } from '../context/AuthContext';
 import { useChurch } from '../context/ChurchContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -15,6 +16,7 @@ const SUCCESS = '#10b981';
 const SHOW_YOUTUBE_LIVE = false;
 
 export default function OnlineMeetingDetailScreen({ navigation, route }: any) {
+  const { isDark: _adminIsDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { meeting } = route.params;
   const { isDark } = useTheme();
   const { user, member } = useAuth();
@@ -25,10 +27,10 @@ export default function OnlineMeetingDetailScreen({ navigation, route }: any) {
   const [loading, setLoading] = useState(true);
 
   // Colors
-  const bgColor = isDark ? '#0f172a' : '#FAF7F2';
-  const cardColor = isDark ? '#1e293b' : '#fff';
-  const textColor = isDark ? '#fff' : '#1e293b';
-  const mutedText = isDark ? '#94a3b8' : '#64748b';
+  const bgColor = screenBg;
+  const cardColor = cardSurface;
+  const textColor = primaryText;
+  const mutedText = secondaryText;
 
   useEffect(() => {
     const churchId = activeChurch?.id || meeting?.churchId || member?.churchId;
@@ -353,7 +355,7 @@ export default function OnlineMeetingDetailScreen({ navigation, route }: any) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   container: { flex: 1 },
 
   // Header
@@ -466,4 +468,4 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
-});
+}));

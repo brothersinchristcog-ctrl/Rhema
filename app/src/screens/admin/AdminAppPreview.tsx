@@ -27,10 +27,12 @@ import { AdminTabContext } from '../../context/AdminTabContext';
 
 import FirestoreService, { DailyPromise } from '../../services/FirestoreService';
 import { formatDateDisplay } from '../../utils/DateUtils';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const { width } = Dimensions.get('window');
 
 export default function AdminAppPreview() {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { setActiveTab } = useContext(AdminTabContext);
   const [promise, setPromise] = useState<DailyPromise | null>(null);
   const [sermons, setSermons] = useState<any[]>([]);
@@ -262,7 +264,7 @@ export default function AdminAppPreview() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FAF7F2' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAF7F2' },
   
@@ -334,4 +336,4 @@ const styles = StyleSheet.create({
   navSection: { paddingHorizontal: 20, marginTop: 20, gap: 12 },
   navBtn: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: '#fff', borderWidth: 1, borderColor: '#1a2d5a', borderRadius: 12, paddingVertical: 14, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5 },
   navBtnTxt: { color: '#1a2d5a', fontSize: 13, fontWeight: '700' }
-});
+}));

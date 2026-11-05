@@ -14,6 +14,7 @@ import { AlertCircle, Plus, Check, ChevronLeft, Filter, X , ArrowLeft } from 'lu
 import { AdminTabContext } from '../../context/AdminTabContext';
 
 import FirestoreService, { DailyPromise } from '../../services/FirestoreService';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const colors = {
   ink: '#1a2d5a',
@@ -35,6 +36,7 @@ const colors = {
 const serifFont = Platform.OS === 'ios' ? 'Georgia' : 'serif';
 
 export default function AdminPromiseList() {
+  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { setActiveTab, setEditingData, setTabByName } = useContext(AdminTabContext);
   const [promises, setPromises] = useState<DailyPromise[]>([]);
   const [loading, setLoading] = useState(true);
@@ -507,7 +509,7 @@ export default function AdminPromiseList() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
@@ -701,4 +703,4 @@ const styles = StyleSheet.create({
   footerBranding: { textAlign: 'center', paddingTop: 20, paddingBottom: 8, fontSize: 11, letterSpacing: 0.8, color: '#B3A67E', textTransform: 'uppercase', fontWeight: '600' },
 
   fab: { position: 'absolute', bottom: 90, right: 24, width: 56, height: 56, borderRadius: 28, backgroundColor: colors.goldBright, justifyContent: 'center', alignItems: 'center', elevation: 6, shadowColor: '#8C6428', shadowOpacity: 0.6, shadowRadius: 10, shadowOffset: { width: 0, height: 6 }, borderWidth: 2, borderColor: 'rgba(255,255,255,0.3)' }
-});
+}));

@@ -92,28 +92,28 @@ export const CustomAlert = forwardRef<CustomAlertRef, CustomAlertProps>((props, 
 
   const getIcon = () => {
     switch (type) {
-      case 'success': return <Ionicons name="checkmark-circle" size={56} color={colors.primary} />;
-      case 'error': return <Ionicons name="close-circle" size={56} color="#ef4444" />;
-      case 'warning': return <Ionicons name="warning" size={56} color="#f59e0b" />;
-      default: return <Ionicons name="information-circle" size={56} color={colors.primary} />;
-    }
-  };
-
-  const getHeaderColor = () => {
-    switch (type) {
-      case 'success': return colors.primary;
-      case 'error': return '#ef4444';
-      case 'warning': return '#f59e0b';
-      default: return colors.primary;
+      case 'success': return <Ionicons name="checkmark-circle" size={54} color="#22C55E" />;
+      case 'error': return <Ionicons name="close-circle" size={54} color="#EF4444" />;
+      case 'warning': return <Ionicons name="warning" size={54} color="#F59E0B" />;
+      default: return <Ionicons name="information-circle" size={54} color={isDark ? '#38BDF8' : '#0284C7'} />;
     }
   };
 
   const getIconBgColor = () => {
     switch (type) {
-      case 'success': return colors.primary + '15';
-      case 'error': return '#fee2e2';
-      case 'warning': return '#fef3c7';
-      default: return colors.primary + '15';
+      case 'success': return isDark ? 'rgba(34, 197, 94, 0.16)' : '#DCFCE7';
+      case 'error': return isDark ? 'rgba(239, 68, 68, 0.16)' : '#FEE2E2';
+      case 'warning': return isDark ? 'rgba(245, 158, 11, 0.16)' : '#FEF3C7';
+      default: return isDark ? 'rgba(56, 189, 248, 0.16)' : '#E0F2FE';
+    }
+  };
+
+  const getIconBorderColor = () => {
+    switch (type) {
+      case 'success': return isDark ? 'rgba(34, 197, 94, 0.32)' : '#BBF7D0';
+      case 'error': return isDark ? 'rgba(239, 68, 68, 0.32)' : '#FECACA';
+      case 'warning': return isDark ? 'rgba(245, 158, 11, 0.32)' : '#FDE68A';
+      default: return isDark ? 'rgba(56, 189, 248, 0.32)' : '#BAE6FD';
     }
   };
 
@@ -122,17 +122,26 @@ export const CustomAlert = forwardRef<CustomAlertRef, CustomAlertProps>((props, 
       transparent={true}
       visible={visible}
       animationType="none"
+      statusBarTranslucent={true}
       onRequestClose={handleClose}
     >
       <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
-        <Animated.View style={[styles.alertBox, { backgroundColor: colors.card, transform: [{ scale: scaleAnim }] }]}>
+        <Animated.View style={[
+          styles.alertBox,
+          {
+            backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF',
+            borderWidth: 1.5,
+            borderColor: isDark ? '#3F3F46' : '#E2E8F0',
+            transform: [{ scale: scaleAnim }]
+          }
+        ]}>
           
-          <View style={[styles.iconContainer, { backgroundColor: getIconBgColor() }]}>
+          <View style={[styles.iconContainer, { backgroundColor: getIconBgColor(), borderWidth: 1, borderColor: getIconBorderColor() }]}>
             {getIcon()}
           </View>
 
-          <Text style={[styles.title, { color: getHeaderColor() }]}>{title}</Text>
-          <Text style={[styles.message, { color: colors.textSecondary }]}>{message}</Text>
+          <Text style={[styles.title, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>{title}</Text>
+          <Text style={[styles.message, { color: isDark ? '#E4E4E7' : '#475569' }]}>{message}</Text>
 
           <View style={styles.buttonContainer}>
             {buttons && buttons.length > 0 ? (
@@ -141,9 +150,9 @@ export const CustomAlert = forwardRef<CustomAlertRef, CustomAlertProps>((props, 
                   key={index}
                   style={[
                     styles.button,
-                    { backgroundColor: colors.primary, shadowColor: colors.primary },
-                    btn.style === 'cancel' && { backgroundColor: isDark ? '#334155' : '#F3F4F6', shadowOpacity: 0, elevation: 0 },
-                    btn.style === 'destructive' && { backgroundColor: '#ef4444', shadowColor: '#ef4444' },
+                    { backgroundColor: isDark ? '#FFFFFF' : '#0F172A', shadowColor: '#000' },
+                    btn.style === 'cancel' && { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: isDark ? '#3F3F46' : '#E2E8F0', shadowOpacity: 0, elevation: 0 },
+                    btn.style === 'destructive' && { backgroundColor: '#EF4444', shadowColor: '#EF4444' },
                     buttons.length === 2 && styles.buttonHalf
                   ]}
                   onPress={() => {
@@ -158,7 +167,8 @@ export const CustomAlert = forwardRef<CustomAlertRef, CustomAlertProps>((props, 
                 >
                   <Text style={[
                     styles.buttonText,
-                    btn.style === 'cancel' && { color: colors.text },
+                    { color: isDark ? '#0F172A' : '#FFFFFF' },
+                    btn.style === 'cancel' && { color: isDark ? '#E4E4E7' : '#0F172A' },
                     btn.style === 'destructive' && { color: '#FFFFFF' }
                   ]}>
                     {btn.text}
@@ -167,11 +177,11 @@ export const CustomAlert = forwardRef<CustomAlertRef, CustomAlertProps>((props, 
               ))
             ) : (
               <TouchableOpacity 
-                style={[styles.button, { backgroundColor: colors.primary, shadowColor: colors.primary }]} 
+                style={[styles.button, { backgroundColor: isDark ? '#FFFFFF' : '#0F172A', shadowColor: '#000' }]} 
                 onPress={handleClose} 
-                activeOpacity={0.8}
+                activeOpacity={0.85}
               >
-                <Text style={styles.buttonText}>OK</Text>
+                <Text style={[styles.buttonText, { color: isDark ? '#0F172A' : '#FFFFFF' }]}>OK</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -199,7 +209,7 @@ const { width } = Dimensions.get('window');
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: spacing.xl
