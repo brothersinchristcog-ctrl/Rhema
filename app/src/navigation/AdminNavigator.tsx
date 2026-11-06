@@ -85,7 +85,6 @@ import { Shield, Video as VideoIcon, Headset } from 'lucide-react-native';
 import AdminQuizList from '../screens/admin/quiz/AdminQuizList';
 import AdminBaptism from '../screens/admin/AdminBaptism';
 import ChurchService from '../services/ChurchService';
-import AdminServicePlanner from '../screens/admin/AdminServicePlanner';
 import AdminDailyVersesManager from '../screens/admin/AdminDailyVersesManager';
 import AdminCareCellsHub from '../screens/admin/care_cells/AdminCareCellsHub';
 import CareCellService from '../services/CareCellService';
@@ -291,7 +290,6 @@ export default function AdminNavigator({ navigation, route }: any) {
     { name: 'Prayers', icon: Heart, component: AdminPrayerModeration },
     { name: 'Attendance', icon: ClipboardCheck, component: AdminAttendance },
     ...(isSuperAdminUser || hasCareCellAccess ? [{ name: 'Care Cells', icon: HeartHandshake, component: AdminCareCellsHub }] : []),
-    { name: 'Service Roster', icon: ClipboardCheck, component: AdminServicePlanner },
     { name: 'Members', icon: Users, component: AdminMembers },
     { name: 'Celebrations', icon: Gift, component: AdminCelebrations },
     { name: 'Gallery', icon: ImageIcon, component: AdminGalleryNavigator },
