@@ -9,16 +9,16 @@ import {
   Modal,
   ActivityIndicator,
   Share,
-  Platform,
   Dimensions,
   Alert,
-  StatusBar
+  StatusBar,
+  Platform
 } from 'react-native';
 import {
   CalendarDays,
   Plus,
-  ChevronLeft,
-  ChevronRight,
+  ArrowLeft,
+  RefreshCw,
   Share2,
   Clock,
   Music,
@@ -28,23 +28,24 @@ import {
   Trash2,
   Search,
   X,
-  Copy,
   BookOpen,
   Mic,
   Video,
   Sparkles,
-  AlertTriangle,
+  AlertCircle,
   Check,
   MapPin,
-  RefreshCw,
+  ChevronUp,
+  ChevronDown,
   MessageCircle,
-  Radio,
-  Tv,
+  FileText,
+  User,
   Heart,
-  Baby
-, ArrowLeft } from 'lucide-react-native';
+  ChevronRight
+} from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import firestore from '@react-native-firebase/firestore';
+
 import { useChurch } from '../../context/ChurchContext';
 import { useAuth } from '../../context/AuthContext';
 import { AdminTabContext } from '../../context/AdminTabContext';
@@ -57,100 +58,97 @@ import ServiceRosterService, {
   ServiceDepartment,
   TimetableCategory
 } from '../../services/ServiceRosterService';
-import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
+import { useAdminTheme } from '../../utils/adminThemeHelper';
 
 const { width } = Dimensions.get('window');
 
-const PRELUDE_SUGGESTIONS = [
-  'Acoustic + Drum',
-  'Keys',
-  'Elec',
-  'Acoustic',
-  'Keys + Acoustic',
-  'Full Band',
-  'Pads',
-  'Drums Only',
-  'None'
+const SERVICE_TYPE_PRESETS = [
+  'Sunday 1st Service',
+  'Sunday 2nd Service',
+  'Sunday Evening Service',
+  'Bible Study',
+  'Friday Fasting Prayer',
+  'Youth Fellowship',
+  'Holy Communion Service',
+  'Special Conference'
 ];
 
-const INTERLUDE_SUGGESTIONS = [
-  'Keys + Elec (Alt)',
-  'Keys/ Elec Alt',
-  'Elec + Keys (Alt)',
-  '(Elec + Keys)',
-  'Acoustic Solo',
-  'Elec Lead',
-  'Full Band Dynamics',
-  'None'
-];
-
-const NOTES_SUGGESTIONS = [
-  "Celebrate God's power, strength, and salvation",
-  "Prep for 2nd Coming",
-  "God just wants our heart",
-  "You washed us clean with your Blood",
-  "Call to Worship & Praise",
-  "Intimate Surrender & Holy Spirit",
-  "Maintain purity and be Holy",
-  "Giving our best to God (Offertory)"
+const RUNSHEET_PRESETS: { category: TimetableCategory; name: string; dur: number }[] = [
+  { category: 'starting_prayer', name: 'Opening Prayer', dur: 10 },
+  { category: 'opening_song', name: 'Opening Praise Song', dur: 10 },
+  { category: 'worship_songs', name: 'Praise & Worship', dur: 30 },
+  { category: 'bible_reading', name: 'Bible Reading', dur: 10 },
+  { category: 'sermon', name: 'Sermon / Message', dur: 45 },
+  { category: 'additional', name: 'Offertory & Announcements', dur: 15 },
+  { category: 'closing_prayer', name: 'Closing Prayer & Benediction', dur: 5 },
 ];
 
 export default function AdminServicePlanner({ navigation }: any) {
-  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
+  const { isDark, colors: adminColors, screenBg } = useAdminTheme();
   const insets = useSafeAreaInsets();
   const { activeChurch } = useChurch();
   const { setActiveTab } = useContext(AdminTabContext);
   const { member } = useAuth();
 
-  // State: Plans list & loading
+  const churchId = activeChurch?.id || 'rhema';
+
+  // State: Plans & Loading
   const [plans, setPlans] = useState<ServicePlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<ServicePlan | null>(null);
-  const [activePlanTab, setActivePlanTab] = useState<'roster' | 'setlist' | 'runSheet' | 'export'>('roster');
+  const [activePlanTab, setActivePlanTab] = useState<'roster' | 'runSheet' | 'setlist' | 'sermon'>('roster');
 
-  // State: Church Events for quick planning
-  const [churchEvents, setChurchEvents] = useState<any[]>([]);
-
-  // State: Church Members for assignment picker
+  // State: Church Members & Songs
   const [churchMembers, setChurchMembers] = useState<any[]>([]);
+  const [churchSongs, setChurchSongs] = useState<any[]>([]);
   const [memberSearchQuery, setMemberSearchQuery] = useState('');
   const [assigningRoleId, setAssigningRoleId] = useState<string | null>(null);
   const [assigningRoleName, setAssigningRoleName] = useState<string>('');
-  const [customAssigneeName, setCustomAssigneeName] = useState('');
   const [showMemberPickerModal, setShowMemberPickerModal] = useState(false);
 
-  // State: Create / Edit Plan Modal & Detailed Timetable
-  const [showCreatePlanModal, setShowCreatePlanModal] = useState(false);
-  const [planFormDate, setPlanFormDate] = useState(new Date().toISOString().split('T')[0]);
-  const [planFormTitle, setPlanFormTitle] = useState('');
-  const [planFormType, setPlanFormType] = useState<'sunday_service' | 'special_event' | 'conference'>('sunday_service');
-  const [planFormStartTime, setPlanFormStartTime] = useState('09:00');
-  const [planFormEndTime, setPlanFormEndTime] = useState('11:00');
-  const [planFormLocation, setPlanFormLocation] = useState('');
-  const [planFormTimetable, setPlanFormTimetable] = useState<RunSheetItem[]>([]);
-  const [editingTimetableItemIndex, setEditingTimetableItemIndex] = useState<number | null>(null);
-  const [showActivityEditorModal, setShowActivityEditorModal] = useState(false);
-  const [activityEditorForm, setActivityEditorForm] = useState<RunSheetItem>({
+  // State: Quick Create Service Wizard Modal
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createTitle, setCreateTitle] = useState('Sunday 1st Service');
+  const [createDate, setCreateDate] = useState('');
+  const [createStartTime, setCreateStartTime] = useState('09:30');
+  const [createEndTime, setCreateEndTime] = useState('12:00');
+  const [createLocation, setCreateLocation] = useState('Rhema Church Sanctuary');
+  const [createTemplateType, setCreateTemplateType] = useState<'standard' | 'blank'>('standard');
+  const [creatingPlan, setCreatingPlan] = useState(false);
+
+  // State: Edit Service Details Modal
+  const [showEditDetailsModal, setShowEditDetailsModal] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDate, setEditDate] = useState('');
+  const [editStartTime, setEditStartTime] = useState('');
+  const [editEndTime, setEditEndTime] = useState('');
+  const [editLocation, setEditLocation] = useState('');
+  const [editSermonTitle, setEditSermonTitle] = useState('');
+  const [editSermonSpeaker, setEditSermonSpeaker] = useState('');
+  const [editSermonVerses, setEditSermonVerses] = useState('');
+
+  // State: Add/Edit Run-Sheet Activity Modal
+  const [showActivityModal, setShowActivityModal] = useState(false);
+  const [editingActivityIndex, setEditingActivityIndex] = useState<number | null>(null);
+  const [activityForm, setActivityForm] = useState<RunSheetItem>({
     id: '',
-    time: '09:00 to 09:20',
-    startTime: '09:00',
-    endTime: '09:20',
-    durationMinutes: 20,
+    time: '09:30 to 09:40',
+    startTime: '09:30',
+    endTime: '09:40',
+    durationMinutes: 10,
     program: '',
     category: 'starting_prayer',
     assignedTo: '',
-    songTitle: '',
-    musicians: '',
     passage: '',
-    place: '',
+    place: 'Sanctuary',
     notes: '',
   });
-  const [savingPlan, setSavingPlan] = useState(false);
 
-  // State: Setlist Song Modal
+  // State: Add/Edit Setlist Song Modal
   const [showSongModal, setShowSongModal] = useState(false);
   const [editingSongIndex, setEditingSongIndex] = useState<number | null>(null);
+  const [songSearchQuery, setSongSearchQuery] = useState('');
   const [songForm, setSongForm] = useState<SetlistItem>({
     id: '',
     title: '',
@@ -162,323 +160,179 @@ export default function AdminServicePlanner({ navigation }: any) {
     prelude: '',
     interlude: '',
     notes: '',
-    isOffertory: false,
+    isOffertory: false
   });
 
-  // Load church data
+  // ── Load Church Data ─────────────────────────────────────
   useEffect(() => {
     loadData();
-  }, [activeChurch]);
+  }, [churchId]);
 
   const loadData = async () => {
-    if (!activeChurch?.id) {
-      setLoading(false);
-      return;
-    }
+    if (!churchId) return;
     setLoading(true);
     try {
-      const [fetchedPlans, members, eventsSnap] = await Promise.all([
-        ServiceRosterService.getServicePlans(activeChurch.id),
+      const [fetchedPlans, members, songs] = await Promise.all([
+        ServiceRosterService.getServicePlans(churchId, 40),
         FirestoreService.getAllMembers(),
-        firestore()
-          .collection('Rhema Church')
-          .doc(activeChurch.id)
-          .collection('events')
-          .orderBy('date', 'desc')
-          .limit(30)
-          .get()
-          .catch(() => null)
+        FirestoreService.getWorshipSongs({ forceRefresh: false }).catch(() => [])
       ]);
       setPlans(fetchedPlans);
       setChurchMembers(members);
-      if (eventsSnap && !eventsSnap.empty) {
-        const evList = eventsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-        setChurchEvents(evList);
-      }
+      setChurchSongs(songs || []);
+
       if (fetchedPlans.length > 0) {
-        setSelectedPlan(fetchedPlans[0]);
+        setSelectedPlan(prev => {
+          if (prev) {
+            const fresh = fetchedPlans.find(p => p.id === prev.id);
+            if (fresh) return fresh;
+          }
+          return fetchedPlans[0];
+        });
       } else {
         setSelectedPlan(null);
       }
     } catch (e) {
-      console.error('Error loading service planner data:', e);
+      console.error('[AdminServicePlanner] loadData error:', e);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  // Open Service Timetable Modal (New or Edit)
-  const openServiceTimetableModal = (planToEdit?: ServicePlan | null) => {
-    if (planToEdit) {
-      setSelectedPlan(planToEdit);
-      setPlanFormTitle(planToEdit.serviceTitle || '');
-      setPlanFormDate(planToEdit.date || new Date().toISOString().split('T')[0]);
-      setPlanFormType(planToEdit.serviceType || 'sunday_service');
-      setPlanFormStartTime(planToEdit.startTime || '09:00');
-      setPlanFormEndTime(planToEdit.endTime || '11:00');
-      setPlanFormLocation(planToEdit.location || activeChurch?.name || '');
-      setPlanFormTimetable(
-        planToEdit.runSheet && planToEdit.runSheet.length > 0
-          ? [...planToEdit.runSheet]
-          : []
-      );
-    } else {
-      setSelectedPlan(null);
-      setPlanFormTitle('');
-      setPlanFormDate(new Date().toISOString().split('T')[0]);
-      setPlanFormType('sunday_service');
-      setPlanFormStartTime('09:00');
-      setPlanFormEndTime('11:00');
-      setPlanFormLocation(activeChurch?.name || 'Sanctuary');
-      setPlanFormTimetable([]);
-    }
-    setShowCreatePlanModal(true);
+  // ── Calculate Next Sunday Date ───────────────────────────
+  const getNextSundayDate = () => {
+    const d = new Date();
+    const day = d.getDay();
+    const diff = (7 - day) % 7 || 7;
+    d.setDate(d.getDate() + diff);
+    return d.toISOString().split('T')[0];
   };
 
-  // Add a new activity into the timetable builder
-  const handleAddActivity = (category: TimetableCategory = 'additional') => {
-    let nextStart = planFormStartTime || '09:00';
-    if (planFormTimetable.length > 0) {
-      const last = planFormTimetable[planFormTimetable.length - 1];
-      if (last.endTime) {
-        nextStart = last.endTime;
-      }
-    }
-    const defaultDurations: Record<TimetableCategory, number> = {
-      starting_prayer: 10,
-      opening_song: 10,
-      worship_songs: 20,
-      bible_reading: 10,
-      sermon: 40,
-      closing_prayer: 5,
-      break: 15,
-      additional: 15,
-    };
-    const dur = defaultDurations[category] || 15;
-    const startMin = ServiceRosterService.parseTimeToMinutes(nextStart);
-    const endMin = Math.min(1439, startMin + dur);
-    const nextEnd = ServiceRosterService.minutesToTimeString(endMin);
-
-    const defaultPrograms: Record<TimetableCategory, string> = {
-      starting_prayer: 'Starting Prayer / Invocation',
-      opening_song: 'Opening Praise Song',
-      worship_songs: 'Praise & Worship',
-      bible_reading: 'Scripture / Bible Reading',
-      sermon: 'Sermon / Message',
-      closing_prayer: 'Closing Prayer & Benediction',
-      break: 'Tea / Fellowship Break',
-      additional: 'Special Activity',
-    };
-
-    setActivityEditorForm({
-      id: Math.random().toString(36).substring(7),
-      time: ServiceRosterService.formatTimeRange(nextStart, nextEnd),
-      startTime: nextStart,
-      endTime: nextEnd,
-      durationMinutes: dur,
-      program: defaultPrograms[category] || 'Church Activity',
-      category,
-      assignedTo: '',
-      songTitle: '',
-      musicians: category === 'worship_songs' || category === 'opening_song' ? 'Keys, Guitars & Drums' : '',
-      passage: '',
-      place: planFormLocation || 'Sanctuary',
-      notes: '',
-    });
-    setEditingTimetableItemIndex(null);
-    setShowActivityEditorModal(true);
+  // ── Open Quick Create Wizard ─────────────────────────────
+  const openCreateWizard = () => {
+    setCreateTitle('Sunday 1st Service');
+    setCreateDate(getNextSundayDate());
+    setCreateStartTime('09:30');
+    setCreateEndTime('12:00');
+    setCreateLocation(activeChurch?.name ? `${activeChurch.name} Sanctuary` : 'Rhema Church Sanctuary');
+    setCreateTemplateType('standard');
+    setShowCreateModal(true);
   };
 
-  // Edit an existing activity in the timetable builder
-  const handleEditActivity = (index: number) => {
-    const item = planFormTimetable[index];
-    if (!item) return;
-    setActivityEditorForm({
-      ...item,
-      startTime: item.startTime || (item.time ? item.time.split(/to|-/i)[0]?.trim() : '09:00'),
-      endTime: item.endTime || (item.time ? item.time.split(/to|-/i)[1]?.trim() : '09:20'),
-      durationMinutes: item.durationMinutes || 20,
-      category: item.category || 'additional',
-    });
-    setEditingTimetableItemIndex(index);
-    setShowActivityEditorModal(true);
-  };
-
-  // Save activity from editor modal into planFormTimetable
-  const handleSaveActivityFromEditor = () => {
-    if (!activityEditorForm.program.trim()) {
-      Alert.alert('Required', 'Please specify the activity or program title.');
-      return;
-    }
-    const dur = ServiceRosterService.calculateDuration(
-      activityEditorForm.startTime || '09:00',
-      activityEditorForm.endTime || '09:20'
-    );
-    const updatedItem: RunSheetItem = {
-      ...activityEditorForm,
-      durationMinutes: Math.max(1, dur),
-      time: ServiceRosterService.formatTimeRange(
-        activityEditorForm.startTime || '09:00',
-        activityEditorForm.endTime || '09:20'
-      ),
-    };
-
-    let updatedList = [...planFormTimetable];
-    if (editingTimetableItemIndex !== null) {
-      updatedList[editingTimetableItemIndex] = updatedItem;
-    } else {
-      updatedList.push(updatedItem);
-    }
-    setPlanFormTimetable(updatedList);
-    setShowActivityEditorModal(false);
-  };
-
-  // Delete activity from timetable builder
-  const handleDeleteTimetableActivity = (index: number) => {
-    setPlanFormTimetable(prev => prev.filter((_, i) => i !== index));
-  };
-
-  // Move activity up or down
-  const handleMoveTimetableActivity = (index: number, direction: 'up' | 'down') => {
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= planFormTimetable.length) return;
-    const updated = [...planFormTimetable];
-    const temp = updated[index];
-    updated[index] = updated[targetIndex];
-    updated[targetIndex] = temp;
-    setPlanFormTimetable(updated);
-  };
-
-  // Load clean Sunday service template
-  const handleLoadSundayTemplateInEditor = () => {
-    setPlanFormTimetable(ServiceRosterService.getStandardSundayServiceSample());
-  };
-
-  // Save Complete Service Schedule and Timetable
-  const handleSavePlanDetails = async () => {
-    if (!activeChurch?.id) return;
-    if (!planFormTitle.trim() || !planFormDate.trim()) {
-      Alert.alert('Required', 'Please specify a service title and date.');
+  // ── Create Service Plan ──────────────────────────────────
+  const handleCreateServicePlan = async () => {
+    if (!createTitle.trim() || !createDate.trim()) {
+      Alert.alert('Required', 'Please provide a service title and date.');
       return;
     }
 
-    const validation = ServiceRosterService.validateSchedule(
-      planFormStartTime,
-      planFormEndTime,
-      planFormTimetable
-    );
-
-    if (validation.hasOverlaps) {
-      Alert.alert(
-        'Time Overlap Warning',
-        `Warning: There are overlapping activities in your timetable:\n\n• ${validation.overlapMessages.slice(0, 3).join('\n• ')}\n\nDo you want to save anyway?`,
-        [
-          { text: 'Adjust Timetable', style: 'cancel' },
-          { text: 'Save Anyway', onPress: () => executeSavePlan(validation) }
-        ]
-      );
-      return;
-    }
-
-    await executeSavePlan(validation);
-  };
-
-  const executeSavePlan = async (validation: any) => {
-    if (!activeChurch?.id) return;
-    setSavingPlan(true);
+    setCreatingPlan(true);
     try {
-      const isNew = !selectedPlan?.id;
+      const runSheet = createTemplateType === 'standard'
+        ? ServiceRosterService.getStandardSundayServiceSample()
+        : [];
 
-      // Extract specific anchors if present in timetable
-      const spItem = planFormTimetable.find(r => r.category === 'starting_prayer');
-      const osItem = planFormTimetable.find(r => r.category === 'opening_song');
-      const brItem = planFormTimetable.find(r => r.category === 'bible_reading');
-      const sItem = planFormTimetable.find(r => r.category === 'sermon');
-      const cpItem = planFormTimetable.find(r => r.category === 'closing_prayer');
-
-      const updatedAssignments = {
-        ...(selectedPlan?.assignments || {}),
-        ...(spItem?.assignedTo ? { op_prayer: spItem.assignedTo } : {}),
-        ...(osItem?.assignedTo ? { singer_1: osItem.assignedTo } : {}),
-        ...(cpItem?.assignedTo ? { cl_prayer: cpItem.assignedTo } : {}),
-        ...(sItem?.assignedTo ? { devotion: sItem.assignedTo } : {}),
-      };
-
-      const planPayload: Partial<ServicePlan> = {
-        ...(selectedPlan?.id ? { id: selectedPlan.id } : {}),
-        churchId: activeChurch.id,
-        churchName: activeChurch.name || 'Rhema Church',
-        date: planFormDate.trim(),
-        serviceTitle: planFormTitle.trim(),
-        serviceType: planFormType,
-        status: selectedPlan?.status || 'published',
-        startTime: planFormStartTime.trim(),
-        endTime: planFormEndTime.trim(),
-        location: planFormLocation.trim() || 'Sanctuary',
-        totalDurationMinutes: validation?.totalServiceMinutes || 120,
-        runSheet: planFormTimetable,
-        assignments: updatedAssignments,
-        startingPrayer: spItem ? {
-          person: spItem.assignedTo || '',
-          startTime: spItem.startTime || '',
-          endTime: spItem.endTime || ''
-        } : undefined,
-        openingSong: osItem ? {
-          songTitle: osItem.songTitle || '',
-          leader: osItem.assignedTo || '',
-          musicians: osItem.musicians || '',
-          startTime: osItem.startTime || '',
-          endTime: osItem.endTime || ''
-        } : undefined,
-        bibleReading: brItem ? {
-          person: brItem.assignedTo || '',
-          passage: brItem.passage || '',
-          startTime: brItem.startTime || '',
-          endTime: brItem.endTime || ''
-        } : undefined,
-        closingPrayer: cpItem ? {
-          person: cpItem.assignedTo || '',
-          startTime: cpItem.startTime || '',
-          endTime: cpItem.endTime || ''
-        } : undefined,
+      const newPlan: Partial<ServicePlan> = {
+        churchId,
+        churchName: activeChurch?.name || 'Rhema Church',
+        serviceTitle: createTitle.trim(),
+        serviceType: 'sunday_service',
+        date: createDate.trim(),
+        startTime: createStartTime.trim() || '09:30',
+        endTime: createEndTime.trim() || '12:00',
+        location: createLocation.trim() || 'Rhema Church Sanctuary',
+        status: 'published',
+        assignments: {},
+        assignmentMemberIds: {},
+        assignmentStatus: {},
+        setlist: [],
+        runSheet,
         sermon: {
-          title: sItem?.program || selectedPlan?.sermon?.title || '',
-          code: selectedPlan?.sermon?.code || '',
-          keyVerses: sItem?.passage || selectedPlan?.sermon?.keyVerses || '',
-          speaker: sItem?.assignedTo || selectedPlan?.sermon?.speaker || '',
-          translation: selectedPlan?.sermon?.translation || '',
-          startTime: sItem?.startTime || '10:00',
-          endTime: sItem?.endTime || '10:45'
-        },
-        setlist: selectedPlan?.setlist || []
+          title: '',
+          code: '',
+          keyVerses: '',
+          speaker: '',
+          translation: ''
+        }
       };
 
-      const savedId = await ServiceRosterService.saveServicePlan(activeChurch.id, planPayload);
-      setShowCreatePlanModal(false);
-
-      const refreshed = await ServiceRosterService.getServicePlans(activeChurch.id);
-      setPlans(refreshed);
-      const updated = await ServiceRosterService.getServicePlanById(activeChurch.id, savedId);
-      if (updated) setSelectedPlan(updated);
-      Alert.alert('Success', isNew ? 'Service schedule & timetable created successfully!' : 'Service timetable updated successfully!');
+      const newId = await ServiceRosterService.saveServicePlan(churchId, newPlan);
+      setShowCreateModal(false);
+      await loadData();
+      const created = { id: newId, ...newPlan } as ServicePlan;
+      setSelectedPlan(created);
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to save service.');
+      Alert.alert('Error', e.message || 'Failed to create service plan.');
     } finally {
-      setSavingPlan(false);
+      setCreatingPlan(false);
     }
   };
 
-  // Delete Service Plan
-  const handleDeletePlan = (planToDelete?: ServicePlan | null) => {
-    const plan = planToDelete || selectedPlan;
-    if (!plan?.id || !activeChurch?.id) {
-      Alert.alert('Notice', 'No service plan selected to delete.');
-      return;
-    }
+  // ── Toggle Publish Status ────────────────────────────────
+  const handleToggleStatus = async () => {
+    if (!selectedPlan) return;
+    const nextStatus = selectedPlan.status === 'published' ? 'draft' : 'published';
+    const updated = { ...selectedPlan, status: nextStatus as 'published' | 'draft' };
+    setSelectedPlan(updated);
+    setPlans(prev => prev.map(p => p.id === selectedPlan.id ? updated : p));
+    await ServiceRosterService.saveServicePlan(churchId, {
+      id: selectedPlan.id,
+      status: nextStatus
+    });
+  };
+
+  // ── Open Edit Details Modal ──────────────────────────────
+  const openEditDetails = () => {
+    if (!selectedPlan) return;
+    setEditTitle(selectedPlan.serviceTitle || '');
+    setEditDate(selectedPlan.date || '');
+    setEditStartTime(selectedPlan.startTime || '09:30');
+    setEditEndTime(selectedPlan.endTime || '12:00');
+    setEditLocation(selectedPlan.location || '');
+    setEditSermonTitle(selectedPlan.sermon?.title || '');
+    setEditSermonSpeaker(selectedPlan.sermon?.speaker || '');
+    setEditSermonVerses(selectedPlan.sermon?.keyVerses || '');
+    setShowEditDetailsModal(true);
+  };
+
+  // ── Save Edited Details ──────────────────────────────────
+  const handleSaveDetails = async () => {
+    if (!selectedPlan) return;
+    const updated: ServicePlan = {
+      ...selectedPlan,
+      serviceTitle: editTitle.trim() || selectedPlan.serviceTitle,
+      date: editDate.trim() || selectedPlan.date,
+      startTime: editStartTime.trim(),
+      endTime: editEndTime.trim(),
+      location: editLocation.trim(),
+      sermon: {
+        ...(selectedPlan.sermon || { code: '', translation: '' }),
+        title: editSermonTitle.trim(),
+        speaker: editSermonSpeaker.trim(),
+        keyVerses: editSermonVerses.trim()
+      }
+    };
+    setSelectedPlan(updated);
+    setPlans(prev => prev.map(p => p.id === selectedPlan.id ? updated : p));
+    setShowEditDetailsModal(false);
+    await ServiceRosterService.saveServicePlan(churchId, {
+      id: selectedPlan.id,
+      serviceTitle: updated.serviceTitle,
+      date: updated.date,
+      startTime: updated.startTime,
+      endTime: updated.endTime,
+      location: updated.location,
+      sermon: updated.sermon
+    });
+  };
+
+  // ── Delete Service Plan ──────────────────────────────────
+  const handleDeletePlan = () => {
+    if (!selectedPlan) return;
     Alert.alert(
       'Delete Service Plan',
-      `Are you sure you want to delete "${plan.serviceTitle}"? This will permanently delete the timetable and team assignments for this service.`,
+      `Are you sure you want to delete "${selectedPlan.serviceTitle}" (${selectedPlan.date})?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -486,18 +340,10 @@ export default function AdminServicePlanner({ navigation }: any) {
           style: 'destructive',
           onPress: async () => {
             try {
-              setLoading(true);
-              await ServiceRosterService.deleteServicePlan(activeChurch.id, plan.id);
-              const remaining = plans.filter(p => p.id !== plan.id);
-              setPlans(remaining);
-              setSelectedPlan(remaining.length > 0 ? remaining[0] : null);
-              setShowCreatePlanModal(false);
-              Alert.alert('Deleted', 'Service plan deleted successfully.');
-            } catch (e) {
-              console.error('Error deleting service plan:', e);
-              Alert.alert('Error', 'Failed to delete service plan. Please try again.');
-            } finally {
-              setLoading(false);
+              await ServiceRosterService.deleteServicePlan(churchId, selectedPlan.id);
+              await loadData();
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Failed to delete plan.');
             }
           }
         }
@@ -505,12 +351,15 @@ export default function AdminServicePlanner({ navigation }: any) {
     );
   };
 
-  // Save Assignment update
-  const handleAssignRole = async (personName: string, memberId?: string) => {
-    if (!selectedPlan || !assigningRoleId || !activeChurch?.id) return;
+  // ── Assign Role to Member ────────────────────────────────
+  const handleAssignRole = async (memberItem: any) => {
+    if (!selectedPlan || !assigningRoleId) return;
+    const memberName = memberItem.name || memberItem.firstName || 'Member';
+    const memberId = memberItem.id;
+
     const updatedAssignments = {
       ...selectedPlan.assignments,
-      [assigningRoleId]: personName
+      [assigningRoleId]: memberName
     };
     const updatedMemberIds = {
       ...(selectedPlan.assignmentMemberIds || {}),
@@ -520,16 +369,20 @@ export default function AdminServicePlanner({ navigation }: any) {
       ...(selectedPlan.assignmentStatus || {}),
       [assigningRoleId]: 'pending' as const
     };
+
     const updatedPlan: ServicePlan = {
       ...selectedPlan,
       assignments: updatedAssignments,
       assignmentMemberIds: updatedMemberIds,
       assignmentStatus: updatedStatus
     };
+
     setSelectedPlan(updatedPlan);
+    setPlans(prev => prev.map(p => p.id === selectedPlan.id ? updatedPlan : p));
     setShowMemberPickerModal(false);
-    setCustomAssigneeName('');
-    await ServiceRosterService.saveServicePlan(activeChurch.id, {
+    setAssigningRoleId(null);
+
+    await ServiceRosterService.saveServicePlan(churchId, {
       id: selectedPlan.id,
       assignments: updatedAssignments,
       assignmentMemberIds: updatedMemberIds,
@@ -537,707 +390,677 @@ export default function AdminServicePlanner({ navigation }: any) {
     });
   };
 
-  // Save Setlist Song
-  const handleSaveSong = async () => {
-    if (!selectedPlan || !activeChurch?.id) return;
-    if (!songForm.title.trim()) {
-      Alert.alert('Required', 'Please enter a song title');
+  // ── Remove Role Assignment ───────────────────────────────
+  const handleRemoveRole = async (roleId: string) => {
+    if (!selectedPlan) return;
+    const updatedAssignments = { ...selectedPlan.assignments };
+    delete updatedAssignments[roleId];
+
+    const updatedMemberIds = { ...(selectedPlan.assignmentMemberIds || {}) };
+    delete updatedMemberIds[roleId];
+
+    const updatedStatus = { ...(selectedPlan.assignmentStatus || {}) };
+    delete updatedStatus[roleId];
+
+    const updatedPlan: ServicePlan = {
+      ...selectedPlan,
+      assignments: updatedAssignments,
+      assignmentMemberIds: updatedMemberIds,
+      assignmentStatus: updatedStatus
+    };
+
+    setSelectedPlan(updatedPlan);
+    setPlans(prev => prev.map(p => p.id === selectedPlan.id ? updatedPlan : p));
+
+    await ServiceRosterService.saveServicePlan(churchId, {
+      id: selectedPlan.id,
+      assignments: updatedAssignments,
+      assignmentMemberIds: updatedMemberIds,
+      assignmentStatus: updatedStatus
+    });
+  };
+
+  // ── Filter Members with Skill Matching ────────────────────
+  const filteredMembers = useMemo(() => {
+    const q = memberSearchQuery.trim().toLowerCase();
+    let list = churchMembers;
+
+    if (q) {
+      list = list.filter(m => {
+        const name = (m.name || m.firstName || '').toLowerCase();
+        const phone = (m.phone || '').toLowerCase();
+        const skill = (m.primarySkill || '').toLowerCase();
+        return name.includes(q) || phone.includes(q) || skill.includes(q);
+      });
+    }
+
+    // Sort matching skill members to top
+    if (assigningRoleName) {
+      const target = assigningRoleName.toLowerCase();
+      list = [...list].sort((a, b) => {
+        const aSkill = ((a.primarySkill || '') + ' ' + (a.secondarySkill || '')).toLowerCase();
+        const bSkill = ((b.primarySkill || '') + ' ' + (b.secondarySkill || '')).toLowerCase();
+        const aMatch = aSkill.includes(target) ? 1 : 0;
+        const bMatch = bSkill.includes(target) ? 1 : 0;
+        return bMatch - aMatch;
+      });
+    }
+
+    return list;
+  }, [churchMembers, memberSearchQuery, assigningRoleName]);
+
+  // ── Run Sheet Duration Adjustment (+5m / -5m) ─────────────
+  const handleAdjustRunSheetDuration = async (index: number, deltaMinutes: number) => {
+    if (!selectedPlan || !selectedPlan.runSheet) return;
+    const list = [...selectedPlan.runSheet];
+    const item = list[index];
+    if (!item) return;
+
+    const newDuration = Math.max(5, (item.durationMinutes || 10) + deltaMinutes);
+    const startMin = ServiceRosterService.parseTimeToMinutes(item.startTime || '09:30');
+    const endMin = startMin + newDuration;
+    const newEnd = ServiceRosterService.minutesToTimeString(endMin);
+
+    list[index] = {
+      ...item,
+      durationMinutes: newDuration,
+      endTime: newEnd,
+      time: ServiceRosterService.formatTimeRange(item.startTime || '09:30', newEnd)
+    };
+
+    // Ripple shift subsequent items forward
+    let runningStart = endMin;
+    for (let i = index + 1; i < list.length; i++) {
+      const nextItem = list[i];
+      const nextDur = nextItem.durationMinutes || 10;
+      const nextStartStr = ServiceRosterService.minutesToTimeString(runningStart);
+      const nextEndStr = ServiceRosterService.minutesToTimeString(runningStart + nextDur);
+      list[i] = {
+        ...nextItem,
+        startTime: nextStartStr,
+        endTime: nextEndStr,
+        time: ServiceRosterService.formatTimeRange(nextStartStr, nextEndStr)
+      };
+      runningStart += nextDur;
+    }
+
+    const updatedPlan = { ...selectedPlan, runSheet: list };
+    setSelectedPlan(updatedPlan);
+    setPlans(prev => prev.map(p => p.id === selectedPlan.id ? updatedPlan : p));
+
+    await ServiceRosterService.saveServicePlan(churchId, {
+      id: selectedPlan.id,
+      runSheet: list
+    });
+  };
+
+  // ── Reorder Run Sheet Item ───────────────────────────────
+  const handleMoveRunSheetItem = async (index: number, direction: 'up' | 'down') => {
+    if (!selectedPlan || !selectedPlan.runSheet) return;
+    const target = direction === 'up' ? index - 1 : index + 1;
+    if (target < 0 || target >= selectedPlan.runSheet.length) return;
+
+    const list = [...selectedPlan.runSheet];
+    const temp = list[index];
+    list[index] = list[target];
+    list[target] = temp;
+
+    // Recalculate times sequentially
+    let curMin = ServiceRosterService.parseTimeToMinutes(selectedPlan.startTime || '09:30');
+    for (let i = 0; i < list.length; i++) {
+      const dur = list[i].durationMinutes || 10;
+      const s = ServiceRosterService.minutesToTimeString(curMin);
+      const e = ServiceRosterService.minutesToTimeString(curMin + dur);
+      list[i] = {
+        ...list[i],
+        startTime: s,
+        endTime: e,
+        time: ServiceRosterService.formatTimeRange(s, e)
+      };
+      curMin += dur;
+    }
+
+    const updatedPlan = { ...selectedPlan, runSheet: list };
+    setSelectedPlan(updatedPlan);
+    setPlans(prev => prev.map(p => p.id === selectedPlan.id ? updatedPlan : p));
+
+    await ServiceRosterService.saveServicePlan(churchId, {
+      id: selectedPlan.id,
+      runSheet: list
+    });
+  };
+
+  // ── Delete Run Sheet Item ────────────────────────────────
+  const handleDeleteRunSheetItem = async (index: number) => {
+    if (!selectedPlan || !selectedPlan.runSheet) return;
+    const list = selectedPlan.runSheet.filter((_, i) => i !== index);
+    const updatedPlan = { ...selectedPlan, runSheet: list };
+    setSelectedPlan(updatedPlan);
+    setPlans(prev => prev.map(p => p.id === selectedPlan.id ? updatedPlan : p));
+
+    await ServiceRosterService.saveServicePlan(churchId, {
+      id: selectedPlan.id,
+      runSheet: list
+    });
+  };
+
+  // ── Save Run Sheet Activity (New or Edit) ────────────────
+  const handleSaveActivity = async () => {
+    if (!selectedPlan) return;
+    if (!activityForm.program.trim()) {
+      Alert.alert('Required', 'Please enter an activity title');
       return;
     }
-    let updatedSetlist = [...(selectedPlan.setlist || [])];
-    if (editingSongIndex !== null) {
-      updatedSetlist[editingSongIndex] = { ...songForm };
+
+    const dur = activityForm.durationMinutes || 10;
+    const sMin = ServiceRosterService.parseTimeToMinutes(activityForm.startTime || '09:30');
+    const eMin = sMin + dur;
+    const eStr = ServiceRosterService.minutesToTimeString(eMin);
+
+    const newItem: RunSheetItem = {
+      ...activityForm,
+      durationMinutes: dur,
+      endTime: eStr,
+      time: ServiceRosterService.formatTimeRange(activityForm.startTime || '09:30', eStr)
+    };
+
+    let list = [...(selectedPlan.runSheet || [])];
+    if (editingActivityIndex !== null) {
+      list[editingActivityIndex] = newItem;
     } else {
-      updatedSetlist.push({ ...songForm, id: Math.random().toString(36).substring(7) });
+      list.push(newItem);
     }
-    const updatedPlan = { ...selectedPlan, setlist: updatedSetlist };
+
+    const updatedPlan = { ...selectedPlan, runSheet: list };
     setSelectedPlan(updatedPlan);
+    setPlans(prev => prev.map(p => p.id === selectedPlan.id ? updatedPlan : p));
+    setShowActivityModal(false);
+
+    await ServiceRosterService.saveServicePlan(churchId, {
+      id: selectedPlan.id,
+      runSheet: list
+    });
+  };
+
+  // ── Filter Church Songs for Setlist Picker ───────────────
+  const filteredChurchSongs = useMemo(() => {
+    const q = songSearchQuery.trim().toLowerCase();
+    if (!q) return churchSongs.slice(0, 20);
+    return churchSongs.filter(s => {
+      const t = (s.title || '').toLowerCase();
+      const te = (s.titleTe || '').toLowerCase();
+      const cat = (s.category || '').toLowerCase();
+      return t.includes(q) || te.includes(q) || cat.includes(q);
+    }).slice(0, 20);
+  }, [churchSongs, songSearchQuery]);
+
+  // ── Save Setlist Song ────────────────────────────────────
+  const handleSaveSong = async () => {
+    if (!selectedPlan) return;
+    if (!songForm.title.trim()) {
+      Alert.alert('Required', 'Please enter or select a song title');
+      return;
+    }
+
+    let list = [...(selectedPlan.setlist || [])];
+    if (editingSongIndex !== null) {
+      list[editingSongIndex] = { ...songForm };
+    } else {
+      list.push({ ...songForm, id: Math.random().toString(36).substring(7) });
+    }
+
+    const updatedPlan = { ...selectedPlan, setlist: list };
+    setSelectedPlan(updatedPlan);
+    setPlans(prev => prev.map(p => p.id === selectedPlan.id ? updatedPlan : p));
     setShowSongModal(false);
-    await ServiceRosterService.saveServicePlan(activeChurch.id, {
+
+    await ServiceRosterService.saveServicePlan(churchId, {
       id: selectedPlan.id,
-      setlist: updatedSetlist
+      setlist: list
     });
   };
 
-  // Remove Song
-  const handleDeleteSong = async (index: number) => {
-    if (!selectedPlan || !activeChurch?.id) return;
-    const updated = selectedPlan.setlist.filter((_, i) => i !== index);
-    setSelectedPlan({ ...selectedPlan, setlist: updated });
-    await ServiceRosterService.saveServicePlan(activeChurch.id, {
+  // ── Move Setlist Song Up/Down ────────────────────────────
+  const handleMoveSetlistSong = async (index: number, direction: 'up' | 'down') => {
+    if (!selectedPlan || !selectedPlan.setlist) return;
+    const target = direction === 'up' ? index - 1 : index + 1;
+    if (target < 0 || target >= selectedPlan.setlist.length) return;
+
+    const list = [...selectedPlan.setlist];
+    const temp = list[index];
+    list[index] = list[target];
+    list[target] = temp;
+
+    const updatedPlan = { ...selectedPlan, setlist: list };
+    setSelectedPlan(updatedPlan);
+    setPlans(prev => prev.map(p => p.id === selectedPlan.id ? updatedPlan : p));
+
+    await ServiceRosterService.saveServicePlan(churchId, {
       id: selectedPlan.id,
-      setlist: updated
+      setlist: list
     });
   };
 
-  // WhatsApp Share
+  // ── Delete Setlist Song ──────────────────────────────────
+  const handleDeleteSetlistSong = async (index: number) => {
+    if (!selectedPlan || !selectedPlan.setlist) return;
+    const list = selectedPlan.setlist.filter((_, i) => i !== index);
+    const updatedPlan = { ...selectedPlan, setlist: list };
+    setSelectedPlan(updatedPlan);
+    setPlans(prev => prev.map(p => p.id === selectedPlan.id ? updatedPlan : p));
+
+    await ServiceRosterService.saveServicePlan(churchId, {
+      id: selectedPlan.id,
+      setlist: list
+    });
+  };
+
+  // ── WhatsApp Share ───────────────────────────────────────
   const handleShareToWhatsApp = async () => {
     if (!selectedPlan) return;
     const text = ServiceRosterService.generateWhatsAppShareText(selectedPlan);
     try {
-      await Share.share({
-        message: text,
-        title: `${selectedPlan.churchName || 'Church'} - ${selectedPlan.serviceTitle}`
-      });
+      await Share.share({ message: text });
     } catch (e) {
-      console.error(e);
+      console.warn('Share error:', e);
     }
   };
 
-  // Filtered members for assignment
-  const filteredMembers = churchMembers.filter(m => {
-    const name = (m.name || m.firstName || '').toLowerCase();
-    const phone = (m.phone || '').toLowerCase();
-    const q = memberSearchQuery.toLowerCase();
-    return name.includes(q) || phone.includes(q);
-  });
-
-  // Category Colors
-  const getCategoryTheme = (cat?: TimetableCategory) => {
-    switch (cat) {
-      case 'starting_prayer':
-      case 'closing_prayer':
-        return { bg: '#FEF3C7', border: '#FDE68A', text: '#B45309', label: 'Prayer' };
-      case 'opening_song':
-      case 'worship_songs':
-        return { bg: '#EEF2FF', border: '#C7D2FE', text: '#4338CA', label: 'Worship' };
-      case 'bible_reading':
-        return { bg: '#ECFDF5', border: '#A7F3D0', text: '#047857', label: 'Scripture' };
-      case 'sermon':
-        return { bg: '#EFF6FF', border: '#BFDBFE', text: '#1D4ED8', label: 'Message' };
-      case 'break':
-        return { bg: '#F1F5F9', border: '#E2E8F0', text: '#475569', label: 'Break' };
-      default:
-        return { bg: '#F0FDFA', border: '#99F6E4', text: '#0F766E', label: 'Activity' };
-    }
-  };
+  // ── Departments Matrix ───────────────────────────────────
+  const departments = selectedPlan?.departments || DEFAULT_DEPARTMENTS;
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#1A2D5A" />
 
-      {/* ── Top Hero Header (Consistent Navy & Gold Theme) ─────── */}
+      {/* ── TOP NAV HERO (RHEMA NAVY & GOLD) ───────────────── */}
       <View style={[styles.hero, { paddingTop: Math.max(insets.top, 12) }]}>
         <View style={styles.heroRow}>
-          <View style={styles.heroLeft}>
-            <TouchableOpacity
-              onPress={() => setActiveTab(0)}
-              style={styles.circularBackBtn}
-              activeOpacity={0.7}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
-            </TouchableOpacity>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.heroTitle} numberOfLines={1}>Service Operations & Roster</Text>
-              <Text style={styles.heroSub} numberOfLines={1}>
-                {activeChurch?.name || 'Rhema'} · {plans.length} Services Scheduled
-              </Text>
-            </View>
+          <TouchableOpacity
+            style={styles.heroBackBtn}
+            onPress={() => setActiveTab(0)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <ArrowLeft size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+          <View style={{ flex: 1, paddingHorizontal: 10 }}>
+            <Text style={styles.heroPreTitle}>RHEMA CHURCH OPERATIONS</Text>
+            <Text style={styles.heroMainTitle}>Service Roster & Planner</Text>
           </View>
-          <View style={styles.heroActions}>
-            <TouchableOpacity
-              style={styles.heroRefreshBtn}
-              onPress={loadData}
-              activeOpacity={0.8}
-            >
-              <RefreshCw size={16} color="#1a2d5a" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.newBtn}
-              onPress={() => openServiceTimetableModal(null)}
-              activeOpacity={0.85}
-            >
-              <Plus size={15} color="#1A2D5A" strokeWidth={2.5} />
-              <Text style={styles.newBtnTxt}>New</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity style={styles.heroRefreshBtn} onPress={loadData}>
+            <RefreshCw size={16} color="#FFFFFF" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.heroNewBtn} onPress={openCreateWizard}>
+            <Plus size={16} color="#1A2D5A" strokeWidth={2.5} />
+            <Text style={styles.heroNewBtnTxt}>New</Text>
+          </TouchableOpacity>
         </View>
 
-        {/* ── Horizontal Service Carousel Cards ────────────────── */}
-        {plans.length > 0 && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.carouselScrollView}
-            contentContainerStyle={styles.carouselContainer}
-          >
-            {plans.map((p, pIdx) => {
+        {/* ── HORIZONTAL SERVICE CAROUSEL ──────────────────── */}
+        {plans.length > 0 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.carouselContainer}>
+            {plans.map(p => {
               const isSelected = selectedPlan?.id === p.id;
+              const dateParts = p.date ? p.date.split('-') : ['2026', '11', '08'];
+              const dayNum = dateParts[2] || '08';
+              const monthNum = parseInt(dateParts[1] || '11', 10);
+              const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+              const monthStr = months[monthNum - 1] || 'NOV';
+
               return (
                 <TouchableOpacity
-                  key={`plan_chip_${p.id || ''}_${pIdx}`}
+                  key={p.id}
                   style={[styles.serviceCardChip, isSelected && styles.serviceCardChipActive]}
                   onPress={() => setSelectedPlan(p)}
-                  activeOpacity={0.85}
+                  activeOpacity={0.88}
                 >
-                  <View style={styles.chipTopRow}>
-                    <View style={[styles.chipDatePill, isSelected && styles.chipDatePillActive]}>
-                      <CalendarDays size={10} color={isSelected ? '#1A2D5A' : '#FFFFFF'} />
-                      <Text style={[styles.chipDateTxt, isSelected && styles.chipDateTxtActive]}>
-                        {p.date}
-                      </Text>
-                    </View>
-                    {p.startTime ? (
-                      <Text style={[styles.chipTimeTxt, isSelected && styles.chipTimeTxtActive]}>
-                        {p.startTime}
-                      </Text>
-                    ) : null}
+                  <View style={[styles.chipDateBox, isSelected && styles.chipDateBoxActive]}>
+                    <Text style={[styles.chipDayNum, isSelected && styles.chipDayNumActive]}>{dayNum}</Text>
+                    <Text style={[styles.chipMonthTxt, isSelected && styles.chipMonthTxtActive]}>{monthStr}</Text>
                   </View>
-                  <Text
-                    style={[styles.chipTitleTxt, isSelected && styles.chipTitleTxtActive]}
-                    numberOfLines={1}
-                  >
-                    {p.serviceTitle}
-                  </Text>
+                  <View style={{ flex: 1, paddingLeft: 8 }}>
+                    <Text style={[styles.chipTitle, isSelected && styles.chipTitleActive]} numberOfLines={1}>
+                      {p.serviceTitle}
+                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
+                      <Text style={[styles.chipTime, isSelected && styles.chipTimeActive]}>
+                        {p.startTime || '09:30'}
+                      </Text>
+                      <View style={[styles.chipStatusDot, { backgroundColor: p.status === 'published' ? '#10B981' : '#F59E0B' }]} />
+                    </View>
+                  </View>
                 </TouchableOpacity>
               );
             })}
           </ScrollView>
-        )}
+        ) : null}
       </View>
 
-      {/* ── Main Content Area ──────────────────────────────────── */}
+      {/* ── MAIN CONTENT AREA ──────────────────────────────── */}
       {loading ? (
         <View style={styles.centerWrap}>
           <ActivityIndicator size="large" color="#1A2D5A" />
-          <Text style={styles.loadingTxt}>Loading church service schedules...</Text>
+          <Text style={styles.loadingTxt}>Loading Rhema service planner...</Text>
         </View>
       ) : !selectedPlan ? (
         <View style={styles.emptyWrap}>
-          <View style={styles.emptyIconCircle}>
-            <CalendarDays size={38} color="#1A2D5A" />
-          </View>
-          <Text style={styles.emptyTitle}>No Service Plan Found</Text>
+          <CalendarDays size={48} color="#94A3B8" />
+          <Text style={styles.emptyTitle}>No Service Plans Created</Text>
           <Text style={styles.emptySub}>
-            Create your service timetable, run-sheets, and assign church team rosters.
+            Plan your upcoming Sunday services, assign church members to ministry roles, and build setlists.
           </Text>
-          <TouchableOpacity
-            style={styles.emptyCreateBtn}
-            onPress={() => openServiceTimetableModal(null)}
-            activeOpacity={0.85}
-          >
+          <TouchableOpacity style={styles.emptyCreateBtn} onPress={openCreateWizard}>
             <Plus size={16} color="#FFFFFF" strokeWidth={2.5} />
-            <Text style={styles.emptyCreateBtnTxt}>Create First Service Schedule</Text>
+            <Text style={styles.emptyCreateBtnTxt}>Create First Service</Text>
           </TouchableOpacity>
         </View>
       ) : (
-        <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          {/* ── Active Service Banner Card ─────────────────────── */}
-          <View style={styles.activeServiceCard}>
-            <View style={styles.activeServiceTop}>
-              <View style={{ flex: 1, marginRight: 8 }}>
-                <View style={styles.badgeRow}>
-                  <View style={styles.dateBadge}>
+        <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          
+          {/* ── 1. ACTIVE SERVICE BANNER ────────────────────── */}
+          <View style={styles.activeServiceBanner}>
+            <View style={styles.activeBannerTop}>
+              <View style={{ flex: 1, paddingRight: 10 }}>
+                <View style={styles.activeBadgeRow}>
+                  <View style={styles.activeDateBadge}>
                     <CalendarDays size={12} color="#1A2D5A" />
-                    <Text style={styles.dateBadgeTxt}>{selectedPlan.date}</Text>
+                    <Text style={styles.activeDateBadgeTxt}>{selectedPlan.date}</Text>
                   </View>
-                  {selectedPlan.startTime && (
-                    <View style={styles.timeBadge}>
-                      <Clock size={12} color="#059669" />
-                      <Text style={styles.timeBadgeTxt}>
-                        {selectedPlan.startTime} {selectedPlan.endTime ? `- ${selectedPlan.endTime}` : ''}
-                      </Text>
-                    </View>
-                  )}
+                  <View style={styles.activeTimeBadge}>
+                    <Clock size={12} color="#059669" />
+                    <Text style={styles.activeTimeBadgeTxt}>
+                      {selectedPlan.startTime || '09:30'} – {selectedPlan.endTime || '12:00'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[
+                      styles.statusTogglePill,
+                      selectedPlan.status === 'published' ? styles.statusTogglePublished : styles.statusToggleDraft
+                    ]}
+                    onPress={handleToggleStatus}
+                  >
+                    <View style={[styles.statusSmallDot, { backgroundColor: selectedPlan.status === 'published' ? '#059669' : '#B45309' }]} />
+                    <Text style={[styles.statusToggleTxt, { color: selectedPlan.status === 'published' ? '#059669' : '#B45309' }]}>
+                      {selectedPlan.status === 'published' ? 'Published' : 'Draft'}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
-                <Text style={styles.activeServiceTitle} numberOfLines={2}>
+
+                <Text style={styles.activeBannerTitle} numberOfLines={1}>
                   {selectedPlan.serviceTitle}
                 </Text>
-                {selectedPlan.location && (
-                  <View style={styles.locationRow}>
+                {selectedPlan.location ? (
+                  <View style={styles.activeLocationRow}>
                     <MapPin size={12} color="#64748B" />
-                    <Text style={styles.locationTxt} numberOfLines={1}>
+                    <Text style={styles.activeLocationTxt} numberOfLines={1}>
                       {selectedPlan.location}
                     </Text>
                   </View>
-                )}
+                ) : null}
               </View>
             </View>
 
-            {/* Quick Actions Row */}
-            <View style={styles.activeServiceActionsRow}>
-              <TouchableOpacity
-                style={styles.actionBtnEdit}
-                onPress={() => openServiceTimetableModal(selectedPlan)}
-                activeOpacity={0.8}
-              >
+            {/* Quick Action Buttons */}
+            <View style={styles.activeBannerActions}>
+              <TouchableOpacity style={styles.actionBtnEdit} onPress={openEditDetails}>
                 <Edit2 size={13} color="#FFFFFF" />
-                <Text style={styles.actionBtnEditTxt}>Edit Timetable</Text>
+                <Text style={styles.actionBtnEditTxt}>Edit Details</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.actionBtnShare}
-                onPress={handleShareToWhatsApp}
-                activeOpacity={0.8}
-              >
+              <TouchableOpacity style={styles.actionBtnShare} onPress={handleShareToWhatsApp}>
                 <MessageCircle size={14} color="#059669" />
-                <Text style={styles.actionBtnShareTxt}>Share</Text>
+                <Text style={styles.actionBtnShareTxt}>WhatsApp</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.actionBtnDelete}
-                onPress={() => handleDeletePlan(selectedPlan)}
-                activeOpacity={0.8}
-              >
+              <TouchableOpacity style={styles.actionBtnDelete} onPress={handleDeletePlan}>
                 <Trash2 size={14} color="#DC2626" />
               </TouchableOpacity>
             </View>
           </View>
 
-          {/* ── Modern Segmented Navigation Tabs ───────────────── */}
+          {/* ── 2. SEGMENTED TABS (CLEAN & MODERN) ───────────── */}
           <View style={styles.tabBar}>
             <TouchableOpacity
               style={[styles.tabItem, activePlanTab === 'roster' && styles.tabItemActive]}
               onPress={() => setActivePlanTab('roster')}
-              activeOpacity={0.85}
             >
-              <Users size={15} color={activePlanTab === 'roster' ? '#FFFFFF' : '#64748B'} />
+              <Users size={14} color={activePlanTab === 'roster' ? '#1A2D5A' : '#64748B'} />
               <Text style={[styles.tabItemTxt, activePlanTab === 'roster' && styles.tabItemTxtActive]}>
                 Team Roster
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.tabItem, activePlanTab === 'setlist' && styles.tabItemActive]}
-              onPress={() => setActivePlanTab('setlist')}
-              activeOpacity={0.85}
-            >
-              <Music size={15} color={activePlanTab === 'setlist' ? '#FFFFFF' : '#64748B'} />
-              <Text style={[styles.tabItemTxt, activePlanTab === 'setlist' && styles.tabItemTxtActive]}>
-                Setlist Flow
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
               style={[styles.tabItem, activePlanTab === 'runSheet' && styles.tabItemActive]}
               onPress={() => setActivePlanTab('runSheet')}
-              activeOpacity={0.85}
             >
-              <Clock size={15} color={activePlanTab === 'runSheet' ? '#FFFFFF' : '#64748B'} />
+              <Clock size={14} color={activePlanTab === 'runSheet' ? '#1A2D5A' : '#64748B'} />
               <Text style={[styles.tabItemTxt, activePlanTab === 'runSheet' && styles.tabItemTxtActive]}>
-                Run Sheet
+                Run-Sheet ({selectedPlan.runSheet?.length || 0})
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.tabItem, activePlanTab === 'export' && styles.tabItemActive]}
-              onPress={() => setActivePlanTab('export')}
-              activeOpacity={0.85}
+              style={[styles.tabItem, activePlanTab === 'setlist' && styles.tabItemActive]}
+              onPress={() => setActivePlanTab('setlist')}
             >
-              <Share2 size={15} color={activePlanTab === 'export' ? '#FFFFFF' : '#64748B'} />
-              <Text style={[styles.tabItemTxt, activePlanTab === 'export' && styles.tabItemTxtActive]}>
-                Bulletin
+              <Music size={14} color={activePlanTab === 'setlist' ? '#1A2D5A' : '#64748B'} />
+              <Text style={[styles.tabItemTxt, activePlanTab === 'setlist' && styles.tabItemTxtActive]}>
+                Setlist ({selectedPlan.setlist?.length || 0})
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.tabItem, activePlanTab === 'sermon' && styles.tabItemActive]}
+              onPress={() => setActivePlanTab('sermon')}
+            >
+              <BookOpen size={14} color={activePlanTab === 'sermon' ? '#1A2D5A' : '#64748B'} />
+              <Text style={[styles.tabItemTxt, activePlanTab === 'sermon' && styles.tabItemTxtActive]}>
+                Sermon
               </Text>
             </TouchableOpacity>
           </View>
 
-          {/* ═════════════════════════════════════════════════════
-              TAB 1: TEAM ROSTER (VISUAL MINISTRY CARDS)
-             ═════════════════════════════════════════════════════ */}
+          {/* ── TAB 1: TEAM ROSTER (ASSIGN MEMBERS) ──────────── */}
           {activePlanTab === 'roster' && (
             <View style={{ gap: 14 }}>
-              {/* 1. Worship & Music Department */}
-              <View style={styles.sectionCard}>
-                <View style={[styles.sectionCardHeader, { backgroundColor: '#EEF2FF', borderColor: '#C7D2FE' }]}>
-                  <View style={styles.sectionCardHeaderLeft}>
-                    <View style={[styles.sectionIconWrap, { backgroundColor: '#E0E7FF' }]}>
-                      <Music size={16} color="#4338CA" />
-                    </View>
-                    <View>
-                      <Text style={[styles.sectionCardTitle, { color: '#312E81' }]}>Worship Team & Band</Text>
-                      <Text style={styles.sectionCardSub}>Vocalists, Keyboardists & Instrumentalists</Text>
+              {departments.map(dept => (
+                <View key={dept.id} style={styles.deptCard}>
+                  <View style={[styles.deptHeader, { backgroundColor: dept.badgeBg || '#F8FAFC' }]}>
+                    <View style={styles.deptHeaderLeft}>
+                      <View style={[styles.deptDot, { backgroundColor: dept.color }]} />
+                      <Text style={[styles.deptTitle, { color: dept.color }]}>{dept.name}</Text>
                     </View>
                   </View>
-                </View>
 
-                <View style={styles.rolesGrid}>
-                  {[
-                    { id: 'singer_1', label: 'Singer #1 (Center)', icon: '🎤' },
-                    { id: 'keyboard', label: 'Keyboard', icon: '🎹' },
-                    { id: 'singer_2', label: 'Singer #2 (Left)', icon: '🎤' },
-                    { id: 'electric', label: 'Electric Guitar', icon: '🎸' },
-                    { id: 'singer_3', label: 'Singer #3 (Right)', icon: '🎤' },
-                    { id: 'bass', label: 'Bass Guitar', icon: '🎸' },
-                    { id: 'acoustic', label: 'Acoustic Guitar', icon: '🎸' },
-                    { id: 'drums', label: 'Drums', icon: '🥁' },
-                  ].map(role => {
-                    const assigned = selectedPlan.assignments[role.id];
-                    return (
-                      <TouchableOpacity
-                        key={role.id}
-                        style={[styles.roleTile, assigned ? styles.roleTileAssigned : styles.roleTileUnassigned]}
-                        onPress={() => {
-                          setAssigningRoleId(role.id);
-                          setAssigningRoleName(role.label);
-                          setShowMemberPickerModal(true);
-                        }}
-                        activeOpacity={0.8}
-                      >
-                        <View style={styles.roleTileTop}>
-                          <Text style={styles.roleIconEmoji}>{role.icon}</Text>
-                          <Text style={styles.roleLabelTxt} numberOfLines={1}>{role.label}</Text>
+                  <View style={styles.roleList}>
+                    {dept.roles.map(role => {
+                      const assignedName = selectedPlan.assignments[role.id];
+                      const assignedStatus = selectedPlan.assignmentStatus?.[role.id] || 'pending';
+
+                      return (
+                        <View key={role.id} style={styles.roleRow}>
+                          <View style={{ flex: 1, paddingRight: 8 }}>
+                            <Text style={styles.roleName}>{role.name}</Text>
+                            {assignedName ? (
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
+                                <Text style={styles.assignedMemberName}>{assignedName}</Text>
+                                <View style={[styles.assignedStatusBadge, assignedStatus === 'confirmed' ? styles.statusConfirmed : styles.statusPending]}>
+                                  <Text style={[styles.assignedStatusTxt, { color: assignedStatus === 'confirmed' ? '#059669' : '#B45309' }]}>
+                                    {assignedStatus === 'confirmed' ? '✓ Confirmed' : '⏳ Pending'}
+                                  </Text>
+                                </View>
+                              </View>
+                            ) : (
+                              <Text style={styles.unassignedPlaceholder}>{role.placeholder || 'No member assigned'}</Text>
+                            )}
+                          </View>
+
+                          <View style={styles.roleActionBtns}>
+                            {assignedName ? (
+                              <>
+                                <TouchableOpacity
+                                  style={styles.roleEditBtn}
+                                  onPress={() => {
+                                    setAssigningRoleId(role.id);
+                                    setAssigningRoleName(role.name);
+                                    setMemberSearchQuery('');
+                                    setShowMemberPickerModal(true);
+                                  }}
+                                >
+                                  <Text style={styles.roleEditBtnTxt}>Change</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  style={styles.roleRemoveBtn}
+                                  onPress={() => handleRemoveRole(role.id)}
+                                >
+                                  <X size={14} color="#DC2626" />
+                                </TouchableOpacity>
+                              </>
+                            ) : (
+                              <TouchableOpacity
+                                style={styles.roleAssignBtn}
+                                onPress={() => {
+                                  setAssigningRoleId(role.id);
+                                  setAssigningRoleName(role.name);
+                                  setMemberSearchQuery('');
+                                  setShowMemberPickerModal(true);
+                                }}
+                              >
+                                <Plus size={13} color="#1A2D5A" />
+                                <Text style={styles.roleAssignBtnTxt}>Assign</Text>
+                              </TouchableOpacity>
+                            )}
+                          </View>
                         </View>
-                        {assigned ? (
-                          <View style={styles.assignedPersonRow}>
-                            <View style={styles.avatarBubble}>
-                              <Text style={styles.avatarBubbleTxt}>
-                                {assigned.charAt(0).toUpperCase()}
-                              </Text>
-                            </View>
-                            <Text style={styles.assignedPersonName} numberOfLines={1}>
-                              {assigned}
-                            </Text>
-                          </View>
-                        ) : (
-                          <View style={styles.unassignedPromptRow}>
-                            <Plus size={12} color="#64748B" />
-                            <Text style={styles.unassignedPromptTxt}>Assign Member</Text>
-                          </View>
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                {/* Mini Song Preview */}
-                {selectedPlan.setlist && selectedPlan.setlist.length > 0 && (
-                  <View style={styles.rosterSongPreviewWrap}>
-                    <View style={styles.rosterSongPreviewHeader}>
-                      <Text style={styles.rosterSongPreviewTitle}>
-                        Scheduled Songs ({selectedPlan.setlist.length})
-                      </Text>
-                      <TouchableOpacity onPress={() => setActivePlanTab('setlist')}>
-                        <Text style={styles.viewDetailsLink}>View Setlist →</Text>
-                      </TouchableOpacity>
-                    </View>
-                    {selectedPlan.setlist.map((song, sIdx) => (
-                      <View key={`mini_${song.id || sIdx}`} style={styles.miniSongRow}>
-                        <Text style={styles.miniSongIdx}>{sIdx + 1}.</Text>
-                        <Text style={styles.miniSongName} numberOfLines={1}>{song.title}</Text>
-                        {song.key ? (
-                          <View style={styles.miniKeyPill}>
-                            <Text style={styles.miniKeyPillTxt}>{song.key}</Text>
-                          </View>
-                        ) : null}
-                        {song.ledBy ? (
-                          <Text style={styles.miniSongLeader} numberOfLines={1}>
-                            Led by {song.ledBy}
-                          </Text>
-                        ) : null}
-                      </View>
-                    ))}
-                  </View>
-                )}
-              </View>
-
-              {/* 2. Media & AV Team (BMW) */}
-              <View style={styles.sectionCard}>
-                <View style={[styles.sectionCardHeader, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
-                  <View style={styles.sectionCardHeaderLeft}>
-                    <View style={[styles.sectionIconWrap, { backgroundColor: '#D1FAE5' }]}>
-                      <Tv size={16} color="#059669" />
-                    </View>
-                    <View>
-                      <Text style={[styles.sectionCardTitle, { color: '#065F46' }]}>Team BMW (Audio, Media & Visuals)</Text>
-                      <Text style={styles.sectionCardSub}>Sound Engineers, Live Stream & Cameras</Text>
-                    </View>
+                      );
+                    })}
                   </View>
                 </View>
-
-                <View style={styles.rolesGrid}>
-                  {[
-                    { id: 'sound_foh', label: 'Sounds (FOH)', icon: '🎛️' },
-                    { id: 'cam_main', label: 'V. Camera (Main)', icon: '📹' },
-                    { id: 'sound_stage', label: 'Sounds (Stage)', icon: '🔊' },
-                    { id: 'cam_right', label: 'V. Camera (Right)', icon: '📹' },
-                    { id: 'media_pc1', label: 'Media - Live PC', icon: '💻' },
-                    { id: 'cam_left', label: 'V. Camera (Left)', icon: '📹' },
-                    { id: 'media_pc3', label: 'Media - Lyrics PC', icon: '📽️' },
-                    { id: 'video_dir', label: 'Video Director', icon: '🎬' },
-                    { id: 'media_pc4', label: 'Stage Displays', icon: '🖥️' },
-                    { id: 'photo_cam', label: 'Photographer', icon: '📸' },
-                  ].map(role => {
-                    const assigned = selectedPlan.assignments[role.id];
-                    return (
-                      <TouchableOpacity
-                        key={role.id}
-                        style={[styles.roleTile, assigned ? styles.roleTileAssigned : styles.roleTileUnassigned]}
-                        onPress={() => {
-                          setAssigningRoleId(role.id);
-                          setAssigningRoleName(role.label);
-                          setShowMemberPickerModal(true);
-                        }}
-                        activeOpacity={0.8}
-                      >
-                        <View style={styles.roleTileTop}>
-                          <Text style={styles.roleIconEmoji}>{role.icon}</Text>
-                          <Text style={styles.roleLabelTxt} numberOfLines={1}>{role.label}</Text>
-                        </View>
-                        {assigned ? (
-                          <View style={styles.assignedPersonRow}>
-                            <View style={styles.avatarBubble}>
-                              <Text style={styles.avatarBubbleTxt}>
-                                {assigned.charAt(0).toUpperCase()}
-                              </Text>
-                            </View>
-                            <Text style={styles.assignedPersonName} numberOfLines={1}>
-                              {assigned}
-                            </Text>
-                          </View>
-                        ) : (
-                          <View style={styles.unassignedPromptRow}>
-                            <Plus size={12} color="#64748B" />
-                            <Text style={styles.unassignedPromptTxt}>Assign Member</Text>
-                          </View>
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {/* 3. Platform Ministers & Liturgy */}
-              <View style={styles.sectionCard}>
-                <View style={[styles.sectionCardHeader, { backgroundColor: '#F0FDFA', borderColor: '#99F6E4' }]}>
-                  <View style={styles.sectionCardHeaderLeft}>
-                    <View style={[styles.sectionIconWrap, { backgroundColor: '#CCFBF1' }]}>
-                      <Heart size={16} color="#0D9488" />
-                    </View>
-                    <View>
-                      <Text style={[styles.sectionCardTitle, { color: '#115E59' }]}>Platform Ministers & Hospitality</Text>
-                      <Text style={styles.sectionCardSub}>Prayer Leaders, Ushers & Hospitality</Text>
-                    </View>
-                  </View>
-                </View>
-
-                <View style={styles.rolesGrid}>
-                  {[
-                    { id: 'op_prayer', label: 'Starting Prayer', icon: '🙏' },
-                    { id: 'cl_prayer', label: 'Closing Prayer', icon: '🙏' },
-                    { id: 'devotion', label: 'Devotion / Exhortation', icon: '📖' },
-                    { id: 'announcements', label: 'Announcements', icon: '📢' },
-                    { id: 'ushering', label: 'Ushering Team', icon: '🤝' },
-                    { id: 'fmh', label: 'Hospitality (FMH)', icon: '☕' },
-                  ].map(role => {
-                    const assigned = selectedPlan.assignments[role.id];
-                    return (
-                      <TouchableOpacity
-                        key={role.id}
-                        style={[styles.roleTile, assigned ? styles.roleTileAssigned : styles.roleTileUnassigned]}
-                        onPress={() => {
-                          setAssigningRoleId(role.id);
-                          setAssigningRoleName(role.label);
-                          setShowMemberPickerModal(true);
-                        }}
-                        activeOpacity={0.8}
-                      >
-                        <View style={styles.roleTileTop}>
-                          <Text style={styles.roleIconEmoji}>{role.icon}</Text>
-                          <Text style={styles.roleLabelTxt} numberOfLines={1}>{role.label}</Text>
-                        </View>
-                        {assigned ? (
-                          <View style={styles.assignedPersonRow}>
-                            <View style={styles.avatarBubble}>
-                              <Text style={styles.avatarBubbleTxt}>
-                                {assigned.charAt(0).toUpperCase()}
-                              </Text>
-                            </View>
-                            <Text style={styles.assignedPersonName} numberOfLines={1}>
-                              {assigned}
-                            </Text>
-                          </View>
-                        ) : (
-                          <View style={styles.unassignedPromptRow}>
-                            <Plus size={12} color="#64748B" />
-                            <Text style={styles.unassignedPromptTxt}>Assign Member</Text>
-                          </View>
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {/* 4. Sunday School / Kids Ministry */}
-              <View style={styles.sectionCard}>
-                <View style={[styles.sectionCardHeader, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
-                  <View style={styles.sectionCardHeaderLeft}>
-                    <View style={[styles.sectionIconWrap, { backgroundColor: '#FDE68A' }]}>
-                      <Baby size={16} color="#B45309" />
-                    </View>
-                    <View>
-                      <Text style={[styles.sectionCardTitle, { color: '#78350F' }]}>Sunday School & Kids Ministry</Text>
-                      <Text style={styles.sectionCardSub}>Teachers, Lessons & Classes</Text>
-                    </View>
-                  </View>
-                </View>
-
-                <View style={styles.rolesGrid}>
-                  {[
-                    { id: 'ss_beginners', label: 'Beginners Class', icon: '👶' },
-                    { id: 'ss_primary', label: 'Primary Class', icon: '🧒' },
-                    { id: 'ss_juniors', label: 'Juniors Class', icon: '👦' },
-                    { id: 'ss_seniors', label: 'Seniors Class', icon: '🧑' },
-                  ].map(role => {
-                    const assigned = selectedPlan.assignments[role.id];
-                    return (
-                      <TouchableOpacity
-                        key={role.id}
-                        style={[styles.roleTile, assigned ? styles.roleTileAssigned : styles.roleTileUnassigned]}
-                        onPress={() => {
-                          setAssigningRoleId(role.id);
-                          setAssigningRoleName(role.label);
-                          setShowMemberPickerModal(true);
-                        }}
-                        activeOpacity={0.8}
-                      >
-                        <View style={styles.roleTileTop}>
-                          <Text style={styles.roleIconEmoji}>{role.icon}</Text>
-                          <Text style={styles.roleLabelTxt} numberOfLines={1}>{role.label}</Text>
-                        </View>
-                        {assigned ? (
-                          <View style={styles.assignedPersonRow}>
-                            <View style={styles.avatarBubble}>
-                              <Text style={styles.avatarBubbleTxt}>
-                                {assigned.charAt(0).toUpperCase()}
-                              </Text>
-                            </View>
-                            <Text style={styles.assignedPersonName} numberOfLines={1}>
-                              {assigned}
-                            </Text>
-                          </View>
-                        ) : (
-                          <View style={styles.unassignedPromptRow}>
-                            <Plus size={12} color="#64748B" />
-                            <Text style={styles.unassignedPromptTxt}>Assign Teacher</Text>
-                          </View>
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {/* 5. Sermon Details Card */}
-              <View style={styles.sectionCard}>
-                <View style={[styles.sectionCardHeader, { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }]}>
-                  <View style={styles.sectionCardHeaderLeft}>
-                    <View style={[styles.sectionIconWrap, { backgroundColor: '#DBEAFE' }]}>
-                      <BookOpen size={16} color="#1D4ED8" />
-                    </View>
-                    <View>
-                      <Text style={[styles.sectionCardTitle, { color: '#1E3A8A' }]}>Sermon & Word Ministry</Text>
-                      <Text style={styles.sectionCardSub}>Speaker, Scripture Reading & Message</Text>
-                    </View>
-                  </View>
-                </View>
-
-                <View style={styles.sermonCardBody}>
-                  <View style={styles.sermonFieldRow}>
-                    <View style={{ flex: 2 }}>
-                      <Text style={styles.sermonFieldLabel}>Sermon Title</Text>
-                      <TextInput
-                        style={styles.sermonFieldInput}
-                        value={selectedPlan.sermon?.title || ''}
-                        placeholder="e.g. Walking in the Spirit"
-                        placeholderTextColor="#94A3B8"
-                        onChangeText={t => {
-                          setSelectedPlan(prev => {
-                            if (!prev) return null;
-                            const current = prev.sermon || { title: '', code: '', speaker: '', keyVerses: '' };
-                            return { ...prev, sermon: { ...current, title: t } };
-                          });
-                        }}
-                      />
-                    </View>
-                    <View style={{ flex: 1, marginLeft: 10 }}>
-                      <Text style={styles.sermonFieldLabel}>Code</Text>
-                      <TextInput
-                        style={styles.sermonFieldInput}
-                        value={selectedPlan.sermon?.code || ''}
-                        placeholder="e.g. A101"
-                        placeholderTextColor="#94A3B8"
-                        onChangeText={t => {
-                          setSelectedPlan(prev => {
-                            if (!prev) return null;
-                            const current = prev.sermon || { title: '', code: '', speaker: '', keyVerses: '' };
-                            return { ...prev, sermon: { ...current, code: t } };
-                          });
-                        }}
-                      />
-                    </View>
-                  </View>
-
-                  <View style={[styles.sermonFieldRow, { marginTop: 10 }]}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.sermonFieldLabel}>Preacher / Speaker</Text>
-                      <TextInput
-                        style={styles.sermonFieldInput}
-                        value={selectedPlan.sermon?.speaker || ''}
-                        placeholder="e.g. Pastor / Guest Speaker"
-                        placeholderTextColor="#94A3B8"
-                        onChangeText={t => {
-                          setSelectedPlan(prev => {
-                            if (!prev) return null;
-                            const current = prev.sermon || { title: '', code: '', speaker: '', keyVerses: '' };
-                            return { ...prev, sermon: { ...current, speaker: t } };
-                          });
-                        }}
-                      />
-                    </View>
-                    <View style={{ flex: 1, marginLeft: 10 }}>
-                      <Text style={styles.sermonFieldLabel}>Key Scripture Verses</Text>
-                      <TextInput
-                        style={styles.sermonFieldInput}
-                        value={selectedPlan.sermon?.keyVerses || ''}
-                        placeholder="e.g. Rom 8:1-14"
-                        placeholderTextColor="#94A3B8"
-                        onChangeText={t => {
-                          setSelectedPlan(prev => {
-                            if (!prev) return null;
-                            const current = prev.sermon || { title: '', code: '', speaker: '', keyVerses: '' };
-                            return { ...prev, sermon: { ...current, keyVerses: t } };
-                          });
-                        }}
-                      />
-                    </View>
-                  </View>
-
-                  <TouchableOpacity
-                    style={styles.saveSermonBtn}
-                    onPress={async () => {
-                      if (!activeChurch?.id || !selectedPlan?.id) return;
-                      await ServiceRosterService.saveServicePlan(activeChurch.id, {
-                        id: selectedPlan.id,
-                        sermon: selectedPlan.sermon
-                      });
-                      Alert.alert('Saved', 'Sermon details updated.');
-                    }}
-                    activeOpacity={0.85}
-                  >
-                    <CheckCircle2 size={16} color="#FFFFFF" />
-                    <Text style={styles.saveSermonBtnTxt}>Save Sermon Information</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
+              ))}
             </View>
           )}
 
-          {/* ═════════════════════════════════════════════════════
-              TAB 2: SETLIST FLOW (WORSHIP SONGS)
-             ═════════════════════════════════════════════════════ */}
+          {/* ── TAB 2: RUN-SHEET (ORDER OF SERVICE) ──────────── */}
+          {activePlanTab === 'runSheet' && (
+            <View style={{ gap: 12 }}>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionHeaderTitle}>Chronological Order of Service</Text>
+                <TouchableOpacity
+                  style={styles.addSmallBtn}
+                  onPress={() => {
+                    setEditingActivityIndex(null);
+                    setActivityForm({
+                      id: Math.random().toString(36).substring(7),
+                      time: '09:30 to 09:40',
+                      startTime: '09:30',
+                      endTime: '09:40',
+                      durationMinutes: 10,
+                      program: '',
+                      category: 'starting_prayer',
+                      assignedTo: '',
+                      place: selectedPlan.location || 'Sanctuary',
+                      notes: ''
+                    });
+                    setShowActivityModal(true);
+                  }}
+                >
+                  <Plus size={14} color="#1A2D5A" />
+                  <Text style={styles.addSmallBtnTxt}>Add Item</Text>
+                </TouchableOpacity>
+              </View>
+
+              {(!selectedPlan.runSheet || selectedPlan.runSheet.length === 0) ? (
+                <View style={styles.emptyTabCard}>
+                  <Clock size={32} color="#94A3B8" />
+                  <Text style={styles.emptyTabCardTitle}>No Run-Sheet Items</Text>
+                  <TouchableOpacity
+                    style={styles.loadTemplateBtn}
+                    onPress={async () => {
+                      const template = ServiceRosterService.getStandardSundayServiceSample();
+                      const updatedPlan = { ...selectedPlan, runSheet: template };
+                      setSelectedPlan(updatedPlan);
+                      await ServiceRosterService.saveServicePlan(churchId, {
+                        id: selectedPlan.id,
+                        runSheet: template
+                      });
+                    }}
+                  >
+                    <Sparkles size={14} color="#FFFFFF" />
+                    <Text style={styles.loadTemplateBtnTxt}>Load Sunday Service Template</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                selectedPlan.runSheet.map((item, idx) => (
+                  <View key={item.id || idx} style={styles.runSheetRowCard}>
+                    {/* Time Pillar */}
+                    <View style={styles.runSheetTimePillar}>
+                      <Text style={styles.runSheetTimeTxt}>{item.startTime || '09:30'}</Text>
+                      <View style={styles.durationPill}>
+                        <TouchableOpacity onPress={() => handleAdjustRunSheetDuration(idx, -5)}>
+                          <Text style={styles.durationAdjTxt}>-</Text>
+                        </TouchableOpacity>
+                        <Text style={styles.durationMainTxt}>{item.durationMinutes || 10}m</Text>
+                        <TouchableOpacity onPress={() => handleAdjustRunSheetDuration(idx, 5)}>
+                          <Text style={styles.durationAdjTxt}>+</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+
+                    {/* Content */}
+                    <View style={{ flex: 1, paddingHorizontal: 8 }}>
+                      <Text style={styles.runSheetProgramTxt}>{item.program}</Text>
+                      {item.assignedTo ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 }}>
+                          <User size={12} color="#64748B" />
+                          <Text style={styles.runSheetAssignedTxt}>{item.assignedTo}</Text>
+                        </View>
+                      ) : null}
+                      {item.passage ? (
+                        <Text style={styles.runSheetMetaTxt}>📖 {item.passage}</Text>
+                      ) : null}
+                      {item.songTitle ? (
+                        <Text style={styles.runSheetMetaTxt}>🎵 {item.songTitle}</Text>
+                      ) : null}
+                    </View>
+
+                    {/* Order Controls */}
+                    <View style={styles.runSheetActions}>
+                      <TouchableOpacity
+                        style={styles.reorderBtn}
+                        disabled={idx === 0}
+                        onPress={() => handleMoveRunSheetItem(idx, 'up')}
+                      >
+                        <ChevronUp size={14} color={idx === 0 ? '#CBD5E1' : '#1A2D5A'} />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.reorderBtn}
+                        disabled={idx === selectedPlan.runSheet.length - 1}
+                        onPress={() => handleMoveRunSheetItem(idx, 'down')}
+                      >
+                        <ChevronDown size={14} color={idx === selectedPlan.runSheet.length - 1 ? '#CBD5E1' : '#1A2D5A'} />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.reorderDeleteBtn}
+                        onPress={() => handleDeleteRunSheetItem(idx)}
+                      >
+                        <Trash2 size={13} color="#DC2626" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))
+              )}
+            </View>
+          )}
+
+          {/* ── TAB 3: WORSHIP SETLIST ───────────────────────── */}
           {activePlanTab === 'setlist' && (
             <View style={{ gap: 12 }}>
-              <View style={styles.tabSectionHeaderRow}>
-                <View>
-                  <Text style={styles.tabSectionTitle}>Worship Songs & Chords</Text>
-                  <Text style={styles.tabSectionSubtitle}>
-                    {selectedPlan.setlist?.length || 0} Songs Scheduled
-                  </Text>
-                </View>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionHeaderTitle}>Worship Songs ({selectedPlan.setlist?.length || 0})</Text>
                 <TouchableOpacity
-                  style={styles.primaryAddBtn}
+                  style={styles.addSmallBtn}
                   onPress={() => {
                     setEditingSongIndex(null);
+                    setSongSearchQuery('');
                     setSongForm({
                       id: '',
                       title: '',
@@ -1249,280 +1072,123 @@ export default function AdminServicePlanner({ navigation }: any) {
                       prelude: '',
                       interlude: '',
                       notes: '',
-                      isOffertory: false,
+                      isOffertory: false
                     });
                     setShowSongModal(true);
                   }}
-                  activeOpacity={0.85}
                 >
-                  <Plus size={15} color="#FFFFFF" />
-                  <Text style={styles.primaryAddBtnTxt}>Add Song</Text>
+                  <Plus size={14} color="#1A2D5A" />
+                  <Text style={styles.addSmallBtnTxt}>Add Song</Text>
                 </TouchableOpacity>
               </View>
 
               {(!selectedPlan.setlist || selectedPlan.setlist.length === 0) ? (
-                <View style={styles.emptyCard}>
-                  <Music size={36} color="#CBD5E1" />
-                  <Text style={styles.emptyCardTitle}>No Songs in this Setlist</Text>
-                  <Text style={styles.emptyCardSub}>Add your songs with musical keys, tempo BPM, and band arrangements.</Text>
-                  <TouchableOpacity
-                    style={styles.emptyAddBtn}
-                    onPress={() => {
-                      setEditingSongIndex(null);
-                      setSongForm({
-                        id: '',
-                        title: '',
-                        ledBy: '',
-                        key: 'F',
-                        timeSignature: '4/4',
-                        tempo: '100',
-                        verses: '',
-                        prelude: '',
-                        interlude: '',
-                        notes: '',
-                        isOffertory: false,
-                      });
-                      setShowSongModal(true);
-                    }}
-                  >
-                    <Plus size={15} color="#1A2D5A" />
-                    <Text style={styles.emptyAddBtnTxt}>Add First Song</Text>
-                  </TouchableOpacity>
+                <View style={styles.emptyTabCard}>
+                  <Music size={32} color="#94A3B8" />
+                  <Text style={styles.emptyTabCardTitle}>No Songs in Setlist</Text>
+                  <Text style={styles.emptyTabCardSub}>Add worship songs from your church song library.</Text>
                 </View>
               ) : (
-                selectedPlan.setlist.map((song, index) => (
-                  <View key={`song_${song.id || index}`} style={styles.songCard}>
-                    <View style={styles.songCardTop}>
-                      <View style={styles.songIndexCircle}>
-                        <Text style={styles.songIndexTxt}>{index + 1}</Text>
+                selectedPlan.setlist.map((song, idx) => (
+                  <View key={song.id || idx} style={styles.setlistSongCard}>
+                    <View style={styles.setlistSongTop}>
+                      <View style={styles.setlistSongIndexBadge}>
+                        <Text style={styles.setlistSongIndexTxt}>{idx + 1}</Text>
                       </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.songCardTitle}>{song.title}</Text>
-                        <Text style={styles.songCardLeader}>
-                          {song.ledBy ? `👤 Led by ${song.ledBy}` : 'Unassigned Song Leader'}
-                        </Text>
+                      <View style={{ flex: 1, paddingHorizontal: 10 }}>
+                        <Text style={styles.setlistSongTitle}>{song.title}</Text>
+                        {song.ledBy ? (
+                          <Text style={styles.setlistSongLeader}>🎤 Led by {song.ledBy}</Text>
+                        ) : null}
                       </View>
-                      <View style={styles.songActionsRow}>
+
+                      <View style={styles.setlistActions}>
                         <TouchableOpacity
-                          style={styles.songActionBtn}
-                          onPress={() => {
-                            setEditingSongIndex(index);
-                            setSongForm({ ...song });
-                            setShowSongModal(true);
-                          }}
+                          style={styles.reorderBtn}
+                          disabled={idx === 0}
+                          onPress={() => handleMoveSetlistSong(idx, 'up')}
                         >
-                          <Edit2 size={14} color="#475569" />
+                          <ChevronUp size={14} color={idx === 0 ? '#CBD5E1' : '#1A2D5A'} />
                         </TouchableOpacity>
                         <TouchableOpacity
-                          style={styles.songActionBtn}
-                          onPress={() => handleDeleteSong(index)}
+                          style={styles.reorderBtn}
+                          disabled={idx === selectedPlan.setlist.length - 1}
+                          onPress={() => handleMoveSetlistSong(idx, 'down')}
                         >
-                          <Trash2 size={14} color="#DC2626" />
+                          <ChevronDown size={14} color={idx === selectedPlan.setlist.length - 1 ? '#CBD5E1' : '#1A2D5A'} />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.reorderDeleteBtn}
+                          onPress={() => handleDeleteSetlistSong(idx)}
+                        >
+                          <Trash2 size={13} color="#DC2626" />
                         </TouchableOpacity>
                       </View>
                     </View>
 
-                    {/* Chips Row */}
-                    <View style={styles.songChipsRow}>
-                      <View style={[styles.musicChip, { backgroundColor: '#F3E8FF', borderColor: '#D8B4FE' }]}>
-                        <Text style={[styles.musicChipTxt, { color: '#7E22CE' }]}>Key: {song.key || 'F'}</Text>
+                    {/* Badges: Key, Tempo, Time Sig */}
+                    <View style={styles.setlistBadgesRow}>
+                      <View style={styles.setlistKeyBadge}>
+                        <Text style={styles.setlistKeyBadgeTxt}>Key: {song.key || 'F'}</Text>
                       </View>
-                      <View style={[styles.musicChip, { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }]}>
-                        <Text style={[styles.musicChipTxt, { color: '#1D4ED8' }]}>{song.timeSignature || '4/4'}</Text>
-                      </View>
-                      <View style={[styles.musicChip, { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }]}>
-                        <Text style={[styles.musicChipTxt, { color: '#15803D' }]}>{song.tempo || '100'} BPM</Text>
-                      </View>
-                      {song.isOffertory && (
-                        <View style={[styles.musicChip, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
-                          <Text style={[styles.musicChipTxt, { color: '#B45309' }]}>💰 Offertory</Text>
+                      {song.tempo ? (
+                        <View style={styles.setlistTempoBadge}>
+                          <Text style={styles.setlistTempoBadgeTxt}>BPM: {song.tempo}</Text>
                         </View>
-                      )}
+                      ) : null}
+                      {song.timeSignature ? (
+                        <View style={styles.setlistMeterBadge}>
+                          <Text style={styles.setlistMeterBadgeTxt}>{song.timeSignature}</Text>
+                        </View>
+                      ) : null}
+                      {song.isOffertory ? (
+                        <View style={styles.setlistOffertoryBadge}>
+                          <Text style={styles.setlistOffertoryBadgeTxt}>Offertory</Text>
+                        </View>
+                      ) : null}
                     </View>
 
-                    {/* Arrangements Box */}
-                    {(song.prelude || song.interlude || song.notes) && (
-                      <View style={styles.arrangementWrap}>
-                        {song.prelude ? (
-                          <Text style={styles.arrTxt}>
-                            <Text style={styles.arrLabel}>Prelude: </Text>{song.prelude}
-                          </Text>
-                        ) : null}
-                        {song.interlude ? (
-                          <Text style={styles.arrTxt}>
-                            <Text style={styles.arrLabel}>Interlude: </Text>{song.interlude}
-                          </Text>
-                        ) : null}
-                        {song.notes ? (
-                          <Text style={styles.arrTxt}>
-                            <Text style={styles.arrLabel}>Notes: </Text>{song.notes}
-                          </Text>
-                        ) : null}
+                    {song.prelude || song.interlude || song.notes ? (
+                      <View style={styles.setlistNotesBox}>
+                        {song.prelude ? <Text style={styles.setlistNoteTxt}><Text style={{ fontWeight: '700' }}>Prelude:</Text> {song.prelude}</Text> : null}
+                        {song.interlude ? <Text style={styles.setlistNoteTxt}><Text style={{ fontWeight: '700' }}>Interlude:</Text> {song.interlude}</Text> : null}
+                        {song.notes ? <Text style={styles.setlistNoteTxt}><Text style={{ fontWeight: '700' }}>Notes:</Text> {song.notes}</Text> : null}
                       </View>
-                    )}
+                    ) : null}
                   </View>
                 ))
               )}
             </View>
           )}
 
-          {/* ═════════════════════════════════════════════════════
-              TAB 3: RUN SHEET (VERTICAL TIMELINE TIMETABLE)
-             ═════════════════════════════════════════════════════ */}
-          {activePlanTab === 'runSheet' && (
-            <View style={{ gap: 12 }}>
-              <View style={styles.tabSectionHeaderRow}>
-                <View>
-                  <Text style={styles.tabSectionTitle}>Service Timetable & Run-Sheet</Text>
-                  <Text style={styles.tabSectionSubtitle}>
-                    {selectedPlan.startTime || '09:00'} - {selectedPlan.endTime || '11:00'} · Chronological Order
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.primaryAddBtn}
-                  onPress={() => handleAddActivity('additional')}
-                  activeOpacity={0.85}
-                >
-                  <Plus size={15} color="#FFFFFF" />
-                  <Text style={styles.primaryAddBtnTxt}>Add Activity</Text>
-                </TouchableOpacity>
+          {/* ── TAB 4: SERMON & BULLETIN ─────────────────────── */}
+          {activePlanTab === 'sermon' && (
+            <View style={styles.sermonTabCard}>
+              <View style={styles.sermonCardHeader}>
+                <BookOpen size={20} color="#D4AF37" />
+                <Text style={styles.sermonCardHeaderTitle}>Sermon & Liturgy Overview</Text>
               </View>
 
-              {(!selectedPlan.runSheet || selectedPlan.runSheet.length === 0) ? (
-                <View style={styles.emptyCard}>
-                  <Clock size={36} color="#CBD5E1" />
-                  <Text style={styles.emptyCardTitle}>No Timetable Defined Yet</Text>
-                  <Text style={styles.emptyCardSub}>Create the step-by-step timetable of this service from start to finish.</Text>
-                  <TouchableOpacity
-                    style={styles.emptyAddBtn}
-                    onPress={() => openServiceTimetableModal(selectedPlan)}
-                  >
-                    <Plus size={15} color="#1A2D5A" />
-                    <Text style={styles.emptyAddBtnTxt}>Build Service Timetable</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <View style={styles.timelineList}>
-                  {selectedPlan.runSheet.map((item, idx) => {
-                    const theme = getCategoryTheme(item.category);
-                    return (
-                      <View key={`timeline_${item.id || idx}`} style={styles.timelineRow}>
-                        {/* Time Column */}
-                        <View style={styles.timeColumn}>
-                          <Text style={styles.timeStartTxt}>{item.startTime || item.time?.split(/to|-/i)[0]?.trim() || '09:00'}</Text>
-                          <Text style={styles.timeEndTxt}>{item.endTime || item.time?.split(/to|-/i)[1]?.trim() || '09:15'}</Text>
-                          <View style={styles.durationPill}>
-                            <Text style={styles.durationPillTxt}>{item.durationMinutes || 15}m</Text>
-                          </View>
-                        </View>
-
-                        {/* Node Dot & Line */}
-                        <View style={styles.nodeColumn}>
-                          <View style={[styles.nodeDot, { backgroundColor: theme.text }]} />
-                          {idx < selectedPlan.runSheet.length - 1 && <View style={styles.nodeLine} />}
-                        </View>
-
-                        {/* Activity Card */}
-                        <View style={[styles.activityCard, { borderLeftColor: theme.text }]}>
-                          <View style={styles.activityCardTop}>
-                            <View style={[styles.categoryPill, { backgroundColor: theme.bg, borderColor: theme.border }]}>
-                              <Text style={[styles.categoryPillTxt, { color: theme.text }]}>{theme.label}</Text>
-                            </View>
-                            <View style={styles.activityActions}>
-                              <TouchableOpacity
-                                style={styles.activityActionBtn}
-                                onPress={() => openServiceTimetableModal(selectedPlan)}
-                              >
-                                <Edit2 size={13} color="#475569" />
-                              </TouchableOpacity>
-                            </View>
-                          </View>
-
-                          <Text style={styles.activityProgramTitle}>{item.program}</Text>
-                          {item.assignedTo ? (
-                            <Text style={styles.activityAssignedTxt}>👤 {item.assignedTo}</Text>
-                          ) : null}
-                          {item.songTitle ? (
-                            <Text style={styles.activitySongTxt}>🎵 {item.songTitle}</Text>
-                          ) : null}
-                          {item.passage ? (
-                            <Text style={styles.activityPassageTxt}>📖 {item.passage}</Text>
-                          ) : null}
-                          {item.place ? (
-                            <Text style={styles.activityPlaceTxt}>📍 {item.place}</Text>
-                          ) : null}
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
-              )}
-            </View>
-          )}
-
-          {/* ═════════════════════════════════════════════════════
-              TAB 4: BULLETIN / SHARE CARD
-             ═════════════════════════════════════════════════════ */}
-          {activePlanTab === 'export' && (
-            <View style={{ gap: 14 }}>
-              <View style={styles.bulletinPreviewCard}>
-                <View style={styles.bulletinHeader}>
-                  <Text style={styles.bulletinChurchName}>{(activeChurch?.name || 'RHEMA CHURCH').toUpperCase()}</Text>
-                  <Text style={styles.bulletinServiceTitle}>{selectedPlan.serviceTitle}</Text>
-                  <Text style={styles.bulletinDate}>📅 {selectedPlan.date} · ⏰ {selectedPlan.startTime || '09:00'} - {selectedPlan.endTime || '11:00'}</Text>
-                </View>
-
-                {/* Worship Summary */}
-                <View style={styles.bulletinSection}>
-                  <Text style={styles.bulletinSectionTitle}>🎵 WORSHIP TEAM & BAND</Text>
-                  {selectedPlan.assignments.singer_1 && <Text style={styles.bulletinItemTxt}>• Lead Vocal: {selectedPlan.assignments.singer_1}</Text>}
-                  {selectedPlan.assignments.keyboard && <Text style={styles.bulletinItemTxt}>• Keyboard: {selectedPlan.assignments.keyboard}</Text>}
-                  {selectedPlan.assignments.electric && <Text style={styles.bulletinItemTxt}>• Electric Guitar: {selectedPlan.assignments.electric}</Text>}
-                  {selectedPlan.assignments.bass && <Text style={styles.bulletinItemTxt}>• Bass: {selectedPlan.assignments.bass}</Text>}
-                  {selectedPlan.assignments.drums && <Text style={styles.bulletinItemTxt}>• Drums: {selectedPlan.assignments.drums}</Text>}
-                </View>
-
-                {/* Setlist Summary */}
-                {selectedPlan.setlist && selectedPlan.setlist.length > 0 && (
-                  <View style={styles.bulletinSection}>
-                    <Text style={styles.bulletinSectionTitle}>🎶 WORSHIP SETLIST</Text>
-                    {selectedPlan.setlist.map((s, idx) => (
-                      <Text key={`b_song_${idx}`} style={styles.bulletinItemTxt}>
-                        {idx + 1}. {s.title} [Key: {s.key || 'F'}] {s.ledBy ? `- Led by ${s.ledBy}` : ''}
-                      </Text>
-                    ))}
-                  </View>
-                )}
-
-                {/* Media Summary */}
-                <View style={styles.bulletinSection}>
-                  <Text style={styles.bulletinSectionTitle}>🎛️ MEDIA & BROADCAST (TEAM BMW)</Text>
-                  {selectedPlan.assignments.sound_foh && <Text style={styles.bulletinItemTxt}>• Sound (FOH): {selectedPlan.assignments.sound_foh}</Text>}
-                  {selectedPlan.assignments.media_pc1 && <Text style={styles.bulletinItemTxt}>• Live PC: {selectedPlan.assignments.media_pc1}</Text>}
-                  {selectedPlan.assignments.media_pc3 && <Text style={styles.bulletinItemTxt}>• Lyrics: {selectedPlan.assignments.media_pc3}</Text>}
-                  {selectedPlan.assignments.cam_main && <Text style={styles.bulletinItemTxt}>• Main Camera: {selectedPlan.assignments.cam_main}</Text>}
-                  {selectedPlan.assignments.video_dir && <Text style={styles.bulletinItemTxt}>• Director: {selectedPlan.assignments.video_dir}</Text>}
-                </View>
-
-                {/* Sermon Summary */}
-                {selectedPlan.sermon?.title && (
-                  <View style={styles.bulletinSection}>
-                    <Text style={styles.bulletinSectionTitle}>📖 SERMON MESSAGE</Text>
-                    <Text style={styles.bulletinItemTxt}>• Title: {selectedPlan.sermon.title}</Text>
-                    {selectedPlan.sermon.speaker && <Text style={styles.bulletinItemTxt}>• Speaker: {selectedPlan.sermon.speaker}</Text>}
-                    {selectedPlan.sermon.keyVerses && <Text style={styles.bulletinItemTxt}>• Scripture: {selectedPlan.sermon.keyVerses}</Text>}
-                  </View>
-                )}
+              <View style={styles.sermonFieldRow}>
+                <Text style={styles.sermonFieldLabel}>Sermon Title:</Text>
+                <Text style={styles.sermonFieldVal}>{selectedPlan.sermon?.title || 'Not specified'}</Text>
               </View>
 
-              {/* Share Action Buttons */}
-              <TouchableOpacity
-                style={styles.whatsAppShareBtn}
-                onPress={handleShareToWhatsApp}
-                activeOpacity={0.85}
-              >
-                <MessageCircle size={18} color="#FFFFFF" />
-                <Text style={styles.whatsAppShareBtnTxt}>Share Bulletin via WhatsApp</Text>
+              <View style={styles.sermonFieldRow}>
+                <Text style={styles.sermonFieldLabel}>Preacher / Speaker:</Text>
+                <Text style={styles.sermonFieldVal}>{selectedPlan.sermon?.speaker || 'Senior Pastor'}</Text>
+              </View>
+
+              <View style={styles.sermonFieldRow}>
+                <Text style={styles.sermonFieldLabel}>Key Scripture Verses:</Text>
+                <Text style={[styles.sermonFieldVal, { color: '#2563EB', fontWeight: '700' }]}>
+                  {selectedPlan.sermon?.keyVerses || 'To be announced'}
+                </Text>
+              </View>
+
+              <TouchableOpacity style={styles.sermonEditBtn} onPress={openEditDetails}>
+                <Edit2 size={14} color="#1A2D5A" />
+                <Text style={styles.sermonEditBtnTxt}>Edit Sermon Details</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -1531,73 +1197,185 @@ export default function AdminServicePlanner({ navigation }: any) {
         </ScrollView>
       )}
 
-      {/* ── MODAL 1: ASSIGN REGISTERED MEMBER ─────────────────── */}
-      <Modal
-        visible={showMemberPickerModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowMemberPickerModal(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+      {/* ── MODAL 1: QUICK CREATE SERVICE WIZARD ───────────── */}
+      <Modal visible={showCreateModal} transparent animationType="slide" onRequestClose={() => setShowCreateModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContentCard}>
             <View style={styles.modalCardHeader}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.modalCardTitle}>Assign Team Member</Text>
-                <Text style={styles.modalCardSubtitle}>{assigningRoleName}</Text>
+                <Text style={styles.modalCardTitle}>Create Service Plan</Text>
+                <Text style={styles.modalCardSub}>Rhema Church Operations</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowCreateModal(false)}>
+                <X size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
+              <Text style={styles.inputLabel}>Service Title</Text>
+              <TextInput
+                style={styles.textInput}
+                value={createTitle}
+                onChangeText={setCreateTitle}
+                placeholder="e.g. Sunday Morning Worship"
+                placeholderTextColor="#94A3B8"
+              />
+
+              {/* Presets Chips */}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 8 }}>
+                {SERVICE_TYPE_PRESETS.map(p => (
+                  <TouchableOpacity
+                    key={p}
+                    style={[styles.presetChip, createTitle === p && styles.presetChipActive]}
+                    onPress={() => setCreateTitle(p)}
+                  >
+                    <Text style={[styles.presetChipTxt, createTitle === p && styles.presetChipTxtActive]}>{p}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.inputLabel}>Date (YYYY-MM-DD)</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={createDate}
+                    onChangeText={setCreateDate}
+                    placeholder="2026-11-08"
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.inputLabel}>Start Time</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={createStartTime}
+                    onChangeText={setCreateStartTime}
+                    placeholder="09:30"
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.inputLabel}>End Time</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={createEndTime}
+                    onChangeText={setCreateEndTime}
+                    placeholder="12:00"
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.inputLabel}>Location</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={createLocation}
+                    onChangeText={setCreateLocation}
+                    placeholder="Sanctuary"
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+              </View>
+
+              <Text style={[styles.inputLabel, { marginTop: 12 }]}>Template</Text>
+              <View style={styles.templatePickerRow}>
+                <TouchableOpacity
+                  style={[styles.templateChoice, createTemplateType === 'standard' && styles.templateChoiceActive]}
+                  onPress={() => setCreateTemplateType('standard')}
+                >
+                  <Sparkles size={16} color={createTemplateType === 'standard' ? '#1A2D5A' : '#64748B'} />
+                  <Text style={[styles.templateChoiceTitle, createTemplateType === 'standard' && styles.templateChoiceTitleActive]}>
+                    Standard Sunday
+                  </Text>
+                  <Text style={styles.templateChoiceSub}>Auto-generates 7 service items</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.templateChoice, createTemplateType === 'blank' && styles.templateChoiceActive]}
+                  onPress={() => setCreateTemplateType('blank')}
+                >
+                  <FileText size={16} color={createTemplateType === 'blank' ? '#1A2D5A' : '#64748B'} />
+                  <Text style={[styles.templateChoiceTitle, createTemplateType === 'blank' && styles.templateChoiceTitleActive]}>
+                    Blank Service
+                  </Text>
+                  <Text style={styles.templateChoiceSub}>Build timetable from scratch</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowCreateModal(false)}>
+                <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalSubmitBtn}
+                disabled={creatingPlan}
+                onPress={handleCreateServicePlan}
+              >
+                {creatingPlan ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalSubmitBtnTxt}>Create Service</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL 2: FAST MEMBER PICKER MODAL ──────────────── */}
+      <Modal visible={showMemberPickerModal} transparent animationType="slide" onRequestClose={() => setShowMemberPickerModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContentCard}>
+            <View style={styles.modalCardHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalCardTitle}>Assign {assigningRoleName}</Text>
+                <Text style={styles.modalCardSub}>Pick a registered church member</Text>
               </View>
               <TouchableOpacity onPress={() => setShowMemberPickerModal(false)}>
                 <X size={20} color="#64748B" />
               </TouchableOpacity>
             </View>
 
-            {/* Custom Name Input */}
-            <View style={styles.customAssignRow}>
-              <TextInput
-                style={styles.customAssignInput}
-                placeholder="Or type custom name..."
-                placeholderTextColor="#94A3B8"
-                value={customAssigneeName}
-                onChangeText={setCustomAssigneeName}
-              />
-              <TouchableOpacity
-                style={styles.customAssignSubmitBtn}
-                onPress={() => {
-                  if (customAssigneeName.trim()) {
-                    handleAssignRole(customAssigneeName.trim());
-                  }
-                }}
-              >
-                <Text style={styles.customAssignSubmitTxt}>Set</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Member Search */}
-            <View style={styles.memberSearchBox}>
+            {/* Search Box */}
+            <View style={styles.searchBox}>
               <Search size={15} color="#94A3B8" />
               <TextInput
-                style={styles.memberSearchInput}
-                placeholder="Search registered members..."
+                style={styles.searchInput}
+                placeholder="Search member by name, phone, or skill..."
                 placeholderTextColor="#94A3B8"
                 value={memberSearchQuery}
                 onChangeText={setMemberSearchQuery}
               />
             </View>
 
-            <ScrollView style={{ maxHeight: 260 }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
               {filteredMembers.map((m, mIdx) => {
                 const name = m.name || m.firstName || 'Member';
+                const hasSkill = m.primarySkill || m.secondarySkill;
+
                 return (
                   <TouchableOpacity
                     key={`mem_${m.id || mIdx}`}
-                    style={styles.memberPickerRow}
-                    onPress={() => handleAssignRole(name, m.id)}
+                    style={styles.memberRow}
+                    onPress={() => handleAssignRole(m)}
                   >
                     <View style={styles.memberAvatar}>
                       <Text style={styles.memberAvatarTxt}>{name.charAt(0).toUpperCase()}</Text>
                     </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.memberPickerName}>{name}</Text>
-                      {m.phone ? <Text style={styles.memberPickerPhone}>{m.phone}</Text> : null}
+                    <View style={{ flex: 1, paddingHorizontal: 10 }}>
+                      <Text style={styles.memberName}>{name}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        {m.phone ? <Text style={styles.memberPhone}>{m.phone}</Text> : null}
+                        {hasSkill ? (
+                          <View style={styles.memberSkillBadge}>
+                            <Text style={styles.memberSkillBadgeTxt}>{m.primarySkill || m.secondarySkill}</Text>
+                          </View>
+                        ) : null}
+                      </View>
                     </View>
                     <Check size={16} color="#059669" />
                   </TouchableOpacity>
@@ -1608,340 +1386,299 @@ export default function AdminServicePlanner({ navigation }: any) {
         </View>
       </Modal>
 
-      {/* ── MODAL 2: ADD / EDIT SETLIST SONG ─────────────────── */}
-      <Modal
-        visible={showSongModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowSongModal(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, { maxHeight: '90%' }]}>
+      {/* ── MODAL 3: ADD SONG TO SETLIST WITH LIVE SEARCH ──── */}
+      <Modal visible={showSongModal} transparent animationType="slide" onRequestClose={() => setShowSongModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContentCard}>
             <View style={styles.modalCardHeader}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.modalCardTitle}>
                   {editingSongIndex !== null ? 'Edit Worship Song' : 'Add Song to Setlist'}
                 </Text>
-                <Text style={styles.modalCardSubtitle}>Keys, BPM, Prelude & Arrangements</Text>
+                <Text style={styles.modalCardSub}>Rhema Church Song Library</Text>
               </View>
               <TouchableOpacity onPress={() => setShowSongModal(false)}>
                 <X size={20} color="#64748B" />
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} style={{ paddingVertical: 10 }}>
-              <Text style={styles.inputLabel}>Song Title</Text>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
+              {/* Song Search / Autocomplete from Church Songs */}
+              <Text style={styles.inputLabel}>Search from Church Worship Songs</Text>
+              <View style={styles.searchBox}>
+                <Search size={15} color="#94A3B8" />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search existing song..."
+                  placeholderTextColor="#94A3B8"
+                  value={songSearchQuery}
+                  onChangeText={setSongSearchQuery}
+                />
+              </View>
+
+              {filteredChurchSongs.length > 0 && !songForm.title ? (
+                <View style={styles.songSuggestionsBox}>
+                  {filteredChurchSongs.slice(0, 5).map(s => (
+                    <TouchableOpacity
+                      key={s.id}
+                      style={styles.songSuggestionRow}
+                      onPress={() => {
+                        setSongForm(prev => ({
+                          ...prev,
+                          title: s.title || '',
+                          key: s.key || prev.key || 'F',
+                          tempo: s.tempo ? String(s.tempo) : prev.tempo
+                        }));
+                        setSongSearchQuery('');
+                      }}
+                    >
+                      <Music size={13} color="#1A2D5A" />
+                      <Text style={styles.songSuggestionTxt} numberOfLines={1}>
+                        {s.title} {s.titleTe ? `(${s.titleTe})` : ''}
+                      </Text>
+                      {s.key ? <Text style={styles.songSuggestionKey}>Key: {s.key}</Text> : null}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : null}
+
+              <Text style={[styles.inputLabel, { marginTop: 10 }]}>Song Title</Text>
               <TextInput
                 style={styles.textInput}
-                placeholder="e.g. Yee pata padenu yesayya"
-                placeholderTextColor="#94A3B8"
                 value={songForm.title}
                 onChangeText={t => setSongForm(prev => ({ ...prev, title: t }))}
+                placeholder="Song Title"
+                placeholderTextColor="#94A3B8"
               />
+
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.inputLabel}>Key (e.g. F, G, D, Bb)</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={songForm.key}
+                    onChangeText={t => setSongForm(prev => ({ ...prev, key: t }))}
+                    placeholder="Key"
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.inputLabel}>BPM / Tempo</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={songForm.tempo}
+                    onChangeText={t => setSongForm(prev => ({ ...prev, tempo: t }))}
+                    placeholder="100"
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+              </View>
 
               <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.inputLabel}>Song Leader</Text>
                   <TextInput
                     style={styles.textInput}
-                    placeholder="e.g. Prabhakar Yeddula"
-                    placeholderTextColor="#94A3B8"
                     value={songForm.ledBy}
                     onChangeText={t => setSongForm(prev => ({ ...prev, ledBy: t }))}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>Key</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="e.g. F, D, G, F#m"
+                    placeholder="Lead Vocalist"
                     placeholderTextColor="#94A3B8"
-                    value={songForm.key}
-                    onChangeText={t => setSongForm(prev => ({ ...prev, key: t }))}
                   />
                 </View>
-              </View>
-
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.inputLabel}>Time Signature</Text>
                   <TextInput
                     style={styles.textInput}
-                    placeholder="4/4, 3/4"
-                    placeholderTextColor="#94A3B8"
                     value={songForm.timeSignature}
                     onChangeText={t => setSongForm(prev => ({ ...prev, timeSignature: t }))}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>Tempo (BPM)</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="100"
+                    placeholder="4/4"
                     placeholderTextColor="#94A3B8"
-                    value={songForm.tempo}
-                    onChangeText={t => setSongForm(prev => ({ ...prev, tempo: t }))}
                   />
                 </View>
               </View>
 
-              <Text style={[styles.inputLabel, { marginTop: 10 }]}>Prelude Suggestion</Text>
+              <Text style={[styles.inputLabel, { marginTop: 10 }]}>Arrangement / Practice Notes</Text>
               <TextInput
-                style={styles.textInput}
-                placeholder="e.g. Acoustic + Drum"
-                placeholderTextColor="#94A3B8"
-                value={songForm.prelude}
-                onChangeText={t => setSongForm(prev => ({ ...prev, prelude: t }))}
-              />
-
-              <Text style={[styles.inputLabel, { marginTop: 10 }]}>Arrangement / Theme Notes</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g. Call to Worship & Praise"
-                placeholderTextColor="#94A3B8"
+                style={[styles.textInput, { minHeight: 60, textAlignVertical: 'top' }]}
                 value={songForm.notes}
                 onChangeText={t => setSongForm(prev => ({ ...prev, notes: t }))}
+                placeholder="Prelude notes, transitions, chords..."
+                placeholderTextColor="#94A3B8"
+                multiline
               />
+            </ScrollView>
 
-              <TouchableOpacity
-                style={styles.modalPrimaryBtn}
-                onPress={handleSaveSong}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.modalPrimaryBtnTxt}>
-                  {editingSongIndex !== null ? 'Save Changes' : 'Add to Setlist'}
-                </Text>
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowSongModal(false)}>
+                <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
               </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ── MODAL 3: MASTER SERVICE & TIMETABLE BUILDER ───────── */}
-      <Modal
-        visible={showCreatePlanModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowCreatePlanModal(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, { maxHeight: '92%', width: '96%', padding: 0 }]}>
-            <View style={styles.builderHeader}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.modalCardTitle}>
-                  {selectedPlan?.id ? 'Edit Service Timetable' : 'New Service Schedule & Timetable'}
-                </Text>
-                <Text style={styles.modalCardSubtitle}>Define complete service schedule from start to finish</Text>
-              </View>
-              <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-                <TouchableOpacity
-                  style={styles.saveHeaderBtn}
-                  disabled={savingPlan}
-                  onPress={handleSavePlanDetails}
-                >
-                  {savingPlan ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <Text style={styles.saveHeaderBtnTxt}>Save</Text>
-                  )}
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setShowCreatePlanModal(false)}>
-                  <X size={20} color="#64748B" />
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity style={styles.modalSubmitBtn} onPress={handleSaveSong}>
+                <Text style={styles.modalSubmitBtnTxt}>Save Song</Text>
+              </TouchableOpacity>
             </View>
-
-            <ScrollView style={{ paddingHorizontal: 16, paddingTop: 12 }} showsVerticalScrollIndicator={false}>
-              {/* Quick Select from Church Events */}
-              {churchEvents.length > 0 && !selectedPlan?.id && (
-                <View style={styles.quickEventWrap}>
-                  <Text style={styles.quickEventLabel}>📅 Pick from Scheduled Church Events:</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
-                    {churchEvents.map((ev, evIdx) => {
-                      const title = ev.title || ev.name || 'Event';
-                      const isMatch = planFormTitle === title;
-                      return (
-                        <TouchableOpacity
-                          key={`ev_${ev.id || evIdx}`}
-                          style={[styles.quickEventChip, isMatch && styles.quickEventChipActive]}
-                          onPress={() => {
-                            setPlanFormTitle(title);
-                            if (ev.date) {
-                              const d = ev.date.includes('T') ? ev.date.split('T')[0] : ev.date;
-                              setPlanFormDate(d);
-                            }
-                            if (ev.startTime) {
-                              const cleanStart = ev.startTime.includes('T') ? ev.startTime.split('T')[1].substring(0, 5) : ev.startTime;
-                              setPlanFormStartTime(cleanStart);
-                            }
-                            if (ev.endTime) {
-                              const cleanEnd = ev.endTime.includes('T') ? ev.endTime.split('T')[1].substring(0, 5) : ev.endTime;
-                              setPlanFormEndTime(cleanEnd);
-                            }
-                            if (ev.location) {
-                              setPlanFormLocation(ev.location);
-                            }
-                          }}
-                        >
-                          <Text style={[styles.quickEventChipTxt, isMatch && styles.quickEventChipTxtActive]}>
-                            {title}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
-                </View>
-              )}
-
-              {/* Service Details */}
-              <Text style={styles.inputLabel}>Service Name / Title</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g. Sunday Morning Worship Service"
-                placeholderTextColor="#94A3B8"
-                value={planFormTitle}
-                onChangeText={setPlanFormTitle}
-              />
-
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-                <View style={{ flex: 1.2 }}>
-                  <Text style={styles.inputLabel}>Date (YYYY-MM-DD)</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="2026-10-25"
-                    placeholderTextColor="#94A3B8"
-                    value={planFormDate}
-                    onChangeText={setPlanFormDate}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>Start Time</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="09:00"
-                    placeholderTextColor="#94A3B8"
-                    value={planFormStartTime}
-                    onChangeText={setPlanFormStartTime}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>End Time</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="11:00"
-                    placeholderTextColor="#94A3B8"
-                    value={planFormEndTime}
-                    onChangeText={setPlanFormEndTime}
-                  />
-                </View>
-              </View>
-
-              <Text style={[styles.inputLabel, { marginTop: 10 }]}>Location / Sanctuary</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g. Sanctuary / Church Hall"
-                placeholderTextColor="#94A3B8"
-                value={planFormLocation}
-                onChangeText={setPlanFormLocation}
-              />
-
-              {/* Timetable Items Builder */}
-              <View style={styles.builderSectionHeader}>
-                <Text style={styles.builderSectionTitle}>Service Timetable & Activities ({planFormTimetable.length})</Text>
-                <TouchableOpacity
-                  style={styles.sundayTemplateBtn}
-                  onPress={handleLoadSundayTemplateInEditor}
-                >
-                  <Sparkles size={12} color="#1A2D5A" />
-                  <Text style={styles.sundayTemplateBtnTxt}>Sunday Template</Text>
-                </TouchableOpacity>
-              </View>
-
-              {planFormTimetable.length === 0 ? (
-                <View style={styles.emptyTimetableBox}>
-                  <Text style={styles.emptyTimetableTxt}>
-                    No activities yet. Click below to add Starting Prayer, Worship, Bible Reading, or Sermon.
-                  </Text>
-                </View>
-              ) : (
-                planFormTimetable.map((act, aIdx) => {
-                  const theme = getCategoryTheme(act.category);
-                  return (
-                    <View key={`act_${act.id || aIdx}`} style={styles.actBuilderRow}>
-                      <View style={styles.actBuilderTime}>
-                        <Text style={styles.actBuilderTimeTxt}>{act.startTime || act.time?.split(/to|-/i)[0]?.trim() || '09:00'}</Text>
-                        <Text style={styles.actBuilderDurTxt}>{act.durationMinutes || 15}m</Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.actBuilderProgram} numberOfLines={1}>{act.program}</Text>
-                        <Text style={styles.actBuilderSub} numberOfLines={1}>
-                          {act.assignedTo ? `👤 ${act.assignedTo}` : 'Tap edit to assign'}
-                        </Text>
-                      </View>
-                      <View style={styles.actBuilderActions}>
-                        <TouchableOpacity onPress={() => handleEditActivity(aIdx)} style={styles.iconBtnSmall}>
-                          <Edit2 size={13} color="#475569" />
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={() => handleDeleteTimetableActivity(aIdx)} style={styles.iconBtnSmall}>
-                          <Trash2 size={13} color="#DC2626" />
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  );
-                })
-              )}
-
-              {/* Quick Add Action Pills */}
-              <View style={styles.quickAddRow}>
-                <TouchableOpacity style={styles.quickAddPill} onPress={() => handleAddActivity('starting_prayer')}>
-                  <Text style={styles.quickAddPillTxt}>+ Starting Prayer</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.quickAddPill} onPress={() => handleAddActivity('worship_songs')}>
-                  <Text style={styles.quickAddPillTxt}>+ Praise & Worship</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.quickAddPill} onPress={() => handleAddActivity('bible_reading')}>
-                  <Text style={styles.quickAddPillTxt}>+ Bible Reading</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.quickAddPill} onPress={() => handleAddActivity('sermon')}>
-                  <Text style={styles.quickAddPillTxt}>+ Sermon</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.quickAddPill} onPress={() => handleAddActivity('closing_prayer')}>
-                  <Text style={styles.quickAddPillTxt}>+ Benediction</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={{ height: 30 }} />
-            </ScrollView>
           </View>
         </View>
       </Modal>
 
-      {/* ── MODAL 4: ACTIVITY EDITOR MODAL ───────────────────── */}
-      <Modal
-        visible={showActivityEditorModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowActivityEditorModal(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+      {/* ── MODAL 4: EDIT DETAILS MODAL ────────────────────── */}
+      <Modal visible={showEditDetailsModal} transparent animationType="slide" onRequestClose={() => setShowEditDetailsModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContentCard}>
             <View style={styles.modalCardHeader}>
-              <Text style={styles.modalCardTitle}>
-                {editingTimetableItemIndex !== null ? 'Edit Timetable Activity' : 'Add Activity'}
-              </Text>
-              <TouchableOpacity onPress={() => setShowActivityEditorModal(false)}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalCardTitle}>Edit Service Details</Text>
+                <Text style={styles.modalCardSub}>Title, timings & sermon overview</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowEditDetailsModal(false)}>
                 <X size={20} color="#64748B" />
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.inputLabel}>Program / Activity Name</Text>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
+              <Text style={styles.inputLabel}>Service Title</Text>
               <TextInput
                 style={styles.textInput}
-                value={activityEditorForm.program}
-                placeholder="e.g. Starting Prayer / Scripture Reading"
+                value={editTitle}
+                onChangeText={setEditTitle}
+                placeholder="Service Title"
                 placeholderTextColor="#94A3B8"
-                onChangeText={t => setActivityEditorForm(prev => ({ ...prev, program: t }))}
+              />
+
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.inputLabel}>Date (YYYY-MM-DD)</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={editDate}
+                    onChangeText={setEditDate}
+                    placeholder="2026-11-08"
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.inputLabel}>Location</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={editLocation}
+                    onChangeText={setEditLocation}
+                    placeholder="Sanctuary"
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.inputLabel}>Start Time</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={editStartTime}
+                    onChangeText={setEditStartTime}
+                    placeholder="09:30"
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.inputLabel}>End Time</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={editEndTime}
+                    onChangeText={setEditEndTime}
+                    placeholder="12:00"
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+              </View>
+
+              <Text style={[styles.inputLabel, { marginTop: 14, color: '#D4AF37' }]}>SERMON & LITURGY</Text>
+              <Text style={styles.inputLabel}>Sermon Title</Text>
+              <TextInput
+                style={styles.textInput}
+                value={editSermonTitle}
+                onChangeText={setEditSermonTitle}
+                placeholder="e.g. Walking in Faith"
+                placeholderTextColor="#94A3B8"
+              />
+
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.inputLabel}>Preacher / Speaker</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={editSermonSpeaker}
+                    onChangeText={setEditSermonSpeaker}
+                    placeholder="Speaker"
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.inputLabel}>Key Verses</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={editSermonVerses}
+                    onChangeText={setEditSermonVerses}
+                    placeholder="Romans 3:17-25"
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowEditDetailsModal(false)}>
+                <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalSubmitBtn} onPress={handleSaveDetails}>
+                <Text style={styles.modalSubmitBtnTxt}>Save Changes</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL 5: ADD / EDIT RUN-SHEET ACTIVITY ──────────── */}
+      <Modal visible={showActivityModal} transparent animationType="slide" onRequestClose={() => setShowActivityModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContentCard}>
+            <View style={styles.modalCardHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalCardTitle}>
+                  {editingActivityIndex !== null ? 'Edit Service Activity' : 'Add Service Activity'}
+                </Text>
+                <Text style={styles.modalCardSub}>Order of Service Timetable</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowActivityModal(false)}>
+                <X size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
+              {/* Presets */}
+              <Text style={styles.inputLabel}>Quick Activity Presets</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 6 }}>
+                {RUNSHEET_PRESETS.map(p => (
+                  <TouchableOpacity
+                    key={p.name}
+                    style={styles.presetChip}
+                    onPress={() => setActivityForm(prev => ({
+                      ...prev,
+                      program: p.name,
+                      category: p.category,
+                      durationMinutes: p.dur
+                    }))}
+                  >
+                    <Text style={styles.presetChipTxt}>{p.name} ({p.dur}m)</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <Text style={[styles.inputLabel, { marginTop: 10 }]}>Activity / Program Title</Text>
+              <TextInput
+                style={styles.textInput}
+                value={activityForm.program}
+                onChangeText={t => setActivityForm(prev => ({ ...prev, program: t }))}
+                placeholder="e.g. Praise & Worship"
+                placeholderTextColor="#94A3B8"
               />
 
               <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
@@ -1949,1306 +1686,1008 @@ export default function AdminServicePlanner({ navigation }: any) {
                   <Text style={styles.inputLabel}>Start Time</Text>
                   <TextInput
                     style={styles.textInput}
-                    value={activityEditorForm.startTime}
-                    placeholder="09:00"
+                    value={activityForm.startTime}
+                    onChangeText={t => setActivityForm(prev => ({ ...prev, startTime: t }))}
+                    placeholder="09:30"
                     placeholderTextColor="#94A3B8"
-                    onChangeText={t => setActivityEditorForm(prev => ({ ...prev, startTime: t }))}
                   />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>End Time</Text>
+                  <Text style={styles.inputLabel}>Duration (Minutes)</Text>
                   <TextInput
                     style={styles.textInput}
-                    value={activityEditorForm.endTime}
-                    placeholder="09:20"
+                    value={String(activityForm.durationMinutes || 10)}
+                    onChangeText={t => setActivityForm(prev => ({ ...prev, durationMinutes: parseInt(t, 10) || 10 }))}
+                    keyboardType="numeric"
+                    placeholder="10"
                     placeholderTextColor="#94A3B8"
-                    onChangeText={t => setActivityEditorForm(prev => ({ ...prev, endTime: t }))}
                   />
                 </View>
               </View>
 
-              <Text style={[styles.inputLabel, { marginTop: 10 }]}>Person Assigned / Speaker</Text>
+              <Text style={[styles.inputLabel, { marginTop: 10 }]}>Assigned Minister / Person</Text>
               <TextInput
                 style={styles.textInput}
-                value={activityEditorForm.assignedTo}
-                placeholder="e.g. Pastor / Brother / Sister"
+                value={activityForm.assignedTo}
+                onChangeText={t => setActivityForm(prev => ({ ...prev, assignedTo: t }))}
+                placeholder="e.g. Bro. David / Worship Team"
                 placeholderTextColor="#94A3B8"
-                onChangeText={t => setActivityEditorForm(prev => ({ ...prev, assignedTo: t }))}
               />
 
-              <Text style={[styles.inputLabel, { marginTop: 10 }]}>Songs / Passage / Notes</Text>
+              <Text style={[styles.inputLabel, { marginTop: 10 }]}>Scripture / Song Reference (Optional)</Text>
               <TextInput
                 style={styles.textInput}
-                value={activityEditorForm.songTitle || activityEditorForm.passage || ''}
-                placeholder="e.g. Song title or Scripture verse"
+                value={activityForm.passage || activityForm.songTitle || ''}
+                onChangeText={t => setActivityForm(prev => ({ ...prev, passage: t }))}
+                placeholder="e.g. Romans 3:17-25"
                 placeholderTextColor="#94A3B8"
-                onChangeText={t => setActivityEditorForm(prev => ({ ...prev, songTitle: t, passage: t }))}
               />
-
-              <TouchableOpacity
-                style={styles.modalPrimaryBtn}
-                onPress={handleSaveActivityFromEditor}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.modalPrimaryBtnTxt}>Save Activity</Text>
-              </TouchableOpacity>
             </ScrollView>
+
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowActivityModal(false)}>
+                <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalSubmitBtn} onPress={handleSaveActivity}>
+                <Text style={styles.modalSubmitBtnTxt}>Save Activity</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
+
     </View>
   );
 }
 
-const styles = createAdminThemedStyles(StyleSheet.create({
-  circularBackBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
+const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FAF7F2',
+    backgroundColor: '#FAF7F2'
   },
-  centerWrap: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  loadingTxt: {
-    fontSize: 14,
-    color: '#64748B',
-    marginTop: 12,
-    fontWeight: '600',
-  },
-
-  // ── Hero Header (Navy & Gold) ──────────────────────────────────
   hero: {
-    backgroundColor: 'transparent',
-    
-    
+    backgroundColor: '#1A2D5A',
     paddingHorizontal: 16,
-    paddingBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 5,
+    paddingBottom: 14
   },
   heroRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 8,
+    marginBottom: 12
   },
-  heroLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    marginRight: 8,
+  heroBackBtn: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.12)'
   },
-  backBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 4,
-    paddingRight: 6,
+  heroPreTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#D4AF37',
+    letterSpacing: 0.8
   },
-  backBtnTxt: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  heroDivider: {
-    color: 'rgba(255, 255, 255, 0.3)',
-    marginHorizontal: 10,
+  heroMainTitle: {
     fontSize: 18,
-  },
-  heroTitle: {
-    color: '#1a2d5a',
-    fontSize: 17,
-    fontWeight: '700',
-    letterSpacing: -0.3,
-  },
-  heroSub: {
-    color: '#CBD5E1',
-    fontSize: 11.5,
-    marginTop: 1,
-  },
-  heroActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    fontWeight: '900',
+    color: '#FFFFFF'
   },
   heroRefreshBtn: {
-    width: 40,
-    height: 40,
+    padding: 8,
     borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    marginRight: 8
   },
-  newBtn: {
-    backgroundColor: '#C9A84C',
+  heroNewBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    backgroundColor: '#D4AF37',
     paddingHorizontal: 12,
     paddingVertical: 7,
-    borderRadius: 12,
-    shadowColor: '#C9A84C',
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
-    elevation: 3,
+    borderRadius: 14
   },
-  newBtnTxt: {
+  heroNewBtnTxt: {
     color: '#1A2D5A',
-    fontSize: 12.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '800'
   },
 
-  // ── Service Carousel Chips ─────────────────────────────────────
-  carouselScrollView: {
-    marginTop: 10,
-  },
+  // Carousel
   carouselContainer: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingRight: 16,
+    gap: 10,
+    paddingVertical: 2
   },
   serviceCardChip: {
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)',
     borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-    minWidth: 160,
+    padding: 8,
+    paddingRight: 14,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+    minWidth: 170
   },
   serviceCardChipActive: {
     backgroundColor: '#FFFFFF',
-    borderColor: '#C9A84C',
-    borderWidth: 1.5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    elevation: 3,
+    borderColor: '#D4AF37'
   },
-  chipTopRow: {
-    flexDirection: 'row',
+  chipDateBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
+    justifyContent: 'center'
   },
-  chipDatePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
+  chipDateBoxActive: {
+    backgroundColor: '#1A2D5A'
   },
-  chipDatePillActive: {
-    backgroundColor: '#F1F5F9',
+  chipDayNum: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#FFFFFF'
   },
-  chipDateTxt: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#FFFFFF',
+  chipDayNumActive: {
+    color: '#D4AF37'
   },
-  chipDateTxtActive: {
-    color: '#1A2D5A',
-  },
-  chipTimeTxt: {
-    fontSize: 10,
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontWeight: '600',
-  },
-  chipTimeTxtActive: {
-    color: '#059669',
-  },
-  chipTitleTxt: {
-    fontSize: 12.5,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  chipTitleTxtActive: {
-    color: '#0F172A',
-  },
-
-  // ── Scroll Body ────────────────────────────────────────────────
-  scrollArea: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-
-  // ── Active Service Banner Card ─────────────────────────────────
-  activeServiceCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#1A2D5A',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-    marginBottom: 14,
-  },
-  activeServiceTop: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 6,
-  },
-  dateBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#DBEAFE',
-  },
-  dateBadgeTxt: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#1A2D5A',
-  },
-  timeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#ECFDF5',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-  },
-  timeBadgeTxt: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#059669',
-  },
-  activeServiceTitle: {
-    fontSize: 18,
+  chipMonthTxt: {
+    fontSize: 8,
     fontWeight: '800',
-    color: '#0F172A',
-    letterSpacing: -0.3,
+    color: 'rgba(255,255,255,0.8)'
   },
-  locationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 4,
+  chipMonthTxtActive: {
+    color: '#FFFFFF'
   },
-  locationTxt: {
+  chipTitle: {
     fontSize: 12,
-    color: '#64748B',
+    fontWeight: '800',
+    color: '#FFFFFF'
   },
-  activeServiceActionsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 14,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
+  chipTitleActive: {
+    color: '#1A2D5A'
   },
-  actionBtnEdit: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#1A2D5A',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 10,
+  chipTime: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.8)'
   },
-  actionBtnEditTxt: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#FFFFFF',
+  chipTimeActive: {
+    color: '#64748B'
   },
-  actionBtnShare: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    backgroundColor: '#ECFDF5',
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-  },
-  actionBtnShareTxt: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#059669',
-  },
-  actionBtnDelete: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    alignItems: 'center',
-    justifyContent: 'center',
+  chipStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3
   },
 
-  // ── Segmented Tab Bar ──────────────────────────────────────────
-  tabBar: {
-    flexDirection: 'row',
-    gap: 6,
-    backgroundColor: '#FFFFFF',
-    padding: 5,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 16,
-  },
-  tabItem: {
+  // Content
+  centerWrap: {
     flex: 1,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
-    paddingVertical: 8,
-    borderRadius: 10,
+    padding: 24
   },
-  tabItemActive: {
-    backgroundColor: '#1A2D5A',
-  },
-  tabItemTxt: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#64748B',
-  },
-  tabItemTxtActive: {
-    color: '#FFFFFF',
-  },
-
-  // ── Section Department Cards (Clean & Modern) ──────────────────
-  sectionCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  sectionCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-  },
-  sectionCardHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  sectionIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sectionCardTitle: {
+  loadingTxt: {
+    marginTop: 12,
     fontSize: 14,
-    fontWeight: '700',
-  },
-  sectionCardSub: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 1,
-  },
-
-  // ── Roles Grid ─────────────────────────────────────────────────
-  rolesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    padding: 10,
-    gap: 8,
-  },
-  roleTile: {
-    width: (width - 32 - 20 - 8) / 2,
-    padding: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  roleTileAssigned: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#CBD5E1',
-  },
-  roleTileUnassigned: {
-    backgroundColor: '#F8FAFC',
-    borderColor: '#E2E8F0',
-    borderStyle: 'dashed',
-  },
-  roleTileTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 6,
-  },
-  roleIconEmoji: {
-    fontSize: 13,
-  },
-  roleLabelTxt: {
-    fontSize: 11,
     fontWeight: '600',
-    color: '#475569',
-    flex: 1,
+    color: '#64748B'
   },
-  assignedPersonRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  avatarBubble: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#1A2D5A',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarBubbleTxt: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  assignedPersonName: {
-    fontSize: 12.5,
-    fontWeight: '700',
-    color: '#0F172A',
-    flex: 1,
-  },
-  unassignedPromptRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  unassignedPromptTxt: {
-    fontSize: 11,
-    color: '#94A3B8',
-    fontWeight: '600',
-  },
-
-  // ── Roster Song Preview Mini ───────────────────────────────────
-  rosterSongPreviewWrap: {
-    backgroundColor: '#F8FAFC',
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-    padding: 12,
-  },
-  rosterSongPreviewHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  rosterSongPreviewTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#334155',
-  },
-  viewDetailsLink: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#1A2D5A',
-  },
-  miniSongRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 3,
-  },
-  miniSongIdx: {
-    fontSize: 11.5,
-    color: '#64748B',
-    fontWeight: '700',
-    width: 16,
-  },
-  miniSongName: {
-    fontSize: 12.5,
-    fontWeight: '600',
-    color: '#0F172A',
-    flex: 1,
-  },
-  miniKeyPill: {
-    backgroundColor: '#F3E8FF',
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 4,
-  },
-  miniKeyPillTxt: {
-    fontSize: 9.5,
-    fontWeight: '800',
-    color: '#7E22CE',
-  },
-  miniSongLeader: {
-    fontSize: 11,
-    color: '#64748B',
-  },
-
-  // ── Sermon Card Body ───────────────────────────────────────────
-  sermonCardBody: {
-    padding: 14,
-  },
-  sermonFieldRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  sermonFieldLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#475569',
-    marginBottom: 4,
-  },
-  sermonFieldInput: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    fontSize: 13,
-    color: '#0F172A',
-  },
-  saveSermonBtn: {
-    backgroundColor: '#1A2D5A',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: 10,
-    marginTop: 14,
-  },
-  saveSermonBtnTxt: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-
-  // ── Tab 2: Setlist Styles ──────────────────────────────────────
-  tabSectionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  tabSectionTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  tabSectionSubtitle: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 1,
-  },
-  primaryAddBtn: {
-    backgroundColor: '#1A2D5A',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 10,
-  },
-  primaryAddBtnTxt: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  songCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  songCardTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  songIndexCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#F1F5F9',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  songIndexTxt: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#1A2D5A',
-  },
-  songCardTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  songCardLeader: {
-    fontSize: 11.5,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  songActionsRow: {
-    flexDirection: 'row',
-    gap: 4,
-  },
-  songActionBtn: {
-    padding: 6,
-    borderRadius: 8,
-    backgroundColor: '#F8FAFC',
-  },
-  songChipsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 10,
-    flexWrap: 'wrap',
-  },
-  musicChip: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-  },
-  musicChipTxt: {
-    fontSize: 10.5,
-    fontWeight: '700',
-  },
-  arrangementWrap: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-    padding: 8,
-    marginTop: 10,
-    gap: 3,
-  },
-  arrTxt: {
-    fontSize: 11.5,
-    color: '#334155',
-  },
-  arrLabel: {
-    fontWeight: '700',
-    color: '#64748B',
-  },
-
-  // ── Tab 3: Timeline Run Sheet ──────────────────────────────────
-  timelineList: {
-    paddingTop: 6,
-  },
-  timelineRow: {
-    flexDirection: 'row',
-    marginBottom: 10,
-  },
-  timeColumn: {
-    width: 58,
-    alignItems: 'flex-end',
-    paddingRight: 8,
-    paddingTop: 2,
-  },
-  timeStartTxt: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  timeEndTxt: {
-    fontSize: 10,
-    color: '#64748B',
-  },
-  durationPill: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderRadius: 4,
-    marginTop: 4,
-  },
-  durationPillTxt: {
-    fontSize: 9.5,
-    fontWeight: '700',
-    color: '#64748B',
-  },
-  nodeColumn: {
-    width: 18,
-    alignItems: 'center',
-  },
-  nodeDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginTop: 4,
-  },
-  nodeLine: {
-    width: 2,
-    flex: 1,
-    backgroundColor: '#E2E8F0',
-    marginTop: 4,
-  },
-  activityCard: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderLeftWidth: 3.5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  activityCardTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  categoryPill: {
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: 1,
-  },
-  categoryPillTxt: {
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  activityActions: {
-    flexDirection: 'row',
-  },
-  activityActionBtn: {
-    padding: 4,
-  },
-  activityProgramTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  activityAssignedTxt: {
-    fontSize: 12,
-    color: '#059669',
-    fontWeight: '600',
-    marginTop: 3,
-  },
-  activitySongTxt: {
-    fontSize: 11.5,
-    color: '#4F46E5',
-    marginTop: 2,
-  },
-  activityPassageTxt: {
-    fontSize: 11.5,
-    color: '#D97706',
-    marginTop: 2,
-  },
-  activityPlaceTxt: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 2,
-  },
-
-  // ── Tab 4: Bulletin / Share ────────────────────────────────────
-  bulletinPreviewCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  bulletinHeader: {
-    alignItems: 'center',
-    paddingBottom: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-    marginBottom: 14,
-  },
-  bulletinChurchName: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#1A2D5A',
-    letterSpacing: 1,
-  },
-  bulletinServiceTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#0F172A',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  bulletinDate: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 3,
-  },
-  bulletinSection: {
-    marginBottom: 12,
-  },
-  bulletinSectionTitle: {
-    fontSize: 11.5,
-    fontWeight: '800',
-    color: '#1A2D5A',
-    marginBottom: 5,
-    letterSpacing: 0.5,
-  },
-  bulletinItemTxt: {
-    fontSize: 12.5,
-    color: '#334155',
-    lineHeight: 18,
-  },
-  whatsAppShareBtn: {
-    backgroundColor: '#25D366',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 14,
-    shadowColor: '#25D366',
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  whatsAppShareBtnTxt: {
-    fontSize: 14.5,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-
-  // ── Empty States ───────────────────────────────────────────────
   emptyWrap: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
-  },
-  emptyIconCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: '#EFF6FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
+    padding: 30
   },
   emptyTitle: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '800',
-    color: '#0F172A',
+    color: '#1A2D5A',
+    marginTop: 14
   },
   emptySub: {
     fontSize: 13,
     color: '#64748B',
     textAlign: 'center',
     marginTop: 6,
-    lineHeight: 19,
-    maxWidth: 280,
+    lineHeight: 18
   },
   emptyCreateBtn: {
-    backgroundColor: '#1A2D5A',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 18,
+    backgroundColor: '#1A2D5A',
+    paddingHorizontal: 20,
     paddingVertical: 12,
-    borderRadius: 12,
-    marginTop: 20,
+    borderRadius: 14,
+    marginTop: 18
   },
   emptyCreateBtnTxt: {
     color: '#FFFFFF',
-    fontSize: 13.5,
-    fontWeight: '700',
-  },
-  emptyCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 24,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  emptyCardTitle: {
-    fontSize: 14.5,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginTop: 10,
-  },
-  emptyCardSub: {
-    fontSize: 12,
-    color: '#64748B',
-    textAlign: 'center',
-    marginTop: 4,
-    lineHeight: 17,
-  },
-  emptyAddBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
-    marginTop: 14,
-  },
-  emptyAddBtnTxt: {
-    fontSize: 12.5,
-    fontWeight: '700',
-    color: '#1A2D5A',
+    fontWeight: '800',
+    fontSize: 13
   },
 
-  // ── Modals Backdrop & Cards ────────────────────────────────────
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
-    justifyContent: 'center',
-    alignItems: 'center',
+  scrollArea: {
+    flex: 1
+  },
+  scrollContent: {
+    padding: 16
+  },
+
+  // Active Service Banner
+  activeServiceBanner: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     padding: 16,
-  },
-  modalCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 18,
-    width: '100%',
-    maxWidth: 420,
-    maxHeight: '85%',
-  },
-  modalCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  modalCardTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  modalCardSubtitle: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 2,
-  },
-
-  // Member Picker Modal
-  customAssignRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 12,
-  },
-  customAssignInput: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    fontSize: 13,
-    color: '#0F172A',
-  },
-  customAssignSubmitBtn: {
-    backgroundColor: '#1A2D5A',
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  customAssignSubmitTxt: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  memberSearchBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#F8FAFC',
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    marginTop: 10,
-    marginBottom: 6,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 6
   },
-  memberSearchInput: {
-    flex: 1,
-    fontSize: 12.5,
-    color: '#0F172A',
-    paddingVertical: 0,
-  },
-  memberPickerRow: {
+  activeBannerTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F8FAFC',
+    justifyContent: 'space-between'
   },
-  memberAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#EFF6FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  memberAvatarTxt: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#1A2D5A',
-  },
-  memberPickerName: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  memberPickerPhone: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 1,
-  },
-
-  // Modal Inputs & Buttons
-  inputLabel: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#475569',
-    marginBottom: 4,
-  },
-  textInput: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 13,
-    color: '#0F172A',
-  },
-  modalPrimaryBtn: {
-    backgroundColor: '#1A2D5A',
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 18,
-  },
-  modalPrimaryBtnTxt: {
-    color: '#FFFFFF',
-    fontSize: 13.5,
-    fontWeight: '800',
-  },
-
-  // Builder Modal Styles
-  builderHeader: {
+  activeBadgeRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 6
   },
-  saveHeaderBtn: {
-    backgroundColor: '#1A2D5A',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 10,
-  },
-  saveHeaderBtnTxt: {
-    color: '#FFFFFF',
-    fontSize: 12.5,
-    fontWeight: '800',
-  },
-  quickEventWrap: {
-    backgroundColor: '#F1F5F9',
-    borderRadius: 12,
-    padding: 10,
-    marginBottom: 12,
-  },
-  quickEventLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#334155',
-  },
-  quickEventChip: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    marginRight: 6,
-  },
-  quickEventChipActive: {
-    backgroundColor: '#1A2D5A',
-    borderColor: '#1A2D5A',
-  },
-  quickEventChipTxt: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#475569',
-  },
-  quickEventChipTxtActive: {
-    color: '#FFFFFF',
-  },
-  builderSectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  builderSectionTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  sundayTemplateBtn: {
+  activeDateBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     backgroundColor: '#FEF3C7',
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingVertical: 3,
+    borderRadius: 8
   },
-  sundayTemplateBtnTxt: {
-    fontSize: 10.5,
+  activeDateBadgeTxt: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#92400E'
+  },
+  activeTimeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8
+  },
+  activeTimeBadgeTxt: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#065F46'
+  },
+  statusTogglePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8
+  },
+  statusTogglePublished: {
+    backgroundColor: '#D1FAE5'
+  },
+  statusToggleDraft: {
+    backgroundColor: '#FEF3C7'
+  },
+  statusSmallDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3
+  },
+  statusToggleTxt: {
+    fontSize: 11,
+    fontWeight: '800'
+  },
+  activeBannerTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#1A2D5A'
+  },
+  activeLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 3
+  },
+  activeLocationTxt: {
+    fontSize: 11,
+    color: '#64748B'
+  },
+  activeBannerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9'
+  },
+  actionBtnEdit: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#1A2D5A',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10
+  },
+  actionBtnEditTxt: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 12
+  },
+  actionBtnShare: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10
+  },
+  actionBtnShareTxt: {
+    color: '#059669',
+    fontWeight: '800',
+    fontSize: 12
+  },
+  actionBtnDelete: {
+    padding: 8,
+    borderRadius: 10,
+    backgroundColor: '#FEE2E2',
+    marginLeft: 'auto'
+  },
+
+  // Tabs
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: '#E2E8F0',
+    padding: 3,
+    borderRadius: 12,
+    marginBottom: 16
+  },
+  tabItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 9,
+    borderRadius: 9
+  },
+  tabItemActive: {
+    backgroundColor: '#FFFFFF',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 3
+  },
+  tabItemTxt: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B'
+  },
+  tabItemTxtActive: {
+    color: '#1A2D5A'
+  },
+
+  // Team Roster Dept Cards
+  deptCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    overflow: 'hidden'
+  },
+  deptHeader: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9'
+  },
+  deptHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
+  },
+  deptDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4
+  },
+  deptTitle: {
+    fontSize: 13,
+    fontWeight: '800'
+  },
+  roleList: {
+    paddingHorizontal: 14,
+    paddingVertical: 6
+  },
+  roleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F8FAFC'
+  },
+  roleName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A'
+  },
+  assignedMemberName: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#1A2D5A'
+  },
+  unassignedPlaceholder: {
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 2
+  },
+  assignedStatusBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6
+  },
+  statusConfirmed: {
+    backgroundColor: '#D1FAE5'
+  },
+  statusPending: {
+    backgroundColor: '#FEF3C7'
+  },
+  assignedStatusTxt: {
+    fontSize: 9.5,
+    fontWeight: '800'
+  },
+  roleActionBtns: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6
+  },
+  roleAssignBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8
+  },
+  roleAssignBtnTxt: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#1A2D5A'
+  },
+  roleEditBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: '#EFF6FF'
+  },
+  roleEditBtnTxt: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#2563EB'
+  },
+  roleRemoveBtn: {
+    padding: 4,
+    borderRadius: 6,
+    backgroundColor: '#FEE2E2'
+  },
+
+  // Run Sheet
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4
+  },
+  sectionHeaderTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#1A2D5A'
+  },
+  addSmallBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8
+  },
+  addSmallBtnTxt: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#92400E'
+  },
+  emptyTabCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0'
+  },
+  emptyTabCardTitle: {
+    fontSize: 15,
     fontWeight: '800',
     color: '#1A2D5A',
+    marginTop: 10
   },
-  emptyTimetableBox: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 16,
-    alignItems: 'center',
-  },
-  emptyTimetableTxt: {
+  emptyTabCardSub: {
     fontSize: 12,
     color: '#64748B',
-    textAlign: 'center',
-    lineHeight: 18,
+    marginTop: 4
   },
-  actBuilderRow: {
+  loadTemplateBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#F8FAFC',
+    gap: 6,
+    backgroundColor: '#1A2D5A',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
     borderRadius: 10,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 6,
+    marginTop: 14
   },
-  actBuilderTime: {
-    alignItems: 'center',
-    width: 44,
+  loadTemplateBtnTxt: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 12
   },
-  actBuilderTimeTxt: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  actBuilderDurTxt: {
-    fontSize: 9.5,
-    color: '#64748B',
-  },
-  actBuilderProgram: {
-    fontSize: 12.5,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  actBuilderSub: {
-    fontSize: 11,
-    color: '#059669',
-  },
-  actBuilderActions: {
+  runSheetRowCard: {
     flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0'
+  },
+  runSheetTimePillar: {
+    width: 68,
+    alignItems: 'center'
+  },
+  runSheetTimeTxt: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#1A2D5A'
+  },
+  durationPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 4,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginTop: 3
   },
-  iconBtnSmall: {
-    padding: 5,
+  durationAdjTxt: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#2563EB',
+    paddingHorizontal: 2
   },
-  quickAddRow: {
+  durationMainTxt: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#2563EB'
+  },
+  runSheetProgramTxt: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0F172A'
+  },
+  runSheetAssignedTxt: {
+    fontSize: 11,
+    color: '#64748B'
+  },
+  runSheetMetaTxt: {
+    fontSize: 10.5,
+    color: '#059669',
+    marginTop: 2
+  },
+  runSheetActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4
+  },
+  reorderBtn: {
+    padding: 4,
+    borderRadius: 6,
+    backgroundColor: '#F1F5F9'
+  },
+  reorderDeleteBtn: {
+    padding: 4,
+    borderRadius: 6,
+    backgroundColor: '#FEE2E2',
+    marginLeft: 2
+  },
+
+  // Setlist
+  setlistSongCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0'
+  },
+  setlistSongTop: {
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  setlistSongIndexBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  setlistSongIndexTxt: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#1A2D5A'
+  },
+  setlistSongTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A'
+  },
+  setlistSongLeader: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1
+  },
+  setlistActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4
+  },
+  setlistBadgesRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
-    marginTop: 10,
+    marginTop: 8
   },
-  quickAddPill: {
-    backgroundColor: '#EFF6FF',
+  setlistKeyBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6
+  },
+  setlistKeyBadgeTxt: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#92400E'
+  },
+  setlistTempoBadge: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6
+  },
+  setlistTempoBadgeTxt: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#065F46'
+  },
+  setlistMeterBadge: {
+    backgroundColor: '#F3E8FF',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6
+  },
+  setlistMeterBadgeTxt: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#6B21A8'
+  },
+  setlistOffertoryBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6
+  },
+  setlistOffertoryBadgeTxt: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#475569'
+  },
+  setlistNotesBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    padding: 8,
+    marginTop: 8,
+    gap: 2
+  },
+  setlistNoteTxt: {
+    fontSize: 10.5,
+    color: '#475569'
+  },
+
+  // Sermon Tab Card
+  sermonTabCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 16,
     borderWidth: 1,
-    borderColor: '#BFDBFE',
-    borderRadius: 12,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
+    borderColor: '#E2E8F0',
+    gap: 12
   },
-  quickAddPillTxt: {
+  sermonCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9'
+  },
+  sermonCardHeaderTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#1A2D5A'
+  },
+  sermonFieldRow: {
+    gap: 2
+  },
+  sermonFieldLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#1D4ED8',
+    color: '#64748B',
+    textTransform: 'uppercase'
   },
-}));
+  sermonFieldVal: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0F172A'
+  },
+  sermonEditBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#F1F5F9',
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginTop: 6
+  },
+  sermonEditBtnTxt: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#1A2D5A'
+  },
+
+  // Modals
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16
+  },
+  modalContentCard: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+    maxHeight: '85%'
+  },
+  modalCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14
+  },
+  modalCardTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: '#1A2D5A'
+  },
+  modalCardSub: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B'
+  },
+  inputLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+    marginBottom: 4,
+    textTransform: 'uppercase'
+  },
+  textInput: {
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    fontSize: 13,
+    color: '#0F172A',
+    backgroundColor: '#F8FAFC'
+  },
+  presetChip: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    marginRight: 6
+  },
+  presetChipActive: {
+    backgroundColor: '#1A2D5A'
+  },
+  presetChipTxt: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569'
+  },
+  presetChipTxtActive: {
+    color: '#FFFFFF'
+  },
+  templatePickerRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4
+  },
+  templateChoice: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    padding: 12,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  templateChoiceActive: {
+    borderColor: '#D4AF37',
+    backgroundColor: '#FFFDF5'
+  },
+  templateChoiceTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#475569',
+    marginTop: 4
+  },
+  templateChoiceTitleActive: {
+    color: '#1A2D5A'
+  },
+  templateChoiceSub: {
+    fontSize: 9.5,
+    color: '#94A3B8',
+    marginTop: 2,
+    textAlign: 'center'
+  },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 10
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 12,
+    color: '#0F172A',
+    padding: 0
+  },
+  memberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F8FAFC'
+  },
+  memberAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#1A2D5A',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  memberAvatarTxt: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 13
+  },
+  memberName: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0F172A'
+  },
+  memberPhone: {
+    fontSize: 11,
+    color: '#64748B'
+  },
+  memberSkillBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4
+  },
+  memberSkillBadgeTxt: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#92400E'
+  },
+  songSuggestionsBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    padding: 6,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 4
+  },
+  songSuggestionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+    borderRadius: 6
+  },
+  songSuggestionTxt: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1A2D5A'
+  },
+  songSuggestionKey: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#D4AF37'
+  },
+  modalBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9'
+  },
+  modalCancelBtn: {
+    flex: 1,
+    paddingVertical: 11,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center'
+  },
+  modalCancelBtnTxt: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B'
+  },
+  modalSubmitBtn: {
+    flex: 2,
+    paddingVertical: 11,
+    borderRadius: 10,
+    backgroundColor: '#1A2D5A',
+    alignItems: 'center'
+  },
+  modalSubmitBtnTxt: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#FFFFFF'
+  }
+});
