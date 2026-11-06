@@ -71,6 +71,15 @@ export interface ServicePlan {
   // Dynamic role assignments: map of roleId -> assigned member name(s)
   assignments: Record<string, string>;
   
+  // Member assignment tracking (backwards-compatible with assignments)
+  assignmentMemberIds?: Record<string, string>; // roleId -> member.id
+  assignmentStatus?: Record<string, 'pending' | 'confirmed' | 'declined'>; // roleId -> status
+  assignmentDeclineReasons?: Record<string, string>; // roleId -> reason
+  assignmentCallTimes?: Record<string, string>; // roleId -> e.g. "09:00 AM"
+  assignmentNotes?: Record<string, string>; // roleId -> special notes for member
+  rehearsalTime?: string; // e.g. "Saturday 6:00 PM"
+  rehearsalLocation?: string; // e.g. "Main Sanctuary"
+  
   // Sunday School specific classes if used
   sundaySchoolClasses?: {
     className: string;
@@ -220,14 +229,14 @@ class ServiceRosterService {
             for (const s of raw) {
               const formattedPlan: Partial<ServicePlan> = {
                 churchId,
-                churchName: 'We Christian',
+                churchName: 'Rhema Church',
                 date: s.date ? (s.date.includes('-') && s.date.length === 10 ? s.date : new Date().toISOString().split('T')[0]) : new Date().toISOString().split('T')[0],
                 serviceTitle: s.name || 'Sunday Service',
                 serviceType: s.category?.toLowerCase().includes('prayer') ? 'special_event' : 'sunday_service',
                 status: 'published',
                 startTime: s.startTime || '09:00',
                 endTime: s.endTime || '11:00',
-                location: 'We Christian Sanctuary',
+                location: 'Rhema Church Sanctuary',
                 assignments: {},
                 setlist: (s.songs || []).map((song: any, idx: number) => ({
                   id: song.id || String(idx + 1),
@@ -257,6 +266,92 @@ class ServiceRosterService {
     } catch (e) {
       console.error('[ServiceRosterService] getServicePlans error:', e);
       return [];
+    }
+  }
+
+  /**
+   * Get upcoming published service plans for congregation and members
+   */
+  async getUpcomingPublishedPlans(churchId: string, limitCount = 5): Promise<ServicePlan[]> {
+    try {
+      if (!churchId) return [];
+      const todayStr = new Date().toISOString().split('T')[0];
+      
+      try {
+        const snap = await firestore()
+          .collection('Rhema Church')
+          .doc(churchId)
+          .collection('service_plans')
+          .where('status', '==', 'published')
+          .where('date', '>=', todayStr)
+          .orderBy('date', 'asc')
+          .limit(limitCount)
+          .get();
+
+        if (!snap.empty) {
+          return snap.docs.map(doc => ({
+            id: doc.id,
+            churchId,
+            ...(doc.data() as any)
+          })) as ServicePlan[];
+        }
+      } catch (queryErr) {
+        // In case composite index on status + date is not created yet, fallback smoothly
+        console.warn('[ServiceRosterService] Indexed query fallback:', queryErr);
+      }
+
+      // Safe fallback: fetch latest plans and filter client-side
+      const allSnap = await firestore()
+        .collection('Rhema Church')
+        .doc(churchId)
+        .collection('service_plans')
+        .orderBy('date', 'desc')
+        .limit(20)
+        .get();
+
+      const filtered = allSnap.docs
+        .map(doc => ({ id: doc.id, churchId, ...(doc.data() as any) }))
+        .filter(p => p.status === 'published' && p.date && p.date >= todayStr)
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .slice(0, limitCount) as ServicePlan[];
+
+      return filtered;
+    } catch (e) {
+      console.error('[ServiceRosterService] getUpcomingPublishedPlans error:', e);
+      return [];
+    }
+  }
+
+  /**
+   * Member responds to their role assignment (Accept or Decline)
+   */
+  async respondToAssignment(
+    churchId: string,
+    planId: string,
+    roleId: string,
+    status: 'confirmed' | 'declined',
+    declineReason?: string
+  ): Promise<boolean> {
+    try {
+      if (!churchId || !planId || !roleId) return false;
+      const docRef = firestore()
+        .collection('Rhema Church')
+        .doc(churchId)
+        .collection('service_plans')
+        .doc(planId);
+
+      const updatePayload: any = {
+        [`assignmentStatus.${roleId}`]: status,
+        updatedAt: firestore.FieldValue.serverTimestamp()
+      };
+      if (declineReason) {
+        updatePayload[`assignmentDeclineReasons.${roleId}`] = declineReason;
+      }
+      await docRef.update(updatePayload);
+      return true;
+    } catch (e) {
+      console.error('[ServiceRosterService] respondToAssignment error:', e);
+      return false;
     }
   }
 
@@ -412,7 +507,7 @@ class ServiceRosterService {
     if (plan.assignments['fmh']) text += `• FMH: ${plan.assignments['fmh']}\n`;
     text += `\n`;
 
-    text += `📲 View full setlist details, chords & live run sheet in the WeChristian App!`;
+    text += `📲 View full setlist details, chords & live run sheet in the Rhema Church App!`;
     return text;
   }
 

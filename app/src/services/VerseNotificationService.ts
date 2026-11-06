@@ -554,26 +554,44 @@ class VerseNotificationService {
    * Immediately fires a single combined test notification containing both Telugu and English verses,
    * matching the exact server-side FCM push payload format.
    */
-  async triggerTestPair(verse?: DailyVerse): Promise<boolean> {
+  async triggerTestPair(verse?: DailyVerse, periodOverride?: string): Promise<boolean> {
     try {
+      const nowIst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+      const hour = nowIst.getHours();
+
+      let period = periodOverride;
+      if (!period) {
+        if (hour >= 5 && hour < 12) period = 'Morning';
+        else if (hour >= 12 && hour < 17) period = 'Afternoon';
+        else if (hour >= 17 && hour < 21) period = 'Evening';
+        else period = 'Night';
+      }
+
+      const periodTitles: Record<string, string> = {
+        Morning: "Good Morning · Today's Verse (నేటి వాక్యం)",
+        Afternoon: "Blessed Afternoon · Daily Peace (అనుదిన శాంతి)",
+        Evening: "Evening Prayer · Faith & Grace (విశ్వాసం - కృప)",
+        Night: "Good Night · God's Protection (దేవుని కాపుదల)",
+      };
+
+      const title = periodTitles[period] || periodTitles.Night;
+
       let targetVerse = verse;
       if (!targetVerse) {
         const todayVerses = await this.getTodayVerses(false);
-        targetVerse = todayVerses[0];
+        const periodIdx = ['Morning', 'Afternoon', 'Evening', 'Night'].indexOf(period);
+        targetVerse = todayVerses[periodIdx >= 0 ? periodIdx : 3] || todayVerses[0];
       }
       if (!targetVerse) {
         // Fallback verse if database is initializing
         targetVerse = {
           id: 'test_verse',
-          verseEn: 'The Lord is my shepherd; I shall not want.',
-          referenceEn: 'Psalms 23:1',
-          verseTe: 'యెహోవా నా కాపరి నాకు లేమి కలుగదు.',
-          referenceTe: 'కీర్తనలు 23:1',
+          verseEn: 'And the way of peace have they not known:',
+          referenceEn: 'Romans 3:17',
+          verseTe: 'శాంతిమార్గము వారెరుగరు.',
+          referenceTe: 'రోమీయులకు 3:17',
         };
       }
-
-      const period = 'Morning';
-      const title = "Good Morning · Today's Verse (నేటి వాక్యం)";
 
       const teVerse = (targetVerse.verseTe || targetVerse.verseEn || '').replace(/^["“”'‘]+|["“”'‘]+$/g, '').trim();
       const teRef = (targetVerse.referenceTe || targetVerse.referenceEn || '').trim();
