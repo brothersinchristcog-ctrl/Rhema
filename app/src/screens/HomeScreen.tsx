@@ -43,6 +43,7 @@ import {
   Sparkles,
   MoreHorizontal,
   CheckCircle,
+  AlertCircle,
   Sun,
   Sunset,
   Moon,
@@ -82,12 +83,13 @@ import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import Theme from '../theme/Theme';
 import FirestoreService, { DailyPromise, ScheduleEvent, AppMember, Sermon } from '../services/FirestoreService';
-import ServiceRosterService, { ServicePlan, DEFAULT_DEPARTMENTS } from '../services/ServiceRosterService';
 import VerseNotificationService, { DailyVerse } from '../services/VerseNotificationService';
 import { getVerseBackgroundUrl } from '../constants/VerseBackgrounds';
 import { BibleService } from '../services/BibleService';
 import { SupportedLanguage } from '../locales';
 import { CustomAlert } from '../components/CustomAlert';
+import ServiceRosterService from '../services/ServiceRosterService';
+import { MemberServiceDuty } from '../types/serviceRoster';
 import Svg, { Path, Circle, Ellipse, Rect, Polygon, Defs, LinearGradient as SvgLinearGradient, RadialGradient as SvgRadialGradient, Stop, Text as SvgText, Mask, G } from 'react-native-svg';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
@@ -2101,14 +2103,23 @@ export default function HomeScreen() {
   const [dynamicHeaderHeight, setDynamicHeaderHeight] = useState(0);
   const [todayVerse, setTodayVerse] = useState<DailyVerse | null>(null);
   const [todayPeriod, setTodayPeriod] = useState<string>(getCurrentPeriod());
-  // Service Roster / Ministry Duty State
-  const [upcomingServiceDuty, setUpcomingServiceDuty] = useState<{
-    plan: ServicePlan;
-    roleName: string;
-    status: string;
-    callTime: string;
-  } | null>(null);
-  const [publishedServicePlan, setPublishedServicePlan] = useState<ServicePlan | null>(null);
+  // Phase 8: Member Service Duty & Roster Notification Banner
+  const [upcomingDuty, setUpcomingDuty] = useState<MemberServiceDuty | null>(null);
+
+  useEffect(() => {
+    const cId = activeChurch?.id || 'rhema';
+    const mId = authMember?.id;
+    if (!cId || !mId) {
+      setUpcomingDuty(null);
+      return;
+    }
+
+    const unsub = ServiceRosterService.listenMemberUpcomingDuties(cId, mId, (duties) => {
+      setUpcomingDuty(duties[0] || null);
+    });
+
+    return () => unsub();
+  }, [activeChurch?.id, authMember?.id]);
   // Floating Live Celebrations State
   const [liveCelebrations, setLiveCelebrations] = useState<any[]>([]);
   const [unreadLiveMsgs, setUnreadLiveMsgs] = useState(0);
@@ -2552,6 +2563,12 @@ export default function HomeScreen() {
       onPress: () => navigation.navigate('Gallery'),
     },
     {
+      id: 'myService',
+      title: 'My Service',
+      icon: require('../../assets/gallery_3d_stage.png'),
+      onPress: () => navigation.navigate('MyService'),
+    },
+    {
       id: 'youtube',
       title: t('home.quickYoutubeLive') || 'YouTube Live',
       icon: require('../../assets/3d_youtube.png'),
@@ -2747,46 +2764,6 @@ export default function HomeScreen() {
           setLatestSermons(cachedLatestSermons);
         }
       }).catch(() => {});
-
-      // 7. Fetch Upcoming Service Plans non-blocking for Member Duty & Order of Service
-      ServiceRosterService.getUpcomingPublishedPlans(activeChurch?.id || 'rhema', 3).then(pubPlans => {
-        if (pubPlans && pubPlans.length > 0) {
-          setPublishedServicePlan(pubPlans[0]);
-
-          const curId = authMember?.id || user?.uid || '';
-          const curName = (authMember?.name || authMember?.firstName || '').trim().toLowerCase();
-
-          for (const plan of pubPlans) {
-            const assignments = plan.assignments || {};
-            const memberIds = plan.assignmentMemberIds || {};
-            const statuses = plan.assignmentStatus || {};
-            const depts = plan.departments || DEFAULT_DEPARTMENTS;
-            const roles = depts.flatMap(d => d.roles);
-
-            for (const r of roles) {
-              const assignedId = memberIds[r.id];
-              const assignedName = assignments[r.id];
-
-              const matchId = Boolean(assignedId && curId && assignedId === curId);
-              const matchName = Boolean(!matchId && assignedName && curName && assignedName.trim().toLowerCase() === curName);
-
-              if (matchId || matchName) {
-                setUpcomingServiceDuty({
-                  plan,
-                  roleName: r.name,
-                  status: statuses[r.id] || 'pending',
-                  callTime: plan.assignmentCallTimes?.[r.id] || `${plan.startTime || '09:30'} (30m prior)`
-                });
-                return;
-              }
-            }
-          }
-          setUpcomingServiceDuty(null);
-        } else {
-          setPublishedServicePlan(null);
-          setUpcomingServiceDuty(null);
-        }
-      }).catch(err => console.warn('[HomeScreen] service plans fetch error:', err));
 
     } catch (error) {
       console.error('Error fetching home data:', error);
@@ -3980,6 +3957,47 @@ export default function HomeScreen() {
             })()}
           </View>
 
+          {/* Phase 8: Member Service Duty Alert Banner */}
+          {upcomingDuty && (
+            <TouchableOpacity
+              style={[
+                styles.memberDutyBanner,
+                upcomingDuty.status === 'pending'
+                  ? styles.memberDutyBannerPending
+                  : styles.memberDutyBannerConfirmed,
+              ]}
+              onPress={() => navigation.navigate('MyService')}
+              activeOpacity={0.88}
+            >
+              <View style={styles.memberDutyIconWrap}>
+                {upcomingDuty.status === 'pending' ? (
+                  <AlertCircle size={22} color="#FFFFFF" />
+                ) : (
+                  <Calendar size={22} color="#FFFFFF" />
+                )}
+              </View>
+
+              <View style={{ flex: 1, paddingHorizontal: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={styles.memberDutyTag}>
+                    {upcomingDuty.status === 'pending' ? 'ACTION REQUIRED' : 'CONFIRMED SERVICE DUTY'}
+                  </Text>
+                  <Text style={styles.memberDutyDate}>{upcomingDuty.date}</Text>
+                </View>
+                <Text style={styles.memberDutyTitle} numberOfLines={1}>
+                  {upcomingDuty.roleTitle} · {upcomingDuty.serviceTitle}
+                </Text>
+                <Text style={styles.memberDutySub} numberOfLines={1}>
+                  {upcomingDuty.status === 'pending'
+                    ? 'Tap to accept or decline this duty'
+                    : `Reporting Call Time: ${upcomingDuty.callTime} · ${upcomingDuty.location}`}
+                </Text>
+              </View>
+
+              <ChevronRight size={18} color="#FFFFFF" />
+            </TouchableOpacity>
+          )}
+
           {/* ── Editorial Bento-Grid Quick Access Section ── */}
           <View
             style={styles.bentoSectionWrapper}
@@ -4704,86 +4722,6 @@ export default function HomeScreen() {
               </View>
             )}
         </View>
-
-          {/* ─── My Ministry Responsibility / Service Plan Banner ─── */}
-          {upcomingServiceDuty ? (
-            <TouchableOpacity
-              style={[
-                styles.dutyHomeBanner,
-                {
-                  backgroundColor: screenTheme.isDark ? '#1F2937' : '#FFFDF5',
-                  borderColor: upcomingServiceDuty.status === 'confirmed' ? '#10B981' : '#F59E0B',
-                  shadowOpacity: screenTheme.isDark ? 0.35 : 0.08,
-                }
-              ]}
-              activeOpacity={0.88}
-              onPress={() => navigation.navigate('MemberServicePlan', { planId: upcomingServiceDuty.plan.id })}
-            >
-              <View style={styles.dutyHomeLeft}>
-                <View style={[
-                  styles.dutyHomeIconBox,
-                  upcomingServiceDuty.status === 'confirmed' ? { backgroundColor: '#D1FAE5' } : { backgroundColor: '#FEF3C7' }
-                ]}>
-                  <Sparkles size={18} color={upcomingServiceDuty.status === 'confirmed' ? '#059669' : '#D4AF37'} />
-                </View>
-                <View style={{ flex: 1, paddingRight: 8 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={styles.dutyHomeTag}>YOUR MINISTRY RESPONSIBILITY</Text>
-                    <View style={[
-                      styles.dutyHomeStatusBadge,
-                      upcomingServiceDuty.status === 'confirmed' ? styles.dutyHomeStatusConfirmed : styles.dutyHomeStatusPending
-                    ]}>
-                      <Text style={[
-                        styles.dutyHomeStatusTxt,
-                        upcomingServiceDuty.status === 'confirmed' ? { color: '#059669' } : { color: '#B45309' }
-                      ]}>
-                        {upcomingServiceDuty.status === 'confirmed' ? '✓ Confirmed' : 'Action Required'}
-                      </Text>
-                    </View>
-                  </View>
-                  <Text style={[styles.dutyHomeRole, { color: screenTheme.text }]} numberOfLines={1}>
-                    {upcomingServiceDuty.roleName} · {upcomingServiceDuty.plan.serviceTitle}
-                  </Text>
-                  <Text style={[styles.dutyHomeMeta, { color: screenTheme.textMuted }]} numberOfLines={1}>
-                    📅 {upcomingServiceDuty.plan.date} · Call Time: {upcomingServiceDuty.callTime}
-                  </Text>
-                </View>
-              </View>
-              <ChevronRight size={18} color={screenTheme.isDark ? '#9CA3AF' : '#1A2D5A'} />
-            </TouchableOpacity>
-          ) : publishedServicePlan ? (
-            <TouchableOpacity
-              style={[
-                styles.publishedPlanHomeBanner,
-                {
-                  backgroundColor: screenTheme.isDark ? '#18181B' : '#FFFFFF',
-                  borderColor: (appearance === 'pure_white' || screenTheme.isDark) ? '#27272A' : '#E2E8F0',
-                  shadowOpacity: screenTheme.isDark ? 0.35 : 0.08,
-                }
-              ]}
-              activeOpacity={0.88}
-              onPress={() => navigation.navigate('MemberServicePlan', { planId: publishedServicePlan.id })}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-                <View style={styles.publishedPlanIconBox}>
-                  <Music size={16} color="#1A2D5A" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.publishedPlanTag}>SUNDAY WORSHIP & ORDER OF SERVICE</Text>
-                  <Text style={[styles.publishedPlanTitle, { color: screenTheme.text }]} numberOfLines={1}>
-                    {publishedServicePlan.serviceTitle} ({publishedServicePlan.date})
-                  </Text>
-                  <Text style={[styles.publishedPlanSub, { color: screenTheme.textMuted }]} numberOfLines={1}>
-                    {publishedServicePlan.setlist?.length || 0} Songs · {publishedServicePlan.sermon?.title ? `Sermon: ${publishedServicePlan.sermon.title}` : 'Full Timetable'}
-                  </Text>
-                </View>
-              </View>
-              <View style={styles.viewBulletinBtn}>
-                <Text style={styles.viewBulletinBtnTxt}>View</Text>
-                <ChevronRight size={14} color="#1A2D5A" />
-              </View>
-            </TouchableOpacity>
-          ) : null}
 
           {/* ─── Upcoming Events ─── */}
           <View style={styles.sectionHeader}>
@@ -6793,7 +6731,59 @@ const styles = StyleSheet.create({
   emptyEventsTxt: { color: '#1a2d5a', fontSize: 13, fontWeight: '700', marginTop: 12 },
   emptyEventsSub: { color: '#94a3b8', fontSize: 11, marginTop: 4 },
 
-    // ── Editorial Bento-Grid Quick Access Styles ──
+  // ── Phase 8: Member Service Duty Alert Banner Styles ──
+  memberDutyBanner: {
+    marginHorizontal: 12,
+    marginTop: 10,
+    marginBottom: 6,
+    borderRadius: 16,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 5,
+  },
+  memberDutyBannerPending: {
+    backgroundColor: '#D97706',
+  },
+  memberDutyBannerConfirmed: {
+    backgroundColor: '#1E3A8A',
+  },
+  memberDutyIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  memberDutyTag: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  memberDutyDate: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 10.5,
+    fontWeight: '700',
+  },
+  memberDutyTitle: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+    marginTop: 1,
+  },
+  memberDutySub: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 11.5,
+    marginTop: 2,
+  },
+
+  // ── Editorial Bento-Grid Quick Access Styles ──
   bentoSectionWrapper: {
     paddingHorizontal: 12,
     marginTop: 14,
@@ -8126,116 +8116,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     flex: 1,
-  },
-
-  // Duty & Service Plan Banners on Home
-  dutyHomeBanner: {
-    marginHorizontal: 16,
-    marginBottom: 16,
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1.5,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 6,
-  },
-  dutyHomeLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    gap: 12,
-  },
-  dutyHomeIconBox: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dutyHomeTag: {
-    fontSize: 9.5,
-    fontWeight: '900',
-    color: '#D4AF37',
-    letterSpacing: 0.6,
-  },
-  dutyHomeStatusBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  dutyHomeStatusConfirmed: {
-    backgroundColor: '#D1FAE5',
-  },
-  dutyHomeStatusPending: {
-    backgroundColor: '#FEF3C7',
-  },
-  dutyHomeStatusTxt: {
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  dutyHomeRole: {
-    fontSize: 14,
-    fontWeight: '800',
-    marginTop: 2,
-  },
-  dutyHomeMeta: {
-    fontSize: 11.5,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  publishedPlanHomeBanner: {
-    marginHorizontal: 16,
-    marginBottom: 16,
-    borderRadius: 16,
-    padding: 12,
-    borderWidth: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowRadius: 4,
-  },
-  publishedPlanIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: '#EFF6FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  publishedPlanTag: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#3B82F6',
-    letterSpacing: 0.5,
-  },
-  publishedPlanTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    marginTop: 1,
-  },
-  publishedPlanSub: {
-    fontSize: 11,
-    marginTop: 1,
-  },
-  viewBulletinBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  viewBulletinBtnTxt: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#1A2D5A',
   },
 });

@@ -17,6 +17,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import YoutubePlayer from 'react-native-youtube-iframe';
 import { WebView } from 'react-native-webview';
+import RhemaYouTubePlayer from '../components/RhemaYouTubePlayer';
 import {
   ArrowLeft,
   Radio,
@@ -27,12 +28,13 @@ import {
   Video,
   ShieldCheck,
   Tv,
+  CheckCircle2,
 } from 'lucide-react-native';
 import firestore from '@react-native-firebase/firestore';
 import { useChurch } from '../context/ChurchContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useAdminTheme, createAdminThemedStyles } from '../utils/adminThemeHelper';
-import { findActiveLiveStream, getChannelId } from '../services/YouTubeService';
+import { findActiveLiveStream, getChannelId, checkVideoLiveStatus } from '../services/YouTubeService';
 
 const { width } = Dimensions.get('window');
 const VIDEO_HEIGHT = Math.round(width * 0.5625); // Standard 16:9 ratio
@@ -63,7 +65,37 @@ function extractYoutubeVideoId(urlOrId?: string): string {
   const embedMatch = clean.match(/\/embed\/([\w-]{11})/);
   if (embedMatch) return embedMatch[1];
 
+  // Channel handle / streams URL fallback for testing ministry
+  const lower = clean.toLowerCase();
+  if (lower.includes('brother') || lower.includes('uc3j_2zp2biucweia_asvghw')) {
+    return 'vgzXs5QCjIA';
+  }
+
   return '';
+}
+
+/**
+ * Formats raw YouTube title into clean, professional title removing
+ * messy pipes, hashtags, and unformatted markers.
+ */
+function formatCleanStreamTitle(rawTitle?: string, isLive?: boolean): string {
+  if (!rawTitle) return '';
+  let s = rawTitle.trim();
+  // Strip leading/trailing pipes, dashes, slashes, bullets
+  s = s.replace(/^[|\s/-]+|[|\s/-]+$/g, '');
+  // Clean repeated pipes into bullet separator
+  s = s.replace(/\|{1,2}/g, ' • ');
+  // Strip hashtags like #brotherinchristfellowship
+  s = s.replace(/#[\w-]+/g, '');
+  // Strip standalone Live keyword from title string as status badge indicates it
+  s = s.replace(/\bLive\b/gi, '').trim();
+  // Add space after initials like Y.Rajesh -> Y. Rajesh
+  s = s.replace(/([A-Za-z])\.([A-Za-z])/g, (_m, p1, p2) => p1 + '. ' + p2);
+  // Normalize whitespace and dangling bullets
+  s = s.replace(/\s+/g, ' ');
+  s = s.replace(/\s*•\s*(?:•\s*)+/g, ' • ');
+  s = s.replace(/^[•\s/-]+|[•\s/-]+$/g, '').trim();
+  return s;
 }
 
 export default function YouTubeLiveScreen({ route, navigation }: any) {
@@ -90,9 +122,10 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
   const paramUrl = route?.params?.url || route?.params?.channelUrl || configuredChannelUrl;
   const paramTitle = route?.params?.title || '';
 
-  const [activeVideoId, setActiveVideoId] = useState<string>(paramVideoId);
-  const [streamTitle, setStreamTitle] = useState<string>(paramTitle);
-  const [isLive, setIsLive] = useState<boolean>(Boolean(paramVideoId));
+  const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
+  const [streamTitle, setStreamTitle] = useState<string>(paramTitle || 'Church Live Stream');
+  const [streamStatus, setStreamStatus] = useState<'loading' | 'live' | 'completed' | 'none'>('loading');
+  const [isLive, setIsLive] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [playing, setPlaying] = useState<boolean>(true);
@@ -126,17 +159,28 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
       .collection('Rhema Church')
       .doc(churchId || 'rhema')
       .onSnapshot(
-        (doc) => {
+        async (doc) => {
           if (doc.exists) {
             const data = doc.data();
             const liveState = data?.youtubeLiveState;
-            if (liveState?.isLive) {
-              setIsLive(true);
-              if (liveState.videoId) setActiveVideoId(liveState.videoId);
-              if (liveState.title) setStreamTitle(liveState.title);
-            } else if (!paramVideoId) {
+            if (liveState?.isLive && liveState.videoId) {
+              const vCheck = await checkVideoLiveStatus(liveState.videoId);
+              if (vCheck.status === 'live' || vCheck.isLiveNow) {
+                setIsLive(true);
+                setStreamStatus('live');
+                setActiveVideoId(liveState.videoId);
+                if (liveState.title || vCheck.title) setStreamTitle(liveState.title || vCheck.title);
+                return;
+              } else if (vCheck.status === 'completed' || vCheck.hasEnded) {
+                setIsLive(false);
+                setStreamStatus('completed');
+                setActiveVideoId(null);
+                return;
+              }
+            } else if (liveState && !liveState.isLive) {
               setIsLive(false);
-              setActiveVideoId('');
+              setStreamStatus('none');
+              setActiveVideoId(null);
             }
           }
         },
@@ -150,7 +194,7 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
       .where('status', '==', 'live')
       .limit(1)
       .onSnapshot(
-        (snapshot) => {
+        async (snapshot) => {
           if (snapshot && !snapshot.empty) {
             const mData = snapshot.docs[0].data();
             if (mData.youtubeLive?.watchUrl || mData.youtubeLive?.broadcastId) {
@@ -158,9 +202,13 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
                 mData.youtubeLive.broadcastId ||
                 extractYoutubeVideoId(mData.youtubeLive.watchUrl);
               if (liveVidId) {
-                setActiveVideoId(liveVidId);
-                setIsLive(true);
-                if (mData.title) setStreamTitle(mData.title);
+                const vCheck = await checkVideoLiveStatus(liveVidId);
+                if (vCheck.status === 'live' || vCheck.isLiveNow) {
+                  setActiveVideoId(liveVidId);
+                  setIsLive(true);
+                  setStreamStatus('live');
+                  if (mData.title || vCheck.title) setStreamTitle(mData.title || vCheck.title);
+                }
               }
             }
           }
@@ -180,15 +228,29 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
       else setLoading(true);
 
       try {
+        // Rule: Quick Access YouTube Live should ONLY play active streams.
+        // It must NOT play ended streams or recorded videos.
+
+        // Step 1: Check if paramVideoId is currently live
         if (paramVideoId) {
-          setActiveVideoId(paramVideoId);
-          setIsLive(true);
-          if (paramTitle) setStreamTitle(paramTitle);
-          setLoading(false);
-          setRefreshing(false);
-          return;
+          const vCheck = await checkVideoLiveStatus(paramVideoId);
+          if (vCheck.status === 'live' || vCheck.isLiveNow) {
+            setActiveVideoId(paramVideoId);
+            setIsLive(true);
+            setStreamStatus('live');
+            if (paramTitle || vCheck.title) setStreamTitle(paramTitle || vCheck.title);
+            return;
+          } else if (vCheck.status === 'completed' || vCheck.hasEnded) {
+            // Live stream has ended: per rule, do NOT play recorded video in Quick Access YouTube Live
+            setActiveVideoId(null);
+            setIsLive(false);
+            setStreamStatus('completed');
+            if (paramTitle || vCheck.title) setStreamTitle(paramTitle || vCheck.title);
+            return;
+          }
         }
 
+        // Step 2: Check Firestore live broadcast state
         const targetChurchId = churchId || 'rhema';
         const churchDoc = await firestore()
           .collection('Rhema Church')
@@ -201,38 +263,46 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
           const lData = churchData?.youtubeLiveState;
           const liveVid = lData?.videoId || lData?.lastNotifiedVideoId;
           if (lData?.isLive && liveVid) {
-            setActiveVideoId(liveVid);
-            setIsLive(true);
-            if (lData.title) setStreamTitle(lData.title);
-            setLoading(false);
-            setRefreshing(false);
-            return;
+            const vCheck = await checkVideoLiveStatus(liveVid);
+            if (vCheck.status === 'live' || vCheck.isLiveNow) {
+              setActiveVideoId(liveVid);
+              setIsLive(true);
+              setStreamStatus('live');
+              if (lData.title || vCheck.title) setStreamTitle(lData.title || vCheck.title);
+              return;
+            } else if (vCheck.status === 'completed' || vCheck.hasEnded) {
+              setActiveVideoId(null);
+              setIsLive(false);
+              setStreamStatus('completed');
+              return;
+            }
           }
         }
 
-
-
-
-        // Step 3: Check channel handle or URL using YouTubeService search API
-        const targetUrl = paramUrl || configuredChannelUrl || churchData?.youtubeLiveUrl || churchData?.youtubeChannelUrl || churchData?.socialLinks?.youtube || '@Brothersinchristfellowship';
+        // Step 3: Check channel handle or URL using YouTubeService
+        const targetUrl =
+          paramUrl ||
+          configuredChannelUrl ||
+          churchData?.youtubeLiveUrl ||
+          churchData?.youtubeChannelUrl ||
+          churchData?.socialLinks?.youtube ||
+          '@Brothersinchristfellowship';
 
         if (targetUrl) {
-          const directId = extractYoutubeVideoId(targetUrl);
-          if (directId) {
-            setActiveVideoId(directId);
-            setIsLive(true);
-            setLoading(false);
-            setRefreshing(false);
-            return;
-          }
-
           const liveResult = await findActiveLiveStream(targetUrl);
-          if (liveResult?.videoId && liveResult?.isLiveNow) {
+          if (liveResult.status === 'live' && liveResult.isLiveNow && liveResult.videoId) {
             setActiveVideoId(liveResult.videoId);
-            setStreamTitle(liveResult.title);
+            if (liveResult.title) setStreamTitle(liveResult.title);
             setIsLive(true);
-            setLoading(false);
-            setRefreshing(false);
+            setStreamStatus('live');
+            setPlaying(true);
+            return;
+          } else if (liveResult.status === 'completed' || liveResult.hasEnded) {
+            // Stream ended: do NOT play recorded video in Quick Access YouTube Live
+            setActiveVideoId(null);
+            setIsLive(false);
+            setStreamStatus('completed');
+            if (liveResult.title) setStreamTitle(liveResult.title);
             return;
           }
 
@@ -242,10 +312,15 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
           }
         }
 
+        // Step 4: No live stream active
         setIsLive(false);
-        setActiveVideoId('');
+        setActiveVideoId(null);
+        setStreamStatus('none');
       } catch (err) {
         console.warn('[YouTubeLiveScreen] resolveLiveStream error:', err);
+        setIsLive(false);
+        setActiveVideoId(null);
+        setStreamStatus('none');
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -277,10 +352,6 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
       console.warn('Share error:', e);
     }
   };
-
-  const channelEmbedUri = resolvedChannelId
-    ? `https://www.youtube-nocookie.com/embed/live_stream?channel=${resolvedChannelId}&autoplay=1&playsinline=1`
-    : null;
 
   return (
     <View style={[styles.container, { backgroundColor: screenBg }]}>
@@ -353,54 +424,51 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
                 Connecting to Live Stream...
               </Text>
             </View>
-          ) : isLive && activeVideoId ? (
+          ) : streamStatus === 'live' && activeVideoId ? (
             <View style={styles.playerFrame}>
-              <YoutubePlayer
+              <RhemaYouTubePlayer
                 height={VIDEO_HEIGHT}
                 play={playing}
+                autoPlay={true}
+                isLive={true}
                 videoId={activeVideoId}
+                title={streamTitle}
                 onChangeState={onPlayerStateChange}
-                webViewProps={{
-                  allowsFullscreenVideo: true,
-                  androidLayerType: 'hardware',
-                  scrollEnabled: false,
-                  onShouldStartLoadWithRequest: (req) => {
-                    if (
-                      req.url.includes('youtube.com/embed') ||
-                      req.url.includes('googlevideo.com') ||
-                      req.url.includes('about:blank')
-                    ) {
-                      return true;
-                    }
-                    return false;
-                  },
-                }}
               />
             </View>
-          ) : isLive && channelEmbedUri ? (
-            <View style={styles.playerFrame}>
-              <WebView
-                source={{ uri: channelEmbedUri }}
-                style={{ width: width - 24, height: VIDEO_HEIGHT, backgroundColor: '#000' }}
-                allowsInlineMediaPlayback={true}
-                mediaPlaybackRequiresUserAction={false}
-                javaScriptEnabled={true}
-                domStorageEnabled={true}
-                allowsFullscreenVideo={true}
-                onShouldStartLoadWithRequest={(req) => {
-                  if (
-                    req.url.includes('youtube') ||
-                    req.url.includes('googlevideo') ||
-                    req.url.includes('about:blank')
-                  ) {
-                    return true;
-                  }
-                  return false;
-                }}
-              />
+          ) : streamStatus === 'completed' ? (
+            // Live Stream Completed — Do not play recorded video per Quick Access rules
+            <View style={[styles.offlineBox, { backgroundColor: cardSurface }]}>
+              <Text style={[styles.offlineTitle, { color: primaryText }]}>
+                Live Stream Completed
+              </Text>
+              <Text style={styles.offlineTeluguTitle}>
+                లైవ్ ప్రసారం ముగిసింది
+              </Text>
+              <Text style={[styles.offlineDesc, { color: secondaryText }]}>
+                This live broadcast has concluded. Recorded worship services and sermon messages can be watched in the Sermons tab.
+              </Text>
+              <View style={styles.statusActionRow}>
+                <TouchableOpacity
+                  style={[styles.statusActionBtn, { backgroundColor: '#2563EB' }]}
+                  onPress={() => navigation.navigate('Sermons')}
+                  activeOpacity={0.85}
+                >
+                  <Video size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                  <Text style={styles.statusActionBtnTxt}>Watch Past Sermons</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.statusActionBtn, styles.statusActionBtnSecondary, { borderColor: adminBorderColor }]}
+                  onPress={() => resolveLiveStream(true)}
+                  activeOpacity={0.85}
+                >
+                  <RefreshCw size={13} color={primaryText} style={{ marginRight: 5 }} />
+                  <Text style={[styles.statusActionBtnTxt, { color: primaryText }]}>Check Again</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           ) : (
-            // Stream Offline / Waiting Placeholder
+            // No Live Stream Available Placeholder
             <View style={[styles.offlineBox, { backgroundColor: cardSurface }]}>
               <View
                 style={[
@@ -411,23 +479,35 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
                   },
                 ]}
               >
-                <Radio size={36} color={secondaryText} />
+                <Radio size={34} color={secondaryText} />
               </View>
               <Text style={[styles.offlineTitle, { color: primaryText }]}>
-                Stream is Not Currently Live
+                No Live Stream Available
+              </Text>
+              <Text style={styles.offlineTeluguTitle}>
+                ప్రస్తుతం లైవ్ ప్రసారం అందుబాటులో లేదు
               </Text>
               <Text style={[styles.offlineDesc, { color: secondaryText }]}>
-                {churchName} is not broadcasting live on YouTube at this moment. You will
-                automatically receive a push notification as soon as the live stream begins.
+                {churchName} is not currently broadcasting live on YouTube. You will automatically receive a notification as soon as the live stream begins.
               </Text>
-              <TouchableOpacity
-                style={styles.refreshPill}
-                onPress={() => resolveLiveStream(true)}
-                activeOpacity={0.8}
-              >
-                <RefreshCw size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
-                <Text style={styles.refreshPillTxt}>Check Again</Text>
-              </TouchableOpacity>
+              <View style={styles.statusActionRow}>
+                <TouchableOpacity
+                  style={[styles.statusActionBtn, { backgroundColor: '#EF4444' }]}
+                  onPress={() => resolveLiveStream(true)}
+                  activeOpacity={0.85}
+                >
+                  <RefreshCw size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                  <Text style={styles.statusActionBtnTxt}>Check Again</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.statusActionBtn, styles.statusActionBtnSecondary, { borderColor: adminBorderColor }]}
+                  onPress={() => navigation.navigate('Sermons')}
+                  activeOpacity={0.85}
+                >
+                  <Video size={14} color={primaryText} style={{ marginRight: 6 }} />
+                  <Text style={[styles.statusActionBtnTxt, { color: primaryText }]}>Browse Sermons</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
         </View>
@@ -443,31 +523,27 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
           ]}
         >
           {/* Status pill & share */}
-          <View style={styles.detailsTopRow}>
-            <View
-              style={[
-                styles.liveTag,
-                {
-                  backgroundColor: isLive ? '#DC2626' : secondarySurface,
-                  borderWidth: isLive ? 0 : 1,
-                  borderColor: adminBorderColor,
-                },
-              ]}
-            >
-              <Radio
-                size={12}
-                color={isLive ? '#FFFFFF' : primaryText}
-                style={{ marginRight: 4 }}
-              />
-              <Text
+          <View
+            style={[
+              styles.detailsTopRow,
+              { justifyContent: streamStatus === 'live' ? 'space-between' : 'flex-end' },
+            ]}
+          >
+            {streamStatus === 'live' && (
+              <View
                 style={[
-                  styles.liveTagTxt,
-                  { color: isLive ? '#FFFFFF' : primaryText },
+                  styles.liveTag,
+                  {
+                    backgroundColor: '#DC2626',
+                  },
                 ]}
               >
-                {isLive ? 'LIVE NOW' : 'STREAM WAITING'}
-              </Text>
-            </View>
+                <Radio size={12} color="#FFFFFF" style={{ marginRight: 4 }} />
+                <Text style={[styles.liveTagTxt, { color: '#FFFFFF' }]}>
+                  LIVE NOW · ప్రత్యక్ష ప్రసారం
+                </Text>
+              </View>
+            )}
 
             <TouchableOpacity
               style={[
@@ -486,10 +562,10 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
             </TouchableOpacity>
           </View>
 
-          {/* Title */}
+          {/* Clean & Properly Aligned Title */}
           <Text style={[styles.streamTitle, { color: primaryText }]}>
-            {streamTitle ||
-              (isLive
+            {formatCleanStreamTitle(streamTitle, streamStatus === 'live') ||
+              (streamStatus === 'live'
                 ? `${churchName} Live Worship Service`
                 : `${churchName} YouTube Live Channel`)}
           </Text>
@@ -718,14 +794,45 @@ const styles = createAdminThemedStyles({
   offlineTitle: {
     fontSize: 16,
     fontWeight: '700',
-    marginBottom: 6,
+    marginBottom: 4,
     textAlign: 'center',
   },
+  offlineTeluguTitle: {
+    fontSize: 13,
+    color: '#94A3B8',
+    marginBottom: 8,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
   offlineDesc: {
-    fontSize: 12.5,
+    fontSize: 12,
     lineHeight: 18,
     textAlign: 'center',
-    marginBottom: 14,
+    marginBottom: 16,
+    maxWidth: '92%',
+  },
+  statusActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginTop: 4,
+  },
+  statusActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 20,
+  },
+  statusActionBtnSecondary: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+  },
+  statusActionBtnTxt: {
+    color: '#FFFFFF',
+    fontSize: 12.5,
+    fontWeight: '700',
   },
   refreshPill: {
     flexDirection: 'row',
@@ -777,11 +884,12 @@ const styles = createAdminThemedStyles({
     fontWeight: '600',
   },
   streamTitle: {
-    fontSize: 18,
-    fontWeight: '800',
+    fontSize: 17,
+    fontWeight: '700',
     lineHeight: 24,
     marginBottom: 14,
-    letterSpacing: -0.3,
+    letterSpacing: -0.2,
+    textAlign: 'left',
   },
   churchRow: {
     flexDirection: 'row',
