@@ -408,7 +408,7 @@ export default function AdminServicePlanner({ navigation }: any) {
       const planPayload: Partial<ServicePlan> = {
         ...(selectedPlan?.id ? { id: selectedPlan.id } : {}),
         churchId: activeChurch.id,
-        churchName: activeChurch.name || 'We Christian',
+        churchName: activeChurch.name || 'Rhema Church',
         date: planFormDate.trim(),
         serviceTitle: planFormTitle.trim(),
         serviceType: planFormType,
@@ -1467,7 +1467,7 @@ export default function AdminServicePlanner({ navigation }: any) {
             <View style={{ gap: 14 }}>
               <View style={styles.bulletinPreviewCard}>
                 <View style={styles.bulletinHeader}>
-                  <Text style={styles.bulletinChurchName}>{(activeChurch?.name || 'WE CHRISTIAN').toUpperCase()}</Text>
+                  <Text style={styles.bulletinChurchName}>{(activeChurch?.name || 'RHEMA CHURCH').toUpperCase()}</Text>
                   <Text style={styles.bulletinServiceTitle}>{selectedPlan.serviceTitle}</Text>
                   <Text style={styles.bulletinDate}>📅 {selectedPlan.date} · ⏰ {selectedPlan.startTime || '09:00'} - {selectedPlan.endTime || '11:00'}</Text>
                 </View>

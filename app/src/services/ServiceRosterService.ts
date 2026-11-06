@@ -229,14 +229,14 @@ class ServiceRosterService {
             for (const s of raw) {
               const formattedPlan: Partial<ServicePlan> = {
                 churchId,
-                churchName: 'We Christian',
+                churchName: 'Rhema Church',
                 date: s.date ? (s.date.includes('-') && s.date.length === 10 ? s.date : new Date().toISOString().split('T')[0]) : new Date().toISOString().split('T')[0],
                 serviceTitle: s.name || 'Sunday Service',
                 serviceType: s.category?.toLowerCase().includes('prayer') ? 'special_event' : 'sunday_service',
                 status: 'published',
                 startTime: s.startTime || '09:00',
                 endTime: s.endTime || '11:00',
-                location: 'We Christian Sanctuary',
+                location: 'Rhema Church Sanctuary',
                 assignments: {},
                 setlist: (s.songs || []).map((song: any, idx: number) => ({
                   id: song.id || String(idx + 1),
@@ -507,7 +507,7 @@ class ServiceRosterService {
     if (plan.assignments['fmh']) text += `• FMH: ${plan.assignments['fmh']}\n`;
     text += `\n`;
 
-    text += `📲 View full setlist details, chords & live run sheet in the WeChristian App!`;
+    text += `📲 View full setlist details, chords & live run sheet in the Rhema Church App!`;
     return text;
   }
 
