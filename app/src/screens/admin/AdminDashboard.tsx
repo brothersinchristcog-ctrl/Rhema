@@ -63,6 +63,7 @@ const CARD_BACKGROUNDS: Record<string, any> = {
   'Church Settings': require('../../../assets/admin_cards/church_settings.png'),
   'Church Branches': require('../../../assets/admin_cards/church_branches.jpg'),
   'Attendance': require('../../../assets/admin_cards/attendance.png'),
+  'Service Roster': require('../../../assets/admin_cards/schedule.png'),
   'Care Cells': require('../../../assets/admin_cards/members.png'),
   'Online Meetings': require('../../../assets/admin_cards/online_meetings.jpg'),
   'New Online Meeting': require('../../../assets/admin_cards/new_online_meeting.png'),
@@ -96,7 +97,7 @@ const CATEGORIES = [
     icon: Calendar,
     color: '#831843', // Deep Ruby/Berry for a festive, elegant look with high contrast
     darkColor: '#F472B6',
-    keywords: ['Event', 'Celebration']
+    keywords: ['Event', 'Celebration', 'Service Roster']
   },
   {
     title: 'Communication',

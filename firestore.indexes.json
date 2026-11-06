@@ -1,6 +1,20 @@
 {
   "indexes": [
     {
+      "collectionGroup": "servicePlans",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "attendanceRequests",
       "queryScope": "COLLECTION",
       "fields": [

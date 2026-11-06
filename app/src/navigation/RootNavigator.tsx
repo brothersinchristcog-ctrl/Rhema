@@ -71,6 +71,8 @@ import AIAssistantModal from '../screens/admin/pastor_events/AIAssistantModal';
 import OnlineMeetingsScreen from '../screens/OnlineMeetingsScreen';
 import OnlineMeetingDetailScreen from '../screens/OnlineMeetingDetailScreen';
 import YouTubeLiveScreen from '../screens/YouTubeLiveScreen';
+import LiveStageHUD from '../screens/LiveStageHUD';
+import MyServiceScreen from '../screens/MyServiceScreen';
 import MemberGalleryNavigator from '../screens/gallery/MemberGalleryNavigator';
 
 // Bible Quiz Screens
@@ -768,7 +770,7 @@ function Navigation() {
           } else if (type === 'prayer_request_public') {
             navigationRef.navigate('PrayerWall', { tab: 'public_requests' });
           } else if (type === 'youtube_live') {
-            const liveUrl = data.url || 'https://www.youtube.com/@Brothersinchristfellowship/live';
+            const liveUrl = data.url || '';
             const videoId = data.videoId || '';
             const title = data.title || '';
             const targetChurchId = data.churchId || 'rhema';
@@ -1031,6 +1033,9 @@ function Navigation() {
             <Stack.Screen name="OnlineMeetings" component={renderPremium(OnlineMeetingsScreen)} />
             <Stack.Screen name="OnlineMeetingDetail" component={renderPremium(OnlineMeetingDetailScreen)} />
             <Stack.Screen name="YouTubeLive" component={renderPremium(YouTubeLiveScreen)} />
+            <Stack.Screen name="LiveStageHUD" component={renderPremium(LiveStageHUD)} />
+            <Stack.Screen name="MyService" component={renderPremium(MyServiceScreen)} />
+            <Stack.Screen name="MyServiceDuties" component={renderPremium(MyServiceScreen)} />
             <Stack.Screen name="LiveCelebrationsChat" component={renderPremium(LiveCelebrationsChat)} />
             <Stack.Screen name="Gallery" component={renderPremium(MemberGalleryNavigator)} />
             <Stack.Screen name="VerseOfTheDay" component={renderPremium(VerseOfTheDayScreen)} />

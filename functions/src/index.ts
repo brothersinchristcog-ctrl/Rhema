@@ -1772,3 +1772,12 @@ export {
   pushCareCellPrayerRequest,
   pushCareCellVisit,
 } from './notifications.js';
+
+export {
+  onServiceAssignmentQueueDispatched,
+  onServiceAssignmentResponded,
+  checkServiceAssignmentTimeoutsCron,
+  sendServiceRosterRemindersCron,
+  triggerCheckRosterTimeoutsHttp,
+  onServiceRehearsalCreated,
+} from './rosterNotifications.js';

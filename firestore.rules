@@ -489,6 +489,49 @@ service cloud.firestore {
         allow read, write: if isAuthenticated();
       }
 
+      // Service Roster & Worship Operations Management Module
+      match /servicePlans/{planId} {
+        allow read: if isAuthenticated();
+        allow write: if isChurchAdmin();
+
+        match /assignmentQueues/{queueId} {
+          allow read: if isAuthenticated();
+          allow create, delete: if isChurchAdmin();
+          allow update: if isAuthenticated();
+        }
+
+        match /rehearsals/{rehearsalId} {
+          allow read: if isAuthenticated();
+          allow write: if isChurchAdmin();
+        }
+
+        match /attendance/{attendanceId} {
+          allow read: if isAuthenticated();
+          allow write: if isChurchAdmin();
+        }
+      }
+
+      match /serviceTemplates/{templateId} {
+        allow read: if isAuthenticated();
+        allow write: if isChurchAdmin();
+      }
+
+      match /ministryTeams/{teamId} {
+        allow read: if isAuthenticated();
+        allow write: if isChurchAdmin();
+      }
+
+      match /memberSkills/{skillId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && request.resource.data.memberId == request.auth.uid;
+        allow update, delete: if isChurchAdmin();
+      }
+
+      match /memberAvailability/{availabilityId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated() && (request.resource.data.memberId == request.auth.uid || isChurchAdmin());
+      }
+
       // Any other church subcollection: authenticated members can read, admins can write
       match /{subcollection}/{docId} {
         allow read: if isAuthenticated();

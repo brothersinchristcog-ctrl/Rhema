@@ -87,6 +87,7 @@ import AdminBaptism from '../screens/admin/AdminBaptism';
 import ChurchService from '../services/ChurchService';
 import AdminDailyVersesManager from '../screens/admin/AdminDailyVersesManager';
 import AdminCareCellsHub from '../screens/admin/care_cells/AdminCareCellsHub';
+import AdminServicePlanner from '../screens/admin/AdminServicePlanner';
 import CareCellService from '../services/CareCellService';
 import { RHEMA_CHURCH_ID } from '../constants/ChurchConfig';
 
@@ -290,6 +291,7 @@ export default function AdminNavigator({ navigation, route }: any) {
     { name: 'Prayers', icon: Heart, component: AdminPrayerModeration },
     { name: 'Attendance', icon: ClipboardCheck, component: AdminAttendance },
     ...(isSuperAdminUser || hasCareCellAccess ? [{ name: 'Care Cells', icon: HeartHandshake, component: AdminCareCellsHub }] : []),
+    { name: 'Service Roster', icon: CalendarDays, component: AdminServicePlanner },
     { name: 'Members', icon: Users, component: AdminMembers },
     { name: 'Celebrations', icon: Gift, component: AdminCelebrations },
     { name: 'Gallery', icon: ImageIcon, component: AdminGalleryNavigator },

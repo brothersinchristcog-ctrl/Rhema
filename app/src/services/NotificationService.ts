@@ -117,7 +117,7 @@ class NotificationService {
       const pushTitle = title || data?.pushTitle || data?.title || '🔴 We Are LIVE Now!';
       const pushBody = body || data?.pushBody || data?.body || "Join us for a time of worship, prayer and God's Word. Our live service is now streaming on YouTube. Be blessed!";
 
-      const liveUrl = (data && data.url) || 'https://www.youtube.com/@Brothersinchristfellowship/live';
+      const liveUrl = (data && data.url) || '';
       const videoId = (data && data.videoId) || '';
       const churchId = (data && data.churchId) || 'rhema';
 
@@ -249,7 +249,7 @@ class NotificationService {
           break;
         }
         case 'youtube_live': {
-          const liveUrl = (remoteMessage?.data && remoteMessage.data.url) || rawData?.url || 'https://www.youtube.com/@Brothersinchristfellowship/live';
+          const liveUrl = (remoteMessage?.data && remoteMessage.data.url) || rawData?.url || '';
           const videoId = rawData.videoId || (remoteMessage?.data && remoteMessage.data.videoId) || '';
           const title = rawData.title || (remoteMessage?.notification && remoteMessage.notification.title) || '';
           const targetChurchId = rawData.churchId || (remoteMessage?.data && remoteMessage.data.churchId) || 'rhema';

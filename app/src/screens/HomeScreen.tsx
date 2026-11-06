@@ -43,6 +43,7 @@ import {
   Sparkles,
   MoreHorizontal,
   CheckCircle,
+  AlertCircle,
   Sun,
   Sunset,
   Moon,
@@ -87,6 +88,8 @@ import { getVerseBackgroundUrl } from '../constants/VerseBackgrounds';
 import { BibleService } from '../services/BibleService';
 import { SupportedLanguage } from '../locales';
 import { CustomAlert } from '../components/CustomAlert';
+import ServiceRosterService from '../services/ServiceRosterService';
+import { MemberServiceDuty } from '../types/serviceRoster';
 import Svg, { Path, Circle, Ellipse, Rect, Polygon, Defs, LinearGradient as SvgLinearGradient, RadialGradient as SvgRadialGradient, Stop, Text as SvgText, Mask, G } from 'react-native-svg';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
@@ -2100,6 +2103,23 @@ export default function HomeScreen() {
   const [dynamicHeaderHeight, setDynamicHeaderHeight] = useState(0);
   const [todayVerse, setTodayVerse] = useState<DailyVerse | null>(null);
   const [todayPeriod, setTodayPeriod] = useState<string>(getCurrentPeriod());
+  // Phase 8: Member Service Duty & Roster Notification Banner
+  const [upcomingDuty, setUpcomingDuty] = useState<MemberServiceDuty | null>(null);
+
+  useEffect(() => {
+    const cId = activeChurch?.id || 'rhema';
+    const mId = authMember?.id;
+    if (!cId || !mId) {
+      setUpcomingDuty(null);
+      return;
+    }
+
+    const unsub = ServiceRosterService.listenMemberUpcomingDuties(cId, mId, (duties) => {
+      setUpcomingDuty(duties[0] || null);
+    });
+
+    return () => unsub();
+  }, [activeChurch?.id, authMember?.id]);
   // Floating Live Celebrations State
   const [liveCelebrations, setLiveCelebrations] = useState<any[]>([]);
   const [unreadLiveMsgs, setUnreadLiveMsgs] = useState(0);
@@ -2541,6 +2561,12 @@ export default function HomeScreen() {
       title: t('home.gallery') || 'Gallery',
       icon: require('../../assets/3d_gallery.png'),
       onPress: () => navigation.navigate('Gallery'),
+    },
+    {
+      id: 'myService',
+      title: 'My Service',
+      icon: require('../../assets/gallery_3d_stage.png'),
+      onPress: () => navigation.navigate('MyService'),
     },
     {
       id: 'youtube',
@@ -3930,6 +3956,47 @@ export default function HomeScreen() {
               );
             })()}
           </View>
+
+          {/* Phase 8: Member Service Duty Alert Banner */}
+          {upcomingDuty && (
+            <TouchableOpacity
+              style={[
+                styles.memberDutyBanner,
+                upcomingDuty.status === 'pending'
+                  ? styles.memberDutyBannerPending
+                  : styles.memberDutyBannerConfirmed,
+              ]}
+              onPress={() => navigation.navigate('MyService')}
+              activeOpacity={0.88}
+            >
+              <View style={styles.memberDutyIconWrap}>
+                {upcomingDuty.status === 'pending' ? (
+                  <AlertCircle size={22} color="#FFFFFF" />
+                ) : (
+                  <Calendar size={22} color="#FFFFFF" />
+                )}
+              </View>
+
+              <View style={{ flex: 1, paddingHorizontal: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={styles.memberDutyTag}>
+                    {upcomingDuty.status === 'pending' ? 'ACTION REQUIRED' : 'CONFIRMED SERVICE DUTY'}
+                  </Text>
+                  <Text style={styles.memberDutyDate}>{upcomingDuty.date}</Text>
+                </View>
+                <Text style={styles.memberDutyTitle} numberOfLines={1}>
+                  {upcomingDuty.roleTitle} · {upcomingDuty.serviceTitle}
+                </Text>
+                <Text style={styles.memberDutySub} numberOfLines={1}>
+                  {upcomingDuty.status === 'pending'
+                    ? 'Tap to accept or decline this duty'
+                    : `Reporting Call Time: ${upcomingDuty.callTime} · ${upcomingDuty.location}`}
+                </Text>
+              </View>
+
+              <ChevronRight size={18} color="#FFFFFF" />
+            </TouchableOpacity>
+          )}
 
           {/* ── Editorial Bento-Grid Quick Access Section ── */}
           <View
@@ -6664,7 +6731,59 @@ const styles = StyleSheet.create({
   emptyEventsTxt: { color: '#1a2d5a', fontSize: 13, fontWeight: '700', marginTop: 12 },
   emptyEventsSub: { color: '#94a3b8', fontSize: 11, marginTop: 4 },
 
-    // ── Editorial Bento-Grid Quick Access Styles ──
+  // ── Phase 8: Member Service Duty Alert Banner Styles ──
+  memberDutyBanner: {
+    marginHorizontal: 12,
+    marginTop: 10,
+    marginBottom: 6,
+    borderRadius: 16,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 5,
+  },
+  memberDutyBannerPending: {
+    backgroundColor: '#D97706',
+  },
+  memberDutyBannerConfirmed: {
+    backgroundColor: '#1E3A8A',
+  },
+  memberDutyIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  memberDutyTag: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  memberDutyDate: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 10.5,
+    fontWeight: '700',
+  },
+  memberDutyTitle: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+    marginTop: 1,
+  },
+  memberDutySub: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 11.5,
+    marginTop: 2,
+  },
+
+  // ── Editorial Bento-Grid Quick Access Styles ──
   bentoSectionWrapper: {
     paddingHorizontal: 12,
     marginTop: 14,
