@@ -506,22 +506,34 @@ export default function AdminServicePlanner({ navigation }: any) {
   };
 
   // Save Assignment update
-  const handleAssignRole = async (personName: string) => {
+  const handleAssignRole = async (personName: string, memberId?: string) => {
     if (!selectedPlan || !assigningRoleId || !activeChurch?.id) return;
     const updatedAssignments = {
       ...selectedPlan.assignments,
       [assigningRoleId]: personName
     };
+    const updatedMemberIds = {
+      ...(selectedPlan.assignmentMemberIds || {}),
+      ...(memberId ? { [assigningRoleId]: memberId } : {})
+    };
+    const updatedStatus = {
+      ...(selectedPlan.assignmentStatus || {}),
+      [assigningRoleId]: 'pending' as const
+    };
     const updatedPlan: ServicePlan = {
       ...selectedPlan,
-      assignments: updatedAssignments
+      assignments: updatedAssignments,
+      assignmentMemberIds: updatedMemberIds,
+      assignmentStatus: updatedStatus
     };
     setSelectedPlan(updatedPlan);
     setShowMemberPickerModal(false);
     setCustomAssigneeName('');
     await ServiceRosterService.saveServicePlan(activeChurch.id, {
       id: selectedPlan.id,
-      assignments: updatedAssignments
+      assignments: updatedAssignments,
+      assignmentMemberIds: updatedMemberIds,
+      assignmentStatus: updatedStatus
     });
   };
 
@@ -1578,7 +1590,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                   <TouchableOpacity
                     key={`mem_${m.id || mIdx}`}
                     style={styles.memberPickerRow}
-                    onPress={() => handleAssignRole(name)}
+                    onPress={() => handleAssignRole(name, m.id)}
                   >
                     <View style={styles.memberAvatar}>
                       <Text style={styles.memberAvatarTxt}>{name.charAt(0).toUpperCase()}</Text>

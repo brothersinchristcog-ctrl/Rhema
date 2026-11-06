@@ -82,6 +82,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import Theme from '../theme/Theme';
 import FirestoreService, { DailyPromise, ScheduleEvent, AppMember, Sermon } from '../services/FirestoreService';
+import ServiceRosterService, { ServicePlan, DEFAULT_DEPARTMENTS } from '../services/ServiceRosterService';
 import VerseNotificationService, { DailyVerse } from '../services/VerseNotificationService';
 import { getVerseBackgroundUrl } from '../constants/VerseBackgrounds';
 import { BibleService } from '../services/BibleService';
@@ -2100,6 +2101,14 @@ export default function HomeScreen() {
   const [dynamicHeaderHeight, setDynamicHeaderHeight] = useState(0);
   const [todayVerse, setTodayVerse] = useState<DailyVerse | null>(null);
   const [todayPeriod, setTodayPeriod] = useState<string>(getCurrentPeriod());
+  // Service Roster / Ministry Duty State
+  const [upcomingServiceDuty, setUpcomingServiceDuty] = useState<{
+    plan: ServicePlan;
+    roleName: string;
+    status: string;
+    callTime: string;
+  } | null>(null);
+  const [publishedServicePlan, setPublishedServicePlan] = useState<ServicePlan | null>(null);
   // Floating Live Celebrations State
   const [liveCelebrations, setLiveCelebrations] = useState<any[]>([]);
   const [unreadLiveMsgs, setUnreadLiveMsgs] = useState(0);
@@ -2738,6 +2747,46 @@ export default function HomeScreen() {
           setLatestSermons(cachedLatestSermons);
         }
       }).catch(() => {});
+
+      // 7. Fetch Upcoming Service Plans non-blocking for Member Duty & Order of Service
+      ServiceRosterService.getUpcomingPublishedPlans(activeChurch?.id || 'rhema', 3).then(pubPlans => {
+        if (pubPlans && pubPlans.length > 0) {
+          setPublishedServicePlan(pubPlans[0]);
+
+          const curId = authMember?.id || user?.uid || '';
+          const curName = (authMember?.name || authMember?.firstName || '').trim().toLowerCase();
+
+          for (const plan of pubPlans) {
+            const assignments = plan.assignments || {};
+            const memberIds = plan.assignmentMemberIds || {};
+            const statuses = plan.assignmentStatus || {};
+            const depts = plan.departments || DEFAULT_DEPARTMENTS;
+            const roles = depts.flatMap(d => d.roles);
+
+            for (const r of roles) {
+              const assignedId = memberIds[r.id];
+              const assignedName = assignments[r.id];
+
+              const matchId = Boolean(assignedId && curId && assignedId === curId);
+              const matchName = Boolean(!matchId && assignedName && curName && assignedName.trim().toLowerCase() === curName);
+
+              if (matchId || matchName) {
+                setUpcomingServiceDuty({
+                  plan,
+                  roleName: r.name,
+                  status: statuses[r.id] || 'pending',
+                  callTime: plan.assignmentCallTimes?.[r.id] || `${plan.startTime || '09:30'} (30m prior)`
+                });
+                return;
+              }
+            }
+          }
+          setUpcomingServiceDuty(null);
+        } else {
+          setPublishedServicePlan(null);
+          setUpcomingServiceDuty(null);
+        }
+      }).catch(err => console.warn('[HomeScreen] service plans fetch error:', err));
 
     } catch (error) {
       console.error('Error fetching home data:', error);
@@ -4655,6 +4704,86 @@ export default function HomeScreen() {
               </View>
             )}
         </View>
+
+          {/* ─── My Ministry Responsibility / Service Plan Banner ─── */}
+          {upcomingServiceDuty ? (
+            <TouchableOpacity
+              style={[
+                styles.dutyHomeBanner,
+                {
+                  backgroundColor: screenTheme.isDark ? '#1F2937' : '#FFFDF5',
+                  borderColor: upcomingServiceDuty.status === 'confirmed' ? '#10B981' : '#F59E0B',
+                  shadowOpacity: screenTheme.isDark ? 0.35 : 0.08,
+                }
+              ]}
+              activeOpacity={0.88}
+              onPress={() => navigation.navigate('MemberServicePlan', { planId: upcomingServiceDuty.plan.id })}
+            >
+              <View style={styles.dutyHomeLeft}>
+                <View style={[
+                  styles.dutyHomeIconBox,
+                  upcomingServiceDuty.status === 'confirmed' ? { backgroundColor: '#D1FAE5' } : { backgroundColor: '#FEF3C7' }
+                ]}>
+                  <Sparkles size={18} color={upcomingServiceDuty.status === 'confirmed' ? '#059669' : '#D4AF37'} />
+                </View>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={styles.dutyHomeTag}>YOUR MINISTRY RESPONSIBILITY</Text>
+                    <View style={[
+                      styles.dutyHomeStatusBadge,
+                      upcomingServiceDuty.status === 'confirmed' ? styles.dutyHomeStatusConfirmed : styles.dutyHomeStatusPending
+                    ]}>
+                      <Text style={[
+                        styles.dutyHomeStatusTxt,
+                        upcomingServiceDuty.status === 'confirmed' ? { color: '#059669' } : { color: '#B45309' }
+                      ]}>
+                        {upcomingServiceDuty.status === 'confirmed' ? '✓ Confirmed' : 'Action Required'}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={[styles.dutyHomeRole, { color: screenTheme.text }]} numberOfLines={1}>
+                    {upcomingServiceDuty.roleName} · {upcomingServiceDuty.plan.serviceTitle}
+                  </Text>
+                  <Text style={[styles.dutyHomeMeta, { color: screenTheme.textMuted }]} numberOfLines={1}>
+                    📅 {upcomingServiceDuty.plan.date} · Call Time: {upcomingServiceDuty.callTime}
+                  </Text>
+                </View>
+              </View>
+              <ChevronRight size={18} color={screenTheme.isDark ? '#9CA3AF' : '#1A2D5A'} />
+            </TouchableOpacity>
+          ) : publishedServicePlan ? (
+            <TouchableOpacity
+              style={[
+                styles.publishedPlanHomeBanner,
+                {
+                  backgroundColor: screenTheme.isDark ? '#18181B' : '#FFFFFF',
+                  borderColor: (appearance === 'pure_white' || screenTheme.isDark) ? '#27272A' : '#E2E8F0',
+                  shadowOpacity: screenTheme.isDark ? 0.35 : 0.08,
+                }
+              ]}
+              activeOpacity={0.88}
+              onPress={() => navigation.navigate('MemberServicePlan', { planId: publishedServicePlan.id })}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                <View style={styles.publishedPlanIconBox}>
+                  <Music size={16} color="#1A2D5A" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.publishedPlanTag}>SUNDAY WORSHIP & ORDER OF SERVICE</Text>
+                  <Text style={[styles.publishedPlanTitle, { color: screenTheme.text }]} numberOfLines={1}>
+                    {publishedServicePlan.serviceTitle} ({publishedServicePlan.date})
+                  </Text>
+                  <Text style={[styles.publishedPlanSub, { color: screenTheme.textMuted }]} numberOfLines={1}>
+                    {publishedServicePlan.setlist?.length || 0} Songs · {publishedServicePlan.sermon?.title ? `Sermon: ${publishedServicePlan.sermon.title}` : 'Full Timetable'}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.viewBulletinBtn}>
+                <Text style={styles.viewBulletinBtnTxt}>View</Text>
+                <ChevronRight size={14} color="#1A2D5A" />
+              </View>
+            </TouchableOpacity>
+          ) : null}
 
           {/* ─── Upcoming Events ─── */}
           <View style={styles.sectionHeader}>
@@ -7997,5 +8126,116 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     flex: 1,
+  },
+
+  // Duty & Service Plan Banners on Home
+  dutyHomeBanner: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1.5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6,
+  },
+  dutyHomeLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 12,
+  },
+  dutyHomeIconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dutyHomeTag: {
+    fontSize: 9.5,
+    fontWeight: '900',
+    color: '#D4AF37',
+    letterSpacing: 0.6,
+  },
+  dutyHomeStatusBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  dutyHomeStatusConfirmed: {
+    backgroundColor: '#D1FAE5',
+  },
+  dutyHomeStatusPending: {
+    backgroundColor: '#FEF3C7',
+  },
+  dutyHomeStatusTxt: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  dutyHomeRole: {
+    fontSize: 14,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  dutyHomeMeta: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  publishedPlanHomeBanner: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowRadius: 4,
+  },
+  publishedPlanIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  publishedPlanTag: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#3B82F6',
+    letterSpacing: 0.5,
+  },
+  publishedPlanTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    marginTop: 1,
+  },
+  publishedPlanSub: {
+    fontSize: 11,
+    marginTop: 1,
+  },
+  viewBulletinBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  viewBulletinBtnTxt: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1A2D5A',
   },
 });

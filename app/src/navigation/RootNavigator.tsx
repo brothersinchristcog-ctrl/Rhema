@@ -72,6 +72,7 @@ import OnlineMeetingsScreen from '../screens/OnlineMeetingsScreen';
 import OnlineMeetingDetailScreen from '../screens/OnlineMeetingDetailScreen';
 import YouTubeLiveScreen from '../screens/YouTubeLiveScreen';
 import MemberGalleryNavigator from '../screens/gallery/MemberGalleryNavigator';
+import MemberServicePlanScreen from '../screens/MemberServicePlanScreen';
 
 // Bible Quiz Screens
 import BibleQuizHomeScreen from '../screens/quiz/BibleQuizHomeScreen';
@@ -1049,6 +1050,7 @@ function Navigation() {
             <Stack.Screen name="EventMap" component={renderPremium(PastorEventMap)} />
             <Stack.Screen name="AIAssistant" component={renderPremium(AIAssistantModal)} options={{ presentation: 'modal' }} />
             <Stack.Screen name="EventAttendees" component={EventAttendeesScreen} />
+            <Stack.Screen name="MemberServicePlan" component={renderPremium(MemberServicePlanScreen)} />
           </>
         ) : (
           <Stack.Screen name="Onboarding" component={OnboardingScreen} />
