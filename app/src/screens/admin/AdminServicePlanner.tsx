@@ -134,9 +134,27 @@ const SKILL_CATEGORIES = [
 
 const STANDARD_KEYS = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B', 'Em', 'Am', 'Dm', 'Bm'];
 
+const SERIF_FONT = Platform.OS === 'ios' ? 'Georgia' : 'serif';
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const getSafeDateParts = (dateStr: string) => {
+  if (!dateStr) return { day: '01', month: 'SUN' };
+  const parts = dateStr.split('-');
+  if (parts.length === 3) {
+    const monthIdx = parseInt(parts[1], 10) - 1;
+    return {
+      day: parts[2] || '01',
+      month: (MONTH_NAMES[monthIdx] || 'SUN').toUpperCase()
+    };
+  }
+  return { day: '01', month: 'SUN' };
+};
+
 export default function AdminServicePlanner({ navigation }: any) {
   const insets = useSafeAreaInsets();
-  const { isDark, screenBg, cardSurface, primaryText, secondaryText, borderColor } = useAdminTheme();
+  const { isDark, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor, appFontFamily } = useAdminTheme();
+  const inputBg = isDark ? '#27272A' : '#FAFAF9';
+  const inputBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1';
+  const cardBorder = isDark ? 'rgba(255, 255, 255, 0.14)' : '#CBD5E1';
   const { activeChurch } = useChurch();
   const { member } = useAuth();
   const { setActiveTab } = useContext(AdminTabContext);
@@ -2542,7 +2560,7 @@ export default function AdminServicePlanner({ navigation }: any) {
             style={[styles.tabBtn, activePlannerTab === 'calendar' && styles.tabBtnActive]}
             onPress={() => setActivePlannerTab('calendar')}
           >
-            <CalendarDays size={14} color={activePlannerTab === 'calendar' ? '#1E3A8A' : secondaryText} />
+            <CalendarDays size={14} color={activePlannerTab === 'calendar' ? '#FFFFFF' : secondaryText} />
             <Text style={[styles.tabBtnTxt, activePlannerTab === 'calendar' && styles.tabBtnTxtActive]}>
               Services ({plans.length})
             </Text>
@@ -2553,7 +2571,7 @@ export default function AdminServicePlanner({ navigation }: any) {
             onPress={() => setActivePlannerTab('builder')}
             disabled={!selectedPlan}
           >
-            <Layers size={14} color={activePlannerTab === 'builder' ? '#1E3A8A' : secondaryText} />
+            <Layers size={14} color={activePlannerTab === 'builder' ? '#FFFFFF' : secondaryText} />
             <Text style={[styles.tabBtnTxt, activePlannerTab === 'builder' && styles.tabBtnTxtActive]}>
               Order Builder {selectedPlan ? `(${selectedPlan.runSheet?.length || 0})` : ''}
             </Text>
@@ -2564,7 +2582,7 @@ export default function AdminServicePlanner({ navigation }: any) {
             onPress={() => setActivePlannerTab('setlist')}
             disabled={!selectedPlan}
           >
-            <Music size={14} color={activePlannerTab === 'setlist' ? '#1E3A8A' : secondaryText} />
+            <Music size={14} color={activePlannerTab === 'setlist' ? '#FFFFFF' : secondaryText} />
             <Text style={[styles.tabBtnTxt, activePlannerTab === 'setlist' && styles.tabBtnTxtActive]}>
               Worship Setlist {selectedPlan ? `(${selectedPlan.setlist?.length || 0})` : ''}
             </Text>
@@ -2575,7 +2593,7 @@ export default function AdminServicePlanner({ navigation }: any) {
             onPress={() => setActivePlannerTab('queue')}
             disabled={!selectedPlan}
           >
-            <ListOrdered size={14} color={activePlannerTab === 'queue' ? '#1E3A8A' : secondaryText} />
+            <ListOrdered size={14} color={activePlannerTab === 'queue' ? '#FFFFFF' : secondaryText} />
             <Text style={[styles.tabBtnTxt, activePlannerTab === 'queue' && styles.tabBtnTxtActive]}>
               Assignments {selectedPlan ? `(${assignmentQueues.length})` : ''}
             </Text>
@@ -2585,7 +2603,7 @@ export default function AdminServicePlanner({ navigation }: any) {
             style={[styles.tabBtn, activePlannerTab === 'teams' && styles.tabBtnActive]}
             onPress={() => setActivePlannerTab('teams')}
           >
-            <Users size={14} color={activePlannerTab === 'teams' ? '#1E3A8A' : secondaryText} />
+            <Users size={14} color={activePlannerTab === 'teams' ? '#FFFFFF' : secondaryText} />
             <Text style={[styles.tabBtnTxt, activePlannerTab === 'teams' && styles.tabBtnTxtActive]}>
               Ministry Teams ({ministryTeams.length})
             </Text>
@@ -2595,7 +2613,7 @@ export default function AdminServicePlanner({ navigation }: any) {
             style={[styles.tabBtn, activePlannerTab === 'skills' && styles.tabBtnActive]}
             onPress={() => setActivePlannerTab('skills')}
           >
-            <Award size={14} color={activePlannerTab === 'skills' ? '#1E3A8A' : secondaryText} />
+            <Award size={14} color={activePlannerTab === 'skills' ? '#FFFFFF' : secondaryText} />
             <Text style={[styles.tabBtnTxt, activePlannerTab === 'skills' && styles.tabBtnTxtActive]}>
               Verified Skills {pendingSkillsCount > 0 ? `(${pendingSkillsCount} ⚠️)` : `(${memberSkills.length})`}
             </Text>
@@ -2605,7 +2623,7 @@ export default function AdminServicePlanner({ navigation }: any) {
             style={[styles.tabBtn, activePlannerTab === 'templates' && styles.tabBtnActive]}
             onPress={() => setActivePlannerTab('templates')}
           >
-            <BookOpen size={14} color={activePlannerTab === 'templates' ? '#1E3A8A' : secondaryText} />
+            <BookOpen size={14} color={activePlannerTab === 'templates' ? '#FFFFFF' : secondaryText} />
             <Text style={[styles.tabBtnTxt, activePlannerTab === 'templates' && styles.tabBtnTxtActive]}>
               Templates ({templates.length})
             </Text>
@@ -2643,7 +2661,7 @@ export default function AdminServicePlanner({ navigation }: any) {
               </ScrollView>
 
               {filteredPlans.length === 0 ? (
-                <View style={[styles.emptyCard, { backgroundColor: cardSurface, borderColor }]}>
+                <View style={[styles.emptyCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
                   <Calendar size={36} color="#94A3B8" />
                   <Text style={[styles.emptyTitle, { color: primaryText }]}>No Services Scheduled</Text>
                   <Text style={[styles.emptySubtitle, { color: secondaryText }]}>
@@ -2661,12 +2679,13 @@ export default function AdminServicePlanner({ navigation }: any) {
                 filteredPlans.map((plan, planIdx) => {
                   const isSelected = selectedPlan?.id === plan.id;
                   const typeLabel = SERVICE_TYPE_LABELS[plan.serviceType] || plan.serviceType;
+                  const { day, month } = getSafeDateParts(plan.date);
                   return (
                     <TouchableOpacity
                       key={plan.id ? `plan_${plan.id}_${planIdx}` : `plan_${planIdx}`}
                       style={[
                         styles.planCard,
-                        { backgroundColor: cardSurface, borderColor },
+                        { backgroundColor: cardSurface, borderColor: isSelected ? '#1E3A8A' : cardBorder },
                         isSelected && styles.planCardSelected
                       ]}
                       activeOpacity={0.85}
@@ -2677,10 +2696,8 @@ export default function AdminServicePlanner({ navigation }: any) {
                     >
                       <View style={styles.planCardTop}>
                         <View style={styles.dateBadge}>
-                          <Text style={styles.dateBadgeDay}>{plan.date.split('-')[2] || '01'}</Text>
-                          <Text style={styles.dateBadgeMonth}>
-                            {new Date(plan.date).toLocaleString('default', { month: 'short' }).toUpperCase()}
-                          </Text>
+                          <Text style={styles.dateBadgeDay}>{day}</Text>
+                          <Text style={styles.dateBadgeMonth}>{month}</Text>
                         </View>
                         <View style={{ flex: 1, paddingHorizontal: 10 }}>
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -2704,7 +2721,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                         <ChevronRight size={18} color="#94A3B8" />
                       </View>
 
-                      <View style={styles.planCardBottom}>
+                      <View style={[styles.planCardBottom, { borderTopColor: borderColor }]}>
                         <View style={styles.planStatRow}>
                           <Text style={[styles.planStatTxt, { color: secondaryText }]}>
                             📋 {plan.runSheet?.length || 0} Activities
@@ -2728,18 +2745,18 @@ export default function AdminServicePlanner({ navigation }: any) {
                             </TouchableOpacity>
                           )}
                           <TouchableOpacity
-                            style={styles.cardManageBtn}
+                            style={[styles.cardManageBtn, { backgroundColor: isDark ? 'rgba(30, 58, 138, 0.25)' : '#EFF6FF', borderColor: isDark ? '#1E3A8A' : '#BFDBFE' }]}
                             onPress={() => {
                               setSelectedPlan(plan);
                               setActivePlannerTab('builder');
                             }}
                             activeOpacity={0.8}
                           >
-                            <Layers size={12} color="#1E3A8A" style={{ marginRight: 4 }} />
-                            <Text style={styles.cardManageBtnTxt}>Order Builder</Text>
+                            <Layers size={12} color={isDark ? '#93C5FD' : '#1E3A8A'} style={{ marginRight: 4 }} />
+                            <Text style={[styles.cardManageBtnTxt, { color: isDark ? '#93C5FD' : '#1E3A8A' }]}>Order Builder</Text>
                           </TouchableOpacity>
                           <TouchableOpacity
-                            style={styles.cardDeleteBtn}
+                            style={[styles.cardDeleteBtn, { backgroundColor: isDark ? 'rgba(220, 38, 38, 0.15)' : '#FEF2F2', borderColor: isDark ? 'rgba(220, 38, 38, 0.35)' : '#FECACA' }]}
                             onPress={() => handleDeleteServicePlan(plan.id, plan.serviceTitle, plan.date)}
                             activeOpacity={0.8}
                             hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
@@ -2759,7 +2776,7 @@ export default function AdminServicePlanner({ navigation }: any) {
           {/* TAB 2: DYNAMIC ORDER BUILDER & RUNSHEET */}
           {activePlannerTab === 'builder' && selectedPlan && (
             <View style={styles.tabContent}>
-              <View style={[styles.selectedBanner, { backgroundColor: cardSurface, borderColor }]}>
+              <View style={[styles.selectedBanner, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <View style={{ flex: 1, paddingRight: 8 }}>
                     <Text style={styles.selectedBannerTag}>SELECTED SERVICE</Text>
@@ -2790,19 +2807,19 @@ export default function AdminServicePlanner({ navigation }: any) {
                       <Radio size={14} color="#FFFFFF" />
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={styles.bannerActionBtn}
+                      style={[styles.bannerActionBtn, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: cardBorder }]}
                       onPress={openEditDetailsModal}
                     >
-                      <Edit3 size={14} color="#1E3A8A" />
+                      <Edit3 size={14} color={isDark ? '#93C5FD' : '#1E3A8A'} />
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={styles.bannerActionBtn}
+                      style={[styles.bannerActionBtn, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: cardBorder }]}
                       onPress={() => setShowApplyTemplateModal(true)}
                     >
-                      <Copy size={14} color="#1E3A8A" />
+                      <Copy size={14} color={isDark ? '#93C5FD' : '#1E3A8A'} />
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.bannerActionBtn, { borderColor: '#FCA5A5' }]}
+                      style={[styles.bannerActionBtn, { backgroundColor: isDark ? 'rgba(220, 38, 38, 0.15)' : '#FEF2F2', borderColor: isDark ? 'rgba(220, 38, 38, 0.35)' : '#FCA5A5' }]}
                       onPress={handleDeleteService}
                     >
                       <Trash2 size={14} color="#DC2626" />
@@ -3040,7 +3057,7 @@ export default function AdminServicePlanner({ navigation }: any) {
           {activePlannerTab === 'setlist' && selectedPlan && (
             <View style={styles.tabContent}>
               {/* Setlist Summary Banner */}
-              <View style={[styles.selectedBanner, { backgroundColor: cardSurface, borderColor }]}>
+              <View style={[styles.selectedBanner, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.selectedBannerTag}>WORSHIP SETLIST</Text>
@@ -3197,7 +3214,7 @@ export default function AdminServicePlanner({ navigation }: any) {
           {activePlannerTab === 'queue' && selectedPlan && (
             <View style={styles.tabContent}>
               {/* Selected Service Banner in Assignments tab */}
-              <View style={[styles.selectedBanner, { backgroundColor: cardSurface, borderColor, marginBottom: 12 }]}>
+              <View style={[styles.selectedBanner, { backgroundColor: cardSurface, borderColor: cardBorder, marginBottom: 12 }]}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <View style={{ flex: 1, paddingRight: 8 }}>
                     <Text style={styles.selectedBannerTag}>SERVICE RESPONSIBILITY ASSIGNMENTS</Text>
@@ -3210,13 +3227,13 @@ export default function AdminServicePlanner({ navigation }: any) {
                   </View>
                   <View style={{ flexDirection: 'row', gap: 6 }}>
                     <TouchableOpacity
-                      style={styles.bannerActionBtn}
+                      style={[styles.bannerActionBtn, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: cardBorder }]}
                       onPress={openEditDetailsModal}
                     >
-                      <Edit3 size={14} color="#1E3A8A" />
+                      <Edit3 size={14} color={isDark ? '#93C5FD' : '#1E3A8A'} />
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.bannerActionBtn, { borderColor: '#FCA5A5' }]}
+                      style={[styles.bannerActionBtn, { backgroundColor: isDark ? 'rgba(220, 38, 38, 0.15)' : '#FEF2F2', borderColor: isDark ? 'rgba(220, 38, 38, 0.35)' : '#FCA5A5' }]}
                       onPress={handleDeleteService}
                     >
                       <Trash2 size={14} color="#DC2626" />
@@ -4330,19 +4347,23 @@ export default function AdminServicePlanner({ navigation }: any) {
         >
           <View style={[styles.modalBox, { backgroundColor: cardSurface }]}>
             <View style={styles.modalHeader}>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={[styles.modalTitle, { color: primaryText }]}>Select Songs from Library</Text>
                 <Text style={[styles.modalSubtitle, { color: secondaryText }]}>
                   Choose from {churchSongs.length} Telugu & English praise songs.
                 </Text>
               </View>
-              <TouchableOpacity onPress={() => setShowSongPickerModal(false)}>
-                <X size={20} color={secondaryText} />
+              <TouchableOpacity
+                style={[styles.modalCloseCircle, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}
+                onPress={() => setShowSongPickerModal(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <X size={18} color={secondaryText} />
               </TouchableOpacity>
             </View>
 
             {/* Song Search Bar */}
-            <View style={[styles.searchBox, { backgroundColor: screenBg, borderColor }]}>
+            <View style={[styles.searchBox, { backgroundColor: inputBg, borderColor: inputBorder }]}>
               <Search size={16} color="#94A3B8" />
               <TextInput
                 style={[styles.searchInput, { color: primaryText }]}
@@ -4370,8 +4391,8 @@ export default function AdminServicePlanner({ navigation }: any) {
                       key={song.id ? `song_${song.id}_${songIdx}` : `song_${songIdx}`}
                       style={[
                         styles.songPickItem,
-                        { borderColor },
-                        alreadyInSetlist && { backgroundColor: isDark ? '#1E293B' : '#EFF6FF', borderColor: '#1E3A8A' }
+                        { borderColor: cardBorder },
+                        alreadyInSetlist && { backgroundColor: isDark ? 'rgba(30, 58, 138, 0.25)' : '#EFF6FF', borderColor: '#1E3A8A' }
                       ]}
                       onPress={() => handleSelectSongFromLibrary(song)}
                       activeOpacity={0.7}
@@ -4428,7 +4449,7 @@ export default function AdminServicePlanner({ navigation }: any) {
         >
           <View style={[styles.modalBox, { backgroundColor: cardSurface }]}>
             <View style={styles.modalHeader}>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={[styles.modalTitle, { color: primaryText }]}>
                   {editingSetlistIndex !== null ? 'Edit Setlist Song' : 'Configure Song for Worship'}
                 </Text>
@@ -4436,8 +4457,12 @@ export default function AdminServicePlanner({ navigation }: any) {
                   {selectedSongForSetlist?.title || 'Assign Key, BPM, Song Leader & Musicians'}
                 </Text>
               </View>
-              <TouchableOpacity onPress={() => setShowConfigureSongModal(false)}>
-                <X size={20} color={secondaryText} />
+              <TouchableOpacity
+                style={[styles.modalCloseCircle, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}
+                onPress={() => setShowConfigureSongModal(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <X size={18} color={secondaryText} />
               </TouchableOpacity>
             </View>
 
@@ -4448,7 +4473,11 @@ export default function AdminServicePlanner({ navigation }: any) {
                 {STANDARD_KEYS.map(k => (
                   <TouchableOpacity
                     key={k}
-                    style={[styles.keyPickerChip, songKeyInput === k && styles.keyPickerChipActive]}
+                    style={[
+                      styles.keyPickerChip,
+                      songKeyInput === k && styles.keyPickerChipActive,
+                      songKeyInput !== k && { backgroundColor: inputBg, borderColor: inputBorder }
+                    ]}
                     onPress={() => setSongKeyInput(k)}
                   >
                     <Text style={[styles.keyPickerChipTxt, songKeyInput === k && styles.keyPickerChipTxtActive]}>
@@ -4463,7 +4492,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.fieldLabel, { color: primaryText }]}>Tempo (BPM)</Text>
                   <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                     placeholder="120"
                     keyboardType="numeric"
                     value={songBpmInput}
@@ -4473,7 +4502,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.fieldLabel, { color: primaryText }]}>Time Signature</Text>
                   <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                     placeholder="4/4"
                     value={songTimeSigInput}
                     onChangeText={setSongTimeSigInput}
@@ -4482,7 +4511,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.fieldLabel, { color: primaryText }]}>Duration (Mins)</Text>
                   <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                     placeholder="6"
                     keyboardType="numeric"
                     value={songDurationInput}
@@ -4494,7 +4523,7 @@ export default function AdminServicePlanner({ navigation }: any) {
               {/* Song Leader */}
               <Text style={[styles.fieldLabel, { color: primaryText }]}>Song Leader *</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                 placeholder="Name of song leader"
                 value={songLeaderInput}
                 onChangeText={setSongLeaderInput}
@@ -4520,7 +4549,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.subFieldLabel, { color: secondaryText }]}>Keyboard</Text>
                   <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                     placeholder="Keyboard player"
                     value={songKeyboardInput}
                     onChangeText={setSongKeyboardInput}
@@ -4529,7 +4558,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.subFieldLabel, { color: secondaryText }]}>Acoustic Guitar</Text>
                   <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                     placeholder="Acoustic guitarist"
                     value={songAcousticInput}
                     onChangeText={setSongAcousticInput}
@@ -4541,7 +4570,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.subFieldLabel, { color: secondaryText }]}>Drums</Text>
                   <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                     placeholder="Drummer"
                     value={songDrumsInput}
                     onChangeText={setSongDrumsInput}
@@ -4550,7 +4579,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.subFieldLabel, { color: secondaryText }]}>Bass Guitar</Text>
                   <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                     placeholder="Bassist"
                     value={songBassInput}
                     onChangeText={setSongBassInput}
@@ -4561,7 +4590,7 @@ export default function AdminServicePlanner({ navigation }: any) {
               {/* Rehearsal Arrangement Notes */}
               <Text style={[styles.fieldLabel, { color: primaryText }]}>Rehearsal & Arrangement Notes</Text>
               <TextInput
-                style={[styles.textArea, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                style={[styles.textArea, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                 placeholder="e.g. Intro with Keys -> Acoustic joins on Verse 1 -> Full Band Chorus -> Modulate to Key A on Bridge"
                 multiline
                 numberOfLines={3}
@@ -4717,14 +4746,14 @@ export default function AdminServicePlanner({ navigation }: any) {
               showsVerticalScrollIndicator={true}
             >
               {/* CARD 1: BASIC INFORMATION */}
-              <View style={[styles.formSectionCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor }]}>
+              <View style={[styles.formSectionCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
                 <View style={[styles.formCardHeaderRow, { borderBottomColor: borderColor }]}>
                   <Sparkles size={14} color="#1E3A8A" />
                   <Text style={[styles.formCardHeaderText, { color: primaryText }]}>BASIC INFORMATION</Text>
                 </View>
 
                 <Text style={[styles.fieldLabel, { color: primaryText }]}>Service Name *</Text>
-                <View style={[styles.modernInputContainer, { backgroundColor: screenBg, borderColor }]}>
+                <View style={[styles.modernInputContainer, { backgroundColor: inputBg, borderColor: inputBorder }]}>
                   <TextInput
                     style={[styles.modernInput, { color: primaryText }]}
                     placeholder="e.g. Sunday Morning Worship"
@@ -4739,7 +4768,11 @@ export default function AdminServicePlanner({ navigation }: any) {
                   {(Object.keys(SERVICE_TYPE_LABELS) as ServiceType[]).map(st => (
                     <TouchableOpacity
                       key={st}
-                      style={[styles.typeSelectChip, createType === st && styles.typeSelectChipActive]}
+                      style={[
+                        styles.typeSelectChip,
+                        createType === st && styles.typeSelectChipActive,
+                        createType !== st && { backgroundColor: inputBg, borderColor: inputBorder, borderWidth: 1 }
+                      ]}
                       onPress={() => setCreateType(st)}
                     >
                       <Text style={[styles.typeSelectChipTxt, createType === st && styles.typeSelectChipTxtActive]}>
@@ -4751,7 +4784,7 @@ export default function AdminServicePlanner({ navigation }: any) {
               </View>
 
               {/* CARD 2: DATE & SCHEDULE */}
-              <View style={[styles.formSectionCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor }]}>
+              <View style={[styles.formSectionCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
                 <View style={[styles.formCardHeaderRow, { borderBottomColor: borderColor }]}>
                   <Calendar size={14} color="#1E3A8A" />
                   <Text style={[styles.formCardHeaderText, { color: primaryText }]}>DATE & SCHEDULE</Text>
@@ -4759,11 +4792,11 @@ export default function AdminServicePlanner({ navigation }: any) {
 
                 <Text style={[styles.fieldLabel, { color: primaryText }]}>Service Date *</Text>
                 <TouchableOpacity
-                  style={[styles.pickerInputBtn, { backgroundColor: screenBg, borderColor }]}
+                  style={[styles.pickerInputBtn, { backgroundColor: inputBg, borderColor: inputBorder }]}
                   onPress={() => setDatePickerVisible(true)}
                   activeOpacity={0.7}
                 >
-                  <View style={styles.pickerIconContainer}>
+                  <View style={[styles.pickerIconContainer, { backgroundColor: isDark ? 'rgba(30, 58, 138, 0.3)' : '#EFF6FF' }]}>
                     <Calendar size={18} color="#1E3A8A" />
                   </View>
                   <View style={{ flex: 1 }}>
@@ -4781,11 +4814,11 @@ export default function AdminServicePlanner({ navigation }: any) {
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.fieldLabel, { color: primaryText }]}>Start Time *</Text>
                     <TouchableOpacity
-                      style={[styles.pickerInputBtn, { backgroundColor: screenBg, borderColor }]}
+                      style={[styles.pickerInputBtn, { backgroundColor: inputBg, borderColor: inputBorder }]}
                       onPress={() => setStartTimePickerVisible(true)}
                       activeOpacity={0.7}
                     >
-                      <View style={styles.pickerIconContainer}>
+                      <View style={[styles.pickerIconContainer, { backgroundColor: isDark ? 'rgba(30, 58, 138, 0.3)' : '#EFF6FF' }]}>
                         <Clock size={16} color="#1E3A8A" />
                       </View>
                       <View style={{ flex: 1 }}>
@@ -4802,11 +4835,11 @@ export default function AdminServicePlanner({ navigation }: any) {
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.fieldLabel, { color: primaryText }]}>End Time *</Text>
                     <TouchableOpacity
-                      style={[styles.pickerInputBtn, { backgroundColor: screenBg, borderColor }]}
+                      style={[styles.pickerInputBtn, { backgroundColor: inputBg, borderColor: inputBorder }]}
                       onPress={() => setEndTimePickerVisible(true)}
                       activeOpacity={0.7}
                     >
-                      <View style={[styles.pickerIconContainer, { backgroundColor: '#FEF3C7' }]}>
+                      <View style={[styles.pickerIconContainer, { backgroundColor: isDark ? 'rgba(217, 119, 6, 0.25)' : '#FEF3C7' }]}>
                         <Clock size={16} color="#D97706" />
                       </View>
                       <View style={{ flex: 1 }}>
@@ -4823,7 +4856,7 @@ export default function AdminServicePlanner({ navigation }: any) {
               </View>
 
               {/* CARD 3: LOCATION & SERMON DETAILS */}
-              <View style={[styles.formSectionCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor }]}>
+              <View style={[styles.formSectionCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
                 <View style={[styles.formCardHeaderRow, { borderBottomColor: borderColor }]}>
                   <MapPin size={14} color="#1E3A8A" />
                   <Text style={[styles.formCardHeaderText, { color: primaryText }]}>LOCATION & SERMON DETAILS</Text>
@@ -4831,7 +4864,7 @@ export default function AdminServicePlanner({ navigation }: any) {
 
                 {/* Location */}
                 <Text style={[styles.fieldLabel, { color: primaryText }]}>Service Location</Text>
-                <View style={[styles.modernInputContainer, { backgroundColor: screenBg, borderColor }]}>
+                <View style={[styles.modernInputContainer, { backgroundColor: inputBg, borderColor: inputBorder }]}>
                   <MapPin size={16} color="#64748B" style={styles.inputLeftIcon} />
                   <TextInput
                     style={[styles.modernInput, { color: primaryText }]}
@@ -4844,7 +4877,7 @@ export default function AdminServicePlanner({ navigation }: any) {
 
                 {/* Preacher / Speaker */}
                 <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 12 }]}>Preacher / Speaker</Text>
-                <View style={[styles.modernInputContainer, { backgroundColor: screenBg, borderColor }]}>
+                <View style={[styles.modernInputContainer, { backgroundColor: inputBg, borderColor: inputBorder }]}>
                   <Mic size={16} color="#64748B" style={styles.inputLeftIcon} />
                   <TextInput
                     style={[styles.modernInput, { color: primaryText }]}
@@ -4857,7 +4890,7 @@ export default function AdminServicePlanner({ navigation }: any) {
 
                 {/* Sermon Theme */}
                 <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 12 }]}>Sermon Theme</Text>
-                <View style={[styles.modernInputContainer, { backgroundColor: screenBg, borderColor }]}>
+                <View style={[styles.modernInputContainer, { backgroundColor: inputBg, borderColor: inputBorder }]}>
                   <BookOpen size={16} color="#64748B" style={styles.inputLeftIcon} />
                   <TextInput
                     style={[styles.modernInput, { color: primaryText }]}
@@ -4870,7 +4903,7 @@ export default function AdminServicePlanner({ navigation }: any) {
 
                 {/* Bible Scripture */}
                 <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 12 }]}>Bible Scripture</Text>
-                <View style={[styles.modernInputContainer, { backgroundColor: screenBg, borderColor }]}>
+                <View style={[styles.modernInputContainer, { backgroundColor: inputBg, borderColor: inputBorder }]}>
                   <FileText size={16} color="#64748B" style={styles.inputLeftIcon} />
                   <TextInput
                     style={[styles.modernInput, { color: primaryText }]}
@@ -4883,7 +4916,7 @@ export default function AdminServicePlanner({ navigation }: any) {
               </View>
 
               {/* CARD 4: RECURRENCE & STARTING TEMPLATE */}
-              <View style={[styles.formSectionCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor }]}>
+              <View style={[styles.formSectionCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
                 <View style={[styles.formCardHeaderRow, { borderBottomColor: borderColor }]}>
                   <RotateCcw size={14} color="#1E3A8A" />
                   <Text style={[styles.formCardHeaderText, { color: primaryText }]}>RECURRENCE & ORDER TEMPLATE</Text>
@@ -4903,7 +4936,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                         style={[
                           styles.recurrenceBtn,
                           isSelected && styles.recurrenceBtnActive,
-                          !isSelected && { backgroundColor: isDark ? '#334155' : '#F8FAFC', borderColor }
+                          !isSelected && { backgroundColor: inputBg, borderColor: inputBorder }
                         ]}
                         onPress={() => setCreateRecurrence(r.id as any)}
                         activeOpacity={0.8}
@@ -4931,7 +4964,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                             style={[
                               styles.countChip,
                               isSelected && styles.countChipActive,
-                              !isSelected && { backgroundColor: isDark ? '#334155' : '#F1F5F9' }
+                              !isSelected && { backgroundColor: inputBg, borderColor: inputBorder, borderWidth: 1 }
                             ]}
                             onPress={() => setCreateOccurrencesCount(n)}
                             activeOpacity={0.8}
@@ -4952,7 +4985,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                     style={[
                       styles.tplSelectChip,
                       selectedTemplateForNew === 'blank' && styles.tplSelectChipActive,
-                      selectedTemplateForNew !== 'blank' && { backgroundColor: isDark ? '#334155' : '#F8FAFC', borderColor }
+                      selectedTemplateForNew !== 'blank' && { backgroundColor: inputBg, borderColor: inputBorder }
                     ]}
                     onPress={() => handleSelectTemplateForForm('blank')}
                     activeOpacity={0.8}
@@ -4977,7 +5010,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                         style={[
                           styles.tplSelectChip,
                           isSelected && styles.tplSelectChipActive,
-                          !isSelected && { backgroundColor: isDark ? '#334155' : '#F8FAFC', borderColor }
+                          !isSelected && { backgroundColor: inputBg, borderColor: inputBorder }
                         ]}
                         onPress={() => handleSelectTemplateForForm(tpl.id)}
                         activeOpacity={0.8}
@@ -5355,15 +5388,19 @@ export default function AdminServicePlanner({ navigation }: any) {
               <Text style={[styles.modalTitle, { color: primaryText }]}>
                 {editingActivityId ? 'Edit Activity Item' : 'Add Activity to Service'}
               </Text>
-              <TouchableOpacity onPress={() => setShowActivityModal(false)}>
-                <X size={20} color={secondaryText} />
+              <TouchableOpacity
+                style={[styles.modalCloseCircle, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}
+                onPress={() => setShowActivityModal(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <X size={18} color={secondaryText} />
               </TouchableOpacity>
             </View>
 
             <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
               <Text style={[styles.fieldLabel, { color: primaryText }]}>Activity / Program Name *</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                 placeholder="e.g. Praise & Worship (Setlist)"
                 placeholderTextColor="#94A3B8"
                 value={actProgram}
@@ -5375,7 +5412,11 @@ export default function AdminServicePlanner({ navigation }: any) {
                 {(Object.keys(CATEGORY_COLORS) as ActivityCategory[]).map(cat => (
                   <TouchableOpacity
                     key={cat}
-                    style={[styles.categorySelectChip, actCategory === cat && styles.categorySelectChipActive]}
+                    style={[
+                      styles.categorySelectChip,
+                      actCategory === cat && styles.categorySelectChipActive,
+                      actCategory !== cat && { backgroundColor: inputBg, borderColor: inputBorder, borderWidth: 1 }
+                    ]}
                     onPress={() => setActCategory(cat)}
                   >
                     <Text style={[styles.categorySelectChipTxt, actCategory === cat && styles.categorySelectChipTxtActive]}>
@@ -5387,7 +5428,7 @@ export default function AdminServicePlanner({ navigation }: any) {
 
               <Text style={[styles.fieldLabel, { color: primaryText }]}>Duration (Minutes)</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                 placeholder="15"
                 keyboardType="numeric"
                 placeholderTextColor="#94A3B8"
@@ -5397,7 +5438,7 @@ export default function AdminServicePlanner({ navigation }: any) {
 
               <Text style={[styles.fieldLabel, { color: primaryText }]}>Responsible Person</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                 placeholder="Type name or select member below"
                 placeholderTextColor="#94A3B8"
                 value={actResponsible}
@@ -5485,8 +5526,12 @@ export default function AdminServicePlanner({ navigation }: any) {
           <View style={[styles.modalBox, { backgroundColor: cardSurface, maxHeight: '92%' }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: primaryText }]}>Edit Service Information</Text>
-              <TouchableOpacity onPress={() => setShowEditDetailsModal(false)}>
-                <X size={20} color={secondaryText} />
+              <TouchableOpacity
+                style={[styles.modalCloseCircle, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}
+                onPress={() => setShowEditDetailsModal(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <X size={18} color={secondaryText} />
               </TouchableOpacity>
             </View>
 
@@ -5498,7 +5543,7 @@ export default function AdminServicePlanner({ navigation }: any) {
             >
               <Text style={[styles.fieldLabel, { color: primaryText }]}>Service Title *</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                 placeholder="e.g. Sunday Morning Worship"
                 placeholderTextColor="#94A3B8"
                 value={editTitle}
@@ -5509,11 +5554,11 @@ export default function AdminServicePlanner({ navigation }: any) {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.fieldLabel, { color: primaryText }]}>Date</Text>
                   <TouchableOpacity
-                    style={[styles.pickerInputBtn, { backgroundColor: screenBg, borderColor }]}
+                    style={[styles.pickerInputBtn, { backgroundColor: inputBg, borderColor: inputBorder }]}
                     onPress={() => setEditDatePickerVisible(true)}
                     activeOpacity={0.7}
                   >
-                    <View style={styles.pickerIconContainer}>
+                    <View style={[styles.pickerIconContainer, { backgroundColor: isDark ? 'rgba(30, 58, 138, 0.3)' : '#EFF6FF' }]}>
                       <Calendar size={16} color="#1E3A8A" />
                     </View>
                     <View style={{ flex: 1 }}>
@@ -5530,11 +5575,11 @@ export default function AdminServicePlanner({ navigation }: any) {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.fieldLabel, { color: primaryText }]}>Start Time</Text>
                   <TouchableOpacity
-                    style={[styles.pickerInputBtn, { backgroundColor: screenBg, borderColor }]}
+                    style={[styles.pickerInputBtn, { backgroundColor: inputBg, borderColor: inputBorder }]}
                     onPress={() => setEditStartTimePickerVisible(true)}
                     activeOpacity={0.7}
                   >
-                    <View style={styles.pickerIconContainer}>
+                    <View style={[styles.pickerIconContainer, { backgroundColor: isDark ? 'rgba(30, 58, 138, 0.3)' : '#EFF6FF' }]}>
                       <Clock size={16} color="#1E3A8A" />
                     </View>
                     <View style={{ flex: 1 }}>
@@ -5551,7 +5596,7 @@ export default function AdminServicePlanner({ navigation }: any) {
 
               <Text style={[styles.fieldLabel, { color: primaryText }]}>Location</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                 placeholder="e.g. Main Church Sanctuary / Hall"
                 placeholderTextColor="#94A3B8"
                 value={editLocation}
@@ -5560,7 +5605,7 @@ export default function AdminServicePlanner({ navigation }: any) {
 
               <Text style={[styles.fieldLabel, { color: primaryText }]}>Preacher / Speaker</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                 placeholder="e.g. Pastor / Speaker Name"
                 placeholderTextColor="#94A3B8"
                 value={editPreacher}
@@ -5571,7 +5616,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.fieldLabel, { color: primaryText }]}>Theme</Text>
                   <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                     placeholder="e.g. God's Grace / Living by Faith"
                     placeholderTextColor="#94A3B8"
                     value={editTheme}
@@ -5581,7 +5626,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.fieldLabel, { color: primaryText }]}>Bible Scripture</Text>
                   <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                     placeholder="e.g. Romans 8:1, Psalm 23"
                     placeholderTextColor="#94A3B8"
                     value={editScripture}
@@ -6613,7 +6658,7 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     borderBottomWidth: 1,
     elevation: 2,
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 3,
@@ -6627,47 +6672,60 @@ const styles = StyleSheet.create({
   headerBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 5,
     backgroundColor: '#FEF3C7',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
   },
   headerBadgeTxt: {
     fontSize: 9.5,
     fontWeight: '800',
     color: '#D97706',
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
   statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
+    paddingVertical: 2.5,
+    borderRadius: 999,
+    borderWidth: 1,
   },
   statusPillDraft: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#F1F5F9',
+    borderColor: '#CBD5E1',
   },
   statusPillPublished: {
-    backgroundColor: '#D1FAE5',
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
   },
   statusPillLive: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
   },
   statusPillCompleted: {
-    backgroundColor: '#E0E7FF',
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
   },
   statusPillTxt: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '800',
     color: '#1E293B',
+    letterSpacing: 0.5,
   },
   headerTitle: {
-    fontSize: 19,
+    fontFamily: SERIF_FONT,
+    fontSize: 21,
     fontWeight: '800',
+    letterSpacing: -0.4,
     marginTop: 4,
   },
   headerSubtitle: {
     fontSize: 12,
+    fontWeight: '500',
     marginTop: 2,
   },
   newServiceBtn: {
@@ -6675,38 +6733,53 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     backgroundColor: '#1E3A8A',
-    paddingHorizontal: 14,
+    paddingHorizontal: 15,
     paddingVertical: 9,
     borderRadius: 10,
     elevation: 2,
+    shadowColor: '#1E3A8A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
   },
   newServiceBtnTxt: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   tabsScroll: {
-    marginTop: 4,
+    marginTop: 6,
+    marginBottom: 2,
   },
   tabBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 13,
+    borderRadius: 10,
     marginRight: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
   },
   tabBtnActive: {
-    backgroundColor: '#EEF2FF',
+    backgroundColor: '#1E3A8A',
+    borderColor: '#1E3A8A',
+    elevation: 2,
+    shadowColor: '#1E3A8A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
   },
   tabBtnTxt: {
-    fontSize: 12.5,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
   },
   tabBtnTxtActive: {
-    color: '#1E3A8A',
+    color: '#FFFFFF',
     fontWeight: '800',
   },
   bodyScroll: {
@@ -6729,67 +6802,82 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   filterChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+    paddingHorizontal: 13,
+    paddingVertical: 7,
+    borderRadius: 10,
     backgroundColor: '#F1F5F9',
     marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   filterChipActive: {
     backgroundColor: '#1E3A8A',
+    borderColor: '#1E3A8A',
   },
   filterChipTxt: {
     fontSize: 11,
     fontWeight: '700',
     color: '#475569',
+    letterSpacing: 0.5,
   },
   filterChipTxtActive: {
     color: '#FFFFFF',
+    fontWeight: '800',
   },
   emptyCard: {
-    padding: 32,
-    borderRadius: 16,
-    borderWidth: 1,
+    paddingVertical: 36,
+    paddingHorizontal: 20,
+    borderRadius: 18,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 20,
+    marginTop: 16,
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
   },
   emptyTitle: {
-    fontSize: 16,
+    fontFamily: SERIF_FONT,
+    fontSize: 17,
     fontWeight: '800',
+    letterSpacing: -0.3,
     marginTop: 12,
   },
   emptySubtitle: {
     fontSize: 12.5,
+    lineHeight: 19,
     textAlign: 'center',
     marginTop: 6,
-    maxWidth: 280,
+    maxWidth: 290,
   },
   createEmptyBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     backgroundColor: '#1E3A8A',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
     borderRadius: 10,
     marginTop: 18,
   },
   createEmptyBtnTxt: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   planCard: {
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 14,
-    marginBottom: 12,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    padding: 16,
+    marginBottom: 14,
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
   },
   planCardSelected: {
     borderColor: '#1E3A8A',
@@ -6800,55 +6888,76 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   dateBadge: {
-    width: 44,
-    height: 48,
-    borderRadius: 10,
+    width: 50,
+    height: 52,
+    borderRadius: 12,
     backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
     alignItems: 'center',
     justifyContent: 'center',
   },
   dateBadgeDay: {
-    fontSize: 16,
+    fontFamily: SERIF_FONT,
+    fontSize: 18,
     fontWeight: '900',
     color: '#1E3A8A',
   },
   dateBadgeMonth: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '800',
     color: '#3B82F6',
+    letterSpacing: 0.8,
   },
   planTypeTag: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '800',
     color: '#D97706',
+    letterSpacing: 0.5,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
   },
   miniStatusPill: {
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
   },
   miniStatusPillTxt: {
     fontSize: 9,
     fontWeight: '800',
+    letterSpacing: 0.4,
   },
   planTitle: {
-    fontSize: 15,
+    fontFamily: SERIF_FONT,
+    fontSize: 16,
     fontWeight: '800',
-    marginTop: 2,
+    letterSpacing: -0.2,
+    marginTop: 4,
   },
   planMeta: {
     fontSize: 11.5,
-    marginTop: 2,
+    marginTop: 3,
   },
   planCardBottom: {
-    marginTop: 10,
-    paddingTop: 8,
+    marginTop: 12,
+    paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 8,
   },
   planStatRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: 10,
+    alignItems: 'center',
   },
   planStatTxt: {
     fontSize: 11,
@@ -6870,25 +6979,32 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   selectedBanner: {
-    padding: 14,
-    borderRadius: 14,
-    borderWidth: 1,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1.5,
     marginBottom: 16,
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
   },
   selectedBannerTag: {
-    fontSize: 9,
+    fontSize: 9.5,
     fontWeight: '800',
     color: '#3B82F6',
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
   selectedBannerTitle: {
-    fontSize: 17,
+    fontFamily: SERIF_FONT,
+    fontSize: 18,
     fontWeight: '800',
+    letterSpacing: -0.3,
     marginTop: 2,
   },
   selectedBannerMeta: {
     fontSize: 12,
-    marginTop: 2,
+    marginTop: 3,
   },
   selectedBannerTheme: {
     fontSize: 12,
@@ -6896,9 +7012,9 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   bannerActionBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     alignItems: 'center',
@@ -6906,8 +7022,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   statusSwitcherRow: {
-    marginTop: 12,
-    paddingTop: 10,
+    marginTop: 14,
+    paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
     flexDirection: 'row',
@@ -6916,44 +7032,51 @@ const styles = StyleSheet.create({
   },
   statusSwitcherLabel: {
     fontSize: 11.5,
-    fontWeight: '600',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   statusButtonsGroup: {
     flexDirection: 'row',
     gap: 4,
   },
   statusToggleBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
     backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   statusToggleBtnActive: {
     backgroundColor: '#1E3A8A',
+    borderColor: '#1E3A8A',
   },
   statusToggleBtnTxt: {
     fontSize: 10,
     fontWeight: '700',
     color: '#64748B',
+    letterSpacing: 0.3,
   },
   statusToggleBtnTxtActive: {
     color: '#FFFFFF',
+    fontWeight: '800',
   },
   warningBox: {
-    padding: 12,
-    borderRadius: 10,
+    padding: 14,
+    borderRadius: 12,
     backgroundColor: '#FEF2F2',
     borderWidth: 1,
     borderColor: '#FECACA',
     marginBottom: 14,
   },
   warningTitle: {
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '800',
     color: '#991B1B',
   },
   warningMsg: {
-    fontSize: 11,
+    fontSize: 11.5,
     color: '#B91C1C',
     marginTop: 2,
   },
@@ -6961,24 +7084,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   sectionHeading: {
-    fontSize: 16,
+    fontFamily: SERIF_FONT,
+    fontSize: 18,
     fontWeight: '800',
+    letterSpacing: -0.3,
   },
   sectionSubheading: {
-    fontSize: 11.5,
-    marginTop: 1,
+    fontSize: 12,
+    marginTop: 2,
   },
   addActivityBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 5,
     backgroundColor: '#1E3A8A',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 8,
+    elevation: 1,
   },
   addActivityBtnTxt: {
     color: '#FFFFFF',
@@ -6988,11 +7114,13 @@ const styles = StyleSheet.create({
   applyTemplateBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 5,
     backgroundColor: '#EEF2FF',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
   },
   applyTemplateBtnTxt: {
     color: '#1E3A8A',
@@ -7000,19 +7128,30 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   emptyRunSheetCard: {
-    padding: 24,
-    borderRadius: 14,
-    borderWidth: 1,
+    paddingVertical: 36,
+    paddingHorizontal: 20,
+    borderRadius: 18,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
   },
   runSheetItemCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 10,
-    marginBottom: 8,
+    borderRadius: 14,
+    borderWidth: 1.2,
+    padding: 12,
+    marginBottom: 10,
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
   },
   reorderColumn: {
     alignItems: 'center',
@@ -7051,12 +7190,14 @@ const styles = StyleSheet.create({
     color: '#1E3A8A',
   },
   itemProgramTitle: {
-    fontSize: 14,
-    fontWeight: '700',
+    fontFamily: SERIF_FONT,
+    fontSize: 15,
+    fontWeight: '800',
     marginTop: 2,
+    letterSpacing: -0.2,
   },
   itemResponsible: {
-    fontSize: 11,
+    fontSize: 11.5,
     marginTop: 1,
   },
   itemInstructions: {
@@ -7070,23 +7211,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   itemEditBtn: {
-    padding: 6,
-    borderRadius: 6,
-    backgroundColor: '#F1F5F9',
+    padding: 7,
+    borderRadius: 8,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
   },
   itemDeleteBtn: {
-    padding: 6,
-    borderRadius: 6,
+    padding: 7,
+    borderRadius: 8,
     backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
   },
   // Phase 3: Setlist Styles
   setlistCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1.2,
+    padding: 13,
     marginBottom: 10,
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
   },
   keyBadge: {
     backgroundColor: '#EFF6FF',
@@ -7125,9 +7275,11 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
   },
   setlistSongTitle: {
-    fontSize: 15,
+    fontFamily: SERIF_FONT,
+    fontSize: 15.5,
     fontWeight: '800',
     marginTop: 3,
+    letterSpacing: -0.2,
   },
   setlistSongTe: {
     fontSize: 12,
@@ -7148,9 +7300,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
   musicianChipTxt: {
     fontSize: 10,
@@ -7168,9 +7320,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   lyricsBtn: {
-    padding: 6,
-    borderRadius: 6,
+    padding: 7,
+    borderRadius: 8,
     backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
   },
   // Search Box in Song Picker
   searchBox: {
@@ -7180,7 +7334,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
     marginBottom: 12,
   },
   searchInput: {
@@ -7192,8 +7346,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
+    borderRadius: 12,
+    borderWidth: 1.2,
     marginBottom: 8,
   },
   songPickIconBox: {
@@ -7205,8 +7359,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   songPickTitle: {
-    fontSize: 14,
-    fontWeight: '700',
+    fontFamily: SERIF_FONT,
+    fontSize: 14.5,
+    fontWeight: '800',
   },
   songPickTe: {
     fontSize: 11.5,
@@ -7259,10 +7414,15 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   templateCard: {
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    padding: 15,
     marginBottom: 12,
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
   },
   templateTypeTag: {
     fontSize: 10,
@@ -7279,9 +7439,11 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   templateTitle: {
-    fontSize: 15,
+    fontFamily: SERIF_FONT,
+    fontSize: 16,
     fontWeight: '800',
-    marginTop: 2,
+    marginTop: 3,
+    letterSpacing: -0.2,
   },
   templateDescription: {
     fontSize: 11.5,
@@ -7313,8 +7475,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     backgroundColor: '#1E3A8A',
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingVertical: 10,
+    borderRadius: 10,
     marginTop: 10,
   },
   applyTemplateCardBtnTxt: {
@@ -7338,17 +7500,24 @@ const styles = StyleSheet.create({
   },
   teamCard: {
     flexDirection: 'row',
-    borderRadius: 14,
-    borderWidth: 1,
+    borderRadius: 16,
+    borderWidth: 1.5,
     marginBottom: 12,
     overflow: 'hidden',
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
   },
   teamColorBar: {
     width: 6,
   },
   teamTitle: {
-    fontSize: 15,
+    fontFamily: SERIF_FONT,
+    fontSize: 16,
     fontWeight: '800',
+    letterSpacing: -0.2,
   },
   teamActiveBadge: {
     paddingHorizontal: 6,
@@ -7409,12 +7578,13 @@ const styles = StyleSheet.create({
   skillStatCard: {
     flex: 1,
     padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
+    borderRadius: 14,
+    borderWidth: 1.2,
     alignItems: 'center',
   },
   skillStatNum: {
-    fontSize: 18,
+    fontFamily: SERIF_FONT,
+    fontSize: 20,
     fontWeight: '900',
   },
   skillStatLbl: {
@@ -7426,8 +7596,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    borderRadius: 12,
-    borderWidth: 1,
+    borderRadius: 14,
+    borderWidth: 1.2,
     padding: 12,
     marginBottom: 8,
   },
@@ -7455,7 +7625,8 @@ const styles = StyleSheet.create({
     color: '#1E3A8A',
   },
   skillMemberName: {
-    fontSize: 13.5,
+    fontFamily: SERIF_FONT,
+    fontSize: 14.5,
     fontWeight: '800',
   },
   miniSkillStatusBadge: {
@@ -7495,9 +7666,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     backgroundColor: '#059669',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
   },
   verifyBtnTxt: {
     fontSize: 11,
@@ -7505,9 +7676,11 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   rejectBtn: {
-    padding: 6,
-    borderRadius: 6,
+    padding: 7,
+    borderRadius: 8,
     backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -7517,8 +7690,8 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalBox: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     padding: 20,
     maxHeight: '90%',
   },
@@ -7552,8 +7725,10 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   modalTitle: {
-    fontSize: 17,
+    fontFamily: SERIF_FONT,
+    fontSize: 18,
     fontWeight: '800',
+    letterSpacing: -0.3,
   },
   modalSubtitle: {
     fontSize: 11.5,
@@ -7561,23 +7736,31 @@ const styles = StyleSheet.create({
     maxWidth: 290,
   },
   fieldLabel: {
-    fontSize: 12,
+    fontSize: 10.5,
     fontWeight: '700',
-    marginBottom: 4,
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+    marginBottom: 6,
   },
   input: {
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 13,
-    marginBottom: 10,
+    paddingVertical: 10,
+    fontSize: 13.5,
+    marginBottom: 12,
+    minHeight: 46,
   },
   formSectionCard: {
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    padding: 16,
     marginBottom: 14,
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
   },
   nextStepsCard: {
     borderWidth: 1,
@@ -7603,9 +7786,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   formCardHeaderText: {
-    fontSize: 11,
+    fontFamily: SERIF_FONT,
+    fontSize: 14,
     fontWeight: '800',
-    letterSpacing: 0.6,
+    letterSpacing: 0.4,
   },
   modernInputContainer: {
     flexDirection: 'row',
@@ -7625,28 +7809,28 @@ const styles = StyleSheet.create({
   },
   textArea: {
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 13,
-    height: 70,
+    paddingVertical: 10,
+    fontSize: 13.5,
+    height: 75,
     textAlignVertical: 'top',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   pickerInputBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 9,
-    marginBottom: 10,
+    marginBottom: 12,
     minHeight: 48,
   },
   pickerIconContainer: {
     width: 32,
     height: 32,
-    borderRadius: 7,
+    borderRadius: 8,
     backgroundColor: '#EFF6FF',
     alignItems: 'center',
     justifyContent: 'center',
@@ -7689,8 +7873,8 @@ const styles = StyleSheet.create({
   },
   recurrenceBtn: {
     flex: 1,
-    paddingVertical: 9,
-    borderRadius: 8,
+    paddingVertical: 10,
+    borderRadius: 10,
     borderWidth: 1.5,
     borderColor: '#E2E8F0',
     alignItems: 'center',
@@ -7733,8 +7917,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 5,
     paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
+    paddingVertical: 8,
+    borderRadius: 10,
     borderWidth: 1.5,
     borderColor: '#E2E8F0',
     marginRight: 8,
@@ -7910,8 +8094,11 @@ const styles = StyleSheet.create({
   },
   modalCancelBtn: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingVertical: 11,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#F1F5F9',
   },
   modalCancelBtnTxt: {
     fontSize: 13,
@@ -7920,9 +8107,9 @@ const styles = StyleSheet.create({
   },
   modalConfirmBtn: {
     backgroundColor: '#1E3A8A',
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 11,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -7952,18 +8139,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1,
+    paddingVertical: 16,
+    borderRadius: 16,
+    borderWidth: 1.5,
     marginBottom: 16,
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
   },
   queueSummaryCol: {
     alignItems: 'center',
     flex: 1,
   },
   queueSummaryNum: {
-    fontSize: 20,
-    fontWeight: '800',
+    fontFamily: SERIF_FONT,
+    fontSize: 22,
+    fontWeight: '900',
   },
   queueSummaryLbl: {
     fontSize: 11,
@@ -7976,10 +8169,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#E2E8F0',
   },
   queueRoleCard: {
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    padding: 15,
     marginBottom: 14,
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
   },
   queueRoleCardConfirmed: {
     borderLeftWidth: 4,
@@ -8013,8 +8211,10 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   queueRoleTitle: {
+    fontFamily: SERIF_FONT,
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: -0.2,
   },
   queueStatusBadge: {
     flexDirection: 'row',
@@ -8339,7 +8539,7 @@ const styles = StyleSheet.create({
   },
   modalSheet: {
     width: '94%',
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 18,
     elevation: 5,
     shadowColor: '#000',
@@ -8353,10 +8553,15 @@ const styles = StyleSheet.create({
   },
   // Phase 6 Rehearsal Styles
   rehearsalCard: {
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    padding: 15,
     marginBottom: 14,
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
   },
   rehearsalCardTop: {
     flexDirection: 'row',
@@ -8364,8 +8569,10 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   rehearsalTitle: {
-    fontSize: 15,
-    fontWeight: '700',
+    fontFamily: SERIF_FONT,
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.2,
   },
   rehearsalMeta: {
     fontSize: 11.5,
@@ -8625,13 +8832,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
+    borderRadius: 14,
+    borderWidth: 1.2,
     marginBottom: 8,
   },
   volCardName: {
-    fontSize: 14,
-    fontWeight: '700',
+    fontFamily: SERIF_FONT,
+    fontSize: 14.5,
+    fontWeight: '800',
   },
   volTeamBadge: {
     backgroundColor: '#EFF6FF',
@@ -8723,15 +8931,16 @@ const styles = StyleSheet.create({
   },
   kpiCard: {
     width: (width - 42) / 2,
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1.2,
   },
   kpiLabel: {
     fontSize: 12,
     fontWeight: '600',
   },
   kpiValue: {
+    fontFamily: SERIF_FONT,
     fontSize: 22,
     fontWeight: '900',
     marginVertical: 4,
@@ -8740,13 +8949,19 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   analyticsSectionCard: {
-    padding: 14,
-    borderRadius: 10,
-    borderWidth: 1,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1.5,
     marginBottom: 14,
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
   },
   analyticsCardTitle: {
-    fontSize: 14,
+    fontFamily: SERIF_FONT,
+    fontSize: 15,
     fontWeight: '800',
   },
   analyticsCardSub: {
@@ -8888,8 +9103,9 @@ const styles = StyleSheet.create({
     color: '#1E3A8A',
   },
   topSongTitle: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontFamily: SERIF_FONT,
+    fontSize: 14,
+    fontWeight: '800',
   },
   topSongTeTitle: {
     fontSize: 12,
@@ -8919,9 +9135,9 @@ const styles = StyleSheet.create({
   activityItemCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 10,
-    borderRadius: 8,
-    borderWidth: 1,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1.2,
     marginBottom: 8,
   },
   activityOrderBadge: {
@@ -8939,8 +9155,9 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   activityTitle: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontFamily: SERIF_FONT,
+    fontSize: 14,
+    fontWeight: '800',
   },
   activityMeta: {
     fontSize: 11,
@@ -8969,9 +9186,9 @@ const styles = StyleSheet.create({
   songItemCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 10,
-    borderRadius: 8,
-    borderWidth: 1,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1.2,
     marginBottom: 8,
   },
   songOrderBadge: {
@@ -9014,9 +9231,9 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   dutyItemCard: {
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
+    padding: 13,
+    borderRadius: 14,
+    borderWidth: 1.2,
     marginBottom: 10,
   },
   dutyHeaderRow: {
@@ -9026,7 +9243,8 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   dutyRoleTitle: {
-    fontSize: 13,
+    fontFamily: SERIF_FONT,
+    fontSize: 14.5,
     fontWeight: '800',
   },
   dutySkillTagTxt: {
@@ -9127,10 +9345,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     marginBottom: 8,
+    elevation: 2,
+    shadowColor: '#1E3A8A',
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
   },
   publishServiceBtnTxt: {
     color: '#FFFFFF',
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '800',
     letterSpacing: 0.3,
   },
@@ -9154,7 +9377,7 @@ const styles = StyleSheet.create({
   modalDraftBtn: {
     flex: 1,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
@@ -9167,9 +9390,14 @@ const styles = StyleSheet.create({
     flex: 1.6,
     backgroundColor: '#1E3A8A',
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
+    elevation: 2,
+    shadowColor: '#1E3A8A',
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
   },
   modalPublishBtnTxt: {
     fontSize: 13,
@@ -9179,9 +9407,9 @@ const styles = StyleSheet.create({
   memberAssignCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 10,
-    borderRadius: 8,
-    borderWidth: 1,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1.2,
     marginBottom: 8,
   },
   memberAvatarCircle: {
@@ -9198,8 +9426,9 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   memberAssignName: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontFamily: SERIF_FONT,
+    fontSize: 14,
+    fontWeight: '800',
   },
   memberAssignPhone: {
     fontSize: 11,
