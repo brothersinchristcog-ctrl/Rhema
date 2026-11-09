@@ -1623,7 +1623,13 @@ class ServiceRosterService {
         availabilityReason?: string;
       }> = [];
 
-      const targetSkill = (params.requiredSkill || params.roleTitle || '').toLowerCase();
+      const targetSkill = (params.requiredSkill || params.roleTitle || '').toLowerCase().trim();
+
+      const checkMatch = (candidate: string) => {
+        if (!candidate || !targetSkill) return false;
+        const c = candidate.toLowerCase().trim();
+        return c.includes(targetSkill) || targetSkill.includes(c);
+      };
 
       for (const m of members) {
         let score = 10;
@@ -1637,12 +1643,32 @@ class ServiceRosterService {
 
         // Check verified skills
         const mSkills = skillMap.get(m.id) || [];
-        if (targetSkill && mSkills.some(s => targetSkill.includes(s) || s.includes(targetSkill))) {
-          score += 40;
+        const hasVerified = Boolean(targetSkill && mSkills.some(s => checkMatch(s)));
+
+        // Check primary skills
+        const pSkills = [
+          ...(typeof m.primarySkill === 'string' ? m.primarySkill.split(',') : []),
+          ...(Array.isArray(m.primarySkills) ? m.primarySkills : [])
+        ].map(s => s.trim());
+        const hasPrimary = pSkills.some(s => checkMatch(s));
+
+        // Check secondary skills
+        const sSkills = [
+          ...(typeof m.secondarySkill === 'string' ? m.secondarySkill.split(',') : []),
+          ...(Array.isArray(m.secondarySkills) ? m.secondarySkills : [])
+        ].map(s => s.trim());
+        const hasSecondary = sSkills.some(s => checkMatch(s));
+
+        if (hasVerified) {
+          score += 50;
           reasons.push('Verified Skill Match');
-        } else if (m.primarySkill && targetSkill.includes(m.primarySkill.toLowerCase())) {
-          score += 20;
+        }
+        if (hasPrimary) {
+          score += 30;
           reasons.push('Profile Primary Skill');
+        } else if (hasSecondary) {
+          score += 20;
+          reasons.push('Profile Secondary Skill');
         }
 
         // Check availability blockouts

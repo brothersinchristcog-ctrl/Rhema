@@ -417,6 +417,88 @@ export default function AdminServicePlanner({ navigation }: any) {
   const [bandWorshipLeader, setBandWorshipLeader] = useState('');
   const [bandWorshipLeaderId, setBandWorshipLeaderId] = useState('');
   const [savingBand, setSavingBand] = useState(false);
+  const [expandedInstrumentMembers, setExpandedInstrumentMembers] = useState<Record<string, boolean>>({});
+
+  const parseSkillsList = (val: any): string[] => {
+    if (Array.isArray(val)) return val.filter(Boolean);
+    if (typeof val === 'string' && val.trim()) {
+      return val.split(',').map((s: string) => s.trim()).filter(Boolean);
+    }
+    return [];
+  };
+
+  interface MusicianCandidate {
+    id: string;
+    name: string;
+    phone?: string;
+    isPrimary: boolean;
+    isSecondary: boolean;
+    isVerified: boolean;
+    badge: string;
+  }
+
+  const getMusicianCandidates = (instrumentKey: string): MusicianCandidate[] => {
+    const keywordMap: Record<string, string[]> = {
+      keyboard: ['keyboard', 'piano', 'keys', 'synth', 'organ'],
+      drums: ['drum', 'percussion', 'cajon', 'pad', 'octapad'],
+      bass: ['bass'],
+      acoustic: ['acoustic', 'guitar'],
+      electric: ['electric', 'lead guitar'],
+      sound: ['sound', 'audio', 'foh', 'stage audio', 'monitors', 'mixer'],
+      worship_leader: ['worship leader', 'worship', 'vocal', 'singer', 'vocalist', 'songs', 'choir']
+    };
+
+    const keywords = keywordMap[instrumentKey] || [];
+    if (keywords.length === 0) return [];
+
+    const list: MusicianCandidate[] = [];
+
+    churchMembers.forEach(m => {
+      const pSkills = [
+        ...parseSkillsList(m.primarySkill),
+        ...(Array.isArray(m.primarySkills) ? m.primarySkills : [])
+      ].map(s => String(s).toLowerCase().trim());
+
+      const sSkills = [
+        ...parseSkillsList(m.secondarySkill),
+        ...(Array.isArray(m.secondarySkills) ? m.secondarySkills : [])
+      ].map(s => String(s).toLowerCase().trim());
+
+      const verifiedRecords = memberSkills.filter(
+        s => s.memberId === m.id && s.verificationStatus === 'verified'
+      );
+      const vSkills = verifiedRecords.map(s => String(s.skillName || '').toLowerCase().trim());
+
+      const isPrimary = pSkills.some(ps => keywords.some(k => ps.includes(k)));
+      const isSecondary = sSkills.some(ss => keywords.some(k => ss.includes(k)));
+      const isVerified = vSkills.some(vs => keywords.some(k => vs.includes(k)));
+
+      if (isPrimary || isSecondary || isVerified) {
+        let badge = '';
+        if (isVerified && isPrimary) badge = '★ Primary (Verified)';
+        else if (isPrimary) badge = '★ Primary';
+        else if (isVerified && isSecondary) badge = '★ Secondary (Verified)';
+        else if (isSecondary) badge = '★ Secondary';
+        else if (isVerified) badge = '✓ Verified';
+
+        list.push({
+          id: m.id,
+          name: m.name || m.fullName || `${m.firstName || ''} ${m.lastName || ''}`.trim() || 'Church Member',
+          phone: m.phone || m.phoneNumber || m.mobile,
+          isPrimary,
+          isSecondary,
+          isVerified,
+          badge
+        });
+      }
+    });
+
+    return list.sort((a, b) => {
+      const scoreA = (a.isVerified && a.isPrimary ? 40 : 0) + (a.isPrimary ? 30 : 0) + (a.isVerified && a.isSecondary ? 20 : 0) + (a.isSecondary ? 10 : 0) + (a.isVerified ? 5 : 0);
+      const scoreB = (b.isVerified && b.isPrimary ? 40 : 0) + (b.isPrimary ? 30 : 0) + (b.isVerified && b.isSecondary ? 20 : 0) + (b.isSecondary ? 10 : 0) + (b.isVerified ? 5 : 0);
+      return scoreB - scoreA;
+    });
+  };
 
   // Templates state
   const [templates, setTemplates] = useState<ServiceTemplate[]>([]);
@@ -1202,6 +1284,7 @@ export default function AdminServicePlanner({ navigation }: any) {
               const timeoutMinutes = 120; // 2 hours default
               const dispatchedDuties: string[] = [];
               const seenRoleKeys = new Set<string>();
+              const seenMemberDutyKeys = new Set<string>();
 
               // Helper to resolve member ID from member name or phone
               const resolveMemberId = (rawId?: string, rawName?: string): { id?: string; name: string; phone?: string } => {
@@ -1209,10 +1292,10 @@ export default function AdminServicePlanner({ navigation }: any) {
                 const lowerName = cleanName.toLowerCase();
 
                 if (rawId && rawId.trim()) {
-                  const m = churchMembers.find(m => m.id === rawId);
+                  const m = churchMembers.find(m => m.id === rawId || m.uid === rawId);
                   if (m) {
                     const mName = m.name || m.fullName || `${m.firstName || ''} ${m.lastName || ''}`.trim() || cleanName;
-                    return { id: rawId, name: mName, phone: m.phone || m.phoneNumber };
+                    return { id: m.id || rawId, name: mName, phone: m.phone || m.phoneNumber || m.mobile };
                   }
                   return { id: rawId, name: cleanName, phone: undefined };
                 }
@@ -1221,12 +1304,12 @@ export default function AdminServicePlanner({ navigation }: any) {
                   // 1. Exact match
                   const exactMatch = churchMembers.find(m => {
                     const mName = (m.name || m.fullName || `${m.firstName || ''} ${m.lastName || ''}`.trim() || '').toLowerCase();
-                    const mPhone = (m.phone || m.phoneNumber || '').trim();
+                    const mPhone = (m.phone || m.phoneNumber || m.mobile || '').trim();
                     return mName === lowerName || mPhone === cleanName;
                   });
                   if (exactMatch) {
                     const mName = exactMatch.name || exactMatch.fullName || `${exactMatch.firstName || ''} ${exactMatch.lastName || ''}`.trim() || cleanName;
-                    return { id: exactMatch.id, name: mName, phone: exactMatch.phone || exactMatch.phoneNumber };
+                    return { id: exactMatch.id, name: mName, phone: exactMatch.phone || exactMatch.phoneNumber || exactMatch.mobile };
                   }
 
                   // 2. Inclusion / substring match
@@ -1236,19 +1319,19 @@ export default function AdminServicePlanner({ navigation }: any) {
                     const mLast = (m.lastName || '').toLowerCase().trim();
                     return (
                       (mName && (mName.includes(lowerName) || lowerName.includes(mName))) ||
-                      (mFirst && lowerName.includes(mFirst)) ||
-                      (mLast && lowerName.includes(mLast))
+                      (mFirst && (mFirst === lowerName || lowerName.includes(mFirst))) ||
+                      (mLast && (mLast === lowerName || lowerName.includes(mLast)))
                     );
                   });
                   if (partialMatch) {
                     const mName = partialMatch.name || partialMatch.fullName || `${partialMatch.firstName || ''} ${partialMatch.lastName || ''}`.trim() || cleanName;
-                    return { id: partialMatch.id, name: mName, phone: partialMatch.phone || partialMatch.phoneNumber };
+                    return { id: partialMatch.id, name: mName, phone: partialMatch.phone || partialMatch.phoneNumber || partialMatch.mobile };
                   }
                 }
                 return { id: rawId || undefined, name: cleanName, phone: undefined };
               };
 
-              // Collect duties across RunSheet, Setlist, and Assignments
+              // Collect duties across RunSheet, Band, Setlist, and Assignments
               const allDuties: Array<{
                 roleId: string;
                 roleTitle: string;
@@ -1264,9 +1347,11 @@ export default function AdminServicePlanner({ navigation }: any) {
               (plan.runSheet || []).forEach((item, idx) => {
                 if (item.responsiblePerson && item.responsiblePerson.trim()) {
                   const resolved = resolveMemberId(item.responsibleMemberId, item.responsiblePerson);
-                  const roleId = item.id || `act_${idx}`;
-                  if (resolved.id && !seenRoleKeys.has(roleId)) {
+                  const roleId = item.id ? `act_${item.id}` : `act_${idx}`;
+                  const dutyKey = `${resolved.id || resolved.name}_${roleId}`;
+                  if (resolved.id && !seenRoleKeys.has(roleId) && !seenMemberDutyKeys.has(dutyKey)) {
                     seenRoleKeys.add(roleId);
+                    seenMemberDutyKeys.add(dutyKey);
                     allDuties.push({
                       roleId,
                       roleTitle: item.program || 'Service Activity',
@@ -1275,19 +1360,76 @@ export default function AdminServicePlanner({ navigation }: any) {
                       memberId: resolved.id,
                       memberName: resolved.name,
                       memberPhone: resolved.phone,
-                      requiredSkill: item.category
+                      requiredSkill: item.category || item.program
                     });
                   }
                 }
               });
 
-              // 2. Setlist songs (Worship leaders & band musicians)
+              // 2. Whole-Service Musical Instruments & Worship Band (Primary whole-service notifications)
+              const wholeBandRoleDefs = [
+                { roleId: 'role_keyboard', defaultTitle: 'Keyboardist / Pianist', skill: 'Keyboard / Piano' },
+                { roleId: 'role_drums', defaultTitle: 'Drummer / Percussionist', skill: 'Drums / Percussion' },
+                { roleId: 'role_bass', defaultTitle: 'Bass Guitarist', skill: 'Bass Guitar' },
+                { roleId: 'role_acoustic', defaultTitle: 'Acoustic Guitarist', skill: 'Acoustic Guitar' },
+                { roleId: 'role_electric', defaultTitle: 'Electric Guitarist', skill: 'Electric Guitar' },
+                { roleId: 'role_sound', defaultTitle: 'Sound & Audio Engineer', skill: 'Sound Engineer (FOH)' },
+                { roleId: 'role_worship_leader', defaultTitle: 'Worship Leader', skill: 'Worship Leader' },
+              ];
+
+              wholeBandRoleDefs.forEach(b => {
+                const memberName = plan.assignments?.[b.roleId];
+                if (memberName && memberName.trim() && !seenRoleKeys.has(b.roleId)) {
+                  const resolved = resolveMemberId(plan.assignmentMemberIds?.[b.roleId], memberName);
+                  const dutyKey = `${resolved.id || resolved.name}_${b.roleId}`;
+                  if (resolved.id && !seenMemberDutyKeys.has(dutyKey)) {
+                    seenRoleKeys.add(b.roleId);
+                    seenMemberDutyKeys.add(dutyKey);
+                    allDuties.push({
+                      roleId: b.roleId,
+                      roleTitle: b.defaultTitle,
+                      memberId: resolved.id,
+                      memberName: resolved.name,
+                      memberPhone: resolved.phone,
+                      requiredSkill: b.skill
+                    });
+                  }
+                }
+              });
+
+              // 3. Other General Service Assignments (Preacher, Ushes, Media, etc.)
+              if (plan.assignments) {
+                for (const [roleId, memberName] of Object.entries(plan.assignments)) {
+                  if (!memberName || !memberName.trim() || seenRoleKeys.has(roleId)) continue;
+                  const resolved = resolveMemberId(plan.assignmentMemberIds?.[roleId], memberName);
+                  const dutyKey = `${resolved.id || resolved.name}_${roleId}`;
+                  if (resolved.id && !seenMemberDutyKeys.has(dutyKey)) {
+                    seenRoleKeys.add(roleId);
+                    seenMemberDutyKeys.add(dutyKey);
+                    const roleObj = serviceRolesList.find(r => r.roleId === roleId);
+                    const roleTitle = roleObj?.roleTitle || roleId.replace('role_', '').replace('act_', '').replace(/_/g, ' ');
+                    allDuties.push({
+                      roleId,
+                      roleTitle,
+                      memberId: resolved.id,
+                      memberName: resolved.name,
+                      memberPhone: resolved.phone,
+                      requiredSkill: roleObj?.suggestedSkill || roleTitle
+                    });
+                  }
+                }
+              }
+
+              // 4. Setlist songs (Only notify guest / unique players not already covered by whole-service band)
               (plan.setlist || []).forEach((song, idx) => {
-                if (song.ledBy && song.ledBy.trim()) {
+                const wholeServiceLeader = plan.assignments?.['role_worship_leader'];
+                if (song.ledBy && song.ledBy.trim() && song.ledBy !== wholeServiceLeader) {
                   const resolved = resolveMemberId(song.ledByMemberId, song.ledBy);
                   const roleId = `worship_lead_${song.id || idx}`;
-                  if (resolved.id && !seenRoleKeys.has(roleId)) {
+                  const dutyKey = `${resolved.id || resolved.name}_worship_leader`;
+                  if (resolved.id && !seenRoleKeys.has(roleId) && !seenMemberDutyKeys.has(dutyKey)) {
                     seenRoleKeys.add(roleId);
+                    seenMemberDutyKeys.add(dutyKey);
                     allDuties.push({
                       roleId,
                       roleTitle: `Worship Lead (${song.title})`,
@@ -1300,11 +1442,14 @@ export default function AdminServicePlanner({ navigation }: any) {
                 }
                 if (song.musicianAssignments) {
                   Object.entries(song.musicianAssignments).forEach(([instrument, assignment]) => {
-                    if (assignment?.memberName && assignment.memberName.trim()) {
+                    const wholeBandName = plan.assignments?.[`role_${instrument}`];
+                    if (assignment?.memberName && assignment.memberName.trim() && assignment.memberName !== wholeBandName) {
                       const resolved = resolveMemberId(assignment.memberId, assignment.memberName);
                       const roleId = `band_${song.id || idx}_${instrument}`;
-                      if (resolved.id && !seenRoleKeys.has(roleId)) {
+                      const dutyKey = `${resolved.id || resolved.name}_${instrument}`;
+                      if (resolved.id && !seenRoleKeys.has(roleId) && !seenMemberDutyKeys.has(dutyKey)) {
                         seenRoleKeys.add(roleId);
+                        seenMemberDutyKeys.add(dutyKey);
                         allDuties.push({
                           roleId,
                           roleTitle: `${instrument.charAt(0).toUpperCase() + instrument.slice(1)} (${song.title})`,
@@ -1318,27 +1463,6 @@ export default function AdminServicePlanner({ navigation }: any) {
                   });
                 }
               });
-
-              // 3. Plan general assignments
-              if (plan.assignments) {
-                for (const [roleId, memberName] of Object.entries(plan.assignments)) {
-                  if (!memberName || !memberName.trim()) continue;
-                  const resolved = resolveMemberId(plan.assignmentMemberIds?.[roleId], memberName);
-                  if (resolved.id && !seenRoleKeys.has(roleId)) {
-                    seenRoleKeys.add(roleId);
-                    const roleObj = serviceRolesList.find(r => r.roleId === roleId);
-                    const roleTitle = roleObj?.roleTitle || roleId.replace('role_', '').replace('act_', '');
-                    allDuties.push({
-                      roleId,
-                      roleTitle,
-                      memberId: resolved.id,
-                      memberName: resolved.name,
-                      memberPhone: resolved.phone,
-                      requiredSkill: roleObj?.suggestedSkill || roleTitle
-                    });
-                  }
-                }
-              }
 
               // Dispatch queue for each duty
               for (const duty of allDuties) {
@@ -1693,15 +1817,19 @@ export default function AdminServicePlanner({ navigation }: any) {
       const newMemberIds: Record<string, string> = { ...(selectedPlan.assignmentMemberIds || {}) };
 
       const updateRole = (roleKey: string, name: string, id: string) => {
-        if (name.trim()) {
-          newAssignments[roleKey] = name.trim();
+        const clean = name.trim();
+        if (clean) {
+          newAssignments[roleKey] = clean;
           if (id) {
             newMemberIds[roleKey] = id;
           } else {
-            const found = churchMembers.find(m =>
-              (m.name && m.name.toLowerCase().trim() === name.toLowerCase().trim()) ||
-              (m.firstName && m.firstName.toLowerCase().trim() === name.toLowerCase().trim())
-            );
+            const lower = clean.toLowerCase();
+            const found = churchMembers.find(m => {
+              const mName = (m.name || m.fullName || `${m.firstName || ''} ${m.lastName || ''}`).toLowerCase().trim();
+              const mFirst = (m.firstName || '').toLowerCase().trim();
+              const mLast = (m.lastName || '').toLowerCase().trim();
+              return mName === lower || mName.includes(lower) || lower.includes(mName) || mFirst === lower || mLast === lower;
+            });
             if (found) newMemberIds[roleKey] = found.id;
           }
         } else {
@@ -2292,6 +2420,7 @@ export default function AdminServicePlanner({ navigation }: any) {
       { id: 'role_worship_leader', title: 'Worship Leader', category: 'worship', skill: 'Worship Leader', teamId: 'team_worship' },
       { id: 'role_keyboard', title: 'Keyboardist / Synth', category: 'music', skill: 'Keyboard', teamId: 'team_music' },
       { id: 'role_acoustic', title: 'Acoustic Guitar', category: 'music', skill: 'Guitar', teamId: 'team_music' },
+      { id: 'role_electric', title: 'Electric Guitarist', category: 'music', skill: 'Electric Guitar', teamId: 'team_music' },
       { id: 'role_bass', title: 'Bass Guitar', category: 'music', skill: 'Bass Guitar', teamId: 'team_music' },
       { id: 'role_drums', title: 'Drummer', category: 'music', skill: 'Drums', teamId: 'team_music' },
       { id: 'role_sound', title: 'Sound Engineer', category: 'technical', skill: 'Sound Engineering', teamId: 'team_sound' },
@@ -2737,6 +2866,182 @@ export default function AdminServicePlanner({ navigation }: any) {
     } finally {
       setExportingCsv(false);
     }
+  };
+
+  const renderBandInstrumentSection = (config: {
+    emoji: string;
+    title: string;
+    instrumentKey: string;
+    value: string;
+    valueId: string;
+    onChangeText: (txt: string) => void;
+    onSelectCandidate: (cand: { id: string; name: string }) => void;
+    onClear: () => void;
+  }) => {
+    const candidates = getMusicianCandidates(config.instrumentKey);
+    const isExpanded = expandedInstrumentMembers[config.instrumentKey] || false;
+
+    return (
+      <View style={{ marginBottom: 16 }}>
+        {/* Header with Title and Clear button */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+            <Text style={{ fontSize: 16 }}>{config.emoji}</Text>
+            <Text style={[styles.fieldLabel, { color: primaryText, marginBottom: 0, fontWeight: '700' }]}>
+              {config.title}
+            </Text>
+          </View>
+          {config.value ? (
+            <TouchableOpacity onPress={config.onClear} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+              <Text style={{ fontSize: 11.5, color: '#EF4444', fontWeight: '700' }}>Clear</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+
+        {/* Input */}
+        <TextInput
+          style={[
+            styles.input,
+            {
+              backgroundColor: inputBg,
+              color: primaryText,
+              borderColor: config.value ? '#10B981' : inputBorder,
+              borderWidth: config.value ? 1.5 : 1
+            }
+          ]}
+          placeholder={`Enter or select ${config.title.toLowerCase()}`}
+          placeholderTextColor="#94A3B8"
+          value={config.value}
+          onChangeText={config.onChangeText}
+        />
+
+        {/* Skilled Candidates Display */}
+        <View style={{ marginTop: 6 }}>
+          {candidates.length > 0 ? (
+            <View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <Text style={{ fontSize: 10.5, color: isDark ? '#34D399' : '#059669', fontWeight: '700', letterSpacing: 0.5 }}>
+                  MATCHED BY SKILL ({candidates.length}):
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setExpandedInstrumentMembers(prev => ({ ...prev, [config.instrumentKey]: !isExpanded }))}
+                  hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                >
+                  <Text style={{ fontSize: 10.5, color: secondaryText, fontWeight: '600' }}>
+                    {isExpanded ? 'Hide All' : '+ Show All Members'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                {candidates.map(c => {
+                  const isSelected = config.valueId === c.id || config.value.toLowerCase().trim() === c.name.toLowerCase().trim();
+                  return (
+                    <TouchableOpacity
+                      key={c.id}
+                      style={[
+                        styles.quickMemberChip,
+                        {
+                          backgroundColor: isSelected ? publishBtnBg : (isDark ? '#27272A' : '#F1F5F9'),
+                          borderColor: isSelected ? publishBtnBg : (c.isPrimary ? '#10B981' : (isDark ? '#3F3F46' : '#CBD5E1')),
+                          borderWidth: 1,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 5
+                        }
+                      ]}
+                      onPress={() => config.onSelectCandidate({ id: c.id, name: c.name })}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[styles.quickMemberChipTxt, isSelected && { color: '#FFFFFF', fontWeight: '700' }]}>
+                        {c.name}
+                      </Text>
+                      <View style={{
+                        paddingHorizontal: 5,
+                        paddingVertical: 1.5,
+                        borderRadius: 6,
+                        backgroundColor: isSelected ? 'rgba(255,255,255,0.25)' : (c.isPrimary ? (isDark ? 'rgba(16,185,129,0.2)' : '#DCFCE7') : (isDark ? 'rgba(100,116,139,0.2)' : '#E2E8F0'))
+                      }}>
+                        <Text style={{
+                          fontSize: 9,
+                          fontWeight: '800',
+                          color: isSelected ? '#FFFFFF' : (c.isPrimary ? (isDark ? '#34D399' : '#15803D') : secondaryText)
+                        }}>
+                          {c.badge}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          ) : (
+            <View>
+              <Text style={{ fontSize: 11, color: secondaryText, fontStyle: 'italic', marginBottom: 4 }}>
+                No members tagged with this skill in profile. Select volunteer:
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                {churchMembers.slice(0, 12).map(m => {
+                  const mName = m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim() || 'Member';
+                  const isSelected = config.valueId === m.id || config.value.toLowerCase().trim() === mName.toLowerCase().trim();
+                  return (
+                    <TouchableOpacity
+                      key={m.id}
+                      style={[
+                        styles.quickMemberChip,
+                        {
+                          backgroundColor: isSelected ? publishBtnBg : (isDark ? '#27272A' : '#F1F5F9'),
+                          borderColor: isSelected ? publishBtnBg : (isDark ? '#3F3F46' : '#CBD5E1'),
+                          borderWidth: 1
+                        }
+                      ]}
+                      onPress={() => config.onSelectCandidate({ id: m.id, name: mName })}
+                    >
+                      <Text style={[styles.quickMemberChipTxt, isSelected && { color: '#FFFFFF', fontWeight: '700' }]}>
+                        {mName}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
+
+          {/* Expanded all members if toggled */}
+          {candidates.length > 0 && isExpanded && (
+            <View style={{ marginTop: 8, paddingTop: 6, borderTopWidth: 1, borderTopColor: cardBorder }}>
+              <Text style={{ fontSize: 10, color: secondaryText, fontWeight: '700', marginBottom: 4 }}>
+                ALL CHURCH MEMBERS:
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                {churchMembers.map(m => {
+                  const mName = m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim() || 'Member';
+                  const isSelected = config.valueId === m.id || config.value.toLowerCase().trim() === mName.toLowerCase().trim();
+                  return (
+                    <TouchableOpacity
+                      key={m.id}
+                      style={[
+                        styles.quickMemberChip,
+                        {
+                          backgroundColor: isSelected ? publishBtnBg : (isDark ? '#27272A' : '#F1F5F9'),
+                          borderColor: isSelected ? publishBtnBg : (isDark ? '#3F3F46' : '#CBD5E1'),
+                          borderWidth: 1
+                        }
+                      ]}
+                      onPress={() => config.onSelectCandidate({ id: m.id, name: mName })}
+                    >
+                      <Text style={[styles.quickMemberChipTxt, isSelected && { color: '#FFFFFF', fontWeight: '700' }]}>
+                        {mName}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
+        </View>
+      </View>
+    );
   };
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -3406,21 +3711,21 @@ export default function AdminServicePlanner({ navigation }: any) {
 
               {/* WHOLE-SERVICE WORSHIP BAND CARD */}
               <View style={[styles.selectedBanner, { backgroundColor: cardSurface, borderColor: cardBorder, marginTop: 10, marginBottom: 14 }]}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: isDark ? 'rgba(46, 107, 79, 0.25)' : '#ECFDF5', alignItems: 'center', justifyContent: 'center' }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                    <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: isDark ? 'rgba(46, 107, 79, 0.25)' : '#ECFDF5', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                       <Music size={16} color="#2E6B4F" />
                     </View>
-                    <View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={[styles.selectedBannerTag, { marginBottom: 1 }]}>SERVICE WORSHIP BAND</Text>
-                      <Text style={[styles.selectedBannerTitle, { color: primaryText, fontSize: 16 }]}>
+                      <Text style={[styles.selectedBannerTitle, { color: primaryText, fontSize: 15 }]} numberOfLines={1}>
                         Whole-Service Musical Instruments
                       </Text>
                     </View>
                   </View>
 
                   <TouchableOpacity
-                    style={[styles.publishServiceBtn, { paddingVertical: 6, paddingHorizontal: 12, backgroundColor: publishBtnBg }]}
+                    style={[styles.publishServiceBtn, { paddingVertical: 6, paddingHorizontal: 12, backgroundColor: publishBtnBg, flexShrink: 0 }]}
                     onPress={openServiceBandModal}
                     activeOpacity={0.85}
                   >
@@ -3435,64 +3740,81 @@ export default function AdminServicePlanner({ navigation }: any) {
                   Assigned once for the whole service. All setlist praise songs automatically use this band without needing to assign per song.
                 </Text>
 
-                {/* Band Members Quick Grid */}
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
-                    <Text style={{ fontSize: 12 }}>🎹</Text>
-                    <View>
-                      <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }}>KEYBOARD</Text>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_keyboard'] ? primaryText : '#94A3B8' }}>
+                {/* Band Members Quick Grid - 2-Column Responsive Layout */}
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between' }}>
+                  {/* Keyboard */}
+                  <View style={{ width: '48.5%', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
+                    <Text style={{ fontSize: 14 }}>🎹</Text>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }} numberOfLines={1}>KEYBOARD</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_keyboard'] ? primaryText : '#94A3B8' }} numberOfLines={1}>
                         {selectedPlan.assignments?.['role_keyboard'] || 'Not Assigned'}
                       </Text>
                     </View>
                   </View>
 
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
-                    <Text style={{ fontSize: 12 }}>🥁</Text>
-                    <View>
-                      <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }}>DRUMS</Text>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_drums'] ? primaryText : '#94A3B8' }}>
+                  {/* Drums */}
+                  <View style={{ width: '48.5%', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
+                    <Text style={{ fontSize: 14 }}>🥁</Text>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }} numberOfLines={1}>DRUMS</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_drums'] ? primaryText : '#94A3B8' }} numberOfLines={1}>
                         {selectedPlan.assignments?.['role_drums'] || 'Not Assigned'}
                       </Text>
                     </View>
                   </View>
 
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
-                    <Text style={{ fontSize: 12 }}>🎸</Text>
-                    <View>
-                      <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }}>BASS GUITAR</Text>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_bass'] ? primaryText : '#94A3B8' }}>
+                  {/* Bass Guitar */}
+                  <View style={{ width: '48.5%', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
+                    <Text style={{ fontSize: 14 }}>🎸</Text>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }} numberOfLines={1}>BASS GUITAR</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_bass'] ? primaryText : '#94A3B8' }} numberOfLines={1}>
                         {selectedPlan.assignments?.['role_bass'] || 'Not Assigned'}
                       </Text>
                     </View>
                   </View>
 
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
-                    <Text style={{ fontSize: 12 }}>🎸</Text>
-                    <View>
-                      <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }}>ACOUSTIC GUITAR</Text>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_acoustic'] ? primaryText : '#94A3B8' }}>
+                  {/* Acoustic Guitar */}
+                  <View style={{ width: '48.5%', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
+                    <Text style={{ fontSize: 14 }}>🎸</Text>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }} numberOfLines={1}>ACOUSTIC GUITAR</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_acoustic'] ? primaryText : '#94A3B8' }} numberOfLines={1}>
                         {selectedPlan.assignments?.['role_acoustic'] || 'Not Assigned'}
                       </Text>
                     </View>
                   </View>
 
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
-                    <Text style={{ fontSize: 12 }}>🎧</Text>
-                    <View>
-                      <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }}>SOUND / AUDIO</Text>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_sound'] ? primaryText : '#94A3B8' }}>
+                  {/* Electric Guitar */}
+                  <View style={{ width: '48.5%', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
+                    <Text style={{ fontSize: 14 }}>⚡</Text>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }} numberOfLines={1}>ELECTRIC GUITAR</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_electric'] ? primaryText : '#94A3B8' }} numberOfLines={1}>
+                        {selectedPlan.assignments?.['role_electric'] || 'Not Assigned'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Sound & Audio */}
+                  <View style={{ width: '48.5%', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
+                    <Text style={{ fontSize: 14 }}>🎧</Text>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }} numberOfLines={1}>SOUND / AUDIO</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_sound'] ? primaryText : '#94A3B8' }} numberOfLines={1}>
                         {selectedPlan.assignments?.['role_sound'] || 'Not Assigned'}
                       </Text>
                     </View>
                   </View>
 
+                  {/* Worship Leader */}
                   {selectedPlan.assignments?.['role_worship_leader'] ? (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
-                      <Text style={{ fontSize: 12 }}>🎤</Text>
-                      <View>
-                        <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }}>WORSHIP LEADER</Text>
-                        <Text style={{ fontSize: 12, fontWeight: '700', color: primaryText }}>
+                    <View style={{ width: '100%', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
+                      <Text style={{ fontSize: 14 }}>🎤</Text>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }} numberOfLines={1}>WORSHIP LEADER</Text>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: primaryText }} numberOfLines={1}>
                           {selectedPlan.assignments['role_worship_leader']}
                         </Text>
                       </View>
@@ -4999,17 +5321,48 @@ export default function AdminServicePlanner({ navigation }: any) {
                 onChangeText={setSongLeaderInput}
               />
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-                {churchMembers.slice(0, 6).map(m => (
-                  <TouchableOpacity
-                    key={m.id}
-                    style={[styles.quickMemberChip, songLeaderInput === m.name && styles.quickMemberChipActive]}
-                    onPress={() => setSongLeaderInput(m.name || m.firstName)}
-                  >
-                    <Text style={[styles.quickMemberChipTxt, songLeaderInput === m.name && styles.quickMemberChipTxtActive]}>
-                      {m.name || m.firstName}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                {(() => {
+                  const leadCandidates = getMusicianCandidates('worship_leader');
+                  const list = leadCandidates.length > 0
+                    ? leadCandidates.map(c => ({ id: c.id, name: c.name, badge: c.badge }))
+                    : churchMembers.slice(0, 8).map(m => ({ id: m.id, name: m.name || m.firstName, badge: '' }));
+                  return list.map(item => {
+                    const isSelected = songLeaderInput === item.name;
+                    return (
+                      <TouchableOpacity
+                        key={item.id}
+                        style={[
+                          styles.quickMemberChip,
+                          {
+                            backgroundColor: isSelected ? publishBtnBg : (isDark ? '#27272A' : '#F1F5F9'),
+                            borderColor: isSelected ? publishBtnBg : (isDark ? '#3F3F46' : '#CBD5E1'),
+                            borderWidth: 1,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 4
+                          }
+                        ]}
+                        onPress={() => setSongLeaderInput(item.name)}
+                      >
+                        <Text style={[styles.quickMemberChipTxt, isSelected && { color: '#FFFFFF', fontWeight: '700' }]}>
+                          {item.name}
+                        </Text>
+                        {item.badge ? (
+                          <View style={{
+                            paddingHorizontal: 4,
+                            paddingVertical: 1,
+                            borderRadius: 4,
+                            backgroundColor: isSelected ? 'rgba(255,255,255,0.25)' : (isDark ? 'rgba(16,185,129,0.2)' : '#DCFCE7')
+                          }}>
+                            <Text style={{ fontSize: 8.5, fontWeight: '800', color: isSelected ? '#FFFFFF' : (isDark ? '#34D399' : '#15803D') }}>
+                              {item.badge}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </TouchableOpacity>
+                    );
+                  });
+                })()}
               </ScrollView>
 
               {/* Musician Assignments */}
@@ -5141,242 +5494,151 @@ export default function AdminServicePlanner({ navigation }: any) {
               </View>
 
               {/* 1. Keyboard */}
-              <View style={{ marginBottom: 14 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <Text style={{ fontSize: 16 }}>🎹</Text>
-                  <Text style={[styles.fieldLabel, { color: primaryText, marginBottom: 0 }]}>Keyboardist / Pianist *</Text>
-                </View>
-                <TextInput
-                  style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
-                  placeholder="Enter or select keyboard player"
-                  placeholderTextColor="#94A3B8"
-                  value={bandKeyboard}
-                  onChangeText={(txt) => {
-                    setBandKeyboard(txt);
-                    setBandKeyboardId('');
-                  }}
-                />
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
-                  {churchMembers.slice(0, 8).map(m => (
-                    <TouchableOpacity
-                      key={m.id}
-                      style={[styles.quickMemberChip, bandKeyboard === (m.name || m.firstName) && styles.quickMemberChipActive]}
-                      onPress={() => {
-                        setBandKeyboard(m.name || m.firstName);
-                        setBandKeyboardId(m.id);
-                      }}
-                    >
-                      <Text style={[styles.quickMemberChipTxt, bandKeyboard === (m.name || m.firstName) && styles.quickMemberChipTxtActive]}>
-                        {m.name || m.firstName}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
+              {renderBandInstrumentSection({
+                emoji: '🎹',
+                title: 'Keyboardist / Pianist',
+                instrumentKey: 'keyboard',
+                value: bandKeyboard,
+                valueId: bandKeyboardId,
+                onChangeText: (txt) => {
+                  setBandKeyboard(txt);
+                  setBandKeyboardId('');
+                },
+                onSelectCandidate: (cand) => {
+                  setBandKeyboard(cand.name);
+                  setBandKeyboardId(cand.id);
+                },
+                onClear: () => {
+                  setBandKeyboard('');
+                  setBandKeyboardId('');
+                }
+              })}
 
               {/* 2. Drums */}
-              <View style={{ marginBottom: 14 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <Text style={{ fontSize: 16 }}>🥁</Text>
-                  <Text style={[styles.fieldLabel, { color: primaryText, marginBottom: 0 }]}>Drummer / Percussionist</Text>
-                </View>
-                <TextInput
-                  style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
-                  placeholder="Enter or select drummer"
-                  placeholderTextColor="#94A3B8"
-                  value={bandDrums}
-                  onChangeText={(txt) => {
-                    setBandDrums(txt);
-                    setBandDrumsId('');
-                  }}
-                />
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
-                  {churchMembers.slice(0, 8).map(m => (
-                    <TouchableOpacity
-                      key={m.id}
-                      style={[styles.quickMemberChip, bandDrums === (m.name || m.firstName) && styles.quickMemberChipActive]}
-                      onPress={() => {
-                        setBandDrums(m.name || m.firstName);
-                        setBandDrumsId(m.id);
-                      }}
-                    >
-                      <Text style={[styles.quickMemberChipTxt, bandDrums === (m.name || m.firstName) && styles.quickMemberChipTxtActive]}>
-                        {m.name || m.firstName}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
+              {renderBandInstrumentSection({
+                emoji: '🥁',
+                title: 'Drummer / Percussionist',
+                instrumentKey: 'drums',
+                value: bandDrums,
+                valueId: bandDrumsId,
+                onChangeText: (txt) => {
+                  setBandDrums(txt);
+                  setBandDrumsId('');
+                },
+                onSelectCandidate: (cand) => {
+                  setBandDrums(cand.name);
+                  setBandDrumsId(cand.id);
+                },
+                onClear: () => {
+                  setBandDrums('');
+                  setBandDrumsId('');
+                }
+              })}
 
               {/* 3. Bass Guitar */}
-              <View style={{ marginBottom: 14 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <Text style={{ fontSize: 16 }}>🎸</Text>
-                  <Text style={[styles.fieldLabel, { color: primaryText, marginBottom: 0 }]}>Bass Guitarist</Text>
-                </View>
-                <TextInput
-                  style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
-                  placeholder="Enter or select bass guitarist"
-                  placeholderTextColor="#94A3B8"
-                  value={bandBass}
-                  onChangeText={(txt) => {
-                    setBandBass(txt);
-                    setBandBassId('');
-                  }}
-                />
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
-                  {churchMembers.slice(0, 8).map(m => (
-                    <TouchableOpacity
-                      key={m.id}
-                      style={[styles.quickMemberChip, bandBass === (m.name || m.firstName) && styles.quickMemberChipActive]}
-                      onPress={() => {
-                        setBandBass(m.name || m.firstName);
-                        setBandBassId(m.id);
-                      }}
-                    >
-                      <Text style={[styles.quickMemberChipTxt, bandBass === (m.name || m.firstName) && styles.quickMemberChipTxtActive]}>
-                        {m.name || m.firstName}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
+              {renderBandInstrumentSection({
+                emoji: '🎸',
+                title: 'Bass Guitarist',
+                instrumentKey: 'bass',
+                value: bandBass,
+                valueId: bandBassId,
+                onChangeText: (txt) => {
+                  setBandBass(txt);
+                  setBandBassId('');
+                },
+                onSelectCandidate: (cand) => {
+                  setBandBass(cand.name);
+                  setBandBassId(cand.id);
+                },
+                onClear: () => {
+                  setBandBass('');
+                  setBandBassId('');
+                }
+              })}
 
               {/* 4. Acoustic Guitar */}
-              <View style={{ marginBottom: 14 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <Text style={{ fontSize: 16 }}>🎸</Text>
-                  <Text style={[styles.fieldLabel, { color: primaryText, marginBottom: 0 }]}>Acoustic Guitarist</Text>
-                </View>
-                <TextInput
-                  style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
-                  placeholder="Enter or select acoustic guitarist"
-                  placeholderTextColor="#94A3B8"
-                  value={bandAcoustic}
-                  onChangeText={(txt) => {
-                    setBandAcoustic(txt);
-                    setBandAcousticId('');
-                  }}
-                />
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
-                  {churchMembers.slice(0, 8).map(m => (
-                    <TouchableOpacity
-                      key={m.id}
-                      style={[styles.quickMemberChip, bandAcoustic === (m.name || m.firstName) && styles.quickMemberChipActive]}
-                      onPress={() => {
-                        setBandAcoustic(m.name || m.firstName);
-                        setBandAcousticId(m.id);
-                      }}
-                    >
-                      <Text style={[styles.quickMemberChipTxt, bandAcoustic === (m.name || m.firstName) && styles.quickMemberChipTxtActive]}>
-                        {m.name || m.firstName}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
+              {renderBandInstrumentSection({
+                emoji: '🎸',
+                title: 'Acoustic Guitarist',
+                instrumentKey: 'acoustic',
+                value: bandAcoustic,
+                valueId: bandAcousticId,
+                onChangeText: (txt) => {
+                  setBandAcoustic(txt);
+                  setBandAcousticId('');
+                },
+                onSelectCandidate: (cand) => {
+                  setBandAcoustic(cand.name);
+                  setBandAcousticId(cand.id);
+                },
+                onClear: () => {
+                  setBandAcoustic('');
+                  setBandAcousticId('');
+                }
+              })}
 
               {/* 5. Electric Guitar */}
-              <View style={{ marginBottom: 14 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <Text style={{ fontSize: 16 }}>⚡</Text>
-                  <Text style={[styles.fieldLabel, { color: primaryText, marginBottom: 0 }]}>Electric Guitarist</Text>
-                </View>
-                <TextInput
-                  style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
-                  placeholder="Enter or select electric guitarist"
-                  placeholderTextColor="#94A3B8"
-                  value={bandElectric}
-                  onChangeText={(txt) => {
-                    setBandElectric(txt);
-                    setBandElectricId('');
-                  }}
-                />
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
-                  {churchMembers.slice(0, 8).map(m => (
-                    <TouchableOpacity
-                      key={m.id}
-                      style={[styles.quickMemberChip, bandElectric === (m.name || m.firstName) && styles.quickMemberChipActive]}
-                      onPress={() => {
-                        setBandElectric(m.name || m.firstName);
-                        setBandElectricId(m.id);
-                      }}
-                    >
-                      <Text style={[styles.quickMemberChipTxt, bandElectric === (m.name || m.firstName) && styles.quickMemberChipTxtActive]}>
-                        {m.name || m.firstName}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
+              {renderBandInstrumentSection({
+                emoji: '⚡',
+                title: 'Electric Guitarist',
+                instrumentKey: 'electric',
+                value: bandElectric,
+                valueId: bandElectricId,
+                onChangeText: (txt) => {
+                  setBandElectric(txt);
+                  setBandElectricId('');
+                },
+                onSelectCandidate: (cand) => {
+                  setBandElectric(cand.name);
+                  setBandElectricId(cand.id);
+                },
+                onClear: () => {
+                  setBandElectric('');
+                  setBandElectricId('');
+                }
+              })}
 
               {/* 6. Sound & Audio */}
-              <View style={{ marginBottom: 14 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <Text style={{ fontSize: 16 }}>🎧</Text>
-                  <Text style={[styles.fieldLabel, { color: primaryText, marginBottom: 0 }]}>Sound & Audio Engineer</Text>
-                </View>
-                <TextInput
-                  style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
-                  placeholder="Enter or select sound operator"
-                  placeholderTextColor="#94A3B8"
-                  value={bandSound}
-                  onChangeText={(txt) => {
-                    setBandSound(txt);
-                    setBandSoundId('');
-                  }}
-                />
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
-                  {churchMembers.slice(0, 8).map(m => (
-                    <TouchableOpacity
-                      key={m.id}
-                      style={[styles.quickMemberChip, bandSound === (m.name || m.firstName) && styles.quickMemberChipActive]}
-                      onPress={() => {
-                        setBandSound(m.name || m.firstName);
-                        setBandSoundId(m.id);
-                      }}
-                    >
-                      <Text style={[styles.quickMemberChipTxt, bandSound === (m.name || m.firstName) && styles.quickMemberChipTxtActive]}>
-                        {m.name || m.firstName}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
+              {renderBandInstrumentSection({
+                emoji: '🎧',
+                title: 'Sound & Audio Engineer',
+                instrumentKey: 'sound',
+                value: bandSound,
+                valueId: bandSoundId,
+                onChangeText: (txt) => {
+                  setBandSound(txt);
+                  setBandSoundId('');
+                },
+                onSelectCandidate: (cand) => {
+                  setBandSound(cand.name);
+                  setBandSoundId(cand.id);
+                },
+                onClear: () => {
+                  setBandSound('');
+                  setBandSoundId('');
+                }
+              })}
 
               {/* 7. Worship Leader */}
-              <View style={{ marginBottom: 14 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <Text style={{ fontSize: 16 }}>🎤</Text>
-                  <Text style={[styles.fieldLabel, { color: primaryText, marginBottom: 0 }]}>Primary Worship Leader</Text>
-                </View>
-                <TextInput
-                  style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
-                  placeholder="Enter or select worship leader"
-                  placeholderTextColor="#94A3B8"
-                  value={bandWorshipLeader}
-                  onChangeText={(txt) => {
-                    setBandWorshipLeader(txt);
-                    setBandWorshipLeaderId('');
-                  }}
-                />
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
-                  {churchMembers.slice(0, 8).map(m => (
-                    <TouchableOpacity
-                      key={m.id}
-                      style={[styles.quickMemberChip, bandWorshipLeader === (m.name || m.firstName) && styles.quickMemberChipActive]}
-                      onPress={() => {
-                        setBandWorshipLeader(m.name || m.firstName);
-                        setBandWorshipLeaderId(m.id);
-                      }}
-                    >
-                      <Text style={[styles.quickMemberChipTxt, bandWorshipLeader === (m.name || m.firstName) && styles.quickMemberChipTxtActive]}>
-                        {m.name || m.firstName}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
+              {renderBandInstrumentSection({
+                emoji: '🎤',
+                title: 'Primary Worship Leader',
+                instrumentKey: 'worship_leader',
+                value: bandWorshipLeader,
+                valueId: bandWorshipLeaderId,
+                onChangeText: (txt) => {
+                  setBandWorshipLeader(txt);
+                  setBandWorshipLeaderId('');
+                },
+                onSelectCandidate: (cand) => {
+                  setBandWorshipLeader(cand.name);
+                  setBandWorshipLeaderId(cand.id);
+                },
+                onClear: () => {
+                  setBandWorshipLeader('');
+                  setBandWorshipLeaderId('');
+                }
+              })}
             </ScrollView>
 
             <View style={styles.modalFooter}>

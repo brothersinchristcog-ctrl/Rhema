@@ -311,6 +311,12 @@ class NotificationService {
           });
           break;
         }
+        case 'service_assignment':
+        case 'service_roster':
+        case 'roster_assignment': {
+          nav.navigate('MyService');
+          break;
+        }
         default:
           if (id) {
             nav.navigate('Updates', { highlightId: id, highlightType: type });
