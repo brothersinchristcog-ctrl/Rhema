@@ -2564,7 +2564,7 @@ export default function HomeScreen() {
     },
     {
       id: 'myService',
-      title: 'My Service',
+      title: 'Service Roster',
       icon: require('../../assets/gallery_3d_stage.png'),
       onPress: () => navigation.navigate('MyService'),
     },
