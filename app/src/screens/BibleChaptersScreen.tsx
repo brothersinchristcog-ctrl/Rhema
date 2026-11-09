@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -9,9 +9,8 @@ import {
   StatusBar, 
   Platform 
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, CheckCircle2, BookOpen } from 'lucide-react-native';
+import { ArrowLeft, CheckCircle2 } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
@@ -20,12 +19,24 @@ import { BibleService } from '../services/BibleService';
 
 const { width } = Dimensions.get('window');
 
+const VERSES_LABELS: Record<string, string> = {
+  en: 'Verses',
+  te: 'వచనములు',
+  hi: 'पद',
+  ta: 'வசனங்கள்',
+  mr: 'वचने',
+  ml: 'വാക്യങ്ങൾ',
+  kn: 'ವಚನಗಳು',
+};
+
 export default function BibleChaptersScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
   const { bookName, lang: paramLang, bookIndex: paramBookIndex } = route.params || {};
   const { isDark, colors } = useTheme();
   const { language, t } = useLanguage();
   const [readChapters, setReadChapters] = useState<Set<number>>(new Set());
+  const [selectedChapter, setSelectedChapter] = useState<number | null>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
 
   const currentLang = paramLang || language;
   const resolvedBookIndex = paramBookIndex !== undefined 
@@ -35,6 +46,9 @@ export default function BibleChaptersScreen({ route, navigation }: any) {
   const displayBookName = BibleService.getBookName(resolvedBookIndex, currentLang);
   const count = BibleService.getChapterCount(resolvedBookIndex);
   const chapters = Array.from({ length: count }, (_, i) => i + 1);
+
+  const verseCount = selectedChapter ? BibleService.getVerseCount(resolvedBookIndex, selectedChapter) : 0;
+  const verses = Array.from({ length: verseCount }, (_, i) => i + 1);
 
   useFocusEffect(
     useCallback(() => {
@@ -60,12 +74,31 @@ export default function BibleChaptersScreen({ route, navigation }: any) {
     }, [resolvedBookIndex])
   );
 
+  const handleSelectChapter = (chapter: number) => {
+    setSelectedChapter(chapter);
+    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+  };
+
+  const handleSelectVerse = (verse?: number) => {
+    if (!selectedChapter) return;
+    navigation.navigate('BibleReader', {
+      bookIndex: resolvedBookIndex,
+      bookName: displayBookName,
+      chapter: selectedChapter,
+      targetVerse: verse,
+      lang: currentLang,
+    });
+  };
+
+  const activeBadgeBg = isDark ? '#FFFFFF' : '#000000';
+  const activeBadgeText = isDark ? '#000000' : '#FFFFFF';
+  const cardBorder = isDark ? 'rgba(255, 255, 255, 0.16)' : '#94A3B8';
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar barStyle={colors.barStyle} backgroundColor={colors.background} />
       
-      {/* Header */}
-            {/* ── Screen Header (Clean circular back button & title) ── */}
+      {/* ── Screen Header (Clean circular back button & title) ── */}
       <View
         style={[
           styles.headerRow,
@@ -73,55 +106,146 @@ export default function BibleChaptersScreen({ route, navigation }: any) {
         ]}
       >
         <TouchableOpacity
-          style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          onPress={() => navigation.goBack()}
+          style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: cardBorder }]}
+          onPress={() => {
+            if (selectedChapter) {
+              setSelectedChapter(null);
+            } else {
+              navigation.goBack();
+            }
+          }}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           activeOpacity={0.8}
         >
           <ArrowLeft size={20} color={colors.text} strokeWidth={2.4} />
         </TouchableOpacity>
 
-        <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
-          {displayBookName}
-        </Text>
+        <View style={styles.headerCenterColumn}>
+          <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
+            {displayBookName}
+          </Text>
+        </View>
 
         <View style={styles.headerRightSpacer} />
       </View>
 
-      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-        <Text style={[styles.secTitle, { color: colors.text }]}>
-          {t('bible.chapters')}
-        </Text>
-        <View style={styles.grid}>
-          {chapters.map((chapter) => {
-            const isRead = readChapters.has(chapter);
-            return (
-              <TouchableOpacity 
-                key={chapter} 
-                style={[
-                  styles.chapterBox, 
-                  { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 },
-                  isRead && { backgroundColor: isDark ? '#064e3b' : '#d1fae5', borderColor: '#10b981', borderWidth: 1 }
-                ]}
-                onPress={() => navigation.navigate('BibleReader', { 
-                  bookIndex: resolvedBookIndex,
-                  bookName: displayBookName, 
-                  chapter, 
-                  lang: currentLang 
-                })}
-              >
-                <Text style={[styles.chapterNum, { color: isDark ? '#fff' : '#1a2d5a' }, isRead && { color: isDark ? '#34d399' : '#047857' }]}>
-                  {chapter}
-                </Text>
-                {isRead && (
-                  <View style={{ position: 'absolute', top: 4, right: 4 }}>
-                    <CheckCircle2 color="#10b981" size={12} />
-                  </View>
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+      {/* ── Mode Selector Tabs: Chapters vs Verses (when a chapter is chosen) ── */}
+      <View style={[styles.stepTabsWrap, { backgroundColor: colors.surface, borderColor: cardBorder }]}>
+        <TouchableOpacity
+          style={[
+            styles.stepTabBtn,
+            !selectedChapter && { backgroundColor: activeBadgeBg }
+          ]}
+          activeOpacity={0.85}
+          onPress={() => setSelectedChapter(null)}
+        >
+          <Text
+            style={[
+              styles.stepTabTxt,
+              { color: !selectedChapter ? activeBadgeText : colors.textSecondary }
+            ]}
+          >
+            {t('bible.chapters')}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.stepTabBtn,
+            selectedChapter !== null && { backgroundColor: activeBadgeBg },
+            selectedChapter === null && { opacity: 0.5 }
+          ]}
+          activeOpacity={0.85}
+          disabled={selectedChapter === null}
+        >
+          <Text
+            style={[
+              styles.stepTabTxt,
+              { color: selectedChapter !== null ? activeBadgeText : colors.textSecondary }
+            ]}
+          >
+            {VERSES_LABELS[currentLang] || VERSES_LABELS.en}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView
+        ref={scrollViewRef}
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {!selectedChapter ? (
+          /* ── STEP 1: Centered Chapters Grid ── */
+          <View style={styles.sectionBlock}>
+            <View style={styles.grid}>
+              {chapters.map((chapter) => {
+                const isRead = readChapters.has(chapter);
+                return (
+                  <TouchableOpacity 
+                    key={chapter} 
+                    activeOpacity={0.8}
+                    style={[
+                      styles.chapterBox, 
+                      {
+                        backgroundColor: isDark ? 'rgba(39, 39, 42, 0.7)' : 'rgba(255, 255, 255, 0.85)',
+                        borderColor: cardBorder,
+                        borderWidth: 1.2,
+                      },
+                      isRead && {
+                        backgroundColor: isDark ? '#064e3b' : '#d1fae5',
+                        borderColor: '#10b981',
+                        borderWidth: 1.4,
+                      }
+                    ]}
+                    onPress={() => handleSelectChapter(chapter)}
+                  >
+                    <Text
+                      style={[
+                        styles.chapterNum,
+                        { color: isDark ? '#FFFFFF' : '#0F172A' },
+                        isRead && { color: isDark ? '#34d399' : '#047857' }
+                      ]}
+                    >
+                      {chapter}
+                    </Text>
+                    {isRead && (
+                      <View style={styles.readCheckBadge}>
+                        <CheckCircle2 color="#10b981" size={12} />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        ) : (
+          /* ── STEP 2: Centered Verses Grid ── */
+          <View style={styles.sectionBlock}>
+            <View style={styles.grid}>
+              {verses.map((verseNum) => (
+                <TouchableOpacity
+                  key={verseNum}
+                  activeOpacity={0.78}
+                  style={[
+                    styles.chapterBox,
+                    {
+                      backgroundColor: isDark ? 'rgba(39, 39, 42, 0.7)' : 'rgba(255, 255, 255, 0.88)',
+                      borderColor: cardBorder,
+                      borderWidth: 1.2,
+                    }
+                  ]}
+                  onPress={() => handleSelectVerse(verseNum)}
+                >
+                  <Text style={[styles.chapterNum, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                    {verseNum}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
+
         <View style={{ height: 100 }} />
       </ScrollView>
     </View>
@@ -130,12 +254,12 @@ export default function BibleChaptersScreen({ route, navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-    headerRow: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingBottom: 14,
+    paddingBottom: 12,
   },
   circularBackBtn: {
     width: 44,
@@ -143,12 +267,18 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: 1.2,
     shadowColor: '#000',
     shadowOpacity: 0.06,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
     elevation: 3,
+  },
+  headerCenterColumn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
   },
   headerTitleText: {
     fontSize: 20,
@@ -156,105 +286,81 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
     textAlign: 'center',
   },
+  headerSubtitleText: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+    textAlign: 'center',
+  },
   headerRightSpacer: {
     width: 44,
     height: 44,
   },
-  headerCardWrapper: {
-    paddingHorizontal: 16,
-    paddingBottom: 4,
-  },
-  header: {
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    borderRadius: 24,
+  stepTabsWrap: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    overflow: 'hidden',
-    position: 'relative',
-    borderWidth: 1,
-    borderColor: 'rgba(228, 238, 234, 0.25)',
+    marginHorizontal: 20,
+    marginBottom: 12,
+    padding: 4,
+    borderRadius: 24,
+    borderWidth: 1.2,
+    gap: 8,
   },
-  headerDecoCircle1: {
-    position: 'absolute',
-    width: 130,
-    height: 130,
-    borderRadius: 65,
-    backgroundColor: 'rgba(228, 238, 234, 0.10)',
-    top: -50,
-    right: -25,
-  },
-  headerDecoCircle2: {
-    position: 'absolute',
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: 'rgba(228, 238, 234, 0.08)',
-    bottom: -40,
-    left: 35,
-  },
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    backgroundColor: '#E4EEEA',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  headerCenterTitleWrap: {
+  stepTabBtn: {
     flex: 1,
+    paddingVertical: 9,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 12,
   },
-  headerTitle: {
-    color: '#FFFFFF',
-    fontSize: 20,
+  stepTabTxt: {
+    fontSize: 13,
     fontWeight: '800',
-    letterSpacing: 0.5,
+  },
+  scroll: { flex: 1 },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 6,
+    alignItems: 'center',
+  },
+  sectionBlock: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  secTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 16,
     textAlign: 'center',
   },
-  headerTitleAccentBar: {
-    width: 28,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: '#E4EEEA',
-    marginTop: 5,
-    opacity: 0.85,
-  },
-  headerRightIconBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    backgroundColor: '#E4EEEA',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  headerSub: { color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: '600', marginTop: 2 },
-
-  scroll: { flex: 1, padding: 20 },
-  secTitle: { fontSize: 16, fontWeight: '800', marginBottom: 20 },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
-    justifyContent: 'flex-start'
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
   },
   chapterBox: {
-    width: (width - 76) / 5,
-    height: (width - 76) / 5,
-    borderRadius: 12,
+    width: (width - 88) / 5,
+    height: (width - 88) / 5,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 3,
     shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
-    position: 'relative'
+    position: 'relative',
   },
-  chapterNum: { fontSize: 16, fontWeight: '800' }
+  chapterNum: {
+    fontSize: 16,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  readCheckBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+  },
 });

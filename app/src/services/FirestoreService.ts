@@ -1009,13 +1009,17 @@ class FirestoreService {
 
   async adminUpdateMember(churchId: string, memberId: string, details: any) {
     try {
+      const targetChurchId = churchId || await this.getChurchId();
+      if (!targetChurchId) {
+        throw new Error('Church ID is missing');
+      }
       if (details.phone) {
-        const isDuplicate = await this.checkMemberExistsInChurch(churchId, details.phone, memberId);
+        const isDuplicate = await this.checkMemberExistsInChurch(targetChurchId, details.phone, memberId);
         if (isDuplicate) {
           throw new Error('DUPLICATE_MEMBER');
         }
       }
-      await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(memberId).update(details);
+      await firestore().collection('Rhema Church').doc(targetChurchId).collection('members').doc(memberId).set(details, { merge: true });
       return { success: true };
     } catch (error: any) {
       console.error("Error updating member:", error);
@@ -1203,12 +1207,17 @@ class FirestoreService {
       const snapshot = await col.get();
       return snapshot.docs
         .filter((doc: any) => doc.data().status !== 'Left')
-        .map((doc: any) => ({ 
-          name: doc.data().name || doc.data().firstName || 'Unknown',
-          email: doc.data().email || '',
-          ...doc.data(),
-          id: doc.id
-        }));
+        .map((doc: any) => {
+          const data = doc.data();
+          const fullName = data.name || (`${data.firstName || ''} ${data.lastName || ''}`.trim()) || 'Unknown';
+          return {
+            ...data,
+            name: fullName,
+            displayName: fullName,
+            email: data.email || '',
+            id: doc.id
+          };
+        });
     } catch (error) {
       console.error('Error fetching all members:', error);
       return [];

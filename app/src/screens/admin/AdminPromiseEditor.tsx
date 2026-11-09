@@ -888,7 +888,7 @@ export default function AdminPromiseEditor() {
             {/* Header: Title & Close */}
             <View style={styles.pickerHd}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <CalendarIcon size={18} color="#1a2d5a" />
+                <CalendarIcon size={18} color={isDark ? "#60A5FA" : "#2563EB"} />
                 <Text style={styles.pickerTitle}>Select Promise Date</Text>
               </View>
               <TouchableOpacity 
@@ -906,7 +906,7 @@ export default function AdminPromiseEditor() {
                 onPress={prevMonth}
                 activeOpacity={0.7}
               >
-                <ChevronLeft size={20} color="#1a2d5a" />
+                <ChevronLeft size={20} color={isDark ? "#FFFFFF" : "#0F172A"} />
               </TouchableOpacity>
               
               <View style={{ alignItems: 'center' }}>
@@ -923,7 +923,7 @@ export default function AdminPromiseEditor() {
                 onPress={nextMonth}
                 activeOpacity={0.7}
               >
-                <ChevronRight size={20} color="#1a2d5a" />
+                <ChevronRight size={20} color={isDark ? "#FFFFFF" : "#0F172A"} />
               </TouchableOpacity>
             </View>
 
@@ -988,7 +988,7 @@ export default function AdminPromiseEditor() {
                 onPress={selectToday}
                 activeOpacity={0.75}
               >
-                <Sparkles size={13} color="#1a2d5a" />
+                <Sparkles size={13} color={isDark ? "#60A5FA" : "#2563EB"} />
                 <Text style={styles.pickerTodayBtnTxt}>Today (నేడు)</Text>
               </TouchableOpacity>
 
@@ -1008,268 +1008,458 @@ export default function AdminPromiseEditor() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.hero}>
+      <View style={[styles.hero, { borderBottomWidth: 1, borderBottomColor: isDark ? '#27272A' : '#E2E8F0', paddingBottom: 14, marginBottom: 4 }]}>
         <View style={styles.heroTitleRow}>
           <TouchableOpacity
             onPress={() => setTabByName?.('Promises')}
-            style={styles.circularBackBtn}
+            style={[styles.circularBackBtn, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? '#3F3F46' : '#E2E8F0' }]}
             activeOpacity={0.7}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
+            <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.2} />
           </TouchableOpacity>
-          <Text style={[styles.heroTitle, { marginLeft: 12 }]}>{editingData ? 'Edit Promise' : 'New Promise'}</Text>
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 }}>
+            <Text
+              style={[
+                styles.heroTitle,
+                {
+                  color: isDark ? '#FFFFFF' : '#0F172A',
+                  textAlign: 'center',
+                  fontSize: 20,
+                  fontWeight: '800',
+                  fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+                  letterSpacing: -0.4,
+                }
+              ]}
+              numberOfLines={1}
+            >
+              {editingData ? 'Edit Promise' : 'New Promise'}
+            </Text>
+          </View>
+          <View style={{ width: 40, height: 40 }} />
         </View>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
 
-        <View style={[styles.section, styles.secNavy]}>
-          <View style={styles.secHd}>
-            <View style={styles.secHdPill}>
-              <CalendarIcon size={13} color="#fff" />
+        <View style={[styles.section, isDark ? styles.sectionDark : styles.sectionLight]}>
+          <LinearGradient
+            colors={
+              isDark
+                ? ['rgba(59, 130, 246, 0.14)', 'rgba(39, 39, 42, 0.72)', 'rgba(20, 20, 24, 0.94)']
+                : ['#FFFFFF', '#FAFBFD', '#EFF6FF']
+            }
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.sectionInner}
+          >
+            <View style={styles.secHd}>
+              <View style={[styles.secHdPill, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF' }]}>
+                <CalendarIcon size={14} color={isDark ? '#60A5FA' : '#2563EB'} />
+              </View>
+              <Text style={styles.secHdTXT}>Schedule</Text>
             </View>
-            <Text style={styles.secHdTXT}>Schedule</Text>
-          </View>
-          <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Promise date <Text style={{color:'#c0392b'}}>*</Text></Text>
-            <TouchableOpacity style={styles.inputWrap} onPress={openDatePicker}>
-              <Text style={styles.inputText}>{formatDateDisplay(form.date)}</Text>
-              <CalendarIcon size={14} color="#374151" style={styles.inputIcon} />
-            </TouchableOpacity>
-          </View>
-          {renderDatePicker()}
-        </View>
-
-        <View style={[styles.section, styles.secNavy]}>
-          <View style={styles.secHd}>
-            <View style={styles.secHdPill}>
-              <BookOpen size={13} color="#fff" />
-            </View>
-            <Text style={styles.secHdTXT}>English Promise</Text>
-          </View>
-
-          <View style={{ backgroundColor: '#F8FAFC', padding: 15, borderRadius: 12, marginBottom: 20, borderWidth: 1, borderColor: '#E2E8F0' }}>
-            <Text style={{ fontSize: 13, fontWeight: '700', color: '#1a2d5a', marginBottom: 12 }}>Auto-Populate Bible Verse</Text>
-            
-            <View style={{ flexDirection: 'column', gap: 10 }}>
-              <TouchableOpacity 
-                style={[styles.input, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 46, paddingVertical: 10, paddingHorizontal: 12 }]} 
-                onPress={() => setSelectionModalType('book')}
-                activeOpacity={0.7}
-              >
-                <Text style={{ color: selectedBook !== null ? '#1a2d5a' : '#94A3B8', flex: 1, fontSize: 13, fontWeight: '600' }} numberOfLines={1} ellipsizeMode="tail">
-                  {selectedBook !== null ? `${ENGLISH_NAMES[selectedBook]} - ${TELUGU_NAMES[selectedBook]}` : 'Select Book'}
-                </Text>
-                <ChevronDown size={16} color="#94A3B8" style={{ marginLeft: 6 }} />
+            <View style={styles.fGroup}>
+              <Text style={[styles.fLabel, isDark && { color: '#F1F5F9' }]}>Promise date <Text style={{color:'#ef4444'}}>*</Text></Text>
+              <TouchableOpacity style={[styles.inputWrap, isDark ? styles.inputWrapDark : styles.inputWrapLight]} onPress={openDatePicker}>
+                <Text style={[styles.inputText, isDark && { color: '#FFFFFF' }]}>{formatDateDisplay(form.date)}</Text>
+                <CalendarIcon size={14} color={isDark ? '#CBD5E1' : '#475569'} style={styles.inputIcon} />
               </TouchableOpacity>
+            </View>
+            {renderDatePicker()}
+          </LinearGradient>
+        </View>
+
+        <View style={[styles.section, isDark ? styles.sectionDark : styles.sectionLight]}>
+          <LinearGradient
+            colors={
+              isDark
+                ? ['rgba(99, 102, 241, 0.14)', 'rgba(39, 39, 42, 0.72)', 'rgba(20, 20, 24, 0.94)']
+                : ['#FFFFFF', '#FAFBFD', '#EEF2FF']
+            }
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.sectionInner}
+          >
+            <View style={styles.secHd}>
+              <View style={[styles.secHdPill, { backgroundColor: isDark ? 'rgba(99, 102, 241, 0.15)' : '#EEF2FF' }]}>
+                <BookOpen size={14} color={isDark ? '#818CF8' : '#4F46E5'} />
+              </View>
+              <Text style={styles.secHdTXT}>English Promise</Text>
+            </View>
+
+            <View style={{
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#E2E8F0',
+              padding: 14,
+              borderRadius: 14,
+              marginBottom: 16,
+              borderWidth: 1.5,
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : '#94A3B8',
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+                <Sparkles size={14} color={isDark ? '#F59E0B' : '#D97706'} />
+                <Text style={{ fontSize: 12.5, fontWeight: '700', color: isDark ? '#F1F5F9' : '#0F172A' }}>
+                  Auto-Populate Bible Verse
+                </Text>
+              </View>
               
-              <View style={{ flexDirection: 'row', gap: 10, alignItems: 'stretch' }}>
+              <View style={{ flexDirection: 'column', gap: 10 }}>
                 <TouchableOpacity 
-                  style={[styles.input, { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 46, paddingVertical: 10, paddingHorizontal: 10 }]} 
-                  onPress={() => {
-                    if (selectedBook === null) return AppAlert.alert('Info', 'Please select a Book first');
-                    setSelectionModalType('chapter');
-                  }}
+                  style={[
+                    styles.input,
+                    isDark && styles.inputDark,
+                    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 46, paddingVertical: 10, paddingHorizontal: 12 }
+                  ]} 
+                  onPress={() => setSelectionModalType('book')}
                   activeOpacity={0.7}
                 >
-                  <Text 
-                    style={{ color: selectedChapter !== null ? '#1a2d5a' : '#94A3B8', fontSize: 12.5, fontWeight: '600', flex: 1, marginRight: 4 }}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit={true}
-                    minimumFontScale={0.8}
-                  >
-                    {selectedChapter !== null ? `Chapter ${selectedChapter}` : 'Select Chapter'}
+                  <Text style={{ color: selectedBook !== null ? (isDark ? '#FFFFFF' : '#0F172A') : (isDark ? '#CBD5E1' : '#475569'), flex: 1, fontSize: 13, fontWeight: '600' }} numberOfLines={1} ellipsizeMode="tail">
+                    {selectedBook !== null ? `${ENGLISH_NAMES[selectedBook]} - ${TELUGU_NAMES[selectedBook]}` : 'Select Book'}
                   </Text>
-                  <ChevronDown size={15} color="#94A3B8" />
+                  <ChevronDown size={16} color={isDark ? '#CBD5E1' : '#475569'} style={{ marginLeft: 6 }} />
                 </TouchableOpacity>
-
-                <TouchableOpacity 
-                  style={[styles.input, { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 46, paddingVertical: 10, paddingHorizontal: 10 }]} 
-                  onPress={() => {
-                    if (selectedChapter === null) return AppAlert.alert('Info', 'Please select a Chapter first');
-                    setSelectionModalType('verse');
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Text 
-                    style={{ color: selectedVerse !== null ? '#1a2d5a' : '#94A3B8', fontSize: 12.5, fontWeight: '600', flex: 1, marginRight: 4 }}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit={true}
-                    minimumFontScale={0.8}
+                
+                <View style={{ flexDirection: 'row', gap: 10, alignItems: 'stretch' }}>
+                  <TouchableOpacity 
+                    style={[
+                      styles.input,
+                      isDark && styles.inputDark,
+                      { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 46, paddingVertical: 10, paddingHorizontal: 10 }
+                    ]} 
+                    onPress={() => {
+                      if (selectedBook === null) return AppAlert.alert('Info', 'Please select a Book first');
+                      setSelectionModalType('chapter');
+                    }}
+                    activeOpacity={0.7}
                   >
-                    {selectedVerse !== null ? `Verse ${selectedVerse}` : 'Select Verse'}
-                  </Text>
-                  <ChevronDown size={15} color="#94A3B8" />
-                </TouchableOpacity>
-              </View>
-            </View>
+                    <Text 
+                      style={{ color: selectedChapter !== null ? (isDark ? '#FFFFFF' : '#0F172A') : (isDark ? '#CBD5E1' : '#475569'), fontSize: 12.5, fontWeight: '600', flex: 1, marginRight: 4 }}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit={true}
+                      minimumFontScale={0.8}
+                    >
+                      {selectedChapter !== null ? `Chapter ${selectedChapter}` : 'Select Chapter'}
+                    </Text>
+                    <ChevronDown size={15} color={isDark ? '#CBD5E1' : '#475569'} />
+                  </TouchableOpacity>
 
-            {isFetchingVerse && (
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 12 }}>
-                <ActivityIndicator size="small" color="#1a2d5a" />
-                <Text style={{ fontSize: 12, color: '#64748B', fontWeight: '500' }}>Fetching verse text…</Text>
-              </View>
-            )}
-          </View>
-
-          <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Verse reference <Text style={{color:'#c0392b'}}>*</Text> <Text style={styles.fHint}>e.g. John 3:16</Text></Text>
-            <TextInput style={styles.input} value={form.enRef} onChangeText={(v) => setForm({...form, enRef: v})} placeholder="Book Chapter:Verse" />
-          </View>
-          <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Verse text — English <Text style={{color:'#c0392b'}}>*</Text></Text>
-            <TextInput style={[styles.input, styles.textarea]} multiline value={form.enVerse} onChangeText={(v) => setForm({...form, enVerse: v})} placeholder="Type or paste the Bible verse in English…" />
-          </View>
-          <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Devotional note — English <Text style={styles.fHint}>Optional</Text></Text>
-            <TextInput style={[styles.input, styles.textarea]} multiline value={form.enNote} onChangeText={(v) => setForm({...form, enNote: v})} placeholder="Pastor's reflection in English…" />
-          </View>
-        </View>
-
-        <View style={[styles.section, styles.secBlue]}>
-          <View style={styles.secHd}>
-            <View style={styles.secHdPill}>
-              <Languages size={13} color="#fff" />
-            </View>
-            <Text style={styles.secHdTXT}>Telugu Promise - తెలుగు వాగ్దానం</Text>
-          </View>
-          <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Verse reference — Telugu <Text style={styles.fHint}>e.g. యోహాను 3:16</Text></Text>
-            <TextInput style={[styles.input, styles.teIn]} value={form.teRef} onChangeText={(v) => setForm({...form, teRef: v})} placeholder="పుస్తకం అధ్యాయం:వచనం" />
-          </View>
-          <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Verse text — Telugu <Text style={{color:'#c0392b'}}>*</Text></Text>
-            <TextInput style={[styles.input, styles.textarea, styles.teIn]} multiline value={form.teVerse} onChangeText={(v) => setForm({...form, teVerse: v})} placeholder="తెలుగులో బైబిల్ వచనం ఇక్కడ టైప్ చేయండి…" />
-          </View>
-          <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Devotional note — Telugu <Text style={styles.fHint}>ఐచ్ఛికం</Text></Text>
-            <TextInput style={[styles.input, styles.textarea, styles.teIn]} multiline value={form.teNote} onChangeText={(v) => setForm({...form, teNote: v})} placeholder="పాస్టర్ గారి వ్యాఖ్యానం తెలుగులో…" />
-          </View>
-        </View>
-
-        <View style={[styles.section, styles.secNavy]}>
-          <View style={styles.secHd}>
-            <View style={[styles.secHdPill, { backgroundColor: '#1E3A8A' }]}>
-              <Upload size={13} color="#fff" />
-            </View>
-            <Text style={styles.secHdTXT}>Daily Promise Thumbnail</Text>
-            <View style={styles.landscapeBadge}>
-              <Text style={styles.landscapeBadgeTxt}>16:9 Landscape</Text>
-            </View>
-          </View>
-
-          <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>
-              Custom Thumbnail <Text style={styles.fHint}>(16:9 Landscape format)</Text>
-            </Text>
-
-            {(form.imageUrl || bgImageUrl) ? (
-              <View style={{ marginTop: 6 }}>
-                {/* 16:9 Preview of Uploaded Thumbnail */}
-                <View style={[styles.promiseThumbnailFrame, { borderColor: '#1E3A8A', overflow: 'hidden' }]}>
-                  <Image
-                    source={{ uri: form.imageUrl || bgImageUrl }}
-                    style={StyleSheet.absoluteFillObject}
-                    resizeMode="cover"
-                  />
+                  <TouchableOpacity 
+                    style={[
+                      styles.input,
+                      isDark && styles.inputDark,
+                      { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 46, paddingVertical: 10, paddingHorizontal: 10 }
+                    ]} 
+                    onPress={() => {
+                      if (selectedChapter === null) return AppAlert.alert('Info', 'Please select a Chapter first');
+                      setSelectionModalType('verse');
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text 
+                      style={{ color: selectedVerse !== null ? (isDark ? '#FFFFFF' : '#0F172A') : (isDark ? '#CBD5E1' : '#475569'), fontSize: 12.5, fontWeight: '600', flex: 1, marginRight: 4 }}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit={true}
+                      minimumFontScale={0.8}
+                    >
+                      {selectedVerse !== null ? `Verse ${selectedVerse}` : 'Select Verse'}
+                    </Text>
+                    <ChevronDown size={15} color={isDark ? '#CBD5E1' : '#475569'} />
+                  </TouchableOpacity>
                 </View>
+              </View>
 
-                {/* Actions: Replace or Remove */}
-                <View style={[styles.thumbActionRow, { marginTop: 10 }]}>
+              {isFetchingVerse && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 12 }}>
+                  <ActivityIndicator size="small" color={isDark ? '#818CF8' : '#4F46E5'} />
+                  <Text style={{ fontSize: 12, color: isDark ? '#CBD5E1' : '#64748B', fontWeight: '500' }}>Fetching verse text…</Text>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.fGroup}>
+              <Text style={[styles.fLabel, isDark && { color: '#F1F5F9' }]}>Verse reference <Text style={{color:'#ef4444'}}>*</Text> <Text style={[styles.fHint, { color: isDark ? '#CBD5E1' : '#475569' }]}>e.g. John 3:16</Text></Text>
+              <TextInput
+                style={[styles.input, isDark ? styles.inputDark : styles.inputLight]}
+                value={form.enRef}
+                onChangeText={(v) => setForm({...form, enRef: v})}
+                placeholder="Book Chapter:Verse"
+                placeholderTextColor={isDark ? '#A1A1AA' : '#64748B'}
+              />
+            </View>
+            <View style={styles.fGroup}>
+              <Text style={[styles.fLabel, isDark && { color: '#F1F5F9' }]}>Verse text — English <Text style={{color:'#ef4444'}}>*</Text></Text>
+              <TextInput
+                style={[styles.input, styles.textarea, isDark ? styles.inputDark : styles.inputLight]}
+                multiline
+                value={form.enVerse}
+                onChangeText={(v) => setForm({...form, enVerse: v})}
+                placeholder="Type or paste the Bible verse in English…"
+                placeholderTextColor={isDark ? '#A1A1AA' : '#64748B'}
+              />
+            </View>
+            <View style={styles.fGroup}>
+              <Text style={[styles.fLabel, isDark && { color: '#F1F5F9' }]}>Devotional note — English <Text style={[styles.fHint, { color: isDark ? '#CBD5E1' : '#475569' }]}>Optional</Text></Text>
+              <TextInput
+                style={[styles.input, styles.textarea, isDark ? styles.inputDark : styles.inputLight]}
+                multiline
+                value={form.enNote}
+                onChangeText={(v) => setForm({...form, enNote: v})}
+                placeholder="Pastor's reflection in English…"
+                placeholderTextColor={isDark ? '#A1A1AA' : '#64748B'}
+              />
+            </View>
+          </LinearGradient>
+        </View>
+
+        <View style={[styles.section, isDark ? styles.sectionDark : styles.sectionLight]}>
+          <LinearGradient
+            colors={
+              isDark
+                ? ['rgba(245, 158, 11, 0.14)', 'rgba(39, 39, 42, 0.72)', 'rgba(20, 20, 24, 0.94)']
+                : ['#FFFFFF', '#FAFBFD', '#FEF3C7']
+            }
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.sectionInner}
+          >
+            <View style={styles.secHd}>
+              <View style={[styles.secHdPill, { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : '#FEF3C7' }]}>
+                <Languages size={14} color={isDark ? '#FBBF24' : '#D97706'} />
+              </View>
+              <Text style={styles.secHdTXT}>Telugu Promise - తెలుగు వాగ్దానం</Text>
+            </View>
+            <View style={styles.fGroup}>
+              <Text style={[styles.fLabel, isDark && { color: '#F1F5F9' }]}>Verse reference — Telugu <Text style={[styles.fHint, { color: isDark ? '#CBD5E1' : '#475569' }]}>e.g. యోహాను 3:16</Text></Text>
+              <TextInput
+                style={[styles.input, styles.teIn, isDark ? styles.inputDark : styles.inputLight]}
+                value={form.teRef}
+                onChangeText={(v) => setForm({...form, teRef: v})}
+                placeholder="పుస్తకం అధ్యాయం:వచనం"
+                placeholderTextColor={isDark ? '#A1A1AA' : '#64748B'}
+              />
+            </View>
+            <View style={styles.fGroup}>
+              <Text style={[styles.fLabel, isDark && { color: '#F1F5F9' }]}>Verse text — Telugu <Text style={{color:'#ef4444'}}>*</Text></Text>
+              <TextInput
+                style={[styles.input, styles.textarea, styles.teIn, isDark ? styles.inputDark : styles.inputLight]}
+                multiline
+                value={form.teVerse}
+                onChangeText={(v) => setForm({...form, teVerse: v})}
+                placeholder="తెలుగులో బైబిల్ వచనం ఇక్కడ టైప్ చేయండి…"
+                placeholderTextColor={isDark ? '#A1A1AA' : '#64748B'}
+              />
+            </View>
+            <View style={styles.fGroup}>
+              <Text style={[styles.fLabel, isDark && { color: '#F1F5F9' }]}>Devotional note — Telugu <Text style={[styles.fHint, { color: isDark ? '#CBD5E1' : '#475569' }]}>ఐచ్ఛికం</Text></Text>
+              <TextInput
+                style={[styles.input, styles.textarea, styles.teIn, isDark ? styles.inputDark : styles.inputLight]}
+                multiline
+                value={form.teNote}
+                onChangeText={(v) => setForm({...form, teNote: v})}
+                placeholder="పాస్టర్ గారి వ్యాఖ్యానం తెలుగులో…"
+                placeholderTextColor={isDark ? '#A1A1AA' : '#64748B'}
+              />
+            </View>
+          </LinearGradient>
+        </View>
+
+        <View style={[styles.section, isDark ? styles.sectionDark : styles.sectionLight]}>
+          <LinearGradient
+            colors={
+              isDark
+                ? ['rgba(168, 85, 247, 0.14)', 'rgba(39, 39, 42, 0.72)', 'rgba(20, 20, 24, 0.94)']
+                : ['#FFFFFF', '#FAFBFD', '#F3E8FF']
+            }
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.sectionInner}
+          >
+            <View style={styles.secHd}>
+              <View style={[styles.secHdPill, { backgroundColor: isDark ? 'rgba(168, 85, 247, 0.15)' : '#F3E8FF' }]}>
+                <Upload size={14} color={isDark ? '#C084FC' : '#7C3AED'} />
+              </View>
+              <Text style={styles.secHdTXT}>Daily Promise Thumbnail</Text>
+              <View style={[styles.landscapeBadge, isDark && { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
+                <Text style={[styles.landscapeBadgeTxt, isDark && { color: '#34D399' }]}>16:9 Landscape</Text>
+              </View>
+            </View>
+
+            <View style={styles.fGroup}>
+              <Text style={[styles.fLabel, isDark && { color: '#F1F5F9' }]}>
+                Custom Thumbnail <Text style={[styles.fHint, { color: isDark ? '#CBD5E1' : '#475569' }]}>(16:9 Landscape format)</Text>
+              </Text>
+
+              {(form.imageUrl || bgImageUrl) ? (
+                <View style={{ marginTop: 6 }}>
+                  {/* 16:9 Preview of Uploaded Thumbnail */}
+                  <View style={[styles.promiseThumbnailFrame, { borderColor: isDark ? 'rgba(255,255,255,0.18)' : '#E2E8F0', overflow: 'hidden' }]}>
+                    <Image
+                      source={{ uri: form.imageUrl || bgImageUrl }}
+                      style={StyleSheet.absoluteFillObject}
+                      resizeMode="cover"
+                    />
+                  </View>
+
+                  {/* Actions: Replace or Remove */}
+                  <View style={[styles.thumbActionRow, { marginTop: 10 }]}>
+                    <TouchableOpacity
+                      style={[
+                        styles.btnThumbActionSub,
+                        styles.btnThumbActionSecondary,
+                        isDark && { backgroundColor: 'rgba(255, 255, 255, 0.08)', borderColor: 'rgba(255, 255, 255, 0.16)' },
+                        { flex: 1 }
+                      ]}
+                      onPress={pickThumbnail}
+                      disabled={isUploadingImage}
+                      activeOpacity={0.7}
+                    >
+                      {isUploadingImage ? (
+                        <ActivityIndicator size="small" color={isDark ? '#FFFFFF' : '#374151'} />
+                      ) : (
+                        <Upload size={14} color={isDark ? '#FFFFFF' : '#374151'} strokeWidth={2.2} />
+                      )}
+                      <Text style={[styles.btnThumbActionSecondaryTxt, isDark && { color: '#FFFFFF' }]}>
+                        {isUploadingImage ? 'Uploading…' : 'Replace Image'}
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.btnThumbActionSub,
+                        styles.btnThumbActionDanger,
+                        isDark && { backgroundColor: 'rgba(220, 38, 38, 0.18)', borderColor: 'rgba(220, 38, 38, 0.35)' },
+                        { flex: 1 }
+                      ]}
+                      onPress={() => {
+                        setBgImageUrl('');
+                        setForm(prev => ({ ...prev, imageUrl: '' }));
+                        setIsCustomUploaded(false);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <X size={14} color={isDark ? '#F87171' : '#DC2626'} strokeWidth={2.2} />
+                      <Text style={[styles.btnThumbActionDangerTxt, isDark && { color: '#F87171' }]}>
+                        Remove Thumbnail
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <View style={{ marginTop: 6 }}>
                   <TouchableOpacity
-                    style={[styles.btnThumbActionSub, styles.btnThumbActionSecondary, { flex: 1 }]}
+                    style={[
+                      styles.btnUploadThumbSecondary,
+                      {
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 10,
+                        paddingVertical: 14,
+                        paddingHorizontal: 16,
+                        borderWidth: 1.5,
+                        borderColor: isDark ? 'rgba(192, 132, 252, 0.35)' : '#94A3B8',
+                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9',
+                        borderRadius: 12,
+                      }
+                    ]}
                     onPress={pickThumbnail}
                     disabled={isUploadingImage}
                     activeOpacity={0.7}
                   >
                     {isUploadingImage ? (
-                      <ActivityIndicator size="small" color="#374151" />
+                      <ActivityIndicator size="small" color={isDark ? '#C084FC' : '#7C3AED'} />
                     ) : (
-                      <Upload size={14} color="#374151" strokeWidth={2.2} />
+                      <Upload size={18} color={isDark ? '#C084FC' : '#7C3AED'} strokeWidth={2.2} />
                     )}
-                    <Text style={styles.btnThumbActionSecondaryTxt}>
-                      {isUploadingImage ? 'Uploading…' : 'Replace Image'}
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.btnThumbActionSub, styles.btnThumbActionDanger, { flex: 1 }]}
-                    onPress={() => {
-                      setBgImageUrl('');
-                      setForm(prev => ({ ...prev, imageUrl: '' }));
-                      setIsCustomUploaded(false);
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <X size={14} color="#DC2626" strokeWidth={2.2} />
-                    <Text style={styles.btnThumbActionDangerTxt}>
-                      Remove Thumbnail
+                    <Text style={[styles.btnUploadThumbSecondaryTxt, { fontSize: 13.5, fontWeight: '700', color: isDark ? '#E9D5FF' : '#6D28D9' }]}>
+                      {isUploadingImage ? 'Uploading to Cloud…' : 'Upload Custom Thumbnail'}
                     </Text>
                   </TouchableOpacity>
                 </View>
-              </View>
-            ) : (
-              <View style={{ marginTop: 6 }}>
-                <TouchableOpacity
-                  style={[styles.btnUploadThumbSecondary, { paddingVertical: 24, borderWidth: 1.5, borderColor: '#CBD5E1' }]}
-                  onPress={pickThumbnail}
-                  disabled={isUploadingImage}
-                  activeOpacity={0.7}
-                >
-                  {isUploadingImage ? (
-                    <ActivityIndicator size="small" color="#1E3A8A" />
-                  ) : (
-                    <Upload size={24} color="#1E3A8A" />
-                  )}
-                  <View style={{ alignItems: 'center', gap: 4 }}>
-                    <Text style={[styles.btnUploadThumbSecondaryTxt, { fontSize: 14, color: '#1E3A8A' }]}>
-                      {isUploadingImage ? 'Uploading to Cloud…' : 'Upload Custom Thumbnail'}
-                    </Text>
-                    <Text style={{ fontSize: 11.5, color: '#64748B' }}>
-                      Tap to select a 16:9 landscape image from your device
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
+              )}
+            </View>
+          </LinearGradient>
         </View>
 
-        <View style={[styles.section, styles.secRed]}>
-          <View style={styles.secHd}>
-            <View style={styles.secHdPill}>
-              <Play size={13} color="#fff" />
+        <View style={[styles.section, isDark ? styles.sectionDark : styles.sectionLight]}>
+          <LinearGradient
+            colors={
+              isDark
+                ? ['rgba(239, 68, 68, 0.14)', 'rgba(39, 39, 42, 0.72)', 'rgba(20, 20, 24, 0.94)']
+                : ['#FFFFFF', '#FAFBFD', '#FEE2E2']
+            }
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.sectionInner}
+          >
+            <View style={styles.secHd}>
+              <View style={[styles.secHdPill, { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2' }]}>
+                <Play size={14} color={isDark ? '#F87171' : '#DC2626'} />
+              </View>
+              <Text style={styles.secHdTXT}>YouTube Link</Text>
             </View>
-            <Text style={styles.secHdTXT}>YouTube Link</Text>
-          </View>
-          <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Video Title</Text>
-            <TextInput style={styles.input} value={form.videoTitle} onChangeText={(v) => setForm({...form, videoTitle: v})} placeholder="Devotional Video Title" />
-          </View>
-          <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Duration <Text style={styles.fHint}>e.g. 1:20</Text></Text>
-            <TextInput style={styles.input} value={form.duration} onChangeText={(v) => setForm({...form, duration: v})} placeholder="Video duration" />
-          </View>
-          <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>YouTube video URL</Text>
-            <TextInput style={styles.input} value={form.ytUrl} onChangeText={(v) => setForm({...form, ytUrl: v})} placeholder="https://youtube.com/watch?v=…" />
-          </View>
+            <View style={styles.fGroup}>
+              <Text style={[styles.fLabel, isDark && { color: '#F1F5F9' }]}>Video Title</Text>
+              <TextInput
+                style={[styles.input, isDark ? styles.inputDark : styles.inputLight]}
+                value={form.videoTitle}
+                onChangeText={(v) => setForm({...form, videoTitle: v})}
+                placeholder="Devotional Video Title"
+                placeholderTextColor={isDark ? '#A1A1AA' : '#64748B'}
+              />
+            </View>
+            <View style={styles.fGroup}>
+              <Text style={[styles.fLabel, isDark && { color: '#F1F5F9' }]}>Duration <Text style={[styles.fHint, { color: isDark ? '#CBD5E1' : '#475569' }]}>e.g. 1:20</Text></Text>
+              <TextInput
+                style={[styles.input, isDark ? styles.inputDark : styles.inputLight]}
+                value={form.duration}
+                onChangeText={(v) => setForm({...form, duration: v})}
+                placeholder="Video duration"
+                placeholderTextColor={isDark ? '#A1A1AA' : '#64748B'}
+              />
+            </View>
+            <View style={styles.fGroup}>
+              <Text style={[styles.fLabel, isDark && { color: '#F1F5F9' }]}>YouTube video URL</Text>
+              <TextInput
+                style={[styles.input, isDark ? styles.inputDark : styles.inputLight]}
+                value={form.ytUrl}
+                onChangeText={(v) => setForm({...form, ytUrl: v})}
+                placeholder="https://youtube.com/watch?v=…"
+                placeholderTextColor={isDark ? '#A1A1AA' : '#64748B'}
+              />
+            </View>
+          </LinearGradient>
         </View>
 
-        <View style={[styles.section, styles.secNavy]}>
-          <View style={styles.secHd}>
-            <View style={styles.secHdPill}>
-              <User size={13} color="#fff" />
+        <View style={[styles.section, isDark ? styles.sectionDark : styles.sectionLight]}>
+          <LinearGradient
+            colors={
+              isDark
+                ? ['rgba(20, 184, 166, 0.14)', 'rgba(39, 39, 42, 0.72)', 'rgba(20, 20, 24, 0.94)']
+                : ['#FFFFFF', '#FAFBFD', '#E6FFFA']
+            }
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.sectionInner}
+          >
+            <View style={styles.secHd}>
+              <View style={[styles.secHdPill, { backgroundColor: isDark ? 'rgba(20, 184, 166, 0.15)' : '#CCFBF1' }]}>
+                <User size={14} color={isDark ? '#2DD4BF' : '#0D9488'} />
+              </View>
+              <Text style={styles.secHdTXT}>Pastor & Status</Text>
             </View>
-            <Text style={styles.secHdTXT}>Pastor & Status</Text>
-          </View>
-          <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Pastor Name</Text>
-            <TextInput style={styles.input} value={form.pastor} onChangeText={(v) => setForm({...form, pastor: v})} placeholder="Pastor Name" />
-          </View>
-          <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Publish status</Text>
+            <View style={styles.fGroup}>
+              <Text style={[styles.fLabel, isDark && { color: '#F1F5F9' }]}>Pastor Name</Text>
+              <TextInput
+                style={[styles.input, isDark ? styles.inputDark : styles.inputLight]}
+                value={form.pastor}
+                onChangeText={(v) => setForm({...form, pastor: v})}
+                placeholder="Pastor Name"
+                placeholderTextColor={isDark ? '#A1A1AA' : '#64748B'}
+              />
+            </View>
+            <View style={styles.fGroup}>
+              <Text style={[styles.fLabel, isDark && { color: '#F1F5F9' }]}>Publish status</Text>
 
             {/* Derive today's date string for comparison */}
             {(() => {
@@ -1287,9 +1477,9 @@ export default function AdminPromiseEditor() {
               return (
                 <View style={styles.statusSelectorContainer}>
                   {isToday && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#fffbeb', borderRadius: 10, padding: 10, marginBottom: 8, borderWidth: 1, borderColor: '#fde68a' }}>
-                      <Clock size={13} color="#D97706" />
-                      <Text style={{ fontSize: 11.5, color: '#92400e', fontWeight: '600', flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: isDark ? 'rgba(245, 158, 11, 0.12)' : '#fffbeb', borderRadius: 10, padding: 10, marginBottom: 8, borderWidth: 1, borderColor: isDark ? 'rgba(245, 158, 11, 0.25)' : '#fde68a' }}>
+                      <Clock size={13} color={isDark ? '#FBBF24' : '#D97706'} />
+                      <Text style={{ fontSize: 11.5, color: isDark ? '#FDE68A' : '#92400e', fontWeight: '600', flex: 1 }}>
                         Today's date selected — only Publish Now is available.
                       </Text>
                     </View>
@@ -1299,22 +1489,24 @@ export default function AdminPromiseEditor() {
                   <TouchableOpacity
                     style={[
                       styles.statusOptionCard,
-                      form.status === 'Published' && styles.statusOptionCardPublished
+                      isDark && { backgroundColor: 'rgba(255, 255, 255, 0.05)', borderColor: 'rgba(255, 255, 255, 0.12)' },
+                      form.status === 'Published' && (isDark ? { backgroundColor: 'rgba(16, 185, 129, 0.18)', borderColor: '#10B981' } : styles.statusOptionCardPublished)
                     ]}
                     onPress={() => setForm({ ...form, status: 'Published' })}
                     activeOpacity={0.8}
                   >
                     <View style={[
                       styles.statusOptionIconBox,
-                      form.status === 'Published' ? styles.statusOptionIconBoxPublished : {}
+                      form.status === 'Published' ? styles.statusOptionIconBoxPublished : (isDark ? { backgroundColor: '#2E2E33' } : {})
                     ]}>
-                      <Send size={15} color={form.status === 'Published' ? '#fff' : '#059669'} />
+                      <Send size={15} color={form.status === 'Published' ? '#fff' : (isDark ? '#34D399' : '#059669')} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <Text style={[
                           styles.statusOptionTitle,
-                          form.status === 'Published' && styles.statusOptionTitlePublished
+                          isDark && { color: '#E4E4E7' },
+                          form.status === 'Published' && (isDark ? { color: '#34D399' } : styles.statusOptionTitlePublished)
                         ]}>
                           Publish Now
                         </Text>
@@ -1322,10 +1514,11 @@ export default function AdminPromiseEditor() {
                           <View style={styles.activeDotGreen} />
                         )}
                       </View>
-                      <Text style={styles.statusOptionSub}>Live immediately on Member Home View</Text>
+                      <Text style={[styles.statusOptionSub, { color: isDark ? "#CBD5E1" : "#475569" }]}>Live immediately on Member Home View</Text>
                     </View>
                     <View style={[
                       styles.statusRadioCircle,
+                      isDark && { borderColor: 'rgba(255,255,255,0.2)' },
                       form.status === 'Published' && styles.statusRadioCirclePublished
                     ]}>
                       {form.status === 'Published' && <Check size={12} color="#fff" strokeWidth={3} />}
@@ -1336,7 +1529,8 @@ export default function AdminPromiseEditor() {
                   <TouchableOpacity
                     style={[
                       styles.statusOptionCard,
-                      form.status === 'Scheduled' && styles.statusOptionCardScheduled,
+                      isDark && { backgroundColor: 'rgba(255, 255, 255, 0.05)', borderColor: 'rgba(255, 255, 255, 0.12)' },
+                      form.status === 'Scheduled' && (isDark ? { backgroundColor: 'rgba(245, 158, 11, 0.18)', borderColor: '#F59E0B' } : styles.statusOptionCardScheduled),
                       isToday && { opacity: 0.38 }
                     ]}
                     onPress={() => !isToday && setForm({ ...form, status: 'Scheduled' })}
@@ -1345,15 +1539,16 @@ export default function AdminPromiseEditor() {
                   >
                     <View style={[
                       styles.statusOptionIconBox,
-                      form.status === 'Scheduled' ? styles.statusOptionIconBoxScheduled : {}
+                      form.status === 'Scheduled' ? styles.statusOptionIconBoxScheduled : (isDark ? { backgroundColor: '#2E2E33' } : {})
                     ]}>
-                      <Clock size={15} color={form.status === 'Scheduled' ? '#fff' : '#D97706'} />
+                      <Clock size={15} color={form.status === 'Scheduled' ? '#fff' : (isDark ? '#FBBF24' : '#D97706')} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <Text style={[
                           styles.statusOptionTitle,
-                          form.status === 'Scheduled' && styles.statusOptionTitleScheduled
+                          isDark && { color: '#E4E4E7' },
+                          form.status === 'Scheduled' && (isDark ? { color: '#FBBF24' } : styles.statusOptionTitleScheduled)
                         ]}>
                           Scheduled
                         </Text>
@@ -1361,12 +1556,13 @@ export default function AdminPromiseEditor() {
                           <View style={styles.activeDotAmber} />
                         )}
                       </View>
-                      <Text style={styles.statusOptionSub}>
+                      <Text style={[styles.statusOptionSub, { color: isDark ? "#CBD5E1" : "#475569" }]}>
                         {isToday ? 'Not available for today\'s date' : `Auto-publishes on ${formatDateDisplay(form.date)}`}
                       </Text>
                     </View>
                     <View style={[
                       styles.statusRadioCircle,
+                      isDark && { borderColor: 'rgba(255,255,255,0.2)' },
                       form.status === 'Scheduled' && styles.statusRadioCircleScheduled
                     ]}>
                       {form.status === 'Scheduled' && <Check size={12} color="#fff" strokeWidth={3} />}
@@ -1377,7 +1573,8 @@ export default function AdminPromiseEditor() {
                   <TouchableOpacity
                     style={[
                       styles.statusOptionCard,
-                      form.status === 'Draft' && styles.statusOptionCardDraft,
+                      isDark && { backgroundColor: 'rgba(255, 255, 255, 0.05)', borderColor: 'rgba(255, 255, 255, 0.12)' },
+                      form.status === 'Draft' && (isDark ? { backgroundColor: 'rgba(148, 163, 184, 0.18)', borderColor: '#94A3B8' } : styles.statusOptionCardDraft),
                       isToday && { opacity: 0.38 }
                     ]}
                     onPress={() => !isToday && setForm({ ...form, status: 'Draft' })}
@@ -1386,15 +1583,16 @@ export default function AdminPromiseEditor() {
                   >
                     <View style={[
                       styles.statusOptionIconBox,
-                      form.status === 'Draft' ? styles.statusOptionIconBoxDraft : {}
+                      form.status === 'Draft' ? styles.statusOptionIconBoxDraft : (isDark ? { backgroundColor: '#2E2E33' } : {})
                     ]}>
-                      <FileText size={15} color={form.status === 'Draft' ? '#fff' : '#475569'} />
+                      <FileText size={15} color={form.status === 'Draft' ? '#fff' : (isDark ? '#94A3B8' : '#475569')} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <Text style={[
                           styles.statusOptionTitle,
-                          form.status === 'Draft' && styles.statusOptionTitleDraft
+                          isDark && { color: '#E4E4E7' },
+                          form.status === 'Draft' && (isDark ? { color: '#CBD5E1' } : styles.statusOptionTitleDraft)
                         ]}>
                           Save as Draft
                         </Text>
@@ -1402,12 +1600,13 @@ export default function AdminPromiseEditor() {
                           <View style={styles.activeDotSlate} />
                         )}
                       </View>
-                      <Text style={styles.statusOptionSub}>
+                      <Text style={[styles.statusOptionSub, { color: isDark ? "#CBD5E1" : "#475569" }]}>
                         {isToday ? 'Not available for today\'s date' : 'Saved privately, hidden from members'}
                       </Text>
                     </View>
                     <View style={[
                       styles.statusRadioCircle,
+                      isDark && { borderColor: 'rgba(255,255,255,0.2)' },
                       form.status === 'Draft' && styles.statusRadioCircleDraft
                     ]}>
                       {form.status === 'Draft' && <Check size={12} color="#fff" strokeWidth={3} />}
@@ -1417,81 +1616,133 @@ export default function AdminPromiseEditor() {
               );
             })()}
           </View>
-
+          </LinearGradient>
         </View>
 
         <View style={styles.footerBtnRow}>
           {form.status === 'Published' ? (
             <>
               <TouchableOpacity 
-                style={styles.btnDraft} 
-                onPress={() => handleSave('Draft')}
-                disabled={loading}
-              >
-                <FileText size={15} color="#1a2d5a" />
-                <Text style={styles.btnDraftTxt}>Save as Draft</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.btnSave, { backgroundColor: '#15803D' }, loading && { opacity: 0.85 }]} 
+                style={[
+                  styles.btnSave,
+                  {
+                    backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                    borderColor: isDark ? '#FFFFFF' : '#000000',
+                  },
+                  loading && { opacity: 0.85 }
+                ]} 
                 onPress={() => handleSave('Published')}
                 disabled={loading}
+                activeOpacity={0.8}
               >
                 {loading ? (
-                  <ActivityIndicator size="small" color="#fff" />
+                  <ActivityIndicator size="small" color={isDark ? "#000000" : "#FFFFFF"} />
                 ) : (
-                  <Send size={15} color="#fff" />
+                  <Send size={15} color={isDark ? "#000000" : "#FFFFFF"} />
                 )}
-                <Text style={styles.btnSaveTxt}>
+                <Text style={[styles.btnSaveTxt, { color: isDark ? "#000000" : "#FFFFFF" }]}>
                   {loading ? 'Publishing…' : 'Save & Publish Now'}
                 </Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[
+                  styles.btnDraft,
+                  {
+                    backgroundColor: isDark ? '#27272A' : '#475569',
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.25)' : '#334155',
+                  }
+                ]} 
+                onPress={() => handleSave('Draft')}
+                disabled={loading}
+                activeOpacity={0.8}
+              >
+                <FileText size={15} color="#FFFFFF" />
+                <Text style={[styles.btnDraftTxt, { color: '#FFFFFF' }]}>Save as Draft</Text>
               </TouchableOpacity>
             </>
           ) : form.status === 'Scheduled' ? (
             <>
               <TouchableOpacity 
-                style={styles.btnDraft} 
-                onPress={() => handleSave('Draft')}
-                disabled={loading}
-              >
-                <FileText size={15} color="#1a2d5a" />
-                <Text style={styles.btnDraftTxt}>Save as Draft</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.btnSave, { backgroundColor: '#1a2d5a' }, loading && { opacity: 0.85 }]} 
+                style={[
+                  styles.btnSave,
+                  {
+                    backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                    borderColor: isDark ? '#FFFFFF' : '#000000',
+                  },
+                  loading && { opacity: 0.85 }
+                ]} 
                 onPress={() => handleSave('Scheduled')}
                 disabled={loading}
+                activeOpacity={0.8}
               >
                 {loading ? (
-                  <ActivityIndicator size="small" color="#fff" />
+                  <ActivityIndicator size="small" color={isDark ? "#000000" : "#FFFFFF"} />
                 ) : (
-                  <Clock size={15} color="#fff" />
+                  <Clock size={15} color={isDark ? "#000000" : "#FFFFFF"} />
                 )}
-                <Text style={styles.btnSaveTxt}>
+                <Text style={[styles.btnSaveTxt, { color: isDark ? "#000000" : "#FFFFFF" }]}>
                   {loading ? 'Scheduling…' : 'Save & Schedule'}
                 </Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[
+                  styles.btnDraft,
+                  {
+                    backgroundColor: isDark ? '#27272A' : '#475569',
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.25)' : '#334155',
+                  }
+                ]} 
+                onPress={() => handleSave('Draft')}
+                disabled={loading}
+                activeOpacity={0.8}
+              >
+                <FileText size={15} color="#FFFFFF" />
+                <Text style={[styles.btnDraftTxt, { color: '#FFFFFF' }]}>Save as Draft</Text>
               </TouchableOpacity>
             </>
           ) : (
             <>
               <TouchableOpacity 
-                style={styles.btnDraft} 
+                style={[
+                  styles.btnSave,
+                  {
+                    backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                    borderColor: isDark ? '#FFFFFF' : '#000000',
+                  },
+                  loading && { opacity: 0.85 }
+                ]} 
                 onPress={() => handleSave('Published')}
                 disabled={loading}
-              >
-                <Send size={15} color="#15803D" />
-                <Text style={[styles.btnDraftTxt, { color: '#15803D' }]}>Publish Now</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.btnSave, { backgroundColor: '#475569' }, loading && { opacity: 0.85 }]} 
-                onPress={() => handleSave('Draft')}
-                disabled={loading}
+                activeOpacity={0.8}
               >
                 {loading ? (
-                  <ActivityIndicator size="small" color="#fff" />
+                  <ActivityIndicator size="small" color={isDark ? "#000000" : "#FFFFFF"} />
                 ) : (
-                  <Save size={15} color="#fff" />
+                  <Send size={15} color={isDark ? "#000000" : "#FFFFFF"} />
                 )}
-                <Text style={styles.btnSaveTxt}>
+                <Text style={[styles.btnSaveTxt, { color: isDark ? "#000000" : "#FFFFFF" }]}>
+                  {loading ? 'Publishing…' : 'Save & Publish Now'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[
+                  styles.btnDraft,
+                  {
+                    backgroundColor: isDark ? '#27272A' : '#475569',
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.25)' : '#334155',
+                  },
+                  loading && { opacity: 0.85 }
+                ]} 
+                onPress={() => handleSave('Draft')}
+                disabled={loading}
+                activeOpacity={0.8}
+              >
+                {loading ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Save size={15} color="#FFFFFF" />
+                )}
+                <Text style={[styles.btnDraftTxt, { color: '#FFFFFF' }]}>
                   {loading ? 'Saving…' : 'Save as Draft'}
                 </Text>
               </TouchableOpacity>
@@ -1506,26 +1757,7 @@ export default function AdminPromiseEditor() {
         <View style={{ height: 60 }} />
       </ScrollView>
 
-      <TouchableOpacity 
-        style={[
-          styles.fab,
-          form.status === 'Published' && { backgroundColor: '#15803D' },
-          form.status === 'Scheduled' && { backgroundColor: '#1a2d5a' },
-          form.status === 'Draft' && { backgroundColor: '#475569' }
-        ]} 
-        onPress={() => handleSave(form.status as 'Published' | 'Scheduled' | 'Draft')} 
-        disabled={loading}
-      >
-        {loading ? (
-          <ActivityIndicator size="small" color="#fff" />
-        ) : form.status === 'Published' ? (
-          <Send size={22} color="#fff" />
-        ) : form.status === 'Scheduled' ? (
-          <Clock size={22} color="#fff" />
-        ) : (
-          <Save size={22} color="#fff" />
-        )}
-      </TouchableOpacity>
+
 
       <Modal visible={selectionModalType !== null} transparent animationType="slide">
         <View style={styles.modalOverlay}>
@@ -1787,23 +2019,121 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   container: { flex: 1, backgroundColor: '#EDE8DC' },
   scroll: { padding: 14, paddingBottom: 100 },
   hero: { backgroundColor: 'transparent',   paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12, marginBottom: 6 },
-  heroTitleRow: { flexDirection: 'row', alignItems: 'center' },
-  heroTitle: { color: '#1a2d5a', fontSize: 20, fontWeight: '600' },
-  section: { backgroundColor: '#FFFFFF', borderRadius: 14, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(26,45,90,0.08)', borderTopWidth: 3, borderTopColor: '#1a2d5a' },
+  heroTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 0 },
+  heroTitle: { color: '#0F172A', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '800', letterSpacing: -0.4 },
+  section: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    marginBottom: 16,
+    borderWidth: 1.5,
+    borderColor: '#94A3B8',
+    overflow: 'hidden',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.10,
+    shadowRadius: 14,
+    elevation: 4,
+  },
+  sectionLight: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#94A3B8',
+    borderWidth: 1.5,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.10,
+    shadowRadius: 14,
+    elevation: 4,
+  },
+  sectionDark: {
+    backgroundColor: '#161619',
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+    borderWidth: 1.5,
+    shadowColor: '#000000',
+    shadowOpacity: 0.45,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  sectionInner: {
+    padding: 16,
+    width: '100%',
+  },
   secNavy: {}, secBlue: {}, secRed: {},
-  secHd: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(26,45,90,0.07)', paddingBottom: 10 },
-  secHdPill: { width: 26, height: 26, borderRadius: 7, backgroundColor: '#1a2d5a', justifyContent: 'center', alignItems: 'center' },
-  secHdTXT: { fontSize: 12, fontWeight: '800', color: '#1a2d5a', textTransform: 'uppercase', letterSpacing: 1.3, flex: 1 },
-  fGroup: { marginBottom: 12 },
-  fLabel: { fontSize: 10, fontWeight: '700', color: '#374151', textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 6 },
-  fHint: { fontWeight: '500', color: '#9CA3AF', fontSize: 11, textTransform: 'none' },
-  fSub: { fontSize: 11, color: '#6B7280', marginTop: 6, fontStyle: 'italic' },
-  statusDropdownTxt: { fontSize: 13, fontWeight: '600', color: '#1a2d5a', flex: 1 },
-  input: { backgroundColor: '#FAFAF9', borderWidth: 1, borderColor: '#E2DDD5', borderRadius: 10, paddingHorizontal: 13, paddingVertical: 11, fontSize: 13, color: '#1a2d5a', fontWeight: '500' },
-  inputWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FAFAF9', borderWidth: 1, borderColor: '#E2DDD5', borderRadius: 10, paddingHorizontal: 13, paddingVertical: 11 },
-  inputText: { flex: 1, fontSize: 13, color: '#1a2d5a', fontWeight: '500' },
+  secHd: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    paddingBottom: 10,
+  },
+  secHdPill: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  secHdTXT: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#0F172A',
+    textTransform: 'uppercase',
+    letterSpacing: 1.1,
+    flex: 1,
+  },
+  fGroup: { marginBottom: 14 },
+  fLabel: { fontSize: 11, fontWeight: '700', color: '#1E293B', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 },
+  fHint: { fontWeight: '600', color: '#475569', fontSize: 11, textTransform: 'none' },
+  fSub: { fontSize: 11, color: '#64748B', marginTop: 6, fontStyle: 'italic' },
+  statusDropdownTxt: { fontSize: 13, fontWeight: '600', color: '#0F172A', flex: 1 },
+  input: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1.5,
+    borderColor: '#94A3B8',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 13,
+    color: '#0F172A',
+    fontWeight: '500',
+  },
+  inputLight: {
+    backgroundColor: '#F1F5F9',
+    borderColor: '#94A3B8',
+    borderWidth: 1.5,
+    color: '#0F172A',
+  },
+  inputDark: {
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+    borderWidth: 1.5,
+    color: '#FFFFFF',
+  },
+  inputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1.5,
+    borderColor: '#94A3B8',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  inputWrapLight: {
+    backgroundColor: '#F1F5F9',
+    borderColor: '#94A3B8',
+    borderWidth: 1.5,
+  },
+  inputWrapDark: {
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+    borderWidth: 1.5,
+  },
+  inputText: { flex: 1, fontSize: 13, color: '#0F172A', fontWeight: '500' },
   inputIcon: { marginLeft: 10 },
-  textarea: { minHeight: 80, textAlignVertical: 'top' },
+  textarea: { minHeight: 88, textAlignVertical: 'top' },
   teIn: { fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontSize: 14, lineHeight: 22 },
   themeRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 6, gap: 10 },
   themeChip: { width: 38, height: 38, borderRadius: 19, borderWidth: 2.5, borderColor: 'transparent' },
@@ -1811,10 +2141,10 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
   pickerCard: { backgroundColor: '#fff', width: '88%', maxWidth: 360, borderRadius: 20, padding: 18, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 12, elevation: 8 },
   pickerHd: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
-  pickerTitle: { fontSize: 15, fontWeight: '700', color: '#1a2d5a' },
+  pickerTitle: { fontSize: 15, fontWeight: '700', color: '#0F172A' },
   pickerNavRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingHorizontal: 4 },
   pickerNavBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' },
-  pickerMonthYearTxt: { fontSize: 15, fontWeight: '800', color: '#1a2d5a' },
+  pickerMonthYearTxt: { fontSize: 15, fontWeight: '800', color: '#0F172A' },
   pickerMonthTeluguTxt: { fontSize: 11, fontWeight: '600', color: '#64748B', marginTop: 1 },
   pickerWeekDaysRow: { flexDirection: 'row', marginBottom: 6, paddingBottom: 4, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
   pickerWeekDayCol: { flex: 1, alignItems: 'center' },
@@ -1822,14 +2152,14 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   calGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   calCellBlank: { width: '14.28%', height: 36 },
   calCell: { width: '14.28%', height: 36, justifyContent: 'center', alignItems: 'center', borderRadius: 8, marginVertical: 2 },
-  calCellActive: { backgroundColor: '#1a2d5a' },
+  calCellActive: { backgroundColor: '#0F172A' },
   calCellToday: { borderWidth: 1.5, borderColor: '#F59E0B', backgroundColor: 'rgba(245, 158, 11, 0.1)' },
   calCellTxt: { fontSize: 12, color: '#334155', fontWeight: '600' },
   calCellTxtActive: { color: '#FFFFFF', fontWeight: '800' },
   calCellTxtToday: { color: '#B45309', fontWeight: '700' },
   pickerFooterRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F1F5F9' },
   pickerTodayBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, backgroundColor: '#EFF6FF' },
-  pickerTodayBtnTxt: { fontSize: 12, fontWeight: '700', color: '#1a2d5a' },
+  pickerTodayBtnTxt: { fontSize: 12, fontWeight: '700', color: '#2563EB' },
   pickerCancelBtn: { paddingVertical: 8, paddingHorizontal: 12 },
   pickerCancelBtnTxt: { fontSize: 12, fontWeight: '600', color: '#64748B' },
 
@@ -1840,7 +2170,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     borderBottomColor: '#F3F4F6',
   },
   modalOptionActive: {
-    backgroundColor: '#1a2d5a',
+    backgroundColor: '#2563EB',
   },
   modalOptionText: {
     fontSize: 15,
@@ -1857,12 +2187,12 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: '#FAFAF9',
+    backgroundColor: '#F8FAFC',
     borderWidth: 1.5,
-    borderColor: '#E2DDD5',
+    borderColor: '#E2E8F0',
     borderRadius: 12,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 11,
   },
   statusOptionCardPublished: {
     borderColor: '#10B981',
@@ -2180,43 +2510,76 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   cardBtnTxt: { color: '#1a2d5a', fontSize: 11, fontWeight: '700' },
 
   // ─── Footer Action Buttons ────────────────────────────────────────────────
-  // Horizontal container: Draft | Save & Publish side-by-side
   footerBtnRow: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     gap: 12,
-    marginBottom: 16,
+    marginBottom: 20,
+    width: '100%',
   },
-  // Primary: forest green — Save & Publish
   btnSave: {
-    flex: 1,
-    backgroundColor: '#2E6B4F',
-    borderRadius: 14,
-    paddingVertical: 16,
+    width: '100%',
+    backgroundColor: '#000000',
+    borderRadius: 999,
+    paddingVertical: 15,
+    paddingHorizontal: 20,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 7,
-    elevation: 6,
-    shadowColor: '#2E6B4F',
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 5 },
-  },
-  btnSaveTxt: { color: '#fff', fontSize: 13, fontWeight: '800', letterSpacing: 0.3 },
-  // Secondary: cream with navy border — Save as Draft
-  btnDraft: {
-    flex: 1,
-    backgroundColor: '#F5F0E8',
-    borderRadius: 14,
-    paddingVertical: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 7,
+    gap: 8,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
     borderWidth: 1.5,
-    borderColor: 'rgba(26,45,90,0.30)',
+    borderColor: '#000000',
   },
-  btnDraftTxt: { color: '#1a2d5a', fontSize: 13, fontWeight: '700', letterSpacing: 0.2 },
+  btnSaveDark: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+  },
+  btnSaveTxt: {
+    color: '#FFFFFF',
+    fontSize: 13.5,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  btnSaveTxtDark: {
+    color: '#000000',
+  },
+  btnDraft: {
+    width: '100%',
+    backgroundColor: '#475569',
+    borderRadius: 999,
+    paddingVertical: 15,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1.5,
+    borderColor: '#334155',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  btnDraftDark: {
+    backgroundColor: '#27272A',
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  btnDraftTxt: {
+    color: '#FFFFFF',
+    fontSize: 13.5,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  btnDraftTxtDark: {
+    color: '#FFFFFF',
+  },
   btnBack: { alignItems: 'center', paddingVertical: 10 },
   btnBackTxt: { fontSize: 14, color: '#6B7280', fontWeight: '600' },
 

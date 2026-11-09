@@ -10,14 +10,15 @@ import {
   RefreshControl,
   StatusBar
 } from 'react-native';
-import { AlertCircle, Plus, Check, ChevronLeft, Filter, X , ArrowLeft } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { AlertCircle, Plus, Check, ChevronLeft, Filter, X, ArrowLeft, Calendar } from 'lucide-react-native';
 import { AdminTabContext } from '../../context/AdminTabContext';
 
 import FirestoreService, { DailyPromise } from '../../services/FirestoreService';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const colors = {
-  ink: '#1a2d5a',
+  ink: '#202923',
   ink2: '#22304F',
   inkSoft: '#6B7593',
   parchment: '#F3EAD9',
@@ -138,30 +139,56 @@ export default function AdminPromiseList() {
     const restChar = verseTextEn.slice(1);
 
     return (
-      <View key={item.id} style={styles.verseCard}>
-        <View style={styles.vcBand}>
+      <View
+        key={item.id}
+        style={[
+          styles.verseCard,
+          {
+            backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+            borderColor: isDark ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0',
+          },
+        ]}
+      >
+        <View
+          style={[
+            styles.vcBand,
+            {
+              backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+              borderBottomWidth: 1,
+              borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0',
+            },
+          ]}
+        >
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 }}>
-            <Text style={styles.vcDate}>{displayDate}</Text>
+            <Text style={[styles.vcDate, { color: isDark ? '#FFFFFF' : '#202923' }]}>{displayDate}</Text>
             {!!item.status && (
               <View style={[
                 styles.statusBadgePill,
-                item.status === 'Published' && styles.statusBadgePublished,
-                item.status === 'Draft' && styles.statusBadgeDraft,
-                item.status === 'Scheduled' && styles.statusBadgeScheduled,
+                item.status === 'Published' && { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.2)' : '#D1FAE5' },
+                item.status === 'Draft' && { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7' },
+                item.status === 'Scheduled' && { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.2)' : '#DBEAFE' },
               ]}>
                 <Text style={[
                   styles.statusBadgeTxt,
-                  item.status === 'Published' && { color: '#065F46' },
-                  item.status === 'Draft' && { color: '#92400E' },
-                  item.status === 'Scheduled' && { color: '#1E3A8A' },
+                  item.status === 'Published' && { color: isDark ? '#34D399' : '#065F46' },
+                  item.status === 'Draft' && { color: isDark ? '#FBBF24' : '#92400E' },
+                  item.status === 'Scheduled' && { color: isDark ? '#60A5FA' : '#1E3A8A' },
                 ]}>
                   {item.status}
                 </Text>
               </View>
             )}
           </View>
-          <View style={styles.seal}>
-            {type === 'upcoming' ? <Plus size={14} color={colors.ink} /> : <Check size={14} color={colors.ink} strokeWidth={3} />}
+          <View
+            style={[
+              styles.seal,
+              {
+                backgroundColor: isDark ? '#000000' : '#202923',
+                borderColor: isDark ? '#3F3F46' : '#202923',
+              },
+            ]}
+          >
+            {type === 'upcoming' ? <Plus size={13} color="#FFFFFF" strokeWidth={2.6} /> : <Check size={13} color="#FFFFFF" strokeWidth={2.8} />}
           </View>
         </View>
 
@@ -169,46 +196,56 @@ export default function AdminPromiseList() {
           <View style={[styles.vcRef, { alignItems: 'baseline' }]}>
             <Text style={{ includeFontPadding: false, textAlignVertical: 'bottom' }}>
               {(item.verseReferenceEn || item.verseReference) && (
-                <Text style={{ fontSize: 13, color: colors.ink, fontWeight: '700' }}>
+                <Text style={{ fontSize: 13.5, color: isDark ? '#FFFFFF' : '#202923', fontWeight: '800' }}>
                   {item.verseReferenceEn || item.verseReference}
                 </Text>
               )}
               {item.verseReferenceTe && (item.verseReferenceEn || item.verseReference) && (
-                <Text style={{ fontSize: 13, color: colors.rule, marginHorizontal: 8 }}>  |  </Text>
+                <Text style={{ fontSize: 13, color: isDark ? '#52525B' : '#CBD5E1', marginHorizontal: 8 }}>  |  </Text>
               )}
               {item.verseReferenceTe && (
-                <Text style={{ fontSize: 13, color: colors.ink, fontWeight: '700' }}>
+                <Text style={{ fontSize: 13.5, color: isDark ? '#FFFFFF' : '#202923', fontWeight: '800' }}>
                   {item.verseReferenceTe}
                 </Text>
               )}
             </Text>
             {(item as any).author && (
               <>
-                <Text style={styles.dot}>•</Text>
-                <Text style={styles.author}>{(item as any).author}</Text>
+                <Text style={[styles.dot, { color: isDark ? '#71717A' : '#94A3B8' }]}>•</Text>
+                <Text style={[styles.author, { color: isDark ? '#D4D4D8' : '#475569' }]}>{(item as any).author}</Text>
               </>
             )}
           </View>
 
-          <Text style={styles.vcQuote}>
-            <Text style={styles.dropCap}>{firstChar}</Text>
+          <Text style={[styles.vcQuote, { color: isDark ? '#E4E4E7' : '#334155' }]}>
+            <Text style={[styles.dropCap, { color: isDark ? '#FFFFFF' : '#202923' }]}>{firstChar}</Text>
             {restChar}
           </Text>
           
           {item.verseTelugu ? (
-            <Text style={styles.vcQuoteTel}>
+            <Text style={[styles.vcQuoteTel, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
               {stripHtml(item.verseTelugu)}
             </Text>
           ) : null}
 
-          <View style={styles.vcBottom}>
+          <View style={[styles.vcBottom, { borderTopColor: isDark ? '#27272A' : '#F1F5F9', borderStyle: 'solid' }]}>
             <View style={styles.vcFlags}>
-              <Text style={styles.flagOn}>✓ English</Text>
-              <Text style={isMissingTe ? styles.flagOff : styles.flagOn}>{isMissingTe ? '✗ Telugu' : '✓ Telugu'}</Text>
-              <Text style={isMissingLink ? styles.flagOff : styles.flagOn}>{isMissingLink ? '▶ No link' : '▶ YouTube'}</Text>
+              <Text style={[styles.flagOn, { color: isDark ? '#34D399' : colors.moss }]}>✓ English</Text>
+              <Text style={isMissingTe ? [styles.flagOff, { color: isDark ? '#71717A' : '#94A3B8' }] : [styles.flagOn, { color: isDark ? '#34D399' : colors.moss }]}>{isMissingTe ? '✗ Telugu' : '✓ Telugu'}</Text>
+              <Text style={isMissingLink ? [styles.flagOff, { color: isDark ? '#71717A' : '#94A3B8' }] : [styles.flagOn, { color: isDark ? '#34D399' : colors.moss }]}>{isMissingLink ? '▶ No link' : '▶ YouTube'}</Text>
             </View>
-            <TouchableOpacity onPress={() => type === 'past' ? handleView(item) : handleEdit(item)}>
-              <Text style={styles.viewLink}>Edit →</Text>
+            <TouchableOpacity
+              style={[
+                styles.editBadgeBtn,
+                {
+                  backgroundColor: isDark ? '#000000' : '#202923',
+                  borderColor: isDark ? '#3F3F46' : '#202923',
+                },
+              ]}
+              onPress={() => type === 'past' ? handleView(item) : handleEdit(item)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.editBadgeBtnTxt}>Edit →</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -224,99 +261,189 @@ export default function AdminPromiseList() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
-      <View style={styles.hero}>
+      <View style={[styles.hero, { borderBottomWidth: 1, borderBottomColor: isDark ? '#27272A' : '#E2E8F0', paddingBottom: 14, marginBottom: 4 }]}>
         <View style={styles.heroTitleRow}>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', flexShrink: 1 }}>
-            <TouchableOpacity
-              onPress={() => setTabByName?.('Dashboard')}
-              style={styles.circularBackBtn}
-              activeOpacity={0.7}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
-            </TouchableOpacity>
-            <View style={{ flexShrink: 1, marginLeft: 12 }}>
-              <Text style={[styles.heroTitle, { flexShrink: 1 }]} numberOfLines={1}>Daily Promises</Text>
-            </View>
-          </View>
+          <TouchableOpacity
+            onPress={() => setTabByName?.('Dashboard')}
+            style={[styles.circularBackBtn, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? '#3F3F46' : '#E2E8F0' }]}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.2} />
+          </TouchableOpacity>
           
-          <View style={{ width: 10 }} />
-          <TouchableOpacity style={[styles.newBtn, { flexShrink: 0 }]} onPress={() => { setEditingData(null); setTabByName?.('New Promise'); }}>
-            <Text style={styles.newBtnTxt} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>+ New Promise</Text>
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 }}>
+            <Text
+              style={[
+                styles.heroTitle,
+                {
+                  color: isDark ? '#FFFFFF' : '#0F172A',
+                  textAlign: 'center',
+                  fontSize: 20,
+                  fontWeight: '800',
+                  fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+                  letterSpacing: -0.4,
+                }
+              ]}
+              numberOfLines={1}
+            >
+              Daily Promises
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={[
+              styles.newBtn,
+              {
+                flexShrink: 0,
+                backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                borderRadius: 999,
+                paddingHorizontal: 13,
+                paddingVertical: 7.5,
+                borderWidth: 1.5,
+                borderColor: isDark ? '#FFFFFF' : '#000000',
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }
+            ]}
+            onPress={() => { setEditingData(null); setTabByName?.('New Promise'); }}
+            activeOpacity={0.8}
+          >
+            <Text
+              style={[
+                styles.newBtnTxt,
+                {
+                  color: isDark ? '#000000' : '#FFFFFF',
+                  fontWeight: '800',
+                  fontSize: 12,
+                }
+              ]}
+              numberOfLines={1}
+            >
+              + New Promise
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll}>
-
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
         <View style={styles.content}>
           <View style={styles.stats}>
             {/* 1. Published Card */}
             <TouchableOpacity 
               style={[
                 styles.statBox, 
-                activeFilter === 'published' && styles.statBoxActivePublished
+                {
+                  backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                  borderColor: activeFilter === 'published'
+                    ? (isDark ? '#34D399' : colors.moss)
+                    : (isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(62, 107, 82, 0.22)'),
+                  borderWidth: activeFilter === 'published' ? 1.8 : 1,
+                  paddingVertical: 0,
+                  overflow: 'hidden',
+                }
               ]}
               onPress={() => setActiveFilter(prev => prev === 'published' ? 'all' : 'published')}
               activeOpacity={0.75}
             >
-              <View style={[styles.statNotch, { backgroundColor: colors.moss }]} />
-              <Text style={[styles.num, { color: colors.moss }]}>{stats.published}</Text>
-              <View style={styles.statLabelRow}>
-                <Text style={[styles.statLabel, activeFilter === 'published' && { color: colors.moss }]}>Published</Text>
-                {activeFilter === 'published' && (
-                  <View style={[styles.activeIndicatorDot, { backgroundColor: colors.moss }]} />
-                )}
-              </View>
-              <Text style={styles.statHintTxt}>
-                {activeFilter === 'published' ? 'Active ✓' : 'Tap to view'}
-              </Text>
+              <LinearGradient
+                colors={
+                  isDark
+                    ? ['rgba(52, 211, 153, 0.14)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)']
+                    : ['#FFFFFF', '#F7FCF9', '#ECFDF5']
+                }
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.statGlassInner}
+              >
+                <View style={[styles.statNotch, { backgroundColor: isDark ? '#34D399' : colors.moss }]} />
+                <Text style={[styles.num, { color: isDark ? '#34D399' : colors.moss }]}>{stats.published}</Text>
+                <View style={styles.statLabelRow}>
+                  <Text style={[styles.statLabel, { color: isDark ? '#E4E4E7' : colors.inkSoft }, activeFilter === 'published' && { color: isDark ? '#34D399' : colors.moss }]}>Published</Text>
+                  {activeFilter === 'published' && <View style={[styles.activeIndicatorDot, { backgroundColor: isDark ? '#34D399' : colors.moss }]} />}
+                </View>
+                <Text style={[styles.statHintTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>{activeFilter === 'published' ? 'Active ✓' : 'Tap to view'}</Text>
+              </LinearGradient>
             </TouchableOpacity>
 
             {/* 2. Drafts Card */}
             <TouchableOpacity 
               style={[
                 styles.statBox, 
-                activeFilter === 'draft' && styles.statBoxActiveDraft
+                {
+                  backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                  borderColor: activeFilter === 'draft'
+                    ? (isDark ? '#FBBF24' : colors.goldDeep)
+                    : (isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(166, 124, 61, 0.24)'),
+                  borderWidth: activeFilter === 'draft' ? 1.8 : 1,
+                  paddingVertical: 0,
+                  overflow: 'hidden',
+                }
               ]}
               onPress={() => setActiveFilter(prev => prev === 'draft' ? 'all' : 'draft')}
               activeOpacity={0.75}
             >
-              <View style={[styles.statNotch, { backgroundColor: colors.gold }]} />
-              <Text style={[styles.num, { color: colors.goldDeep }]}>{stats.draft}</Text>
-              <View style={styles.statLabelRow}>
-                <Text style={[styles.statLabel, activeFilter === 'draft' && { color: colors.goldDeep }]}>Drafts</Text>
-                {activeFilter === 'draft' && (
-                  <View style={[styles.activeIndicatorDot, { backgroundColor: colors.goldDeep }]} />
-                )}
-              </View>
-              <Text style={styles.statHintTxt}>
-                {activeFilter === 'draft' ? 'Active ✓' : 'Tap to view'}
-              </Text>
+              <LinearGradient
+                colors={
+                  isDark
+                    ? ['rgba(251, 191, 36, 0.14)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)']
+                    : ['#FFFFFF', '#FFFDF7', '#FEF3C7']
+                }
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.statGlassInner}
+              >
+                <View style={[styles.statNotch, { backgroundColor: isDark ? '#FBBF24' : colors.gold }]} />
+                <Text style={[styles.num, { color: isDark ? '#FBBF24' : colors.goldDeep }]}>{stats.draft}</Text>
+                <View style={styles.statLabelRow}>
+                  <Text style={[styles.statLabel, { color: isDark ? '#E4E4E7' : colors.inkSoft }, activeFilter === 'draft' && { color: isDark ? '#FBBF24' : colors.goldDeep }]}>Drafts</Text>
+                  {activeFilter === 'draft' && <View style={[styles.activeIndicatorDot, { backgroundColor: isDark ? '#FBBF24' : colors.goldDeep }]} />}
+                </View>
+                <Text style={[styles.statHintTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>{activeFilter === 'draft' ? 'Active ✓' : 'Tap to view'}</Text>
+              </LinearGradient>
             </TouchableOpacity>
 
             {/* 3. Missing Card */}
             <TouchableOpacity 
               style={[
                 styles.statBox, 
-                activeFilter === 'missing' && styles.statBoxActiveMissing
+                {
+                  backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                  borderColor: activeFilter === 'missing'
+                    ? (isDark ? '#F87171' : colors.clay)
+                    : (isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(162, 75, 52, 0.22)'),
+                  borderWidth: activeFilter === 'missing' ? 1.8 : 1,
+                  paddingVertical: 0,
+                  overflow: 'hidden',
+                }
               ]}
               onPress={() => setActiveFilter(prev => prev === 'missing' ? 'all' : 'missing')}
               activeOpacity={0.75}
             >
-              <View style={[styles.statNotch, { backgroundColor: colors.clay }]} />
-              <Text style={[styles.num, { color: colors.clay }]}>{stats.missing}</Text>
-              <View style={styles.statLabelRow}>
-                <Text style={[styles.statLabel, activeFilter === 'missing' && { color: colors.clay }]}>Missing</Text>
-                {activeFilter === 'missing' && (
-                  <View style={[styles.activeIndicatorDot, { backgroundColor: colors.clay }]} />
-                )}
-              </View>
-              <Text style={styles.statHintTxt}>
-                {activeFilter === 'missing' ? 'Active ✓' : 'Tap to view'}
-              </Text>
+              <LinearGradient
+                colors={
+                  isDark
+                    ? ['rgba(248, 113, 113, 0.14)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)']
+                    : ['#FFFFFF', '#FFF9F8', '#FEE2E2']
+                }
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.statGlassInner}
+              >
+                <View style={[styles.statNotch, { backgroundColor: isDark ? '#F87171' : colors.clay }]} />
+                <Text style={[styles.num, { color: isDark ? '#F87171' : colors.clay }]}>{stats.missing}</Text>
+                <View style={styles.statLabelRow}>
+                  <Text style={[styles.statLabel, { color: isDark ? '#E4E4E7' : colors.inkSoft }, activeFilter === 'missing' && { color: isDark ? '#F87171' : colors.clay }]}>Missing</Text>
+                  {activeFilter === 'missing' && <View style={[styles.activeIndicatorDot, { backgroundColor: isDark ? '#F87171' : colors.clay }]} />}
+                </View>
+                <Text style={[styles.statHintTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>{activeFilter === 'missing' ? 'Active ✓' : 'Tap to view'}</Text>
+              </LinearGradient>
             </TouchableOpacity>
           </View>
 
@@ -354,11 +481,25 @@ export default function AdminPromiseList() {
               {publishedPromises.length > 0 ? (
                 publishedPromises.map(item => renderCard(item, 'filtered'))
               ) : (
-                <View style={styles.emptyCard}>
-                  <Text style={styles.emptyText}>No published promises found.</Text>
-                  <TouchableOpacity style={styles.ghostBtn} onPress={() => { setEditingData(null); setTabByName?.('New Promise'); }}>
-                    <Text style={styles.ghostBtnTxt}>+ Create Promise</Text>
-                  </TouchableOpacity>
+                <View style={[styles.premiumEmptyOuter, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0' }]}>
+                  <LinearGradient
+                    colors={isDark ? ['rgba(255, 255, 255, 0.06)', 'rgba(24, 24, 27, 0.92)'] : ['#FFFFFF', '#F8FAFC']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.premiumEmptyInner}
+                  >
+                    <View style={[styles.premiumEmptyIconCircle, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: isDark ? '#3F3F46' : '#E2E8F0' }]}>
+                      <Calendar size={20} color={isDark ? '#FFFFFF' : '#202923'} strokeWidth={2} />
+                    </View>
+                    <Text style={[styles.premiumEmptyText, { color: isDark ? '#A1A1AA' : '#475569' }]}>No published promises found.</Text>
+                    <TouchableOpacity
+                      style={[styles.premiumScheduleBtn, { backgroundColor: isDark ? '#000000' : '#202923', borderColor: isDark ? '#3F3F46' : '#202923' }]}
+                      onPress={() => { setEditingData(null); setTabByName?.('New Promise'); }}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.premiumScheduleBtnTxt}>+ Create Promise</Text>
+                    </TouchableOpacity>
+                  </LinearGradient>
                 </View>
               )}
             </View>
@@ -370,11 +511,25 @@ export default function AdminPromiseList() {
               {draftPromises.length > 0 ? (
                 draftPromises.map(item => renderCard(item, 'filtered'))
               ) : (
-                <View style={styles.emptyCard}>
-                  <Text style={styles.emptyText}>No draft promises found. All promises are published or scheduled.</Text>
-                  <TouchableOpacity style={styles.ghostBtn} onPress={() => { setEditingData(null); setTabByName?.('New Promise'); }}>
-                    <Text style={styles.ghostBtnTxt}>+ Create Draft</Text>
-                  </TouchableOpacity>
+                <View style={[styles.premiumEmptyOuter, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0' }]}>
+                  <LinearGradient
+                    colors={isDark ? ['rgba(255, 255, 255, 0.06)', 'rgba(24, 24, 27, 0.92)'] : ['#FFFFFF', '#F8FAFC']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.premiumEmptyInner}
+                  >
+                    <View style={[styles.premiumEmptyIconCircle, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: isDark ? '#3F3F46' : '#E2E8F0' }]}>
+                      <Calendar size={20} color={isDark ? '#FFFFFF' : '#202923'} strokeWidth={2} />
+                    </View>
+                    <Text style={[styles.premiumEmptyText, { color: isDark ? '#A1A1AA' : '#475569' }]}>No draft promises found. All promises are published or scheduled.</Text>
+                    <TouchableOpacity
+                      style={[styles.premiumScheduleBtn, { backgroundColor: isDark ? '#000000' : '#202923', borderColor: isDark ? '#3F3F46' : '#202923' }]}
+                      onPress={() => { setEditingData(null); setTabByName?.('New Promise'); }}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.premiumScheduleBtnTxt}>+ Create Draft</Text>
+                    </TouchableOpacity>
+                  </LinearGradient>
                 </View>
               )}
             </View>
@@ -383,23 +538,45 @@ export default function AdminPromiseList() {
           {/* Filtered View: Missing */}
           {activeFilter === 'missing' && (
             <View>
-              <View style={styles.alert}>
-                <AlertCircle size={20} color={colors.clay} style={{ marginTop: 2 }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.alertTitle}>{missingDates.length} days need daily promises this month.</Text>
-                  <Text style={styles.alertText}>Tap any date below to open the promise editor and schedule it immediately.</Text>
-                </View>
+              <View style={[styles.premiumNoticeOuter, { borderColor: isDark ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0', backgroundColor: isDark ? '#18181B' : '#FFFFFF' }]}>
+                <LinearGradient
+                  colors={isDark ? ['rgba(255, 255, 255, 0.08)', 'rgba(39, 39, 42, 0.50)', 'rgba(18, 18, 21, 0.90)'] : ['#FFFFFF', '#F8FAFC', '#F1F5F9']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.premiumNoticeInner}
+                >
+                  <View style={[styles.premiumNoticeIconWrap, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9', borderColor: isDark ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0' }]}>
+                    <AlertCircle size={20} color={isDark ? '#FBBF24' : '#0F172A'} strokeWidth={2.2} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <Text style={[styles.premiumNoticeTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                        {missingDates.length} days need daily promises
+                      </Text>
+                      <View style={[styles.premiumNoticeBadge, { backgroundColor: isDark ? '#000000' : '#0F172A', borderColor: isDark ? '#3F3F46' : '#0F172A' }]}>
+                        <Text style={styles.premiumNoticeBadgeTxt}>QUEUE</Text>
+                      </View>
+                    </View>
+                    <Text style={[styles.premiumNoticeSub, { color: isDark ? '#A1A1AA' : '#475569' }]}>
+                      Tap any date below to open the promise editor and schedule it immediately.
+                    </Text>
+                  </View>
+                </LinearGradient>
               </View>
 
               <View style={styles.missingHead}>
-                <Text style={styles.missingTitle}>All Missing Dates ({missingDates.length})</Text>
+                <Text style={[styles.missingTitle, { color: isDark ? '#C6A66B' : '#98713D', fontSize: 18, fontWeight: '800' }]}>All Missing Dates ({missingDates.length})</Text>
                 {missingDates.length > 0 && (
-                  <TouchableOpacity style={styles.fillAll} onPress={() => {
-                    const now = new Date();
-                    const dStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(missingDates[0]).padStart(2, '0')}`;
-                    setEditingData({ date: dStr });
-                    setTabByName?.('New Promise');
-                  }}>
+                  <TouchableOpacity
+                    style={[styles.fillAll, { backgroundColor: isDark ? '#18181B' : '#202923', borderColor: isDark ? '#3F3F46' : '#202923' }]}
+                    onPress={() => {
+                      const now = new Date();
+                      const dStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(missingDates[0]).padStart(2, '0')}`;
+                      setEditingData({ date: dStr });
+                      setTabByName?.('New Promise');
+                    }}
+                    activeOpacity={0.8}
+                  >
                     <Text style={styles.fillAllTxt}>+ Fill First ({missingDates[0]})</Text>
                   </TouchableOpacity>
                 )}
@@ -409,16 +586,43 @@ export default function AdminPromiseList() {
                 {missingDates.map(d => {
                   const monthStr = monthNamesShort[(new Date()).getMonth()];
                   return (
-                    <TouchableOpacity key={d} style={styles.missingCell} onPress={() => { 
-                      const now = new Date();
-                      const dStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-                      setEditingData({ date: dStr }); 
-                      setTabByName?.('New Promise'); 
-                    }}>
-                      <View style={styles.missingMonth}><Text style={styles.missingMonthTxt}>{monthStr}</Text></View>
-                      <Text style={styles.missingDay}>{d}</Text>
-                      <View style={styles.missingDash} />
-                      <Text style={styles.missingAdd}>+ Add</Text>
+                    <TouchableOpacity
+                      key={d}
+                      style={[
+                        styles.missingCell,
+                        {
+                          backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                          borderColor: isDark ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0',
+                        },
+                      ]}
+                      onPress={() => { 
+                        const now = new Date();
+                        const dStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                        setEditingData({ date: dStr }); 
+                        setTabByName?.('New Promise'); 
+                      }}
+                      activeOpacity={0.78}
+                    >
+                      <LinearGradient
+                        colors={isDark ? ['rgba(198, 166, 107, 0.10)', 'rgba(24, 24, 27, 0.92)'] : ['#FFFFFF', '#FAF8F5']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.missingCellInner}
+                      >
+                        <Text style={[styles.missingMonthTxt, { color: isDark ? '#C6A66B' : '#98713D' }]}>{monthStr}</Text>
+                        <Text style={[styles.missingDay, { color: isDark ? '#F2F0E8' : '#202923' }]}>{d}</Text>
+                        <View
+                          style={[
+                            styles.missingAddPill,
+                            {
+                              backgroundColor: isDark ? 'rgba(198, 166, 107, 0.16)' : 'rgba(152, 113, 61, 0.10)',
+                              borderColor: isDark ? 'rgba(198, 166, 107, 0.35)' : 'rgba(152, 113, 61, 0.25)',
+                            },
+                          ]}
+                        >
+                          <Text style={[styles.missingAdd, { color: isDark ? '#C6A66B' : '#98713D' }]}>+ Add</Text>
+                        </View>
+                      </LinearGradient>
                     </TouchableOpacity>
                   );
                 })}
@@ -430,43 +634,101 @@ export default function AdminPromiseList() {
           {activeFilter === 'all' && (
             <>
               {missingDates.length > 0 && (
-                <View style={styles.alert}>
-                  <AlertCircle size={20} color={colors.clay} style={{ marginTop: 2 }} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.alertTitle}>{missingDates.length} days are still empty.</Text>
-                    <Text style={styles.alertText}>Nothing is scheduled for the dates below. Fill them in before the queue catches up.</Text>
-                  </View>
+                <View style={[styles.premiumNoticeOuter, { borderColor: isDark ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0', backgroundColor: isDark ? '#18181B' : '#FFFFFF' }]}>
+                  <LinearGradient
+                    colors={isDark ? ['rgba(255, 255, 255, 0.08)', 'rgba(39, 39, 42, 0.50)', 'rgba(18, 18, 21, 0.90)'] : ['#FFFFFF', '#F8FAFC', '#F1F5F9']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.premiumNoticeInner}
+                  >
+                    <View style={[styles.premiumNoticeIconWrap, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9', borderColor: isDark ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0' }]}>
+                      <AlertCircle size={20} color={isDark ? '#FBBF24' : '#0F172A'} strokeWidth={2.2} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <Text style={[styles.premiumNoticeTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                          {missingDates.length} days are still empty
+                        </Text>
+                        <View style={[styles.premiumNoticeBadge, { backgroundColor: isDark ? '#000000' : '#0F172A', borderColor: isDark ? '#3F3F46' : '#0F172A' }]}>
+                          <Text style={styles.premiumNoticeBadgeTxt}>QUEUE</Text>
+                        </View>
+                      </View>
+                      <Text style={[styles.premiumNoticeSub, { color: isDark ? '#A1A1AA' : '#475569' }]}>
+                        Nothing is scheduled for the dates below. Fill them in before the queue catches up.
+                      </Text>
+                    </View>
+                  </LinearGradient>
                 </View>
               )}
 
               <View style={styles.sectionTitleRow}>
-                <Text style={styles.sectionTitle}>Today</Text>
-                <View style={styles.sectionTitleLine} />
+                <Text style={[styles.todayHeadingText, { color: isDark ? '#F2F0E8' : '#202923' }]}>Today</Text>
               </View>
               {todayPromise ? renderCard(todayPromise, 'today') : (
-                <View style={styles.emptyCard}>
-                  <Text style={styles.emptyText}>Nothing is scheduled for <Text style={styles.dateTag}>{displayDateFullStr}</Text> yet.</Text>
-                  <TouchableOpacity style={styles.ghostBtn} onPress={() => { setEditingData({ date: todayStr }); setTabByName?.('New Promise'); }}>
-                    <Text style={styles.ghostBtnTxt}>+ Schedule today's promise</Text>
-                  </TouchableOpacity>
+                <View style={[styles.premiumEmptyOuter, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0' }]}>
+                  <LinearGradient
+                    colors={isDark ? ['rgba(255, 255, 255, 0.06)', 'rgba(39, 39, 42, 0.45)', 'rgba(24, 24, 27, 0.92)'] : ['#FFFFFF', '#F8FAFC', '#F1F5F9']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.premiumEmptyInner}
+                  >
+                    <View style={[styles.premiumEmptyIconCircle, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: isDark ? '#3F3F46' : '#E2E8F0' }]}>
+                      <Calendar size={20} color={isDark ? '#F2F0E8' : '#202923'} strokeWidth={2.2} />
+                    </View>
+                    <Text
+                      style={[styles.premiumEmptyTitle, { color: isDark ? '#F2F0E8' : '#202923', width: '100%', textAlign: 'center' }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.85}
+                    >
+                      No Promise Scheduled
+                    </Text>
+                    <Text
+                      style={[styles.premiumEmptyText, { color: isDark ? '#A1A1AA' : '#475569', width: '100%' }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.8}
+                    >
+                      Pending for <Text style={[styles.dateTag, { color: isDark ? '#F2F0E8' : '#202923' }]}>{displayDateFullStr}</Text>
+                    </Text>
+                    <TouchableOpacity
+                      style={[styles.premiumScheduleBtn, { backgroundColor: isDark ? '#000000' : '#202923', borderColor: isDark ? '#3F3F46' : '#202923' }]}
+                      onPress={() => { setEditingData({ date: todayStr }); setTabByName?.('New Promise'); }}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.premiumScheduleBtnTxt}>+ Schedule today's promise</Text>
+                    </TouchableOpacity>
+                  </LinearGradient>
                 </View>
               )}
 
               <View style={styles.sectionTitleRow}>
-                <Text style={styles.sectionTitle}>Upcoming</Text>
-                <View style={styles.sectionTitleLine} />
+                <Text style={[styles.todayHeadingText, { color: isDark ? '#B9C8BD' : '#315C50' }]}>Upcoming</Text>
               </View>
               {upcoming.length > 0 ? (
                 upcoming.slice(0, 10).map(item => renderCard(item, 'upcoming'))
               ) : (
-                <View style={styles.emptyCard}>
-                  <Text style={styles.emptyText}>No promises scheduled ahead. Add a few days now to stay ahead of the queue.</Text>
+                <View style={[styles.premiumEmptyOuter, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0' }]}>
+                  <LinearGradient
+                    colors={isDark ? ['rgba(255, 255, 255, 0.06)', 'rgba(24, 24, 27, 0.92)'] : ['#FFFFFF', '#F8FAFC']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.premiumEmptyInner}
+                  >
+                    <Text style={[styles.premiumEmptyText, { color: isDark ? '#A1A1AA' : '#475569', marginBottom: 0 }]}>
+                      No upcoming promises scheduled yet.
+                    </Text>
+                  </LinearGradient>
                 </View>
               )}
 
               <View style={styles.missingHead}>
-                <Text style={styles.missingTitle}>Missing dates ({missingDates.length})</Text>
-                <TouchableOpacity style={styles.fillAll} onPress={() => setActiveFilter('missing')}>
+                <Text style={[styles.missingTitle, { color: isDark ? '#C6A66B' : '#98713D', fontSize: 18, fontWeight: '800' }]}>Missing dates ({missingDates.length})</Text>
+                <TouchableOpacity
+                  style={[styles.fillAll, { backgroundColor: isDark ? '#18181B' : '#202923', borderColor: isDark ? '#3F3F46' : '#202923' }]}
+                  onPress={() => setActiveFilter('missing')}
+                  activeOpacity={0.8}
+                >
                   <Text style={styles.fillAllTxt}>View all ({missingDates.length}) →</Text>
                 </TouchableOpacity>
               </View>
@@ -474,24 +736,50 @@ export default function AdminPromiseList() {
                 {missingDates.slice(0, 6).map(d => {
                   const monthStr = monthNamesShort[(new Date()).getMonth()];
                   return (
-                    <TouchableOpacity key={d} style={styles.missingCell} onPress={() => { 
-                      const now = new Date();
-                      const dStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-                      setEditingData({ date: dStr }); 
-                      setTabByName?.('New Promise'); 
-                    }}>
-                      <View style={styles.missingMonth}><Text style={styles.missingMonthTxt}>{monthStr}</Text></View>
-                      <Text style={styles.missingDay}>{d}</Text>
-                      <View style={styles.missingDash} />
-                      <Text style={styles.missingAdd}>+ Add</Text>
+                    <TouchableOpacity
+                      key={d}
+                      style={[
+                        styles.missingCell,
+                        {
+                          backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                          borderColor: isDark ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0',
+                        },
+                      ]}
+                      onPress={() => { 
+                        const now = new Date();
+                        const dStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                        setEditingData({ date: dStr }); 
+                        setTabByName?.('New Promise'); 
+                      }}
+                      activeOpacity={0.78}
+                    >
+                      <LinearGradient
+                        colors={isDark ? ['rgba(198, 166, 107, 0.10)', 'rgba(24, 24, 27, 0.92)'] : ['#FFFFFF', '#FAF8F5']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.missingCellInner}
+                      >
+                        <Text style={[styles.missingMonthTxt, { color: isDark ? '#C6A66B' : '#98713D' }]}>{monthStr}</Text>
+                        <Text style={[styles.missingDay, { color: isDark ? '#F2F0E8' : '#202923' }]}>{d}</Text>
+                        <View
+                          style={[
+                            styles.missingAddPill,
+                            {
+                              backgroundColor: isDark ? 'rgba(198, 166, 107, 0.16)' : 'rgba(152, 113, 61, 0.10)',
+                              borderColor: isDark ? 'rgba(198, 166, 107, 0.35)' : 'rgba(152, 113, 61, 0.25)',
+                            },
+                          ]}
+                        >
+                          <Text style={[styles.missingAdd, { color: isDark ? '#C6A66B' : '#98713D' }]}>+ Add</Text>
+                        </View>
+                      </LinearGradient>
                     </TouchableOpacity>
                   );
                 })}
               </View>
 
               <View style={styles.sectionTitleRow}>
-                <Text style={styles.sectionTitle}>Past Promises</Text>
-                <View style={styles.sectionTitleLine} />
+                <Text style={[styles.todayHeadingText, { color: isDark ? '#FFFFFF' : '#202923' }]}>Past Promises</Text>
               </View>
               {past.slice(0, 5).map(item => renderCard(item, 'past'))}
             </>
@@ -533,8 +821,6 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   // Hero
   hero: { 
     backgroundColor: 'transparent', 
-    
-    
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 12,
@@ -543,48 +829,40 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     position: 'relative'
   },
   heroTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 0 },
-  heroTitle: { color: '#1a2d5a', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '600', letterSpacing: -0.5, marginBottom: 0 },
-  newBtn: { backgroundColor: '#FCD34D', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 3 },
-  newBtnTxt: { color: colors.ink, fontSize: 12, fontWeight: '700' },
+  heroTitle: { color: '#1a2d5a', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '800', letterSpacing: -0.4, marginBottom: 0 },
+  newBtn: { backgroundColor: '#000000', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 3 },
+  newBtnTxt: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
 
   content: { paddingHorizontal: 16 },
 
-  // Stats
-  stats: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 20, marginTop: 16 },
-  statBox: { flex: 1, backgroundColor: colors.paper, borderRadius: 16, paddingVertical: 18, alignItems: 'center', elevation: 4, shadowColor: colors.ink, shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, borderWidth: 1.5, borderColor: 'rgba(21,28,51,0.06)', position: 'relative' },
-  statBoxActivePublished: {
-    borderColor: colors.moss,
-    borderWidth: 2,
-    backgroundColor: '#F0FDF4',
-    elevation: 6,
-    shadowColor: colors.moss,
-    shadowOpacity: 0.2,
+  // Original Centered Stat Cards with Refined Glassmorphism
+  stats: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 18, marginTop: 12 },
+  statBox: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.06,
     shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    position: 'relative',
   },
-  statBoxActiveDraft: {
-    borderColor: colors.goldDeep,
-    borderWidth: 2,
-    backgroundColor: '#FFFBEB',
-    elevation: 6,
-    shadowColor: colors.goldDeep,
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
+  statGlassInner: {
+    width: '100%',
+    paddingVertical: 12,
+    alignItems: 'center',
+    position: 'relative',
   },
-  statBoxActiveMissing: {
-    borderColor: colors.clay,
-    borderWidth: 2,
-    backgroundColor: '#FEF2F2',
-    elevation: 6,
-    shadowColor: colors.clay,
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-  },
-  statNotch: { position: 'absolute', top: -1, width: 32, height: 4, borderBottomLeftRadius: 4, borderBottomRightRadius: 4 },
-  num: { fontFamily: serifFont, fontSize: 30, fontWeight: '700', marginBottom: 4 },
+  statNotch: { position: 'absolute', top: -1, width: 32, height: 3.5, borderBottomLeftRadius: 4, borderBottomRightRadius: 4 },
+  num: { fontFamily: serifFont, fontSize: 25, fontWeight: '700', marginBottom: 2 },
   statLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  statLabel: { fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.2, color: colors.inkSoft, fontWeight: '700' },
+  statLabel: { fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 1.1, color: colors.inkSoft, fontWeight: '700' },
   activeIndicatorDot: { width: 6, height: 6, borderRadius: 3 },
-  statHintTxt: { fontSize: 9, color: '#94A3B8', fontWeight: '600', marginTop: 4, letterSpacing: 0.3 },
+  statHintTxt: { fontSize: 8.5, color: '#94A3B8', fontWeight: '600', marginTop: 2, letterSpacing: 0.3 },
 
   // Filter Banner
   filterBanner: {
@@ -630,54 +908,188 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Alert
-  alert: { backgroundColor: colors.clayBg, borderColor: colors.clayLine, borderWidth: 1, borderLeftWidth: 3, borderLeftColor: colors.clay, borderRadius: 12, padding: 14, flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 26, alignItems: 'flex-start' },
-  alertTitle: { fontFamily: serifFont, color: colors.clay, fontWeight: '600', fontSize: 14.5, marginBottom: 3 },
-  alertText: { fontSize: 13, color: '#7C4028', lineHeight: 18 },
+  // Premium Notice Card (replaces old red alert card)
+  premiumNoticeOuter: {
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 22,
+    overflow: 'hidden',
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  premiumNoticeInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    gap: 12,
+  },
+  premiumNoticeIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  premiumNoticeTitle: {
+    fontSize: 14.5,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  premiumNoticeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  premiumNoticeBadgeTxt: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.6,
+  },
+  premiumNoticeSub: {
+    fontSize: 12.5,
+    lineHeight: 18,
+    fontWeight: '500',
+  },
 
-  // Sections
-  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, marginTop: 10 },
-  sectionTitle: { fontFamily: serifFont, fontSize: 14, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase', color: colors.inkSoft, marginRight: 8 },
-  sectionTitleLine: { flex: 1, height: 1, backgroundColor: colors.rule },
+  // Sections (Today, Upcoming, Past Promises)
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, marginTop: 8 },
+  todayHeadingText: {
+    fontSize: 19,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
 
-  // Empty Cards
-  emptyCard: { borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.gold, borderRadius: 16, backgroundColor: colors.paper, padding: 24, alignItems: 'center', marginBottom: 24 },
-  emptyText: { fontSize: 14, color: colors.inkSoft, lineHeight: 21, textAlign: 'center', marginBottom: 14 },
-  dateTag: { fontFamily: serifFont, fontWeight: '600', color: colors.ink },
-  ghostBtn: { backgroundColor: colors.ink, paddingHorizontal: 20, paddingVertical: 11, borderRadius: 100, borderWidth: 1, borderColor: colors.gold },
-  ghostBtnTxt: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  // Redesigned Today / Empty Card
+  premiumEmptyOuter: {
+    borderRadius: 18,
+    borderWidth: 1,
+    marginBottom: 24,
+    overflow: 'hidden',
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  premiumEmptyInner: {
+    paddingHorizontal: 14,
+    paddingVertical: 20,
+    alignItems: 'center',
+  },
+  premiumEmptyIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  premiumEmptyTitle: {
+    fontSize: 15.5,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+    marginBottom: 4,
+  },
+  premiumEmptyText: {
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  dateTag: { fontFamily: serifFont, fontWeight: '700' },
+  premiumScheduleBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 11,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  premiumScheduleBtnTxt: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
 
   // Missing Dates
-  missingHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  missingTitle: { fontFamily: serifFont, fontSize: 16, fontWeight: '600', color: colors.clay },
-  fillAll: { backgroundColor: colors.clay, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 100 },
-  fillAllTxt: { color: '#fff', fontSize: 12.5, fontWeight: '700' },
+  missingHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  missingTitle: { fontFamily: serifFont, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
+  fillAll: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  fillAllTxt: { color: '#FFFFFF', fontSize: 12, fontWeight: '800', letterSpacing: 0.2 },
   missingGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 30 },
-  missingCell: { width: '31%', backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.clayLine, borderRadius: 8, alignItems: 'center', overflow: 'hidden', paddingBottom: 6 },
-  missingMonth: { backgroundColor: colors.clay, width: '100%', alignItems: 'center', paddingVertical: 4 },
-  missingMonthTxt: { color: '#fff', fontSize: 8, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase' },
-  missingDay: { fontFamily: serifFont, fontSize: 14, fontWeight: '600', color: colors.ink, marginVertical: 4 },
-  missingDash: { width: '60%', height: 1, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.clayLine, marginBottom: 4 },
-  missingAdd: { fontSize: 9, color: colors.clay, fontWeight: '700', letterSpacing: 0.5 },
+  missingCell: {
+    width: '31%',
+    borderWidth: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  missingCellInner: {
+    width: '100%',
+    alignItems: 'center',
+    paddingVertical: 11,
+    paddingHorizontal: 8,
+  },
+  missingMonthTxt: { fontSize: 9.5, fontWeight: '800', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 2 },
+  missingDay: { fontFamily: serifFont, fontSize: 21, fontWeight: '800', marginBottom: 6 },
+  missingAddPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  missingAdd: { fontSize: 9.5, fontWeight: '800', letterSpacing: 0.4 },
 
-  // Verse Card
-  verseCard: { backgroundColor: colors.paper, borderRadius: 10, elevation: 2, shadowColor: colors.ink, shadowOpacity: 0.1, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, marginBottom: 14, borderWidth: 1, borderColor: 'rgba(21,28,51,0.05)', overflow: 'hidden' },
-  vcBand: { backgroundColor: colors.ink, paddingHorizontal: 14, paddingVertical: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  vcDate: { fontFamily: serifFont, fontSize: 13, fontWeight: '600', color: '#fff' },
-  seal: { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.goldBright, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'rgba(255,255,255,0.25)', elevation: 3 },
+  // Redesigned Verse Card
+  verseCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    overflow: 'hidden',
+  },
+  vcBand: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  vcDate: { fontSize: 13.5, fontWeight: '800', letterSpacing: -0.2 },
+  seal: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+  },
   statusBadgePill: {
-    borderRadius: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-  },
-  statusBadgePublished: {
-    backgroundColor: '#D1FAE5',
-  },
-  statusBadgeDraft: {
-    backgroundColor: '#FEF3C7',
-  },
-  statusBadgeScheduled: {
-    backgroundColor: '#DBEAFE',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
   },
   statusBadgeTxt: {
     fontSize: 9.5,
@@ -685,20 +1097,28 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     letterSpacing: 0.4,
     textTransform: 'uppercase',
   },
-  vcBody: { paddingHorizontal: 14, paddingTop: 14, paddingBottom: 10 },
-  vcRef: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 10 },
-  tag: { backgroundColor: colors.parchment, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 100, borderWidth: 1, borderColor: colors.rule },
-  tagText: { fontSize: 10, color: colors.inkSoft, fontWeight: '600' },
-  dot: { color: colors.gold, fontSize: 9 },
-  author: { fontSize: 11, color: colors.goldDeep, fontWeight: '700' },
-  vcQuote: { fontFamily: serifFont, fontStyle: 'italic', fontSize: 14, color: colors.ink, marginBottom: 8, paddingBottom: 4 },
-  dropCap: { fontFamily: serifFont, fontSize: 28, fontWeight: '600', color: colors.gold },
-  vcQuoteTel: { fontStyle: 'italic', fontSize: 12.5, color: colors.inkSoft, marginBottom: 12 },
-  vcBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.rule, borderStyle: 'dashed' },
+  vcBody: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 12 },
+  vcRef: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 8 },
+  dot: { fontSize: 9 },
+  author: { fontSize: 11, fontWeight: '700' },
+  vcQuote: { fontFamily: serifFont, fontStyle: 'italic', fontSize: 14, lineHeight: 21, marginBottom: 8, paddingBottom: 4 },
+  dropCap: { fontFamily: serifFont, fontSize: 26, fontWeight: '700' },
+  vcQuoteTel: { fontStyle: 'italic', fontSize: 12.5, lineHeight: 19, marginBottom: 12 },
+  vcBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10, borderTopWidth: 1 },
   vcFlags: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  flagOn: { fontSize: 10, color: colors.moss, fontWeight: '600' },
-  flagOff: { fontSize: 10, color: '#C4B896', fontWeight: '600' },
-  viewLink: { fontSize: 11, fontWeight: '700', color: colors.ink },
+  flagOn: { fontSize: 10.5, fontWeight: '700' },
+  flagOff: { fontSize: 10.5, fontWeight: '600' },
+  editBadgeBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  editBadgeBtnTxt: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
 
   footerBranding: { textAlign: 'center', paddingTop: 20, paddingBottom: 8, fontSize: 11, letterSpacing: 0.8, color: '#B3A67E', textTransform: 'uppercase', fontWeight: '600' },
 

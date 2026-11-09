@@ -7,14 +7,15 @@ import {
   Dimensions,
   FlatList,
   SafeAreaView,
-  StatusBar
+  StatusBar,
+  Platform
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme } from '../../../context/ThemeContext';
 import { colors, spacing, radius, typography, shadow } from '../../../theme/Theme';
 import { PastorEvent } from '../../../types/event';
 import EventTypeBadge from '../../../components/EventTypeBadge';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
 
 // Try to safely load react-native-maps
 let MapView: any = null;
@@ -188,12 +189,12 @@ const markerColors = {
 };
 
 export const PastorEventMap = ({ route, navigation }: { route: any; navigation: any }) => {
-  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { events = [] } = route.params as { events: PastorEvent[] };
+  const { isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const mapRef = useRef<any>(null);
   const flatListRef = useRef<FlatList>(null);
-  const insets = useSafeAreaInsets();
 
   // Helper to convert time strings like "9:00 AM" to sortable minutes
   const timeToMins = (timeStr: string) => {
@@ -288,25 +289,29 @@ export const PastorEventMap = ({ route, navigation }: { route: any; navigation: 
     const isSelected = selectedEventId === item.id;
     return (
       <TouchableOpacity
-        style={[styles.bottomCard, isSelected && styles.bottomCardSelected]}
+        style={[
+          styles.bottomCard,
+          { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isSelected ? (isDark ? '#FFFFFF' : '#000000') : (isDark ? '#27272A' : '#E2E8F0') },
+          isSelected && styles.bottomCardSelected
+        ]}
         activeOpacity={0.9}
         onPress={() => selectEvent(item, index)}
       >
         <View style={styles.cardHeader}>
           <EventTypeBadge type={item.type} />
-          <Text style={styles.cardTime}>{item.startTime}</Text>
+          <Text style={[styles.cardTime, { color: isDark ? '#B9C8BD' : '#315C50' }]}>{item.startTime}</Text>
         </View>
-        <Text style={styles.cardTitle} numberOfLines={1}>{item.title}</Text>
+        <Text style={[styles.cardTitle, { color: isDark ? '#C6A66B' : '#98713D' }]} numberOfLines={1}>{item.title}</Text>
         <View style={styles.cardVenueRow}>
-          <Ionicons name="business-outline" size={13} color={colors.textSecondary} />
-          <Text style={styles.cardVenue} numberOfLines={1}>{item.venue}</Text>
+          <Ionicons name="business-outline" size={13} color={isDark ? '#A1A1AA' : colors.textSecondary} />
+          <Text style={[styles.cardVenue, { color: isDark ? '#A1A1AA' : colors.textSecondary }]} numberOfLines={1}>{item.venue}</Text>
         </View>
         <TouchableOpacity
           style={styles.detailsButton}
           onPress={() => navigation.navigate('EventDetail', { event: item, allEvents: sortedEvents })}
         >
-          <Text style={styles.detailsButtonText}>View Details</Text>
-          <Ionicons name="arrow-forward" size={12} color={colors.primary} />
+          <Text style={[styles.detailsButtonText, { color: isDark ? '#B9C8BD' : '#315C50' }]}>View Details</Text>
+          <Ionicons name="arrow-forward" size={12} color={isDark ? '#B9C8BD' : '#315C50'} />
         </TouchableOpacity>
       </TouchableOpacity>
     );
@@ -319,15 +324,33 @@ export const PastorEventMap = ({ route, navigation }: { route: any; navigation: 
   }));
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.bgPrimary} />
+    <SafeAreaView style={[styles.container, { backgroundColor: isDark ? '#000000' : '#FFFFFF' }]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={isDark ? "#000000" : "#FFFFFF"} />
       
       {/* Navbar */}
-      <View style={[styles.navBar, { paddingTop: insets.top }]}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
+      <View style={[
+        styles.navBar,
+        {
+          backgroundColor: isDark ? '#000000' : '#FFFFFF',
+          borderBottomWidth: 1.5,
+          borderBottomColor: isDark ? '#27272A' : '#CBD5E1',
+          paddingTop: Platform.OS === 'android' ? Math.max(insets.top, StatusBar.currentHeight || 24) + 10 : Math.max(insets.top, 12),
+          paddingBottom: 14,
+          paddingHorizontal: 16,
+          height: 'auto',
+        }
+      ]}>
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.7}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="arrow-back" size={24} color={isDark ? '#FFFFFF' : '#0F172A'} />
         </TouchableOpacity>
-        <Text style={styles.navTitle}>Interactive Map Route</Text>
+        <Text style={[styles.navTitle, { color: isDark ? '#FFFFFF' : '#0F172A', fontSize: 18, fontWeight: '800' }]}>
+          Interactive Map Route
+        </Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -410,7 +433,12 @@ export const PastorEventMap = ({ route, navigation }: { route: any; navigation: 
       )}
 
       {/* Bottom Swipeable List */}
-      <View style={styles.bottomListWrapper}>
+      <View style={[
+        styles.bottomListWrapper,
+        {
+          bottom: Platform.OS === 'android' ? Math.max(insets.bottom, 24) + 24 : Math.max(insets.bottom, 16) + 16
+        }
+      ]}>
         <FlatList
           ref={flatListRef}
           data={sortedEvents}
@@ -427,11 +455,11 @@ export const PastorEventMap = ({ route, navigation }: { route: any; navigation: 
           )}
         />
       </View>
-    </View>
+    </SafeAreaView>
   );
 };
 
-const styles = createAdminThemedStyles(StyleSheet.create({
+const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.bgPrimary
@@ -441,11 +469,11 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
+    height: 56,
     backgroundColor: colors.bgPrimary,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-    zIndex: 10,
-    paddingBottom: 10
+    zIndex: 10
   },
   backButton: {
     padding: spacing.xs
@@ -542,7 +570,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     color: colors.primary
   },
   mockMapContainer: {
-    backgroundColor: '#FAF7F2',
+    backgroundColor: '#F1F5F9',
     position: 'relative',
     overflow: 'hidden'
   },
@@ -627,6 +655,6 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     color: colors.textSecondary,
     marginTop: -2
   }
-}));
+});
 
 export default PastorEventMap;

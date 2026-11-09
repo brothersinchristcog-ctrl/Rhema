@@ -1351,41 +1351,82 @@ export default function AdminAttendance() {
       <View style={styles.container}>
         <StatusBar barStyle="dark-content" />
 
-        {/* ── Hero Header (Consistent with AdminTabs like AdminEventList, AdminMembers) ── */}
-        <View style={[styles.hero, { paddingTop: Math.max(insets.top, 12) }]}>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start', flex: 1, marginRight: 8 }}>
+        {/* ── Hero Section (Top Mini Card Header) ── */}
+        <View style={[styles.hero, {
+          backgroundColor: isDark ? '#000000' : '#FFFFFF',
+          borderBottomWidth: 1,
+          borderBottomColor: isDark ? '#27272A' : '#E2E8F0',
+          paddingTop: Math.max(insets.top - 8, 4),
+          paddingBottom: 8,
+          marginBottom: 2,
+        }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+            <View style={{ minWidth: 54, alignItems: 'flex-start', justifyContent: 'center' }}>
               <TouchableOpacity
                 onPress={() => setSelectedEvent(null)}
-                style={styles.circularBackBtn}
+                style={[styles.circularBackBtn, {
+                  backgroundColor: isDark ? '#000000' : '#FFFFFF',
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : '#E2E8F0',
+                  borderWidth: 1.5,
+                }]}
                 activeOpacity={0.7}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
+                <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#0F172A'} strokeWidth={2.2} />
               </TouchableOpacity>
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                  <Text style={styles.heroTitle} numberOfLines={1}>{selectedEvent.title}</Text>
-                  {selectedEvent.recurringGroupId && (
-                    <View style={styles.heroRecurringPill}>
-                      <Text style={styles.heroRecurringPillTxt}>
-                        {selectedEvent.recurring === 'Every day' ? '🔁 Daily Series' : '🔁 Recurring'}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-                <Text style={[styles.heroSub, { marginTop: 2 }]} numberOfLines={1}>
-                  {selectedEvent.dateStr} · {selectedEvent.timeStr}
-                </Text>
-              </View>
+              <View style={{ height: 12, marginTop: 2 }} />
             </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <TouchableOpacity style={styles.newBtn} onPress={() => openEventQRModal(selectedEvent)}>
-                <QrCode size={16} color="#1a2d5a" />
-                <Text style={styles.newBtnTxt}>Event QR</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.heroRefreshBtn} onPress={handleRefreshSelectedEvent}>
-                <RefreshCw size={15} color="#FFFFFF" />
+
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, marginTop: -8 }}>
+              <Text
+                style={[
+                  styles.heroTitle,
+                  {
+                    color: isDark ? '#FFFFFF' : '#0F172A',
+                    textAlign: 'center',
+                    fontSize: 20,
+                    fontWeight: '800',
+                    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+                    letterSpacing: -0.4,
+                  }
+                ]}
+                numberOfLines={1}
+              >
+                {selectedEvent.title}
+              </Text>
+            </View>
+
+            <View style={{ minWidth: 54, alignItems: 'center', justifyContent: 'center' }}>
+              <TouchableOpacity
+                style={{ alignItems: 'center', justifyContent: 'center' }}
+                onPress={() => openEventQRModal(selectedEvent)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                activeOpacity={0.7}
+              >
+                <View
+                  style={[
+                    styles.circularBackBtn,
+                    {
+                      backgroundColor: isDark ? '#000000' : '#FFFFFF',
+                      borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : '#E2E8F0',
+                      borderWidth: 1.5,
+                    }
+                  ]}
+                >
+                  <QrCode size={18} color={isDark ? '#FFFFFF' : '#0F172A'} strokeWidth={2} />
+                </View>
+                <Text
+                  style={{
+                    fontSize: 9.5,
+                    fontWeight: '700',
+                    color: isDark ? '#94A3B8' : '#64748B',
+                    marginTop: 2,
+                    textAlign: 'center',
+                  }}
+                  numberOfLines={1}
+                >
+                  Event QR
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1423,7 +1464,7 @@ export default function AdminAttendance() {
 
           <View style={styles.kpiGrid}>
             {/* 1. Expected Members */}
-            <View style={[styles.kpiCard, { borderColor: '#CBD5E1' }]}>
+            <View style={[styles.kpiCard, { borderColor: '#94A3B8', borderWidth: 1.5 }]}>
               <View style={[styles.kpiIconWrap, { backgroundColor: '#F1F5F9' }]}>
                 <Users size={17} color="#475569" strokeWidth={2.2} />
               </View>
@@ -1433,7 +1474,14 @@ export default function AdminAttendance() {
             </View>
 
             {/* 2. Total Present */}
-            <View style={[styles.kpiCard, { borderColor: '#A7F3D0', backgroundColor: '#F0FDF4' }]}>
+            <View style={[
+              styles.kpiCard,
+              {
+                borderColor: isDark ? '#059669' : '#86EFAC',
+                backgroundColor: isDark ? 'rgba(5, 150, 105, 0.15)' : '#F0FDF4',
+                borderWidth: 1.5
+              }
+            ]}>
               <View style={[styles.kpiIconWrap, { backgroundColor: '#DCFCE7' }]}>
                 <UserCheck size={17} color={COLORS.greenDark} strokeWidth={2.2} />
               </View>
@@ -1443,7 +1491,14 @@ export default function AdminAttendance() {
             </View>
 
             {/* 3. Absent Members */}
-            <View style={[styles.kpiCard, { borderColor: '#FECACA', backgroundColor: '#FEF2F2' }]}>
+            <View style={[
+              styles.kpiCard,
+              {
+                borderColor: isDark ? '#DC2626' : '#FECACA',
+                backgroundColor: isDark ? 'rgba(220, 38, 38, 0.15)' : '#FEF2F2',
+                borderWidth: 1.5
+              }
+            ]}>
               <View style={[styles.kpiIconWrap, { backgroundColor: '#FEE2E2' }]}>
                 <UserX size={17} color="#DC2626" strokeWidth={2.2} />
               </View>
@@ -1453,7 +1508,14 @@ export default function AdminAttendance() {
             </View>
 
             {/* 4. Family Members */}
-            <View style={[styles.kpiCard, { borderColor: '#BFDBFE', backgroundColor: '#EFF6FF' }]}>
+            <View style={[
+              styles.kpiCard,
+              {
+                borderColor: isDark ? '#2563EB' : '#BFDBFE',
+                backgroundColor: isDark ? 'rgba(37, 99, 235, 0.15)' : '#EFF6FF',
+                borderWidth: 1.5
+              }
+            ]}>
               <View style={[styles.kpiIconWrap, { backgroundColor: '#DBEAFE' }]}>
                 <Users size={17} color="#1D4ED8" strokeWidth={2.2} />
               </View>
@@ -1463,7 +1525,14 @@ export default function AdminAttendance() {
             </View>
 
             {/* 5. Guests & Visitors */}
-            <View style={[styles.kpiCard, { borderColor: '#DDD6FE', backgroundColor: '#FAF5FF' }]}>
+            <View style={[
+              styles.kpiCard,
+              {
+                borderColor: isDark ? '#7C3AED' : '#DDD6FE',
+                backgroundColor: isDark ? 'rgba(124, 58, 237, 0.15)' : '#FAF5FF',
+                borderWidth: 1.5
+              }
+            ]}>
               <View style={[styles.kpiIconWrap, { backgroundColor: '#EDE9FE' }]}>
                 <UserPlus size={17} color="#6D28D9" strokeWidth={2.2} />
               </View>
@@ -1474,7 +1543,24 @@ export default function AdminAttendance() {
           </View>
 
           {/* ── Attendance Chart (Requirement 2) ── */}
-          <View style={styles.chartCard}>
+          <View style={[
+            styles.chartCard,
+            !isDark && {
+              backgroundColor: '#FFFFFF',
+              borderWidth: 1.5,
+              borderColor: '#94A3B8',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.08,
+              shadowRadius: 6,
+              elevation: 3,
+            },
+            isDark && {
+              backgroundColor: '#18181B',
+              borderWidth: 1,
+              borderColor: 'rgba(255, 255, 255, 0.14)',
+            }
+          ]}>
             <View style={styles.chartCardHeader}>
               <PieChart size={18} color={COLORS.ink} style={{ marginRight: 8 }} />
               <Text style={styles.chartCardTitle}>Attendance Distribution Chart</Text>
@@ -1527,18 +1613,35 @@ export default function AdminAttendance() {
           </View>
 
           {/* Search Box */}
-          <View style={styles.searchBox}>
-            <Search size={16} color="#94A3B8" style={{ marginRight: 8 }} />
+          <View style={[
+            styles.searchBox,
+            !isDark && {
+              backgroundColor: '#FFFFFF',
+              borderWidth: 1.5,
+              borderColor: '#94A3B8',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 1 },
+              shadowOpacity: 0.06,
+              shadowRadius: 4,
+              elevation: 2,
+            },
+            isDark && {
+              backgroundColor: '#18181B',
+              borderWidth: 1,
+              borderColor: 'rgba(255, 255, 255, 0.14)',
+            }
+          ]}>
+            <Search size={16} color={isDark ? '#94A3B8' : '#64748B'} style={{ marginRight: 8 }} />
             <TextInput
-              style={styles.searchInput}
+              style={[styles.searchInput, isDark && { color: '#FFFFFF' }, !isDark && { color: '#0F172A' }]}
               placeholder={`Search ${reportFilter.toLowerCase()} members...`}
-              placeholderTextColor="#94A3B8"
+              placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
               value={searchMemberQuery}
               onChangeText={setSearchMemberQuery}
             />
             {searchMemberQuery.length > 0 && (
               <TouchableOpacity onPress={() => setSearchMemberQuery('')}>
-                <X size={15} color="#94A3B8" />
+                <X size={15} color={isDark ? '#94A3B8' : '#64748B'} />
               </TouchableOpacity>
             )}
           </View>
@@ -1567,7 +1670,27 @@ export default function AdminAttendance() {
                 const isGuest = Boolean(item.isGuest || item.id?.startsWith('guest_') || item.memberName?.includes('(Guest)'));
 
                 return (
-                  <View key={item.id || idx} style={styles.memberRowCard}>
+                  <View
+                    key={item.id || idx}
+                    style={[
+                      styles.memberRowCard,
+                      !isDark && {
+                        backgroundColor: '#FFFFFF',
+                        borderWidth: 1.5,
+                        borderColor: '#94A3B8',
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 1 },
+                        shadowOpacity: 0.05,
+                        shadowRadius: 4,
+                        elevation: 2,
+                      },
+                      isDark && {
+                        backgroundColor: '#18181B',
+                        borderWidth: 1,
+                        borderColor: 'rgba(255, 255, 255, 0.12)',
+                      }
+                    ]}
+                  >
                     <View style={styles.memberRowTop}>
                       {/* Initials Avatar */}
                       <View style={[
@@ -1690,29 +1813,86 @@ export default function AdminAttendance() {
   // ═══════════════════════════════════════════════════════════════════════════
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#1A2D5A" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#000000' : '#FFFFFF'} />
 
-      {/* ── Hero Header (Consistent with AdminTabs like AdminEventList, AdminMembers) ── */}
-      <View style={[styles.hero, { paddingTop: Math.max(insets.top, 12) }]}>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+      {/* ── Hero Section (Top Mini Card Header) ── */}
+      <View style={[styles.hero, {
+        backgroundColor: isDark ? '#000000' : '#FFFFFF',
+        borderBottomWidth: 1,
+        borderBottomColor: isDark ? '#27272A' : '#E2E8F0',
+        paddingTop: Math.max(insets.top - 8, 4),
+        paddingBottom: 8,
+        marginBottom: 2,
+      }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+          <View style={{ minWidth: 54, alignItems: 'flex-start', justifyContent: 'center' }}>
             <TouchableOpacity
               onPress={() => setActiveTab(0)}
-              style={styles.circularBackBtn}
+              style={[styles.circularBackBtn, {
+                backgroundColor: isDark ? '#000000' : '#FFFFFF',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : '#E2E8F0',
+                borderWidth: 1.5,
+              }]}
               activeOpacity={0.7}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
+              <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#0F172A'} strokeWidth={2.2} />
             </TouchableOpacity>
-            <View style={{ marginLeft: 12 }}>
-              <Text style={styles.heroTitle}>Attendance</Text>
-              <Text style={[styles.heroSub, { marginTop: 2 }]}>{eventsList.length} total · Reports & Stats</Text>
-            </View>
+            <View style={{ height: 12, marginTop: 2 }} />
           </View>
-          <TouchableOpacity style={styles.newBtn} onPress={openChurchQRModal}>
-            <QrCode size={16} color="#1a2d5a" />
-            <Text style={styles.newBtnTxt}>Church QR</Text>
-          </TouchableOpacity>
+
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, marginTop: -8 }}>
+            <Text
+              style={[
+                styles.heroTitle,
+                {
+                  color: isDark ? '#FFFFFF' : '#0F172A',
+                  textAlign: 'center',
+                  fontSize: 20,
+                  fontWeight: '800',
+                  fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+                  letterSpacing: -0.4,
+                }
+              ]}
+              numberOfLines={1}
+            >
+              Attendance
+            </Text>
+          </View>
+
+          <View style={{ minWidth: 54, alignItems: 'center', justifyContent: 'center' }}>
+            <TouchableOpacity
+              style={{ alignItems: 'center', justifyContent: 'center' }}
+              onPress={openChurchQRModal}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              activeOpacity={0.7}
+            >
+              <View
+                style={[
+                  styles.circularBackBtn,
+                  {
+                    backgroundColor: isDark ? '#000000' : '#FFFFFF',
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : '#E2E8F0',
+                    borderWidth: 1.5,
+                  }
+                ]}
+              >
+                <QrCode size={18} color={isDark ? '#FFFFFF' : '#0F172A'} strokeWidth={2} />
+              </View>
+              <Text
+                style={{
+                  fontSize: 9.5,
+                  fontWeight: '700',
+                  color: isDark ? '#94A3B8' : '#64748B',
+                  marginTop: 2,
+                  textAlign: 'center',
+                }}
+                numberOfLines={1}
+              >
+                Church QR
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
@@ -1750,11 +1930,27 @@ export default function AdminAttendance() {
             return (
               <TouchableOpacity
                 key={tab.id}
-                style={[styles.filterPill, isActive && styles.filterPillActive]}
+                style={[
+                  styles.filterPill,
+                  isDark
+                    ? (isActive
+                        ? { backgroundColor: '#FFFFFF', borderColor: '#FFFFFF' }
+                        : { backgroundColor: '#18181B', borderColor: 'rgba(255, 255, 255, 0.14)' })
+                    : (isActive
+                        ? { backgroundColor: '#000000', borderColor: '#000000' }
+                        : { backgroundColor: '#F8FAFC', borderColor: '#CBD5E1' })
+                ]}
                 onPress={() => setTimelineFilter(tab.id)}
                 activeOpacity={0.8}
               >
-                <Text style={[styles.filterPillTxt, isActive && styles.filterPillTxtActive]}>
+                <Text
+                  style={[
+                    styles.filterPillTxt,
+                    isDark
+                      ? (isActive ? { color: '#000000', fontWeight: '800' } : { color: '#A1A1AA' })
+                      : (isActive ? { color: '#FFFFFF', fontWeight: '800' } : { color: '#64748B' })
+                  ]}
+                >
                   {tab.label}
                 </Text>
               </TouchableOpacity>
@@ -1763,18 +1959,35 @@ export default function AdminAttendance() {
         </ScrollView>
 
         {/* Search Input */}
-        <View style={styles.searchBox}>
-          <Search size={16} color="#94A3B8" style={{ marginRight: 8 }} />
+        <View style={[
+          styles.searchBox,
+          !isDark && {
+            backgroundColor: '#FFFFFF',
+            borderWidth: 1.5,
+            borderColor: '#94A3B8',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.06,
+            shadowRadius: 4,
+            elevation: 2,
+          },
+          isDark && {
+            backgroundColor: '#18181B',
+            borderWidth: 1,
+            borderColor: 'rgba(255, 255, 255, 0.14)',
+          }
+        ]}>
+          <Search size={16} color={isDark ? '#94A3B8' : '#64748B'} style={{ marginRight: 8 }} />
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, isDark && { color: '#FFFFFF' }, !isDark && { color: '#0F172A' }]}
             placeholder="Search events by title or date..."
-            placeholderTextColor="#94A3B8"
+            placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
             value={searchEventQuery}
             onChangeText={setSearchEventQuery}
           />
           {searchEventQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchEventQuery('')}>
-              <X size={16} color="#94A3B8" />
+              <X size={16} color={isDark ? '#94A3B8' : '#64748B'} />
             </TouchableOpacity>
           )}
         </View>
@@ -1805,7 +2018,24 @@ export default function AdminAttendance() {
               return (
                 <View
                   key={event.id}
-                  style={[styles.eventReportCard, isToday && styles.eventReportCardToday]}
+                  style={[
+                    styles.eventReportCard,
+                    !isDark && {
+                      backgroundColor: isToday ? '#FAFDF9' : '#FFFFFF',
+                      borderWidth: 1.5,
+                      borderColor: isToday ? '#10B981' : '#94A3B8',
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.08,
+                      shadowRadius: 6,
+                      elevation: 3,
+                    },
+                    isDark && {
+                      backgroundColor: '#18181B',
+                      borderWidth: 1,
+                      borderColor: isToday ? '#059669' : 'rgba(255, 255, 255, 0.14)',
+                    }
+                  ]}
                 >
                   {/* Top Badge & Date & Delete */}
                   <View style={styles.eventCardTop}>
@@ -2017,21 +2247,20 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   // ── Hero Header (Consistent with AdminTabs like AdminEventList, AdminMembers) ──
   hero: {
     backgroundColor: 'transparent',
-    
-    
     paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 12,
+    paddingTop: 4,
+    paddingBottom: 8,
     overflow: 'visible',
     position: 'relative',
-    marginBottom: 6,
+    marginBottom: 2,
   },
   heroTitleRow: { flexDirection: 'row', alignItems: 'center' },
-  heroTitle: { color: '#1a2d5a',
+  heroTitle: {
+    color: '#0F172A',
     fontSize: 20,
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
-    fontWeight: '600',
-    letterSpacing: -0.5,
+    fontWeight: '800',
+    letterSpacing: -0.4,
   },
   heroSub: { color: '#64748b',
     fontSize: 13,
@@ -2315,13 +2544,13 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
   },
   filterPillActive: {
-    backgroundColor: '#1A2D5A',
-    borderColor: '#1A2D5A',
+    backgroundColor: '#000000',
+    borderColor: '#000000',
   },
   filterPillTxt: {
     fontSize: 12.5,
@@ -2330,16 +2559,17 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   },
   filterPillTxtActive: {
     color: '#FFFFFF',
+    fontWeight: '800',
   },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderWidth: 1.5,
+    borderColor: '#94A3B8',
     borderRadius: 12,
     paddingHorizontal: 12,
-    height: 42,
+    height: 44,
     marginBottom: 14,
   },
   searchInput: {
@@ -2375,12 +2605,12 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   eventReportCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderWidth: 1.5,
+    borderColor: '#94A3B8',
     padding: 16,
-    elevation: 2,
+    elevation: 3,
     shadowColor: '#000',
-    shadowOpacity: 0.04,
+    shadowOpacity: 0.08,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },
   },
@@ -2487,7 +2717,8 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     width: (width - 32 - 10) / 2,
     backgroundColor: '#FFFFFF',
     borderRadius: 14,
-    borderWidth: 1,
+    borderWidth: 1.5,
+    borderColor: '#94A3B8',
     padding: 12,
   },
   kpiIconWrap: {
@@ -2519,13 +2750,13 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   chartCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderWidth: 1.5,
+    borderColor: '#94A3B8',
     padding: 18,
     marginBottom: 20,
-    elevation: 2,
+    elevation: 3,
     shadowColor: '#000',
-    shadowOpacity: 0.04,
+    shadowOpacity: 0.08,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 2 },
   },
@@ -2651,9 +2882,14 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   memberRowCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderWidth: 1.5,
+    borderColor: '#94A3B8',
     padding: 14,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 1 },
   },
   memberRowTop: {
     flexDirection: 'row',

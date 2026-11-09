@@ -5,6 +5,12 @@ import Svg, { Defs, LinearGradient, Stop, Rect, Circle, G } from 'react-native-s
 
 const { width } = Dimensions.get('window');
 
+const renderWhatsAppIcon = (color: string) => (
+  <Svg viewBox="0 0 24 24" fill={color} width={16} height={16}>
+    <Path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5.1-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1-.2.2-.7.8-.8 1-.2.2-.3.2-.5.1-.2-.1-1-.4-1.9-1.2-.7-.6-1.2-1.4-1.3-1.6-.1-.2 0-.4.1-.5.1-.1.2-.3.4-.4.1-.2.2-.3.2-.5.1-.2 0-.4 0-.5 0-.1-.6-1.5-.8-2-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.5.1-.7.3-.2.2-1 1-1 2.3 0 1.4 1 2.7 1.1 2.9.1.2 2 3 4.8 4.3.7.3 1.2.5 1.6.6.7.2 1.3.2 1.8.1.5-.1 1.5-.6 1.8-1.2.2-.6.2-1.1.1-1.2-.1-.2-.2-.2-.4-.3Z" />
+  </Svg>
+);
+
 const ICONS = {
   whatsapp: (
     <Svg viewBox="0 0 24 24" fill="currentColor" width={16} height={16}>
@@ -56,14 +62,39 @@ export default function AdminCelebrationsPreview({
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.circularBackBtn} onPress={onBack} activeOpacity={0.7}>
-          <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
+      <View style={[
+        styles.header,
+        {
+          backgroundColor: isDark ? '#000000' : '#FFFFFF',
+          borderBottomWidth: 1.5,
+          borderBottomColor: isDark ? '#27272A' : '#CBD5E1',
+          paddingBottom: 14,
+          paddingTop: 12,
+          paddingHorizontal: 20,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }
+      ]}>
+        <TouchableOpacity 
+          style={[
+            styles.circularBackBtn,
+            {
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#FFFFFF',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.3)' : '#CBD5E1',
+              borderWidth: 1.5,
+            }
+          ]} 
+          onPress={onBack} 
+          activeOpacity={0.7}
+        >
+          <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.2} />
         </TouchableOpacity>
-        <View style={[styles.headerTitles, { marginLeft: 12 }]}>
-          <Text style={styles.headerTitle}>Prepare Wish</Text>
-          <Text style={styles.headerSub}>Preview</Text>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={[styles.headerTitle, { color: isDark ? '#FFFFFF' : '#0F172A', textAlign: 'center' }]}>Prepare Wish</Text>
+          <Text style={[styles.headerSub, { color: isDark ? '#A1A1AA' : '#64748B', textAlign: 'center' }]}>Preview</Text>
         </View>
+        <View style={{ width: 40 }} />
       </View>
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
@@ -119,13 +150,36 @@ export default function AdminCelebrationsPreview({
         </View>
 
         <View style={styles.buttonRow}>
-          <TouchableOpacity style={styles.btnOutline} onPress={onEdit}>
-            <Edit2 stroke="#37469B" width={16} height={16} />
-            <Text style={styles.btnOutlineText}>Edit</Text>
+          <TouchableOpacity 
+            style={[
+              styles.btnOutline,
+              {
+                backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+                borderWidth: 1.5,
+              }
+            ]} 
+            onPress={onEdit}
+            activeOpacity={0.75}
+          >
+            <Edit2 stroke={isDark ? '#FFFFFF' : '#000000'} width={16} height={16} />
+            <Text style={[styles.btnOutlineText, { color: isDark ? '#FFFFFF' : '#000000' }]}>Edit</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.btnPrimary} onPress={onContinue}>
-            {ICONS.whatsapp}
-            <Text style={styles.btnPrimaryText}>Continue</Text>
+          <TouchableOpacity 
+            style={[
+              styles.btnPrimary,
+              {
+                backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                borderColor: isDark ? '#FFFFFF' : '#000000',
+                borderWidth: 1.5,
+                shadowColor: isDark ? '#FFFFFF' : '#000000',
+              }
+            ]} 
+            onPress={onContinue}
+            activeOpacity={0.8}
+          >
+            {renderWhatsAppIcon(isDark ? '#000000' : '#FFFFFF')}
+            <Text style={[styles.btnPrimaryText, { color: isDark ? '#000000' : '#FFFFFF' }]}>Continue</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -199,7 +253,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   },
   contentContainer: {
     padding: 20,
-    paddingBottom: 40,
+    paddingBottom: 60,
   },
   sectionTitle: {
     fontFamily: 'Inter-Bold',

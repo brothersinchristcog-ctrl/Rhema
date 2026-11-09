@@ -36,14 +36,39 @@ export default function AdminCelebrationsConfirm({
     return (
     <View style={styles.container}>
       {/* ── Fixed Header ── */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.circularBackBtn} onPress={onDone} activeOpacity={0.7}>
-          <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
+      <View style={[
+        styles.header,
+        {
+          backgroundColor: isDark ? '#000000' : '#FFFFFF',
+          borderBottomWidth: 1.5,
+          borderBottomColor: isDark ? '#27272A' : '#CBD5E1',
+          paddingBottom: 14,
+          paddingTop: 12,
+          paddingHorizontal: 20,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }
+      ]}>
+        <TouchableOpacity 
+          style={[
+            styles.circularBackBtn,
+            {
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#FFFFFF',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.3)' : '#CBD5E1',
+              borderWidth: 1.5,
+            }
+          ]} 
+          onPress={onDone} 
+          activeOpacity={0.7}
+        >
+          <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.2} />
         </TouchableOpacity>
-        <View style={[styles.heroTitles, { borderLeftWidth: 0, paddingLeft: 0, marginLeft: 12 }]}>
-          <Text style={styles.headerTitle}>{categoryLabel}</Text>
-          <Text style={styles.headerSub}>CONFIRMATION</Text>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={[styles.headerTitle, { color: isDark ? '#FFFFFF' : '#0F172A', textAlign: 'center' }]}>{categoryLabel}</Text>
+          <Text style={[styles.headerSub, { color: isDark ? '#A1A1AA' : '#64748B', textAlign: 'center' }]}>CONFIRMATION</Text>
         </View>
+        <View style={{ width: 40 }} />
       </View>
 
       <View style={styles.content}>

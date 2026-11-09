@@ -41,7 +41,7 @@ export default function BibleReaderScreen({ route, navigation }: any) {
   const [error, setError] = useState<string | null>(null);
   
   const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [successModalType, setSuccessModalType] = useState<'saved' | 'copied'>('saved');
+  const [successModalType, setSuccessModalType] = useState<'saved' | 'copied' | 'read'>('saved');
   const [showVerseOptionsModal, setShowVerseOptionsModal] = useState(false);
   const [selectedVerseItem, setSelectedVerseItem] = useState<any>(null);
 
@@ -354,6 +354,7 @@ export default function BibleReaderScreen({ route, navigation }: any) {
         ]}
       >
         <TouchableOpacity
+
           style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
@@ -368,11 +369,13 @@ export default function BibleReaderScreen({ route, navigation }: any) {
 
         <TouchableOpacity
           onPress={() => setShowVoiceModal(true)}
-          style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          style={{ width: 44, height: 44, opacity: 0 }}
+          disabled={true}
+
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           activeOpacity={0.8}
         >
-          <Volume2 size={20} color={isSpeaking ? '#ef4444' : colors.text} />
+          {false && <Volume2 size={20} color={isSpeaking ? '#ef4444' : colors.text} />}
         </TouchableOpacity>
       </View>
 
@@ -384,7 +387,7 @@ export default function BibleReaderScreen({ route, navigation }: any) {
         <View style={styles.readerContent}>
           {loading ? (
             <View style={styles.loadingContainer}>
-               <Text style={{ color: '#1a2d5a', fontWeight: '700' }}>
+               <Text style={{ color: isDark ? '#FFFFFF' : '#000000', fontWeight: '800', fontSize: 16 }}>
                  {t('bible.readNow')}...
                </Text>
             </View>
@@ -501,7 +504,15 @@ export default function BibleReaderScreen({ route, navigation }: any) {
               <TouchableOpacity 
                 style={[
                   styles.markReadBtn, 
-                  { backgroundColor: isChapterRead ? (isDark ? '#334155' : '#e2e8f0') : '#10b981', marginTop: 20 }
+                  {
+                    backgroundColor: isChapterRead
+                      ? (isDark ? '#27272A' : '#FFFFFF')
+                      : '#10b981',
+                    borderWidth: isChapterRead ? 1.5 : 0,
+                    borderColor: isChapterRead ? (isDark ? '#FFFFFF' : '#000000') : 'transparent',
+                    marginTop: 20,
+                    marginBottom: 24,
+                  }
                 ]}
                 onPress={async () => {
                   try {
@@ -519,18 +530,18 @@ export default function BibleReaderScreen({ route, navigation }: any) {
                         await AsyncStorage.setItem('@BibleReadProgress', JSON.stringify(progress));
                       }
                       setIsChapterRead(true);
-                      Alert.alert('Success', 'Chapter marked as read!');
+                      setSuccessModalType('read'); setShowSuccessModal(true);
                     }
                   } catch (e) {
                     console.error('Error saving read progress', e);
                   }
                 }}
               >
-                <CheckCircle2 color={isChapterRead ? (isDark ? '#94a3b8' : '#64748b') : '#fff'} size={18} />
+                <CheckCircle2 color={isChapterRead ? (isDark ? '#FFFFFF' : '#000000') : '#fff'} size={18} />
                 <Text style={{ 
-                  color: isChapterRead ? (isDark ? '#94a3b8' : '#64748b') : '#fff', 
+                  color: isChapterRead ? (isDark ? '#FFFFFF' : '#000000') : '#fff', 
                   fontSize: 14, 
-                  fontWeight: '700', 
+                  fontWeight: '800', 
                   marginLeft: 8 
                 }}>
                   {isChapterRead ? 'Unmark as Read' : 'Mark as Read'}
@@ -543,7 +554,7 @@ export default function BibleReaderScreen({ route, navigation }: any) {
       </ScrollView>
 
       {/* Floating Audio Button */}
-      {!selectionMode && !loading && verses.length > 0 && (
+      {false && !selectionMode && !loading && verses.length > 0 && (
         <TouchableOpacity
           style={[styles.audioFab, isSpeaking && styles.audioFabActive]}
           onPress={isSpeaking ? stopSpeech : startSpeech}
@@ -559,29 +570,29 @@ export default function BibleReaderScreen({ route, navigation }: any) {
       {/* Bottom Bar — switches between nav and selection action bar */}
       {selectionMode ? (
         <LinearGradient 
-          colors={['#2b52a1', '#1a3673']}
+          colors={isDark ? ['#FFFFFF', '#FFFFFF'] : ['#000000', '#000000']}
           start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
           style={styles.selectionBar}
         >
           <TouchableOpacity style={styles.selectionCancelBtn} onPress={cancelSelection}>
-            <Text style={[styles.selectionCancelTxt, { color: '#fff' }]}>Cancel</Text>
+            <Text style={[styles.selectionCancelTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>Cancel</Text>
           </TouchableOpacity>
           <View style={styles.selectionCountBox}>
-            <Text style={[styles.selectionCountTxt, { color: '#fff' }]}>
+            <Text style={[styles.selectionCountTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
               {selectedVerses.size} verse{selectedVerses.size !== 1 ? 's' : ''} selected
             </Text>
           </View>
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <TouchableOpacity
-              style={[styles.selectionSaveBtn, { backgroundColor: 'rgba(255,255,255,0.15)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)', paddingHorizontal: 14, paddingVertical: 8 }, selectedVerses.size === 0 && { opacity: 0.4 }]}
+              style={[styles.selectionSaveBtn, { backgroundColor: isDark ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.15)', borderWidth: 1, borderColor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.3)', paddingHorizontal: 14, paddingVertical: 8 }, selectedVerses.size === 0 && { opacity: 0.4 }]}
               onPress={copyMultipleVerses}
               disabled={selectedVerses.size === 0}
             >
-              <Copy color="#fff" size={18} />
+              <Copy color={isDark ? '#000000' : '#FFFFFF'} size={18} />
             </TouchableOpacity>
             
             <TouchableOpacity
-              style={[styles.selectionSaveBtn, selectedVerses.size === 0 && { opacity: 0.4 }]}
+              style={[styles.selectionSaveBtn, { backgroundColor: isDark ? '#000000' : '#27272A' }, selectedVerses.size === 0 && { opacity: 0.4 }]}
               onPress={saveMultipleVersesToNotes}
               disabled={selectedVerses.size === 0}
             >
@@ -592,7 +603,7 @@ export default function BibleReaderScreen({ route, navigation }: any) {
         </LinearGradient>
       ) : (
         <LinearGradient 
-          colors={['#2b52a1', '#1a3673']}
+          colors={isDark ? ['#FFFFFF', '#FFFFFF'] : ['#000000', '#000000']}
           start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
           style={styles.bottomBar}
         >
@@ -601,13 +612,13 @@ export default function BibleReaderScreen({ route, navigation }: any) {
             onPress={() => chapter > 1 && navigation.push('BibleReader', { bookIndex, bookName: localizedBookName, chapter: chapter - 1, lang: activeLang })}
             disabled={chapter <= 1}
           >
-            <ChevronLeft color="#fff" size={24} />
+            <ChevronLeft color={isDark ? '#000000' : '#FFFFFF'} size={24} />
           </TouchableOpacity>
           <TouchableOpacity 
             style={styles.barMain}
             onPress={() => navigation.navigate('BibleChapters', { bookIndex, bookName: localizedBookName, lang: activeLang })}
           >
-            <Text style={[styles.barMainTxt, { color: '#fff' }]}>
+            <Text style={[styles.barMainTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
               {t('bible.chapters')} {chapter} / {totalChapters}
             </Text>
           </TouchableOpacity>
@@ -616,7 +627,7 @@ export default function BibleReaderScreen({ route, navigation }: any) {
             onPress={() => chapter < totalChapters && navigation.push('BibleReader', { bookIndex, bookName: localizedBookName, chapter: chapter + 1, lang: activeLang })}
             disabled={chapter >= totalChapters}
           >
-            <ChevronLeft color="#fff" size={24} style={{ transform: [{ rotate: '180deg' }] }} />
+            <ChevronLeft color={isDark ? '#000000' : '#FFFFFF'} size={24} style={{ transform: [{ rotate: '180deg' }] }} />
           </TouchableOpacity>
         </LinearGradient>
       )}
@@ -732,17 +743,28 @@ export default function BibleReaderScreen({ route, navigation }: any) {
         animationType="fade"
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: isDark ? '#1e293b' : '#fff' }]}>
-            <View style={styles.modalIconContainer}>
+          <View style={[styles.modalContent, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderWidth: 1.5, borderColor: isDark ? 'rgba(255,255,255,0.18)' : '#000000' }]}>
+            <View style={[styles.modalIconContainer, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.16)' : '#ECFDF5', borderWidth: 1.5, borderColor: '#10B981' }]}>
               <CheckCircle2 color="#10b981" size={50} />
             </View>
-            <Text style={[styles.modalTitle, { color: isDark ? '#f8fafc' : '#0f172a' }]}>
-              {successModalType === 'copied' 
+            <Text style={[styles.modalTitle, { color: isDark ? '#FFFFFF' : '#000000' }]}>
+              {successModalType === 'read'
+                ? 'Hallelujah!'
+                : successModalType === 'copied'
                 ? (savedVerseCount > 1 ? `${savedVerseCount} Verses Copied!` : 'Verse Copied!')
                 : (savedVerseCount > 1 ? `${savedVerseCount} Verses Saved!` : 'Verse Saved!')}
             </Text>
-            <Text style={[styles.modalDesc, { color: isDark ? '#94a3b8' : '#64748b' }]}>
-              {successModalType === 'copied'
+            {successModalType === 'read' && (
+              <View style={{ backgroundColor: isDark ? '#27272A' : '#F1F5F9', paddingHorizontal: 14, paddingVertical: 5, borderRadius: 999, marginBottom: 10, borderWidth: 1, borderColor: isDark ? '#3F3F46' : '#CBD5E1' }}>
+                <Text style={{ color: isDark ? '#FFFFFF' : '#0F172A', fontSize: 12.5, fontWeight: '800' }}>
+                  {activeLang === 'en' ? `${englishBookName} ${chapter}` : `${localizedBookName} ${chapter}`} • Completed
+                </Text>
+              </View>
+            )}
+            <Text style={[styles.modalDesc, { color: isDark ? '#A1A1AA' : '#475569' }]}>
+              {successModalType === 'read'
+                ? 'Chapter marked as read! Your Bible reading progress has been saved.'
+                : successModalType === 'copied'
                 ? 'The selected verses have been copied to your clipboard.'
                 : (savedVerseCount > 1
                   ? `${savedVerseCount} verses have been added to your Sermon Notes as one entry.`
@@ -751,23 +773,23 @@ export default function BibleReaderScreen({ route, navigation }: any) {
             
             <View style={styles.modalActions}>
               <TouchableOpacity 
-                style={[styles.modalBtn, successModalType === 'copied' ? styles.modalBtnPrimary : styles.modalBtnSecondary]} 
+                style={[styles.modalBtn, (successModalType === 'copied' || successModalType === 'read') ? { backgroundColor: isDark ? '#FFFFFF' : '#000000', borderRadius: 999 } : [styles.modalBtnSecondary, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderRadius: 999 }]]} 
                 onPress={() => setShowSuccessModal(false)}
               >
-                <Text style={successModalType === 'copied' ? styles.modalBtnPrimaryTxt : styles.modalBtnSecondaryTxt}>
-                  {successModalType === 'copied' ? 'OK' : 'Continue Reading'}
+                <Text style={(successModalType === 'copied' || successModalType === 'read') ? [styles.modalBtnPrimaryTxt, { color: isDark ? '#000000' : '#FFFFFF', fontWeight: '800' }] : [styles.modalBtnSecondaryTxt, { color: isDark ? '#FFFFFF' : '#0F172A', fontWeight: '800' }]}>
+                  {successModalType === 'read' ? 'Amen • Continue' : successModalType === 'copied' ? 'OK' : 'Continue Reading'}
                 </Text>
               </TouchableOpacity>
               
               {successModalType === 'saved' && (
                 <TouchableOpacity 
-                  style={[styles.modalBtn, styles.modalBtnPrimary]} 
+                  style={[styles.modalBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000', borderRadius: 999 }]} 
                   onPress={() => {
                     setShowSuccessModal(false);
                     navigation.navigate('MemberNotes');
                   }}
                 >
-                  <Text style={styles.modalBtnPrimaryTxt}>View Notes</Text>
+                  <Text style={[styles.modalBtnPrimaryTxt, { color: isDark ? '#000000' : '#FFFFFF', fontWeight: '800' }]}>View Notes</Text>
                 </TouchableOpacity>
               )}
             </View>

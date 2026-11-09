@@ -45,6 +45,7 @@ import {
   X
 , ArrowLeft } from 'lucide-react-native';
 import { FlatList, Keyboard } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import PrayerVerseService, { BibleBookItem } from '../../services/PrayerVerseService';
 import FirestoreService from '../../services/FirestoreService';
 import Theme from '../../theme/Theme';
@@ -91,6 +92,7 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
   const scrollViewRef = useRef<ScrollView>(null);
   const [detailPrayer, setDetailPrayer] = useState<any | null>(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
+  const [activeStatFilter, setActiveStatFilter] = useState<'all' | 'pending' | 'answered'>('all');
   const churchName = activeChurch?.name || 'Church';
   const churchLogo = activeChurch?.theme?.logoUrl || null;
 
@@ -493,7 +495,11 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
       : null;
 
     return (
-      <View style={[styles.workflowContainer, isDetailModal && { backgroundColor: '#FFFFFF', borderWidth: 0, padding: 0 }]}>
+      <View style={[
+        styles.workflowContainer,
+        isDark && { borderTopColor: '#27272A' },
+        isDetailModal && { backgroundColor: isDark ? '#000000' : '#FFFFFF', borderWidth: 0, padding: 0 }
+      ]}>
         {isPublic && (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 }}>
             <Megaphone size={14} color="#D97706" />
@@ -503,93 +509,144 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
           </View>
         )}
 
-        {/* ── 1. Bible Scripture Selection Fields (Book, Chapter, Verse) ── */}
-        <View style={styles.sectionBox}>
+        {/* ── 1. Bible Scripture Selection (Single Step-by-Step Dropdown) ── */}
+        <View style={[
+          styles.sectionBox,
+          !isDark && {
+            backgroundColor: '#FFFFFF',
+            borderWidth: 1.5,
+            borderColor: '#CBD5E1',
+          },
+          isDark && {
+            backgroundColor: '#121215',
+            borderWidth: 1,
+            borderColor: 'rgba(255, 255, 255, 0.12)',
+          }
+        ]}>
           <View style={styles.sectionHeaderRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <BookOpen size={16} color="#92400E" />
-              <Text style={styles.sectionTitle}>1. Bible Scripture Selection</Text>
+              <BookOpen size={16} color={isDark ? '#FFFFFF' : '#0F172A'} />
+              <Text style={[styles.sectionTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>1. Bible Scripture Selection</Text>
             </View>
             {(currentVerse?.reference || currentBCV) && (
               <TouchableOpacity
                 onPress={() => handleClearVerse(reqId)}
-                style={styles.clearBtn}
+                style={[
+                  styles.clearBtn,
+                  isDark && { backgroundColor: 'rgba(239, 68, 68, 0.2)' }
+                ]}
               >
-                <Text style={styles.clearBtnTxt}>Clear</Text>
+                <Text style={[styles.clearBtnTxt, isDark && { color: '#F87171' }]}>Clear</Text>
               </TouchableOpacity>
             )}
           </View>
 
-          {/* Book, Chapter, Verse Selection Row */}
-          <View style={styles.bcvRow}>
-            {/* Book Selector */}
-            <TouchableOpacity
-              style={styles.bcvField}
-              onPress={() => handleOpenBookPicker(reqId)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.bcvLabel}>Bible Book</Text>
-              <View style={styles.bcvBox}>
-                <Text style={[styles.bcvVal, !currentBook && styles.bcvPlaceholder]} numberOfLines={1}>
-                  {currentBook ? `${currentBook.nameEn} (${currentBook.nameTe})` : 'Select Book'}
-                </Text>
-                <ChevronDown size={14} color="#64748B" />
+          {/* Single Unified Scripture Selection Dropdown */}
+          <TouchableOpacity
+            style={[
+              styles.singleBcvBox,
+              !isDark && {
+                backgroundColor: '#F8FAFC',
+                borderWidth: 1.5,
+                borderColor: '#CBD5E1',
+              },
+              isDark && {
+                backgroundColor: '#1A1A1E',
+                borderColor: 'rgba(255, 255, 255, 0.15)',
+              }
+            ]}
+            onPress={() => handleOpenBookPicker(reqId)}
+            activeOpacity={0.7}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+              <View style={[styles.singleBcvIconWrap, !isDark && { backgroundColor: '#E2E8F0' }, isDark && { backgroundColor: '#27272A' }]}>
+                <BookOpen size={16} color={isDark ? '#FFFFFF' : '#0F172A'} />
               </View>
-            </TouchableOpacity>
-
-            {/* Chapter Selector */}
-            <TouchableOpacity
-              style={styles.bcvFieldSmall}
-              onPress={() => handleOpenChapterPicker(reqId)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.bcvLabel}>Chapter</Text>
-              <View style={styles.bcvBox}>
-                <Text style={[styles.bcvVal, !currentBCV && styles.bcvPlaceholder]}>
-                  {currentBCV ? `Ch ${currentBCV.chapter}` : 'Ch'}
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.singleBcvLabel, isDark && { color: '#94A3B8' }]}>
+                  {currentVerse?.reference || currentBCV ? 'Selected Scripture' : 'Bible Scripture'}
                 </Text>
-                <ChevronDown size={14} color="#64748B" />
-              </View>
-            </TouchableOpacity>
-
-            {/* Verse Selector */}
-            <TouchableOpacity
-              style={styles.bcvFieldSmall}
-              onPress={() => handleOpenVersePicker(reqId)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.bcvLabel}>Verse</Text>
-              <View style={styles.bcvBox}>
-                <Text style={[styles.bcvVal, !currentBCV && styles.bcvPlaceholder]}>
-                  {currentBCV ? `v. ${currentBCV.verse}` : 'Verse'}
+                <Text
+                  style={[
+                    styles.singleBcvVal,
+                    !isDark && { color: '#0F172A' },
+                    isDark && { color: '#FFFFFF' },
+                    !(currentVerse?.reference || currentBCV) && styles.singleBcvPlaceholder
+                  ]}
+                  numberOfLines={1}
+                >
+                  {currentVerse?.reference 
+                    ? (currentVerse.referenceTe ? `${currentVerse.reference} · ${currentVerse.referenceTe}` : currentVerse.reference)
+                    : currentBCV && currentBook
+                      ? `${currentBook.nameEn} ${currentBCV.chapter}:${currentBCV.verse}`
+                      : 'Select Book, Chapter & Verse'}
                 </Text>
-                <ChevronDown size={14} color="#64748B" />
               </View>
-            </TouchableOpacity>
-          </View>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingLeft: 8 }}>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#FFFFFF' : '#0F172A' }}>
+                {currentVerse?.reference || currentBCV ? 'Change' : 'Select'}
+              </Text>
+              <ChevronDown size={15} color={isDark ? '#FFFFFF' : '#0F172A'} />
+            </View>
+          </TouchableOpacity>
 
           {/* Automatic Scripture Display (English & Telugu) */}
           {loadingScripture[reqId] ? (
-            <View style={styles.scriptureLoadingBox}>
-              <ActivityIndicator size="small" color="#92400E" />
-              <Text style={styles.scriptureLoadingTxt}>Looking up Holy Scripture in English & Telugu...</Text>
+            <View style={[
+              styles.scriptureLoadingBox,
+              !isDark && { backgroundColor: '#F8FAFC', borderColor: '#CBD5E1', borderWidth: 1.5 },
+              isDark && { backgroundColor: '#111114', borderColor: 'rgba(255, 255, 255, 0.12)', borderWidth: 1 }
+            ]}>
+              <ActivityIndicator size="small" color={isDark ? '#FFFFFF' : '#0F172A'} />
+              <Text style={[styles.scriptureLoadingTxt, { color: isDark ? '#E4E4E7' : '#0F172A' }]}>Looking up Holy Scripture in English & Telugu...</Text>
             </View>
           ) : currentVerse?.reference ? (
-            <View style={styles.scriptureDisplayCard}>
+            <View style={[
+              styles.scriptureDisplayCard,
+              !isDark && {
+                backgroundColor: '#F8FAFC',
+                borderWidth: 1.5,
+                borderColor: '#CBD5E1',
+              },
+              isDark && {
+                backgroundColor: '#000000',
+                borderWidth: 1,
+                borderColor: 'rgba(255, 255, 255, 0.16)',
+              }
+            ]}>
               {/* Reference Title Header */}
-              <View style={styles.scriptureRefHeader}>
-                <BookOpen size={14} color="#92400E" />
-                <Text style={styles.scriptureRefEn}>{currentVerse.reference}</Text>
+              <View style={[styles.scriptureRefHeader, { borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#E2E8F0' }]}>
+                <BookOpen size={14} color={isDark ? '#FFFFFF' : '#0F172A'} />
+                <Text style={[styles.scriptureRefEn, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>{currentVerse.reference}</Text>
                 {currentVerse.referenceTe ? (
-                  <Text style={styles.scriptureRefTe}>· {currentVerse.referenceTe}</Text>
+                  <Text style={[styles.scriptureRefTe, { color: isDark ? '#94A3B8' : '#64748B' }]}>· {currentVerse.referenceTe}</Text>
                 ) : null}
               </View>
 
               {/* English Scripture Words */}
               <View style={styles.scriptureTextBlock}>
-                <Text style={styles.scriptureLangLabel}>ENGLISH (Holy Bible):</Text>
+                <Text style={[styles.scriptureLangLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>ENGLISH (Holy Bible):</Text>
                 <TextInput
-                  style={styles.scriptureTextInput}
+                  style={[
+                    styles.scriptureTextInput,
+                    !isDark && {
+                      color: '#0F172A',
+                      backgroundColor: '#FFFFFF',
+                      borderColor: '#CBD5E1',
+                      borderWidth: 1.5,
+                      borderRadius: 8,
+                      padding: 10,
+                    },
+                    isDark && {
+                      color: '#FFFFFF',
+                      backgroundColor: '#111114',
+                      borderColor: 'rgba(255, 255, 255, 0.12)',
+                      borderWidth: 1,
+                      borderRadius: 8,
+                      padding: 10,
+                    }
+                  ]}
                   multiline
                   value={currentVerse.text}
                   onChangeText={(txt) => setSelectedVerses(prev => ({
@@ -597,16 +654,38 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
                     [reqId]: { ...(prev[reqId] || { reference: '' }), text: txt }
                   }))}
                   placeholder="English scripture text..."
-                  placeholderTextColor="#94A3B8"
+                  placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                 />
               </View>
 
               {/* Telugu Scripture Words */}
               {currentVerse.textTe ? (
-                <View style={[styles.scriptureTextBlock, { borderTopWidth: 1, borderTopColor: '#FEF3C7', paddingTop: 8, marginTop: 8 }]}>
-                  <Text style={[styles.scriptureLangLabel, { color: '#854D0E' }]}>TELUGU (పరిశుద్ధ గ్రంథము):</Text>
+                <View style={[
+                  styles.scriptureTextBlock,
+                  { borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#E2E8F0', paddingTop: 8, marginTop: 8 }
+                ]}>
+                  <Text style={[styles.scriptureLangLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>TELUGU (పరిశుద్ధ గ్రంథము):</Text>
                   <TextInput
-                    style={[styles.scriptureTextInput, { fontStyle: 'italic', color: '#713F12' }]}
+                    style={[
+                      styles.scriptureTextInput,
+                      { fontStyle: 'italic' },
+                      !isDark && {
+                        color: '#0F172A',
+                        backgroundColor: '#FFFFFF',
+                        borderColor: '#CBD5E1',
+                        borderWidth: 1.5,
+                        borderRadius: 8,
+                        padding: 10,
+                      },
+                      isDark && {
+                        color: '#E4E4E7',
+                        backgroundColor: '#111114',
+                        borderColor: 'rgba(255, 255, 255, 0.12)',
+                        borderWidth: 1,
+                        borderRadius: 8,
+                        padding: 10,
+                      }
+                    ]}
                     multiline
                     value={currentVerse.textTe}
                     onChangeText={(txt) => setSelectedVerses(prev => ({
@@ -614,35 +693,62 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
                       [reqId]: { ...(prev[reqId] || { reference: '' }), textTe: txt }
                     }))}
                     placeholder="Telugu scripture text..."
-                    placeholderTextColor="#94A3B8"
+                    placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                   />
                 </View>
               ) : null}
             </View>
           ) : (
-            <Text style={styles.selectScriptureHint}>
-              Select Book, Chapter, and Verse above to display scripture text automatically in English & Telugu.
+            <Text style={[styles.selectScriptureHint, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+              Tap the scripture box above to choose Book, Chapter, and Verse.
             </Text>
           )}
         </View>
 
         {/* ── 2. Admin Personal Prayer Response ── */}
-        <View style={[styles.sectionBox, { marginTop: 12 }]}>
+        <View style={[
+          styles.sectionBox,
+          { marginTop: 12 },
+          !isDark && {
+            backgroundColor: '#FFFFFF',
+            borderWidth: 1.5,
+            borderColor: '#CBD5E1',
+          },
+          isDark && {
+            backgroundColor: '#121215',
+            borderWidth: 1,
+            borderColor: 'rgba(255, 255, 255, 0.12)',
+          }
+        ]}>
           <View style={styles.sectionHeaderRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <MessageSquare size={15} color="#1D4ED8" />
-              <Text style={[styles.sectionTitle, { color: '#1D4ED8' }]}>2. Personal Prayer Response</Text>
+              <MessageSquare size={15} color={isDark ? '#60A5FA' : '#0F172A'} />
+              <Text style={[styles.sectionTitle, { color: isDark ? '#60A5FA' : '#0F172A' }]}>2. Personal Prayer Response</Text>
             </View>
           </View>
 
-          <Text style={styles.inputFieldSubtitle}>
+          <Text style={[styles.inputFieldSubtitle, isDark && { color: '#94A3B8' }]}>
             Enter your personal pastoral message, prayer, or encouragement for this member:
           </Text>
 
           <TextInput
-            style={styles.personalResponseInput}
+            style={[
+              styles.personalResponseInput,
+              !isDark && {
+                backgroundColor: '#F8FAFC',
+                borderWidth: 1.5,
+                borderColor: '#CBD5E1',
+                color: '#0F172A',
+              },
+              isDark && {
+                backgroundColor: '#101012',
+                borderWidth: 1,
+                borderColor: 'rgba(255, 255, 255, 0.15)',
+                color: '#FFFFFF',
+              }
+            ]}
             placeholder="Type your personal prayer response to the member..."
-            placeholderTextColor="#94A3B8"
+            placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
             value={currentReply}
             onChangeText={(txt) => setAdminResponses(prev => ({ ...prev, [reqId]: txt }))}
             multiline
@@ -673,12 +779,18 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
               ) : null}
 
               <TouchableOpacity
-                style={styles.shareNativeBtn}
+                style={[
+                  styles.shareNativeBtn,
+                  isDark && {
+                    backgroundColor: '#1A1A1E',
+                    borderColor: 'rgba(255, 255, 255, 0.15)',
+                  }
+                ]}
                 onPress={() => handleShareMotivationalVerse(item, 'native')}
                 activeOpacity={0.8}
               >
-                <Share2 size={14} color="#334155" />
-                <Text style={styles.shareNativeBtnTxt}>Share Encouragement</Text>
+                <Share2 size={14} color={isDark ? '#E4E4E7' : '#334155'} />
+                <Text style={[styles.shareNativeBtnTxt, isDark && { color: '#E4E4E7' }]}>Share Encouragement</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -997,10 +1109,14 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
       style={[
         styles.pCard, 
         isAnswered && styles.pCardAnswered,
+        isDark && {
+          backgroundColor: '#000000',
+          borderColor: isAnswered ? 'rgba(52, 211, 153, 0.35)' : 'rgba(255, 255, 255, 0.16)',
+        },
         isTarget && {
           borderColor: '#7C3AED',
           borderWidth: 2,
-          backgroundColor: '#FAF5FF',
+          backgroundColor: isDark ? '#1E1238' : '#FAF5FF',
           shadowColor: '#7C3AED',
           shadowOpacity: 0.2,
           shadowRadius: 8,
@@ -1031,15 +1147,15 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
         </View>
         <View style={{ flex: 1, marginLeft: 12 }}>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
-            <Text style={styles.pUserName}>{item.name}</Text>
+            <Text style={[styles.pUserName, isDark && { color: '#FFFFFF' }]}>{item.name}</Text>
             {isAnswered && (
-              <View style={styles.ansBadge}>
-                <CheckCircle2 size={10} color={COLORS.moss} />
-                <Text style={styles.ansBadgeTxt}>Processed</Text>
+              <View style={[styles.ansBadge, isDark && { backgroundColor: 'rgba(5, 150, 105, 0.25)' }]}>
+                <CheckCircle2 size={10} color={isDark ? '#34D399' : COLORS.moss} />
+                <Text style={[styles.ansBadgeTxt, isDark && { color: '#34D399' }]}>Processed</Text>
               </View>
             )}
           </View>
-          <Text style={styles.pTime}>{getTimeAgo(item.createdAt)}{item.phone ? ` · ${item.phone}` : ''}</Text>
+          <Text style={[styles.pTime, isDark && { color: '#94A3B8' }]}>{getTimeAgo(item.createdAt)}{item.phone ? ` · ${item.phone}` : ''}</Text>
         </View>
         {!isAnswered && (
           <TouchableOpacity onPress={() => handleRemove(item.id)}>
@@ -1048,11 +1164,22 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
         )}
       </View>
 
-      <View style={styles.pTextContainer}>
-        <Text style={styles.pText}>{item.text}</Text>
+      <View style={[
+        styles.pTextContainer,
+        !isDark && {
+          backgroundColor: '#F8FAFC',
+          borderWidth: 1.5,
+          borderColor: '#CBD5E1',
+        },
+        isDark && {
+          backgroundColor: '#111114',
+          borderColor: 'rgba(255, 255, 255, 0.1)',
+        }
+      ]}>
+        <Text style={[styles.pText, isDark && { color: '#FFFFFF' }]}>{item.text}</Text>
         {item.textTe && item.textTe.trim() !== (item.text || '').trim() && (
-          <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 0.5, borderTopColor: '#e2e8f0' }}>
-            <Text style={[styles.pText, { fontStyle: 'italic', color: '#475569' }]}>
+          <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 0.5, borderTopColor: isDark ? '#27272A' : '#e2e8f0' }}>
+            <Text style={[styles.pText, { fontStyle: 'italic', color: isDark ? '#D1D5DB' : '#475569' }]}>
               {item.textTe}
             </Text>
           </View>
@@ -1061,15 +1188,27 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
 
       {/* REPLIES / COMMENTS SECTION */}
       {item.replies && item.replies.length > 0 && (
-        <View style={styles.repliesContainer}>
-          <Text style={styles.repliesHeader}>Comments</Text>
+        <View style={[
+          styles.repliesContainer,
+          isDark && {
+            backgroundColor: '#111114',
+            borderColor: 'rgba(255, 255, 255, 0.1)',
+          }
+        ]}>
+          <Text style={[styles.repliesHeader, isDark && { color: '#E4E4E7' }]}>Comments</Text>
           {item.replies.map((reply: any) => (
-            <View key={reply.id} style={styles.replyCard}>
+            <View key={reply.id} style={[
+              styles.replyCard,
+              isDark && {
+                backgroundColor: '#18181B',
+                borderColor: 'rgba(255, 255, 255, 0.1)',
+              }
+            ]}>
               <View style={styles.replyHeader}>
-                <Text style={styles.replyAuthor}>{reply.author}</Text>
-                <Text style={styles.replyDate}>{getTimeAgo(reply.date)}</Text>
+                <Text style={[styles.replyAuthor, isDark && { color: '#FFFFFF' }]}>{reply.author}</Text>
+                <Text style={[styles.replyDate, isDark && { color: '#94A3B8' }]}>{getTimeAgo(reply.date)}</Text>
               </View>
-              <Text style={styles.replyBody}>{reply.body}</Text>
+              <Text style={[styles.replyBody, isDark && { color: '#D4D4D8' }]}>{reply.body}</Text>
             </View>
           ))}
         </View>
@@ -1077,53 +1216,83 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
 
       <View style={styles.pFooter}>
         <View style={styles.catBadge}>
-          <View style={styles.catDot} />
-          <Text style={styles.catTxt}>{item.category || 'General'}</Text>
+          <View style={[styles.catDot, isDark && { backgroundColor: '#F59E0B' }]} />
+          <Text style={[styles.catTxt, isDark && { color: '#A1A1AA' }]}>{item.category || 'General'}</Text>
         </View>
         <View style={styles.pActions}>
           {/* Pray button */}
           <TouchableOpacity
-            style={[styles.pActionBtn, { backgroundColor: '#EFF6FF', paddingHorizontal: 12, paddingVertical: 6, gap: 5 }]}
+            style={[
+              styles.pActionBtn,
+              {
+                backgroundColor: isDark ? 'rgba(37, 99, 235, 0.2)' : '#EFF6FF',
+                borderColor: isDark ? 'rgba(59, 130, 246, 0.35)' : 'transparent',
+                borderWidth: isDark ? 1 : 0,
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                gap: 5
+              }
+            ]}
             onPress={() => handleAdminPray(item.id)}
           >
-            <Heart size={14} color="#2563EB" />
-            <Text style={[styles.pActionBtnTxt, { color: '#2563EB' }]}>Pray</Text>
+            <Heart size={14} color={isDark ? '#60A5FA' : '#2563EB'} />
+            <Text style={[styles.pActionBtnTxt, { color: isDark ? '#60A5FA' : '#2563EB' }]}>Pray</Text>
           </TouchableOpacity>
           {/* Close button */}
           <TouchableOpacity
-            style={[styles.pActionBtn, { backgroundColor: '#FEE2E2', paddingHorizontal: 12, paddingVertical: 6 }]}
+            style={[
+              styles.pActionBtn,
+              {
+                backgroundColor: isDark ? 'rgba(239, 68, 68, 0.2)' : '#FEE2E2',
+                borderColor: isDark ? 'rgba(239, 68, 68, 0.35)' : 'transparent',
+                borderWidth: isDark ? 1 : 0,
+                paddingHorizontal: 12,
+                paddingVertical: 6
+              }
+            ]}
             onPress={() => handleClose(item.id)}
           >
-            <Text style={[styles.pActionBtnTxt, { color: '#EF4444' }]}>Close</Text>
+            <Text style={[styles.pActionBtnTxt, { color: isDark ? '#F87171' : '#EF4444' }]}>Close</Text>
           </TouchableOpacity>
         </View>
       </View>
 
       {/* Attached Bible Verse for Answered Requests */}
       {isAnswered && (item.bibleVerse || item.verseReference) && (
-        <View style={styles.answeredVerseBox}>
+        <View style={[
+          styles.answeredVerseBox,
+          isDark && {
+            backgroundColor: '#111114',
+            borderColor: 'rgba(255, 255, 255, 0.15)',
+          }
+        ]}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <BookOpen size={14} color="#854D0E" />
-              <Text style={{ fontSize: 13, fontWeight: '800', color: '#854D0E' }}>
+              <BookOpen size={14} color={isDark ? '#FFFFFF' : '#854D0E'} />
+              <Text style={{ fontSize: 13, fontWeight: '800', color: isDark ? '#FFFFFF' : '#854D0E' }}>
                 {item.bibleVerse || item.verseReference}
               </Text>
             </View>
             <TouchableOpacity
-              style={styles.answeredShareBtn}
+              style={[
+                styles.answeredShareBtn,
+                isDark && {
+                  backgroundColor: 'rgba(255, 255, 255, 0.12)',
+                }
+              ]}
               onPress={() => handleShareMotivationalVerse(item, item.phone ? 'whatsapp' : 'native')}
             >
-              <Share2 size={12} color="#854D0E" />
-              <Text style={{ fontSize: 11, fontWeight: '700', color: '#854D0E' }}>Share Verse</Text>
+              <Share2 size={12} color={isDark ? '#FFFFFF' : '#854D0E'} />
+              <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#FFFFFF' : '#854D0E' }}>Share Verse</Text>
             </TouchableOpacity>
           </View>
           {item.verseText ? (
-            <Text style={{ fontSize: 13, fontStyle: 'italic', color: '#713F12', lineHeight: 18 }}>
+            <Text style={{ fontSize: 13, fontStyle: 'italic', color: isDark ? '#FFFFFF' : '#713F12', lineHeight: 18 }}>
               "{item.verseText}"
             </Text>
           ) : null}
           {item.verseTextTe && item.verseTextTe.trim() !== (item.verseText || '').trim() ? (
-            <Text style={{ fontSize: 12, fontStyle: 'italic', color: '#854D0E', marginTop: 3 }}>
+            <Text style={{ fontSize: 12, fontStyle: 'italic', color: isDark ? '#D4D4D8' : '#854D0E', marginTop: 3 }}>
               "{item.verseTextTe}"
             </Text>
           ) : null}
@@ -1146,29 +1315,65 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
   }
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+    <View style={[styles.container, { backgroundColor: isDark ? '#000000' : '#F8FAFC' }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
-      {/* ── Hero Section ── */}
-      <View style={styles.hero}>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-            <TouchableOpacity
-              onPress={() => setActiveTab(0)}
-              style={styles.circularBackBtn}
-              activeOpacity={0.7}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      {/* ── Hero Section (Top Mini Card Header) ── */}
+      <View style={[styles.hero, {
+        backgroundColor: isDark ? '#000000' : '#FFFFFF',
+        borderBottomWidth: 1,
+        borderBottomColor: isDark ? '#27272A' : '#E2E8F0',
+        paddingBottom: 14,
+        marginBottom: 4
+      }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+          <TouchableOpacity
+            onPress={() => setActiveTab(0)}
+            style={[styles.circularBackBtn, {
+              backgroundColor: isDark ? '#000000' : '#FFFFFF',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : '#E2E8F0',
+              borderWidth: 1.5,
+            }]}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#0F172A'} strokeWidth={2.2} />
+          </TouchableOpacity>
+
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 }}>
+            <Text
+              style={[
+                styles.heroTitle,
+                {
+                  color: isDark ? '#FFFFFF' : '#0F172A',
+                  textAlign: 'center',
+                  fontSize: 20,
+                  fontWeight: '800',
+                  fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+                  letterSpacing: -0.4,
+                }
+              ]}
+              numberOfLines={1}
             >
-              <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
-            </TouchableOpacity>
-            <View style={{ marginLeft: 12 }}>
-              <Text style={styles.heroTitle}>Prayers</Text>
-              <Text style={[styles.heroSub, { marginTop: 2 }]}>{pendingPrayers.length} new · {answeredPrayers.length} processed</Text>
-            </View>
+              Prayers
+            </Text>
           </View>
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            <TouchableOpacity style={{ padding: 8 }} onPress={() => setShowTopMenu(true)}>
-              <MoreVertical size={22} color="#1a2d5a" />
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', minWidth: 40, justifyContent: 'flex-end' }}>
+            <TouchableOpacity
+              style={[
+                styles.circularBackBtn,
+                {
+                  backgroundColor: isDark ? '#000000' : '#FFFFFF',
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : '#E2E8F0',
+                  borderWidth: 1.5,
+                }
+              ]}
+              onPress={() => setShowTopMenu(true)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              activeOpacity={0.7}
+            >
+              <MoreVertical size={18} color={isDark ? '#FFFFFF' : '#0F172A'} />
             </TouchableOpacity>
           </View>
         </View>
@@ -1183,34 +1388,127 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
 
         {/* ── Stats Row ── */}
         <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <Text style={[styles.statVal, { color: COLORS.clay }]}>{pendingPrayers.length}</Text>
-            <Text style={styles.statLbl}>New Requests</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={[styles.statVal, { color: COLORS.moss }]}>{answeredPrayers.length}</Text>
-            <Text style={styles.statLbl}>Processed</Text>
-          </View>
+          {/* 1. New Requests Card */}
+          <TouchableOpacity 
+            style={[
+              styles.statBox, 
+              {
+                backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                borderColor: activeStatFilter === 'pending'
+                  ? (isDark ? '#F87171' : COLORS.clay)
+                  : (isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(162, 75, 52, 0.22)'),
+                borderWidth: activeStatFilter === 'pending' ? 1.8 : 1,
+                paddingVertical: 0,
+                overflow: 'hidden',
+              }
+            ]}
+            onPress={() => setActiveStatFilter(prev => prev === 'pending' ? 'all' : 'pending')}
+            activeOpacity={0.75}
+          >
+            <LinearGradient
+              colors={
+                isDark
+                  ? ['rgba(248, 113, 113, 0.14)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)']
+                  : ['#FFFFFF', '#FEF8F6', '#FEE2E2']
+              }
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.statGlassInner}
+            >
+              <View style={[styles.statNotch, { backgroundColor: isDark ? '#F87171' : COLORS.clay }]} />
+              <Text style={[styles.num, { color: isDark ? '#F87171' : COLORS.clay }]}>{pendingPrayers.length}</Text>
+              <View style={styles.statLabelRow}>
+                <Text style={[styles.statLabel, { color: isDark ? '#E4E4E7' : COLORS.inkSoft }, activeStatFilter === 'pending' && { color: isDark ? '#F87171' : COLORS.clay }]}>
+                  New Requests
+                </Text>
+                {activeStatFilter === 'pending' && <View style={[styles.activeIndicatorDot, { backgroundColor: isDark ? '#F87171' : COLORS.clay }]} />}
+              </View>
+              <Text style={[styles.statHintTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+                {activeStatFilter === 'pending' ? 'Active ✓' : 'Tap to view'}
+              </Text>
+            </LinearGradient>
+          </TouchableOpacity>
+
+          {/* 2. Processed Card */}
+          <TouchableOpacity 
+            style={[
+              styles.statBox, 
+              {
+                backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                borderColor: activeStatFilter === 'answered'
+                  ? (isDark ? '#34D399' : COLORS.moss)
+                  : (isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(62, 107, 82, 0.22)'),
+                borderWidth: activeStatFilter === 'answered' ? 1.8 : 1,
+                paddingVertical: 0,
+                overflow: 'hidden',
+              }
+            ]}
+            onPress={() => setActiveStatFilter(prev => prev === 'answered' ? 'all' : 'answered')}
+            activeOpacity={0.75}
+          >
+            <LinearGradient
+              colors={
+                isDark
+                  ? ['rgba(52, 211, 153, 0.14)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)']
+                  : ['#FFFFFF', '#F7FCF9', '#ECFDF5']
+              }
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.statGlassInner}
+            >
+              <View style={[styles.statNotch, { backgroundColor: isDark ? '#34D399' : COLORS.moss }]} />
+              <Text style={[styles.num, { color: isDark ? '#34D399' : COLORS.moss }]}>{answeredPrayers.length}</Text>
+              <View style={styles.statLabelRow}>
+                <Text style={[styles.statLabel, { color: isDark ? '#E4E4E7' : COLORS.inkSoft }, activeStatFilter === 'answered' && { color: isDark ? '#34D399' : COLORS.moss }]}>
+                  Processed
+                </Text>
+                {activeStatFilter === 'answered' && <View style={[styles.activeIndicatorDot, { backgroundColor: isDark ? '#34D399' : COLORS.moss }]} />}
+              </View>
+              <Text style={[styles.statHintTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+                {activeStatFilter === 'answered' ? 'Active ✓' : 'Tap to view'}
+              </Text>
+            </LinearGradient>
+          </TouchableOpacity>
         </View>
 
         {/* ── Pending Review ── */}
-        {pendingPrayers.length > 0 && (
+        {activeStatFilter !== 'answered' && pendingPrayers.length > 0 && (
           <>
             <View style={styles.listHd}>
-              <Text style={[styles.listHdTitle, { color: COLORS.goldDeep }]}>Requests for Review ({pendingPrayers.length})</Text>
+              <Text style={[styles.listHdTitle, { color: isDark ? '#FFFFFF' : COLORS.goldDeep }]}>Requests for Review ({pendingPrayers.length})</Text>
             </View>
             {pendingPrayers.map(p => renderPrayerCard(p))}
           </>
         )}
 
         {/* ── Answered Section ── */}
-        {answeredPrayers.length > 0 && (
+        {activeStatFilter !== 'pending' && answeredPrayers.length > 0 && (
           <>
-            <View style={[styles.listHd, { marginTop: 20 }]}>
-              <Text style={styles.listHdTitle}>Recent History</Text>
+            <View style={[styles.listHd, { marginTop: activeStatFilter === 'answered' ? 0 : 20 }]}>
+              <Text style={[styles.listHdTitle, isDark && { color: '#FFFFFF' }]}>
+                {activeStatFilter === 'answered' ? `Processed Requests (${answeredPrayers.length})` : 'Recent History'}
+              </Text>
             </View>
-            {answeredPrayers.slice(0, 5).map(p => renderPrayerCard(p, true))}
+            {(activeStatFilter === 'answered' ? answeredPrayers : answeredPrayers.slice(0, 5)).map(p => renderPrayerCard(p, true))}
           </>
+        )}
+
+        {activeStatFilter === 'pending' && pendingPrayers.length === 0 && (
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+            <Text style={{ color: isDark ? '#A1A1AA' : COLORS.inkSoft, fontSize: 14 }}>No new prayer requests.</Text>
+          </View>
+        )}
+
+        {activeStatFilter === 'answered' && answeredPrayers.length === 0 && (
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+            <Text style={{ color: isDark ? '#A1A1AA' : COLORS.inkSoft, fontSize: 14 }}>No processed prayer requests.</Text>
+          </View>
+        )}
+
+        {activeStatFilter === 'all' && pendingPrayers.length === 0 && answeredPrayers.length === 0 && (
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+            <Text style={{ color: isDark ? '#A1A1AA' : COLORS.inkSoft, fontSize: 14 }}>No prayer requests found.</Text>
+          </View>
         )}
 
       </ScrollView>
@@ -1233,21 +1531,32 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
           {detailPrayer ? (
           <View style={[
             styles.detailModalContainer,
+            isDark && {
+              backgroundColor: '#000000',
+              borderColor: 'rgba(255, 255, 255, 0.15)',
+              borderWidth: 1,
+            },
             keyboardHeight > 0 && Platform.OS === 'android' && {
               maxHeight: Dimensions.get('window').height - 40,
             }
           ]}>
             {/* Modal Header */}
-            <View style={styles.detailModalHeader}>
+            <View style={[
+              styles.detailModalHeader,
+              isDark && {
+                backgroundColor: '#000000',
+                borderBottomColor: '#27272A',
+              }
+            ]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 12 }}>
                 <View style={[styles.pAvatar, { backgroundColor: detailPrayer?.isAnswered ? '#059669' : '#7C3AED', width: 44, height: 44, borderRadius: 22 }]}>
                   <Text style={[styles.pAvatarTxt, { fontSize: 18 }]}>{(detailPrayer?.name || 'M').charAt(0)}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.ink }}>
+                  <Text style={{ fontSize: 18, fontWeight: '800', color: isDark ? '#FFFFFF' : COLORS.ink }}>
                     {detailPrayer?.name || 'Church Member'}
                   </Text>
-                  <Text style={{ fontSize: 13, color: COLORS.inkSoft, marginTop: 2 }}>
+                  <Text style={{ fontSize: 13, color: isDark ? '#94A3B8' : COLORS.inkSoft, marginTop: 2 }}>
                     {getTimeAgo(detailPrayer?.createdAt)}{detailPrayer?.phone ? ` · ${detailPrayer.phone}` : ''}
                   </Text>
                 </View>
@@ -1285,34 +1594,34 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
               {/* Badges row */}
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
                 <View style={[styles.catBadge, { paddingHorizontal: 10, paddingVertical: 4 }]}>
-                  <View style={styles.catDot} />
-                  <Text style={[styles.catTxt, { fontSize: 13 }]}>{detailPrayer?.category || 'General'}</Text>
+                  <View style={[styles.catDot, isDark && { backgroundColor: '#F59E0B' }]} />
+                  <Text style={[styles.catTxt, { fontSize: 13 }, isDark && { color: '#D4D4D8' }]}>{detailPrayer?.category || 'General'}</Text>
                 </View>
                 {detailPrayer?.isPublic ? (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#FEF3C7', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, gap: 4 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? 'rgba(217, 119, 6, 0.2)' : '#FEF3C7', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, gap: 4 }}>
                     <Megaphone size={12} color="#D97706" />
                     <Text style={{ fontSize: 12, fontWeight: '700', color: '#D97706' }}>PUBLIC REQUEST</Text>
                   </View>
                 ) : (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#EFF6FF', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, gap: 4 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? 'rgba(37, 99, 235, 0.2)' : '#EFF6FF', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, gap: 4 }}>
                     <ShieldCheck size={12} color="#2563EB" />
                     <Text style={{ fontSize: 12, fontWeight: '700', color: '#2563EB' }}>PRIVATE (CONFIDENTIAL)</Text>
                   </View>
                 )}
                 {detailPrayer?.isAnswered && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#DCFCE7', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, gap: 4 }}>
-                    <CheckCircle2 size={12} color="#15803D" />
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#15803D' }}>PROCESSED</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? 'rgba(5, 150, 105, 0.2)' : '#DCFCE7', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, gap: 4 }}>
+                    <CheckCircle2 size={12} color={isDark ? '#34D399' : '#15803D'} />
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#34D399' : '#15803D' }}>PROCESSED</Text>
                   </View>
                 )}
               </View>
 
               {/* Submitter phone call quick link */}
               {detailPrayer?.phone ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F8FAFC', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 16 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: isDark ? '#141417' : '#F8FAFC', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: isDark ? '#27272A' : '#E2E8F0', marginBottom: 16 }}>
                   <View>
-                    <Text style={{ fontSize: 12, color: '#64748B', fontWeight: '600' }}>Contact Number</Text>
-                    <Text style={{ fontSize: 15, fontWeight: '800', color: '#1E293B', marginTop: 2 }}>{detailPrayer.phone}</Text>
+                    <Text style={{ fontSize: 12, color: isDark ? '#94A3B8' : '#64748B', fontWeight: '600' }}>Contact Number</Text>
+                    <Text style={{ fontSize: 15, fontWeight: '800', color: isDark ? '#FFFFFF' : '#1E293B', marginTop: 2 }}>{detailPrayer.phone}</Text>
                   </View>
                   <TouchableOpacity
                     style={{ backgroundColor: '#2563EB', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 }}
@@ -1324,20 +1633,32 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
               ) : null}
 
               {/* Prayer Request Full Text */}
-              <View style={{ backgroundColor: '#FFFFFF', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 16 }}>
-                <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.inkSoft, textTransform: 'uppercase', marginBottom: 8, letterSpacing: 0.5 }}>
+              <View style={[
+                { padding: 16, borderRadius: 16, marginBottom: 16 },
+                !isDark && {
+                  backgroundColor: '#F8FAFC',
+                  borderWidth: 1.5,
+                  borderColor: '#CBD5E1',
+                },
+                isDark && {
+                  backgroundColor: '#111114',
+                  borderWidth: 1,
+                  borderColor: 'rgba(255, 255, 255, 0.12)',
+                }
+              ]}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#94A3B8' : COLORS.inkSoft, textTransform: 'uppercase', marginBottom: 8, letterSpacing: 0.5 }}>
                   Prayer Request
                 </Text>
-                <Text style={{ fontSize: 16, color: COLORS.ink, lineHeight: 24, fontWeight: '500' }}>
+                <Text style={{ fontSize: 16, color: isDark ? '#FFFFFF' : COLORS.ink, lineHeight: 24, fontWeight: '500' }}>
                   {detailPrayer?.text || detailPrayer?.request || ''}
                 </Text>
 
                 {detailPrayer?.textTe && detailPrayer?.textTe.trim() !== (detailPrayer?.text || '').trim() && (
-                  <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.inkSoft, textTransform: 'uppercase', marginBottom: 6 }}>
+                  <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: isDark ? '#27272A' : '#F1F5F9' }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#94A3B8' : COLORS.inkSoft, textTransform: 'uppercase', marginBottom: 6 }}>
                       Telugu Request
                     </Text>
-                    <Text style={{ fontSize: 15, color: '#475569', lineHeight: 22, fontStyle: 'italic' }}>
+                    <Text style={{ fontSize: 15, color: isDark ? '#D1D5DB' : '#475569', lineHeight: 22, fontStyle: 'italic' }}>
                       {detailPrayer.textTe}
                     </Text>
                   </View>
@@ -1347,16 +1668,16 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
               {/* Comments History */}
               {detailPrayer?.replies && detailPrayer.replies.length > 0 && (
                 <View style={{ marginBottom: 16 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '800', color: COLORS.ink, marginBottom: 8 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: isDark ? '#FFFFFF' : COLORS.ink, marginBottom: 8 }}>
                     Response History ({detailPrayer.replies.length})
                   </Text>
                   {detailPrayer.replies.map((reply: any) => (
-                    <View key={reply.id} style={{ backgroundColor: '#F8FAFC', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 8 }}>
+                    <View key={reply.id} style={{ backgroundColor: isDark ? '#141417' : '#F8FAFC', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: isDark ? '#27272A' : '#E2E8F0', marginBottom: 8 }}>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                        <Text style={{ fontWeight: '700', fontSize: 13, color: '#1E293B' }}>{reply.author}</Text>
-                        <Text style={{ fontSize: 11, color: '#64748B' }}>{getTimeAgo(reply.date)}</Text>
+                        <Text style={{ fontWeight: '700', fontSize: 13, color: isDark ? '#FFFFFF' : '#1E293B' }}>{reply.author}</Text>
+                        <Text style={{ fontSize: 11, color: isDark ? '#94A3B8' : '#64748B' }}>{getTimeAgo(reply.date)}</Text>
                       </View>
-                      <Text style={{ fontSize: 14, color: '#334155' }}>{reply.body}</Text>
+                      <Text style={{ fontSize: 14, color: isDark ? '#D4D4D8' : '#334155' }}>{reply.body}</Text>
                     </View>
                   ))}
                 </View>
@@ -1364,29 +1685,29 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
 
               {/* Attached Bible Verse for Answered Requests in Detail Modal */}
               {detailPrayer?.isAnswered && (detailPrayer?.bibleVerse || detailPrayer?.verseReference) && (
-                <View style={{ backgroundColor: '#FEF3C7', padding: 14, borderRadius: 14, borderWidth: 1, borderColor: '#FDE68A', marginBottom: 16 }}>
+                <View style={{ backgroundColor: isDark ? '#111114' : '#FEF3C7', padding: 14, borderRadius: 14, borderWidth: 1, borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#FDE68A', marginBottom: 16 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <BookOpen size={16} color="#854D0E" />
-                      <Text style={{ fontSize: 14, fontWeight: '800', color: '#854D0E' }}>
+                      <BookOpen size={16} color={isDark ? '#FFFFFF' : '#854D0E'} />
+                      <Text style={{ fontSize: 14, fontWeight: '800', color: isDark ? '#FFFFFF' : '#854D0E' }}>
                         {detailPrayer.bibleVerse || detailPrayer.verseReference}
                       </Text>
                     </View>
                     <TouchableOpacity
-                      style={{ backgroundColor: '#FDE68A', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 5 }}
+                      style={{ backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#FDE68A', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 5 }}
                       onPress={() => handleShareMotivationalVerse(detailPrayer, detailPrayer.phone ? 'whatsapp' : 'native')}
                     >
-                      <Share2 size={13} color="#854D0E" />
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#854D0E' }}>Share Verse</Text>
+                      <Share2 size={13} color={isDark ? '#FFFFFF' : '#854D0E'} />
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#FFFFFF' : '#854D0E' }}>Share Verse</Text>
                     </TouchableOpacity>
                   </View>
                   {detailPrayer.verseText ? (
-                    <Text style={{ fontSize: 14, fontStyle: 'italic', color: '#713F12', lineHeight: 20 }}>
+                    <Text style={{ fontSize: 14, fontStyle: 'italic', color: isDark ? '#FFFFFF' : '#713F12', lineHeight: 20 }}>
                       "{detailPrayer.verseText}"
                     </Text>
                   ) : null}
                   {detailPrayer.verseTextTe && detailPrayer.verseTextTe.trim() !== (detailPrayer.verseText || '').trim() ? (
-                    <Text style={{ fontSize: 13, fontStyle: 'italic', color: '#854D0E', marginTop: 4 }}>
+                    <Text style={{ fontSize: 13, fontStyle: 'italic', color: isDark ? '#D4D4D8' : '#854D0E', marginTop: 4 }}>
                       "{detailPrayer.verseTextTe}"
                     </Text>
                   ) : null}
@@ -1437,11 +1758,17 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.pickerOverlay}
+          style={[styles.pickerOverlay, { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.85)' : 'rgba(0, 0, 0, 0.7)' }]}
         >
-          <View style={styles.pickerContainer}>
+          <View style={[
+            styles.pickerContainer,
+            isDark && { backgroundColor: '#121214', borderTopColor: 'rgba(255, 255, 255, 0.15)', borderWidth: 1 }
+          ]}>
             {/* Picker Header with Back Navigation & Close */}
-            <View style={styles.pickerHeader}>
+            <View style={[
+              styles.pickerHeader,
+              isDark && { borderBottomColor: '#27272A' }
+            ]}>
               {bcvPicker.step !== 'book' ? (
                 <TouchableOpacity
                   style={styles.pickerNavBtn}
@@ -1453,21 +1780,21 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
                     }
                   }}
                 >
-                  <ChevronLeft size={22} color="#1E293B" />
+                  <ChevronLeft size={22} color={isDark ? '#FFFFFF' : '#1E293B'} />
                 </TouchableOpacity>
               ) : (
                 <View style={{ width: 32 }} />
               )}
 
               <View style={{ alignItems: 'center' }}>
-                <Text style={styles.pickerTitle}>
+                <Text style={[styles.pickerTitle, isDark && { color: '#FFFFFF' }]}>
                   {bcvPicker.step === 'book'
                     ? 'Select Bible Book'
                     : bcvPicker.step === 'chapter'
                     ? `${allBibleBooks[bcvPicker.selectedBookIndex]?.nameEn} · Select Chapter`
                     : `${allBibleBooks[bcvPicker.selectedBookIndex]?.nameEn} ${bcvPicker.selectedChapter} · Select Verse`}
                 </Text>
-                <Text style={styles.pickerSubtitle}>
+                <Text style={[styles.pickerSubtitle, isDark && { color: '#94A3B8' }]}>
                   {bcvPicker.step === 'book'
                     ? 'Choose from 66 Books of Scripture'
                     : bcvPicker.step === 'chapter'
@@ -1480,7 +1807,7 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
                 style={styles.pickerNavBtn}
                 onPress={() => setBcvPicker(prev => ({ ...prev, visible: false }))}
               >
-                <X size={20} color="#64748B" />
+                <X size={20} color={isDark ? '#94A3B8' : '#64748B'} />
               </TouchableOpacity>
             </View>
 
@@ -1488,12 +1815,15 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
             {bcvPicker.step === 'book' && (
               <View style={{ flex: 1 }}>
                 {/* Search bar */}
-                <View style={styles.pickerSearchBox}>
+                <View style={[
+                  styles.pickerSearchBox,
+                  isDark && { backgroundColor: '#1C1C1F', borderColor: '#27272A' }
+                ]}>
                   <Search size={16} color="#94A3B8" />
                   <TextInput
-                    style={styles.pickerSearchInput}
+                    style={[styles.pickerSearchInput, isDark && { color: '#FFFFFF' }]}
                     placeholder="Search by book name (e.g. John, యోహాను)..."
-                    placeholderTextColor="#94A3B8"
+                    placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                     value={bcvPicker.searchQuery}
                     onChangeText={(txt) => setBcvPicker(prev => ({ ...prev, searchQuery: txt }))}
                   />
@@ -1504,19 +1834,58 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
                   )}
                 </View>
 
-                {/* OT / NT Tabs */}
-                <View style={styles.testamentTabBar}>
-                  {(['ALL', 'OT', 'NT'] as const).map(tab => (
-                    <TouchableOpacity
-                      key={tab}
-                      style={[styles.testamentTab, bcvPicker.testamentFilter === tab && styles.testamentTabActive]}
-                      onPress={() => setBcvPicker(prev => ({ ...prev, testamentFilter: tab }))}
-                    >
-                      <Text style={[styles.testamentTabTxt, bcvPicker.testamentFilter === tab && styles.testamentTabTxtActive]}>
-                        {tab === 'ALL' ? 'All (66)' : tab === 'OT' ? 'Old Testament (39)' : 'New Testament (27)'}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                {/* Badges: All (66), Old Testament (39), New Testament (27) */}
+                <View style={styles.testamentBadgeRow}>
+                  {([
+                    { key: 'ALL', label: 'All', count: 66 },
+                    { key: 'OT', label: 'Old Testament', count: 39 },
+                    { key: 'NT', label: 'New Testament', count: 27 },
+                  ] as const).map(({ key, label, count }) => {
+                    const isActive = bcvPicker.testamentFilter === key;
+                    return (
+                      <TouchableOpacity
+                        key={key}
+                        style={[
+                          styles.testamentBadge,
+                          isDark
+                            ? (isActive ? styles.testamentBadgeActiveDark : styles.testamentBadgeInactiveDark)
+                            : (isActive ? styles.testamentBadgeActiveLight : styles.testamentBadgeInactiveLight)
+                        ]}
+                        onPress={() => setBcvPicker(prev => ({ ...prev, testamentFilter: key }))}
+                        activeOpacity={0.75}
+                      >
+                        <Text
+                          style={[
+                            styles.testamentBadgeTxt,
+                            isDark
+                              ? (isActive ? styles.testamentBadgeTxtActiveDark : styles.testamentBadgeTxtInactiveDark)
+                              : (isActive ? styles.testamentBadgeTxtActiveLight : styles.testamentBadgeTxtInactiveLight)
+                          ]}
+                        >
+                          {label}
+                        </Text>
+                        <View
+                          style={[
+                            styles.testamentCountPill,
+                            isDark
+                              ? (isActive ? styles.testamentCountPillActiveDark : styles.testamentCountPillInactiveDark)
+                              : (isActive ? styles.testamentCountPillActiveLight : styles.testamentCountPillInactiveLight)
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.testamentCountTxt,
+                              isDark
+                                ? (isActive ? styles.testamentCountTxtActiveDark : styles.testamentCountTxtInactiveDark)
+                                : (isActive ? styles.testamentCountTxtActiveLight : styles.testamentCountTxtInactiveLight)
+                            ]}
+                          >
+                            {count}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
 
                 {/* Books List */}
@@ -1532,19 +1901,28 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
                   })}
                   keyExtractor={item => item.nameEn + item.index}
                   keyboardShouldPersistTaps="handled"
+                  contentContainerStyle={{ paddingBottom: Platform.OS === 'android' ? 60 : 70 }}
                   renderItem={({ item }) => (
                     <TouchableOpacity
-                      style={[styles.bookRow, bcvPicker.selectedBookIndex === item.index && styles.bookRowSelected]}
+                      style={[
+                        styles.bookRow,
+                        isDark && { borderBottomColor: '#27272A' },
+                        bcvPicker.selectedBookIndex === item.index && (isDark ? { backgroundColor: '#1F1A0E' } : styles.bookRowSelected)
+                      ]}
                       onPress={() => handleSelectBookInPicker(item.index)}
                     >
                       <View style={{ flex: 1 }}>
-                        <Text style={[styles.bookNameEn, bcvPicker.selectedBookIndex === item.index && styles.bookNameEnSelected]}>
+                        <Text style={[
+                          styles.bookNameEn,
+                          isDark && { color: '#FFFFFF' },
+                          bcvPicker.selectedBookIndex === item.index && (isDark ? { color: '#F59E0B' } : styles.bookNameEnSelected)
+                        ]}>
                           {item.nameEn}
                         </Text>
-                        <Text style={styles.bookNameTe}>{item.nameTe}</Text>
+                        <Text style={[styles.bookNameTe, isDark && { color: '#94A3B8' }]}>{item.nameTe}</Text>
                       </View>
-                      <View style={styles.chCountBadge}>
-                        <Text style={styles.chCountText}>{item.totalChapters} Ch</Text>
+                      <View style={[styles.chCountBadge, isDark && { backgroundColor: '#1C1C1F' }]}>
+                        <Text style={[styles.chCountText, isDark && { color: '#A1A1AA' }]}>{item.totalChapters} Ch</Text>
                       </View>
                     </TouchableOpacity>
                   )}
@@ -1554,16 +1932,28 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
 
             {/* Step 2: Chapter Selection */}
             {bcvPicker.step === 'chapter' && (
-              <ScrollView contentContainerStyle={{ padding: 16 }} keyboardShouldPersistTaps="handled">
-                <Text style={styles.pickerSectionLabel}>Tap a Chapter Number:</Text>
+              <ScrollView
+                contentContainerStyle={{ padding: 16, paddingBottom: Platform.OS === 'android' ? 80 : 90 }}
+                showsVerticalScrollIndicator={true}
+                keyboardShouldPersistTaps="handled"
+              >
+                <Text style={[styles.pickerSectionLabel, isDark && { color: '#CBD5E1' }]}>Tap a Chapter Number:</Text>
                 <View style={styles.gridContainer}>
                   {Array.from({ length: allBibleBooks[bcvPicker.selectedBookIndex]?.totalChapters || 1 }, (_, i) => i + 1).map(ch => (
                     <TouchableOpacity
                       key={ch}
-                      style={[styles.gridCell, bcvPicker.selectedChapter === ch && styles.gridCellActive]}
+                      style={[
+                        styles.gridCell,
+                        isDark && { backgroundColor: '#1C1C1F', borderColor: '#27272A' },
+                        bcvPicker.selectedChapter === ch && (isDark ? { backgroundColor: '#B45309', borderColor: '#F59E0B' } : styles.gridCellActive)
+                      ]}
                       onPress={() => handleSelectChapterInPicker(ch)}
                     >
-                      <Text style={[styles.gridCellTxt, bcvPicker.selectedChapter === ch && styles.gridCellTxtActive]}>
+                      <Text style={[
+                        styles.gridCellTxt,
+                        isDark && { color: '#FFFFFF' },
+                        bcvPicker.selectedChapter === ch && styles.gridCellTxtActive
+                      ]}>
                         {ch}
                       </Text>
                     </TouchableOpacity>
@@ -1574,15 +1964,22 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
 
             {/* Step 3: Verse Selection */}
             {bcvPicker.step === 'verse' && (
-              <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+              <ScrollView
+                contentContainerStyle={{ padding: 16, paddingBottom: Platform.OS === 'android' ? 90 : 100 }}
+                showsVerticalScrollIndicator={true}
+                keyboardShouldPersistTaps="handled"
+              >
                 {/* Custom Verse / Range input */}
                 <View style={styles.customVerseInputRow}>
-                  <Text style={styles.pickerSectionLabel}>Custom Verse or Range:</Text>
+                  <Text style={[styles.pickerSectionLabel, isDark && { color: '#CBD5E1' }]}>Custom Verse or Range:</Text>
                   <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
                     <TextInput
-                      style={styles.customVerseInput}
+                      style={[
+                        styles.customVerseInput,
+                        isDark && { backgroundColor: '#1C1C1F', borderColor: '#27272A', color: '#FFFFFF' }
+                      ]}
                       placeholder="e.g. 6 or 6-7"
-                      placeholderTextColor="#94A3B8"
+                      placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                       value={bcvPicker.selectedVerse}
                       onChangeText={(txt) => setBcvPicker(prev => ({ ...prev, selectedVerse: txt }))}
                       keyboardType="numbers-and-punctuation"
@@ -1607,15 +2004,23 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
                   </Text>
                 </TouchableOpacity>
 
-                <Text style={[styles.pickerSectionLabel, { marginTop: 16 }]}>Or Tap a Verse Number:</Text>
+                <Text style={[styles.pickerSectionLabel, { marginTop: 16 }, isDark && { color: '#CBD5E1' }]}>Or Tap a Verse Number:</Text>
                 <View style={styles.gridContainer}>
                   {Array.from({ length: PrayerVerseService.getVerseCount(bcvPicker.selectedBookIndex, bcvPicker.selectedChapter) }, (_, i) => i + 1).map(v => (
                     <TouchableOpacity
                       key={v}
-                      style={[styles.gridCell, bcvPicker.selectedVerse === String(v) && styles.gridCellActive]}
+                      style={[
+                        styles.gridCell,
+                        isDark && { backgroundColor: '#1C1C1F', borderColor: '#27272A' },
+                        bcvPicker.selectedVerse === String(v) && (isDark ? { backgroundColor: '#B45309', borderColor: '#F59E0B' } : styles.gridCellActive)
+                      ]}
                       onPress={() => handleSelectVerseInPicker(v)}
                     >
-                      <Text style={[styles.gridCellTxt, bcvPicker.selectedVerse === String(v) && styles.gridCellTxtActive]}>
+                      <Text style={[
+                        styles.gridCellTxt,
+                        isDark && { color: '#FFFFFF' },
+                        bcvPicker.selectedVerse === String(v) && styles.gridCellTxtActive
+                      ]}>
                         {v}
                       </Text>
                     </TouchableOpacity>
@@ -1629,172 +2034,304 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
 
       {/* ── Create Prayer Request Modal ── */}
       {showCreateModal && (
-        <View style={[StyleSheet.absoluteFill, { zIndex: 1000, backgroundColor: COLORS.paper }]}>
+        <View style={[StyleSheet.absoluteFill, { zIndex: 1000, backgroundColor: isDark ? '#09090B' : COLORS.paper }]}>
           <SafeAreaView style={{ flex: 1 }}>
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-              <View style={[styles.createModalContent, { flex: 1, height: undefined, borderTopLeftRadius: 0, borderTopRightRadius: 0 }]}>
-                <View style={[styles.createModalHeader, { borderTopLeftRadius: 0, borderTopRightRadius: 0 }]}>
-                  <Text style={styles.createModalTitle}>Create New Prayer Request</Text>
-                  <TouchableOpacity onPress={() => setShowCreateModal(false)} style={styles.closeBtn}>
-                    <XCircle size={24} color="#64748b" />
+              <View style={[styles.createModalContent, { flex: 1, height: undefined, borderTopLeftRadius: 0, borderTopRightRadius: 0 }, isDark && { backgroundColor: '#09090B' }]}>
+                <View style={[
+                  styles.createModalHeader,
+                  {
+                    borderTopLeftRadius: 0,
+                    borderTopRightRadius: 0,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    paddingTop: 8,
+                    paddingBottom: 12,
+                    paddingHorizontal: 16,
+                    position: 'relative',
+                  },
+                  isDark
+                    ? { backgroundColor: '#18181B', borderBottomColor: 'rgba(255, 255, 255, 0.1)' }
+                    : { backgroundColor: '#FFFFFF', borderBottomColor: '#E2E8F0' }
+                ]}>
+                  <Text style={[
+                    styles.createModalTitle,
+                    { textAlign: 'center', flex: 1, marginHorizontal: 40, marginTop: -2 },
+                    isDark ? { color: '#FFFFFF' } : { color: '#0F172A' }
+                  ]}>
+                    Create New Prayer Request
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => setShowCreateModal(false)}
+                    style={[
+                      styles.closeBtn,
+                      { position: 'absolute', right: 16 },
+                      isDark ? { backgroundColor: '#27272A' } : { backgroundColor: '#F1F5F9' }
+                    ]}
+                  >
+                    <XCircle size={24} color={isDark ? '#94A3B8' : '#64748b'} />
                   </TouchableOpacity>
                 </View>
                 
-                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20 }}>
-              {/* Member Lookup */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Church Member</Text>
-                <View style={styles.searchBox}>
-                  <TextInput
-                    placeholder="Search by name or phone..."
-                    style={styles.searchInput}
-                    value={memberSearchQuery}
-                    onChangeText={handleMemberSearch}
-                  />
-                  {searchingMembers && <ActivityIndicator size="small" color={COLORS.ink} />}
-                </View>
-
-                {memberSearchResults.length > 0 && !selectedMember && (
-                  <View style={styles.searchResults}>
-                    {memberSearchResults.map(m => (
-                      <TouchableOpacity
-                        key={m.id}
-                        style={styles.searchItem}
-                        onPress={() => {
-                          setSelectedMember(m);
-                          setMemberSearchResults([]);
-                          setMemberSearchQuery(m.name);
-                        }}
-                      >
-                        <View>
-                          <Text style={styles.searchItemName}>{m.name}</Text>
-                          <Text style={styles.searchItemPhone}>{m.phone || 'No Phone'}</Text>
-                        </View>
-                        <Plus size={14} color={COLORS.ink} />
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-
-                {selectedMember && (
-                  <View style={styles.selectedBadge}>
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
-                      <User size={14} color="#fff" />
-                      <Text style={styles.selectedBadgeTxt}>{selectedMember.name}</Text>
+                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20, paddingBottom: 120 }}>
+                  {/* Member Lookup */}
+                  <View style={styles.inputGroup}>
+                    <Text style={[styles.inputLabel, isDark && { color: '#FFFFFF' }, !isDark && { color: '#0F172A' }]}>
+                      Church Member
+                    </Text>
+                    <View style={[
+                      styles.searchBox,
+                      isDark && { backgroundColor: '#18181B', borderColor: 'rgba(255, 255, 255, 0.14)' },
+                      !isDark && { backgroundColor: '#FFFFFF', borderColor: '#CBD5E1', borderWidth: 1.5 }
+                    ]}>
+                      <TextInput
+                        placeholder="Search by name or phone..."
+                        placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+                        style={[styles.searchInput, isDark && { color: '#FFFFFF' }, !isDark && { color: '#0F172A' }]}
+                        value={memberSearchQuery}
+                        onChangeText={handleMemberSearch}
+                      />
+                      {searchingMembers && <ActivityIndicator size="small" color={isDark ? '#FFFFFF' : COLORS.ink} />}
                     </View>
-                    <TouchableOpacity onPress={() => setSelectedMember(null)}>
-                      <XCircle size={16} color="#fff" />
+
+                    {memberSearchResults.length > 0 && !selectedMember && (
+                      <View style={[
+                        styles.searchResults,
+                        isDark && { backgroundColor: '#18181B', borderColor: 'rgba(255, 255, 255, 0.14)' },
+                        !isDark && { backgroundColor: '#FFFFFF', borderColor: '#CBD5E1', borderWidth: 1.5 }
+                      ]}>
+                        {memberSearchResults.map(m => (
+                          <TouchableOpacity
+                            key={m.id}
+                            style={[
+                              styles.searchItem,
+                              isDark && { borderBottomColor: 'rgba(255, 255, 255, 0.08)' },
+                              !isDark && { borderBottomColor: '#E2E8F0' }
+                            ]}
+                            onPress={() => {
+                              setSelectedMember(m);
+                              setMemberSearchResults([]);
+                              setMemberSearchQuery(m.name);
+                            }}
+                          >
+                            <View>
+                              <Text style={[styles.searchItemName, isDark && { color: '#FFFFFF' }, !isDark && { color: '#0F172A' }]}>{m.name}</Text>
+                              <Text style={[styles.searchItemPhone, isDark && { color: '#94A3B8' }]}>{m.phone || 'No Phone'}</Text>
+                            </View>
+                            <Plus size={14} color={isDark ? '#FFFFFF' : COLORS.ink} />
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
+
+                    {selectedMember && (
+                      <View style={[
+                        styles.selectedBadge,
+                        isDark && { backgroundColor: '#27272A', borderColor: 'rgba(255, 255, 255, 0.14)', borderWidth: 1 },
+                        !isDark && { backgroundColor: '#0F172A' }
+                      ]}>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+                          <User size={14} color="#fff" />
+                          <Text style={styles.selectedBadgeTxt}>{selectedMember.name}</Text>
+                        </View>
+                        <TouchableOpacity onPress={() => setSelectedMember(null)}>
+                          <XCircle size={16} color="#fff" />
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={[styles.inputLabel, isDark && { color: '#FFFFFF' }, !isDark && { color: '#0F172A' }]}>
+                      Prayer Category
+                    </Text>
+                    <TouchableOpacity
+                      style={[
+                        styles.pickerBtn,
+                        isDark && { backgroundColor: '#18181B', borderColor: 'rgba(255, 255, 255, 0.14)' },
+                        !isDark && { backgroundColor: '#FFFFFF', borderColor: '#CBD5E1', borderWidth: 1.5 }
+                      ]}
+                      onPress={() => setShowPicker(!showPicker)}
+                    >
+                      <Text style={[
+                        styles.pickerTxt,
+                        isDark && { color: '#FFFFFF' },
+                        !isDark && { color: '#0F172A' },
+                        !pastorRequest.category && { color: isDark ? '#71717A' : '#94A3B8' }
+                      ]}>
+                        {pastorRequest.category || 'Select Category'}
+                      </Text>
+                      <MoreVertical size={14} color={isDark ? '#94A3B8' : '#64748b'} />
                     </TouchableOpacity>
+
+                    {showPicker && (
+                      <View style={[
+                        styles.categoryList,
+                        isDark && { backgroundColor: '#18181B', borderColor: 'rgba(255, 255, 255, 0.14)' },
+                        !isDark && { backgroundColor: '#FFFFFF', borderColor: '#CBD5E1', borderWidth: 1.5 }
+                      ]}>
+                        {prayerCategories.map(cat => (
+                          <TouchableOpacity
+                            key={cat}
+                            style={[
+                              styles.catOption,
+                              isDark && { borderBottomColor: 'rgba(255, 255, 255, 0.08)' },
+                              !isDark && { borderBottomColor: '#E2E8F0' },
+                              pastorRequest.category === cat && (isDark ? { backgroundColor: '#2563EB' } : styles.catOptionActive)
+                            ]}
+                            onPress={() => {
+                              setPastorRequest({ ...pastorRequest, category: cat });
+                              setShowPicker(false);
+                            }}
+                          >
+                            <Text style={[
+                              styles.catOptionTxt,
+                              isDark && { color: '#FFFFFF' },
+                              !isDark && { color: '#0F172A' },
+                              pastorRequest.category === cat && { color: '#FFFFFF', fontWeight: '800' }
+                            ]}>
+                              {cat}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
                   </View>
-                )}
-              </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Prayer Category</Text>
-                <TouchableOpacity
-                  style={styles.pickerBtn}
-                  onPress={() => setShowPicker(!showPicker)}
-                >
-                  <Text style={styles.pickerTxt}>
-                    {pastorRequest.category || 'Select Category'}
-                  </Text>
-                  <MoreVertical size={14} color="#64748b" />
-                </TouchableOpacity>
+                  <View style={styles.inputGroup}>
+                    <Text style={[styles.inputLabel, isDark && { color: '#FFFFFF' }, !isDark && { color: '#0F172A' }]}>
+                      Prayer request text — English
+                    </Text>
+                    <View style={[
+                      styles.textArea,
+                      isDark && { backgroundColor: '#18181B', borderColor: 'rgba(255, 255, 255, 0.14)' },
+                      !isDark && { backgroundColor: '#FFFFFF', borderColor: '#CBD5E1', borderWidth: 1.5 }
+                    ]}>
+                      <TextInput
+                        placeholder="Type the prayer request details..."
+                        placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+                        style={[
+                          styles.textInput,
+                          { minHeight: 120 },
+                          isDark && { color: '#FFFFFF' },
+                          !isDark && { color: '#0F172A' }
+                        ]}
+                        multiline
+                        scrollEnabled={false}
+                        value={pastorRequest.en}
+                        onChangeText={t => setPastorRequest({ ...pastorRequest, en: t })}
+                      />
+                    </View>
+                  </View>
 
-                {showPicker && (
-                  <View style={styles.categoryList}>
-                    {prayerCategories.map(cat => (
-                      <TouchableOpacity
-                        key={cat}
-                        style={[styles.catOption, pastorRequest.category === cat && styles.catOptionActive]}
-                        onPress={() => {
-                          setPastorRequest({ ...pastorRequest, category: cat });
-                          setShowPicker(false);
-                        }}
-                      >
-                        <Text style={[styles.catOptionTxt, pastorRequest.category === cat && { color: '#fff' }]}>
-                          {cat}
+                  <View style={styles.inputGroup}>
+                    <Text style={[styles.inputLabel, isDark && { color: '#FFFFFF' }, !isDark && { color: '#0F172A' }]}>
+                      Detailed Prayer Request
+                    </Text>
+                    <View style={[
+                      styles.textArea,
+                      isDark && { backgroundColor: '#18181B', borderColor: 'rgba(255, 255, 255, 0.14)' },
+                      !isDark && { backgroundColor: '#FFFFFF', borderColor: '#CBD5E1', borderWidth: 1.5 }
+                    ]}>
+                      <TextInput
+                        placeholder="ప్రార్థన మనవి వివరాలను టైప్ చేయండి..."
+                        placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+                        style={[
+                          styles.textInput,
+                          { minHeight: 120, fontStyle: 'italic' },
+                          isDark && { color: '#FFFFFF' },
+                          !isDark && { color: '#0F172A' }
+                        ]}
+                        multiline
+                        scrollEnabled={false}
+                        value={pastorRequest.te}
+                        onChangeText={t => setPastorRequest({ ...pastorRequest, te: t })}
+                      />
+                    </View>
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={[styles.inputLabel, isDark && { color: '#FFFFFF' }, !isDark && { color: '#0F172A' }]}>
+                      Post as
+                    </Text>
+                    <TouchableOpacity
+                      style={[
+                        styles.pickerBtn,
+                        isDark && { backgroundColor: '#18181B', borderColor: 'rgba(255, 255, 255, 0.14)' },
+                        !isDark && { backgroundColor: '#FFFFFF', borderColor: '#CBD5E1', borderWidth: 1.5 }
+                      ]}
+                      onPress={() => setShowPostAs(!showPostAs)}
+                    >
+                      <Text style={[styles.pickerTxt, isDark && { color: '#FFFFFF' }, !isDark && { color: '#0F172A' }]}>
+                        {pastorRequest.postAs}
+                      </Text>
+                      <MoreVertical size={14} color={isDark ? '#94A3B8' : '#64748b'} />
+                    </TouchableOpacity>
+
+                    {showPostAs && (
+                      <View style={[
+                        styles.categoryList,
+                        isDark && { backgroundColor: '#18181B', borderColor: 'rgba(255, 255, 255, 0.14)' },
+                        !isDark && { backgroundColor: '#FFFFFF', borderColor: '#CBD5E1', borderWidth: 1.5 }
+                      ]}>
+                        {postAsOptions.map(opt => (
+                          <TouchableOpacity
+                            key={opt}
+                            style={[
+                              styles.catOption,
+                              isDark && { borderBottomColor: 'rgba(255, 255, 255, 0.08)' },
+                              !isDark && { borderBottomColor: '#E2E8F0' },
+                              pastorRequest.postAs === opt && (isDark ? { backgroundColor: '#2563EB' } : styles.catOptionActive)
+                            ]}
+                            onPress={() => {
+                              setPastorRequest({ ...pastorRequest, postAs: opt });
+                              setShowPostAs(false);
+                            }}
+                          >
+                            <Text style={[
+                              styles.catOptionTxt,
+                              isDark && { color: '#FFFFFF' },
+                              !isDark && { color: '#0F172A' },
+                              pastorRequest.postAs === opt && { color: '#FFFFFF', fontWeight: '800' }
+                            ]}>
+                              {opt}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.publishBtn,
+                      {
+                        borderRadius: 999,
+                        marginTop: 14,
+                        marginBottom: 40,
+                      },
+                      isDark
+                        ? { backgroundColor: '#FFFFFF' }
+                        : { backgroundColor: '#000000' },
+                      submitting && { opacity: 0.7 }
+                    ]}
+                    onPress={handlePublish}
+                    disabled={submitting}
+                  >
+                    {submitting ? (
+                      <ActivityIndicator color={isDark ? '#000000' : '#FFFFFF'} />
+                    ) : (
+                      <>
+                        <Megaphone size={16} color={isDark ? '#000000' : '#FFFFFF'} style={{ marginRight: 8 }} />
+                        <Text style={[styles.publishBtnTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
+                          Submit Prayer Request
                         </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Prayer request text — English</Text>
-                <View style={styles.textArea}>
-                  <TextInput
-                    placeholder="Type the prayer request details..."
-                    style={[styles.textInput, { minHeight: 120 }]}
-                    multiline
-                    scrollEnabled={false}
-                    value={pastorRequest.en}
-                    onChangeText={t => setPastorRequest({ ...pastorRequest, en: t })}
-                  />
-                </View>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Detailed Prayer Request</Text>
-                <View style={styles.textArea}>
-                  <TextInput
-                    placeholder="ప్రార్థన మనవి వివరాలను టైప్ చేయండి..."
-                    style={[styles.textInput, { minHeight: 120, fontStyle: 'italic' }]}
-                    multiline
-                    scrollEnabled={false}
-                    value={pastorRequest.te}
-                    onChangeText={t => setPastorRequest({ ...pastorRequest, te: t })}
-                  />
-                </View>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Post as</Text>
-                <TouchableOpacity
-                  style={styles.pickerBtn}
-                  onPress={() => setShowPostAs(!showPostAs)}
-                >
-                  <Text style={styles.pickerTxt}>{pastorRequest.postAs}</Text>
-                  <MoreVertical size={14} color="#64748b" />
-                </TouchableOpacity>
-
-                {showPostAs && (
-                  <View style={styles.categoryList}>
-                    {postAsOptions.map(opt => (
-                      <TouchableOpacity
-                        key={opt}
-                        style={[styles.catOption, pastorRequest.postAs === opt && styles.catOptionActive]}
-                        onPress={() => {
-                          setPastorRequest({ ...pastorRequest, postAs: opt });
-                          setShowPostAs(false);
-                        }}
-                      >
-                        <Text style={[styles.catOptionTxt, pastorRequest.postAs === opt && { color: '#fff' }]}>
-                          {opt}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-              </View>
-
-              <TouchableOpacity
-                style={[styles.publishBtn, submitting && { opacity: 0.7 }, { marginTop: 10, marginBottom: 40 }]}
-                onPress={handlePublish}
-                disabled={submitting}
-              >
-                {submitting ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <>
-                    <Megaphone size={16} color="#fff" style={{ marginRight: 8 }} />
-                    <Text style={styles.publishBtnTxt}>Submit Prayer Request</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-              <View style={{ height: 400 }} />
-            </ScrollView>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                  <View style={{ height: 400 }} />
+                </ScrollView>
               </View>
             </KeyboardAvoidingView>
           </SafeAreaView>
@@ -1854,21 +2391,47 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
       </Modal>
       {/* ── Top Menu Modal ── */}
       <Modal transparent visible={showTopMenu} animationType="fade" onRequestClose={() => setShowTopMenu(false)}>
-        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setShowTopMenu(false)}>
-          <View style={{ position: 'absolute', top: 90, right: 20, backgroundColor: '#fff', borderRadius: 12, padding: 8, elevation: 10, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10, width: 220 }}>
+        <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' }} activeOpacity={1} onPress={() => setShowTopMenu(false)}>
+          <View style={{
+            position: 'absolute',
+            top: 90,
+            right: 20,
+            backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+            borderRadius: 14,
+            padding: 8,
+            elevation: 10,
+            shadowColor: '#000',
+            shadowOpacity: 0.25,
+            shadowRadius: 10,
+            width: 220,
+            borderWidth: 1,
+            borderColor: isDark ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0',
+          }}>
             <TouchableOpacity 
-              style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', flexDirection: 'row', alignItems: 'center', gap: 10 }}
+              style={{
+                padding: 12,
+                borderBottomWidth: 1,
+                borderBottomColor: isDark ? '#27272A' : '#F1F5F9',
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+              }}
               onPress={() => { setShowTopMenu(false); setShowCreateModal(true); }}
             >
-              <Plus size={18} color={COLORS.ink} />
-              <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.ink }}>New Prayer</Text>
+              <Plus size={18} color={isDark ? '#FFFFFF' : '#0F172A'} />
+              <Text style={{ fontSize: 14, fontWeight: '700', color: isDark ? '#FFFFFF' : '#0F172A' }}>New Prayer</Text>
             </TouchableOpacity>
             <TouchableOpacity 
-              style={{ padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}
+              style={{
+                padding: 12,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+              }}
               onPress={() => { setShowTopMenu(false); setShowDownloadModal(true); }}
             >
-              <FileDown size={18} color={COLORS.ink} />
-              <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.ink }}>Download Requests</Text>
+              <FileDown size={18} color={isDark ? '#FFFFFF' : '#0F172A'} />
+              <Text style={{ fontSize: 14, fontWeight: '700', color: isDark ? '#FFFFFF' : '#0F172A' }}>Download Requests</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -1877,41 +2440,114 @@ export default function AdminPrayerModeration({ navigation, route, routeParams }
       {/* ── Download PDF Modal ── */}
       <Modal transparent visible={showDownloadModal} animationType="slide" onRequestClose={() => setShowDownloadModal(false)}>
         <View style={styles.createModalOverlay}>
-          <View style={[styles.createModalContent, { height: 'auto', paddingBottom: 40 }]}>
-            <View style={styles.createModalHeader}>
-              <Text style={styles.createModalTitle}>Download Report</Text>
-              <TouchableOpacity onPress={() => setShowDownloadModal(false)} style={styles.closeBtn}>
-                <XCircle size={24} color={COLORS.inkSoft} />
+          <View style={[
+            styles.createModalContent,
+            { height: 'auto', paddingBottom: 40 },
+            isDark && {
+              backgroundColor: '#18181B',
+              borderWidth: 1,
+              borderColor: 'rgba(255, 255, 255, 0.14)',
+            },
+            !isDark && {
+              backgroundColor: '#FFFFFF',
+              borderWidth: 1,
+              borderColor: '#E2E8F0',
+            }
+          ]}>
+            <View style={[
+              styles.createModalHeader,
+              isDark && {
+                backgroundColor: '#18181B',
+                borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+              },
+              !isDark && {
+                backgroundColor: '#FFFFFF',
+                borderBottomColor: '#E2E8F0',
+              }
+            ]}>
+              <Text style={[styles.createModalTitle, isDark && { color: '#FFFFFF' }, !isDark && { color: '#0F172A' }]}>Download Report</Text>
+              <TouchableOpacity
+                onPress={() => setShowDownloadModal(false)}
+                style={[
+                  styles.closeBtn,
+                  isDark && { backgroundColor: '#27272A' },
+                  !isDark && { backgroundColor: '#F1F5F9' }
+                ]}
+              >
+                <XCircle size={22} color={isDark ? '#94A3B8' : '#64748B'} />
               </TouchableOpacity>
             </View>
             <View style={{ padding: 24 }}>
-              <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.ink, marginBottom: 12 }}>Select Filter</Text>
-              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 24 }}>
-                {(['all', 'pending', 'answered'] as const).map(f => (
-                  <TouchableOpacity
-                    key={f}
-                    onPress={() => setPdfFilter(f)}
-                    style={{
-                      paddingHorizontal: 16,
-                      paddingVertical: 10,
-                      borderRadius: 20,
-                      backgroundColor: pdfFilter === f ? COLORS.ink : COLORS.parchment,
-                      borderWidth: 1,
-                      borderColor: pdfFilter === f ? COLORS.ink : COLORS.rule,
-                    }}
-                  >
-                    <Text style={{ color: pdfFilter === f ? '#fff' : COLORS.inkSoft, fontWeight: '700', fontSize: 13 }}>
-                      {f === 'all' ? `All (${prayers.length})` : f === 'pending' ? `Pending (${pendingPrayers.length})` : `Answered (${answeredPrayers.length})`}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+              <Text style={{ fontSize: 14, fontWeight: '800', color: isDark ? '#FFFFFF' : '#0F172A', marginBottom: 12 }}>Select Filter</Text>
+              <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 24 }}>
+                {(['all', 'pending', 'answered'] as const).map(f => {
+                  const isSelected = pdfFilter === f;
+                  return (
+                    <TouchableOpacity
+                      key={f}
+                      onPress={() => setPdfFilter(f)}
+                      style={[
+                        {
+                          flex: 1,
+                          paddingVertical: 11,
+                          paddingHorizontal: 6,
+                          borderRadius: 999,
+                          borderWidth: 1.5,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        },
+                        isDark
+                          ? (isSelected
+                              ? { backgroundColor: '#2563EB', borderColor: '#3B82F6' }
+                              : { backgroundColor: '#27272A', borderColor: 'rgba(255, 255, 255, 0.12)' })
+                          : (isSelected
+                              ? { backgroundColor: '#0F172A', borderColor: '#0F172A' }
+                              : { backgroundColor: '#F8FAFC', borderColor: '#CBD5E1' })
+                      ]}
+                    >
+                      <Text
+                        style={{
+                          color: isSelected ? '#FFFFFF' : (isDark ? '#CBD5E1' : '#475569'),
+                          fontWeight: '700',
+                          fontSize: 12,
+                          textAlign: 'center',
+                        }}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                      >
+                        {f === 'all' ? `All (${prayers.length})` : f === 'pending' ? `Pending (${pendingPrayers.length})` : `Answered (${answeredPrayers.length})`}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
               <TouchableOpacity
                 onPress={() => exportPrayersToPDF(pdfFilter)}
-                style={{ backgroundColor: COLORS.goldDeep, borderRadius: 12, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+                style={[
+                  {
+                    borderRadius: 999,
+                    paddingVertical: 15,
+                    paddingHorizontal: 20,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 10,
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.15,
+                    shadowRadius: 6,
+                    elevation: 3,
+                  },
+                  isDark
+                    ? { backgroundColor: '#FFFFFF' }
+                    : { backgroundColor: '#000000' }
+                ]}
+                activeOpacity={0.8}
               >
-                <FileDown size={20} color="#fff" />
-                <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>Download Prayer Requests</Text>
+                <FileDown size={20} color={isDark ? '#000000' : '#FFFFFF'} />
+                <Text style={{ color: isDark ? '#000000' : '#FFFFFF', fontSize: 15, fontWeight: '800', letterSpacing: 0.2 }}>
+                  Download Prayer Requests
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1971,10 +2607,35 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   },
   newBtnTxt: { color: '#1a2d5a', fontSize: 13, fontWeight: '800', letterSpacing: 0.3 },
 
-  statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 18 },
-  statCard: { flex: 1, backgroundColor: COLORS.paper, borderRadius: 16, paddingVertical: 18, alignItems: 'center', elevation: 3, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, borderWidth: 1, borderColor: COLORS.rule },
-  statVal: { fontSize: 24, fontWeight: '900', fontFamily: FONTS.serif },
-  statLbl: { fontSize: 11, color: COLORS.inkSoft, marginTop: 4, fontWeight: '600' },
+  statsRow: { flexDirection: 'row', justifyContent: 'center', gap: 12, marginBottom: 18, marginTop: 4 },
+  statBox: {
+    flex: 1,
+    maxWidth: 136,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    position: 'relative',
+  },
+  statGlassInner: {
+    width: '100%',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    position: 'relative',
+  },
+  statNotch: { position: 'absolute', top: -1, width: 32, height: 3.5, borderBottomLeftRadius: 4, borderBottomRightRadius: 4 },
+  num: { fontFamily: FONTS.serif, fontSize: 24, fontWeight: '700', marginBottom: 2 },
+  statLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  statLabel: { fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 1.1, color: COLORS.inkSoft, fontWeight: '700' },
+  activeIndicatorDot: { width: 6, height: 6, borderRadius: 3 },
+  statHintTxt: { fontSize: 8.5, color: '#94A3B8', fontWeight: '600', marginTop: 2, letterSpacing: 0.3 },
 
   listHd: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   listHdTitle: { fontSize: 14, fontWeight: '800', color: COLORS.ink, textTransform: 'uppercase', letterSpacing: 0.5 },
@@ -1990,7 +2651,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   ansBadge: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 4, backgroundColor: '#DCFCE7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
   ansBadgeTxt: { fontSize: 9, fontWeight: '800', color: '#15803D' },
 
-  pTextContainer: { backgroundColor: 'rgba(0,0,0,0.02)', borderRadius: 12, padding: 18, marginBottom: 15, borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)' },
+  pTextContainer: { backgroundColor: '#F8FAFC', borderRadius: 12, padding: 16, marginBottom: 15, borderWidth: 1.5, borderColor: '#CBD5E1' },
   pText: { fontSize: 14, color: COLORS.ink, lineHeight: 22, fontFamily: FONTS.serif },
 
   pFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -2005,25 +2666,25 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   pastorSection: { backgroundColor: COLORS.paper, borderRadius: 16, padding: 20, marginTop: 20, borderWidth: 1, borderColor: COLORS.rule },
   pastorSecTitle: { fontSize: 14, fontWeight: '800', color: COLORS.ink, marginBottom: 20 },
   inputGroup: { marginBottom: 15 },
-  inputLabel: { fontSize: 12, fontWeight: '800', color: COLORS.ink, marginBottom: 8 },
-  textArea: { backgroundColor: '#fff', borderWidth: 1, borderColor: COLORS.rule, borderRadius: 12, minHeight: 80, paddingHorizontal: 12, marginBottom: 10 },
-  textInput: { fontSize: 13, color: COLORS.ink, paddingVertical: 12, textAlignVertical: 'top', fontFamily: FONTS.serif },
-  pickerBtn: { height: 50, backgroundColor: '#fff', borderWidth: 1, borderColor: COLORS.rule, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15 },
-  pickerTxt: { fontSize: 14, color: COLORS.ink, fontWeight: '600' },
-  categoryList: { backgroundColor: '#fff', borderWidth: 1, borderColor: COLORS.rule, borderRadius: 12, padding: 4, marginTop: 4, elevation: 5, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10 },
-  catOption: { paddingVertical: 14, paddingHorizontal: 15, borderBottomWidth: 0.5, borderBottomColor: COLORS.rule },
-  catOptionActive: { backgroundColor: COLORS.goldBright },
-  catOptionTxt: { fontSize: 14, color: COLORS.ink, fontWeight: '500' },
-  publishBtn: { height: 56, backgroundColor: COLORS.ink, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 10, elevation: 4, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10 },
+  inputLabel: { fontSize: 12, fontWeight: '800', color: '#0F172A', marginBottom: 8 },
+  textArea: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 12, minHeight: 80, paddingHorizontal: 12, marginBottom: 10 },
+  textInput: { fontSize: 13, color: '#0F172A', paddingVertical: 12, textAlignVertical: 'top', fontFamily: FONTS.serif },
+  pickerBtn: { height: 50, backgroundColor: '#fff', borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15 },
+  pickerTxt: { fontSize: 14, color: '#0F172A', fontWeight: '600' },
+  categoryList: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 12, padding: 4, marginTop: 4, elevation: 5, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10 },
+  catOption: { paddingVertical: 14, paddingHorizontal: 15, borderBottomWidth: 0.5, borderBottomColor: '#E2E8F0' },
+  catOptionActive: { backgroundColor: '#2563EB' },
+  catOptionTxt: { fontSize: 14, color: '#0F172A', fontWeight: '500' },
+  publishBtn: { height: 52, backgroundColor: '#000000', borderRadius: 999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 10, elevation: 4, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10 },
   publishBtnTxt: { color: '#fff', fontSize: 15, fontWeight: '800', fontFamily: FONTS.serif },
 
   // Search Styles
-  searchBox: { height: 50, backgroundColor: '#fff', borderWidth: 1, borderColor: COLORS.rule, borderRadius: 12, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', paddingHorizontal: 15, gap: 10 },
-  searchInput: { flex: 1, fontSize: 14, color: COLORS.ink, fontFamily: FONTS.serif },
-  searchResults: { backgroundColor: '#fff', borderWidth: 1, borderColor: COLORS.rule, borderRadius: 12, marginTop: 4, maxHeight: 200, overflow: 'hidden', elevation: 5, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10 },
-  searchItem: { padding: 14, borderBottomWidth: 0.5, borderBottomColor: COLORS.rule, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  searchItemName: { fontSize: 14, fontWeight: '800', color: COLORS.ink, fontFamily: FONTS.serif },
-  searchItemPhone: { fontSize: 12, color: COLORS.inkSoft, marginTop: 2 },
+  searchBox: { height: 50, backgroundColor: '#fff', borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 12, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', paddingHorizontal: 15, gap: 10 },
+  searchInput: { flex: 1, fontSize: 14, color: '#0F172A', fontFamily: FONTS.serif },
+  searchResults: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 12, marginTop: 4, maxHeight: 200, overflow: 'hidden', elevation: 5, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10 },
+  searchItem: { padding: 14, borderBottomWidth: 0.5, borderBottomColor: '#E2E8F0', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  searchItemName: { fontSize: 14, fontWeight: '800', color: '#0F172A', fontFamily: FONTS.serif },
+  searchItemPhone: { fontSize: 12, color: '#64748B', marginTop: 2 },
   selectedBadge: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: COLORS.ink, paddingHorizontal: 14, paddingVertical: 12, borderRadius: 10, marginTop: 8 },
   selectedBadgeTxt: { color: '#fff', fontSize: 13, fontWeight: '800' },
   
@@ -2039,18 +2700,18 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     textAlignVertical: 'top',
   },
 
-  detailModalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.75)', justifyContent: 'flex-end' },
+  detailModalOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.75)', justifyContent: 'flex-end' },
   detailModalContainer: { backgroundColor: '#F8FAFC', borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: '90%', shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.25, shadowRadius: 16, elevation: 12 },
   detailModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 18, borderBottomWidth: 1, borderBottomColor: '#E2E8F0', backgroundColor: '#FFFFFF', borderTopLeftRadius: 28, borderTopRightRadius: 28 },
   detailModalCloseBtn: { padding: 4 },
-  createModalOverlay: { flex: 1, backgroundColor: 'rgba(21, 28, 51, 0.75)', justifyContent: 'flex-end' },
-  createModalContent: { backgroundColor: COLORS.parchment, borderTopLeftRadius: 30, borderTopRightRadius: 30, height: '85%' },
-  createModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, backgroundColor: COLORS.paper, borderTopLeftRadius: 30, borderTopRightRadius: 30, borderBottomWidth: 1, borderBottomColor: COLORS.rule },
-  createModalTitle: { fontSize: 18, fontWeight: '900', color: COLORS.ink, fontFamily: FONTS.serif },
-  closeBtn: { padding: 4, backgroundColor: COLORS.clayBg, borderRadius: 20 },
+  createModalOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.75)', justifyContent: 'flex-end' },
+  createModalContent: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 30, borderTopRightRadius: 30, height: '85%' },
+  createModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, backgroundColor: '#FFFFFF', borderTopLeftRadius: 30, borderTopRightRadius: 30, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
+  createModalTitle: { fontSize: 18, fontWeight: '900', color: '#0F172A', fontFamily: FONTS.serif },
+  closeBtn: { padding: 4, backgroundColor: '#F1F5F9', borderRadius: 20 },
 
   // Success Modal Styles
-  successModalOverlay: { flex: 1, backgroundColor: 'rgba(21, 28, 51, 0.75)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  successModalOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.75)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   successCard: { width: '100%', backgroundColor: '#fff', borderRadius: 24, padding: 32, alignItems: 'center', elevation: 10, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 20 },
   successIconBox: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.moss, justifyContent: 'center', alignItems: 'center', marginBottom: 20, shadowColor: COLORS.moss, shadowOpacity: 0.4, shadowRadius: 12, elevation: 6 },
   successTitle: { fontSize: 22, fontWeight: '900', color: COLORS.ink, fontFamily: FONTS.serif, marginBottom: 8, textAlign: 'center' },
@@ -2085,11 +2746,11 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     borderTopColor: '#E2E8F0',
   },
   sectionBox: {
-    backgroundColor: '#FAF5FF',
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#DDD6FE',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
   },
   sectionHeaderRow: {
     flexDirection: 'row',
@@ -2100,7 +2761,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   sectionTitle: {
     fontSize: 12,
     fontWeight: '800',
-    color: '#6B21A8',
+    color: '#0F172A',
     textTransform: 'uppercase',
     letterSpacing: 0.3,
   },
@@ -2114,6 +2775,45 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#EF4444',
+  },
+
+  // Single Unified BCV Selection Styles
+  singleBcvBox: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  singleBcvIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  singleBcvLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#64748B',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  singleBcvVal: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  singleBcvPlaceholder: {
+    color: '#94A3B8',
+    fontWeight: '500',
   },
 
   // BCV Selection Fields Row
@@ -2160,7 +2860,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   // Scripture Display Card
   selectScriptureHint: {
     fontSize: 12,
-    color: '#7C3AED',
+    color: '#64748B',
     fontStyle: 'italic',
     marginTop: 4,
     lineHeight: 18,
@@ -2232,10 +2932,10 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     marginBottom: 6,
   },
   personalResponseInput: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
     borderColor: '#CBD5E1',
-    borderRadius: 8,
+    borderRadius: 10,
     padding: 12,
     fontSize: 14,
     color: COLORS.ink,
@@ -2341,15 +3041,16 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   // ── BCV Picker Modal Styles ──
   pickerOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
     justifyContent: 'flex-end',
   },
   pickerContainer: {
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    height: '80%',
-    maxHeight: 650,
+    height: '82%',
+    maxHeight: 680,
+    paddingBottom: Platform.OS === 'android' ? 24 : 34,
   },
   pickerHeader: {
     flexDirection: 'row',
@@ -2390,6 +3091,88 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     paddingVertical: 9,
     fontSize: 13,
     color: '#1E293B',
+  },
+  testamentBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    marginTop: 10,
+    marginBottom: 10,
+    gap: 8,
+  },
+  testamentBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1.2,
+  },
+  testamentBadgeActiveDark: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#FFFFFF',
+  },
+  testamentBadgeInactiveDark: {
+    backgroundColor: '#18181B',
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  testamentBadgeActiveLight: {
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
+  },
+  testamentBadgeInactiveLight: {
+    backgroundColor: '#F1F5F9',
+    borderColor: '#E2E8F0',
+  },
+  testamentBadgeTxt: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  testamentBadgeTxtActiveDark: {
+    color: '#000000',
+  },
+  testamentBadgeTxtInactiveDark: {
+    color: '#A1A1AA',
+  },
+  testamentBadgeTxtActiveLight: {
+    color: '#FFFFFF',
+  },
+  testamentBadgeTxtInactiveLight: {
+    color: '#475569',
+  },
+  testamentCountPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 999,
+  },
+  testamentCountPillActiveDark: {
+    backgroundColor: '#000000',
+  },
+  testamentCountPillInactiveDark: {
+    backgroundColor: '#27272A',
+  },
+  testamentCountPillActiveLight: {
+    backgroundColor: '#334155',
+  },
+  testamentCountPillInactiveLight: {
+    backgroundColor: '#E2E8F0',
+  },
+  testamentCountTxt: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  testamentCountTxtActiveDark: {
+    color: '#FFFFFF',
+  },
+  testamentCountTxtInactiveDark: {
+    color: '#A1A1AA',
+  },
+  testamentCountTxtActiveLight: {
+    color: '#FFFFFF',
+  },
+  testamentCountTxtInactiveLight: {
+    color: '#64748B',
   },
   testamentTabBar: {
     flexDirection: 'row',
