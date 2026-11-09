@@ -2253,36 +2253,57 @@ class ServiceRosterService {
    */
   generateRunSheetHtml(plan: ServicePlan, churchName: string = 'Rhema Global Ministries'): string {
     const formattedDate = formatDateMonthYear(plan.date) || 'Worship Service';
+    const formattedStartTime = formatTimeTo12Hour(plan.startTime);
+    const formattedEndTime = formatTimeTo12Hour(plan.endTime);
     const runSheetItems = plan.runSheet || [];
     const setlistItems = plan.setlist || [];
 
+    // Parse assignments
+    const assignmentsList: Array<{ roleTitle: string; memberName: string }> = [];
+    if (plan.assignments) {
+      Object.entries(plan.assignments).forEach(([roleId, memberName]) => {
+        if (memberName && memberName.trim()) {
+          const roleTitle = roleId.replace('role_', '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+          assignmentsList.push({ roleTitle, memberName });
+        }
+      });
+    }
+
     const runSheetRows = runSheetItems.map(item => `
       <tr>
-        <td style="text-align: center; font-weight: bold; width: 35px;">${item.order || '-'}</td>
-        <td style="white-space: nowrap; font-weight: 600; width: 110px;">${formatTimeTo12Hour(item.startTime)} - ${formatTimeTo12Hour(item.endTime)}</td>
-        <td>
-          <div style="font-weight: 700; font-size: 13.5px; color: #0F172A;">${item.program}</div>
-          ${item.instructions ? `<div style="font-size: 11px; color: #64748B; margin-top: 2px;">${item.instructions}</div>` : ''}
+        <td style="text-align: center; font-weight: 700; width: 32px; color: #64748B;">${item.order || '-'}</td>
+        <td style="white-space: nowrap; font-weight: 700; width: 130px; color: #0F172A; font-variant-numeric: tabular-nums;">
+          ${formatTimeTo12Hour(item.startTime)} - ${formatTimeTo12Hour(item.endTime)}
         </td>
-        <td style="font-size: 11px; text-transform: uppercase; color: #475569;">${item.category?.replace('_', ' ') || '-'}</td>
-        <td style="text-align: center; font-weight: 600; width: 55px;">${item.durationMinutes}m</td>
-        <td style="font-weight: 600; color: #1E3A8A;">${item.responsiblePerson || 'Unassigned'}</td>
-        <td style="font-size: 11.5px; color: #475569;">${item.supportingTeam || '-'}</td>
+        <td>
+          <div style="font-weight: 700; font-size: 13px; color: #0F172A;">${item.program}</div>
+          ${item.instructions ? `<div style="font-size: 10.5px; color: #64748B; margin-top: 2px; font-style: italic;">• ${item.instructions}</div>` : ''}
+        </td>
+        <td style="width: 105px;">
+          <span class="cat-badge">${item.category?.replace(/_/g, ' ') || '-'}</span>
+        </td>
+        <td style="text-align: center; font-weight: 700; width: 45px; color: #475569;">${item.durationMinutes}m</td>
+        <td style="font-weight: 700; color: #1E392A; width: 160px;">
+          ${item.responsiblePerson || '<span style="color:#94A3B8; font-weight: normal;">Unassigned</span>'}
+        </td>
+        <td style="font-size: 11px; color: #475569; width: 110px;">${item.supportingTeam || '-'}</td>
       </tr>
     `).join('');
 
     const setlistRows = setlistItems.map((s, idx) => `
       <tr>
-        <td style="text-align: center; font-weight: bold; width: 35px;">${idx + 1}</td>
+        <td style="text-align: center; font-weight: 700; width: 32px; color: #64748B;">${idx + 1}</td>
         <td>
-          <div style="font-weight: 700; font-size: 13px;">${s.title}</div>
-          ${s.titleTe ? `<div style="font-size: 11.5px; color: #64748B;">${s.titleTe}</div>` : ''}
+          <div style="font-weight: 700; font-size: 13px; color: #0F172A;">${s.title}</div>
+          ${s.titleTe ? `<div style="font-size: 11px; color: #B45309; margin-top: 1px;">${s.titleTe}</div>` : ''}
         </td>
-        <td style="text-align: center; font-weight: 800; color: #2563EB;">${s.key || 'G'}</td>
-        <td style="text-align: center; font-weight: 600;">${s.tempo ? `${s.tempo} BPM` : '120'}</td>
-        <td style="text-align: center;">${s.timeSignature || '4/4'}</td>
-        <td style="font-weight: 600;">${s.ledBy || 'Worship Leader'}</td>
-        <td style="font-size: 11px; color: #64748B;">${s.rehearsalNotes || '-'}</td>
+        <td style="text-align: center; width: 65px;">
+          <span class="key-badge">Key ${s.key || 'G'}</span>
+        </td>
+        <td style="text-align: center; font-weight: 700; width: 65px; color: #475569;">${s.tempo ? `${s.tempo} BPM` : '120'}</td>
+        <td style="text-align: center; width: 50px; color: #475569;">${s.timeSignature || '4/4'}</td>
+        <td style="font-weight: 700; color: #1E392A; width: 140px;">${s.ledBy || 'Worship Leader'}</td>
+        <td style="font-size: 10.5px; color: #64748B;">${s.rehearsalNotes || '-'}</td>
       </tr>
     `).join('');
 
@@ -2291,24 +2312,173 @@ class ServiceRosterService {
       <html>
       <head>
         <meta charset="utf-8" />
-        <title>${plan.serviceTitle} - Run-Sheet</title>
+        <title>${plan.serviceTitle} - Service Run-Sheet</title>
         <style>
-          @page { size: A4 portrait; margin: 14mm 10mm; }
-          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #0F172A; margin: 0; padding: 0; font-size: 12px; }
-          .header { text-align: center; border-bottom: 2.5px solid #1E3A8A; padding-bottom: 10px; margin-bottom: 12px; }
-          .church-name { font-size: 17px; font-weight: 900; letter-spacing: 0.8px; color: #1E3A8A; text-transform: uppercase; margin-bottom: 2px; }
-          .doc-title { font-size: 13px; font-weight: 800; color: #D97706; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 6px; }
-          .service-meta-grid { display: flex; justify-content: space-between; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; font-size: 11.5px; }
-          .meta-item { margin: 2px 0; }
-          .meta-label { font-weight: 700; color: #475569; }
-          .meta-val { font-weight: 800; color: #0F172A; }
-          .section-heading { font-size: 12px; font-weight: 800; color: #1E3A8A; text-transform: uppercase; letter-spacing: 0.5px; border-left: 4px solid #1E3A8A; padding-left: 6px; margin: 12px 0 6px 0; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 11px; }
-          th { background: #1E3A8A; color: #FFFFFF; font-weight: 800; text-align: left; padding: 6px 8px; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.3px; }
-          td { padding: 5px 8px; border-bottom: 1px solid #E2E8F0; vertical-align: top; }
-          tr:nth-child(even) td { background-color: #F8FAFC; }
-          .notes-box { background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 6px; padding: 8px; margin-top: 10px; font-size: 11px; }
-          .footer { text-align: center; font-size: 9.5px; color: #94A3B8; margin-top: 16px; border-top: 1px solid #E2E8F0; padding-top: 6px; }
+          @page { size: A4 portrait; margin: 12mm 10mm; }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: #0F172A;
+            margin: 0;
+            padding: 0;
+            font-size: 11.5px;
+            line-height: 1.4;
+          }
+          .header {
+            text-align: center;
+            border-bottom: 2px solid #1E293B;
+            padding-bottom: 8px;
+            margin-bottom: 12px;
+          }
+          .church-name {
+            font-size: 18px;
+            font-weight: 900;
+            letter-spacing: 0.8px;
+            color: #1E293B;
+            text-transform: uppercase;
+            margin-bottom: 3px;
+          }
+          .doc-title {
+            font-size: 11.5px;
+            font-weight: 800;
+            color: #2E6B4F;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+          }
+          .service-meta-grid {
+            display: flex;
+            justify-content: space-between;
+            background: #F8FAFC;
+            border: 1px solid #E2E8F0;
+            border-radius: 8px;
+            padding: 10px 14px;
+            margin-bottom: 14px;
+            font-size: 11px;
+            gap: 16px;
+          }
+          .meta-col {
+            flex: 1;
+            min-width: 0;
+          }
+          .meta-item {
+            margin: 3px 0;
+          }
+          .meta-label {
+            font-weight: 700;
+            color: #64748B;
+            font-size: 9.5px;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+          }
+          .meta-val {
+            font-weight: 800;
+            color: #0F172A;
+          }
+          .section-heading {
+            font-size: 11px;
+            font-weight: 800;
+            color: #1E293B;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            border-left: 3.5px solid #2E6B4F;
+            padding-left: 8px;
+            margin: 14px 0 8px 0;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 14px;
+            font-size: 11px;
+            page-break-inside: auto;
+          }
+          thead {
+            display: table-header-group;
+          }
+          tr {
+            page-break-inside: avoid;
+          }
+          th {
+            background: #1E293B;
+            color: #FFFFFF;
+            font-weight: 800;
+            text-align: left;
+            padding: 7px 8px;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+          }
+          td {
+            padding: 6px 8px;
+            border-bottom: 1px solid #E2E8F0;
+            vertical-align: middle;
+          }
+          tr:nth-child(even) td {
+            background-color: #F8FAFC;
+          }
+          .cat-badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 9.5px;
+            font-weight: 700;
+            text-transform: uppercase;
+            background: #F1F5F9;
+            color: #475569;
+            border: 1px solid #E2E8F0;
+            white-space: nowrap;
+          }
+          .key-badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 800;
+            background: #EFF6FF;
+            color: #1D4ED8;
+            border: 1px solid #BFDBFE;
+          }
+          .assignments-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 14px;
+          }
+          .assignment-item {
+            background: #F8FAFC;
+            border: 1px solid #E2E8F0;
+            border-radius: 6px;
+            padding: 6px 10px;
+            min-width: 130px;
+            flex: 1;
+          }
+          .assignment-role {
+            font-size: 9.5px;
+            font-weight: 700;
+            color: #64748B;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+          }
+          .assignment-name {
+            font-size: 11.5px;
+            font-weight: 800;
+            color: #0F172A;
+            margin-top: 1px;
+          }
+          .notes-box {
+            background: #FFFBEB;
+            border: 1px solid #FDE68A;
+            border-radius: 6px;
+            padding: 9px 12px;
+            margin-top: 10px;
+            font-size: 11px;
+          }
+          .footer {
+            text-align: center;
+            font-size: 9px;
+            color: #94A3B8;
+            margin-top: 16px;
+            border-top: 1px solid #E2E8F0;
+            padding-top: 6px;
+          }
         </style>
       </head>
       <body>
@@ -2318,33 +2488,45 @@ class ServiceRosterService {
         </div>
 
         <div class="service-meta-grid">
-          <div>
+          <div class="meta-col">
             <div class="meta-item"><span class="meta-label">SERVICE:</span> <span class="meta-val">${plan.serviceTitle}</span></div>
-            <div class="meta-item"><span class="meta-label">DATE & TIME:</span> <span class="meta-val">${formattedDate} · ${plan.startTime} - ${plan.endTime} (${plan.totalDurationMinutes || 120}m)</span></div>
-            <div class="meta-item"><span class="meta-label">SANCTUARY:</span> <span class="meta-val">${plan.location || 'Church Sanctuary'}</span></div>
+            <div class="meta-item"><span class="meta-label">DATE & TIME:</span> <span class="meta-val">${formattedDate} · ${formattedStartTime} - ${formattedEndTime} (${plan.totalDurationMinutes || 120}m)</span></div>
+            <div class="meta-item"><span class="meta-label">LOCATION:</span> <span class="meta-val">${plan.location || 'Church Sanctuary'}</span></div>
           </div>
-          <div>
+          <div class="meta-col">
             <div class="meta-item"><span class="meta-label">PREACHER:</span> <span class="meta-val">${plan.preacher || 'Pastor'}</span></div>
             ${plan.theme ? `<div class="meta-item"><span class="meta-label">THEME:</span> <span class="meta-val">"${plan.theme}"</span></div>` : ''}
             ${plan.bibleReference ? `<div class="meta-item"><span class="meta-label">SCRIPTURE:</span> <span class="meta-val">${plan.bibleReference}</span></div>` : ''}
           </div>
         </div>
 
+        ${assignmentsList.length > 0 ? `
+          <div class="section-heading">MINISTRY RESPONSIBILITIES</div>
+          <div class="assignments-grid">
+            ${assignmentsList.map(a => `
+              <div class="assignment-item">
+                <div class="assignment-role">${a.roleTitle}</div>
+                <div class="assignment-name">${a.memberName}</div>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+
         <div class="section-heading">CHRONOLOGICAL RUN-SHEET TIMELINE (${runSheetItems.length} SEGMENTS)</div>
         <table>
           <thead>
             <tr>
-              <th>#</th>
-              <th>Time</th>
-              <th>Segment / Program</th>
-              <th>Category</th>
-              <th>Dur</th>
-              <th>Minister / Leader</th>
-              <th>Team</th>
+              <th style="width: 32px; text-align: center;">#</th>
+              <th style="width: 130px;">Time</th>
+              <th>Program / Segment</th>
+              <th style="width: 105px;">Category</th>
+              <th style="width: 45px; text-align: center;">Dur</th>
+              <th style="width: 160px;">Assigned Minister</th>
+              <th style="width: 110px;">Ministry Team</th>
             </tr>
           </thead>
           <tbody>
-            ${runSheetRows || '<tr><td colspan="7" style="text-align: center; color: #94A3B8;">No activities scheduled</td></tr>'}
+            ${runSheetRows || '<tr><td colspan="7" style="text-align: center; color: #94A3B8; padding: 14px;">No activities scheduled</td></tr>'}
           </tbody>
         </table>
 
@@ -2353,13 +2535,13 @@ class ServiceRosterService {
           <table>
             <thead>
               <tr>
-                <th>#</th>
+                <th style="width: 32px; text-align: center;">#</th>
                 <th>Song Title</th>
-                <th style="text-align: center;">Key</th>
-                <th style="text-align: center;">BPM</th>
-                <th style="text-align: center;">Time</th>
-                <th>Song Leader</th>
-                <th>Notes / Musician Cues</th>
+                <th style="text-align: center; width: 65px;">Key</th>
+                <th style="text-align: center; width: 65px;">BPM</th>
+                <th style="text-align: center; width: 50px;">Time</th>
+                <th style="width: 140px;">Song Leader</th>
+                <th>Musician / Audio Notes</th>
               </tr>
             </thead>
             <tbody>
@@ -2370,8 +2552,8 @@ class ServiceRosterService {
 
         ${plan.additionalInstructions ? `
           <div class="notes-box">
-            <strong>DIRECTOR & BOOTH NOTES:</strong><br/>
-            ${plan.additionalInstructions}
+            <strong style="color: #92400E; text-transform: uppercase; font-size: 10.5px;">Director & Sound Booth Notes:</strong><br/>
+            <span style="color: #451A03; margin-top: 2px; display: inline-block;">${plan.additionalInstructions}</span>
           </div>
         ` : ''}
 

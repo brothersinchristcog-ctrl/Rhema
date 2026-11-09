@@ -2601,43 +2601,17 @@ export default function AdminServicePlanner({ navigation }: any) {
             <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.2} />
           </TouchableOpacity>
 
-          <View style={{ flex: 1, paddingHorizontal: 10, justifyContent: 'center' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'nowrap' }}>
-              <Text style={[styles.headerTitle, { color: primaryText, flexShrink: 1 }]} numberOfLines={1}>
-                {activePlannerTab === 'setlist' ? 'Worship Setlist' :
-                  activePlannerTab === 'queue' ? 'Assignment Queue' :
-                    activePlannerTab === 'rehearsals' ? 'Service Rehearsals' :
-                      activePlannerTab === 'attendance' ? 'Volunteer Attendance' :
-                        activePlannerTab === 'analytics' ? 'Roster Analytics' :
-                          activePlannerTab === 'teams' ? 'Ministry Teams' :
-                            activePlannerTab === 'skills' ? 'Verified Skills' :
-                              activePlannerTab === 'templates' ? 'Service Templates' :
-                                selectedPlan ? selectedPlan.serviceTitle : 'Service Roster'}
-              </Text>
-              {selectedPlan && (activePlannerTab === 'builder' || activePlannerTab === 'setlist') && (
-                <View style={[
-                  styles.statusPill,
-                  selectedPlan.status === 'published' ? styles.statusPillPublished :
-                    selectedPlan.status === 'live' ? styles.statusPillLive :
-                      selectedPlan.status === 'completed' ? styles.statusPillCompleted :
-                        styles.statusPillDraft
-                ]}>
-                  <Text style={[
-                    styles.statusPillTxt,
-                    selectedPlan.status === 'published' ? { color: '#047857' } :
-                      selectedPlan.status === 'live' ? { color: '#DC2626' } :
-                        selectedPlan.status === 'completed' ? { color: '#475569' } :
-                          { color: '#64748B' }
-                  ]}>
-                    {selectedPlan.status.toUpperCase()}
-                  </Text>
-                </View>
-              )}
-            </View>
-            <Text style={[styles.headerSubtitle, { color: secondaryText }]} numberOfLines={1}>
-              {activePlannerTab === 'setlist' ? `${selectedPlan?.setlist?.length || 0} songs · ~${totalSetlistMinutes}m praise` :
-                activePlannerTab === 'queue' ? `${assignmentQueues.filter(q => q.status === 'confirmed').length} confirmed · ${assignmentQueues.filter(q => q.status === 'pending').length} pending` :
-                selectedPlan ? `📅 ${formatDateMonthYear(selectedPlan.date)} · ${formatDisplayTime(selectedPlan.startTime)} - ${formatDisplayTime(selectedPlan.endTime)}` : 'Plan & coordinate church worship'}
+          <View style={{ flex: 1, paddingHorizontal: 12, justifyContent: 'center' }}>
+            <Text style={[styles.headerTitle, { color: primaryText }]} numberOfLines={1}>
+              {activePlannerTab === 'setlist' ? 'Worship Setlist' :
+                activePlannerTab === 'queue' ? 'Assignment Queue' :
+                  activePlannerTab === 'rehearsals' ? 'Service Rehearsals' :
+                    activePlannerTab === 'attendance' ? 'Volunteer Attendance' :
+                      activePlannerTab === 'analytics' ? 'Roster Analytics' :
+                        activePlannerTab === 'teams' ? 'Ministry Teams' :
+                          activePlannerTab === 'skills' ? 'Verified Skills' :
+                            activePlannerTab === 'templates' ? 'Service Templates' :
+                              'Service Roster'}
             </Text>
           </View>
 
@@ -2989,34 +2963,51 @@ export default function AdminServicePlanner({ navigation }: any) {
             <View style={styles.tabContent}>
               <View style={[styles.selectedBanner, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <View style={{ flex: 1, paddingRight: 8 }}>
+                  <View style={{ flex: 1, paddingRight: 10 }}>
                     <Text style={styles.selectedBannerTag}>SELECTED SERVICE</Text>
                     <Text style={[styles.selectedBannerTitle, { color: primaryText }]}>
                       {selectedPlan.serviceTitle}
                     </Text>
-                    <Text style={[styles.selectedBannerMeta, { color: secondaryText }]}>
-                      📅 {formatDateMonthYear(selectedPlan.date)} · ⏰ {formatDisplayTime(selectedPlan.startTime)} - {formatDisplayTime(selectedPlan.endTime)} · 📍 {selectedPlan.location}
-                    </Text>
-                    {selectedPlan.theme ? (
-                      <Text style={[styles.selectedBannerTheme, { color: '#D97706' }]}>
-                        Theme: "{selectedPlan.theme}" {selectedPlan.bibleReference ? `(${selectedPlan.bibleReference})` : ''}
-                      </Text>
-                    ) : null}
+
+                    {/* Date and Time neatly displayed below title with proper spacing */}
+                    <View style={{ marginTop: 8, gap: 5 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                          <Calendar size={13} color="#2E6B4F" />
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: primaryText }}>
+                            {formatDateMonthYear(selectedPlan.date)}
+                          </Text>
+                        </View>
+                        <Text style={{ color: secondaryText, fontSize: 12 }}>•</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                          <Clock size={13} color="#D97706" />
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: primaryText }}>
+                            {formatDisplayTime(selectedPlan.startTime)} - {formatDisplayTime(selectedPlan.endTime)}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {selectedPlan.location ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 1 }}>
+                          <MapPin size={13} color="#DC2626" />
+                          <Text style={{ fontSize: 12.5, fontWeight: '500', color: secondaryText }} numberOfLines={1}>
+                            {selectedPlan.location}
+                          </Text>
+                        </View>
+                      ) : null}
+
+                      {selectedPlan.theme ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 1 }}>
+                          <BookOpen size={13} color="#D97706" />
+                          <Text style={{ fontSize: 12, fontWeight: '600', color: '#D97706' }} numberOfLines={1}>
+                            Theme: "{selectedPlan.theme}" {selectedPlan.bibleReference ? `(${selectedPlan.bibleReference})` : ''}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
                   </View>
 
                   <View style={{ flexDirection: 'row', gap: 6 }}>
-                    <TouchableOpacity
-                      style={[styles.bannerActionBtn, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: cardBorder }]}
-                      onPress={() => {
-                        navigation.navigate('LiveStageHUD', {
-                          serviceId: selectedPlan.id,
-                          churchId,
-                          plan: selectedPlan
-                        });
-                      }}
-                    >
-                      <Radio size={14} color={secondaryBtnText} />
-                    </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.bannerActionBtn, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: cardBorder }]}
                       onPress={openEditDetailsModal}
