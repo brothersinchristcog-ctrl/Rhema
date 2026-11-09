@@ -818,7 +818,7 @@ class ServiceRosterService {
       updatedAt: firestore.FieldValue.serverTimestamp()
     };
 
-    await newDoc.set(created);
+    await newDoc.set(this.sanitizeForFirestore(created));
     return created;
   }
 
@@ -890,7 +890,7 @@ class ServiceRosterService {
    */
   async createMinistryTeam(churchId: string, team: Partial<MinistryTeam>): Promise<MinistryTeam> {
     const col = this.getMinistryTeamsCol(churchId);
-    const docRef = col.doc();
+    const docRef = team.id ? col.doc(team.id) : col.doc();
 
     const created: MinistryTeam = {
       id: docRef.id,
@@ -898,17 +898,18 @@ class ServiceRosterService {
       name: team.name || 'New Ministry Team',
       description: team.description || '',
       color: team.color || '#1E3A8A',
-      leaderId: team.leaderId,
-      leaderName: team.leaderName,
-      leaderPhone: team.leaderPhone,
-      memberIds: team.memberIds || [],
+      leaderId: team.leaderId || '',
+      leaderName: team.leaderName || '',
+      leaderPhone: team.leaderPhone || '',
+      memberIds: (team.memberIds || []).filter((id): id is string => Boolean(id)),
       positions: team.positions || [],
       active: team.active ?? true,
       createdAt: firestore.FieldValue.serverTimestamp(),
       updatedAt: firestore.FieldValue.serverTimestamp()
     };
 
-    await docRef.set(created);
+    const sanitized = this.sanitizeForFirestore(created);
+    await docRef.set(sanitized, { merge: true });
     return created;
   }
 
@@ -916,30 +917,34 @@ class ServiceRosterService {
    * Update ministry team
    */
   async updateMinistryTeam(churchId: string, teamId: string, updates: Partial<MinistryTeam>): Promise<void> {
-    await this.getMinistryTeamsCol(churchId).doc(teamId).update({
+    const payload = this.sanitizeForFirestore({
       ...updates,
+      ...(updates.memberIds ? { memberIds: updates.memberIds.filter((id): id is string => Boolean(id)) } : {}),
       updatedAt: firestore.FieldValue.serverTimestamp()
     });
+    await this.getMinistryTeamsCol(churchId).doc(teamId).set(payload, { merge: true });
   }
 
   /**
    * Add member to a ministry team
    */
   async addMemberToTeam(churchId: string, teamId: string, memberId: string): Promise<void> {
-    await this.getMinistryTeamsCol(churchId).doc(teamId).update({
+    if (!memberId) return;
+    await this.getMinistryTeamsCol(churchId).doc(teamId).set({
       memberIds: firestore.FieldValue.arrayUnion(memberId),
       updatedAt: firestore.FieldValue.serverTimestamp()
-    });
+    }, { merge: true });
   }
 
   /**
    * Remove member from a ministry team
    */
   async removeMemberFromTeam(churchId: string, teamId: string, memberId: string): Promise<void> {
-    await this.getMinistryTeamsCol(churchId).doc(teamId).update({
+    if (!memberId) return;
+    await this.getMinistryTeamsCol(churchId).doc(teamId).set({
       memberIds: firestore.FieldValue.arrayRemove(memberId),
       updatedAt: firestore.FieldValue.serverTimestamp()
-    });
+    }, { merge: true });
   }
 
   /**
@@ -957,7 +962,7 @@ class ServiceRosterService {
         createdAt: firestore.FieldValue.serverTimestamp(),
         updatedAt: firestore.FieldValue.serverTimestamp()
       };
-      await docRef.set(teamObj, { merge: true });
+      await docRef.set(this.sanitizeForFirestore(teamObj), { merge: true });
       seeded.push(teamObj);
     }
 
@@ -1022,7 +1027,7 @@ class ServiceRosterService {
       updatedAt: firestore.FieldValue.serverTimestamp()
     };
 
-    await docRef.set(record, { merge: true });
+    await docRef.set(this.sanitizeForFirestore(record), { merge: true });
     return record;
   }
 
@@ -1036,13 +1041,13 @@ class ServiceRosterService {
     verifiedBy: string,
     rejectionReason?: string
   ): Promise<void> {
-    await this.getMemberSkillsCol(churchId).doc(skillId).update({
+    await this.getMemberSkillsCol(churchId).doc(skillId).update(this.sanitizeForFirestore({
       verificationStatus: status,
-      verifiedBy,
+      verifiedBy: verifiedBy || 'Admin',
       verifiedAt: firestore.FieldValue.serverTimestamp(),
       ...(rejectionReason ? { rejectionReason } : {}),
       updatedAt: firestore.FieldValue.serverTimestamp()
-    });
+    }));
   }
 
   /**
@@ -1080,10 +1085,10 @@ class ServiceRosterService {
     const docId = `${record.memberId}_${targetMonth}`;
     const docRef = this.getMemberAvailabilityCol(churchId).doc(docId);
 
-    await docRef.set({
+    await docRef.set(this.sanitizeForFirestore({
       id: docId,
       churchId: churchId || 'rhema',
-      memberId: record.memberId,
+      memberId: record.memberId || '',
       memberName: record.memberName || '',
       monthYear: targetMonth,
       unavailableDates: record.unavailableDates || [],
@@ -1091,7 +1096,7 @@ class ServiceRosterService {
       maxServicesPerMonth: record.maxServicesPerMonth,
       notes: record.notes || '',
       updatedAt: firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
+    }), { merge: true });
   }
 
   /**
@@ -2346,13 +2351,13 @@ class ServiceRosterService {
   // ─────────────────────────────────────────────────────────────────────────────
 
   async updateLiveServiceState(churchId: string, serviceId: string, liveState: Partial<LiveServiceState>): Promise<void> {
-    await this.getServicePlansCol(churchId).doc(serviceId).update({
+    await this.getServicePlansCol(churchId).doc(serviceId).update(this.sanitizeForFirestore({
       liveState: {
         ...liveState,
         lastUpdated: firestore.FieldValue.serverTimestamp()
       },
       updatedAt: firestore.FieldValue.serverTimestamp()
-    });
+    }));
   }
 
   listenLiveServiceState(
@@ -2422,12 +2427,12 @@ class ServiceRosterService {
       completionStatus: idx === 0 ? ('in_progress' as const) : ('pending' as const)
     }));
 
-    await planRef.update({
+    await planRef.update(this.sanitizeForFirestore({
       status: 'live',
       liveState: initialLiveState,
       runSheet: updatedRunSheet,
       updatedAt: firestore.FieldValue.serverTimestamp()
-    });
+    }));
   }
 
   /**
