@@ -17,6 +17,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import {
+  ArrowLeft,
   Calendar,
   CalendarDays,
   Clock,
@@ -114,7 +115,7 @@ const CATEGORY_COLORS: Record<ActivityCategory, { bg: string; text: string }> = 
   bible_reading: { bg: '#E0F2FE', text: '#0369A1' },
   offering: { bg: '#ECFDF5', text: '#065F46' },
   announcements: { bg: '#FFFBEB', text: '#B45309' },
-  sermon: { bg: '#EFF6FF', text: '#1E40AF' },
+  sermon: { bg: '#FEF3C7', text: '#92400E' },
   communion: { bg: '#FCE7F3', text: '#831843' },
   special_performance: { bg: '#F5F3FF', text: '#6D28D9' },
   closing_prayer: { bg: '#FEF2F2', text: '#991B1B' },
@@ -155,9 +156,21 @@ export default function AdminServicePlanner({ navigation }: any) {
   const inputBg = isDark ? '#27272A' : '#FAFAF9';
   const inputBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1';
   const cardBorder = isDark ? 'rgba(255, 255, 255, 0.14)' : '#CBD5E1';
+
+  // Unified Rhema Button Color Tokens (strictly matching Promises, Sermons, Events)
+  const primaryBtnBg = isDark ? '#FFFFFF' : '#000000';
+  const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
+  const publishBtnBg = isDark ? '#10B981' : '#2E6B4F'; // Forest Green / Emerald from AdminEventEditor
+  const secondaryBtnBg = isDark ? '#27272A' : '#F8FAFC';
+  const secondaryBtnBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1';
+  const secondaryBtnText = isDark ? '#E4E4E7' : '#334155';
+  const dangerBtnBg = isDark ? '#27272A' : '#F8FAFC';
+  const dangerBtnBorder = isDark ? 'rgba(248, 113, 113, 0.35)' : '#FECACA';
+  const dangerBtnText = isDark ? '#F87171' : '#DC2626';
+
   const { activeChurch } = useChurch();
   const { member } = useAuth();
-  const { setActiveTab } = useContext(AdminTabContext);
+  const { setActiveTab, setTabByName } = useContext(AdminTabContext);
 
   const churchId = activeChurch?.id || 'rhema';
 
@@ -207,7 +220,7 @@ export default function AdminServicePlanner({ navigation }: any) {
   const [selectedTeam, setSelectedTeam] = useState<MinistryTeam | null>(null);
   const [teamNameInput, setTeamNameInput] = useState('');
   const [teamDescInput, setTeamDescInput] = useState('');
-  const [teamColorInput, setTeamColorInput] = useState('#1E3A8A');
+  const [teamColorInput, setTeamColorInput] = useState('#2E6B4F');
   const [teamLeaderId, setTeamLeaderId] = useState<string | undefined>(undefined);
   const [teamMemberIds, setTeamMemberIds] = useState<string[]>([]);
   const [savingTeam, setSavingTeam] = useState(false);
@@ -1813,7 +1826,7 @@ export default function AdminServicePlanner({ navigation }: any) {
     setSelectedTeam(null);
     setTeamNameInput('');
     setTeamDescInput('');
-    setTeamColorInput('#1E3A8A');
+    setTeamColorInput('#2E6B4F');
     setTeamLeaderId(undefined);
     setTeamMemberIds([]);
     setShowTeamModal(true);
@@ -1823,7 +1836,7 @@ export default function AdminServicePlanner({ navigation }: any) {
     setSelectedTeam(team);
     setTeamNameInput(team.name);
     setTeamDescInput(team.description || '');
-    setTeamColorInput(team.color || '#1E3A8A');
+    setTeamColorInput(team.color || '#2E6B4F');
     setTeamLeaderId(team.leaderId);
     setTeamMemberIds(team.memberIds || []);
     setShowTeamModal(true);
@@ -2442,10 +2455,20 @@ export default function AdminServicePlanner({ navigation }: any) {
 
   return (
     <View style={[styles.container, { backgroundColor: screenBg }]}>
-      {/* ─── Top Header ─── */}
+      {/* ─── Top Header (Matching Daily Promises, Events, Sermons) ─── */}
       <View style={[styles.header, { paddingTop: insets.top + 8, backgroundColor: cardSurface, borderBottomColor: borderColor }]}>
         <View style={styles.headerRow}>
-          <View style={{ flex: 1 }}>
+          {/* Circular Back Button (identical to Promises, Sermons, Events) */}
+          <TouchableOpacity
+            onPress={() => { if (setTabByName) setTabByName('Dashboard'); else if (navigation?.canGoBack?.()) navigation.goBack(); else setActiveTab(0); }}
+            style={[styles.circularBackBtn, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? '#3F3F46' : '#E2E8F0' }]}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.2} />
+          </TouchableOpacity>
+
+          <View style={{ flex: 1, paddingHorizontal: 10 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <View style={styles.headerBadge}>
                 <Sparkles size={11} color="#D97706" />
@@ -2464,167 +2487,217 @@ export default function AdminServicePlanner({ navigation }: any) {
               )}
             </View>
             <Text style={[styles.headerTitle, { color: primaryText }]} numberOfLines={1}>
-              {activePlannerTab === 'setlist' ? 'Worship Setlist & Songs' :
-                activePlannerTab === 'queue' ? 'Assignment Queue & Cascade' :
+              {activePlannerTab === 'setlist' ? 'Worship Setlist' :
+                activePlannerTab === 'queue' ? 'Assignment Queue' :
                   activePlannerTab === 'rehearsals' ? 'Service Rehearsals' :
                     activePlannerTab === 'attendance' ? 'Volunteer Attendance' :
-                      activePlannerTab === 'analytics' ? 'Roster Analytics & Health' :
+                      activePlannerTab === 'analytics' ? 'Roster Analytics' :
                         activePlannerTab === 'teams' ? 'Ministry Teams' :
-                          activePlannerTab === 'skills' ? 'Member Skills & Verification' :
+                          activePlannerTab === 'skills' ? 'Verified Skills' :
                             activePlannerTab === 'templates' ? 'Service Templates' :
                               selectedPlan ? selectedPlan.serviceTitle : 'Service Roster'}
             </Text>
             <Text style={[styles.headerSubtitle, { color: secondaryText }]} numberOfLines={1}>
-              {activePlannerTab === 'setlist' ? `${selectedPlan?.setlist?.length || 0} songs · ~${totalSetlistMinutes} mins praise flow` :
-                activePlannerTab === 'queue' ? `${assignmentQueues.filter(q => q.status === 'confirmed').length} confirmed · ${assignmentQueues.filter(q => q.status === 'pending').length} pending queue(s)` :
-                  activePlannerTab === 'rehearsals' ? `${rehearsals.length} rehearsal(s) scheduled for this service` :
-                    activePlannerTab === 'attendance' ? `${serviceVolunteers.length} volunteer(s) assigned for this service` :
-                      activePlannerTab === 'analytics' ? 'Turnout rates, burnout risk & worship analytics' :
-                        activePlannerTab === 'teams' ? `${ministryTeams.length} active ministry teams · ${churchMembers.length} members` :
-                          activePlannerTab === 'skills' ? `${memberSkills.length} skills recorded · ${pendingSkillsCount} pending review` :
-                            selectedPlan ? `📅 ${selectedPlan.date} · ${selectedPlan.startTime} - ${selectedPlan.endTime}` : 'Plan & coordinate church worship'}
+              {activePlannerTab === 'setlist' ? `${selectedPlan?.setlist?.length || 0} songs · ~${totalSetlistMinutes}m praise` :
+                activePlannerTab === 'queue' ? `${assignmentQueues.filter(q => q.status === 'confirmed').length} confirmed · ${assignmentQueues.filter(q => q.status === 'pending').length} pending` :
+                selectedPlan ? `📅 ${selectedPlan.date} · ${selectedPlan.startTime} - ${selectedPlan.endTime}` : 'Plan & coordinate church worship'}
             </Text>
           </View>
 
-          {activePlannerTab === 'rehearsals' ? (
-            <TouchableOpacity
-              style={styles.newServiceBtn}
-              onPress={openCreateRehearsalModal}
-              activeOpacity={0.85}
+          {/* Right Action Button (Pill shaped, black in light mode, white in dark mode - NO BLUE) */}
+          <TouchableOpacity
+            style={[
+              styles.newServiceBtn,
+              {
+                backgroundColor: primaryBtnBg,
+                borderColor: primaryBtnBg,
+              }
+            ]}
+            onPress={
+              activePlannerTab === 'rehearsals' ? openCreateRehearsalModal :
+              activePlannerTab === 'attendance' ? handleCheckInAllVolunteers :
+              activePlannerTab === 'analytics' ? fetchAnalytics :
+              activePlannerTab === 'setlist' ? openSongPicker :
+              activePlannerTab === 'teams' ? openCreateTeamModal :
+              activePlannerTab === 'skills' ? () => setShowAddSkillModal(true) :
+              openCreateModal
+            }
+            activeOpacity={0.85}
+          >
+            <Plus size={14} color={primaryBtnText} strokeWidth={2.5} />
+            <Text
+              style={[
+                styles.newServiceBtnTxt,
+                { color: primaryBtnText }
+              ]}
+              numberOfLines={1}
             >
-              <Plus size={16} color="#FFFFFF" />
-              <Text style={styles.newServiceBtnTxt}>Add Rehearsal</Text>
-            </TouchableOpacity>
-          ) : activePlannerTab === 'attendance' ? (
-            <TouchableOpacity
-              style={[styles.newServiceBtn, { backgroundColor: '#059669' }]}
-              onPress={handleCheckInAllVolunteers}
-              activeOpacity={0.85}
-              disabled={savingAttendance || serviceVolunteers.length === 0}
-            >
-              <UserCheck size={16} color="#FFFFFF" />
-              <Text style={styles.newServiceBtnTxt}>Check-In All</Text>
-            </TouchableOpacity>
-          ) : activePlannerTab === 'analytics' ? (
-            <TouchableOpacity
-              style={styles.newServiceBtn}
-              onPress={fetchAnalytics}
-              activeOpacity={0.85}
-              disabled={loadingAnalytics}
-            >
-              <RefreshCw size={14} color="#FFFFFF" />
-              <Text style={styles.newServiceBtnTxt}>Refresh</Text>
-            </TouchableOpacity>
-          ) : activePlannerTab === 'setlist' ? (
-            <TouchableOpacity
-              style={styles.newServiceBtn}
-              onPress={openSongPicker}
-              activeOpacity={0.85}
-            >
-              <Plus size={16} color="#FFFFFF" />
-              <Text style={styles.newServiceBtnTxt}>Add Song</Text>
-            </TouchableOpacity>
-          ) : activePlannerTab === 'teams' ? (
-            <TouchableOpacity
-              style={styles.newServiceBtn}
-              onPress={openCreateTeamModal}
-              activeOpacity={0.85}
-            >
-              <Plus size={16} color="#FFFFFF" />
-              <Text style={styles.newServiceBtnTxt}>Add Team</Text>
-            </TouchableOpacity>
-          ) : activePlannerTab === 'skills' ? (
-            <TouchableOpacity
-              style={styles.newServiceBtn}
-              onPress={() => setShowAddSkillModal(true)}
-              activeOpacity={0.85}
-            >
-              <Plus size={16} color="#FFFFFF" />
-              <Text style={styles.newServiceBtnTxt}>Add Skill</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={styles.newServiceBtn}
-              onPress={openCreateModal}
-              activeOpacity={0.85}
-            >
-              <Plus size={16} color="#FFFFFF" />
-              <Text style={styles.newServiceBtnTxt}>New Service</Text>
-            </TouchableOpacity>
-          )}
+              {activePlannerTab === 'rehearsals' ? 'Practice' :
+               activePlannerTab === 'attendance' ? 'Check-In' :
+               activePlannerTab === 'analytics' ? 'Refresh' :
+               activePlannerTab === 'setlist' ? 'Add Song' :
+               activePlannerTab === 'teams' ? 'Add Team' :
+               activePlannerTab === 'skills' ? 'Add Skill' :
+               'New Service'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
-        {/* ─── Navigation Tabs ─── */}
+        {/* ─── Navigation Tabs (Black active in light, white active in dark - NO BLUE) ─── */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsScroll}>
           <TouchableOpacity
-            style={[styles.tabBtn, activePlannerTab === 'calendar' && styles.tabBtnActive]}
+            style={[
+              styles.tabBtn,
+              activePlannerTab === 'calendar' ? {
+                backgroundColor: primaryBtnBg,
+                borderColor: primaryBtnBg,
+              } : {
+                backgroundColor: isDark ? '#18181B' : '#F8FAFC',
+                borderColor: cardBorder,
+              }
+            ]}
             onPress={() => setActivePlannerTab('calendar')}
           >
-            <CalendarDays size={14} color={activePlannerTab === 'calendar' ? '#FFFFFF' : secondaryText} />
-            <Text style={[styles.tabBtnTxt, activePlannerTab === 'calendar' && styles.tabBtnTxtActive]}>
+            <CalendarDays size={14} color={activePlannerTab === 'calendar' ? primaryBtnText : secondaryText} />
+            <Text style={[
+              styles.tabBtnTxt,
+              activePlannerTab === 'calendar' ? { color: primaryBtnText, fontWeight: '800' } : { color: secondaryText }
+            ]}>
               Services ({plans.length})
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabBtn, activePlannerTab === 'builder' && styles.tabBtnActive]}
+            style={[
+              styles.tabBtn,
+              activePlannerTab === 'builder' ? {
+                backgroundColor: primaryBtnBg,
+                borderColor: primaryBtnBg,
+              } : {
+                backgroundColor: isDark ? '#18181B' : '#F8FAFC',
+                borderColor: cardBorder,
+              }
+            ]}
             onPress={() => setActivePlannerTab('builder')}
             disabled={!selectedPlan}
           >
-            <Layers size={14} color={activePlannerTab === 'builder' ? '#FFFFFF' : secondaryText} />
-            <Text style={[styles.tabBtnTxt, activePlannerTab === 'builder' && styles.tabBtnTxtActive]}>
+            <Layers size={14} color={activePlannerTab === 'builder' ? primaryBtnText : secondaryText} />
+            <Text style={[
+              styles.tabBtnTxt,
+              activePlannerTab === 'builder' ? { color: primaryBtnText, fontWeight: '800' } : { color: secondaryText }
+            ]}>
               Order Builder {selectedPlan ? `(${selectedPlan.runSheet?.length || 0})` : ''}
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabBtn, activePlannerTab === 'setlist' && styles.tabBtnActive]}
+            style={[
+              styles.tabBtn,
+              activePlannerTab === 'setlist' ? {
+                backgroundColor: primaryBtnBg,
+                borderColor: primaryBtnBg,
+              } : {
+                backgroundColor: isDark ? '#18181B' : '#F8FAFC',
+                borderColor: cardBorder,
+              }
+            ]}
             onPress={() => setActivePlannerTab('setlist')}
             disabled={!selectedPlan}
           >
-            <Music size={14} color={activePlannerTab === 'setlist' ? '#FFFFFF' : secondaryText} />
-            <Text style={[styles.tabBtnTxt, activePlannerTab === 'setlist' && styles.tabBtnTxtActive]}>
+            <Music size={14} color={activePlannerTab === 'setlist' ? primaryBtnText : secondaryText} />
+            <Text style={[
+              styles.tabBtnTxt,
+              activePlannerTab === 'setlist' ? { color: primaryBtnText, fontWeight: '800' } : { color: secondaryText }
+            ]}>
               Worship Setlist {selectedPlan ? `(${selectedPlan.setlist?.length || 0})` : ''}
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabBtn, activePlannerTab === 'queue' && styles.tabBtnActive]}
+            style={[
+              styles.tabBtn,
+              activePlannerTab === 'queue' ? {
+                backgroundColor: primaryBtnBg,
+                borderColor: primaryBtnBg,
+              } : {
+                backgroundColor: isDark ? '#18181B' : '#F8FAFC',
+                borderColor: cardBorder,
+              }
+            ]}
             onPress={() => setActivePlannerTab('queue')}
             disabled={!selectedPlan}
           >
-            <ListOrdered size={14} color={activePlannerTab === 'queue' ? '#FFFFFF' : secondaryText} />
-            <Text style={[styles.tabBtnTxt, activePlannerTab === 'queue' && styles.tabBtnTxtActive]}>
+            <ListOrdered size={14} color={activePlannerTab === 'queue' ? primaryBtnText : secondaryText} />
+            <Text style={[
+              styles.tabBtnTxt,
+              activePlannerTab === 'queue' ? { color: primaryBtnText, fontWeight: '800' } : { color: secondaryText }
+            ]}>
               Assignments {selectedPlan ? `(${assignmentQueues.length})` : ''}
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabBtn, activePlannerTab === 'teams' && styles.tabBtnActive]}
+            style={[
+              styles.tabBtn,
+              activePlannerTab === 'teams' ? {
+                backgroundColor: primaryBtnBg,
+                borderColor: primaryBtnBg,
+              } : {
+                backgroundColor: isDark ? '#18181B' : '#F8FAFC',
+                borderColor: cardBorder,
+              }
+            ]}
             onPress={() => setActivePlannerTab('teams')}
           >
-            <Users size={14} color={activePlannerTab === 'teams' ? '#FFFFFF' : secondaryText} />
-            <Text style={[styles.tabBtnTxt, activePlannerTab === 'teams' && styles.tabBtnTxtActive]}>
+            <Users size={14} color={activePlannerTab === 'teams' ? primaryBtnText : secondaryText} />
+            <Text style={[
+              styles.tabBtnTxt,
+              activePlannerTab === 'teams' ? { color: primaryBtnText, fontWeight: '800' } : { color: secondaryText }
+            ]}>
               Ministry Teams ({ministryTeams.length})
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabBtn, activePlannerTab === 'skills' && styles.tabBtnActive]}
+            style={[
+              styles.tabBtn,
+              activePlannerTab === 'skills' ? {
+                backgroundColor: primaryBtnBg,
+                borderColor: primaryBtnBg,
+              } : {
+                backgroundColor: isDark ? '#18181B' : '#F8FAFC',
+                borderColor: cardBorder,
+              }
+            ]}
             onPress={() => setActivePlannerTab('skills')}
           >
-            <Award size={14} color={activePlannerTab === 'skills' ? '#FFFFFF' : secondaryText} />
-            <Text style={[styles.tabBtnTxt, activePlannerTab === 'skills' && styles.tabBtnTxtActive]}>
+            <Award size={14} color={activePlannerTab === 'skills' ? primaryBtnText : secondaryText} />
+            <Text style={[
+              styles.tabBtnTxt,
+              activePlannerTab === 'skills' ? { color: primaryBtnText, fontWeight: '800' } : { color: secondaryText }
+            ]}>
               Verified Skills {pendingSkillsCount > 0 ? `(${pendingSkillsCount} ⚠️)` : `(${memberSkills.length})`}
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabBtn, activePlannerTab === 'templates' && styles.tabBtnActive]}
+            style={[
+              styles.tabBtn,
+              activePlannerTab === 'templates' ? {
+                backgroundColor: primaryBtnBg,
+                borderColor: primaryBtnBg,
+              } : {
+                backgroundColor: isDark ? '#18181B' : '#F8FAFC',
+                borderColor: cardBorder,
+              }
+            ]}
             onPress={() => setActivePlannerTab('templates')}
           >
-            <BookOpen size={14} color={activePlannerTab === 'templates' ? '#FFFFFF' : secondaryText} />
-            <Text style={[styles.tabBtnTxt, activePlannerTab === 'templates' && styles.tabBtnTxtActive]}>
+            <BookOpen size={14} color={activePlannerTab === 'templates' ? primaryBtnText : secondaryText} />
+            <Text style={[
+              styles.tabBtnTxt,
+              activePlannerTab === 'templates' ? { color: primaryBtnText, fontWeight: '800' } : { color: secondaryText }
+            ]}>
               Templates ({templates.length})
             </Text>
           </TouchableOpacity>
@@ -2634,14 +2707,14 @@ export default function AdminServicePlanner({ navigation }: any) {
       {/* ─── Body Content ─── */}
       {loading ? (
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color="#1E3A8A" />
+          <ActivityIndicator size="large" color={primaryBtnBg} />
           <Text style={[styles.centerText, { color: secondaryText }]}>Loading service operations...</Text>
         </View>
       ) : (
         <ScrollView
           style={styles.bodyScroll}
           contentContainerStyle={{ paddingBottom: 100 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#1E3A8A']} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[primaryBtnBg]} />}
         >
           {/* TAB 1: CALENDAR & SERVICE SCHEDULE */}
           {activePlannerTab === 'calendar' && (
@@ -2685,7 +2758,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                       key={plan.id ? `plan_${plan.id}_${planIdx}` : `plan_${planIdx}`}
                       style={[
                         styles.planCard,
-                        { backgroundColor: cardSurface, borderColor: isSelected ? '#1E3A8A' : cardBorder },
+                        { backgroundColor: cardSurface, borderColor: isSelected ? primaryBtnBg : cardBorder },
                         isSelected && styles.planCardSelected
                       ]}
                       activeOpacity={0.85}
@@ -2745,15 +2818,15 @@ export default function AdminServicePlanner({ navigation }: any) {
                             </TouchableOpacity>
                           )}
                           <TouchableOpacity
-                            style={[styles.cardManageBtn, { backgroundColor: isDark ? 'rgba(30, 58, 138, 0.25)' : '#EFF6FF', borderColor: isDark ? '#1E3A8A' : '#BFDBFE' }]}
+                            style={[styles.cardManageBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
                             onPress={() => {
                               setSelectedPlan(plan);
                               setActivePlannerTab('builder');
                             }}
                             activeOpacity={0.8}
                           >
-                            <Layers size={12} color={isDark ? '#93C5FD' : '#1E3A8A'} style={{ marginRight: 4 }} />
-                            <Text style={[styles.cardManageBtnTxt, { color: isDark ? '#93C5FD' : '#1E3A8A' }]}>Order Builder</Text>
+                            <Layers size={12} color={secondaryBtnText} style={{ marginRight: 4 }} />
+                            <Text style={[styles.cardManageBtnTxt, { color: secondaryBtnText }]}>Order Builder</Text>
                           </TouchableOpacity>
                           <TouchableOpacity
                             style={[styles.cardDeleteBtn, { backgroundColor: isDark ? 'rgba(220, 38, 38, 0.15)' : '#FEF2F2', borderColor: isDark ? 'rgba(220, 38, 38, 0.35)' : '#FECACA' }]}
@@ -2810,13 +2883,13 @@ export default function AdminServicePlanner({ navigation }: any) {
                       style={[styles.bannerActionBtn, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: cardBorder }]}
                       onPress={openEditDetailsModal}
                     >
-                      <Edit3 size={14} color={isDark ? '#93C5FD' : '#1E3A8A'} />
+                      <Edit3 size={14} color={secondaryBtnText} />
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.bannerActionBtn, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: cardBorder }]}
                       onPress={() => setShowApplyTemplateModal(true)}
                     >
-                      <Copy size={14} color={isDark ? '#93C5FD' : '#1E3A8A'} />
+                      <Copy size={14} color={secondaryBtnText} />
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.bannerActionBtn, { backgroundColor: isDark ? 'rgba(220, 38, 38, 0.15)' : '#FEF2F2', borderColor: isDark ? 'rgba(220, 38, 38, 0.35)' : '#FCA5A5' }]}
@@ -2869,7 +2942,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                 {/* Run-sheet PDF & CSV Export Toolbar (Phase 9) */}
                 <View style={styles.exportToolbar}>
                   <TouchableOpacity
-                    style={[styles.exportBtn, { backgroundColor: '#1E3A8A' }]}
+                    style={[styles.exportBtn, { backgroundColor: primaryBtnBg }]}
                     onPress={handleExportPdf}
                     disabled={exportingPdf}
                   >
@@ -2968,7 +3041,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                       style={styles.applyTemplateBtn}
                       onPress={() => setShowApplyTemplateModal(true)}
                     >
-                      <Copy size={14} color="#1E3A8A" />
+                      <Copy size={14} color={secondaryBtnText} />
                       <Text style={styles.applyTemplateBtnTxt}>Apply Template</Text>
                     </TouchableOpacity>
                   </View>
@@ -3007,7 +3080,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                             </Text>
                           </View>
                           <View style={styles.timeBadge}>
-                            <Clock size={11} color="#1E3A8A" />
+                            <Clock size={11} color={secondaryText} />
                             <Text style={styles.timeBadgeTxt}>
                               {item.startTime} - {item.endTime} ({item.durationMinutes}m)
                             </Text>
@@ -3037,7 +3110,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                           style={styles.itemEditBtn}
                           onPress={() => openEditActivityModal(item)}
                         >
-                          <Edit3 size={14} color="#1E3A8A" />
+                          <Edit3 size={14} color={secondaryBtnText} />
                         </TouchableOpacity>
                         <TouchableOpacity
                           style={styles.itemDeleteBtn}
@@ -3188,13 +3261,13 @@ export default function AdminServicePlanner({ navigation }: any) {
                           style={styles.lyricsBtn}
                           onPress={() => openLyricsModal(item)}
                         >
-                          <FileText size={14} color="#1E3A8A" />
+                          <FileText size={14} color={secondaryBtnText} />
                         </TouchableOpacity>
                         <TouchableOpacity
                           style={styles.itemEditBtn}
                           onPress={() => openEditSetlistItem(item, index)}
                         >
-                          <Sliders size={14} color="#1E3A8A" />
+                          <Sliders size={14} color={secondaryBtnText} />
                         </TouchableOpacity>
                         <TouchableOpacity
                           style={styles.itemDeleteBtn}
@@ -3230,7 +3303,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                       style={[styles.bannerActionBtn, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: cardBorder }]}
                       onPress={openEditDetailsModal}
                     >
-                      <Edit3 size={14} color={isDark ? '#93C5FD' : '#1E3A8A'} />
+                      <Edit3 size={14} color={secondaryBtnText} />
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.bannerActionBtn, { backgroundColor: isDark ? 'rgba(220, 38, 38, 0.15)' : '#FEF2F2', borderColor: isDark ? 'rgba(220, 38, 38, 0.35)' : '#FCA5A5' }]}
@@ -3280,10 +3353,10 @@ export default function AdminServicePlanner({ navigation }: any) {
               </View>
 
               {/* Automatic Background Notifications Alert Box */}
-              <View style={[styles.cascadeAlertBox, { backgroundColor: isDark ? '#1E293B' : '#EFF6FF', borderColor: '#93C5FD', marginBottom: 12 }]}>
-                <Send size={15} color="#1E3A8A" style={{ marginTop: 2 }} />
+              <View style={[styles.cascadeAlertBox, { backgroundColor: isDark ? '#18181B' : '#F8FAFC', borderColor: cardBorder, marginBottom: 12 }]}>
+                <Send size={15} color={isDark ? '#10B981' : '#2E6B4F'} style={{ marginTop: 2 }} />
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.cascadeAlertTitle, { color: '#1E3A8A' }]}>
+                  <Text style={[styles.cascadeAlertTitle, { color: isDark ? '#10B981' : '#2E6B4F' }]}>
                     Automatic Background Notifications & Replacement
                   </Text>
                   <Text style={[styles.cascadeAlertBody, { color: secondaryText }]}>
@@ -3484,7 +3557,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                         style={styles.overrideBtn}
                         onPress={() => openManualOverrideModal(role.roleId, role.roleTitle)}
                       >
-                        <UserCheck size={12} color="#1E3A8A" />
+                        <UserCheck size={12} color={secondaryBtnText} />
                         <Text style={styles.overrideBtnTxt}>Direct Assign</Text>
                       </TouchableOpacity>
 
@@ -3587,7 +3660,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                             style={styles.itemEditBtn}
                             onPress={() => openEditRehearsalModal(reh)}
                           >
-                            <Edit3 size={14} color="#1E3A8A" />
+                            <Edit3 size={14} color={secondaryBtnText} />
                           </TouchableOpacity>
                           <TouchableOpacity
                             style={styles.itemDeleteBtn}
@@ -3605,8 +3678,8 @@ export default function AdminServicePlanner({ navigation }: any) {
                             const teamObj = ministryTeams.find(t => t.id === tId);
                             return (
                               <View key={tId ? `team_${tId}_${tIdx}` : `team_${tIdx}`} style={[styles.rehTeamPill, { backgroundColor: teamObj?.color ? `${teamObj.color}15` : '#E0E7FF' }]}>
-                                <Users size={11} color={teamObj?.color || '#1E3A8A'} />
-                                <Text style={[styles.rehTeamPillTxt, { color: teamObj?.color || '#1E3A8A' }]}>
+                                <Users size={11} color={teamObj?.color || '#2E6B4F'} />
+                                <Text style={[styles.rehTeamPillTxt, { color: teamObj?.color || '#2E6B4F' }]}>
                                   {teamObj?.name || tId}
                                 </Text>
                               </View>
@@ -3623,7 +3696,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                           </Text>
                           {practiceSongs.map((s, sIdx) => (
                             <View key={s.id ? `prac_${s.id}_${sIdx}` : `prac_${sIdx}`} style={styles.rehSongItemRow}>
-                              <Music size={12} color="#1E3A8A" />
+                              <Music size={12} color={secondaryText} />
                               <Text style={[styles.rehSongTitle, { color: primaryText }]} numberOfLines={1}>
                                 {s.title} {s.titleTe ? `(${s.titleTe})` : ''}
                               </Text>
@@ -3704,7 +3777,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                     <Text style={styles.attCounterLbl}>Absent</Text>
                   </View>
                   <View style={styles.attCounterItem}>
-                    <Text style={[styles.attCounterVal, { color: '#2563EB' }]}>{attendanceStats.excused}</Text>
+                    <Text style={[styles.attCounterVal, { color: '#64748B' }]}>{attendanceStats.excused}</Text>
                     <Text style={styles.attCounterLbl}>Excused</Text>
                   </View>
                   <View style={styles.attCounterItem}>
@@ -3861,14 +3934,14 @@ export default function AdminServicePlanner({ navigation }: any) {
                   onPress={fetchAnalytics}
                   disabled={loadingAnalytics}
                 >
-                  <RefreshCw size={13} color="#1E3A8A" />
+                  <RefreshCw size={13} color={secondaryBtnText} />
                   <Text style={styles.refreshAnalyticsBtnTxt}>Reload</Text>
                 </TouchableOpacity>
               </View>
 
               {loadingAnalytics ? (
                 <View style={styles.analyticsLoadingBox}>
-                  <ActivityIndicator size="large" color="#1E3A8A" />
+                  <ActivityIndicator size="large" color={primaryBtnBg} />
                   <Text style={[styles.analyticsLoadingTxt, { color: secondaryText }]}>
                     Analyzing church volunteer health and service metrics...
                   </Text>
@@ -3899,9 +3972,9 @@ export default function AdminServicePlanner({ navigation }: any) {
                     <View style={[styles.kpiCard, { backgroundColor: cardSurface, borderColor }]}>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                         <Text style={[styles.kpiLabel, { color: secondaryText }]}>Acceptance</Text>
-                        <CheckCircle2 size={16} color="#1E3A8A" />
+                        <CheckCircle2 size={16} color={isDark ? '#10B981' : '#2E6B4F'} />
                       </View>
-                      <Text style={[styles.kpiValue, { color: '#1E3A8A' }]}>
+                      <Text style={[styles.kpiValue, { color: primaryText }]}>
                         {analyticsData.acceptanceRatePercent}%
                       </Text>
                       <Text style={[styles.kpiSub, { color: secondaryText }]}>
@@ -4065,7 +4138,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                             </Text>
                           </View>
                           <View style={styles.songCountBadge}>
-                            <Music size={12} color="#1E3A8A" />
+                            <Music size={12} color={secondaryText} />
                             <Text style={styles.songCountTxt}>{song.count}x</Text>
                           </View>
                         </View>
@@ -4123,7 +4196,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                       activeOpacity={0.88}
                       onPress={() => openEditTeamModal(team)}
                     >
-                      <View style={[styles.teamColorBar, { backgroundColor: team.color || '#1E3A8A' }]} />
+                      <View style={[styles.teamColorBar, { backgroundColor: team.color || '#2E6B4F' }]} />
                       <View style={{ flex: 1, paddingVertical: 12, paddingHorizontal: 12 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -4146,7 +4219,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                             👑 Leader: <Text style={{ fontWeight: '700', color: primaryText }}>{team.leaderName || 'Unassigned'}</Text>
                           </Text>
                           <View style={styles.teamMembersCountBadge}>
-                            <Users size={12} color="#1E3A8A" />
+                            <Users size={12} color={secondaryText} />
                             <Text style={styles.teamMembersCountTxt}>{memberCount} Members</Text>
                           </View>
                         </View>
@@ -4163,7 +4236,7 @@ export default function AdminServicePlanner({ navigation }: any) {
             <View style={styles.tabContent}>
               <View style={styles.skillStatsRow}>
                 <View style={[styles.skillStatCard, { backgroundColor: cardSurface, borderColor }]}>
-                  <Text style={[styles.skillStatNum, { color: '#1E3A8A' }]}>{memberSkills.length}</Text>
+                  <Text style={[styles.skillStatNum, { color: primaryText }]}>{memberSkills.length}</Text>
                   <Text style={[styles.skillStatLbl, { color: secondaryText }]}>Total Skills</Text>
                 </View>
                 <View style={[styles.skillStatCard, { backgroundColor: cardSurface, borderColor }]}>
@@ -4173,7 +4246,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                   <Text style={[styles.skillStatLbl, { color: secondaryText }]}>Verified</Text>
                 </View>
                 <View style={[styles.skillStatCard, { backgroundColor: cardSurface, borderColor }]}>
-                  <Text style={[styles.skillStatNum, { color: pendingSkillsCount > 0 ? '#DC2626' : '#1E3A8A' }]}>
+                  <Text style={[styles.skillStatNum, { color: pendingSkillsCount > 0 ? '#DC2626' : primaryText }]}>
                     {pendingSkillsCount}
                   </Text>
                   <Text style={[styles.skillStatLbl, { color: secondaryText }]}>Pending Review</Text>
@@ -4244,7 +4317,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                               </Text>
                             </View>
                           </View>
-                          <Text style={[styles.skillNameText, { color: '#1E3A8A' }]}>
+                          <Text style={[styles.skillNameText, { color: primaryText }]}>
                             🎯 {skill.skillName} ({skill.proficiencyLevel?.toUpperCase() || 'INTERMEDIATE'})
                           </Text>
                           <Text style={[styles.skillCategoryMeta, { color: secondaryText }]}>
@@ -4315,7 +4388,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                       </Text>
                     ))}
                     {tpl.runSheetTemplate.length > 4 && (
-                      <Text style={[styles.templatePreviewMore, { color: '#1E3A8A' }]}>
+                      <Text style={[styles.templatePreviewMore, { color: isDark ? '#10B981' : '#2E6B4F' }]}>
                         + {tpl.runSheetTemplate.length - 4} more activities...
                       </Text>
                     )}
@@ -4381,7 +4454,7 @@ export default function AdminServicePlanner({ navigation }: any) {
 
             {/* Song List */}
             {loadingSongs ? (
-              <ActivityIndicator size="small" color="#1E3A8A" style={{ marginVertical: 30 }} />
+              <ActivityIndicator size="small" color={primaryBtnBg} style={{ marginVertical: 30 }} />
             ) : (
               <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
                 {filteredLibrarySongs.map((song, songIdx) => {
@@ -4392,16 +4465,16 @@ export default function AdminServicePlanner({ navigation }: any) {
                       style={[
                         styles.songPickItem,
                         { borderColor: cardBorder },
-                        alreadyInSetlist && { backgroundColor: isDark ? 'rgba(30, 58, 138, 0.25)' : '#EFF6FF', borderColor: '#1E3A8A' }
+                        alreadyInSetlist && { backgroundColor: isDark ? 'rgba(46, 107, 79, 0.2)' : '#ECFDF5', borderColor: publishBtnBg }
                       ]}
                       onPress={() => handleSelectSongFromLibrary(song)}
                       activeOpacity={0.7}
                     >
-                      <View style={[styles.songPickIconBox, alreadyInSetlist && { backgroundColor: '#1E3A8A' }]}>
+                      <View style={[styles.songPickIconBox, alreadyInSetlist && { backgroundColor: publishBtnBg }]}>
                         {alreadyInSetlist ? (
                           <Check size={16} color="#FFFFFF" strokeWidth={3} />
                         ) : (
-                          <Music size={16} color="#1E3A8A" />
+                          <Music size={16} color={primaryText} />
                         )}
                       </View>
                       <View style={{ flex: 1, paddingHorizontal: 10 }}>
@@ -4415,11 +4488,11 @@ export default function AdminServicePlanner({ navigation }: any) {
                       </View>
                       {alreadyInSetlist ? (
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                          <Check size={14} color="#1E3A8A" strokeWidth={3} />
-                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#1E3A8A' }}>Added</Text>
+                          <Check size={14} color={publishBtnBg} strokeWidth={3} />
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: publishBtnBg }}>Added</Text>
                         </View>
                       ) : (
-                        <Plus size={16} color="#1E3A8A" />
+                        <Plus size={16} color={primaryText} />
                       )}
                     </TouchableOpacity>
                   );
@@ -4666,7 +4739,7 @@ export default function AdminServicePlanner({ navigation }: any) {
               {/* English Lyrics */}
               {viewingLyricsSong?.lyricsEn ? (
                 <View style={styles.lyricsBlock}>
-                  <Text style={[styles.lyricsLangHeader, { color: '#1E3A8A' }]}>ENGLISH LYRICS / TRANSLITERATION</Text>
+                  <Text style={[styles.lyricsLangHeader, { color: primaryText }]}>ENGLISH LYRICS / TRANSLITERATION</Text>
                   <Text style={[styles.lyricsText, { color: primaryText }]}>
                     {viewingLyricsSong.lyricsEn}
                   </Text>
@@ -4707,8 +4780,8 @@ export default function AdminServicePlanner({ navigation }: any) {
             {/* Modal Header */}
             <View style={styles.modalHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-                <View style={[styles.modalHeaderIconBadge, { backgroundColor: isDark ? '#1E293B' : '#EFF6FF' }]}>
-                  <CalendarDays size={20} color="#1E3A8A" />
+                <View style={[styles.modalHeaderIconBadge, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+                  <CalendarDays size={20} color={primaryText} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.modalTitle, { color: primaryText }]}>
@@ -4748,7 +4821,7 @@ export default function AdminServicePlanner({ navigation }: any) {
               {/* CARD 1: BASIC INFORMATION */}
               <View style={[styles.formSectionCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
                 <View style={[styles.formCardHeaderRow, { borderBottomColor: borderColor }]}>
-                  <Sparkles size={14} color="#1E3A8A" />
+                  <Sparkles size={14} color={isDark ? '#10B981' : '#2E6B4F'} />
                   <Text style={[styles.formCardHeaderText, { color: primaryText }]}>BASIC INFORMATION</Text>
                 </View>
 
@@ -4786,7 +4859,7 @@ export default function AdminServicePlanner({ navigation }: any) {
               {/* CARD 2: DATE & SCHEDULE */}
               <View style={[styles.formSectionCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
                 <View style={[styles.formCardHeaderRow, { borderBottomColor: borderColor }]}>
-                  <Calendar size={14} color="#1E3A8A" />
+                  <Calendar size={14} color={isDark ? '#10B981' : '#2E6B4F'} />
                   <Text style={[styles.formCardHeaderText, { color: primaryText }]}>DATE & SCHEDULE</Text>
                 </View>
 
@@ -4796,8 +4869,8 @@ export default function AdminServicePlanner({ navigation }: any) {
                   onPress={() => setDatePickerVisible(true)}
                   activeOpacity={0.7}
                 >
-                  <View style={[styles.pickerIconContainer, { backgroundColor: isDark ? 'rgba(30, 58, 138, 0.3)' : '#EFF6FF' }]}>
-                    <Calendar size={18} color="#1E3A8A" />
+                  <View style={[styles.pickerIconContainer, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+                    <Calendar size={18} color={primaryText} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.pickerValueText, { color: primaryText }]}>
@@ -4818,8 +4891,8 @@ export default function AdminServicePlanner({ navigation }: any) {
                       onPress={() => setStartTimePickerVisible(true)}
                       activeOpacity={0.7}
                     >
-                      <View style={[styles.pickerIconContainer, { backgroundColor: isDark ? 'rgba(30, 58, 138, 0.3)' : '#EFF6FF' }]}>
-                        <Clock size={16} color="#1E3A8A" />
+                      <View style={[styles.pickerIconContainer, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+                        <Clock size={16} color={primaryText} />
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.pickerValueText, { color: primaryText }]} numberOfLines={1}>
@@ -4858,7 +4931,7 @@ export default function AdminServicePlanner({ navigation }: any) {
               {/* CARD 3: LOCATION & SERMON DETAILS */}
               <View style={[styles.formSectionCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
                 <View style={[styles.formCardHeaderRow, { borderBottomColor: borderColor }]}>
-                  <MapPin size={14} color="#1E3A8A" />
+                  <MapPin size={14} color={isDark ? '#10B981' : '#2E6B4F'} />
                   <Text style={[styles.formCardHeaderText, { color: primaryText }]}>LOCATION & SERMON DETAILS</Text>
                 </View>
 
@@ -4918,7 +4991,7 @@ export default function AdminServicePlanner({ navigation }: any) {
               {/* CARD 4: RECURRENCE & STARTING TEMPLATE */}
               <View style={[styles.formSectionCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
                 <View style={[styles.formCardHeaderRow, { borderBottomColor: borderColor }]}>
-                  <RotateCcw size={14} color="#1E3A8A" />
+                  <RotateCcw size={14} color={isDark ? '#10B981' : '#2E6B4F'} />
                   <Text style={[styles.formCardHeaderText, { color: primaryText }]}>RECURRENCE & ORDER TEMPLATE</Text>
                 </View>
 
@@ -5028,11 +5101,11 @@ export default function AdminServicePlanner({ navigation }: any) {
               </View>
 
               {/* Guidance Info Card */}
-              <View style={[styles.nextStepsCard, { backgroundColor: isDark ? '#1E293B' : '#EFF6FF', borderColor: '#93C5FD' }]}>
+              <View style={[styles.nextStepsCard, { backgroundColor: isDark ? '#18181B' : '#F8FAFC', borderColor: cardBorder }]}>
                 <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
-                  <Layers size={20} color="#1E3A8A" style={{ marginTop: 2 }} />
+                  <Layers size={20} color={isDark ? '#10B981' : '#2E6B4F'} style={{ marginTop: 2 }} />
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.nextStepsTitle, { color: '#1E3A8A' }]}>
+                    <Text style={[styles.nextStepsTitle, { color: primaryText }]}>
                       Dedicated Workspace Preparation
                     </Text>
                     <Text style={[styles.nextStepsBody, { color: secondaryText }]}>
@@ -5214,7 +5287,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                           {verifiedSkill ? ` · 🎯 ${verifiedSkill.skillName}` : ''}
                         </Text>
                       </View>
-                      <Plus size={16} color={verifiedSkill ? '#10B981' : '#1E3A8A'} />
+                      <Plus size={16} color={verifiedSkill ? '#10B981' : primaryText} />
                     </TouchableOpacity>
                   );
                 });
@@ -5558,8 +5631,8 @@ export default function AdminServicePlanner({ navigation }: any) {
                     onPress={() => setEditDatePickerVisible(true)}
                     activeOpacity={0.7}
                   >
-                    <View style={[styles.pickerIconContainer, { backgroundColor: isDark ? 'rgba(30, 58, 138, 0.3)' : '#EFF6FF' }]}>
-                      <Calendar size={16} color="#1E3A8A" />
+                    <View style={[styles.pickerIconContainer, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+                      <Calendar size={16} color={primaryText} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.pickerValueText, { color: primaryText }]} numberOfLines={1}>
@@ -5579,8 +5652,8 @@ export default function AdminServicePlanner({ navigation }: any) {
                     onPress={() => setEditStartTimePickerVisible(true)}
                     activeOpacity={0.7}
                   >
-                    <View style={[styles.pickerIconContainer, { backgroundColor: isDark ? 'rgba(30, 58, 138, 0.3)' : '#EFF6FF' }]}>
-                      <Clock size={16} color="#1E3A8A" />
+                    <View style={[styles.pickerIconContainer, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+                        <Clock size={16} color={primaryText} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.pickerValueText, { color: primaryText }]} numberOfLines={1}>
@@ -5702,7 +5775,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                       {tpl.runSheetTemplate.length} activities · ~{tpl.defaultDurationMinutes} mins
                     </Text>
                   </View>
-                  <ArrowRight size={16} color="#1E3A8A" />
+                  <ArrowRight size={16} color={primaryText} />
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -6051,7 +6124,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                 <Text style={[styles.fieldLabel, { color: primaryText, marginBottom: 0 }]}>
                   Recommended Candidates
                 </Text>
-                {loadingRecommendations && <ActivityIndicator size="small" color="#1E3A8A" />}
+                {loadingRecommendations && <ActivityIndicator size="small" color={primaryBtnBg} />}
               </View>
               <Text style={[styles.fieldHint, { color: secondaryText }]}>
                 Ranked by verified skills, ministry team membership, and blockout availability.
@@ -6194,7 +6267,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                             {m.phone || 'No phone'} · {m.userType || 'Member'}
                           </Text>
                         </View>
-                        {isSelected && <Check size={16} color="#1E3A8A" />}
+                        {isSelected && <Check size={16} color={primaryText} />}
                       </TouchableOpacity>
                     );
                   })}
@@ -6432,7 +6505,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                       key={t.id}
                       style={[
                         styles.teamPickerChip,
-                        isChecked && { backgroundColor: t.color || '#1E3A8A', borderColor: t.color || '#1E3A8A' }
+                        isChecked && { backgroundColor: t.color || primaryBtnBg, borderColor: t.color || primaryBtnBg }
                       ]}
                       onPress={() => {
                         if (isChecked) {
@@ -6598,7 +6671,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                           { key: 'present', label: 'P', color: '#059669', bg: '#ECFDF5' },
                           { key: 'late', label: 'L', color: '#D97706', bg: '#FEF3C7' },
                           { key: 'absent', label: 'A', color: '#DC2626', bg: '#FEF2F2' },
-                          { key: 'excused', label: 'E', color: '#2563EB', bg: '#EFF6FF' },
+                          { key: 'excused', label: 'E', color: '#64748B', bg: '#F1F5F9' },
                         ].map(st => {
                           const isSelected = curStatus === st.key;
                           return (
@@ -6652,6 +6725,16 @@ export default function AdminServicePlanner({ navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   header: {
     paddingHorizontal: 16,
@@ -6707,8 +6790,8 @@ const styles = StyleSheet.create({
     borderColor: '#FECACA',
   },
   statusPillCompleted: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#BFDBFE',
+    backgroundColor: '#F1F5F9',
+    borderColor: '#CBD5E1',
   },
   statusPillTxt: {
     fontSize: 9.5,
@@ -6732,12 +6815,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#000000',
     paddingHorizontal: 15,
-    paddingVertical: 9,
-    borderRadius: 10,
+    paddingVertical: 8,
+    borderRadius: 999,
     elevation: 2,
-    shadowColor: '#1E3A8A',
+    shadowColor: '#000000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 3,
@@ -6765,10 +6848,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   tabBtnActive: {
-    backgroundColor: '#1E3A8A',
-    borderColor: '#1E3A8A',
+    backgroundColor: '#000000',
+    borderColor: '#000000',
     elevation: 2,
-    shadowColor: '#1E3A8A',
+    shadowColor: '#000000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 3,
@@ -6811,8 +6894,8 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
   },
   filterChipActive: {
-    backgroundColor: '#1E3A8A',
-    borderColor: '#1E3A8A',
+    backgroundColor: '#000000',
+    borderColor: '#000000',
   },
   filterChipTxt: {
     fontSize: 11,
@@ -6856,7 +6939,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#000000',
     paddingHorizontal: 18,
     paddingVertical: 11,
     borderRadius: 10,
@@ -6880,7 +6963,7 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
   },
   planCardSelected: {
-    borderColor: '#1E3A8A',
+    borderColor: '#000000',
     borderWidth: 2,
   },
   planCardTop: {
@@ -6891,9 +6974,9 @@ const styles = StyleSheet.create({
     width: 50,
     height: 52,
     borderRadius: 12,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     borderWidth: 1,
-    borderColor: '#DBEAFE',
+    borderColor: '#CBD5E1',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -6901,12 +6984,12 @@ const styles = StyleSheet.create({
     fontFamily: SERIF_FONT,
     fontSize: 18,
     fontWeight: '900',
-    color: '#1E3A8A',
+    color: '#0F172A',
   },
   dateBadgeMonth: {
     fontSize: 9.5,
     fontWeight: '800',
-    color: '#3B82F6',
+    color: '#475569',
     letterSpacing: 0.8,
   },
   planTypeTag: {
@@ -6992,7 +7075,7 @@ const styles = StyleSheet.create({
   selectedBannerTag: {
     fontSize: 9.5,
     fontWeight: '800',
-    color: '#3B82F6',
+    color: '#2E6B4F',
     letterSpacing: 0.8,
   },
   selectedBannerTitle: {
@@ -7049,8 +7132,8 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
   },
   statusToggleBtnActive: {
-    backgroundColor: '#1E3A8A',
-    borderColor: '#1E3A8A',
+    backgroundColor: '#000000',
+    borderColor: '#000000',
   },
   statusToggleBtnTxt: {
     fontSize: 10,
@@ -7100,7 +7183,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#000000',
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 8,
@@ -7123,7 +7206,7 @@ const styles = StyleSheet.create({
     borderColor: '#BFDBFE',
   },
   applyTemplateBtnTxt: {
-    color: '#1E3A8A',
+    color: '#0F172A',
     fontSize: 12,
     fontWeight: '700',
   },
@@ -7179,7 +7262,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     paddingHorizontal: 6,
     paddingVertical: 1,
     borderRadius: 4,
@@ -7187,7 +7270,7 @@ const styles = StyleSheet.create({
   timeBadgeTxt: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#1E3A8A',
+    color: '#0F172A',
   },
   itemProgramTitle: {
     fontFamily: SERIF_FONT,
@@ -7213,9 +7296,9 @@ const styles = StyleSheet.create({
   itemEditBtn: {
     padding: 7,
     borderRadius: 8,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: '#DBEAFE',
+    borderColor: '#CBD5E1',
   },
   itemDeleteBtn: {
     padding: 7,
@@ -7239,7 +7322,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
   },
   keyBadge: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
@@ -7247,7 +7330,7 @@ const styles = StyleSheet.create({
   keyBadgeTxt: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#1E3A8A',
+    color: '#0F172A',
   },
   bpmBadge: {
     backgroundColor: '#FEF3C7',
@@ -7322,9 +7405,9 @@ const styles = StyleSheet.create({
   lyricsBtn: {
     padding: 7,
     borderRadius: 8,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: '#DBEAFE',
+    borderColor: '#CBD5E1',
   },
   // Search Box in Song Picker
   searchBox: {
@@ -7354,7 +7437,7 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 8,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -7381,8 +7464,8 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   keyPickerChipActive: {
-    backgroundColor: '#1E3A8A',
-    borderColor: '#1E3A8A',
+    backgroundColor: '#000000',
+    borderColor: '#000000',
   },
   keyPickerChipTxt: {
     fontSize: 12,
@@ -7474,7 +7557,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#000000',
     paddingVertical: 10,
     borderRadius: 10,
     marginTop: 10,
@@ -7560,7 +7643,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
@@ -7568,7 +7651,7 @@ const styles = StyleSheet.create({
   teamMembersCountTxt: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#1E3A8A',
+    color: '#0F172A',
   },
   skillStatsRow: {
     flexDirection: 'row',
@@ -7615,14 +7698,14 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
   skillAvatarTxt: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#1E3A8A',
+    color: '#0F172A',
   },
   skillMemberName: {
     fontFamily: SERIF_FONT,
@@ -7707,7 +7790,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 10,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -7831,7 +7914,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 8,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
@@ -7856,7 +7939,7 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   typeSelectChipActive: {
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#000000',
   },
   typeSelectChipTxt: {
     fontSize: 11,
@@ -7882,8 +7965,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   recurrenceBtnActive: {
-    borderColor: '#1E3A8A',
-    backgroundColor: '#1E3A8A',
+    borderColor: '#000000',
+    backgroundColor: '#000000',
   },
   recurrenceBtnTxt: {
     fontSize: 11.5,
@@ -7901,7 +7984,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
   },
   countChipActive: {
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#000000',
   },
   countChipTxt: {
     fontSize: 11.5,
@@ -7925,8 +8008,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   tplSelectChipActive: {
-    borderColor: '#1E3A8A',
-    backgroundColor: '#1E3A8A',
+    borderColor: '#000000',
+    backgroundColor: '#000000',
   },
   tplSelectChipTxt: {
     fontSize: 11.5,
@@ -7945,7 +8028,7 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   categorySelectChipActive: {
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#000000',
   },
   categorySelectChipTxt: {
     fontSize: 10.5,
@@ -7965,8 +8048,8 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   quickMemberChipActive: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#1E3A8A',
+    backgroundColor: '#000000',
+    borderColor: '#000000',
   },
   quickMemberChipTxt: {
     fontSize: 11.5,
@@ -7974,7 +8057,7 @@ const styles = StyleSheet.create({
     color: '#475569',
   },
   quickMemberChipTxtActive: {
-    color: '#1E3A8A',
+    color: '#FFFFFF',
   },
   memberPickerContainer: {
     marginTop: 6,
@@ -7990,7 +8073,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   memberRosterItemSelected: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
   },
   memberRosterName: {
     fontSize: 13,
@@ -8010,8 +8093,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   checkboxCircleActive: {
-    backgroundColor: '#1E3A8A',
-    borderColor: '#1E3A8A',
+    backgroundColor: '#000000',
+    borderColor: '#000000',
   },
   skillCategoryRow: {
     flexDirection: 'row',
@@ -8028,8 +8111,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   skillCategoryBtnActive: {
-    borderColor: '#1E3A8A',
-    backgroundColor: '#EFF6FF',
+    borderColor: '#000000',
+    backgroundColor: '#000000',
   },
   skillCategoryBtnTxt: {
     fontSize: 11,
@@ -8037,7 +8120,7 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   skillCategoryBtnTxtActive: {
-    color: '#1E3A8A',
+    color: '#FFFFFF',
   },
   presetSkillChip: {
     paddingHorizontal: 10,
@@ -8047,7 +8130,7 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   presetSkillChipActive: {
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#000000',
   },
   presetSkillChipTxt: {
     fontSize: 11,
@@ -8072,8 +8155,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   proficiencyChipActive: {
-    borderColor: '#1E3A8A',
-    backgroundColor: '#EFF6FF',
+    borderColor: '#000000',
+    backgroundColor: '#000000',
   },
   proficiencyChipTxt: {
     fontSize: 10,
@@ -8081,7 +8164,7 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   proficiencyChipTxtActive: {
-    color: '#1E3A8A',
+    color: '#FFFFFF',
   },
   modalFooter: {
     flexDirection: 'row',
@@ -8106,7 +8189,7 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   modalConfirmBtn: {
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#000000',
     paddingHorizontal: 20,
     paddingVertical: 11,
     borderRadius: 10,
@@ -8200,8 +8283,8 @@ const styles = StyleSheet.create({
   queueCategoryPill: {
     fontSize: 9.5,
     fontWeight: '800',
-    color: '#1E3A8A',
-    backgroundColor: '#E0E7FF',
+    color: '#0F172A',
+    backgroundColor: '#F1F5F9',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
@@ -8371,7 +8454,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#2E6B4F',
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 8,
@@ -8385,17 +8468,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F8FAFC',
     paddingHorizontal: 10,
     paddingVertical: 7,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#BFDBFE',
+    borderColor: '#CBD5E1',
   },
   overrideBtnTxt: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#1E3A8A',
+    color: '#334155',
   },
   simulateBtn: {
     flexDirection: 'row',
@@ -8429,8 +8512,8 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   timeoutChipActive: {
-    backgroundColor: '#1E3A8A',
-    borderColor: '#1E3A8A',
+    backgroundColor: '#000000',
+    borderColor: '#000000',
   },
   timeoutChipTxt: {
     fontSize: 12,
@@ -8455,7 +8538,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#000000',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -8506,7 +8589,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#000000',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
@@ -8526,8 +8609,8 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   memberSelectItemActive: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#1E3A8A',
+    backgroundColor: '#F1F5F9',
+    borderColor: '#000000',
   },
   memberSelectName: {
     fontSize: 13.5,
@@ -8674,8 +8757,8 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   rehPresetChipActive: {
-    backgroundColor: '#1E3A8A',
-    borderColor: '#1E3A8A',
+    backgroundColor: '#000000',
+    borderColor: '#000000',
   },
   rehPresetChipTxt: {
     fontSize: 11.5,
@@ -8695,8 +8778,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   rehSongPickRowActive: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#1E3A8A',
+    backgroundColor: '#F1F5F9',
+    borderColor: '#000000',
   },
   rehSongPickTxt: {
     fontSize: 13,
@@ -8842,7 +8925,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   volTeamBadge: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
@@ -8850,7 +8933,7 @@ const styles = StyleSheet.create({
   volTeamBadgeTxt: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#1E3A8A',
+    color: '#0F172A',
   },
   volRoleTitle: {
     fontSize: 12,
@@ -8891,8 +8974,8 @@ const styles = StyleSheet.create({
     borderColor: '#DC2626',
   },
   attStatusPillExcused: {
-    backgroundColor: '#2563EB',
-    borderColor: '#2563EB',
+    backgroundColor: '#64748B',
+    borderColor: '#64748B',
   },
   attStatusPillTxtActive: {
     color: '#FFFFFF',
@@ -8907,12 +8990,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F8FAFC',
   },
   refreshAnalyticsBtnTxt: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#1E3A8A',
+    color: '#334155',
   },
   analyticsLoadingBox: {
     paddingVertical: 40,
@@ -9076,7 +9159,7 @@ const styles = StyleSheet.create({
   servesCountVal: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#1E3A8A',
+    color: '#0F172A',
   },
   servesCountLbl: {
     fontSize: 9,
@@ -9093,14 +9176,14 @@ const styles = StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 13,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
   songRankTxt: {
     fontSize: 11,
     fontWeight: '800',
-    color: '#1E3A8A',
+    color: '#0F172A',
   },
   topSongTitle: {
     fontFamily: SERIF_FONT,
@@ -9120,7 +9203,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
@@ -9128,7 +9211,7 @@ const styles = StyleSheet.create({
   songCountTxt: {
     fontSize: 12,
     fontWeight: '800',
-    color: '#1E3A8A',
+    color: '#0F172A',
   },
 
   // ─── Unified All-in-One Form Styles ───
@@ -9144,7 +9227,7 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#000000',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 8,
@@ -9181,7 +9264,7 @@ const styles = StyleSheet.create({
   outlineActionBtnTxt: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#1E3A8A',
+    color: '#0F172A',
   },
   songItemCard: {
     flexDirection: 'row',
@@ -9201,17 +9284,17 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   songKeyBadge: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     paddingHorizontal: 6,
     paddingVertical: 1,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: '#93C5FD',
+    borderColor: '#CBD5E1',
   },
   songKeyBadgeTxt: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#1E3A8A',
+    color: '#0F172A',
   },
   cascadeAlertBox: {
     flexDirection: 'row',
@@ -9263,7 +9346,7 @@ const styles = StyleSheet.create({
   dutyCascadePillTxt: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#1E3A8A',
+    color: '#2E6B4F',
   },
   dutyAssigneeRow: {
     flexDirection: 'row',
@@ -9292,14 +9375,14 @@ const styles = StyleSheet.create({
   dutyChangeBtn: {
     paddingHorizontal: 8,
     paddingVertical: 4,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F8FAFC',
     borderRadius: 4,
     marginRight: 6,
   },
   dutyChangeBtnTxt: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#1E3A8A',
+    color: '#334155',
   },
   dutyClearBtn: {
     padding: 4,
@@ -9317,7 +9400,7 @@ const styles = StyleSheet.create({
   dutyAssignBtnTxt: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#1E3A8A',
+    color: '#2E6B4F',
   },
   reviewSummaryRow: {
     flexDirection: 'row',
@@ -9337,19 +9420,19 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   publishServiceBtn: {
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#2E6B4F',
     paddingVertical: 14,
-    borderRadius: 10,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 8,
     marginBottom: 8,
-    elevation: 2,
-    shadowColor: '#1E3A8A',
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
+    shadowColor: '#2E6B4F',
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
   },
   publishServiceBtnTxt: {
     color: '#FFFFFF',
@@ -9388,13 +9471,13 @@ const styles = StyleSheet.create({
   },
   modalPublishBtn: {
     flex: 1.6,
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#2E6B4F',
     paddingVertical: 12,
-    borderRadius: 10,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 2,
-    shadowColor: '#1E3A8A',
+    shadowColor: '#2E6B4F',
     shadowOpacity: 0.25,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
@@ -9416,7 +9499,7 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#000000',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -9451,7 +9534,7 @@ const styles = StyleSheet.create({
   cardQuickPublishBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#2E6B4F',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 6,
@@ -9464,15 +9547,15 @@ const styles = StyleSheet.create({
   cardManageBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F8FAFC',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#93C5FD',
+    borderColor: '#CBD5E1',
   },
   cardManageBtnTxt: {
-    color: '#1E3A8A',
+    color: '#334155',
     fontSize: 11,
     fontWeight: '700',
   },
