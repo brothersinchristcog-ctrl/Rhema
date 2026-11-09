@@ -5,15 +5,19 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
+  SafeAreaView,
   Linking,
   StatusBar,
   Alert,
-  ActivityIndicator
+  ActivityIndicator,
+  Platform
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { ChevronLeft , ArrowLeft } from 'lucide-react-native';
-import { colors, spacing, radius, typography, shadow } from '../../../theme/Theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+const isMapsAvailable = Platform.OS !== 'android';
+
+import { spacing, radius, typography, shadow } from '../../../theme/Theme';
+import { useTheme } from '../../../context/ThemeContext';
 import FirestoreService from '../../../services/FirestoreService';
 import { CustomAlert, AlertButton } from '../../../components/CustomAlert';
 import { PastorEvent } from '../../../types/event';
@@ -24,12 +28,13 @@ import { getStartingLocation } from '../../../utils/locationStore';
 import MapView from 'react-native-maps';
 import * as Speech from 'expo-speech';
 import { SavedLocation } from '../../../utils/locationStore';
-import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
+import { Image } from 'react-native';
 
 export const PastorEventDetail = ({ route, navigation }: { route: any; navigation: any }) => {
-  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { event, allEvents = [] } = route.params as { event: PastorEvent; allEvents: PastorEvent[] };
+  const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
+  const styles = getStyles(colors, isDark);
   const [deleting, setDeleting] = React.useState(false);
 
   const [alertConfig, setAlertConfig] = React.useState<{
@@ -41,28 +46,9 @@ export const PastorEventDetail = ({ route, navigation }: { route: any; navigatio
   }>({ visible: false, title: '', message: '', type: 'info' });
 
   const closeAlert = () => setAlertConfig(prev => ({ ...prev, visible: false }));
-
-  const [isSpeaking, setIsSpeaking] = React.useState(false);
   const [homeLocation, setHomeLocation] = React.useState<SavedLocation | null>(null);
 
-  const handleSpeech = async () => {
-    if (isSpeaking) {
-      Speech.stop();
-      setIsSpeaking(false);
-      return;
-    }
-    
-    setIsSpeaking(true);
-    const speechText = `You have an upcoming event: ${event.title}. It is scheduled for ${formatDate(event.date)} at ${event.startTime}. The venue is ${event.venue || event.address || 'Unknown'}. Do you have any questions?`;
-    
-    Speech.speak(speechText, {
-      language: 'en',
-      rate: 0.9,
-      onDone: () => setIsSpeaking(false),
-      onStopped: () => setIsSpeaking(false),
-      onError: () => setIsSpeaking(false),
-    });
-  };
+
 
   React.useEffect(() => {
     const fetchHome = async () => {
@@ -70,10 +56,6 @@ export const PastorEventDetail = ({ route, navigation }: { route: any; navigatio
       if (loc) setHomeLocation(loc);
     };
     fetchHome();
-
-    return () => {
-      Speech.stop();
-    };
   }, []);
 
   // Format date nicely
@@ -108,9 +90,23 @@ export const PastorEventDetail = ({ route, navigation }: { route: any; navigatio
   const eventIndex = sameDayEvents.findIndex(e => e.id === event.id);
   const nextEvent = sameDayEvents[eventIndex + 1];
 
-  // Global Next Event for Distance calculations
-  const globalEventIndex = allEvents.findIndex(e => e.id === event.id);
-  const globalNextEvent = globalEventIndex >= 0 && globalEventIndex < allEvents.length - 1 ? allEvents[globalEventIndex + 1] : undefined;
+  const getEventTimestamp = (e: PastorEvent) => {
+    if (!e || !e.date) return 0;
+    const mins = timeToMins(e.startTime);
+    const parts = e.date.split('-');
+    if (parts.length < 3) return 0;
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    const d = parseInt(parts[2], 10);
+    if (!y || !m || !d) return 0;
+    return new Date(y, m - 1, d, Math.floor(mins / 60), mins % 60).getTime();
+  };
+
+  // Find next event strictly occurring in the future relative to this event
+  const currentEventTime = getEventTimestamp(event);
+  const chronoSortedEvents = [...allEvents].sort((a, b) => getEventTimestamp(a) - getEventTimestamp(b));
+  const futureEvents = chronoSortedEvents.filter(e => e.id !== event.id && getEventTimestamp(e) > currentEventTime);
+  const globalNextEvent = futureEvents.length > 0 ? futureEvents[0] : undefined;
 
   const [nextEventTravel, setNextEventTravel] = React.useState<{
     loading: boolean;
@@ -203,31 +199,11 @@ export const PastorEventDetail = ({ route, navigation }: { route: any; navigatio
           style: 'destructive',
           onPress: async () => {
             closeAlert();
-            try {
-              setDeleting(true);
-              await FirestoreService.deletePastorEvent(event.id);
-              
-              // Slight delay so the previous modal can unmount fully before showing success
-              setTimeout(() => {
-                setAlertConfig({
-                  visible: true,
-                  title: 'Deleted',
-                  message: 'Event has been deleted.',
-                  type: 'success',
-                  buttons: [{ text: 'OK', onPress: () => { closeAlert(); navigation.goBack(); } }]
-                });
-              }, 300);
-            } catch (err: any) {
-              setDeleting(false);
-              setTimeout(() => {
-                setAlertConfig({
-                  visible: true,
-                  title: 'Delete Failed',
-                  message: err?.message || 'Could not delete event.',
-                  type: 'error',
-                  buttons: [{ text: 'OK', onPress: closeAlert }]
-                });
-              }, 300);
+            await FirestoreService.deletePastorEvent(event.id).catch(e => console.warn('Delete failed:', e));
+            if (navigation.canGoBack()) {
+              navigation.goBack();
+            } else {
+              navigation.navigate('AdminRoot');
             }
           }
         }
@@ -236,8 +212,8 @@ export const PastorEventDetail = ({ route, navigation }: { route: any; navigatio
   };
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
+    <SafeAreaView style={[styles.container, { backgroundColor: isDark ? '#000000' : '#FFFFFF' }]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={isDark ? "#000000" : "#FFFFFF"} />
       
       <CustomAlert 
         visible={alertConfig.visible}
@@ -248,24 +224,31 @@ export const PastorEventDetail = ({ route, navigation }: { route: any; navigatio
         onClose={closeAlert}
       />
       
-      {/* ── Hero Section ── */}
-      <View style={[styles.hero, { paddingTop: insets.top + 16 }]}>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-            <TouchableOpacity
-              onPress={() => requestAnimationFrame(() => navigation.goBack())}
-              style={styles.circularBackBtn}
-              activeOpacity={0.7}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
-            </TouchableOpacity>
-            <View style={{ marginLeft: 12 }}>
-              <Text style={styles.heroTitle}>Event Details</Text>
-              <Text style={[styles.heroSub, { marginTop: 2 }]}>{event.title}</Text>
-            </View>
-          </View>
-        </View>
+      {/* Top Navigation Bar */}
+      <View style={[
+        styles.navBar,
+        {
+          backgroundColor: isDark ? '#000000' : '#FFFFFF',
+          borderBottomWidth: 1.5,
+          borderBottomColor: isDark ? '#27272A' : '#CBD5E1',
+          paddingTop: Platform.OS === 'android' ? Math.max(insets.top, StatusBar.currentHeight || 24) + 10 : Math.max(insets.top, 12),
+          paddingBottom: 14,
+          paddingHorizontal: 16,
+          height: 'auto',
+        }
+      ]}>
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.7}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="arrow-back" size={24} color={isDark ? '#FFFFFF' : '#0F172A'} />
+        </TouchableOpacity>
+        <Text style={[styles.navTitle, { color: isDark ? '#FFFFFF' : '#0F172A', fontSize: 18, fontWeight: '800' }]} numberOfLines={1}>
+          Event Details
+        </Text>
+        <View style={{ width: 40 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -273,26 +256,25 @@ export const PastorEventDetail = ({ route, navigation }: { route: any; navigatio
         <View style={styles.card}>
           {/* 1. Header Info */}
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <Text style={[styles.mainTitle, { flex: 1, marginBottom: 16 }]}>{event.title}</Text>
-
+            <Text style={[styles.mainTitle, { flex: 1, marginBottom: 16, color: isDark ? '#C6A66B' : '#98713D' }]}>{event.title}</Text>
           </View>
 
           <View style={{ gap: 12, marginBottom: spacing.lg }}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+              <Ionicons name="calendar-outline" size={18} color={isDark ? '#FFFFFF' : '#000000'} />
               <Text style={[styles.timeVal, { marginLeft: 8 }]}>{formatDate(event.date)}</Text>
             </View>
 
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Ionicons name="time-outline" size={18} color={colors.primary} />
+              <Ionicons name="time-outline" size={18} color={isDark ? '#FFFFFF' : '#000000'} />
               <Text style={[styles.timeVal, { marginLeft: 8 }]}>
                 Start: {event.startTime}{event.endTime ? ` | End: ${event.endTime}` : ''}
               </Text>
             </View>
 
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Ionicons name="hourglass-outline" size={18} color={colors.primary} />
-              <Text style={[styles.timeVal, { marginLeft: 8, color: colors.textSecondary }]}>
+              <Ionicons name="hourglass-outline" size={18} color={isDark ? '#FFFFFF' : '#000000'} />
+              <Text style={[styles.timeVal, { marginLeft: 8, color: isDark ? '#94A3B8' : '#64748b' }]}>
                 Meeting length: {event.durationMins >= 60 ? `${Math.round(event.durationMins / 60 * 10) / 10} hours` : `${event.durationMins} mins`}
               </Text>
             </View>
@@ -301,10 +283,10 @@ export const PastorEventDetail = ({ route, navigation }: { route: any; navigatio
           <View style={styles.divider} />
 
           {/* 2. Venue & Location */}
-          <Text style={[styles.cardLabel, { marginTop: spacing.md }]}>Venue & Location</Text>
-          <Text style={styles.venueTitle}>{event.venue}</Text>
+          <Text style={[styles.cardLabel, { marginTop: spacing.md, color: isDark ? '#B9C8BD' : '#315C50' }]}>Venue & Location</Text>
+          <Text style={[styles.venueTitle, { color: isDark ? '#FFFFFF' : '#111827' }]}>{event.venue}</Text>
           {event.city && (
-            <Text style={[styles.addressText, { fontWeight: '600', color: colors.primary, marginTop: 2 }]}>
+            <Text style={[styles.addressText, { fontWeight: '600', color: isDark ? '#B9C8BD' : '#315C50', marginTop: 2 }]}>
               {event.city}
             </Text>
           )}
@@ -314,25 +296,53 @@ export const PastorEventDetail = ({ route, navigation }: { route: any; navigatio
 
           {(event.lat && event.lng) ? (
             <TouchableOpacity style={{ height: 160, width: '100%', borderRadius: radius.md, overflow: 'hidden', marginVertical: spacing.md }} onPress={handleDirections} activeOpacity={0.8}>
-              <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
-                <MapView
-                  style={StyleSheet.absoluteFillObject}
-                  initialRegion={{
-                    latitude: event.lat,
-                    longitude: event.lng,
-                    latitudeDelta: 0.01,
-                    longitudeDelta: 0.01,
-                  }}
-                  scrollEnabled={false}
-                  zoomEnabled={false}
-                  pitchEnabled={false}
-                  rotateEnabled={false}
-                />
-                {/* Custom Marker */}
-                <View style={{ position: 'absolute', top: '50%', left: '50%', marginTop: -16, marginLeft: -12, alignItems: 'center', justifyContent: 'center' }}>
-                  <Ionicons name="location" size={32} color={colors.error} />
+              {isMapsAvailable ? (
+                <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
+                  <MapView
+                    style={StyleSheet.absoluteFillObject}
+                    initialRegion={{
+                      latitude: event.lat,
+                      longitude: event.lng,
+                      latitudeDelta: 0.01,
+                      longitudeDelta: 0.01,
+                    }}
+                    scrollEnabled={false}
+                    zoomEnabled={false}
+                    pitchEnabled={false}
+                    rotateEnabled={false}
+                  />
+                  {/* Custom Marker */}
+                  <View style={{ position: 'absolute', top: '50%', left: '50%', marginTop: -16, marginLeft: -12, alignItems: 'center', justifyContent: 'center' }}>
+                    <Ionicons name="location" size={32} color={colors.error} />
+                  </View>
                 </View>
-              </View>
+              ) : (
+                <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' }]}>
+                  {process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY ? (
+                    <Image
+                      source={{ uri: `https://static-maps.yandex.ru/1.x/?ll=${event.lng},${event.lat}&size=600,300&z=15&l=map&pt=${event.lng},${event.lat},pm2rdl` }}
+                      style={StyleSheet.absoluteFillObject}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <>
+                      {/* Decorative Grid Lines */}
+                      <View style={styles.gridLinesContainer}>
+                        {[1, 2, 3, 4].map(i => (
+                          <View key={`h-${i}`} style={[styles.gridLineH, { top: `${i * 20}%` }]} />
+                        ))}
+                        {[1, 2, 3, 4].map(i => (
+                          <View key={`v-${i}`} style={[styles.gridLineV, { left: `${i * 20}%` }]} />
+                        ))}
+                      </View>
+                      <Ionicons name="map" size={36} color={colors.primary} style={{ opacity: 0.8 }} />
+                      <Text style={{ marginTop: 8, fontSize: 13, fontWeight: '600', color: '#111827' }}>
+                        {event.venue || 'View Location'}
+                      </Text>
+                    </>
+                  )}
+                </View>
+              )}
               <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.6)', padding: 6, alignItems: 'center' }}>
                 <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '600' }}>Tap to open in External Maps</Text>
               </View>
@@ -386,51 +396,51 @@ export const PastorEventDetail = ({ route, navigation }: { route: any; navigatio
         {/* Next Chronological Event Distance Planning Card */}
         {globalNextEvent && (
           <TouchableOpacity 
-            style={styles.card}
+            style={[styles.card, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? '#27272A' : '#E2E8F0' }]}
             onPress={() => navigation.push('EventDetail', { event: globalNextEvent, allEvents })}
             activeOpacity={0.7}
           >
-            <Text style={styles.cardLabel}>Next Scheduled Event</Text>
+            <Text style={[styles.cardLabel, { color: isDark ? '#B9C8BD' : '#315C50' }]}>Next Scheduled Event</Text>
             
             <View style={{ marginBottom: spacing.md }}>
-              <Text style={styles.venueTitle}>{globalNextEvent.title}</Text>
+              <Text style={[styles.venueTitle, { color: isDark ? '#C6A66B' : '#98713D' }]}>{globalNextEvent.title}</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-                <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
-                <Text style={[styles.timeVal, { marginLeft: 6, fontSize: 13, color: colors.textSecondary }]}>
+                <Ionicons name="calendar-outline" size={14} color={isDark ? '#FFFFFF' : '#000000'} />
+                <Text style={{ marginLeft: 6, fontSize: 13, fontWeight: '600', color: isDark ? '#CBD5E1' : '#475569' }}>
                   {formatDate(globalNextEvent.date)} • {globalNextEvent.startTime}
                 </Text>
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-                <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
-                <Text style={[styles.timeVal, { marginLeft: 6, fontSize: 13, color: colors.textSecondary }]}>
+                <Ionicons name="location-outline" size={14} color={isDark ? '#FFFFFF' : '#000000'} />
+                <Text style={{ marginLeft: 6, fontSize: 13, fontWeight: '600', color: isDark ? '#CBD5E1' : '#475569' }}>
                   {globalNextEvent.city ? `${globalNextEvent.city} • ` : ''}{globalNextEvent.venue || globalNextEvent.address || 'Location TBD'}
                 </Text>
               </View>
             </View>
 
             {nextEventTravel.loading ? (
-              <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: spacing.md }} />
+              <ActivityIndicator size="small" color={isDark ? '#B9C8BD' : '#315C50'} style={{ marginVertical: spacing.md }} />
             ) : (
               <View style={{ gap: spacing.md, marginTop: spacing.md }}>
                   <View>
-                    <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginBottom: 6, marginLeft: 4 }}>
-                      {event.city ? `${event.city} (${event.venue || 'Event'})` : event.venue || 'Current'} <Ionicons name="arrow-forward" size={10} /> {globalNextEvent.city ? `${globalNextEvent.city} (${globalNextEvent.venue || 'Event'})` : globalNextEvent.venue || 'Next'}
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: isDark ? '#A1A1AA' : '#64748B', marginBottom: 6, marginLeft: 4 }}>
+                      {event.city ? `${event.city} (${event.venue || 'Event'})` : event.venue || 'Current'} <Ionicons name="arrow-forward" size={10} color={isDark ? '#A1A1AA' : '#64748B'} /> {globalNextEvent.city ? `${globalNextEvent.city} (${globalNextEvent.venue || 'Event'})` : globalNextEvent.venue || 'Next'}
                     </Text>
-                    <View style={[styles.travelBadge, { justifyContent: 'flex-start', paddingHorizontal: 12 }]}>
-                      <Ionicons name="car" size={16} color={colors.primary} />
-                      <Text style={[styles.travelBadgeText, { fontSize: 13, marginLeft: 8 }]}>
+                    <View style={[styles.travelBadge, { justifyContent: 'flex-start', paddingHorizontal: 12, backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: isDark ? '#3F3F46' : '#E2E8F0' }]}>
+                      <Ionicons name="car" size={16} color={isDark ? '#B9C8BD' : '#315C50'} />
+                      <Text style={[styles.travelBadgeText, { fontSize: 13, marginLeft: 8, color: isDark ? '#FFFFFF' : '#0F172A' }]}>
                         {nextEventTravel.currentToNextKm.toFixed(1)} km • {nextEventTravel.currentToNextMins >= 60 ? `${Math.floor(nextEventTravel.currentToNextMins / 60)}h ${nextEventTravel.currentToNextMins % 60}m` : `${nextEventTravel.currentToNextMins}m`} travel
                       </Text>
                     </View>
                   </View>
                 
                   <View>
-                    <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginBottom: 6, marginLeft: 4 }}>
-                      {homeLocation?.name || 'Home'} <Ionicons name="arrow-forward" size={10} /> {globalNextEvent.city ? `${globalNextEvent.city} (${globalNextEvent.venue || 'Event'})` : globalNextEvent.venue || 'Next'}
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: isDark ? '#A1A1AA' : '#64748B', marginBottom: 6, marginLeft: 4 }}>
+                      {homeLocation?.name || 'Home'} <Ionicons name="arrow-forward" size={10} color={isDark ? '#A1A1AA' : '#64748B'} /> {globalNextEvent.city ? `${globalNextEvent.city} (${globalNextEvent.venue || 'Event'})` : globalNextEvent.venue || 'Next'}
                     </Text>
-                    <View style={[styles.travelBadge, { justifyContent: 'flex-start', paddingHorizontal: 12 }]}>
-                      <Ionicons name="home" size={16} color={colors.primary} />
-                      <Text style={[styles.travelBadgeText, { fontSize: 13, marginLeft: 8 }]}>
+                    <View style={[styles.travelBadge, { justifyContent: 'flex-start', paddingHorizontal: 12, backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: isDark ? '#3F3F46' : '#E2E8F0' }]}>
+                      <Ionicons name="home" size={16} color={isDark ? '#B9C8BD' : '#315C50'} />
+                      <Text style={[styles.travelBadgeText, { fontSize: 13, marginLeft: 8, color: isDark ? '#FFFFFF' : '#0F172A' }]}>
                         {nextEventTravel.homeToNextKm.toFixed(1)} km • {nextEventTravel.homeToNextMins >= 60 ? `${Math.floor(nextEventTravel.homeToNextMins / 60)}h ${nextEventTravel.homeToNextMins % 60}m` : `${nextEventTravel.homeToNextMins}m`} travel
                       </Text>
                     </View>
@@ -441,14 +451,20 @@ export const PastorEventDetail = ({ route, navigation }: { route: any; navigatio
         )}
 
         {/* Action Buttons */}
-        <View style={{ flexDirection: 'row', gap: 12, marginTop: 8, justifyContent: 'center' }}>
+        <View style={{
+          flexDirection: 'row',
+          gap: 12,
+          marginTop: 12,
+          marginBottom: Platform.OS === 'android' ? Math.max(insets.bottom, 24) + 20 : Math.max(insets.bottom, 16) + 12,
+          justifyContent: 'center'
+        }}>
           <TouchableOpacity 
-            style={styles.editBadge}
+            style={[styles.editBadge, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
             onPress={handleEdit}
             disabled={deleting}
           >
-            <Ionicons name="pencil" size={16} color={colors.primary} />
-            <Text style={styles.editBadgeText}>Edit Event</Text>
+            <Ionicons name="pencil" size={16} color={isDark ? '#000000' : '#FFFFFF'} />
+            <Text style={[styles.editBadgeText, { color: isDark ? '#000000' : '#FFFFFF' }]}>Edit Event</Text>
           </TouchableOpacity>
 
           <TouchableOpacity 
@@ -457,58 +473,82 @@ export const PastorEventDetail = ({ route, navigation }: { route: any; navigatio
             disabled={deleting}
           >
             {deleting ? (
-              <ActivityIndicator color={colors.error} size="small" />
+              <ActivityIndicator color="#FFF" size="small" />
             ) : (
               <>
-                <Ionicons name="trash" size={16} color={colors.error} />
+                <Ionicons name="trash" size={16} color="#FFF" />
                 <Text style={styles.deleteBadgeText}>Delete Event</Text>
               </>
             )}
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 };
 
-const styles = createAdminThemedStyles(StyleSheet.create({
-  circularBackBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    justifyContent: 'center',
+function getStyles(colors: any, isDark: boolean) { return StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: isDark ? '#000000' : '#FFFFFF',
+  },
+  gridLinesContainer: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.1
+  },
+  gridLineH: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 1,
+    borderStyle: 'dashed',
+    borderWidth: 0.5,
+    borderColor: '#0F172A'
+  },
+  gridLineV: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 1,
+    borderStyle: 'dashed',
+    borderWidth: 0.5,
+    borderColor: '#0F172A'
+  },
+  navBar: {
+    flexDirection: 'row',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    height: 56,
+    backgroundColor: colors.card,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border
   },
-  container: { flex: 1, backgroundColor: '#EDE8DC' },
-  hero: {
-    backgroundColor: 'transparent',
-    paddingHorizontal: 16,
-    paddingBottom: 14,
-    
-    
+  backButton: {
+    padding: spacing.xs
   },
-  heroTitle: { color: '#1a2d5a', fontSize: 20, fontWeight: '700' },
-  heroSub: { color: '#64748b', fontSize: 13, fontWeight: '500' },
-  scrollContent: { padding: 20, paddingTop: 10, gap: 16 },
+  navTitle: {
+    ...typography.h2,
+    color: colors.text,
+    flex: 1,
+    textAlign: 'center'
+  },
+  scrollContent: {
+    padding: spacing.lg,
+    paddingBottom: 40,
+    gap: spacing.md
+  },
   card: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
+    backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+    borderRadius: radius.md,
+    padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#f1f5f9',
+    borderColor: isDark ? '#27272A' : '#e2e8f0',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: isDark ? 0.25 : 0.06,
+    shadowRadius: 6,
+    elevation: 2,
   },
   badgeRow: {
     flexDirection: 'row',
@@ -518,11 +558,11 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   },
   dateText: {
     ...typography.caption,
-    color: colors.textSecondary
+    color: '#64748b'
   },
   mainTitle: {
     ...typography.h2,
-    color: colors.textPrimary,
+    color: isDark ? '#C6A66B' : '#98713D',
     marginBottom: spacing.md
   },
   timeRow: {
@@ -533,41 +573,41 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   timeVal: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.textPrimary
+    color: isDark ? '#F1F5F9' : '#0F172A',
   },
   travelCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.border,
     borderColor: colors.primaryMid
   },
   sectionLabel: {
     fontSize: 11,
     fontWeight: '600',
-    color: colors.primaryDark,
+    color: isDark ? '#F1F5F9' : '#111827',
     textTransform: 'uppercase'
   },
   travelText: {
     fontSize: 12,
-    color: colors.primaryDark,
+    color: isDark ? '#F1F5F9' : '#111827',
     marginTop: 2
   },
   cardLabel: {
     fontSize: 11,
-    fontWeight: '600',
-    color: colors.textTertiary,
+    fontWeight: '700',
+    color: isDark ? '#B9C8BD' : '#315C50',
     textTransform: 'uppercase',
     marginBottom: spacing.xs
   },
   venueTitle: {
     ...typography.h3,
-    color: colors.textPrimary,
+    color: isDark ? '#FFFFFF' : '#111827',
     marginBottom: 2
   },
   addressText: {
     fontSize: 13,
-    color: colors.textSecondary,
+    color: '#64748b',
     marginBottom: spacing.md
   },
   mapsButton: {
@@ -591,17 +631,17 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: `${colors.primary}15`,
-    paddingVertical: 8,
-    paddingHorizontal: 8,
+    backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: `${colors.primary}30`
+    borderColor: isDark ? '#3F3F46' : '#E2E8F0'
   },
   travelBadgeText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
-    color: colors.primaryDark,
+    color: isDark ? '#FFFFFF' : '#0F172A',
     marginLeft: 4
   },
   divider: {
@@ -612,7 +652,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   bodyText: {
     fontSize: 13,
     lineHeight: 18,
-    color: colors.textSecondary
+    color: '#64748b'
   },
   notesCard: {
     borderColor: colors.primaryMid,
@@ -630,29 +670,29 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   contactName: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.textPrimary
+    color: '#111827'
   },
   contactPhone: {
     fontSize: 13,
-    color: colors.textSecondary,
+    color: '#64748b',
     marginTop: 2
   },
   callButton: {
     width: 36,
     height: 36,
     borderRadius: radius.full,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center'
   },
   nextEventTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.textPrimary
+    color: '#111827'
   },
   nextEventTime: {
     fontSize: 12,
-    color: colors.textSecondary,
+    color: '#64748b',
     marginTop: 2,
     marginBottom: spacing.sm
   },
@@ -671,16 +711,15 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: `${colors.primary}1A`, // 10% opacity primary
+    backgroundColor: colors.primary,
     paddingVertical: 12,
     paddingHorizontal: spacing.md,
     borderRadius: 100,
-    borderWidth: 1,
-    borderColor: colors.primary,
+    borderWidth: 0,
   },
   editBadgeText: {
     marginLeft: 6,
-    color: colors.primary,
+    color: '#FFF',
     fontWeight: '700',
     fontSize: 14,
   },
@@ -689,19 +728,19 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: `${colors.error}1A`, // 10% opacity error
+    backgroundColor: '#ef4444',
     paddingVertical: 12,
     paddingHorizontal: spacing.md,
     borderRadius: 100,
-    borderWidth: 1,
-    borderColor: colors.error,
+    borderWidth: 0,
   },
   deleteBadgeText: {
     marginLeft: 6,
-    color: colors.error,
+    color: '#FFF',
     fontWeight: '700',
     fontSize: 14,
   }
-}));
+});
+}
 
 export default PastorEventDetail;

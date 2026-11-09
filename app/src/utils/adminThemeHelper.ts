@@ -6,7 +6,7 @@ const PRESERVED_DECORATIVE_FONTS = /pacifico|snell|alexbrush|borel|caveat|damion
 
 const PAGE_BG_KEYS = /^(container|safeArea|mainContainer|screen|page|pageContainer|root|wrapper|scroll|scrollContainer|header|topBar|headerContainer|stickyHeader|main|body|content|contentContainer|listContainer)$/i;
 
-const PRESERVED_WHITE_KEYS = /gradJoinBtn|playBtn|logoCircle|drawerAvatar|activeCircle/i;
+const PRESERVED_WHITE_KEYS = /gradJoinBtn|playBtn|logoCircle|drawerAvatar|activeCircle|btnSaveDark|cadence/i;
 
 const SECONDARY_SURFACE_KEYS = /input|search|filter|chip|pill|tab|segment|badge|tag|box|well|empty|placeholder|footer|toolbar|bar|row|cell|thead|tableHeader|sectionHeader|subHeader/i;
 

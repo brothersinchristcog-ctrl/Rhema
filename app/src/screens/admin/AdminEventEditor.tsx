@@ -973,28 +973,76 @@ export default function AdminEventEditor() {
   };
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+    <View style={[styles.container, { backgroundColor: isDark ? '#000000' : '#FFFFFF' }]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
       <SuccessModal />
       <ValidationErrorModal />
 
-      <View style={styles.hero}>
-        <View style={styles.heroTitleRow}>
-          <TouchableOpacity
-            onPress={() => setTabByName?.('Events')}
-            style={styles.circularBackBtn}
-            activeOpacity={0.7}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
-          </TouchableOpacity>
-          <Text style={[styles.heroTitle, { marginLeft: 12 }]}>{editingData ? 'Edit Event' : 'New Event'}</Text>
+      {/* ── Top Mini Card Header (Centered Title, Border Line, No Blue) ── */}
+      <View style={[
+        styles.hero,
+        {
+          backgroundColor: isDark ? '#000000' : '#FFFFFF',
+          borderBottomWidth: 1.5,
+          borderBottomColor: isDark ? '#27272A' : '#CBD5E1',
+          paddingHorizontal: 16,
+          paddingTop: Platform.OS === 'ios' ? 12 : 10,
+          paddingBottom: 14,
+          marginBottom: 4,
+        }
+      ]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+          {/* Left: Circular Back Button */}
+          <View style={{ minWidth: 40, alignItems: 'flex-start', justifyContent: 'center' }}>
+            <TouchableOpacity
+              onPress={() => setTabByName?.('Events')}
+              style={[
+                styles.circularBackBtn,
+                {
+                  backgroundColor: isDark ? '#000000' : '#FFFFFF',
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : '#CBD5E1',
+                  borderWidth: 1.5,
+                }
+              ]}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.2} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Middle: Centered Title */}
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 }}>
+            <Text
+              style={[
+                styles.heroTitle,
+                {
+                  color: isDark ? '#FFFFFF' : '#0F172A',
+                  textAlign: 'center',
+                  fontSize: 20,
+                  fontWeight: '800',
+                  fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+                  letterSpacing: -0.4,
+                }
+              ]}
+              numberOfLines={1}
+            >
+              {editingData ? 'Edit Event' : 'New Event'}
+            </Text>
+          </View>
+
+          {/* Right spacer for balance */}
+          <View style={{ minWidth: 40 }} />
         </View>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+      <ScrollView 
+        showsVerticalScrollIndicator={false} 
+        style={{ backgroundColor: isDark ? '#000000' : '#FFFFFF' }}
+        contentContainerStyle={[styles.scroll, { backgroundColor: isDark ? '#000000' : '#FFFFFF' }]}
+      >
         
-        <View style={[styles.section, styles.secNavy]}>
+        <View style={[styles.section, isDark && styles.sectionDark]}>
           <View style={styles.secHd}>
             <View style={styles.secHdPill}>
               <Info size={13} color="#fff" />
@@ -1003,31 +1051,66 @@ export default function AdminEventEditor() {
           </View>
           
           <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Event Title — English <Text style={{color:'#c0392b'}}>*</Text></Text>
-            <TextInput style={styles.input} value={titleEn} onChangeText={setTitleEn} placeholder="e.g. Easter Sunday Service 2026" />
+            <Text style={[styles.fLabel, isDark && styles.fLabelDark]}>Event Title — English <Text style={{color:'#c0392b'}}>*</Text></Text>
+            <TextInput 
+              style={[styles.input, isDark && styles.inputDark]} 
+              value={titleEn} 
+              onChangeText={setTitleEn} 
+              placeholder="e.g. Easter Sunday Service 2026" 
+              placeholderTextColor={isDark ? '#94A3B8' : '#94A3B8'}
+            />
           </View>
           
           <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Event Title — Telugu</Text>
-            <TextInput style={[styles.input, styles.teIn]} value={titleTe} onChangeText={setTitleTe} placeholder="తెలుగులో కార్యక్రమం పేరు..." />
+            <Text style={[styles.fLabel, isDark && styles.fLabelDark]}>Event Title — Telugu</Text>
+            <TextInput 
+              style={[styles.input, styles.teIn, isDark && styles.inputDark]} 
+              value={titleTe} 
+              onChangeText={setTitleTe} 
+              placeholder="తెలుగులో కార్యక్రమం పేరు..." 
+              placeholderTextColor={isDark ? '#94A3B8' : '#94A3B8'}
+            />
           </View>
 
           <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Event Type</Text>
-            <TouchableOpacity style={styles.inputWrap} onPress={() => setShowTypeDropdown(!showTypeDropdown)}>
-              <Text style={styles.inputText}>{allEventTypes.find((t: any) => t.value === eventType)?.label || eventType || 'Select Type'}</Text>
-              <ChevronDown size={14} color="#374151" />
+            <Text style={[styles.fLabel, isDark && styles.fLabelDark]}>Event Type</Text>
+            <TouchableOpacity 
+              style={[styles.inputWrap, isDark && styles.inputWrapDark]} 
+              onPress={() => setShowTypeDropdown(!showTypeDropdown)}
+            >
+              <Text style={[styles.inputText, isDark && styles.inputTextDark, !eventType && { color: isDark ? '#94A3B8' : '#94A3B8' }]}>
+                {allEventTypes.find((t: any) => t.value === eventType)?.label || eventType || 'Select Type'}
+              </Text>
+              <ChevronDown size={14} color={isDark ? '#94A3B8' : '#64748B'} />
             </TouchableOpacity>
             {showTypeDropdown && (
-              <View style={styles.dropdownMenu}>
+              <View style={[styles.dropdownMenu, isDark && { backgroundColor: '#27272A', borderColor: 'rgba(255,255,255,0.2)' }]}>
                 <ScrollView nestedScrollEnabled style={{ maxHeight: 260 }}>
                   {allEventTypes.map(t => (
-                    <TouchableOpacity key={t.value} style={[styles.dropdownItem, eventType === t.value && styles.dropdownItemActive]} onPress={() => { setEventType(t.value); setShowTypeDropdown(false); }}>
-                      <Text style={[styles.dropdownItemTxt, eventType === t.value && styles.dropdownItemTxtActive]}>{t.label}</Text>
+                    <TouchableOpacity 
+                      key={t.value} 
+                      style={[
+                        styles.dropdownItem, 
+                        isDark && { borderBottomColor: 'rgba(255,255,255,0.1)' },
+                        eventType === t.value && (isDark ? { backgroundColor: '#3F3F46' } : styles.dropdownItemActive)
+                      ]} 
+                      onPress={() => { setEventType(t.value); setShowTypeDropdown(false); }}
+                    >
+                      <Text style={[
+                        styles.dropdownItemTxt, 
+                        isDark && { color: '#FFFFFF' },
+                        eventType === t.value && styles.dropdownItemTxtActive
+                      ]}>
+                        {t.label}
+                      </Text>
                     </TouchableOpacity>
                   ))}
                   <TouchableOpacity 
-                    style={[styles.dropdownItem, styles.dropdownItemNew]} 
+                    style={[
+                      styles.dropdownItem, 
+                      styles.dropdownItemNew,
+                      isDark && { backgroundColor: '#27272A', borderTopColor: 'rgba(255,255,255,0.1)' }
+                    ]} 
                     onPress={() => { 
                       setShowTypeDropdown(false); 
                       setNewTypeNameEn('');
@@ -1035,8 +1118,8 @@ export default function AdminEventEditor() {
                       setShowNewTypeModal(true); 
                     }}
                   >
-                    <Plus size={16} color="#A67C3D" style={{ marginRight: 8 }} />
-                    <Text style={styles.dropdownItemNewTxt}>New Event Type...</Text>
+                    <Plus size={16} color={isDark ? '#FBBF24' : '#A67C3D'} style={{ marginRight: 8 }} />
+                    <Text style={[styles.dropdownItemNewTxt, isDark && { color: '#FBBF24' }]}>New Event Type...</Text>
                   </TouchableOpacity>
                 </ScrollView>
               </View>
@@ -1044,17 +1127,31 @@ export default function AdminEventEditor() {
           </View>
 
           <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Description — English</Text>
-            <TextInput style={[styles.input, styles.textarea]} multiline value={descEn} onChangeText={setDescEn} placeholder="Tell your members what to expect..." />
+            <Text style={[styles.fLabel, isDark && styles.fLabelDark]}>Description — English</Text>
+            <TextInput 
+              style={[styles.input, styles.textarea, isDark && styles.inputDark]} 
+              multiline 
+              value={descEn} 
+              onChangeText={setDescEn} 
+              placeholder="Tell your members what to expect..." 
+              placeholderTextColor={isDark ? '#94A3B8' : '#94A3B8'}
+            />
           </View>
 
           <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Description — Telugu</Text>
-            <TextInput style={[styles.input, styles.textarea, styles.teIn]} multiline value={descTe} onChangeText={setDescTe} placeholder="కార్యక్రమం గురించి వివరించండి..." />
+            <Text style={[styles.fLabel, isDark && styles.fLabelDark]}>Description — Telugu</Text>
+            <TextInput 
+              style={[styles.input, styles.textarea, styles.teIn, isDark && styles.inputDark]} 
+              multiline 
+              value={descTe} 
+              onChangeText={setDescTe} 
+              placeholder="కార్యక్రమం గురించి వివరించండి..." 
+              placeholderTextColor={isDark ? '#94A3B8' : '#94A3B8'}
+            />
           </View>
         </View>
 
-        <View style={[styles.section, styles.secRed]}>
+        <View style={[styles.section, isDark && styles.sectionDark]}>
           <View style={styles.secHd}>
             <View style={styles.secHdPill}>
               <Calendar size={13} color="#fff" />
@@ -1063,10 +1160,20 @@ export default function AdminEventEditor() {
           </View>
 
           {/* Event Cadence: One-Time vs Recurring Selector */}
-          <View style={styles.cadenceSelector}>
+          <View style={[styles.cadenceSelector, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: isDark ? 'rgba(255,255,255,0.15)' : '#E2E8F0', borderWidth: 1 }]}>
             <TouchableOpacity
               activeOpacity={0.8}
-              style={[styles.cadenceBtn, !isRecurring && styles.cadenceBtnActive]}
+              style={[
+                styles.cadenceBtn,
+                !isRecurring && {
+                  backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: isDark ? 0.25 : 0.15,
+                  shadowRadius: 3,
+                  elevation: 3,
+                }
+              ]}
               onPress={() => {
                 setIsRecurring(false);
                 setRecurring('One-time event');
@@ -1075,15 +1182,39 @@ export default function AdminEventEditor() {
                 if (date) setEndDate(date);
               }}
             >
-              <CalendarDays size={15} color={!isRecurring ? '#0f172a' : '#64748b'} style={{ marginRight: 6 }} />
-              <Text style={[styles.cadenceBtnTxt, !isRecurring && styles.cadenceBtnTxtActive]}>
+              <CalendarDays 
+                size={15} 
+                color={!isRecurring ? (isDark ? '#000000' : '#FFFFFF') : (isDark ? '#A1A1AA' : '#64748B')} 
+                style={{ marginRight: 6 }} 
+              />
+              <Text 
+                style={[
+                  styles.cadenceBtnTxt, 
+                  {
+                    color: !isRecurring 
+                      ? (isDark ? '#000000' : '#FFFFFF') 
+                      : (isDark ? '#A1A1AA' : '#64748B'),
+                    fontWeight: !isRecurring ? '800' : '600',
+                  }
+                ]}
+              >
                 One-Time Event
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               activeOpacity={0.8}
-              style={[styles.cadenceBtn, isRecurring && styles.cadenceBtnActiveRecurring]}
+              style={[
+                styles.cadenceBtn,
+                isRecurring && {
+                  backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: isDark ? 0.25 : 0.15,
+                  shadowRadius: 3,
+                  elevation: 3,
+                }
+              ]}
               onPress={() => {
                 setIsRecurring(true);
                 setRecurring('Select Recurrence');
@@ -1092,8 +1223,22 @@ export default function AdminEventEditor() {
                 if (date) setEndDate(addMonthsToDate(date, recurrenceDuration || 1));
               }}
             >
-              <Repeat size={15} color={isRecurring ? '#0d9488' : '#64748b'} style={{ marginRight: 6 }} />
-              <Text style={[styles.cadenceBtnTxt, isRecurring && styles.cadenceBtnTxtActiveRecurring]}>
+              <Repeat 
+                size={15} 
+                color={isRecurring ? (isDark ? '#000000' : '#FFFFFF') : (isDark ? '#A1A1AA' : '#64748B')} 
+                style={{ marginRight: 6 }} 
+              />
+              <Text 
+                style={[
+                  styles.cadenceBtnTxt, 
+                  {
+                    color: isRecurring 
+                      ? (isDark ? '#000000' : '#FFFFFF') 
+                      : (isDark ? '#A1A1AA' : '#64748B'),
+                    fontWeight: isRecurring ? '800' : '600',
+                  }
+                ]}
+              >
                 Recurring
               </Text>
             </TouchableOpacity>
@@ -1101,34 +1246,50 @@ export default function AdminEventEditor() {
 
           <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.fLabel}>{isRecurring ? 'Series Start Date' : 'Start Date'} <Text style={{color:'#c0392b'}}>*</Text></Text>
-              <TouchableOpacity style={styles.inputWrap} onPress={() => setDatePickerVisibility(true)}>
-                <CalendarDays size={18} color="#64748b" style={{ marginRight: 8 }} />
-                <Text style={styles.inputText}>{date || 'DD-MM-YYYY'}</Text>
+              <Text style={[styles.fLabel, isDark && styles.fLabelDark]}>{isRecurring ? 'Series Start Date' : 'Start Date'} <Text style={{color:'#c0392b'}}>*</Text></Text>
+              <TouchableOpacity 
+                style={[styles.inputWrap, isDark && styles.inputWrapDark]} 
+                onPress={() => setDatePickerVisibility(true)}
+              >
+                <CalendarDays size={18} color={isDark ? '#94A3B8' : '#64748B'} style={{ marginRight: 8 }} />
+                <Text style={[styles.inputText, isDark && styles.inputTextDark, !date && { color: isDark ? '#94A3B8' : '#94A3B8' }]}>
+                  {date || 'DD-MM-YYYY'}
+                </Text>
               </TouchableOpacity>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.fLabel}>{isRecurring ? 'Series End Date' : 'End Date'} <Text style={{color:'#c0392b'}}>*</Text></Text>
-              <TouchableOpacity style={styles.inputWrap} onPress={() => setEndDatePickerVisibility(true)}>
-                <CalendarDays size={18} color="#64748b" style={{ marginRight: 8 }} />
-                <Text style={styles.inputText}>{endDate || 'DD-MM-YYYY'}</Text>
+              <Text style={[styles.fLabel, isDark && styles.fLabelDark]}>{isRecurring ? 'Series End Date' : 'End Date'} <Text style={{color:'#c0392b'}}>*</Text></Text>
+              <TouchableOpacity 
+                style={[styles.inputWrap, isDark && styles.inputWrapDark]} 
+                onPress={() => setEndDatePickerVisibility(true)}
+              >
+                <CalendarDays size={18} color={isDark ? '#94A3B8' : '#64748B'} style={{ marginRight: 8 }} />
+                <Text style={[styles.inputText, isDark && styles.inputTextDark, !endDate && { color: isDark ? '#94A3B8' : '#94A3B8' }]}>
+                  {endDate || 'DD-MM-YYYY'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
           
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
             <View style={[styles.fGroup, { flex: 1 }]}>
-              <Text style={styles.fLabel}>Start Time <Text style={{color:'#c0392b'}}>*</Text></Text>
-              <TouchableOpacity style={styles.inputWrap} onPress={() => setStartTimeVisibility(true)}>
-                <Text style={styles.inputText}>{startTime || '09:00 AM'}</Text>
-                <Clock size={14} color="#374151" />
+              <Text style={[styles.fLabel, isDark && styles.fLabelDark]}>Start Time <Text style={{color:'#c0392b'}}>*</Text></Text>
+              <TouchableOpacity 
+                style={[styles.inputWrap, isDark && styles.inputWrapDark]} 
+                onPress={() => setStartTimeVisibility(true)}
+              >
+                <Text style={[styles.inputText, isDark && styles.inputTextDark]}>{startTime || '09:00 AM'}</Text>
+                <Clock size={14} color={isDark ? '#94A3B8' : '#64748B'} />
               </TouchableOpacity>
             </View>
             <View style={[styles.fGroup, { flex: 1 }]}>
-              <Text style={styles.fLabel}>End Time <Text style={{color:'#c0392b'}}>*</Text></Text>
-              <TouchableOpacity style={styles.inputWrap} onPress={() => setEndTimeVisibility(true)}>
-                <Text style={styles.inputText}>{endTime || '12:00 PM'}</Text>
-                <Clock size={14} color="#374151" />
+              <Text style={[styles.fLabel, isDark && styles.fLabelDark]}>End Time <Text style={{color:'#c0392b'}}>*</Text></Text>
+              <TouchableOpacity 
+                style={[styles.inputWrap, isDark && styles.inputWrapDark]} 
+                onPress={() => setEndTimeVisibility(true)}
+              >
+                <Text style={[styles.inputText, isDark && styles.inputTextDark]}>{endTime || '12:00 PM'}</Text>
+                <Clock size={14} color={isDark ? '#94A3B8' : '#64748B'} />
               </TouchableOpacity>
             </View>
           </View>
@@ -1151,19 +1312,26 @@ export default function AdminEventEditor() {
           {isRecurring && (
             <>
               <View style={styles.fGroup}>
-                <Text style={styles.fLabel}>Repeat Pattern <Text style={{color:'#c0392b'}}>*</Text></Text>
-                <TouchableOpacity style={styles.inputWrap} onPress={() => setShowRecurringDropdown(!showRecurringDropdown)}>
-                  <Text style={[styles.inputText, recurring === 'Select Recurrence' && { color: '#64748b' }]}>
+                <Text style={[styles.fLabel, isDark && styles.fLabelDark]}>Repeat Pattern <Text style={{color:'#c0392b'}}>*</Text></Text>
+                <TouchableOpacity 
+                  style={[styles.inputWrap, isDark && styles.inputWrapDark]} 
+                  onPress={() => setShowRecurringDropdown(!showRecurringDropdown)}
+                >
+                  <Text style={[styles.inputText, isDark && styles.inputTextDark, recurring === 'Select Recurrence' && { color: isDark ? '#94A3B8' : '#94A3B8' }]}>
                     {RECURRING_OPTIONS.find((t: any) => t.value === recurring)?.label || recurring}
                   </Text>
-                  <ChevronDown size={14} color="#374151" />
+                  <ChevronDown size={14} color={isDark ? '#94A3B8' : '#64748B'} />
                 </TouchableOpacity>
                 {showRecurringDropdown && (
-                  <View style={styles.dropdownMenu}>
+                  <View style={[styles.dropdownMenu, isDark && { backgroundColor: '#27272A', borderColor: 'rgba(255,255,255,0.2)' }]}>
                     {RECURRING_OPTIONS.map(r => (
                       <TouchableOpacity
                         key={r.value}
-                        style={[styles.dropdownItem, recurring === r.value && styles.dropdownItemActive]}
+                        style={[
+                          styles.dropdownItem, 
+                          isDark && { borderBottomColor: 'rgba(255,255,255,0.1)' },
+                          recurring === r.value && (isDark ? { backgroundColor: '#3F3F46' } : styles.dropdownItemActive)
+                        ]}
                         onPress={() => {
                           setRecurring(r.value);
                           setShowRecurringDropdown(false);
@@ -1172,7 +1340,13 @@ export default function AdminEventEditor() {
                           }
                         }}
                       >
-                        <Text style={[styles.dropdownItemTxt, recurring === r.value && styles.dropdownItemTxtActive]}>{r.label}</Text>
+                        <Text style={[
+                          styles.dropdownItemTxt, 
+                          isDark && { color: '#FFFFFF' },
+                          recurring === r.value && styles.dropdownItemTxtActive
+                        ]}>
+                          {r.label}
+                        </Text>
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -1180,17 +1354,26 @@ export default function AdminEventEditor() {
               </View>
 
               <View style={styles.fGroup}>
-                <Text style={styles.fLabel}>Recurrence Duration</Text>
-                <TouchableOpacity style={styles.inputWrap} onPress={() => setShowDurationDropdown(!showDurationDropdown)}>
-                  <Text style={styles.inputText}>{DURATION_OPTIONS.find((t: any) => t.value === recurrenceDuration)?.label || `For ${recurrenceDuration} month(s)`}</Text>
-                  <ChevronDown size={14} color="#374151" />
+                <Text style={[styles.fLabel, isDark && styles.fLabelDark]}>Recurrence Duration</Text>
+                <TouchableOpacity 
+                  style={[styles.inputWrap, isDark && styles.inputWrapDark]} 
+                  onPress={() => setShowDurationDropdown(!showDurationDropdown)}
+                >
+                  <Text style={[styles.inputText, isDark && styles.inputTextDark]}>
+                    {DURATION_OPTIONS.find((t: any) => t.value === recurrenceDuration)?.label || `For ${recurrenceDuration} month(s)`}
+                  </Text>
+                  <ChevronDown size={14} color={isDark ? '#94A3B8' : '#64748B'} />
                 </TouchableOpacity>
                 {showDurationDropdown && (
-                  <View style={styles.dropdownMenu}>
+                  <View style={[styles.dropdownMenu, isDark && { backgroundColor: '#27272A', borderColor: 'rgba(255,255,255,0.2)' }]}>
                     {DURATION_OPTIONS.map(o => (
                       <TouchableOpacity
                         key={o.value}
-                        style={[styles.dropdownItem, recurrenceDuration === o.value && styles.dropdownItemActive]}
+                        style={[
+                          styles.dropdownItem, 
+                          isDark && { borderBottomColor: 'rgba(255,255,255,0.1)' },
+                          recurrenceDuration === o.value && (isDark ? { backgroundColor: '#3F3F46' } : styles.dropdownItemActive)
+                        ]}
                         onPress={() => {
                           setRecurrenceDuration(o.value);
                           setShowDurationDropdown(false);
@@ -1199,7 +1382,13 @@ export default function AdminEventEditor() {
                           }
                         }}
                       >
-                        <Text style={[styles.dropdownItemTxt, recurrenceDuration === o.value && styles.dropdownItemTxtActive]}>{o.label}</Text>
+                        <Text style={[
+                          styles.dropdownItemTxt, 
+                          isDark && { color: '#FFFFFF' },
+                          recurrenceDuration === o.value && styles.dropdownItemTxtActive
+                        ]}>
+                          {o.label}
+                        </Text>
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -1233,7 +1422,7 @@ export default function AdminEventEditor() {
           )}
         </View>
 
-        <View style={[styles.section, styles.secGreen]}>
+        <View style={[styles.section, isDark && styles.sectionDark]}>
           <View style={styles.secHd}>
             <View style={styles.secHdPill}>
               <MapPin size={13} color="#fff" />
@@ -1242,24 +1431,43 @@ export default function AdminEventEditor() {
           </View>
 
           <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Venue Name — English</Text>
-            <TextInput style={styles.input} placeholder="e.g. Main Auditorium" value={venueEn} onChangeText={setVenueEn} />
+            <Text style={[styles.fLabel, isDark && styles.fLabelDark]}>Venue Name — English</Text>
+            <TextInput 
+              style={[styles.input, isDark && styles.inputDark]} 
+              placeholder="e.g. Main Auditorium" 
+              placeholderTextColor={isDark ? '#94A3B8' : '#94A3B8'}
+              value={venueEn} 
+              onChangeText={setVenueEn} 
+            />
           </View>
 
           <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Venue Name — Telugu</Text>
-            <TextInput style={[styles.input, styles.teIn]} placeholder="ఆవరణ పేరు తెలుగులో..." value={venueTe} onChangeText={setVenueTe} />
+            <Text style={[styles.fLabel, isDark && styles.fLabelDark]}>Venue Name — Telugu</Text>
+            <TextInput 
+              style={[styles.input, styles.teIn, isDark && styles.inputDark]} 
+              placeholder="ఆవరణ పేరు తెలుగులో..." 
+              placeholderTextColor={isDark ? '#94A3B8' : '#94A3B8'}
+              value={venueTe} 
+              onChangeText={setVenueTe} 
+            />
           </View>
 
           <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Full Address <Text style={styles.fHint}>Shown on Google Maps link</Text></Text>
-            <TextInput style={[styles.input, styles.textarea]} multiline placeholder="Street, area, city..." value={address} onChangeText={setAddress} />
+            <Text style={[styles.fLabel, isDark && styles.fLabelDark]}>Full Address <Text style={[styles.fHint, isDark && styles.fHintDark]}>Shown on Google Maps link</Text></Text>
+            <TextInput 
+              style={[styles.input, styles.textarea, isDark && styles.inputDark]} 
+              multiline 
+              placeholder="Street, area, city..." 
+              placeholderTextColor={isDark ? '#94A3B8' : '#94A3B8'}
+              value={address} 
+              onChangeText={setAddress} 
+            />
           </View>
 
         </View>
 
 
-        <View style={[styles.section, styles.secPurple]}>
+        <View style={[styles.section, isDark && styles.sectionDark]}>
           <View style={styles.secHd}>
             <View style={styles.secHdPill}>
               <ImageIcon size={13} color="#fff" />
@@ -1308,25 +1516,28 @@ export default function AdminEventEditor() {
               </View>
             </View>
           ) : (
-            <TouchableOpacity style={styles.btnUploadThumb} onPress={pickImage}>
-              <ImageIcon size={32} color="#7C3AED" style={{ marginBottom: 10 }} />
-              <Text style={styles.btnUploadThumbTxt}>Upload Poster from Gallery</Text>
-              <Text style={styles.fHint}>Recommended aspect ratio: 16:9 widescreen</Text>
+            <TouchableOpacity 
+              style={[styles.btnUploadThumb, isDark && { backgroundColor: '#27272A', borderColor: 'rgba(255,255,255,0.15)' }]} 
+              onPress={pickImage}
+            >
+              <ImageIcon size={32} color={isDark ? '#C084FC' : '#7C3AED'} style={{ marginBottom: 10 }} />
+              <Text style={[styles.btnUploadThumbTxt, isDark && { color: '#E4E4E7' }]}>Upload Poster from Gallery</Text>
+              <Text style={[styles.fHint, isDark && styles.fHintDark]}>Recommended aspect ratio: 16:9 widescreen</Text>
             </TouchableOpacity>
           )}
 
           <View style={[styles.fGroup, { marginTop: 14 }]}>
-            <Text style={styles.fLabel}>Or Paste Image URL</Text>
+            <Text style={[styles.fLabel, isDark && styles.fLabelDark]}>Or Paste Image URL</Text>
             <View style={styles.urlInputWrap}>
               <TextInput 
-                style={[styles.input, { flex: 1, paddingRight: bannerUrl ? 36 : 12 }]} 
+                style={[styles.input, isDark && styles.inputDark, { flex: 1, paddingRight: bannerUrl ? 36 : 12 }]} 
                 value={bannerUrl} 
                 onChangeText={(val) => {
                   setBannerUrl(val.trim());
                   setImageLoadError(false);
                 }} 
                 placeholder="https://example.com/poster.jpg" 
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={isDark ? '#94A3B8' : '#94A3B8'}
                 autoCapitalize="none"
                 autoCorrect={false}
               />
@@ -1335,16 +1546,16 @@ export default function AdminEventEditor() {
                   style={styles.urlClearBtn} 
                   onPress={() => { setBannerUrl(''); setImageLoadError(false); }}
                 >
-                  <X size={16} color="#9CA3AF" />
+                  <X size={16} color={isDark ? '#94A3B8' : '#9CA3AF'} />
                 </TouchableOpacity>
               )}
             </View>
-            <Text style={styles.fHint}>Supports JPG, PNG, WEBP, and direct cloud image URLs.</Text>
+            <Text style={[styles.fHint, isDark && styles.fHintDark]}>Supports JPG, PNG, WEBP, and direct cloud image URLs.</Text>
           </View>
         </View>
 
         {/* ── Worship Services & Setlist Section (Optional) ── */}
-        <View style={[styles.section, { borderLeftColor: '#10B981', backgroundColor: '#FFFFFF' }]}>
+        <View style={[styles.section, isDark && styles.sectionDark]}>
           <View style={[styles.secHd, { justifyContent: 'space-between', alignItems: 'center' }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
               <View style={[styles.secHdPill, { backgroundColor: '#10B981' }]}>
@@ -1367,10 +1578,10 @@ export default function AdminEventEditor() {
           {/* List of Configured Services */}
           {eventServices.map((service, sIndex) => (
             <View key={service.id} style={{
-              backgroundColor: '#F8FAFC',
+              backgroundColor: isDark ? '#1F1F23' : '#F8FAFC',
               borderRadius: 14,
-              borderWidth: 1,
-              borderColor: '#E2E8F0',
+              borderWidth: 1.5,
+              borderColor: isDark ? 'rgba(255,255,255,0.18)' : '#E2E8F0',
               padding: 14,
               marginBottom: 14
             }}>
@@ -1378,16 +1589,24 @@ export default function AdminEventEditor() {
               <View style={{ marginBottom: 12 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <Text style={{ fontSize: 11, fontWeight: '800', color: '#1a2d5a', letterSpacing: 0.4 }}>SERVICE NAME</Text>
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#E4E4E7' : '#1a2d5a', letterSpacing: 0.4 }}>SERVICE NAME</Text>
                     <Text style={{ fontSize: 13, fontWeight: '800', color: '#DC2626' }}>*</Text>
                   </View>
                   <TouchableOpacity
                     onPress={() => handleRemoveService(service.id)}
-                    style={{ paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6, backgroundColor: '#FEE2E2', flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                    style={{
+                      paddingVertical: 4,
+                      paddingHorizontal: 8,
+                      borderRadius: 6,
+                      backgroundColor: isDark ? 'rgba(239, 68, 68, 0.2)' : '#FEE2E2',
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4
+                    }}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Trash2 size={13} color="#DC2626" />
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#DC2626' }}>Remove</Text>
+                    <Trash2 size={13} color={isDark ? '#F87171' : '#DC2626'} />
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#F87171' : '#DC2626' }}>Remove</Text>
                   </TouchableOpacity>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -1399,10 +1618,10 @@ export default function AdminEventEditor() {
                       flex: 1,
                       fontSize: 14,
                       fontWeight: '700',
-                      color: '#1a2d5a',
-                      backgroundColor: '#FFFFFF',
-                      borderWidth: 1,
-                      borderColor: !service.name?.trim() ? '#EF4444' : '#CBD5E1',
+                      color: isDark ? '#FFFFFF' : '#0F172A',
+                      backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                      borderWidth: 1.5,
+                      borderColor: !service.name?.trim() ? '#EF4444' : (isDark ? 'rgba(255,255,255,0.2)' : '#CBD5E1'),
                       borderRadius: 8,
                       paddingHorizontal: 10,
                       paddingVertical: 7
@@ -1410,7 +1629,7 @@ export default function AdminEventEditor() {
                     value={service.name}
                     onChangeText={(val) => handleUpdateServiceName(service.id, val)}
                     placeholder="e.g. English Service, Morning Worship (Required)"
-                    placeholderTextColor="#94A3B8"
+                    placeholderTextColor={isDark ? '#94A3B8' : '#94A3B8'}
                   />
                 </View>
                 {!service.name?.trim() && (
@@ -1420,22 +1639,32 @@ export default function AdminEventEditor() {
                 )}
               </View>
 
-              {/* Song Leader (Optional) - Service Time removed */}
+              {/* Song Leader (Optional) */}
               <View style={{ marginBottom: 12 }}>
-                <Text style={{ fontSize: 10, fontWeight: '800', color: '#64748B', marginBottom: 4, letterSpacing: 0.5 }}>SONG LEADER (OPTIONAL)</Text>
+                <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? '#E4E4E7' : '#64748B', marginBottom: 4, letterSpacing: 0.5 }}>SONG LEADER (OPTIONAL)</Text>
                 <TextInput
-                  style={{ fontSize: 12, fontWeight: '600', color: '#1a2d5a', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7 }}
+                  style={{
+                    fontSize: 12,
+                    fontWeight: '600',
+                    color: isDark ? '#FFFFFF' : '#0F172A',
+                    backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                    borderWidth: 1.5,
+                    borderColor: isDark ? 'rgba(255,255,255,0.2)' : '#E2E8F0',
+                    borderRadius: 8,
+                    paddingHorizontal: 10,
+                    paddingVertical: 7
+                  }}
                   value={service.songLeader || ''}
                   onChangeText={(val) => handleUpdateServiceLeader(service.id, val)}
                   placeholder="e.g. Bro. David"
-                  placeholderTextColor="#94A3B8"
+                  placeholderTextColor={isDark ? '#94A3B8' : '#94A3B8'}
                 />
               </View>
 
               {/* Scheduled Songs for this Service */}
-              <View style={{ borderTopWidth: 1, borderTopColor: '#E2E8F0', paddingTop: 10 }}>
+              <View style={{ borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255,255,255,0.12)' : '#E2E8F0', paddingTop: 10 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <Text style={{ fontSize: 11, fontWeight: '800', color: '#1a2d5a' }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#FFFFFF' : '#0F172A' }}>
                     Scheduled Songs ({service.songs?.length || 0})
                   </Text>
                   <TouchableOpacity
@@ -1444,25 +1673,25 @@ export default function AdminEventEditor() {
                       flexDirection: 'row',
                       alignItems: 'center',
                       gap: 4,
-                      backgroundColor: '#EFF6FF',
+                      backgroundColor: isDark ? '#27272A' : '#EFF6FF',
                       borderWidth: 1,
-                      borderColor: '#BFDBFE',
+                      borderColor: isDark ? 'rgba(255,255,255,0.2)' : '#BFDBFE',
                       paddingHorizontal: 10,
                       paddingVertical: 5,
                       borderRadius: 8
                     }}
                   >
-                    <Plus size={13} color="#1D4ED8" />
-                    <Text style={{ fontSize: 11, fontWeight: '800', color: '#1D4ED8' }}>
+                    <Plus size={13} color={isDark ? '#FFFFFF' : '#1D4ED8'} />
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#FFFFFF' : '#1D4ED8' }}>
                       {service.songs?.length ? 'Manage / Add Songs' : 'Add Songs'}
                     </Text>
                   </TouchableOpacity>
                 </View>
 
                 {(!service.songs || service.songs.length === 0) ? (
-                  <View style={{ backgroundColor: '#FFFFFF', borderRadius: 10, padding: 14, alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', borderStyle: 'dashed' }}>
-                    <Music size={20} color="#94A3B8" />
-                    <Text style={{ fontSize: 12, color: '#64748B', marginTop: 4 }}>No songs added yet for this service.</Text>
+                  <View style={{ backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderRadius: 10, padding: 14, alignItems: 'center', borderWidth: 1, borderColor: isDark ? 'rgba(255,255,255,0.15)' : '#E2E8F0', borderStyle: 'dashed' }}>
+                    <Music size={20} color={isDark ? '#71717A' : '#94A3B8'} />
+                    <Text style={{ fontSize: 12, color: isDark ? '#A1A1AA' : '#64748B', marginTop: 4 }}>No songs added yet for this service.</Text>
                   </View>
                 ) : (
                   service.songs.map((song, songIdx) => (
@@ -1470,30 +1699,30 @@ export default function AdminEventEditor() {
                       flexDirection: 'row',
                       alignItems: 'center',
                       justifyContent: 'space-between',
-                      backgroundColor: '#FFFFFF',
+                      backgroundColor: isDark ? '#18181B' : '#FFFFFF',
                       borderRadius: 10,
                       padding: 10,
                       marginBottom: 6,
                       borderWidth: 1,
-                      borderColor: '#E2E8F0'
+                      borderColor: isDark ? 'rgba(255,255,255,0.15)' : '#E2E8F0'
                     }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, marginRight: 8 }}>
-                        <Text style={{ fontSize: 12, fontWeight: '800', color: '#64748B', width: 20 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '800', color: isDark ? '#A1A1AA' : '#64748B', width: 20 }}>
                           {songIdx + 1}.
                         </Text>
                         <View style={{ flex: 1 }}>
-                          <Text style={{ fontSize: 13, fontWeight: '700', color: '#1a2d5a' }} numberOfLines={1}>
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? '#FFFFFF' : '#0F172A' }} numberOfLines={1}>
                             {song.title}
                           </Text>
                           {song.titleTe ? (
-                            <Text style={{ fontSize: 10, color: '#64748B' }} numberOfLines={1}>
+                            <Text style={{ fontSize: 10, color: isDark ? '#94A3B8' : '#64748B' }} numberOfLines={1}>
                               {song.titleTe}
                             </Text>
                           ) : null}
                         </View>
                         {song.key ? (
-                          <View style={{ backgroundColor: '#EEF2FF', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
-                            <Text style={{ fontSize: 10, fontWeight: '800', color: '#4338CA' }}>{song.key}</Text>
+                          <View style={{ backgroundColor: isDark ? '#312E81' : '#EEF2FF', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                            <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? '#A5B4FC' : '#4338CA' }}>{song.key}</Text>
                           </View>
                         ) : null}
                       </View>
@@ -1503,20 +1732,20 @@ export default function AdminEventEditor() {
                           onPress={() => handleMoveSongInService(service.id, songIdx, 'up')}
                           style={{ padding: 4, opacity: songIdx === 0 ? 0.3 : 1 }}
                         >
-                          <ArrowUp size={13} color="#475569" />
+                          <ArrowUp size={13} color={isDark ? '#A1A1AA' : '#475569'} />
                         </TouchableOpacity>
                         <TouchableOpacity
                           disabled={songIdx === service.songs.length - 1}
                           onPress={() => handleMoveSongInService(service.id, songIdx, 'down')}
                           style={{ padding: 4, opacity: songIdx === service.songs.length - 1 ? 0.3 : 1 }}
                         >
-                          <ArrowDown size={13} color="#475569" />
+                          <ArrowDown size={13} color={isDark ? '#A1A1AA' : '#475569'} />
                         </TouchableOpacity>
                         <TouchableOpacity
                           onPress={() => handleRemoveSongFromService(service.id, songIdx)}
                           style={{ padding: 4, marginLeft: 2 }}
                         >
-                          <Trash2 size={13} color="#DC2626" />
+                          <Trash2 size={13} color={isDark ? '#F87171' : '#DC2626'} />
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -1532,9 +1761,9 @@ export default function AdminEventEditor() {
               flexDirection: 'row',
               alignItems: 'center',
               justifyContent: 'center',
-              backgroundColor: eventServices.length === 0 ? '#10B981' : '#F0FDF4',
+              backgroundColor: isDark ? '#FFFFFF' : '#000000',
               borderWidth: 1.5,
-              borderColor: '#10B981',
+              borderColor: isDark ? '#FFFFFF' : '#000000',
               borderRadius: 12,
               paddingVertical: 12,
               paddingHorizontal: 16,
@@ -1542,16 +1771,17 @@ export default function AdminEventEditor() {
               marginTop: 6
             }}
             onPress={handleAddService}
+            activeOpacity={0.8}
           >
-            <Plus size={16} color={eventServices.length === 0 ? '#FFFFFF' : '#047857'} />
-            <Text style={{ fontSize: 13, fontWeight: '800', color: eventServices.length === 0 ? '#FFFFFF' : '#047857' }}>
+            <Plus size={16} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.5} />
+            <Text style={{ fontSize: 13, fontWeight: '800', color: isDark ? '#000000' : '#FFFFFF' }}>
               {eventServices.length === 0 ? 'Add Worship Service / Setlist' : 'Add Another Service'}
             </Text>
           </TouchableOpacity>
         </View>
 
         {/* ── Attendance & QR Check-In Settings ── */}
-        <View style={[styles.section, styles.secNavy, requireEventQR && { borderColor: '#B45309', borderWidth: 1.5, backgroundColor: '#FFFBEB' }]}>
+        <View style={[styles.section, isDark && styles.sectionDark, requireEventQR && { borderColor: '#B45309', borderWidth: 1.5, backgroundColor: isDark ? 'rgba(180, 83, 9, 0.15)' : '#FFFBEB' }]}>
           <View style={styles.secHd}>
             <View style={[styles.secHdPill, { backgroundColor: requireEventQR ? '#B45309' : '#1a2d5a' }]}>
               <QrCode size={13} color="#fff" />
@@ -1566,8 +1796,8 @@ export default function AdminEventEditor() {
 
           <View style={[styles.switchRow, { alignItems: 'flex-start' }]}>
             <View style={{ flex: 1, paddingRight: 14 }}>
-              <Text style={styles.switchLabel}>Event QR Code Required</Text>
-              <Text style={[styles.fHint, { marginTop: 4, lineHeight: 16 }]}>
+              <Text style={[styles.switchLabel, isDark && { color: '#FFFFFF' }]}>Event QR Code Required</Text>
+              <Text style={[styles.fHint, isDark && styles.fHintDark, { marginTop: 4, lineHeight: 16 }]}>
                 {requireEventQR
                   ? 'Attendance for this event is allowed ONLY through its specific Event QR Code. The Church QR Code will NOT work.'
                   : 'Church QR Code is allowed. Members can scan either the permanent Church QR or this Event QR to mark attendance.'}
@@ -1662,11 +1892,29 @@ export default function AdminEventEditor() {
         </View>
 
         <View style={styles.footerBtnRow}>
-          <TouchableOpacity style={styles.btnDraft} onPress={() => handleSave('Draft')} disabled={loading}>
+          <TouchableOpacity 
+            style={[
+              styles.btnDraft, 
+              isDark ? {
+                backgroundColor: '#27272A',
+                borderColor: 'rgba(255, 255, 255, 0.25)',
+                borderWidth: 1.5,
+              } : {
+                backgroundColor: '#F8FAFC',
+                borderColor: '#CBD5E1',
+                borderWidth: 1.5,
+              }
+            ]} 
+            onPress={() => handleSave('Draft')} 
+            disabled={loading}
+            activeOpacity={0.8}
+          >
             {loading && publishStatus === 'Draft' ? (
-              <ActivityIndicator color="#1a2d5a" size="small" />
+              <ActivityIndicator color={isDark ? '#FFFFFF' : '#0F172A'} size="small" />
             ) : (
-              <Text style={styles.btnDraftTxt}>Save as Draft</Text>
+              <Text style={[styles.btnDraftTxt, { color: isDark ? '#FFFFFF' : '#0F172A', fontWeight: '800' }]}>
+                Save as Draft
+              </Text>
             )}
           </TouchableOpacity>
           {editingData ? (
@@ -1674,23 +1922,35 @@ export default function AdminEventEditor() {
               style={[
                 styles.btnDraft,
                 {
-                  borderColor: '#94A3B8',
-                  backgroundColor: publishStatus === 'Completed' ? '#E2E8F0' : '#F8FAFC',
+                  borderColor: isDark ? 'rgba(255,255,255,0.2)' : '#94A3B8',
+                  backgroundColor: publishStatus === 'Completed' ? (isDark ? '#3F3F46' : '#E2E8F0') : (isDark ? '#27272A' : '#F8FAFC'),
                 },
               ]}
               onPress={() => handleSave(publishStatus === 'Completed' ? 'Published' : 'Completed')}
               disabled={loading}
+              activeOpacity={0.8}
             >
               {loading && publishStatus === 'Completed' ? (
-                <ActivityIndicator color="#1a2d5a" size="small" />
+                <ActivityIndicator color={isDark ? '#FFFFFF' : '#1a2d5a'} size="small" />
               ) : (
-                <Text style={[styles.btnDraftTxt, { color: '#334155' }]}>
+                <Text style={[styles.btnDraftTxt, { color: isDark ? '#FFFFFF' : '#334155', fontWeight: '800' }]}>
                   {publishStatus === 'Completed' ? 'Reopen Event' : 'Mark Completed ✓'}
                 </Text>
               )}
             </TouchableOpacity>
           ) : null}
-          <TouchableOpacity style={styles.btnSave} onPress={() => handleSave('Published')} disabled={loading}>
+          <TouchableOpacity 
+            style={[
+              styles.btnSave,
+              isDark && {
+                backgroundColor: '#10B981',
+                shadowColor: '#10B981',
+              }
+            ]} 
+            onPress={() => handleSave('Published')} 
+            disabled={loading}
+            activeOpacity={0.8}
+          >
             {loading && publishStatus === 'Published' ? (
               <ActivityIndicator color="#fff" size="small" />
             ) : (
@@ -1700,7 +1960,7 @@ export default function AdminEventEditor() {
         </View>
 
         <TouchableOpacity style={styles.btnBack} onPress={() => { resetForm(); setTabByName?.('Events'); }}>
-          <Text style={styles.btnBackTxt}>← Back to list</Text>
+          <Text style={[styles.btnBackTxt, isDark && { color: '#94A3B8' }]}>← Back to list</Text>
         </TouchableOpacity>
 
         <View style={{ height: 100 }} />
@@ -1800,11 +2060,11 @@ export default function AdminEventEditor() {
 
             <View style={styles.newTypeBody}>
               <View style={styles.newTypeField}>
-                <Text style={styles.newTypeLabel}>Event Type Name (English) <Text style={{ color: '#c0392b' }}>*</Text></Text>
+                <Text style={[styles.newTypeLabel, isDark && { color: '#E4E4E7' }]}>Event Type Name (English) <Text style={{ color: '#c0392b' }}>*</Text></Text>
                 <TextInput
-                  style={styles.newTypeInput}
+                  style={[styles.newTypeInput, isDark && { backgroundColor: '#27272A', color: '#FFFFFF', borderColor: 'rgba(255,255,255,0.2)' }]}
                   placeholder="e.g. Youth Camp, VBS, Fellowship"
-                  placeholderTextColor="#9ca3af"
+                  placeholderTextColor={isDark ? '#94A3B8' : '#9ca3af'}
                   value={newTypeNameEn}
                   onChangeText={setNewTypeNameEn}
                   autoFocus
@@ -1812,11 +2072,11 @@ export default function AdminEventEditor() {
               </View>
 
               <View style={styles.newTypeField}>
-                <Text style={styles.newTypeLabel}>Event Type Name (Telugu — Optional)</Text>
+                <Text style={[styles.newTypeLabel, isDark && { color: '#E4E4E7' }]}>Event Type Name (Telugu — Optional)</Text>
                 <TextInput
-                  style={[styles.newTypeInput, styles.teIn]}
+                  style={[styles.newTypeInput, styles.teIn, isDark && { backgroundColor: '#27272A', color: '#FFFFFF', borderColor: 'rgba(255,255,255,0.2)' }]}
                   placeholder="ఉదా: వేసవి బైబిల్ పాఠశాల"
-                  placeholderTextColor="#9ca3af"
+                  placeholderTextColor={isDark ? '#94A3B8' : '#9ca3af'}
                   value={newTypeNameTe}
                   onChangeText={setNewTypeNameTe}
                 />
@@ -1850,7 +2110,7 @@ export default function AdminEventEditor() {
       <Modal visible={showSongPicker} transparent animationType="slide">
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' }}>
           <View style={{
-            backgroundColor: '#FFFFFF',
+            backgroundColor: isDark ? '#18181B' : '#FFFFFF',
             borderTopLeftRadius: 24,
             borderTopRightRadius: 24,
             height: '85%',
@@ -1861,23 +2121,23 @@ export default function AdminEventEditor() {
             {/* Header */}
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center' }}>
-                  <Music size={20} color="#2563EB" />
+                <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: isDark ? 'rgba(37, 99, 235, 0.2)' : '#EFF6FF', alignItems: 'center', justifyContent: 'center' }}>
+                  <Music size={20} color={isDark ? '#60A5FA' : '#2563EB'} />
                 </View>
                 <View>
-                  <Text style={{ fontSize: 16, fontWeight: '800', color: '#1a2d5a' }}>
+                  <Text style={{ fontSize: 16, fontWeight: '800', color: isDark ? '#FFFFFF' : '#1a2d5a' }}>
                     Select Service Songs
                   </Text>
-                  <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600' }}>
+                  <Text style={{ fontSize: 11, color: isDark ? '#94A3B8' : '#64748B', fontWeight: '600' }}>
                     {tempSelectedSongs.length} {tempSelectedSongs.length === 1 ? 'song selected' : 'songs selected'}
                   </Text>
                 </View>
               </View>
               <TouchableOpacity
                 onPress={() => setShowSongPicker(false)}
-                style={{ padding: 6, borderRadius: 8, backgroundColor: '#F1F5F9' }}
+                style={{ padding: 6, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9' }}
               >
-                <X size={18} color="#64748B" />
+                <X size={18} color={isDark ? '#E4E4E7' : '#64748B'} />
               </TouchableOpacity>
             </View>
 
@@ -1885,20 +2145,20 @@ export default function AdminEventEditor() {
             <View style={{
               flexDirection: 'row',
               alignItems: 'center',
-              backgroundColor: '#F8FAFC',
+              backgroundColor: isDark ? '#27272A' : '#F8FAFC',
               borderWidth: 1,
-              borderColor: '#E2E8F0',
+              borderColor: isDark ? 'rgba(255,255,255,0.15)' : '#E2E8F0',
               borderRadius: 12,
               paddingHorizontal: 12,
               paddingVertical: 8,
               marginBottom: 10,
               gap: 8
             }}>
-              <Search size={16} color="#94A3B8" />
+              <Search size={16} color={isDark ? '#94A3B8' : '#94A3B8'} />
               <TextInput
-                style={{ flex: 1, fontSize: 13, color: '#1a2d5a' }}
+                style={{ flex: 1, fontSize: 13, color: isDark ? '#FFFFFF' : '#0F172A' }}
                 placeholder="Search songs by English or Telugu title..."
-                placeholderTextColor="#94A3B8"
+                placeholderTextColor={isDark ? '#94A3B8' : '#94A3B8'}
                 value={songPickerSearch}
                 onChangeText={setSongPickerSearch}
                 autoCorrect={false}
@@ -2044,7 +2304,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     shadowRadius: 2,
     elevation: 1,
   },
-  container: { flex: 1, backgroundColor: '#EDE8DC' },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
   scroll: { padding: 14, paddingBottom: 100 },
 
   validationErrorCard: {
@@ -2076,9 +2336,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   },
 
   hero: { 
-    backgroundColor: '#1a2d5a', 
-    
-    
+    backgroundColor: '#FFFFFF', 
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 12,
@@ -2087,29 +2345,31 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     marginBottom: 6
   },
   heroTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start' },
-  heroTitle: { color: '#1a2d5a', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '600', letterSpacing: -0.5 },
+  heroTitle: { color: '#0F172A', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '800', letterSpacing: -0.4 },
 
   section: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(26,45,90,0.08)',
-    borderTopWidth: 3,
-    borderTopColor: '#1a2d5a',
-    shadowColor: '#1a2d5a',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 14,
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    shadowColor: '#000000',
     shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  secNavy: { borderTopColor: '#1a2d5a' },
-  secBlue: { borderTopColor: '#0891B2' },
-  secRed: { borderTopColor: '#c0392b' },
-  secGreen: { borderTopColor: '#15803D' },
-  secPurple: { borderTopColor: '#7C3AED' },
-  secAmber: { borderTopColor: '#D97706' },
+  sectionDark: {
+    backgroundColor: '#18181B',
+    borderColor: 'rgba(255, 255, 255, 0.22)',
+  },
+  secNavy: {},
+  secBlue: {},
+  secRed: {},
+  secGreen: {},
+  secPurple: {},
+  secAmber: {},
 
   secHd: {
     flexDirection: 'row',
@@ -2117,21 +2377,21 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     gap: 9,
     marginBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(26,45,90,0.07)',
+    borderBottomColor: '#E2E8F0',
     paddingBottom: 10,
   },
   secHdPill: {
     width: 26,
     height: 26,
     borderRadius: 7,
-    backgroundColor: '#1a2d5a',
+    backgroundColor: '#0F172A',
     justifyContent: 'center',
     alignItems: 'center',
   },
   secHdTXT: {
     fontSize: 12,
     fontWeight: '800',
-    color: '#1a2d5a',
+    color: '#0F172A',
     textTransform: 'uppercase',
     letterSpacing: 1.3,
     flex: 1,
@@ -2146,35 +2406,49 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     letterSpacing: 0.7,
     marginBottom: 6,
   },
-  fHint: { fontWeight: '500', color: '#9CA3AF', fontSize: 11, textTransform: 'none', letterSpacing: 0 },
+  fLabelDark: {
+    color: '#E4E4E7',
+  },
+  fHint: { fontWeight: '500', color: '#64748B', fontSize: 11, textTransform: 'none', letterSpacing: 0 },
+  fHintDark: { color: '#94A3B8' },
 
   inputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FAFAF9',
     borderWidth: 1,
-    borderColor: '#E2DDD5',
+    borderColor: '#CBD5E1',
     borderRadius: 10,
     paddingHorizontal: 13,
     paddingVertical: 11,
   },
-  inputText: { flex: 1, fontSize: 13, color: '#1a2d5a', fontWeight: '500' },
+  inputWrapDark: {
+    backgroundColor: '#27272A',
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  inputText: { flex: 1, fontSize: 13, color: '#0F172A', fontWeight: '500' },
+  inputTextDark: { color: '#FFFFFF' },
   input: {
     backgroundColor: '#FAFAF9',
     borderWidth: 1,
-    borderColor: '#E2DDD5',
+    borderColor: '#CBD5E1',
     borderRadius: 10,
     paddingHorizontal: 13,
     paddingVertical: 11,
     fontSize: 13,
-    color: '#1a2d5a',
+    color: '#0F172A',
     fontWeight: '500',
   },
+  inputDark: {
+    backgroundColor: '#27272A',
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    color: '#FFFFFF',
+  },
   textarea: { minHeight: 80, textAlignVertical: 'top', paddingTop: 11 },
-  teIn: { fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', color: '#1a2d5a', fontSize: 14, lineHeight: 22 },
+  teIn: { fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', color: '#0F172A', fontSize: 14, lineHeight: 22 },
 
   switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
-  switchLabel: { fontSize: 13, color: '#1a2d5a', fontWeight: '500' },
+  switchLabel: { fontSize: 13, color: '#0F172A', fontWeight: '500' },
 
   dropdownMenu: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, marginTop: 4, elevation: 3 },
   dropdownItem: { padding: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
@@ -2396,11 +2670,17 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   },
   btnSaveTxt: { color: '#fff', fontSize: 13, fontWeight: '800', letterSpacing: 0.3 },
   btnDraft: {
-    flex: 1, backgroundColor: '#F5F0E8', borderRadius: 14, paddingVertical: 16,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1.5, borderColor: 'rgba(26,45,90,0.30)',
+    flex: 1, 
+    backgroundColor: '#F8FAFC', 
+    borderRadius: 14, 
+    paddingVertical: 16,
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'center',
+    borderWidth: 1.5, 
+    borderColor: '#CBD5E1',
   },
-  btnDraftTxt: { color: '#1a2d5a', fontSize: 13, fontWeight: '700', letterSpacing: 0.2 },
+  btnDraftTxt: { color: '#0F172A', fontSize: 13, fontWeight: '800', letterSpacing: 0.2 },
   btnBack: { alignItems: 'center', paddingVertical: 10 },
   btnBackTxt: { fontSize: 14, color: '#6B7280', fontWeight: '600' },
 
@@ -2706,6 +2986,12 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     backgroundColor: '#F1F5F9',
     padding: 4,
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  cadenceSelectorDark: {
+    backgroundColor: '#27272A',
+    borderColor: 'rgba(255, 255, 255, 0.15)',
   },
   cadenceBtn: {
     flex: 1,
@@ -2717,34 +3003,37 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     borderRadius: 9,
     backgroundColor: 'transparent',
   },
-  cadenceBtnActive: {
-    backgroundColor: '#FFFFFF',
+  cadenceBtnActiveLight: {
+    backgroundColor: '#000000',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
     elevation: 2,
   },
-  cadenceBtnActiveRecurring: {
+  cadenceBtnActiveDark: {
     backgroundColor: '#FFFFFF',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
   },
   cadenceBtnTxt: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#64748B',
   },
-  cadenceBtnTxtActive: {
-    color: '#0F172A',
-    fontWeight: '700',
+  cadenceBtnTxtDark: {
+    color: '#A1A1AA',
   },
-  cadenceBtnTxtActiveRecurring: {
-    color: '#0D9488',
-    fontWeight: '700',
+  cadenceBtnTxtActiveLight: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+  cadenceBtnTxtActiveDark: {
+    color: '#000000',
+    fontWeight: '800',
   },
 
   recurringInfoCard: {

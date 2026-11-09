@@ -213,13 +213,37 @@ export default function AdminCelebrationsVersePicker({ category, selectedVerseRe
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={onBack}>
-          <ArrowLeft stroke="#162057" width={20} height={20} />
+      <View style={[
+        styles.header,
+        {
+          backgroundColor: isDark ? '#000000' : '#FFFFFF',
+          borderBottomWidth: 1.5,
+          borderBottomColor: isDark ? '#27272A' : '#CBD5E1',
+          paddingBottom: 14,
+          paddingTop: 12,
+          paddingHorizontal: 20,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }
+      ]}>
+        <TouchableOpacity 
+          style={[
+            styles.backButton,
+            {
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#FFFFFF',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.3)' : '#CBD5E1',
+              borderWidth: 1.5,
+            }
+          ]} 
+          onPress={onBack}
+          activeOpacity={0.7}
+        >
+          <ArrowLeft color={isDark ? '#FFFFFF' : '#000000'} width={20} height={20} strokeWidth={2.2} />
         </TouchableOpacity>
-        <View style={styles.headerTitles}>
-          <Text style={styles.headerSubtitle}>Prepare Wish</Text>
-          <Text style={styles.headerTitle}>Bible Verse</Text>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={[styles.headerSubtitle, { color: isDark ? '#A1A1AA' : '#BE9A3A', textAlign: 'center' }]}>Prepare Wish</Text>
+          <Text style={[styles.headerTitle, { color: isDark ? '#FFFFFF' : '#162057', textAlign: 'center' }]}>Bible Verse</Text>
         </View>
         <View style={{ width: 40 }} />
       </View>

@@ -49,14 +49,40 @@ export default function AdminCelebrationsPhotoPicker({
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-          <ArrowLeft size={20} color="#162057" />
+      <View style={[
+        styles.header,
+        {
+          backgroundColor: isDark ? '#000000' : '#FFFFFF',
+          borderBottomWidth: 1.5,
+          borderBottomColor: isDark ? '#27272A' : '#CBD5E1',
+          paddingBottom: 14,
+          paddingTop: 12,
+          paddingHorizontal: 20,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }
+      ]}>
+        <TouchableOpacity 
+          onPress={onBack} 
+          style={[
+            styles.backBtn,
+            {
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#FFFFFF',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.3)' : '#CBD5E1',
+              borderWidth: 1.5,
+              marginRight: 0,
+            }
+          ]}
+          activeOpacity={0.7}
+        >
+          <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.2} />
         </TouchableOpacity>
-        <View style={styles.headerTextContainer}>
-          <Text style={styles.eyebrow}>PREPARE WISH</Text>
-          <Text style={styles.title}>Upload Photo</Text>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={[styles.eyebrow, { color: isDark ? '#A1A1AA' : '#B88A2E', textAlign: 'center' }]}>PREPARE WISH</Text>
+          <Text style={[styles.title, { color: isDark ? '#FFFFFF' : '#162057', textAlign: 'center' }]}>Upload Photo</Text>
         </View>
+        <View style={{ width: 40 }} />
       </View>
 
       <View style={styles.content}>

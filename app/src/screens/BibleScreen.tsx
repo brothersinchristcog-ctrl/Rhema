@@ -142,12 +142,15 @@ export default function BibleScreen({ navigation }: any) {
 
   const filteredBooks = getFilteredBooks();
 
+  const activeBadgeBg = isDark ? '#FFFFFF' : '#000000';
+  const activeBadgeText = isDark ? '#000000' : '#FFFFFF';
+  const inactiveBadgeBorder = isDark ? colors.border : '#94A3B8';
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar barStyle={colors.barStyle} backgroundColor={colors.background} />
       
-      {/* Header */}
-            {/* ── Screen Header (Clean circular back button & title) ── */}
+      {/* ── Screen Header (Clean circular back button & title) ── */}
       <View
         style={[
           styles.headerRow,
@@ -155,7 +158,7 @@ export default function BibleScreen({ navigation }: any) {
         ]}
       >
         <TouchableOpacity
-          style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: isDark ? colors.border : '#94A3B8' }]}
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           activeOpacity={0.8}
@@ -172,7 +175,7 @@ export default function BibleScreen({ navigation }: any) {
 
       {/* Search Input + Dropdown Suggestions Wrapper */}
       <View style={{ marginHorizontal: 20, zIndex: 200 }}>
-        <View style={[styles.searchBarContainer, { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, marginHorizontal: 0 }]}>
+        <View style={[styles.searchBarContainer, { backgroundColor: colors.surface, borderColor: isDark ? colors.border : '#94A3B8', borderWidth: 1.2, marginHorizontal: 0 }]}>
           <TouchableOpacity 
             style={{ padding: 4, marginRight: 6 }}
             onPress={() => {
@@ -242,14 +245,18 @@ export default function BibleScreen({ navigation }: any) {
                 key={l.code}
                 style={[
                   styles.langChip, 
-                  { backgroundColor: isSelected ? colors.accent : colors.surface, borderColor: colors.border, borderWidth: 1 }
+                  {
+                    backgroundColor: isSelected ? activeBadgeBg : colors.surface,
+                    borderColor: isSelected ? activeBadgeBg : inactiveBadgeBorder,
+                    borderWidth: 1.2
+                  }
                 ]}
                 onPress={() => handleBibleLanguageSelect(l.code as SupportedLanguage)}
               >
-                <Globe size={14} color={isSelected ? '#fff' : colors.textSecondary} style={{ marginRight: 6 }} />
+                <Globe size={14} color={isSelected ? activeBadgeText : colors.textSecondary} style={{ marginRight: 6 }} />
                 <Text style={[
                   styles.langChipText, 
-                  { color: isSelected ? '#fff' : colors.textSecondary },
+                  { color: isSelected ? activeBadgeText : colors.textSecondary },
                   isSelected && styles.langChipTextActive
                 ]}>
                   {l.nativeName}
@@ -264,28 +271,31 @@ export default function BibleScreen({ navigation }: any) {
       {bibleLanguage === 'en' && !searchQuery && (
         <View style={{ marginHorizontal: 20, marginBottom: 15 }}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-            {ENGLISH_VERSIONS.map(ver => (
-              <TouchableOpacity
-                key={ver}
-                style={{
-                  paddingHorizontal: 16,
-                  paddingVertical: 8,
-                  borderRadius: 20,
-                  backgroundColor: englishVersion === ver ? colors.accent : colors.surface,
-                  borderWidth: 1,
-                  borderColor: englishVersion === ver ? colors.accent : colors.border
-                }}
-                onPress={() => handleVersionSelect(ver)}
-              >
-                <Text style={{
-                  color: englishVersion === ver ? '#fff' : colors.textSecondary,
-                  fontWeight: englishVersion === ver ? '700' : '500',
-                  fontSize: 13
-                }}>
-                  {ver}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {ENGLISH_VERSIONS.map(ver => {
+              const isVerSelected = englishVersion === ver;
+              return (
+                <TouchableOpacity
+                  key={ver}
+                  style={{
+                    paddingHorizontal: 16,
+                    paddingVertical: 8,
+                    borderRadius: 20,
+                    backgroundColor: isVerSelected ? activeBadgeBg : colors.surface,
+                    borderWidth: 1.2,
+                    borderColor: isVerSelected ? activeBadgeBg : inactiveBadgeBorder
+                  }}
+                  onPress={() => handleVersionSelect(ver)}
+                >
+                  <Text style={{
+                    color: isVerSelected ? activeBadgeText : colors.textSecondary,
+                    fontWeight: isVerSelected ? '800' : '600',
+                    fontSize: 13
+                  }}>
+                    {ver}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
         </View>
       )}
@@ -300,6 +310,7 @@ export default function BibleScreen({ navigation }: any) {
               bookIndex: parsedRef.bookIndex,
               bookName: parsedRef.bookName,
               chapter: parsedRef.chapter,
+              targetVerse: parsedRef.verse || undefined,
               lang: bibleLanguage
             });
             setSearchQuery('');
@@ -324,23 +335,22 @@ export default function BibleScreen({ navigation }: any) {
         </TouchableOpacity>
       )}
 
-
       {/* Testament Tabs */}
       {!searchQuery && (
-        <View style={[styles.tabContainer, { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderRadius: 24, padding: 4 }]}>
+        <View style={[styles.tabContainer, { backgroundColor: colors.surface, borderColor: inactiveBadgeBorder, borderWidth: 1.2, borderRadius: 24, padding: 4 }]}>
           <TouchableOpacity 
-            style={[styles.tab, { backgroundColor: testament === 'OT' ? colors.accent : 'transparent' }]}
+            style={[styles.tab, { backgroundColor: testament === 'OT' ? activeBadgeBg : 'transparent' }]}
             onPress={() => setTestament('OT')}
           >
-            <Text style={[styles.tabText, { color: testament === 'OT' ? '#FFFFFF' : colors.textSecondary, fontWeight: '700' }]}>
+            <Text style={[styles.tabText, { color: testament === 'OT' ? activeBadgeText : colors.textSecondary, fontWeight: '700' }]}>
               {t('bible.oldTestament')}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity 
-            style={[styles.tab, { backgroundColor: testament === 'NT' ? colors.accent : 'transparent' }]}
+            style={[styles.tab, { backgroundColor: testament === 'NT' ? activeBadgeBg : 'transparent' }]}
             onPress={() => setTestament('NT')}
           >
-            <Text style={[styles.tabText, { color: testament === 'NT' ? '#FFFFFF' : colors.textSecondary, fontWeight: '700' }]}>
+            <Text style={[styles.tabText, { color: testament === 'NT' ? activeBadgeText : colors.textSecondary, fontWeight: '700' }]}>
               {t('bible.newTestament')}
             </Text>
           </TouchableOpacity>
@@ -351,7 +361,7 @@ export default function BibleScreen({ navigation }: any) {
         {/* Deep Verse Search Prompt */}
         {searchQuery.length > 2 && !parsedRef?.chapter && (
           <TouchableOpacity 
-            style={[styles.deepSearchCard, { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderLeftWidth: 4, borderLeftColor: colors.accent, marginTop: 10 }]}
+            style={[styles.deepSearchCard, { backgroundColor: colors.surface, borderColor: inactiveBadgeBorder, borderWidth: 1, borderLeftWidth: 4, borderLeftColor: activeBadgeBg, marginTop: 10 }]}
             onPress={() => {
               navigation.navigate('BibleSearch', {
                 initialQuery: searchQuery,
@@ -360,8 +370,8 @@ export default function BibleScreen({ navigation }: any) {
             }}
           >
             <View style={styles.deepSearchLeft}>
-              <View style={[styles.deepSearchIcon, { backgroundColor: colors.accent }]}>
-                <Search size={18} color="#fff" />
+              <View style={[styles.deepSearchIcon, { backgroundColor: activeBadgeBg }]}>
+                <Search size={18} color={activeBadgeText} />
               </View>
               <View>
                 <Text style={[styles.deepSearchTitle, { color: colors.textSecondary }]}>
@@ -370,7 +380,7 @@ export default function BibleScreen({ navigation }: any) {
                 <Text style={[styles.deepSearchQuery, { color: colors.text }]}>"{searchQuery}"</Text>
               </View>
             </View>
-            <ChevronLeft color="#1a2d5a" size={20} style={{ transform: [{ rotate: '180deg' }] }} />
+            <ChevronLeft color={colors.text} size={20} style={{ transform: [{ rotate: '180deg' }] }} />
           </TouchableOpacity>
         )}
 
@@ -388,7 +398,16 @@ export default function BibleScreen({ navigation }: any) {
               return (
                 <TouchableOpacity 
                   key={`${bookIndex}-${index}`} 
-                  style={[styles.bookCard, { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 }]}
+                  activeOpacity={0.85}
+                  style={[
+                    styles.bookCard,
+                    {
+                      borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#94A3B8',
+                      borderWidth: 1.2,
+                      backgroundColor: isDark ? 'rgba(24, 24, 27, 0.65)' : 'rgba(255, 255, 255, 0.72)',
+                      shadowColor: isDark ? '#000000' : '#64748B',
+                    }
+                  ]}
                   onPress={() => {
                     navigation.navigate('BibleChapters', { 
                       bookIndex,
@@ -398,15 +417,47 @@ export default function BibleScreen({ navigation }: any) {
                     });
                   }}
                 >
-                  <View style={styles.bookIcon}>
-                    <BookOpen size={20} color="#1a2d5a" />
-                  </View>
-                  <Text style={[styles.bookName, { color: isDark ? '#fff' : '#1e293b' }]} numberOfLines={1}>
-                    {book}
-                  </Text>
-                  <Text style={[styles.bookSub, { color: colors.textSecondary }]}>
-                    {t('bible.readNow')}
-                  </Text>
+                  <LinearGradient
+                    colors={
+                      isDark
+                        ? ['rgba(255, 255, 255, 0.10)', 'rgba(39, 39, 42, 0.45)', 'rgba(15, 15, 18, 0.75)']
+                        : ['rgba(255, 255, 255, 0.94)', 'rgba(248, 250, 252, 0.80)', 'rgba(226, 232, 240, 0.55)']
+                    }
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.bookCardGlassInner}
+                  >
+                    {/* Glassmorphism specular highlight / sheen */}
+                    <View
+                      style={[
+                        styles.glassHighlightGlow,
+                        {
+                          backgroundColor: isDark
+                            ? 'rgba(255, 255, 255, 0.06)'
+                            : 'rgba(255, 255, 255, 0.85)'
+                        }
+                      ]}
+                    />
+
+                    <View
+                      style={[
+                        styles.bookIcon,
+                        {
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(15, 23, 42, 0.06)',
+                          borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : 'rgba(148, 163, 184, 0.45)',
+                          borderWidth: 1,
+                        }
+                      ]}
+                    >
+                      <BookOpen size={20} color={isDark ? '#FFFFFF' : '#0F172A'} />
+                    </View>
+                    <Text style={[styles.bookName, { color: isDark ? '#FFFFFF' : '#0F172A' }]} numberOfLines={1}>
+                      {book}
+                    </Text>
+                    <Text style={[styles.bookSub, { color: isDark ? '#A1A1AA' : '#475569' }]}>
+                      {t('bible.readNow')}
+                    </Text>
+                  </LinearGradient>
                 </TouchableOpacity>
               );
             })}
@@ -420,7 +471,7 @@ export default function BibleScreen({ navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-    headerRow: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -554,17 +605,19 @@ const styles = StyleSheet.create({
 
   tabContainer: {
     flexDirection: 'row',
-    paddingHorizontal: 20,
+    marginHorizontal: 20,
     marginBottom: 15,
-    gap: 12
+    gap: 8
   },
   tab: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 9,
     borderRadius: 20,
-    backgroundColor: '#f1f5f9'
   },
-  tabActive: { backgroundColor: '#c0392b' },
+  tabActive: { backgroundColor: '#000000' },
   tabText: { fontSize: 13, fontWeight: '700', color: '#64748b' },
   tabTextActive: { color: '#fff' },
 
@@ -577,26 +630,40 @@ const styles = StyleSheet.create({
   },
   bookCard: {
     width: (width - 42) / 2,
-    padding: 16,
     borderRadius: 20,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    alignItems: 'center'
+    overflow: 'hidden',
+    elevation: 4,
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 5 },
+  },
+  bookCardGlassInner: {
+    width: '100%',
+    paddingVertical: 18,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  glassHighlightGlow: {
+    position: 'absolute',
+    top: -28,
+    left: -20,
+    width: 90,
+    height: 60,
+    borderRadius: 45,
+    transform: [{ rotate: '-18deg' }],
   },
   bookIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#eff6ff',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 10
   },
-  bookName: { fontSize: 13, fontWeight: '800', textAlign: 'center', marginBottom: 2 },
-  bookSub: { fontSize: 10, color: '#94a3b8', fontWeight: '600' },
+  bookName: { fontSize: 13.5, fontWeight: '800', textAlign: 'center', marginBottom: 3 },
+  bookSub: { fontSize: 10.5, fontWeight: '700' },
 
   searchBarContainer: {
     flexDirection: 'row',

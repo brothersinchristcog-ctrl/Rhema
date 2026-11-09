@@ -566,81 +566,133 @@ export default function AdminSermonEditor() {
   const currentThumbnailUri = form.thumbnailUrl || (thumbnailFile ? thumbnailFile.uri : null);
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+    <View style={[styles.container, { backgroundColor: isDark ? '#000000' : '#F8FAFC' }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
-      {/* ── Hero Section ── */}
-      <View style={styles.hero}>
-        <View style={styles.heroTitleRow}>
+      {/* ── Hero Section (Top Mini Card Header) ── */}
+      <View style={[styles.hero, {
+        backgroundColor: isDark ? '#000000' : '#FFFFFF',
+        borderBottomWidth: 1,
+        borderBottomColor: isDark ? '#27272A' : '#E2E8F0',
+        paddingBottom: 14,
+        marginBottom: 8
+      }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <TouchableOpacity
             onPress={() => setTabByName?.('Sermons')}
-            style={styles.circularBackBtn}
+            style={[
+              styles.circularBackBtn,
+              {
+                backgroundColor: isDark ? '#000000' : '#FFFFFF',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : '#E2E8F0',
+                borderWidth: 1.5,
+              }
+            ]}
             activeOpacity={0.7}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
+            <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#0F172A'} strokeWidth={2.2} />
           </TouchableOpacity>
-          <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={styles.heroTitle}>{editingData ? 'Edit Sermon' : 'New Sermon'}</Text>
-            <Text style={styles.heroSub}>{editingData ? 'Update sermon details & media' : 'Create & publish sermon video'}</Text>
+
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 }}>
+            <Text
+              style={[
+                styles.heroTitle,
+                {
+                  color: isDark ? '#FFFFFF' : '#0F172A',
+                  textAlign: 'center',
+                  fontSize: 22,
+                  fontWeight: '800',
+                  fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+                  letterSpacing: -0.4,
+                }
+              ]}
+              numberOfLines={1}
+            >
+              {editingData ? 'Edit Sermon' : 'New Sermon'}
+            </Text>
+            <Text style={[styles.heroSub, { color: isDark ? '#A1A1AA' : '#64748B', textAlign: 'center', marginTop: 3, fontSize: 12.5 }]}>
+              {editingData ? 'Update sermon details & media' : 'Create & publish sermon video'}
+            </Text>
           </View>
+
+          {/* Symmetrical placeholder balancing back button */}
+          <View style={{ width: 40 }} />
         </View>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
 
         {/* 1. Sermon Info */}
-        <View style={styles.modBox}>
-          <View style={[styles.modHd, styles.hdBlue]}>
-            <FileText size={14} color="#1a2d5a" />
-            <Text style={styles.modHdTxt}>Sermon Info</Text>
+        <View style={[styles.modBox, { backgroundColor: isDark ? '#000000' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : '#E2E8F0', borderWidth: 1.5 }]}>
+          <View style={[styles.modHd, { borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9' }]}>
+            <FileText size={15} color={isDark ? '#F2F0E8' : '#202923'} />
+            <Text style={[styles.modHdTxt, { color: isDark ? '#F2F0E8' : '#202923' }]}>Sermon Info</Text>
           </View>
           
           <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Title — English <Text style={{color:'#c0392b'}}>*</Text></Text>
-            <TextInput style={styles.input} value={form.titleEn} onChangeText={(v) => setForm({...form, titleEn: v})} placeholder="e.g. Walking in Faith Through Trials" />
+            <Text style={[styles.fLabel, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>Title — English <Text style={{color:'#c0392b'}}>*</Text></Text>
+            <TextInput 
+              style={[styles.input, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#94A3B8', borderWidth: 1.5, color: isDark ? '#FFFFFF' : '#0F172A', elevation: 0, shadowOpacity: 0 }]} 
+              value={form.titleEn} 
+              onChangeText={(v) => setForm({...form, titleEn: v})} 
+              placeholder="e.g. Walking in Faith Through Trials" 
+              placeholderTextColor={isDark ? '#A1A1AA' : '#64748B'} 
+            />
           </View>
 
           <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Title — Telugu</Text>
-            <TextInput style={[styles.input, styles.teIn]} value={form.titleTe} onChangeText={(v) => setForm({...form, titleTe: v})} placeholder="తెలుగులో శీర్షిక..." />
+            <Text style={[styles.fLabel, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>Title — Telugu</Text>
+            <TextInput 
+              style={[styles.input, styles.teIn, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#94A3B8', borderWidth: 1.5, color: isDark ? '#FFFFFF' : '#0F172A', elevation: 0, shadowOpacity: 0 }]} 
+              value={form.titleTe} 
+              onChangeText={(v) => setForm({...form, titleTe: v})} 
+              placeholder="తెలుగులో శీర్షిక..." 
+              placeholderTextColor={isDark ? '#A1A1AA' : '#64748B'} 
+            />
           </View>
 
           <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Pastor Name <Text style={{color:'#c0392b'}}>*</Text></Text>
-            <TextInput style={styles.input} value={form.pastor} onChangeText={(v) => setForm({...form, pastor: v})} placeholder="e.g. Pastor Daniel Raju" />
+            <Text style={[styles.fLabel, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>Pastor Name <Text style={{color:'#c0392b'}}>*</Text></Text>
+            <TextInput 
+              style={[styles.input, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#94A3B8', borderWidth: 1.5, color: isDark ? '#FFFFFF' : '#0F172A', elevation: 0, shadowOpacity: 0 }]} 
+              value={form.pastor} 
+              onChangeText={(v) => setForm({...form, pastor: v})} 
+              placeholder="e.g. Pastor Daniel Raju" 
+              placeholderTextColor={isDark ? '#A1A1AA' : '#64748B'} 
+            />
           </View>
 
           <View style={styles.row}>
             <View style={[styles.fGroup, { flex: 1.8 }]}>
-              <Text style={styles.fLabel}>
-                Sermon Date (Service Date) <Text style={{ color: '#c0392b' }}>*</Text>
+              <Text style={[styles.fLabel, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                Sermon Date <Text style={{ color: '#c0392b' }}>*</Text>
               </Text>
               <TouchableOpacity 
-                style={styles.inputWithIcon} 
+                style={[styles.inputWithIcon, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#94A3B8', borderWidth: 1.5, elevation: 0, shadowOpacity: 0 }]} 
                 onPress={() => setShowDatePicker(true)}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.inputTxt, { flex: 1, fontWeight: '600' }]}>
+                <Text style={[styles.inputTxt, { flex: 1, fontWeight: '600', color: isDark ? '#FFFFFF' : '#0F172A' }]}>
                   {formatDateDisplay(form.date)}
                 </Text>
-                <CalendarIcon size={16} color="#1a2d5a" style={{ marginLeft: 8 }} />
+                <CalendarIcon size={16} color={isDark ? '#E2E8F0' : '#0F172A'} style={{ marginLeft: 8 }} />
               </TouchableOpacity>
-              <Text style={styles.fHelper}>
+              <Text style={[styles.fHelper, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
                 Actual date the service or sermon took place (e.g. 25-10-2026). Displayed to members on the sermon card.
               </Text>
             </View>
 
             <View style={[styles.fGroup, { flex: 1.2 }]}>
-              <Text style={styles.fLabel}>Duration</Text>
+              <Text style={[styles.fLabel, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>Duration</Text>
               <TextInput 
-                style={styles.input} 
+                style={[styles.input, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#94A3B8', borderWidth: 1.5, color: isDark ? '#FFFFFF' : '#0F172A', elevation: 0, shadowOpacity: 0 }]} 
                 value={form.duration} 
                 onChangeText={(v) => setForm({ ...form, duration: v })} 
                 placeholder="e.g. 42 min" 
-                placeholderTextColor="#94A3B8"
+                placeholderTextColor={isDark ? '#A1A1AA' : '#64748B'} 
               />
-              <Text style={styles.fHelper}>
+              <Text style={[styles.fHelper, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
                 Length in minutes or hours (e.g. 120 min).
               </Text>
             </View>
@@ -655,16 +707,22 @@ export default function AdminSermonEditor() {
           />
 
           <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Scripture reference</Text>
-            <TextInput style={styles.input} value={form.ref} onChangeText={(v) => setForm({...form, ref: v})} placeholder="e.g. James 1:2-4" />
+            <Text style={[styles.fLabel, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>Scripture reference</Text>
+            <TextInput 
+              style={[styles.input, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#94A3B8', borderWidth: 1.5, color: isDark ? '#FFFFFF' : '#0F172A', elevation: 0, shadowOpacity: 0 }]} 
+              value={form.ref} 
+              onChangeText={(v) => setForm({...form, ref: v})} 
+              placeholder="e.g. James 1:2-4" 
+              placeholderTextColor={isDark ? '#A1A1AA' : '#64748B'} 
+            />
           </View>
         </View>
 
         {/* Categories */}
-        <View style={styles.modBox}>
-          <View style={[styles.modHd, styles.hdBlue]}>
-            <Folder size={14} color="#1a2d5a" />
-            <Text style={styles.modHdTxt}>Sermon Category</Text>
+        <View style={[styles.modBox, { backgroundColor: isDark ? '#000000' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : '#E2E8F0', borderWidth: 1.5 }]}>
+          <View style={[styles.modHd, { borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9' }]}>
+            <Folder size={15} color={isDark ? '#C6A66B' : '#98713D'} />
+            <Text style={[styles.modHdTxt, { color: isDark ? '#C6A66B' : '#98713D' }]}>Sermon Category</Text>
           </View>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
             {categories.map(cat => {
@@ -678,15 +736,19 @@ export default function AdminSermonEditor() {
                     paddingVertical: 8,
                     borderRadius: 20,
                     borderWidth: 1.5,
-                    borderColor: isSelected ? '#1a2d5a' : '#d1d5db',
-                    backgroundColor: isSelected ? '#1a2d5a' : '#fff',
+                    borderColor: isSelected 
+                      ? (isDark ? '#FFFFFF' : '#000000') 
+                      : (isDark ? 'rgba(255,255,255,0.18)' : '#CBD5E1'),
+                    backgroundColor: isSelected 
+                      ? (isDark ? '#FFFFFF' : '#000000') 
+                      : (isDark ? 'rgba(255,255,255,0.06)' : '#FFFFFF'),
                     flexDirection: 'row',
                     alignItems: 'center',
                     gap: 6
                   }}
                 >
-                  {isSelected && <CheckCircle2 size={13} color="#FCD34D" />}
-                  <Text style={{ fontSize: 12, fontWeight: '600', color: isSelected ? '#fff' : '#374151' }}>{cat}</Text>
+                  {isSelected && <CheckCircle2 size={13} color={isDark ? '#000000' : '#FCD34D'} />}
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: isSelected ? (isDark ? '#000000' : '#FFFFFF') : (isDark ? '#E4E4E7' : '#374151') }}>{cat}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -700,46 +762,59 @@ export default function AdminSermonEditor() {
                 borderRadius: 20,
                 borderWidth: 1.5,
                 borderStyle: 'dashed',
-                borderColor: '#1a2d5a',
-                backgroundColor: '#f0f4ff',
+                borderColor: isDark ? 'rgba(255,255,255,0.35)' : '#64748B',
+                backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#F1F5F9',
                 flexDirection: 'row',
                 alignItems: 'center',
                 gap: 6
               }}
             >
-              <Plus size={14} color="#1a2d5a" />
-              <Text style={{ fontSize: 12, fontWeight: '700', color: '#1a2d5a' }}>New</Text>
+              <Plus size={14} color={isDark ? '#FFFFFF' : '#0F172A'} />
+              <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#FFFFFF' : '#0F172A' }}>New</Text>
             </TouchableOpacity>
           </View>
           {selectedCategories.length > 0 && (
-            <View style={{ marginTop: 14, backgroundColor: '#f0f7ff', borderRadius: 8, padding: 10 }}>
-              <Text style={{ fontSize: 11, color: '#1a2d5a', fontWeight: '600' }}>Selected: {selectedCategories.join(' · ')}</Text>
+            <View style={{ 
+              marginTop: 14, 
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.07)' : '#F1F5F9', 
+              borderWidth: 1,
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0',
+              borderRadius: 10, 
+              padding: 10 
+            }}>
+              <Text style={{ fontSize: 11, color: isDark ? '#F1F5F9' : '#0F172A', fontWeight: '600' }}>Selected: {selectedCategories.join(' · ')}</Text>
             </View>
           )}
         </View>
 
         {/* 2. Media & Details */}
-        <View style={styles.modBox}>
-          <View style={styles.mediaBanner}>
-            <Film size={14} color="#c0392b" />
-            <Text style={styles.mediaBannerTxt}>Media & Details</Text>
+        <View style={[styles.modBox, { backgroundColor: isDark ? '#000000' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : '#E2E8F0', borderWidth: 1.5 }]}>
+          <View style={[styles.modHd, { borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9' }]}>
+            <Film size={15} color={isDark ? '#B9C8BD' : '#315C50'} />
+            <Text style={[styles.modHdTxt, { color: isDark ? '#B9C8BD' : '#315C50' }]}>Media & Details</Text>
           </View>
 
           <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>YouTube video URL</Text>
-            <TextInput style={styles.input} value={form.youtubeId} onChangeText={(v) => setForm({...form, youtubeId: v})} placeholder="https://youtube.com/watch?v=..." />
-            <Text style={styles.fHint}>Paste full URL or 11-character video ID</Text>
+            <Text style={[styles.fLabel, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>YouTube video URL</Text>
+            <TextInput 
+              style={[styles.input, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#94A3B8', borderWidth: 1.5, color: isDark ? '#FFFFFF' : '#0F172A', elevation: 0, shadowOpacity: 0 }]} 
+              value={form.youtubeId} 
+              onChangeText={(v) => setForm({...form, youtubeId: v})} 
+              placeholder="https://youtube.com/watch?v=..." 
+              placeholderTextColor={isDark ? '#A1A1AA' : '#64748B'} 
+            />
+            <Text style={[styles.fHint, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Paste full URL or 11-character video ID</Text>
           </View>
 
           <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Thumbnail <Text style={styles.fHint}>16:9 Landscape Banner</Text></Text>
+            <Text style={[styles.fLabel, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>Thumbnail <Text style={[styles.fHint, { color: isDark ? '#A1A1AA' : '#64748B' }]}>16:9 Landscape Banner</Text></Text>
             {uploadingThumbnail ? (
-              <View style={[styles.dashBox, { height: 160, justifyContent: 'center', alignItems: 'center' }]}>
-                <ActivityIndicator size="large" color="#1a2d5a" />
-                <Text style={[styles.dashTxt, { marginTop: 10, color: '#1a2d5a' }]}>Uploading thumbnail to cloud...</Text>
+              <View style={[styles.dashBox, { height: 160, justifyContent: 'center', alignItems: 'center', borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1', backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC' }]}>
+                <ActivityIndicator size="large" color={isDark ? '#FFFFFF' : '#0F172A'} />
+                <Text style={[styles.dashTxt, { marginTop: 10, color: isDark ? '#FFFFFF' : '#0F172A' }]}>Uploading thumbnail to cloud...</Text>
               </View>
             ) : currentThumbnailUri ? (
-              <View style={styles.thumbPreviewCard}>
+              <View style={[styles.thumbPreviewCard, { borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : '#E2E8F0' }]}>
                 <Image 
                   source={{ uri: currentThumbnailUri }} 
                   style={styles.thumbPreviewImg} 
@@ -763,7 +838,7 @@ export default function AdminSermonEditor() {
                 </View>
               </View>
             ) : autoYoutubeThumb ? (
-              <View style={styles.thumbPreviewCard}>
+              <View style={[styles.thumbPreviewCard, { borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : '#E2E8F0' }]}>
                 <Image 
                   source={{ uri: autoYoutubeThumb }} 
                   style={styles.thumbPreviewImg} 
@@ -772,64 +847,91 @@ export default function AdminSermonEditor() {
                 <View style={styles.thumbYoutubeBadge}>
                   <Text style={styles.thumbYoutubeBadgeTxt}>📺 Auto-fetched from YouTube</Text>
                 </View>
-                <TouchableOpacity style={styles.thumbBtnUploadCustom} onPress={handleImagePick}>
-                  <ImageIcon size={13} color="#1a2d5a" />
-                  <Text style={{ color: '#1a2d5a', fontSize: 11, fontWeight: '700' }}>Upload Custom Thumbnail</Text>
+                <TouchableOpacity 
+                  style={[
+                    styles.thumbBtnUploadCustom, 
+                    { 
+                      backgroundColor: isDark ? '#27272A' : '#FFFFFF',
+                      borderColor: isDark ? 'rgba(255,255,255,0.2)' : '#CBD5E1',
+                      borderWidth: 1
+                    }
+                  ]} 
+                  onPress={handleImagePick}
+                >
+                  <ImageIcon size={13} color={isDark ? '#FFFFFF' : '#0F172A'} />
+                  <Text style={{ color: isDark ? '#FFFFFF' : '#0F172A', fontSize: 11, fontWeight: '700' }}>Upload Custom Thumbnail</Text>
                 </TouchableOpacity>
               </View>
             ) : (
-              <TouchableOpacity style={styles.dashBox} onPress={handleImagePick}>
-                <ImageIcon size={26} color="#9CA3AF" />
-                <Text style={styles.dashTxt}>Upload custom thumbnail</Text>
-                <Text style={styles.dashHint}>JPG or PNG — 16:9 recommended</Text>
+              <TouchableOpacity 
+                style={[
+                  styles.dashBox, 
+                  { 
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1', 
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC' 
+                  }
+                ]} 
+                onPress={handleImagePick}
+              >
+                <ImageIcon size={26} color={isDark ? '#A1A1AA' : '#9CA3AF'} />
+                <Text style={[styles.dashTxt, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>Upload custom thumbnail</Text>
+                <Text style={[styles.dashHint, { color: isDark ? '#A1A1AA' : '#64748B' }]}>JPG or PNG — 16:9 recommended</Text>
               </TouchableOpacity>
             )}
           </View>
 
           <View style={styles.fGroup}>
-            <Text style={styles.fLabel}>Description <Text style={styles.fHint}>Shown below title in app</Text></Text>
-            <TextInput style={[styles.input, { fontFamily: 'monospace', fontSize: 12 }]} multiline numberOfLines={3} value={form.description} onChangeText={(v) => setForm({...form, description: v})} placeholder="Brief summary of this sermon..." />
+            <Text style={[styles.fLabel, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>Description <Text style={[styles.fHint, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Shown below title in app</Text></Text>
+            <TextInput 
+              style={[styles.input, styles.textarea, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#94A3B8', borderWidth: 1.5, color: isDark ? '#FFFFFF' : '#0F172A', fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace', fontSize: 12.5, elevation: 0, shadowOpacity: 0 }]} 
+              multiline 
+              numberOfLines={3} 
+              value={form.description} 
+              onChangeText={(v) => setForm({...form, description: v})} 
+              placeholder="Brief summary of this sermon..." 
+              placeholderTextColor={isDark ? '#A1A1AA' : '#64748B'} 
+            />
           </View>
         </View>
 
         {/* 3. Sermon Notes Document */}
-        <View style={styles.modBox}>
-          <View style={[styles.modHd, styles.hdBlue]}>
-            <BookOpen size={14} color="#1a2d5a" />
-            <Text style={styles.modHdTxt}>Sermon Notes Document</Text>
-            <View style={styles.optionalBadge}>
-              <Text style={styles.optionalBadgeTxt}>Optional</Text>
+        <View style={[styles.modBox, { backgroundColor: isDark ? '#000000' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : '#E2E8F0', borderWidth: 1.5 }]}>
+          <View style={[styles.modHd, { borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9' }]}>
+            <BookOpen size={15} color={isDark ? '#B8A5D6' : '#79649B'} />
+            <Text style={[styles.modHdTxt, { color: isDark ? '#B8A5D6' : '#79649B' }]}>Sermon Notes Document</Text>
+            <View style={[styles.optionalBadge, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#F1F5F9', borderColor: isDark ? 'rgba(255,255,255,0.14)' : '#E2E8F0' }]}>
+              <Text style={[styles.optionalBadgeTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Optional</Text>
             </View>
           </View>
 
-          <Text style={styles.notesSectionSubtitle}>
+          <Text style={[styles.notesSectionSubtitle, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
             Attach sermon notes or study outline in PDF, Word, or Text format (Max 20 MB). Members can read these notes directly inside the app while watching.
           </Text>
 
           {/* Format pills */}
           <View style={styles.formatPillsRow}>
-            <View style={[styles.formatPill, { borderColor: '#FCA5A5', backgroundColor: '#FEF2F2' }]}>
+            <View style={[styles.formatPill, { borderColor: isDark ? 'rgba(239,68,68,0.4)' : '#FCA5A5', backgroundColor: isDark ? 'rgba(239,68,68,0.12)' : '#FEF2F2' }]}>
               <Text style={[styles.formatPillTxt, { color: '#DC2626' }]}>PDF</Text>
-              <Text style={styles.formatPillExt}>.pdf</Text>
+              <Text style={[styles.formatPillExt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>.pdf</Text>
             </View>
-            <View style={[styles.formatPill, { borderColor: '#93C5FD', backgroundColor: '#EFF6FF' }]}>
+            <View style={[styles.formatPill, { borderColor: isDark ? 'rgba(59,130,246,0.4)' : '#93C5FD', backgroundColor: isDark ? 'rgba(59,130,246,0.12)' : '#EFF6FF' }]}>
               <Text style={[styles.formatPillTxt, { color: '#2563EB' }]}>Word</Text>
-              <Text style={styles.formatPillExt}>.doc, .docx</Text>
+              <Text style={[styles.formatPillExt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>.doc, .docx</Text>
             </View>
-            <View style={[styles.formatPill, { borderColor: '#86EFAC', backgroundColor: '#F0FDF4' }]}>
+            <View style={[styles.formatPill, { borderColor: isDark ? 'rgba(34,197,94,0.4)' : '#86EFAC', backgroundColor: isDark ? 'rgba(34,197,94,0.12)' : '#F0FDF4' }]}>
               <Text style={[styles.formatPillTxt, { color: '#16A34A' }]}>Text</Text>
-              <Text style={styles.formatPillExt}>.txt</Text>
+              <Text style={[styles.formatPillExt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>.txt</Text>
             </View>
           </View>
 
           {notesFileName || notesUrl || notesFile ? (
-            <View style={styles.notesDocCard}>
+            <View style={[styles.notesDocCard, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#E2E8F0' }]}>
               <View style={styles.notesDocHeader}>
                 <View style={[
                   styles.notesDocTypeBadge,
-                  notesFileType === 'pdf' ? { backgroundColor: '#FEE2E2', borderColor: '#FCA5A5' } :
-                  (notesFileType === 'doc' || notesFileType === 'docx') ? { backgroundColor: '#DBEAFE', borderColor: '#93C5FD' } :
-                  { backgroundColor: '#DCFCE7', borderColor: '#86EFAC' }
+                  notesFileType === 'pdf' ? { backgroundColor: isDark ? 'rgba(239,68,68,0.2)' : '#FEE2E2', borderColor: isDark ? 'rgba(239,68,68,0.4)' : '#FCA5A5' } :
+                  (notesFileType === 'doc' || notesFileType === 'docx') ? { backgroundColor: isDark ? 'rgba(59,130,246,0.2)' : '#DBEAFE', borderColor: isDark ? 'rgba(59,130,246,0.4)' : '#93C5FD' } :
+                  { backgroundColor: isDark ? 'rgba(34,197,94,0.2)' : '#DCFCE7', borderColor: isDark ? 'rgba(34,197,94,0.4)' : '#86EFAC' }
                 ]}>
                   <Text style={[
                     styles.notesDocTypeTxt,
@@ -841,12 +943,12 @@ export default function AdminSermonEditor() {
                   </Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.notesDocName} numberOfLines={1}>{notesFileName || 'Sermon_Notes'}</Text>
+                  <Text style={[styles.notesDocName, { color: isDark ? '#FFFFFF' : '#1E293B' }]} numberOfLines={1}>{notesFileName || 'Sermon_Notes'}</Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
                     {notesFileSize ? (
-                      <Text style={styles.notesDocMeta}>{(notesFileSize / 1024).toFixed(0)} KB · </Text>
+                      <Text style={[styles.notesDocMeta, { color: isDark ? '#A1A1AA' : '#64748B' }]}>{(notesFileSize / 1024).toFixed(0)} KB · </Text>
                     ) : null}
-                    <Text style={styles.notesDocMeta}>
+                    <Text style={[styles.notesDocMeta, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
                       {notesFile ? 'Ready to upload on save' : 'Uploaded to Cloud'}
                     </Text>
                     <CheckCircle2 size={11} color="#059669" />
@@ -855,21 +957,21 @@ export default function AdminSermonEditor() {
               </View>
 
               {notesText ? (
-                <View style={styles.notesTextPreviewBox}>
-                  <Text style={styles.notesTextPreviewLabel}>Text Content Preview:</Text>
-                  <Text style={styles.notesTextPreviewContent} numberOfLines={3}>
+                <View style={[styles.notesTextPreviewBox, { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.3)' : '#F8FAFC', borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#E2E8F0' }]}>
+                  <Text style={[styles.notesTextPreviewLabel, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Text Content Preview:</Text>
+                  <Text style={[styles.notesTextPreviewContent, { color: isDark ? '#E4E4E7' : '#334155' }]} numberOfLines={3}>
                     {notesText}
                   </Text>
                 </View>
               ) : null}
 
-              <View style={styles.notesDocActions}>
+              <View style={[styles.notesDocActions, { borderTopColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9' }]}>
                 <TouchableOpacity 
-                  style={styles.notesDocChangeBtn} 
+                  style={[styles.notesDocChangeBtn, { backgroundColor: isDark ? '#27272A' : '#F0F4FF' }]} 
                   onPress={handlePickNotesDocument}
                 >
-                  <Paperclip size={13} color="#1a2d5a" />
-                  <Text style={styles.notesDocChangeBtnTxt}>Replace Document</Text>
+                  <Paperclip size={13} color={isDark ? '#93C5FD' : '#1a2d5a'} />
+                  <Text style={[styles.notesDocChangeBtnTxt, { color: isDark ? '#93C5FD' : '#1a2d5a' }]}>Replace Document</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity 
@@ -882,49 +984,79 @@ export default function AdminSermonEditor() {
               </View>
             </View>
           ) : (
-            <TouchableOpacity style={styles.notesUploadDashedBox} onPress={handlePickNotesDocument}>
-              <View style={styles.notesUploadIconCircle}>
-                <Upload size={20} color="#1a2d5a" />
+            <TouchableOpacity 
+              style={[
+                styles.notesUploadDashedBox,
+                {
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
+                }
+              ]} 
+              onPress={handlePickNotesDocument}
+            >
+              <View style={[
+                styles.notesUploadIconCircle,
+                { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.09)' : '#EEF2FF' }
+              ]}>
+                <Upload size={20} color={isDark ? '#FFFFFF' : '#1a2d5a'} />
               </View>
-              <Text style={styles.notesUploadTitle}>Choose Sermon Notes Document</Text>
-              <Text style={styles.notesUploadSubtitle}>
+              <Text style={[styles.notesUploadTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>Choose Sermon Notes Document</Text>
+              <Text style={[styles.notesUploadSubtitle, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
                 Tap to select PDF, Word (.doc, .docx), or Text (.txt) file · Up to 20 MB
               </Text>
-              <View style={styles.notesUploadButton}>
-                <Paperclip size={13} color="#1a2d5a" />
-                <Text style={styles.notesUploadButtonTxt}>Browse Files (Max 20 MB)</Text>
+              <View style={[
+                styles.notesUploadButton,
+                { 
+                  backgroundColor: isDark ? '#27272A' : '#FFFFFF',
+                  borderColor: isDark ? 'rgba(255,255,255,0.2)' : '#CBD5E1',
+                  borderWidth: 1.2
+                }
+              ]}>
+                <Paperclip size={13} color={isDark ? '#FFFFFF' : '#0F172A'} />
+                <Text style={[styles.notesUploadButtonTxt, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>Browse Files (Max 20 MB)</Text>
               </View>
             </TouchableOpacity>
           )}
         </View>
 
         {/* 4. Publish Status */}
-        <View style={styles.modBox}>
-          <View style={[styles.modHd, styles.hdBlue]}>
-            <Radio size={14} color="#1a2d5a" />
-            <Text style={styles.modHdTxt}>Publish Status</Text>
+        <View style={[styles.modBox, { backgroundColor: isDark ? '#000000' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : '#E2E8F0', borderWidth: 1.5 }]}>
+          <View style={[styles.modHd, { borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9' }]}>
+            <Radio size={15} color={isDark ? '#FFFFFF' : '#0F172A'} />
+            <Text style={[styles.modHdTxt, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>Publish Status</Text>
           </View>
           <View style={styles.statusSelectorContainer}>
             {/* Option 1: Publish Now */}
             <TouchableOpacity
               style={[
                 styles.statusOptionCard,
-                form.status === 'Published' && styles.statusOptionCardPublished
+                {
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FAFAF9',
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2DDD5',
+                },
+                form.status === 'Published' && [
+                  styles.statusOptionCardPublished,
+                  { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.14)' : '#F0FDF4' }
+                ]
               ]}
               onPress={() => setForm({ ...form, status: 'Published' })}
               activeOpacity={0.8}
             >
               <View style={[
                 styles.statusOptionIconBox,
-                form.status === 'Published' ? styles.statusOptionIconBoxPublished : {}
+                form.status === 'Published' ? styles.statusOptionIconBoxPublished : { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#E5E7EB' }
               ]}>
-                <Send size={15} color={form.status === 'Published' ? '#fff' : '#059669'} />
+                <Send size={15} color={form.status === 'Published' ? '#fff' : (isDark ? '#34D399' : '#059669')} />
               </View>
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <Text style={[
                     styles.statusOptionTitle,
-                    form.status === 'Published' && styles.statusOptionTitlePublished
+                    { color: isDark ? '#FFFFFF' : '#374151' },
+                    form.status === 'Published' && [
+                      styles.statusOptionTitlePublished,
+                      { color: isDark ? '#34D399' : '#065F46' }
+                    ]
                   ]}>
                     Publish Now
                   </Text>
@@ -932,10 +1064,11 @@ export default function AdminSermonEditor() {
                     <View style={styles.activeDotGreen} />
                   )}
                 </View>
-                <Text style={styles.statusOptionSub}>Live immediately on Member Sermons View</Text>
+                <Text style={[styles.statusOptionSub, { color: isDark ? '#A1A1AA' : '#6B7280' }]}>Live immediately on Member Sermons View</Text>
               </View>
               <View style={[
                 styles.statusRadioCircle,
+                { borderColor: isDark ? 'rgba(255, 255, 255, 0.25)' : '#CBD5E1' },
                 form.status === 'Published' && styles.statusRadioCirclePublished
               ]}>
                 {form.status === 'Published' && <Check size={12} color="#fff" strokeWidth={3} />}
@@ -946,22 +1079,33 @@ export default function AdminSermonEditor() {
             <TouchableOpacity
               style={[
                 styles.statusOptionCard,
-                form.status === 'Scheduled' && styles.statusOptionCardScheduled
+                {
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FAFAF9',
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2DDD5',
+                },
+                form.status === 'Scheduled' && [
+                  styles.statusOptionCardScheduled,
+                  { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.14)' : '#FFFBEB' }
+                ]
               ]}
               onPress={() => setForm({ ...form, status: 'Scheduled' })}
               activeOpacity={0.8}
             >
               <View style={[
                 styles.statusOptionIconBox,
-                form.status === 'Scheduled' ? styles.statusOptionIconBoxScheduled : {}
+                form.status === 'Scheduled' ? styles.statusOptionIconBoxScheduled : { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#E5E7EB' }
               ]}>
-                <Clock size={15} color={form.status === 'Scheduled' ? '#fff' : '#D97706'} />
+                <Clock size={15} color={form.status === 'Scheduled' ? '#fff' : (isDark ? '#FBBF24' : '#D97706')} />
               </View>
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <Text style={[
                     styles.statusOptionTitle,
-                    form.status === 'Scheduled' && styles.statusOptionTitleScheduled
+                    { color: isDark ? '#FFFFFF' : '#374151' },
+                    form.status === 'Scheduled' && [
+                      styles.statusOptionTitleScheduled,
+                      { color: isDark ? '#FBBF24' : '#92400E' }
+                    ]
                   ]}>
                     Scheduled
                   </Text>
@@ -969,12 +1113,13 @@ export default function AdminSermonEditor() {
                     <View style={styles.activeDotAmber} />
                   )}
                 </View>
-                <Text style={styles.statusOptionSub}>
+                <Text style={[styles.statusOptionSub, { color: isDark ? '#A1A1AA' : '#6B7280' }]}>
                   Auto-publishes on {formatDateDisplay(form.scheduledDate)} at {form.scheduledTime}
                 </Text>
               </View>
               <View style={[
                 styles.statusRadioCircle,
+                { borderColor: isDark ? 'rgba(255, 255, 255, 0.25)' : '#CBD5E1' },
                 form.status === 'Scheduled' && styles.statusRadioCircleScheduled
               ]}>
                 {form.status === 'Scheduled' && <Check size={12} color="#fff" strokeWidth={3} />}
@@ -985,22 +1130,33 @@ export default function AdminSermonEditor() {
             <TouchableOpacity
               style={[
                 styles.statusOptionCard,
-                form.status === 'Draft' && styles.statusOptionCardDraft
+                {
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FAFAF9',
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2DDD5',
+                },
+                form.status === 'Draft' && [
+                  styles.statusOptionCardDraft,
+                  { backgroundColor: isDark ? 'rgba(148, 163, 184, 0.14)' : '#F8FAFC' }
+                ]
               ]}
               onPress={() => setForm({ ...form, status: 'Draft' })}
               activeOpacity={0.8}
             >
               <View style={[
                 styles.statusOptionIconBox,
-                form.status === 'Draft' ? styles.statusOptionIconBoxDraft : {}
+                form.status === 'Draft' ? styles.statusOptionIconBoxDraft : { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#E5E7EB' }
               ]}>
-                <FileText size={15} color={form.status === 'Draft' ? '#fff' : '#475569'} />
+                <FileText size={15} color={form.status === 'Draft' ? '#fff' : (isDark ? '#E2E8F0' : '#475569')} />
               </View>
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <Text style={[
                     styles.statusOptionTitle,
-                    form.status === 'Draft' && styles.statusOptionTitleDraft
+                    { color: isDark ? '#FFFFFF' : '#374151' },
+                    form.status === 'Draft' && [
+                      styles.statusOptionTitleDraft,
+                      { color: isDark ? '#E2E8F0' : '#1E293B' }
+                    ]
                   ]}>
                     Save as Draft
                   </Text>
@@ -1008,10 +1164,11 @@ export default function AdminSermonEditor() {
                     <View style={styles.activeDotSlate} />
                   )}
                 </View>
-                <Text style={styles.statusOptionSub}>Saved privately, hidden from members</Text>
+                <Text style={[styles.statusOptionSub, { color: isDark ? '#A1A1AA' : '#6B7280' }]}>Saved privately, hidden from members</Text>
               </View>
               <View style={[
                 styles.statusRadioCircle,
+                { borderColor: isDark ? 'rgba(255, 255, 255, 0.25)' : '#CBD5E1' },
                 form.status === 'Draft' && styles.statusRadioCircleDraft
               ]}>
                 {form.status === 'Draft' && <Check size={12} color="#fff" strokeWidth={3} />}
@@ -1021,14 +1178,14 @@ export default function AdminSermonEditor() {
 
           {/* Dedicated Future Scheduling Box */}
           {form.status === 'Scheduled' && (
-            <View style={styles.schedBox}>
+            <View style={[styles.schedBox, { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.08)' : '#FFFBEB', borderColor: isDark ? 'rgba(245, 158, 11, 0.28)' : '#FDE68A' }]}>
               <View style={styles.schedHeader}>
-                <Clock size={16} color="#B45309" />
-                <Text style={styles.schedHeaderTitle}>Schedule Future Publish Date & Time</Text>
+                <Clock size={16} color={isDark ? '#FBBF24' : '#B45309'} />
+                <Text style={[styles.schedHeaderTitle, { color: isDark ? '#FBBF24' : '#92400E' }]}>Schedule Future Publish Date & Time</Text>
               </View>
               
-              <Text style={styles.schedNotice}>
-                Sermon Date: <Text style={{ fontWeight: '700', color: '#1a2d5a' }}>{formatDateDisplay(form.date)}</Text> (when service took place).
+              <Text style={[styles.schedNotice, { color: isDark ? '#FDE68A' : '#78350F' }]}>
+                Sermon Date: <Text style={{ fontWeight: '700', color: isDark ? '#60A5FA' : '#1a2d5a' }}>{formatDateDisplay(form.date)}</Text> (when service took place).
                 {`\n`}Choose when this video should be published and announced to members:
               </Text>
 
@@ -1037,6 +1194,7 @@ export default function AdminSermonEditor() {
                 <TouchableOpacity 
                   style={[
                     styles.presetChip,
+                    { backgroundColor: isDark ? '#27272A' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : '#FCD34D' },
                     isToday(form.scheduledDate) && form.scheduledTime === '08:00 PM' && styles.presetChipActive
                   ]}
                   onPress={setPresetTonight}
@@ -1044,6 +1202,7 @@ export default function AdminSermonEditor() {
                 >
                   <Text style={[
                     styles.presetChipTxt,
+                    { color: isDark ? '#FDE68A' : '#92400E' },
                     isToday(form.scheduledDate) && form.scheduledTime === '08:00 PM' && styles.presetChipTxtActive
                   ]}>
                     🌙 Tonight (8:00 PM)
@@ -1053,6 +1212,7 @@ export default function AdminSermonEditor() {
                 <TouchableOpacity 
                   style={[
                     styles.presetChip,
+                    { backgroundColor: isDark ? '#27272A' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : '#FCD34D' },
                     isTomorrow(form.scheduledDate) && form.scheduledTime === '09:00 AM' && styles.presetChipActive
                   ]}
                   onPress={setPresetTomorrowMorning}
@@ -1060,6 +1220,7 @@ export default function AdminSermonEditor() {
                 >
                   <Text style={[
                     styles.presetChipTxt,
+                    { color: isDark ? '#FDE68A' : '#92400E' },
                     isTomorrow(form.scheduledDate) && form.scheduledTime === '09:00 AM' && styles.presetChipTxtActive
                   ]}>
                     🌅 Tomorrow (9:00 AM)
@@ -1069,6 +1230,7 @@ export default function AdminSermonEditor() {
                 <TouchableOpacity 
                   style={[
                     styles.presetChip,
+                    { backgroundColor: isDark ? '#27272A' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : '#FCD34D' },
                     isTomorrow(form.scheduledDate) && form.scheduledTime === '08:00 PM' && styles.presetChipActive
                   ]}
                   onPress={setPresetTomorrowNight}
@@ -1076,6 +1238,7 @@ export default function AdminSermonEditor() {
                 >
                   <Text style={[
                     styles.presetChipTxt,
+                    { color: isDark ? '#FDE68A' : '#92400E' },
                     isTomorrow(form.scheduledDate) && form.scheduledTime === '08:00 PM' && styles.presetChipTxtActive
                   ]}>
                     ☀️ Tomorrow (8:00 PM)
@@ -1086,37 +1249,37 @@ export default function AdminSermonEditor() {
               {/* Independent Date & Time Inputs */}
               <View style={styles.schedInputsRow}>
                 <View style={{ flex: 1.2 }}>
-                  <Text style={styles.schedFieldLabel}>Scheduled Publish Date</Text>
+                  <Text style={[styles.schedFieldLabel, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>Scheduled Publish Date</Text>
                   <TouchableOpacity 
-                    style={styles.schedInputBtn} 
+                    style={[styles.schedInputBtn, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#94A3B8', borderWidth: 1.5, elevation: 0, shadowOpacity: 0 }]} 
                     onPress={() => setShowScheduledDatePicker(true)}
                     activeOpacity={0.75}
                   >
-                    <CalendarIcon size={15} color="#1a2d5a" />
-                    <Text style={styles.schedInputBtnTxt}>
+                    <CalendarIcon size={15} color={isDark ? '#FBBF24' : '#0F172A'} />
+                    <Text style={[styles.schedInputBtnTxt, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
                       {formatDateDisplay(form.scheduledDate)}
                     </Text>
                   </TouchableOpacity>
                 </View>
 
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.schedFieldLabel}>Scheduled Publish Time</Text>
+                  <Text style={[styles.schedFieldLabel, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>Scheduled Publish Time</Text>
                   <TouchableOpacity 
-                    style={styles.schedInputBtn} 
+                    style={[styles.schedInputBtn, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#94A3B8', borderWidth: 1.5, elevation: 0, shadowOpacity: 0 }]} 
                     onPress={() => setShowScheduledTimePicker(true)}
                     activeOpacity={0.75}
                   >
-                    <Clock size={15} color="#1a2d5a" />
-                    <Text style={styles.schedInputBtnTxt}>
+                    <Clock size={15} color={isDark ? '#FBBF24' : '#0F172A'} />
+                    <Text style={[styles.schedInputBtnTxt, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
                       {form.scheduledTime}
                     </Text>
                   </TouchableOpacity>
                 </View>
               </View>
 
-              <View style={styles.schedStatusCallout}>
+              <View style={[styles.schedStatusCallout, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.12)' : '#F0FDF4', borderColor: isDark ? 'rgba(16, 185, 129, 0.28)' : '#BBF7D0' }]}>
                 <CheckCircle2 size={14} color="#059669" />
-                <Text style={styles.schedStatusCalloutTxt}>
+                <Text style={[styles.schedStatusCalloutTxt, { color: isDark ? '#34D399' : '#166534' }]}>
                   Auto-publishes on {formatDateDisplay(form.scheduledDate)} at {form.scheduledTime}. Members will receive push notifications then.
                 </Text>
               </View>
@@ -1141,81 +1304,141 @@ export default function AdminSermonEditor() {
           />
         </View>
 
-        {/* Footer Action Buttons exactly like New Promise */}
+        {/* Footer Action Buttons */}
         <View style={styles.footerBtnRow}>
           {form.status === 'Published' ? (
             <>
+              {/* Row 1: Save & Publish Now (White in Dark theme, Black in White theme) */}
               <TouchableOpacity 
-                style={styles.btnDraft} 
-                onPress={() => handleSave('Draft')}
-                disabled={loading}
-              >
-                <FileText size={15} color="#1a2d5a" />
-                <Text style={styles.btnDraftTxt}>Save as Draft</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.btnSave, { backgroundColor: '#15803D' }, loading && { opacity: 0.85 }]} 
+                style={[
+                  styles.btnSave, 
+                  { 
+                    backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                    borderColor: isDark ? '#FFFFFF' : '#000000',
+                    borderWidth: 1.5,
+                  }, 
+                  loading && { opacity: 0.85 }
+                ]} 
                 onPress={() => handleSave('Published')}
                 disabled={loading}
+                activeOpacity={0.85}
               >
                 {loading ? (
-                  <ActivityIndicator size="small" color="#fff" />
+                  <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
                 ) : (
-                  <Send size={15} color="#fff" />
+                  <Send size={16} color={isDark ? '#000000' : '#FFFFFF'} />
                 )}
-                <Text style={styles.btnSaveTxt}>
+                <Text style={[styles.btnSaveTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
                   {loading ? 'Publishing…' : 'Save & Publish Now'}
                 </Text>
+              </TouchableOpacity>
+
+              {/* Row 2: Save as Draft (Highlighted) */}
+              <TouchableOpacity 
+                style={[
+                  styles.btnDraft, 
+                  { 
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#FFFFFF',
+                    borderColor: isDark ? '#FFFFFF' : '#000000',
+                    borderWidth: 2,
+                  }
+                ]} 
+                onPress={() => handleSave('Draft')}
+                disabled={loading}
+                activeOpacity={0.8}
+              >
+                <FileText size={16} color={isDark ? '#FFFFFF' : '#000000'} />
+                <Text style={[styles.btnDraftTxt, { color: isDark ? '#FFFFFF' : '#000000' }]}>Save as Draft</Text>
               </TouchableOpacity>
             </>
           ) : form.status === 'Scheduled' ? (
             <>
+              {/* Row 1: Save & Schedule (White in Dark theme, Black in White theme) */}
               <TouchableOpacity 
-                style={styles.btnDraft} 
-                onPress={() => handleSave('Draft')}
-                disabled={loading}
-              >
-                <FileText size={15} color="#1a2d5a" />
-                <Text style={styles.btnDraftTxt}>Save as Draft</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.btnSave, { backgroundColor: '#1a2d5a' }, loading && { opacity: 0.85 }]} 
+                style={[
+                  styles.btnSave, 
+                  { 
+                    backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                    borderColor: isDark ? '#FFFFFF' : '#000000',
+                    borderWidth: 1.5,
+                  }, 
+                  loading && { opacity: 0.85 }
+                ]} 
                 onPress={() => handleSave('Scheduled')}
                 disabled={loading}
+                activeOpacity={0.85}
               >
                 {loading ? (
-                  <ActivityIndicator size="small" color="#fff" />
+                  <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
                 ) : (
-                  <Clock size={15} color="#fff" />
+                  <Clock size={16} color={isDark ? '#000000' : '#FFFFFF'} />
                 )}
-                <Text style={styles.btnSaveTxt}>
+                <Text style={[styles.btnSaveTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
                   {loading ? 'Scheduling…' : 'Save & Schedule'}
                 </Text>
+              </TouchableOpacity>
+
+              {/* Row 2: Save as Draft (Highlighted) */}
+              <TouchableOpacity 
+                style={[
+                  styles.btnDraft, 
+                  { 
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#FFFFFF',
+                    borderColor: isDark ? '#FFFFFF' : '#000000',
+                    borderWidth: 2,
+                  }
+                ]} 
+                onPress={() => handleSave('Draft')}
+                disabled={loading}
+                activeOpacity={0.8}
+              >
+                <FileText size={16} color={isDark ? '#FFFFFF' : '#000000'} />
+                <Text style={[styles.btnDraftTxt, { color: isDark ? '#FFFFFF' : '#000000' }]}>Save as Draft</Text>
               </TouchableOpacity>
             </>
           ) : (
             <>
+              {/* Row 1: Save as Draft (White in Dark theme, Black in White theme) */}
               <TouchableOpacity 
-                style={styles.btnDraft} 
-                onPress={() => handleSave('Published')}
-                disabled={loading}
-              >
-                <Send size={15} color="#15803D" />
-                <Text style={[styles.btnDraftTxt, { color: '#15803D' }]}>Publish Now</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.btnSave, { backgroundColor: '#475569' }, loading && { opacity: 0.85 }]} 
+                style={[
+                  styles.btnSave, 
+                  { 
+                    backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                    borderColor: isDark ? '#FFFFFF' : '#000000',
+                    borderWidth: 1.5,
+                  }, 
+                  loading && { opacity: 0.85 }
+                ]} 
                 onPress={() => handleSave('Draft')}
                 disabled={loading}
+                activeOpacity={0.85}
               >
                 {loading ? (
-                  <ActivityIndicator size="small" color="#fff" />
+                  <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
                 ) : (
-                  <Save size={15} color="#fff" />
+                  <Save size={16} color={isDark ? '#000000' : '#FFFFFF'} />
                 )}
-                <Text style={styles.btnSaveTxt}>
+                <Text style={[styles.btnSaveTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
                   {loading ? 'Saving…' : 'Save as Draft'}
                 </Text>
+              </TouchableOpacity>
+
+              {/* Row 2: Publish Now (Highlighted) */}
+              <TouchableOpacity 
+                style={[
+                  styles.btnDraft, 
+                  { 
+                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.12)' : '#F0FDF4',
+                    borderColor: isDark ? '#34D399' : '#15803D',
+                    borderWidth: 2,
+                  }
+                ]} 
+                onPress={() => handleSave('Published')}
+                disabled={loading}
+                activeOpacity={0.8}
+              >
+                <Send size={16} color={isDark ? '#34D399' : '#15803D'} />
+                <Text style={[styles.btnDraftTxt, { color: isDark ? '#34D399' : '#15803D' }]}>Publish Now</Text>
               </TouchableOpacity>
             </>
           )}
@@ -1226,10 +1449,10 @@ export default function AdminSermonEditor() {
       {/* Saving / Publishing Full-Screen Loading State */}
       <Modal visible={loading} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.savingCard}>
-            <ActivityIndicator size="large" color="#1a2d5a" />
-            <Text style={styles.savingTitle}>{savingActionText}</Text>
-            <Text style={styles.savingSub}>Syncing sermon details and media with Member View…</Text>
+          <View style={[styles.savingCard, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderWidth: 1.5, borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#E2E8F0' }]}>
+            <ActivityIndicator size="large" color={isDark ? '#FFFFFF' : '#1a2d5a'} />
+            <Text style={[styles.savingTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>{savingActionText}</Text>
+            <Text style={[styles.savingSub, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Syncing sermon details and media with Member View…</Text>
           </View>
         </View>
       </Modal>
@@ -1240,25 +1463,25 @@ export default function AdminSermonEditor() {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
           style={styles.modalOverlay}
         >
-          <View style={styles.newCatCard}>
+          <View style={[styles.newCatCard, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderWidth: 1.5, borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#E2E8F0' }]}>
             <View style={styles.newCatHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <FolderPlus size={20} color="#1a2d5a" />
-                <Text style={styles.newCatTitle}>New Sermon Category</Text>
+                <FolderPlus size={20} color={isDark ? '#FFFFFF' : '#1a2d5a'} />
+                <Text style={[styles.newCatTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>New Sermon Category</Text>
               </View>
               <TouchableOpacity onPress={() => { setShowNewCategoryModal(false); setNewCatInput(''); }} hitSlop={{top:10, bottom:10, left:10, right:10}}>
-                <X size={20} color="#6b7280" />
+                <X size={20} color={isDark ? '#A1A1AA' : '#6b7280'} />
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.newCatSubtitle}>
+            <Text style={[styles.newCatSubtitle, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
               Enter a name for the new category. It will be saved and visible to members.
             </Text>
 
             <TextInput
-              style={styles.newCatInput}
+              style={[styles.newCatInput, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#94A3B8', borderWidth: 1.5, color: isDark ? '#FFFFFF' : '#0F172A', elevation: 0, shadowOpacity: 0 }]}
               placeholder="e.g. Youth Camp, Healing Revival..."
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={isDark ? '#A1A1AA' : '#64748B'}
               value={newCatInput}
               onChangeText={setNewCatInput}
               autoFocus
@@ -1269,18 +1492,22 @@ export default function AdminSermonEditor() {
                 style={styles.newCatBtnCancel} 
                 onPress={() => { setShowNewCategoryModal(false); setNewCatInput(''); }}
               >
-                <Text style={styles.newCatBtnCancelTxt}>Cancel</Text>
+                <Text style={[styles.newCatBtnCancelTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Cancel</Text>
               </TouchableOpacity>
               
               <TouchableOpacity 
-                style={[styles.newCatBtnSave, savingCategory && { opacity: 0.7 }]} 
+                style={[
+                  styles.newCatBtnSave, 
+                  { backgroundColor: isDark ? '#FFFFFF' : '#000000' },
+                  savingCategory && { opacity: 0.7 }
+                ]} 
                 onPress={handleAddNewCategory}
                 disabled={savingCategory}
               >
                 {savingCategory ? (
-                  <ActivityIndicator size="small" color="#fff" />
+                  <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
                 ) : (
-                  <Text style={styles.newCatBtnSaveTxt}>Save Category</Text>
+                  <Text style={[styles.newCatBtnSaveTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>Save Category</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -1291,7 +1518,7 @@ export default function AdminSermonEditor() {
       {/* Redesigned Celebratory Success Modal */}
       <Modal visible={showSuccess} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.successModalCard}>
+          <View style={[styles.successModalCard, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#E2E8F0' }]}>
             {/* Top Decorative Accent Bar */}
             <LinearGradient
               colors={
@@ -1309,11 +1536,11 @@ export default function AdminSermonEditor() {
             <View style={styles.successModalBody}>
               {/* Close Button */}
               <TouchableOpacity 
-                style={styles.successCloseBtn} 
+                style={[styles.successCloseBtn, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]} 
                 onPress={() => setShowSuccess(false)}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <X size={16} color="#64748B" />
+                <X size={16} color={isDark ? '#A1A1AA' : '#64748B'} />
               </TouchableOpacity>
 
               {/* Layered Multi-Ring Glowing Icon Badge */}
@@ -1378,7 +1605,7 @@ export default function AdminSermonEditor() {
               </View>
 
               {/* Headline & Description */}
-              <Text style={styles.successHeading}>
+              <Text style={[styles.successHeading, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
                 {lastSavedStatus === 'Published'
                   ? 'Sermon Published! 🎉'
                   : lastSavedStatus === 'Scheduled'
@@ -1386,7 +1613,7 @@ export default function AdminSermonEditor() {
                   : 'Draft Saved! 💾'}
               </Text>
 
-              <Text style={styles.successDescription}>
+              <Text style={[styles.successDescription, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
                 {lastSavedStatus === 'Published'
                   ? 'Your sermon is live and visible immediately to church members on the Sermons screen.'
                   : lastSavedStatus === 'Scheduled'
@@ -1395,33 +1622,33 @@ export default function AdminSermonEditor() {
               </Text>
 
               {/* Summary Details Card */}
-              <View style={styles.successDetailsCard}>
+              <View style={[styles.successDetailsCard, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC', borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#E2E8F0' }]}>
                 <View style={styles.successDetailRow}>
-                  <Film size={14} color="#1a2d5a" />
-                  <Text style={styles.successDetailLabel}>Title:</Text>
-                  <Text style={styles.successDetailVal} numberOfLines={1}>
+                  <Film size={14} color={isDark ? '#E2E8F0' : '#0F172A'} />
+                  <Text style={[styles.successDetailLabel, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Title:</Text>
+                  <Text style={[styles.successDetailVal, { color: isDark ? '#FFFFFF' : '#0F172A' }]} numberOfLines={1}>
                     {form.titleEn || form.titleTe || 'Sermon'}
                   </Text>
                 </View>
                 <View style={styles.successDetailRow}>
-                  <CalendarIcon size={14} color="#1a2d5a" />
-                  <Text style={styles.successDetailLabel}>Sermon Date:</Text>
-                  <Text style={styles.successDetailVal}>{formatDateDisplay(form.date)}</Text>
+                  <CalendarIcon size={14} color={isDark ? '#E2E8F0' : '#0F172A'} />
+                  <Text style={[styles.successDetailLabel, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Sermon Date:</Text>
+                  <Text style={[styles.successDetailVal, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>{formatDateDisplay(form.date)}</Text>
                 </View>
                 {lastSavedStatus === 'Scheduled' && (
                   <View style={styles.successDetailRow}>
                     <Clock size={14} color="#D97706" />
-                    <Text style={styles.successDetailLabel}>Publishes:</Text>
-                    <Text style={[styles.successDetailVal, { color: '#B45309', fontWeight: '700' }]}>
+                    <Text style={[styles.successDetailLabel, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Publishes:</Text>
+                    <Text style={[styles.successDetailVal, { color: isDark ? '#FBBF24' : '#B45309', fontWeight: '700' }]}>
                       {formatDateDisplay(form.scheduledDate)} at {form.scheduledTime}
                     </Text>
                   </View>
                 )}
                 {!!form.pastor?.trim() && (
                   <View style={styles.successDetailRow}>
-                    <User size={14} color="#1a2d5a" />
-                    <Text style={styles.successDetailLabel}>Pastor:</Text>
-                    <Text style={styles.successDetailVal} numberOfLines={1}>{form.pastor}</Text>
+                    <User size={14} color={isDark ? '#E2E8F0' : '#0F172A'} />
+                    <Text style={[styles.successDetailLabel, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Pastor:</Text>
+                    <Text style={[styles.successDetailVal, { color: isDark ? '#FFFFFF' : '#0F172A' }]} numberOfLines={1}>{form.pastor}</Text>
                   </View>
                 )}
               </View>
@@ -1455,7 +1682,7 @@ export default function AdminSermonEditor() {
                 onPress={() => setShowSuccess(false)}
                 activeOpacity={0.7}
               >
-                <Text style={styles.successSecondaryBtnTxt}>Keep Editing</Text>
+                <Text style={[styles.successSecondaryBtnTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Keep Editing</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1465,12 +1692,12 @@ export default function AdminSermonEditor() {
       {/* Error Modal */}
       <Modal visible={showError} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.errorCard}>
+          <View style={[styles.errorCard, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderWidth: 1.5, borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#E2E8F0' }]}>
             <View style={styles.errorIconBox}>
               <X size={40} color="#c0392b" strokeWidth={3} />
             </View>
             <Text style={styles.errorTitle}>Save Failed</Text>
-            <Text style={styles.errorSub}>{errorMsg}</Text>
+            <Text style={[styles.errorSub, { color: isDark ? '#A1A1AA' : '#6B7280' }]}>{errorMsg}</Text>
             <TouchableOpacity style={[styles.successBtn, { backgroundColor: '#c0392b' }]} onPress={() => setShowError(false)}>
               <Text style={styles.successBtnTxt}>Try Again</Text>
             </TouchableOpacity>
@@ -1478,27 +1705,7 @@ export default function AdminSermonEditor() {
         </View>
       </Modal>
 
-      {/* Floating Action Button */}
-      <TouchableOpacity 
-        style={[
-          styles.fab,
-          form.status === 'Published' && { backgroundColor: '#15803D' },
-          form.status === 'Scheduled' && { backgroundColor: '#1a2d5a' },
-          form.status === 'Draft' && { backgroundColor: '#475569' }
-        ]} 
-        onPress={() => handleSave(form.status)}
-        disabled={loading}
-      >
-        {loading ? (
-          <ActivityIndicator size="small" color="#fff" />
-        ) : form.status === 'Published' ? (
-          <Send size={22} color="#fff" />
-        ) : form.status === 'Scheduled' ? (
-          <Clock size={22} color="#fff" />
-        ) : (
-          <Save size={22} color="#fff" />
-        )}
-      </TouchableOpacity>
+      
     </View>
   );
 }
@@ -1509,8 +1716,8 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     height: 40,
     borderRadius: 20,
     backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
@@ -1540,34 +1747,32 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   // ─── Cards ───────────────────────────────────────────────────────────────
   modBox: { 
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(26,45,90,0.08)',
-    borderTopWidth: 3,
-    borderTopColor: '#1a2d5a',
-    shadowColor: '#1a2d5a',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 16,
+    borderWidth: 1.2,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000000',
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
     shadowOffset: { width: 0, height: 3 },
     elevation: 2,
   },
-  modHd: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginBottom: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(26,45,90,0.08)', paddingBottom: 10 },
+  modHd: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', paddingBottom: 12 },
   hdBlue: { },
   hdYellow: { },
-  modHdTxt: { fontSize: 12, fontWeight: '800', color: '#1a2d5a', textTransform: 'uppercase', letterSpacing: 0.5 },
+  modHdTxt: { fontSize: 13, fontWeight: '800', color: '#0F172A', textTransform: 'uppercase', letterSpacing: 0.6 },
 
   fGroup: { marginBottom: 16 },
-  fLabel: { fontSize: 12, fontWeight: '700', color: '#1a2d5a', marginBottom: 6 },
-  fHint: { fontSize: 9, color: '#9CA3AF', fontWeight: '500', marginTop: 4 },
-  fHelper: { fontSize: 10.5, color: '#64748B', lineHeight: 14, marginTop: 4 },
+  fLabel: { fontSize: 13, fontWeight: '700', color: '#0F172A', marginBottom: 7 },
+  fHint: { fontSize: 10, color: '#64748B', fontWeight: '500', marginTop: 4 },
+  fHelper: { fontSize: 11, color: '#64748B', lineHeight: 15, marginTop: 4 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
 
-  input: { backgroundColor: '#FDFDFD', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, padding: 12, fontSize: 13, color: '#1a2d5a' },
-  inputWithIcon: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FDFDFD', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, paddingHorizontal: 12, height: 45 },
-  inputTxt: { fontSize: 13, color: '#1a2d5a' },
-  teIn: { fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', color: '#1a2d5a', fontStyle: 'italic', backgroundColor: '#F9F6F0' },
+  input: { backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: '#94A3B8', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 13.5, fontWeight: '500', color: '#0F172A' },
+  inputWithIcon: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: '#94A3B8', borderRadius: 12, paddingHorizontal: 14, height: 48 },
+  inputTxt: { fontSize: 13.5, fontWeight: '600', color: '#0F172A' },
+  teIn: { fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', color: '#0F172A', fontStyle: 'italic', backgroundColor: '#FFFFFF' },
   textarea: { minHeight: 80, textAlignVertical: 'top' },
 
   selectBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, padding: 12 },
@@ -1784,42 +1989,52 @@ const styles = createAdminThemedStyles(StyleSheet.create({
 
   // ─── Footer Action Buttons ───────────────────────────────────────────────
   footerBtnRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginTop: 6,
-    marginBottom: 20,
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 12,
+    marginTop: 10,
+    marginBottom: 26,
   },
   btnDraft: {
-    flex: 1,
+    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    gap: 8,
     backgroundColor: '#FFFFFF',
-    borderWidth: 1.5,
-    borderColor: '#CBD5E1',
-    borderRadius: 12,
-    paddingVertical: 13,
-  },
-  btnDraftTxt: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#334155',
-  },
-  btnSave: {
-    flex: 1.5,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    borderRadius: 12,
-    paddingVertical: 13,
+    borderWidth: 2,
+    borderColor: '#000000',
+    borderRadius: 30,
+    paddingVertical: 14,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
     elevation: 2,
   },
+  btnDraftTxt: {
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+    color: '#000000',
+  },
+  btnSave: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 30,
+    paddingVertical: 14,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+  },
   btnSaveTxt: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.2,
     color: '#FFFFFF',
   },
 

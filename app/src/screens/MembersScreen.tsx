@@ -58,6 +58,9 @@ export default function MembersScreen({ navigation }: any) {
   const { member } = useAuth();
   const { isDark, colors } = useTheme();
   const { t, language } = useLanguage();
+  const inputBg = isDark ? '#0F0F12' : '#FFFFFF';
+  const inputBorder = isDark ? '#3F3F46' : '#000000';
+  const placeholderColor = isDark ? '#71717A' : '#94A3B8';
   const [relatedContacts, setRelatedContacts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -344,12 +347,34 @@ export default function MembersScreen({ navigation }: any) {
           {t('members.title')}
         </Text>
 
-        <View style={styles.headerRightSpacer} />
+        <TouchableOpacity
+          style={[styles.circularBackBtn, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}
+          onPress={() => {
+            setEditingMemberId(null);
+            setNewMember({
+              firstName: '',
+              lastName: '',
+              relation: 'Husband',
+              gender: 'Male',
+              dob: '',
+              anniversaryDate: '',
+              email: '',
+              phone: '',
+              referencePhone: '',
+              isKidMember: false,
+            });
+            setShowAddModal(true);
+          }}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          activeOpacity={0.8}
+        >
+          <Plus size={20} color={primaryText} strokeWidth={2.4} />
+        </TouchableOpacity>
       </View>
 
       {/* ── Optional Search Bar when multiple members exist ── */}
       {!loading && member && relatedContacts.length > 2 && (
-        <View style={[styles.searchBarContainer, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}>
+        <View style={[styles.searchBarContainer, { backgroundColor: inputBg, borderColor: inputBorder }]}>
           <Search size={18} color={secondaryText} />
           <TextInput
             placeholder={t('members.searchPlaceholder')}
@@ -643,13 +668,13 @@ export default function MembersScreen({ navigation }: any) {
       {/* ── Add Family Member Modal ── */}
       {showAddModal && (
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: cardSurface }]}>
+          <View style={[styles.modalContent, { backgroundColor: cardSurface, borderTopWidth: 1, borderColor: adminBorderColor }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: primaryText }]}>
                 {editingMemberId ? t('members.editMember') : t('members.addNewMember')}
               </Text>
-              <TouchableOpacity onPress={() => setShowAddModal(false)}>
-                <X size={24} color="#94a3b8" />
+              <TouchableOpacity onPress={() => setShowAddModal(false)} activeOpacity={0.8} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={{ width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center', backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1.5, borderColor: isDark ? '#3F3F46' : '#000000' }}>
+                <X size={18} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.5} />
               </TouchableOpacity>
             </View>
             
@@ -657,9 +682,9 @@ export default function MembersScreen({ navigation }: any) {
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>{t('members.firstName')}</Text>
                 <TextInput 
-                  style={[styles.input, { color: primaryText, borderColor: adminBorderColor, backgroundColor: secondarySurface }]}
+                  style={[styles.input, { color: primaryText, borderColor: inputBorder, backgroundColor: inputBg }]}
                   placeholder={t('members.firstNamePlaceholder')}
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor={placeholderColor}
                   value={newMember.firstName}
                   onChangeText={(tVal) => setNewMember({...newMember, firstName: tVal})}
                 />
@@ -668,9 +693,9 @@ export default function MembersScreen({ navigation }: any) {
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>{t('members.lastName')}</Text>
                 <TextInput 
-                  style={[styles.input, { color: primaryText, borderColor: adminBorderColor, backgroundColor: secondarySurface }]}
+                  style={[styles.input, { color: primaryText, borderColor: inputBorder, backgroundColor: inputBg }]}
                   placeholder={t('members.lastNamePlaceholder')}
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor={placeholderColor}
                   value={newMember.lastName}
                   onChangeText={(tVal) => setNewMember({...newMember, lastName: tVal})}
                 />
@@ -681,9 +706,9 @@ export default function MembersScreen({ navigation }: any) {
                   {KID_RELATIONS.includes(newMember.relation) ? t('members.mobileNumberKids') : t('members.mobileNumber')}
                 </Text>
                 <TextInput 
-                  style={[styles.input, { color: primaryText, borderColor: adminBorderColor, backgroundColor: secondarySurface }]}
+                  style={[styles.input, { color: primaryText, borderColor: inputBorder, backgroundColor: inputBg }]}
                   placeholder={KID_RELATIONS.includes(newMember.relation) ? t('members.phoneKidsPlaceholder') : t('members.phonePlaceholder')}
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor={placeholderColor}
                   keyboardType="phone-pad"
                   value={newMember.phone}
                   onChangeText={(tVal) => setNewMember({...newMember, phone: tVal})}
@@ -703,8 +728,8 @@ export default function MembersScreen({ navigation }: any) {
                             styles.input,
                             { 
                               flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6,
-                              borderColor: newMember.referencePhone === p.phone ? '#1a2d5a' : (adminBorderColor),
-                              backgroundColor: newMember.referencePhone === p.phone ? (isDark ? '#1e3a5f' : '#EFF6FF') : (secondarySurface)
+                              borderColor: newMember.referencePhone === p.phone ? (isDark ? '#FFFFFF' : '#000000') : inputBorder,
+                              backgroundColor: newMember.referencePhone === p.phone ? secondarySurface : inputBg
                             }
                           ]}
                           onPress={() => setNewMember({...newMember, referencePhone: p.phone})}
@@ -723,9 +748,9 @@ export default function MembersScreen({ navigation }: any) {
                     </View>
                   ) : (
                     <TextInput 
-                      style={[styles.input, { color: primaryText, borderColor: adminBorderColor, backgroundColor: secondarySurface }]}
+                      style={[styles.input, { color: primaryText, borderColor: inputBorder, backgroundColor: inputBg }]}
                       placeholder={t('members.parentPhonePlaceholder')}
-                      placeholderTextColor="#94a3b8"
+                      placeholderTextColor={placeholderColor}
                       keyboardType="phone-pad"
                       value={newMember.referencePhone}
                       onChangeText={(tVal) => setNewMember({...newMember, referencePhone: tVal})}
@@ -737,9 +762,9 @@ export default function MembersScreen({ navigation }: any) {
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>{t('members.emailAddress')}</Text>
                 <TextInput 
-                  style={[styles.input, { color: primaryText, borderColor: adminBorderColor, backgroundColor: secondarySurface }]}
+                  style={[styles.input, { color: primaryText, borderColor: inputBorder, backgroundColor: inputBg }]}
                   placeholder={t('members.emailPlaceholder')}
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor={placeholderColor}
                   keyboardType="email-address"
                   autoCapitalize="none"
                   value={newMember.email}
@@ -750,7 +775,7 @@ export default function MembersScreen({ navigation }: any) {
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>{t('members.relation')}</Text>
                 <TouchableOpacity
-                  style={[styles.input, styles.dateInput, { borderColor: adminBorderColor, backgroundColor: secondarySurface }]}
+                  style={[styles.input, styles.dateInput, { borderColor: inputBorder, backgroundColor: inputBg }]}
                   onPress={() => setShowRelationPicker(true)}
                 >
                   <Text style={{ color: primaryText, fontSize: 16, fontWeight: '600' }}>
@@ -766,10 +791,10 @@ export default function MembersScreen({ navigation }: any) {
                   {['Male', 'Female'].map(gen => (
                     <TouchableOpacity 
                       key={gen}
-                      style={[styles.pill, newMember.gender === gen && styles.pillActive]}
+                      style={[styles.pill, { backgroundColor: newMember.gender === gen ? (isDark ? '#FFFFFF' : '#000000') : inputBg, borderColor: newMember.gender === gen ? (isDark ? '#FFFFFF' : '#000000') : inputBorder }]}
                       onPress={() => setNewMember({...newMember, gender: gen})}
                     >
-                      <Text style={[styles.pillText, newMember.gender === gen && styles.pillTextActive]}>
+                      <Text style={[styles.pillText, { color: newMember.gender === gen ? (isDark ? '#000000' : '#FFFFFF') : secondaryText, fontWeight: newMember.gender === gen ? '800' : '600' }]}>
                         {gen === 'Male' ? t('members.male') : t('members.female')}
                       </Text>
                     </TouchableOpacity>
@@ -780,7 +805,7 @@ export default function MembersScreen({ navigation }: any) {
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>{t('members.birthdate')}</Text>
                 <TouchableOpacity 
-                  style={[styles.input, styles.dateInput, { borderColor: adminBorderColor, backgroundColor: secondarySurface }]}
+                  style={[styles.input, styles.dateInput, { borderColor: inputBorder, backgroundColor: inputBg }]}
                   onPress={() => setDatePickerType('birthdate')}
                 >
                   <Text style={{ color: newMember.dob ? (primaryText) : '#94a3b8' }}>
@@ -794,7 +819,7 @@ export default function MembersScreen({ navigation }: any) {
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>{t('members.anniversaryDate')}</Text>
                   <TouchableOpacity 
-                    style={[styles.input, styles.dateInput, { borderColor: adminBorderColor, backgroundColor: secondarySurface }]}
+                    style={[styles.input, styles.dateInput, { borderColor: inputBorder, backgroundColor: inputBg }]}
                     onPress={() => setDatePickerType('anniversary')}
                   >
                     <Text style={{ color: newMember.anniversaryDate ? (primaryText) : '#94a3b8' }}>
@@ -806,14 +831,14 @@ export default function MembersScreen({ navigation }: any) {
               )}
 
               <TouchableOpacity 
-                style={styles.submitBtn} 
+                style={[styles.submitBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000', borderRadius: 999, marginTop: 4, marginBottom: 36 }]} 
                 onPress={handleAddMember}
                 disabled={submitting}
               >
                 {submitting ? (
-                  <ActivityIndicator color="#1a2d5a" />
+                  <ActivityIndicator color={isDark ? '#000000' : '#FFFFFF'} />
                 ) : (
-                  <Text style={styles.submitBtnTxt}>{editingMemberId ? t('members.saveChanges') : t('members.addMember')}</Text>
+                  <Text style={[styles.submitBtnTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>{editingMemberId ? t('members.saveChanges') : t('members.addMember')}</Text>
                 )}
               </TouchableOpacity>
             </ScrollView>
@@ -836,8 +861,8 @@ export default function MembersScreen({ navigation }: any) {
           <View style={[styles.pickerSheet, { backgroundColor: cardSurface }]}>
             <View style={styles.pickerHeader}>
               <Text style={[styles.pickerTitle, { color: primaryText }]}>{t('members.selectRelation')}</Text>
-              <TouchableOpacity onPress={() => setShowRelationPicker(false)}>
-                <X size={22} color={secondaryText} />
+              <TouchableOpacity onPress={() => setShowRelationPicker(false)} activeOpacity={0.8} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={{ width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center', backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1.5, borderColor: isDark ? '#3F3F46' : '#000000' }}>
+                <X size={18} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.5} />
               </TouchableOpacity>
             </View>
             <ScrollView showsVerticalScrollIndicator={false}>
@@ -909,7 +934,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: 1.5,
     shadowColor: '#000',
     shadowOpacity: 0.06,
     shadowRadius: 6,
@@ -939,7 +964,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     justifyContent: 'space-between',
     overflow: 'hidden',
     position: 'relative',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: 'rgba(228, 238, 234, 0.25)',
   },
   headerDecoCircle1: {
@@ -1014,7 +1039,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 5,
     shadowOffset: { width: 0, height: 2 },
-    borderWidth: 1,
+    borderWidth: 1.5,
     gap: 8,
   },
   searchInput: {
@@ -1142,10 +1167,10 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   inputGroup: { marginBottom: 16 },
   inputLabel: { fontSize: 12, fontWeight: '700', color: '#64748b', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
   input: {
-    borderWidth: 1,
-    borderRadius: 12,
+    borderWidth: 1.5,
+    borderRadius: 16,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14, fontWeight: '600',
     fontSize: 16
   },
   dateInput: {
@@ -1158,7 +1183,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#cbd5e1',
     backgroundColor: '#f8fafc'
   },
@@ -1171,7 +1196,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   
   submitBtn: {
     backgroundColor: '#FCD34D',
-    borderRadius: 12,
+    borderRadius: 16,
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 10,
@@ -1207,9 +1232,9 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 14,
     paddingHorizontal: 16,
-    borderRadius: 12,
+    borderRadius: 16,
     marginBottom: 6,
-    borderWidth: 1,
+    borderWidth: 1.5,
   },
   pickerOptionActive: {
     backgroundColor: '#1a2d5a',
