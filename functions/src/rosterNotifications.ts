@@ -558,80 +558,99 @@ export const checkServiceAssignmentTimeoutsCron = onSchedule(
     region: 'asia-south1',
   },
   async () => {
-    console.log('[RosterCron] Checking service assignment timeouts...');
-    const db = getFirestore();
-    const now = new Date();
+    try {
+      console.log('[RosterCron] Checking service assignment timeouts...');
+      const db = getFirestore();
+      const now = new Date();
 
-    // Query across all assignmentQueues collectionGroup
-    const activeQueuesSnap = await db
-      .collectionGroup('assignmentQueues')
-      .where('status', '==', 'pending')
-      .get();
-
-    let timedOutCount = 0;
-
-    for (const doc of activeQueuesSnap.docs) {
-      const data = doc.data();
-
-      // Check First-Come First-Served automated responsibilities
-      if (data.mode === 'first_come_first_served') {
-        const deadline = data.deadline;
-        if (deadline && now > new Date(deadline) && data.status === 'pending' && !data.confirmedCandidateId) {
-          console.log(`[RosterCron] First-Come queue ${doc.id} timed out without bookings.`);
-          await doc.ref.update({
-            status: 'exhausted',
-            history: FieldValue.arrayUnion({
-              timestamp: new Date().toISOString(),
-              action: 'first_come_deadline_expired',
-              details: 'Response deadline expired with no member bookings. Admin alerted.'
-            }),
-            updatedAt: FieldValue.serverTimestamp()
-          });
-          timedOutCount++;
-
-          const churchId = data.churchId || 'rhema';
-          await notifyChurchAdmins(db, churchId, {
-            title: `⏰ Response Deadline Expired: ${data.roleTitle || 'Responsibility'}`,
-            body: `No eligible member accepted the ${data.roleTitle || 'Responsibility'} within the response deadline. Please assign manually.`,
-            serviceId: data.serviceId,
-            roleId: data.roleId
-          });
-          continue;
+      // Query across all assignmentQueues collectionGroup with direct path fallback
+      let queueDocs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+      try {
+        const activeQueuesSnap = await db
+          .collectionGroup('assignmentQueues')
+          .where('status', '==', 'pending')
+          .get();
+        queueDocs = activeQueuesSnap.docs;
+      } catch (cgErr) {
+        console.warn('[RosterCron] collectionGroup on assignmentQueues requires index or failed, falling back to direct church plans scan:', cgErr);
+        const churchPlansSnap = await db
+          .collection(RHEMA_ROOT_COLLECTION)
+          .doc('rhema')
+          .collection('servicePlans')
+          .get();
+        for (const planDoc of churchPlansSnap.docs) {
+          const queues = await planDoc.ref.collection('assignmentQueues').where('status', '==', 'pending').get();
+          queueDocs.push(...queues.docs);
         }
       }
 
-      const curIdx = data.currentCandidateIndex || 0;
-      const candidates = data.candidates || [];
-      const activeCandidate = candidates[curIdx];
+      let timedOutCount = 0;
 
-      if (activeCandidate && activeCandidate.status === 'pending' && activeCandidate.deadline) {
-        const deadlineDate = new Date(activeCandidate.deadline);
-        if (now > deadlineDate) {
-          console.log(`[RosterCron] Candidate ${activeCandidate.candidateName} timed out on doc ${doc.id}`);
-          const freshCands = [...candidates];
-          if (freshCands[curIdx]) {
-            freshCands[curIdx] = {
-              ...freshCands[curIdx],
-              status: 'timed_out',
-              timedOutAt: new Date().toISOString()
-            };
+      for (const doc of queueDocs) {
+        const data = doc.data();
+
+        // Check First-Come First-Served automated responsibilities
+        if (data.mode === 'first_come_first_served') {
+          const deadline = data.deadline;
+          if (deadline && now > new Date(deadline) && data.status === 'pending' && !data.confirmedCandidateId) {
+            console.log(`[RosterCron] First-Come queue ${doc.id} timed out without bookings.`);
+            await doc.ref.update({
+              status: 'exhausted',
+              history: FieldValue.arrayUnion({
+                timestamp: new Date().toISOString(),
+                action: 'first_come_deadline_expired',
+                details: 'Response deadline expired with no member bookings. Admin alerted.'
+              }),
+              updatedAt: FieldValue.serverTimestamp()
+            });
+            timedOutCount++;
+
+            const churchId = data.churchId || 'rhema';
+            await notifyChurchAdmins(db, churchId, {
+              title: `⏰ Response Deadline Expired: ${data.roleTitle || 'Responsibility'}`,
+              body: `No eligible member accepted the ${data.roleTitle || 'Responsibility'} within the response deadline. Please assign manually.`,
+              serviceId: data.serviceId,
+              roleId: data.roleId
+            });
+            continue;
           }
-          await doc.ref.update({
-            candidates: freshCands,
-            history: FieldValue.arrayUnion({
-              timestamp: new Date().toISOString(),
-              action: `candidate_${curIdx + 1}_timed_out`,
-              candidateId: activeCandidate.candidateId,
-              candidateName: activeCandidate.candidateName
-            }),
-            updatedAt: FieldValue.serverTimestamp()
-          });
-          timedOutCount++;
+        }
+
+        const curIdx = data.currentCandidateIndex || 0;
+        const candidates = data.candidates || [];
+        const activeCandidate = candidates[curIdx];
+
+        if (activeCandidate && activeCandidate.status === 'pending' && activeCandidate.deadline) {
+          const deadlineDate = new Date(activeCandidate.deadline);
+          if (now > deadlineDate) {
+            console.log(`[RosterCron] Candidate ${activeCandidate.candidateName} timed out on doc ${doc.id}`);
+            const freshCands = [...candidates];
+            if (freshCands[curIdx]) {
+              freshCands[curIdx] = {
+                ...freshCands[curIdx],
+                status: 'timed_out',
+                timedOutAt: new Date().toISOString()
+              };
+            }
+            await doc.ref.update({
+              candidates: freshCands,
+              history: FieldValue.arrayUnion({
+                timestamp: new Date().toISOString(),
+                action: `candidate_${curIdx + 1}_timed_out`,
+                candidateId: activeCandidate.candidateId,
+                candidateName: activeCandidate.candidateName
+              }),
+              updatedAt: FieldValue.serverTimestamp()
+            });
+            timedOutCount++;
+          }
         }
       }
-    }
 
-    console.log(`[RosterCron] Done checking timeouts. Marked ${timedOutCount} candidate(s) timed out.`);
+      console.log(`[RosterCron] Done checking timeouts. Marked ${timedOutCount} candidate(s) timed out.`);
+    } catch (cronErr) {
+      console.error('[RosterCron] Error in checkServiceAssignmentTimeoutsCron:', cronErr);
+    }
   }
 );
 
@@ -647,57 +666,76 @@ export const sendServiceRosterRemindersCron = onSchedule(
     region: 'asia-south1',
   },
   async () => {
-    console.log('[RosterCron] Checking tomorrow service reminders...');
-    const db = getFirestore();
+    try {
+      console.log('[RosterCron] Checking tomorrow service reminders...');
+      const db = getFirestore();
 
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowStr = tomorrow.toISOString().split('T')[0] ?? '';
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowStr = tomorrow.toISOString().split('T')[0] ?? '';
 
-    const servicesSnap = await db
-      .collectionGroup('servicePlans')
-      .where('status', '==', 'published')
-      .where('date', '==', tomorrowStr)
-      .get();
+      let serviceDocs: FirebaseFirestore.DocumentSnapshot[] = [];
+      try {
+        const servicesSnap = await db
+          .collectionGroup('servicePlans')
+          .where('status', '==', 'published')
+          .where('date', '==', tomorrowStr)
+          .get();
+        serviceDocs = servicesSnap.docs;
+      } catch (cgErr) {
+        console.warn('[RosterCron] collectionGroup on servicePlans requires index or failed, falling back to direct church scan:', cgErr);
+        const plansSnap = await db
+          .collection(RHEMA_ROOT_COLLECTION)
+          .doc('rhema')
+          .collection('servicePlans')
+          .where('status', '==', 'published')
+          .where('date', '==', tomorrowStr)
+          .get();
+        serviceDocs = plansSnap.docs;
+      }
 
-    for (const sDoc of servicesSnap.docs) {
-      const sData = sDoc.data();
-      const queuesSnap = await sDoc.ref.collection('assignmentQueues').where('status', '==', 'confirmed').get();
+      for (const sDoc of serviceDocs) {
+        const sData = sDoc.data() || {};
+        const queuesSnap = await sDoc.ref.collection('assignmentQueues').where('status', '==', 'confirmed').get();
 
-      for (const qDoc of queuesSnap.docs) {
-        const qData = qDoc.data();
-        if (qData.confirmedCandidateId) {
-          const churchId = sData.churchId || 'rhema';
-          const tokens = await resolveCandidateFcmTokens(db, churchId, qData.confirmedCandidateId, undefined, qData.confirmedCandidateName);
+        for (const qDoc of queuesSnap.docs) {
+          const qData = qDoc.data();
+          if (qData.confirmedCandidateId) {
+            const churchId = sData.churchId || 'rhema';
+            const tokens = await resolveCandidateFcmTokens(db, churchId, qData.confirmedCandidateId, undefined, qData.confirmedCandidateName);
 
-          const roleTitle = String(qData.roleTitle || 'Volunteer');
-          const svcTitle = String(sData.serviceTitle || 'Worship Service');
-          const svcTime = String(sData.startTime || '10:00');
-          const title = `Reminder: Serving Tomorrow as ${roleTitle}`;
-          const body = `Service: ${svcTitle} starts tomorrow at ${formatTimeTo12Hour(svcTime)}. Please arrive 30 mins prior for prayer & sound check.`;
+            const roleTitle = String(qData.roleTitle || 'Volunteer');
+            const svcTitle = String(sData.serviceTitle || 'Worship Service');
+            const svcTime = String(sData.startTime || '10:00');
+            const title = `Reminder: Serving Tomorrow as ${roleTitle}`;
+            const body = `Service: ${svcTitle} starts tomorrow at ${formatTimeTo12Hour(svcTime)}. Please arrive 30 mins prior for prayer & sound check.`;
 
-          for (const token of tokens) {
-            try {
-              await getMessaging().send({
-                token,
-                notification: { title, body },
-                data: {
-                  type: 'service_reminder',
-                  serviceId: sDoc.id,
-                  roleTitle: roleTitle,
-                  serviceDate: formatDateMonthYear(tomorrowStr)
-                },
-                android: {
-                  priority: 'high',
-                  notification: { channelId: 'church_alerts', color: '#2E6B4F', sound: 'default' }
-                }
-              });
-            } catch (remErr) {
-              console.error(`[RosterCron] Failed sending reminder to ${qData.confirmedCandidateName}:`, remErr);
+            for (const token of tokens) {
+              try {
+                await getMessaging().send({
+                  token,
+                  notification: { title, body },
+                  data: {
+                    type: 'service_reminder',
+                    serviceId: sDoc.id,
+                    roleTitle: roleTitle,
+                    serviceDate: formatDateMonthYear(tomorrowStr)
+                  },
+                  android: {
+                    priority: 'high',
+                    notification: { channelId: 'church_alerts', color: '#2E6B4F', sound: 'default' }
+                  }
+                });
+              } catch (remErr) {
+                console.error(`[RosterCron] Failed sending reminder to ${qData.confirmedCandidateName}:`, remErr);
+              }
             }
           }
         }
       }
+      console.log('[RosterCron] Finished processing service reminders.');
+    } catch (fatalErr) {
+      console.error('[RosterCron] Error in sendServiceRosterRemindersCron:', fatalErr);
     }
   }
 );
