@@ -1307,11 +1307,10 @@ export default function AdminServicePlanner({ navigation }: any) {
     }
   };
 
-  const handleDeleteService = () => {
-    if (!selectedPlan) return;
+  const handleDeleteServicePlan = (planId: string, planTitle: string, planDate: string) => {
     Alert.alert(
       'Delete Service',
-      `Are you sure you want to delete "${selectedPlan.serviceTitle}" (${selectedPlan.date})? This cannot be undone.`,
+      `Are you sure you want to delete "${planTitle}" (${planDate})?\n\nThis cannot be undone and will permanently remove all activities, songs, and volunteer duty assignments.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -1319,18 +1318,31 @@ export default function AdminServicePlanner({ navigation }: any) {
           style: 'destructive',
           onPress: async () => {
             try {
-              await ServiceRosterService.deleteServicePlan(churchId, selectedPlan.id);
-              const remaining = plans.filter(p => p.id !== selectedPlan.id);
+              setSavingService(true);
+              await ServiceRosterService.deleteServicePlan(churchId, planId);
+              const remaining = plans.filter(p => p.id !== planId);
               setPlans(remaining);
-              setSelectedPlan(remaining[0] || null);
-              Alert.alert('Deleted', 'Service was removed.');
+              if (selectedPlan?.id === planId) {
+                setSelectedPlan(remaining[0] || null);
+              }
+              if (showCreateModal && editingPlanId === planId) {
+                setShowCreateModal(false);
+              }
+              Alert.alert('Deleted', `"${planTitle}" has been deleted.`);
             } catch (err: any) {
               Alert.alert('Error', err.message || 'Failed to delete service.');
+            } finally {
+              setSavingService(false);
             }
           }
         }
       ]
     );
+  };
+
+  const handleDeleteService = () => {
+    if (!selectedPlan) return;
+    handleDeleteServicePlan(selectedPlan.id, selectedPlan.serviceTitle, selectedPlan.date);
   };
 
   const openEditDetailsModal = () => {
@@ -2605,6 +2617,15 @@ export default function AdminServicePlanner({ navigation }: any) {
                           >
                             <Edit3 size={12} color="#1E3A8A" style={{ marginRight: 4 }} />
                             <Text style={styles.cardManageBtnTxt}>Edit & Manage</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.cardDeleteBtn}
+                            onPress={() => handleDeleteServicePlan(plan.id, plan.serviceTitle, plan.date)}
+                            activeOpacity={0.8}
+                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                          >
+                            <Trash2 size={13} color="#DC2626" />
+                            <Text style={styles.cardDeleteBtnTxt}>Delete</Text>
                           </TouchableOpacity>
                         </View>
                       </View>
@@ -4455,13 +4476,24 @@ export default function AdminServicePlanner({ navigation }: any) {
                   </Text>
                 </View>
               </View>
-              <TouchableOpacity
-                style={[styles.modalCloseCircle, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}
-                onPress={() => setShowCreateModal(false)}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <X size={18} color={secondaryText} />
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                {isEditingExistingPlan && editingPlanId && (
+                  <TouchableOpacity
+                    style={[styles.modalCloseCircle, { backgroundColor: '#FEE2E2' }]}
+                    onPress={() => handleDeleteServicePlan(editingPlanId, createTitle || 'This service', createDate)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Trash2 size={16} color="#DC2626" />
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={[styles.modalCloseCircle, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}
+                  onPress={() => setShowCreateModal(false)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <X size={18} color={secondaryText} />
+                </TouchableOpacity>
+              </View>
             </View>
 
             <ScrollView
@@ -5114,11 +5146,33 @@ export default function AdminServicePlanner({ navigation }: any) {
                       💾 Save as Draft (No Notifications Yet)
                     </Text>
                   </TouchableOpacity>
+
+                  {isEditingExistingPlan && editingPlanId && (
+                    <TouchableOpacity
+                      style={styles.deleteServiceFormBtn}
+                      disabled={savingService}
+                      onPress={() => handleDeleteServicePlan(editingPlanId, createTitle || 'This service', createDate)}
+                      activeOpacity={0.8}
+                    >
+                      <Trash2 size={15} color="#DC2626" />
+                      <Text style={styles.deleteServiceFormBtnTxt}>Delete Service Permanently</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               </View>
             </ScrollView>
 
             <View style={[styles.modalFooterRow, { borderTopColor: borderColor }]}>
+              {isEditingExistingPlan && editingPlanId && (
+                <TouchableOpacity
+                  style={styles.modalFooterDeleteBtn}
+                  disabled={savingService}
+                  onPress={() => handleDeleteServicePlan(editingPlanId, createTitle || 'This service', createDate)}
+                  activeOpacity={0.8}
+                >
+                  <Trash2 size={16} color="#DC2626" />
+                </TouchableOpacity>
+              )}
               <TouchableOpacity
                 style={[styles.modalDraftBtn, { borderColor }]}
                 disabled={savingService}
@@ -9322,5 +9376,48 @@ const styles = StyleSheet.create({
     color: '#1E3A8A',
     fontSize: 11,
     fontWeight: '700',
+  },
+  cardDeleteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+  },
+  cardDeleteBtnTxt: {
+    color: '#DC2626',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  deleteServiceFormBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#FEF2F2',
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    marginTop: 8,
+  },
+  deleteServiceFormBtnTxt: {
+    color: '#DC2626',
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  modalFooterDeleteBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
