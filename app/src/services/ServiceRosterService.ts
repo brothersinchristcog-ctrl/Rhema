@@ -1203,15 +1203,78 @@ class ServiceRosterService {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
+   * Deduplicate candidate entries by candidateId and normalized candidateName,
+   * preserving the most definitive response status ('accepted' > 'declined' > 'timed_out' > 'pending' > 'waiting').
+   */
+  deduplicateCandidates(candidates: CandidateEntry[] = []): CandidateEntry[] {
+    if (!Array.isArray(candidates) || candidates.length <= 1) return candidates || [];
+    const statusPriority: Record<string, number> = {
+      accepted: 5,
+      declined: 4,
+      timed_out: 3,
+      missed: 2,
+      pending: 1,
+      waiting: 0,
+    };
+
+    const result: CandidateEntry[] = [];
+    for (const cand of candidates) {
+      if (!cand) continue;
+      const cId = (cand.candidateId || '').trim();
+      const cName = (cand.candidateName || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+      const existingIdx = result.findIndex(existing => {
+        const eId = (existing.candidateId || '').trim();
+        const eName = (existing.candidateName || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        if (cId && eId && cId === eId) return true;
+        if (cName && eName && cName !== 'volunteer' && cName !== 'member' && cName === eName) return true;
+        return false;
+      });
+
+      if (existingIdx === -1) {
+        result.push({ ...cand });
+      } else {
+        const existing = result[existingIdx];
+        const pNew = statusPriority[cand.status] ?? 0;
+        const pOld = statusPriority[existing.status] ?? 0;
+        if (pNew >= pOld) {
+          result[existingIdx] = {
+            ...existing,
+            ...cand,
+            candidateId: existing.candidateId || cand.candidateId,
+            candidateName: cand.candidateName || existing.candidateName,
+            candidatePhone: cand.candidatePhone || existing.candidatePhone,
+            declineReason: cand.declineReason || existing.declineReason,
+            respondedAt: cand.respondedAt || existing.respondedAt,
+          };
+        } else {
+          result[existingIdx] = {
+            ...cand,
+            ...existing,
+            candidatePhone: existing.candidatePhone || cand.candidatePhone,
+            declineReason: existing.declineReason || cand.declineReason,
+            respondedAt: existing.respondedAt || cand.respondedAt,
+          };
+        }
+      }
+    }
+    return result;
+  }
+
+  /**
    * Fetch all assignment queues for a service plan
    */
   async getAssignmentQueues(churchId: string, serviceId: string): Promise<ServiceAssignmentQueue[]> {
     try {
       const snap = await this.getAssignmentQueuesCol(churchId, serviceId).get();
-      return snap.docs.map((doc: any) => ({
-        id: doc.id,
-        ...doc.data()
-      })) as ServiceAssignmentQueue[];
+      return snap.docs.map((doc: any) => {
+        const data = doc.data() || {};
+        return {
+          id: doc.id,
+          ...data,
+          candidates: this.deduplicateCandidates(data.candidates || [])
+        };
+      }) as ServiceAssignmentQueue[];
     } catch (err) {
       console.error('[ServiceRosterService] getAssignmentQueues error:', err);
       return [];
@@ -1228,10 +1291,14 @@ class ServiceRosterService {
   ): () => void {
     return this.getAssignmentQueuesCol(churchId, serviceId).onSnapshot(
       (snap: any) => {
-        const queues = snap.docs.map((doc: any) => ({
-          id: doc.id,
-          ...doc.data()
-        })) as ServiceAssignmentQueue[];
+        const queues = snap.docs.map((doc: any) => {
+          const data = doc.data() || {};
+          return {
+            id: doc.id,
+            ...data,
+            candidates: this.deduplicateCandidates(data.candidates || [])
+          };
+        }) as ServiceAssignmentQueue[];
         onUpdate(queues);
       },
       (err: any) => {
@@ -1369,6 +1436,155 @@ class ServiceRosterService {
   }
 
   /**
+   * Automatic Responsibility Assignment Workflow (First-Come, First-Served):
+   * Identifies all eligible members matching verified / primary / secondary skills,
+   * creates/updates assignment queues, and broadcasts notifications to all eligible members simultaneously.
+   */
+  async autoDispatchFirstComeResponsibilities(
+    churchId: string,
+    serviceId: string
+  ): Promise<{ dispatchedCount: number; emptyCount: number }> {
+    const planDoc = await this.getServicePlansCol(churchId).doc(serviceId).get();
+    if (!planDoc.exists) throw new Error('Service plan not found.');
+    const plan = planDoc.data() as ServicePlan;
+
+    const bandRoles = [
+      { roleId: 'role_keyboard', title: 'Keyboardist / Pianist', skill: 'Keyboard / Piano' },
+      { roleId: 'role_drums', title: 'Drummer / Percussionist', skill: 'Drums / Percussion' },
+      { roleId: 'role_bass', title: 'Bass Guitarist', skill: 'Bass Guitar' },
+      { roleId: 'role_acoustic', title: 'Acoustic Guitarist', skill: 'Acoustic Guitar' },
+      { roleId: 'role_electric', title: 'Electric Guitarist', skill: 'Electric Guitar' },
+      { roleId: 'role_sound', title: 'Sound & Audio Engineer', skill: 'Sound Engineer' },
+      { roleId: 'role_worship_leader', title: 'Worship Leader', skill: 'Worship Leader' },
+    ];
+
+    const unassigned: Array<{
+      roleId: string;
+      roleTitle: string;
+      requiredSkill: string;
+      activityId?: string;
+      activityName?: string;
+    }> = [];
+
+    // Band roles
+    bandRoles.forEach(b => {
+      if (!plan.assignments?.[b.roleId] || !plan.assignments[b.roleId].trim()) {
+        unassigned.push({
+          roleId: b.roleId,
+          roleTitle: b.title,
+          requiredSkill: b.skill
+        });
+      }
+    });
+
+    // RunSheet items
+    (plan.runSheet || []).forEach((item, idx) => {
+      if (!item.responsiblePerson || !item.responsiblePerson.trim()) {
+        const cleanId = item.id ? (item.id.startsWith('act_') ? item.id : `act_${item.id}`) : `act_${idx}`;
+        unassigned.push({
+          roleId: cleanId,
+          roleTitle: item.program || 'Order of Service Responsibility',
+          requiredSkill: item.category || item.program,
+          activityId: item.id || cleanId,
+          activityName: item.program
+        });
+      }
+    });
+
+    let dispatchedCount = 0;
+    let emptyCount = 0;
+    const nowIso = new Date().toISOString();
+    const timeoutMinutes = 120; // 2 hours
+    const deadlineIso = new Date(Date.now() + timeoutMinutes * 60 * 1000).toISOString();
+
+    for (const resp of unassigned) {
+      const qDocRef = this.getAssignmentQueuesCol(churchId, serviceId).doc(resp.roleId);
+      const existingSnap = await qDocRef.get();
+      if (existingSnap.exists) {
+        const existingData = existingSnap.data() as any;
+        if (existingData.status === 'confirmed' || existingData.confirmedCandidateId) {
+          continue; // Already confirmed/booked
+        }
+      }
+
+      // Fetch eligible candidates
+      const eligible = await this.getEligibleCandidatesForRole(churchId, plan.date, {
+        requiredSkill: resp.requiredSkill,
+        roleTitle: resp.roleTitle
+      });
+
+      const qualified = eligible.filter(e => e.isAvailable && e.matchScore >= 20);
+
+      if (qualified.length === 0) {
+        emptyCount++;
+        await qDocRef.set(this.sanitizeForFirestore({
+          id: resp.roleId,
+          serviceId,
+          churchId: churchId || 'rhema',
+          roleId: resp.roleId,
+          roleTitle: resp.roleTitle,
+          activityId: resp.activityId,
+          activityName: resp.activityName,
+          requiredSkill: resp.requiredSkill,
+          mode: 'first_come_first_served',
+          status: 'exhausted',
+          eligibleMemberIds: [],
+          declinedMemberIds: [],
+          candidates: [],
+          timeoutMinutes,
+          deadline: deadlineIso,
+          history: [{
+            timestamp: nowIso,
+            action: 'no_eligible_members',
+            details: 'No members found with matching verified skills and availability.'
+          }],
+          createdAt: firestore.FieldValue.serverTimestamp(),
+          updatedAt: firestore.FieldValue.serverTimestamp()
+        }), { merge: true });
+        continue;
+      }
+
+      const candidateEntries = qualified.map(m => ({
+        candidateId: m.memberId,
+        candidateName: m.memberName,
+        candidatePhone: m.memberPhone || '',
+        status: 'pending' as const,
+        requestedAt: nowIso,
+        deadline: deadlineIso
+      }));
+
+      await qDocRef.set(this.sanitizeForFirestore({
+        id: resp.roleId,
+        serviceId,
+        churchId: churchId || 'rhema',
+        roleId: resp.roleId,
+        roleTitle: resp.roleTitle,
+        activityId: resp.activityId,
+        activityName: resp.activityName,
+        requiredSkill: resp.requiredSkill,
+        mode: 'first_come_first_served',
+        status: 'pending',
+        timeoutMinutes,
+        deadline: deadlineIso,
+        eligibleMemberIds: qualified.map(m => m.memberId),
+        declinedMemberIds: [],
+        candidates: candidateEntries,
+        history: [{
+          timestamp: nowIso,
+          action: 'broadcast_dispatched',
+          details: `First-Come, First-Served broadcast sent to ${qualified.length} eligible member(s) with ${Math.round(timeoutMinutes / 60)}h deadline.`
+        }],
+        createdAt: firestore.FieldValue.serverTimestamp(),
+        updatedAt: firestore.FieldValue.serverTimestamp()
+      }), { merge: true });
+
+      dispatchedCount++;
+    }
+
+    return { dispatchedCount, emptyCount };
+  }
+
+  /**
    * Concurrency-safe Accept / Decline response workflow with auto-cascade
    */
   async respondToAssignment(
@@ -1377,7 +1593,8 @@ class ServiceRosterService {
     roleId: string,
     candidateId: string,
     action: 'accept' | 'decline',
-    reason?: string
+    reason?: string,
+    candidateName?: string
   ): Promise<void> {
     const queueRef = this.getAssignmentQueuesCol(churchId, serviceId).doc(roleId);
     const planRef = this.getServicePlansCol(churchId).doc(serviceId);
@@ -1390,14 +1607,167 @@ class ServiceRosterService {
 
       const qData = qSnap.data() as ServiceAssignmentQueue;
       const candidates = [...(qData.candidates || [])];
+      const nowIso = new Date().toISOString();
+
+      // ─────────────────────────────────────────────────────────────────────────
+      // 1. FIRST-COME, FIRST-SERVED AUTOMATIC SLOT BOOKING
+      // ─────────────────────────────────────────────────────────────────────────
+      const isFCFS = (qData as any).mode === 'first_come_first_served';
+      const normTargetName = (candidateName || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      const isSameCandidate = (c: CandidateEntry) => {
+        if (candidateId && c.candidateId === candidateId) return true;
+        const cNorm = (c.candidateName || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        if (normTargetName && cNorm && normTargetName !== 'volunteer' && cNorm === normTargetName) return true;
+        return false;
+      };
+
+      if (isFCFS) {
+        if (action === 'accept') {
+          // Concurrency check: Ensure slot is not already booked!
+          if (qData.status === 'confirmed' || qData.confirmedCandidateId) {
+            if (qData.confirmedCandidateId !== candidateId) {
+              throw new Error('This responsibility slot has already been booked by another member.');
+            }
+            return;
+          }
+
+          const matchedCand = candidates.find(c => isSameCandidate(c));
+          const resolvedId = matchedCand?.candidateId || candidateId;
+          const resolvedName = candidateName || matchedCand?.candidateName || 'Volunteer';
+
+          let updatedCandidates: CandidateEntry[] = candidates.map((c): CandidateEntry => {
+            if (isSameCandidate(c)) {
+              return { ...c, status: 'accepted', declineReason: undefined, respondedAt: nowIso };
+            }
+            return { ...c, status: c.status === 'declined' ? 'declined' : 'waiting' };
+          });
+
+          if (!updatedCandidates.some(c => isSameCandidate(c))) {
+            updatedCandidates.push({
+              candidateId: resolvedId,
+              candidateName: resolvedName,
+              status: 'accepted',
+              respondedAt: nowIso
+            });
+          }
+          updatedCandidates = this.deduplicateCandidates(updatedCandidates);
+
+          const updatedDeclinedIds = (((qData as any).declinedMemberIds || []) as string[]).filter(
+            id => id !== candidateId && id !== resolvedId
+          );
+
+          const historyEntry = {
+            timestamp: nowIso,
+            action: 'slot_booked_first_come',
+            candidateId: resolvedId,
+            candidateName: resolvedName,
+            details: `Booked by ${resolvedName} (First to accept)`
+          };
+
+          transaction.update(queueRef, this.sanitizeForFirestore({
+            status: 'confirmed',
+            confirmedCandidateId: resolvedId,
+            confirmedCandidateName: resolvedName,
+            bookedAt: nowIso,
+            declinedMemberIds: updatedDeclinedIds,
+            candidates: updatedCandidates,
+            history: firestore.FieldValue.arrayUnion(historyEntry),
+            updatedAt: firestore.FieldValue.serverTimestamp()
+          }));
+
+          transaction.update(planRef, this.sanitizeForFirestore({
+            [`assignments.${roleId}`]: resolvedName,
+            [`assignmentMemberIds.${roleId}`]: resolvedId,
+            [`assignmentStatus.${roleId}`]: 'confirmed',
+            updatedAt: firestore.FieldValue.serverTimestamp()
+          }));
+          return;
+        } else {
+          // Decline in FCFS mode
+          const matchedCand = candidates.find(c => isSameCandidate(c));
+          const resolvedId = matchedCand?.candidateId || candidateId;
+          const resolvedName = candidateName || matchedCand?.candidateName || 'Volunteer';
+
+          const declinedList = Array.from(new Set([
+            ...((qData as any).declinedMemberIds || []),
+            resolvedId,
+            ...(candidateId ? [candidateId] : [])
+          ]));
+          const eligibleList = (qData as any).eligibleMemberIds || [];
+          const isCurrentConfirmed = qData.confirmedCandidateId === candidateId || qData.confirmedCandidateId === resolvedId;
+
+          let updatedCandidates = candidates.map(c => {
+            if (isSameCandidate(c)) {
+              return { ...c, status: 'declined' as const, declineReason: reason || 'Unavailable', respondedAt: nowIso };
+            }
+            return c;
+          });
+
+          if (!updatedCandidates.some(c => isSameCandidate(c))) {
+            updatedCandidates.push({
+              candidateId: resolvedId,
+              candidateName: resolvedName,
+              status: 'declined' as const,
+              declineReason: reason || 'Unavailable',
+              respondedAt: nowIso
+            });
+          }
+          updatedCandidates = this.deduplicateCandidates(updatedCandidates);
+
+          if (isCurrentConfirmed) {
+            // Re-open the slot!
+            const remainingCount = updatedCandidates.filter(c => c.status !== 'declined').length;
+            transaction.update(queueRef, this.sanitizeForFirestore({
+              status: remainingCount > 0 ? 'pending' : 'exhausted',
+              confirmedCandidateId: firestore.FieldValue.delete(),
+              confirmedCandidateName: firestore.FieldValue.delete(),
+              declinedMemberIds: declinedList,
+              candidates: updatedCandidates,
+              history: firestore.FieldValue.arrayUnion({
+                timestamp: nowIso,
+                action: 'confirmed_member_cancelled_slot_reopened',
+                candidateId: resolvedId,
+                candidateName: resolvedName,
+                details: `Cancelled by ${resolvedName}: ${reason || 'Unavailable'}. Slot re-opened.`
+              }),
+              updatedAt: firestore.FieldValue.serverTimestamp()
+            }));
+
+            transaction.update(planRef, this.sanitizeForFirestore({
+              [`assignments.${roleId}`]: firestore.FieldValue.delete(),
+              [`assignmentMemberIds.${roleId}`]: firestore.FieldValue.delete(),
+              [`assignmentStatus.${roleId}`]: 'pending',
+              updatedAt: firestore.FieldValue.serverTimestamp()
+            }));
+          } else {
+            const allDeclined = updatedCandidates.length > 0 && updatedCandidates.every(c => c.status === 'declined');
+            transaction.update(queueRef, this.sanitizeForFirestore({
+              status: allDeclined ? 'exhausted' : qData.status,
+              declinedMemberIds: declinedList,
+              candidates: updatedCandidates,
+              history: firestore.FieldValue.arrayUnion({
+                timestamp: nowIso,
+                action: 'candidate_declined',
+                candidateId: resolvedId,
+                candidateName: resolvedName,
+                details: `Declined: ${reason || 'Unavailable'}`
+              }),
+              updatedAt: firestore.FieldValue.serverTimestamp()
+            }));
+          }
+          return;
+        }
+      }
+
+      // ─────────────────────────────────────────────────────────────────────────
+      // 2. SEQUENTIAL CANDIDATE LADDER (FALLBACK / MANUAL LADDER)
+      // ─────────────────────────────────────────────────────────────────────────
       const curIdx = qData.currentCandidateIndex || 0;
       const activeCandidate = candidates[curIdx];
 
       if (!activeCandidate) {
         throw new Error('No active candidate in assignment queue.');
       }
-
-      const nowIso = new Date().toISOString();
 
       if (action === 'accept') {
         // Mark active candidate accepted and resolve queue
@@ -1626,20 +1996,47 @@ class ServiceRosterService {
         const qSnap = await queueRef.get();
         if (qSnap.exists) {
           const qData = qSnap.data() as ServiceAssignmentQueue;
-          const candidates = [...(qData.candidates || [])];
-          const curIdx = qData.currentCandidateIndex || 0;
-          if (candidates[curIdx]) {
-            candidates[curIdx] = {
-              ...candidates[curIdx],
-              status: 'declined',
-              declineReason: reason,
-              respondedAt: new Date().toISOString()
-            };
+
+          if ((qData as any).mode === 'first_come_first_served') {
+            const declinedList = Array.from(new Set([...((qData as any).declinedMemberIds || []), memberId]));
+            const eligibleList = (qData as any).eligibleMemberIds || [];
+            const remaining = eligibleList.filter((id: string) => !declinedList.includes(id));
+            const updatedCandidates = (qData.candidates || []).map(c => {
+              if (c.candidateId === memberId) {
+                return { ...c, status: 'declined' as const, declineReason: reason, respondedAt: new Date().toISOString() };
+              }
+              return c;
+            });
             await queueRef.update({
-              candidates,
-              status: 'declined',
+              status: remaining.length > 0 ? 'pending' : 'exhausted',
+              confirmedCandidateId: firestore.FieldValue.delete(),
+              confirmedCandidateName: firestore.FieldValue.delete(),
+              declinedMemberIds: declinedList,
+              candidates: updatedCandidates,
               updatedAt: firestore.FieldValue.serverTimestamp()
             });
+            if (remaining.length > 0) {
+              await planRef.update({
+                [`assignmentStatus.${roleId}`]: 'pending',
+                updatedAt: firestore.FieldValue.serverTimestamp()
+              });
+            }
+          } else {
+            const candidates = [...(qData.candidates || [])];
+            const curIdx = qData.currentCandidateIndex || 0;
+            if (candidates[curIdx]) {
+              candidates[curIdx] = {
+                ...candidates[curIdx],
+                status: 'declined',
+                declineReason: reason,
+                respondedAt: new Date().toISOString()
+              };
+              await queueRef.update({
+                candidates,
+                status: 'declined',
+                updatedAt: firestore.FieldValue.serverTimestamp()
+              });
+            }
           }
         }
       } catch (_) {}
@@ -1766,15 +2163,36 @@ class ServiceRosterService {
           reasons.push('Blocked Out');
         }
 
-        results.push({
-          memberId: m.id,
-          memberName: m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim() || 'Church Member',
-          memberPhone: m.phone,
-          matchScore: score,
-          matchReasons: reasons,
-          isAvailable: availCheck.isAvailable,
-          availabilityReason: availCheck.reason
-        });
+        const fullName = m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim() || 'Church Member';
+        const normName = fullName.trim().toLowerCase().replace(/\s+/g, ' ');
+        const existingIdx = results.findIndex(r =>
+          r.memberId === m.id ||
+          (normName && normName !== 'church member' && r.memberName.trim().toLowerCase().replace(/\s+/g, ' ') === normName)
+        );
+
+        if (existingIdx !== -1) {
+          if (score > results[existingIdx].matchScore) {
+            results[existingIdx] = {
+              memberId: m.id,
+              memberName: fullName,
+              memberPhone: m.phone || results[existingIdx].memberPhone,
+              matchScore: score,
+              matchReasons: reasons,
+              isAvailable: availCheck.isAvailable,
+              availabilityReason: availCheck.reason
+            };
+          }
+        } else {
+          results.push({
+            memberId: m.id,
+            memberName: fullName,
+            memberPhone: m.phone,
+            matchScore: score,
+            matchReasons: reasons,
+            isAvailable: availCheck.isAvailable,
+            availabilityReason: availCheck.reason
+          });
+        }
       }
 
       // Sort descending by score
@@ -2343,7 +2761,67 @@ class ServiceRosterService {
               qRoleTitle = resolveRoleTitle(queue.roleId);
             }
 
-            // If this member is the current active candidate and status is pending -> INVITATION!
+            // 3a. Check First-Come, First-Served broadcast queues
+            const isFCFS = (queue as any).mode === 'first_come_first_served';
+            if (isFCFS) {
+              const eligibleIds = (queue as any).eligibleMemberIds || [];
+              const declinedIds = (queue as any).declinedMemberIds || [];
+              const isEligible = eligibleIds.includes(memberId) || candidates.some(c => c.candidateId === memberId);
+              const isDeclined = declinedIds.includes(memberId) || candidates.some(c => c.candidateId === memberId && c.status === 'declined');
+
+              if (queue.status === 'confirmed') {
+                if (queue.confirmedCandidateId === memberId) {
+                  if (!duties.some(d => d.roleId === queue.roleId && d.serviceId === plan.id)) {
+                    duties.push({
+                      id: `${plan.id}_${queue.roleId}_confirmed`,
+                      serviceId: plan.id,
+                      serviceTitle: plan.serviceTitle,
+                      serviceType: plan.serviceType,
+                      date: plan.date,
+                      startTime: plan.startTime,
+                      endTime: plan.endTime,
+                      location: plan.location,
+                      preacher: plan.preacher,
+                      roleId: queue.roleId,
+                      roleTitle: qRoleTitle,
+                      activityName: queue.activityName || qRoleTitle,
+                      callTime: defaultCallTime,
+                      status: 'confirmed',
+                      rehearsals,
+                      setlist: plan.setlist || []
+                    });
+                  }
+                }
+              } else if (queue.status === 'pending' && isEligible && !isDeclined) {
+                if (!duties.some(d => d.roleId === queue.roleId && d.serviceId === plan.id)) {
+                  duties.push({
+                    id: `${plan.id}_${queue.roleId}_fcfs_pending`,
+                    serviceId: plan.id,
+                    serviceTitle: plan.serviceTitle,
+                    serviceType: plan.serviceType,
+                    date: plan.date,
+                    startTime: plan.startTime,
+                    endTime: plan.endTime,
+                    location: plan.location,
+                    preacher: plan.preacher,
+                    roleId: queue.roleId,
+                    roleTitle: qRoleTitle,
+                    activityName: queue.activityName || qRoleTitle,
+                    callTime: defaultCallTime,
+                    status: 'pending',
+                    deadline: (queue as any).deadline,
+                    queueId: queue.id,
+                    candidateIndex: 0,
+                    instructions: 'First-come, first-served open slot. First member to accept gets booked!',
+                    rehearsals,
+                    setlist: plan.setlist || []
+                  });
+                }
+              }
+              continue;
+            }
+
+            // 3b. If this member is the current active candidate and status is pending -> INVITATION!
             if (activeCand && activeCand.candidateId === memberId && activeCand.status === 'pending' && queue.status === 'pending') {
               if (!duties.some(d => d.roleId === queue.roleId && d.serviceId === plan.id)) {
                 duties.push({

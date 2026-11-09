@@ -2,6 +2,20 @@
   "indexes": [
     {
       "collectionGroup": "servicePlans",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "servicePlans",
       "queryScope": "COLLECTION",
       "fields": [
         {
@@ -118,6 +132,16 @@
     }
   ],
   "fieldOverrides": [
+    {
+      "collectionGroup": "assignmentQueues",
+      "fieldPath": "status",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
     {
       "collectionGroup": "members",
       "fieldPath": "uid",

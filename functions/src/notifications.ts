@@ -2190,39 +2190,87 @@ export async function sendDailyVersePushInternal(slotOverride?: string, targetCh
     console.log(`🔑 [DailyVerse] Lock acquired for slot ${slotLockKey}. Dispatching notification...`);
   }
 
-  // 2. Resolve today's verse index
-  // 100% synchronized with SuperAdminVersesManager, HomeScreen, and VerseOfTheDayScreen:
-  // Today's 4 slots are strictly indexed: 0 (Morning), 1 (Afternoon), 2 (Evening), 3 (Night)
-  const targetIndex = slotInfo.index;
-  console.log(`[sendDailyVersePushInternal] Target verse index: ${targetIndex} for slot ${slot}`);
+  // 2. Resolve today's verse index dynamically from the anchor schedule date
+  // 100% synchronized with SuperAdminVersesManager, HomeScreen, and VerseOfTheDayScreen
+  let totalVerses = 5863;
+  let epochStr = '2026-10-30';
+  try {
+    const metaDoc = await db.collection('daily_verses_meta').doc('metadata').get();
+    if (metaDoc.exists) {
+      const mData = metaDoc.data() || {};
+      if (mData.totalVerses && typeof mData.totalVerses === 'number') {
+        totalVerses = mData.totalVerses;
+      }
+      if (mData.scheduleStartDate && typeof mData.scheduleStartDate === 'string') {
+        epochStr = mData.scheduleStartDate;
+      }
+    }
+  } catch (mErr) {
+    console.warn('[sendDailyVersePushInternal] Metadata fetch warning, using defaults:', mErr);
+  }
+
+  // Calculate calendar days diff from epoch in IST
+  const parts = epochStr.split('-').map(Number);
+  const eY = parts[0] || 2026;
+  const eM = parts[1] || 10;
+  const eD = parts[2] || 30;
+  const epochUtc = Date.UTC(eY, eM - 1, eD);
+  const targetUtc = Date.UTC(nowIst.getFullYear(), nowIst.getMonth(), nowIst.getDate());
+  const diffDays = Math.floor((targetUtc - epochUtc) / (24 * 60 * 60 * 1000));
+  const base = diffDays * 4;
+
+  const todayIndices = [
+    ((base + 0) % totalVerses + totalVerses) % totalVerses,
+    ((base + 1) % totalVerses + totalVerses) % totalVerses,
+    ((base + 2) % totalVerses + totalVerses) % totalVerses,
+    ((base + 3) % totalVerses + totalVerses) % totalVerses,
+  ];
+
+  const targetIndex: number = (todayIndices[slotInfo.index] !== undefined ? todayIndices[slotInfo.index] : todayIndices[0]) ?? 0;
+  console.log(`[sendDailyVersePushInternal] Target verse index: ${targetIndex} for slot ${slot} (epoch: ${epochStr}, diffDays: ${diffDays}, slotIdx: ${slotInfo.index}, todayIndices: [${todayIndices.join(', ')}])`);
 
   let verseDocData: any = null;
   let verseId: string = `verse_${targetIndex}`;
 
-  // 1. Primary Source of Truth: Firestore 'daily_verses' collection (as configured in SuperAdminVersesManager & shown on HomeScreen)
+  // 1. Primary Source of Truth: Firestore 'daily_verses' collection
   try {
-    const snap = await db.collection('daily_verses')
-      .where('index', '==', targetIndex)
-      .get();
-    if (!snap.empty && snap.docs.length > 0) {
-      let bestDoc: any = snap.docs[0];
-      let bestTime = 0;
-      snap.docs.forEach((doc: any) => {
-        const d = doc.data();
-        const t = d.updatedAt?.toMillis ? d.updatedAt.toMillis() : (d.updatedAt || d.createdAt?.toMillis?.() || d.createdAt || 0);
-        if (t >= bestTime) {
-          bestTime = t;
-          bestDoc = doc;
-        }
-      });
-      if (bestDoc) {
-        verseDocData = bestDoc.data();
-        verseId = bestDoc.id;
-        console.log(`✨ [sendDailyVersePushInternal] Loaded verse from daily_verses for slot '${slot}' (index ${targetIndex}): ${verseDocData.referenceEn || verseDocData.referenceTe}`);
-      }
+    // 1a. Direct doc lookup by deterministic ID
+    const directDoc = await db.collection('daily_verses').doc(`verse_${targetIndex}`).get();
+    if (directDoc.exists) {
+      verseDocData = directDoc.data();
+      verseId = directDoc.id;
+      console.log(`✨ [sendDailyVersePushInternal] Loaded verse via direct doc verse_${targetIndex}: ${verseDocData.referenceEn || verseDocData.referenceTe}`);
     }
-  } catch (err) {
-    console.warn('[sendDailyVersePushInternal] Could not query daily_verses by index:', err);
+  } catch (dErr) {
+    console.warn('[sendDailyVersePushInternal] Direct doc lookup failed, falling back to index query:', dErr);
+  }
+
+  // 1b. If not found by direct ID, query by index field
+  if (!verseDocData) {
+    try {
+      const snap = await db.collection('daily_verses')
+        .where('index', '==', targetIndex)
+        .get();
+      if (!snap.empty && snap.docs.length > 0) {
+        let bestDoc: any = snap.docs[0];
+        let bestTime = 0;
+        snap.docs.forEach((doc: any) => {
+          const d = doc.data();
+          const t = d.updatedAt?.toMillis ? d.updatedAt.toMillis() : (d.updatedAt || d.createdAt?.toMillis?.() || d.createdAt || 0);
+          if (t >= bestTime) {
+            bestTime = t;
+            bestDoc = doc;
+          }
+        });
+        if (bestDoc) {
+          verseDocData = bestDoc.data();
+          verseId = bestDoc.id;
+          console.log(`✨ [sendDailyVersePushInternal] Loaded verse from daily_verses for slot '${slot}' (index ${targetIndex}): ${verseDocData.referenceEn || verseDocData.referenceTe}`);
+        }
+      }
+    } catch (err) {
+      console.warn('[sendDailyVersePushInternal] Could not query daily_verses by index:', err);
+    }
   }
 
   // 2. Secondary fallback: Rhema Church/rhema/daily_verses
@@ -2255,8 +2303,8 @@ export async function sendDailyVersePushInternal(slotOverride?: string, targetCh
       for (const p of candidates) {
         if (fsMod.existsSync(p)) {
           const raw = fsMod.readFileSync(p, 'utf-8');
-          const list = JSON.parse(raw);
-          if (list && list[targetIndex]) {
+          const list: any = JSON.parse(raw);
+          if (Array.isArray(list) && list[targetIndex]) {
             verseDocData = list[targetIndex];
             verseId = `bulk_${targetIndex}`;
             break;

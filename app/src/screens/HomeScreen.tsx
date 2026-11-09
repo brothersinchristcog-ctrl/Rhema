@@ -17,6 +17,7 @@ import {
   Share,
   Modal,
   Linking,
+  AppState,
   Animated,
   Easing,
   Pressable,
@@ -1828,7 +1829,7 @@ export const getSynchronousVersesForToday = (date: Date = new Date()): DailyVers
     return indices.map((idx, pIdx) => {
       const bv = bulk[idx] || {};
       const period = PERIODS[pIdx];
-      const bgUrl = bv.backgroundUrl || getVerseBackgroundUrl(bv, period, idx);
+      const bgUrl = getVerseBackgroundUrl({ ...bv, index: idx }, period, idx, date);
       return {
         id: `today_verse_${idx}_${pIdx}`,
         index: idx,
@@ -1849,7 +1850,7 @@ export const getSynchronousVersesForToday = (date: Date = new Date()): DailyVers
     ];
     return defs.map((d, pIdx) => ({
       ...d,
-      backgroundUrl: getVerseBackgroundUrl(d, PERIODS[pIdx], d.index),
+      backgroundUrl: getVerseBackgroundUrl(d, PERIODS[pIdx], d.index, date),
     }));
   }
 };
@@ -2156,20 +2157,40 @@ export default function HomeScreen() {
     outputRange: ['0deg', '-18deg', '16deg', '-12deg', '8deg', '-4deg', '2deg', '0deg'],
   });
 
-  // Load today's daily verse
+  // Load today's daily verse & listen to foreground resume for date advancement
   useEffect(() => {
-    const period = getCurrentPeriod();
-    setTodayPeriod(period);
-    VerseNotificationService.getVerseForDate(new Date(), period, true).then(async v => {
-      if (v) {
-        if (language !== 'en') {
-          const lv = await VerseNotificationService.localizeVerse(v, language as any);
-          setTodayVerse(lv);
-        } else {
-          setTodayVerse(v);
+    let active = true;
+    const loadCurrentVerse = () => {
+      const period = getCurrentPeriod();
+      setTodayPeriod(period);
+      VerseNotificationService.getVerseForDate(new Date(), period, true).then(async v => {
+        if (!active) return;
+        if (v) {
+          if (language !== 'en') {
+            const lv = await VerseNotificationService.localizeVerse(v, language as any);
+            if (active) setTodayVerse(lv);
+          } else {
+            if (active) setTodayVerse(v);
+          }
         }
+      }).catch(() => {});
+    };
+
+    loadCurrentVerse();
+
+    // Re-check periodically & on app focus so date/period changes reflect immediately
+    const interval = setInterval(loadCurrentVerse, 60000);
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        loadCurrentVerse();
       }
-    }).catch(() => {});
+    });
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+      sub.remove();
+    };
   }, [language]);
 
   const fetchLiveCelebrations = async () => {
@@ -2963,21 +2984,30 @@ export default function HomeScreen() {
             });
 
             const freshList: DailyVerse[] = [];
+            const nowDate = new Date();
             for (let i = 0; i < 4; i++) {
               const idx = todayIndices[i];
               if (map[idx]) {
                 const v = { ...map[idx] };
-                if (!v.backgroundUrl) {
-                  v.backgroundUrl = getVerseBackgroundUrl(v, PERIODS[i], idx);
-                }
+                v.backgroundUrl = getVerseBackgroundUrl(v, PERIODS[i], idx, nowDate);
                 freshList.push(v);
               }
             }
 
             if (freshList.length >= 4) {
-              cachedTodayFourVersesDateStr = new Date().toDateString();
+              cachedTodayFourVersesDateStr = nowDate.toDateString();
               cachedTodayFourVerses = freshList;
               setTodayFourVerses(freshList);
+
+              // Enrich today's 4 verses with fresh, verse-relevant Unsplash Search API images
+              VerseNotificationService.enrichDayVersesWithUnsplash(freshList, nowDate)
+                .then(enriched => {
+                  if (enriched && enriched.length >= 4) {
+                    cachedTodayFourVerses = [...enriched];
+                    setTodayFourVerses([...enriched]);
+                  }
+                })
+                .catch(() => {});
 
               // Synchronize todayVerse for current period
               const currentPeriod = getCurrentPeriod();
@@ -3024,6 +3054,10 @@ export default function HomeScreen() {
         async (metaSnap) => {
           if (!metaSnap || !metaSnap.exists) return;
           try {
+            const mData = metaSnap.data();
+            if (mData?.scheduleStartDate) {
+              (VerseNotificationService as any).cachedScheduleStartDate = mData.scheduleStartDate;
+            }
             await VerseNotificationService.invalidateCache();
             const fresh = await VerseNotificationService.getTodayVerses(true);
             if (fresh && fresh.length >= 4) {
@@ -3828,7 +3862,7 @@ export default function HomeScreen() {
                           onPress={() => navigation.navigate('VerseOfTheDay', { verseId: verse.id, period })}
                         >
                           <ImageBackground
-                            source={{ uri: getVerseBackgroundUrl(verse, period, idx) }}
+                            source={{ uri: getVerseBackgroundUrl(verse, period, typeof verse.index === 'number' ? verse.index : idx, currentTime) }}
                             style={[
                               styles.vdCleanWhiteCard, 
                               {
@@ -5065,7 +5099,7 @@ export default function HomeScreen() {
           <ViewShot ref={captureVerseRef} options={{ format: 'png', quality: 1 }}>
             <View style={{ width, height: width * 1.5, backgroundColor: '#0a1945' }} collapsable={false}>
               <Image
-                  source={{ uri: getVerseBackgroundUrl(captureVerseConfig.verse, captureVerseConfig.period) }}
+                  source={{ uri: getVerseBackgroundUrl(captureVerseConfig.verse, captureVerseConfig.period, captureVerseConfig.verse?.index ?? 0, currentTime) }}
                   style={StyleSheet.absoluteFillObject}
                   resizeMode="cover"
                 />

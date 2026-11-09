@@ -96,8 +96,8 @@ export default function MyServiceScreen({ navigation, route }: any) {
   const churchId = route?.params?.churchId || activeChurch?.id || 'rhema';
   const memberId = member?.id || '';
 
-  // Tab: 'roster' (Full Service Roster) | 'duties' (Upcoming & Pending Personal Duties)
-  const [activeTab, setActiveTab] = useState<'roster' | 'duties'>('roster');
+  // Tab: 'roster' (Full Service Roster) | 'responsibilities' (Upcoming & Pending Personal Responsibilities)
+  const [activeTab, setActiveTab] = useState<'roster' | 'responsibilities'>('roster');
 
   const [duties, setDuties] = useState<MemberServiceDuty[]>([]);
   const [publishedPlans, setPublishedPlans] = useState<ServicePlan[]>([]);
@@ -181,15 +181,15 @@ export default function MyServiceScreen({ navigation, route }: any) {
     fetchDuties();
   };
 
-  // ── 1-Tap Accept Duty ──
+  // ── 1-Tap Accept Responsibility ──
   const handleAcceptDuty = async (duty: MemberServiceDuty) => {
     Alert.alert(
-      'Accept Service Duty',
-      `Confirm your assignment as "${duty.roleTitle}" for "${duty.serviceTitle}" on ${duty.date}?`,
+      'Accept Responsibility',
+      `Confirm your responsibility as "${duty.roleTitle}" for "${duty.serviceTitle}" on ${formatDateMonthYear(duty.date)}? First to accept gets booked.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Yes, Accept Duty',
+          text: 'Yes, Accept Responsibility',
           style: 'default',
           onPress: async () => {
             try {
@@ -199,15 +199,22 @@ export default function MyServiceScreen({ navigation, route }: any) {
                 duty.serviceId,
                 duty.roleId,
                 memberId,
-                'accept'
+                'accept',
+                undefined,
+                member?.name
               );
               Alert.alert(
-                'Duty Confirmed! 🎉',
-                `Thank you for your service! Your role as "${duty.roleTitle}" is confirmed. Reporting call time is ${duty.callTime}.`
+                'Responsibility Booked! 🎉',
+                `Thank you for your service! Your role as "${duty.roleTitle}" is confirmed and booked. Reporting call time is ${duty.callTime}.`
               );
               fetchDuties();
             } catch (err: any) {
-              Alert.alert('Error', err.message || 'Failed to accept duty.');
+              const msg = err.message || 'Failed to accept responsibility.';
+              if (msg.includes('already been booked')) {
+                Alert.alert('Slot Already Booked', msg);
+              } else {
+                Alert.alert('Error', msg);
+              }
             } finally {
               setSubmittingResponse(false);
             }
@@ -217,7 +224,7 @@ export default function MyServiceScreen({ navigation, route }: any) {
     );
   };
 
-  // ── Decline Duty with Reason Modal ──
+  // ── Decline Responsibility with Reason Modal ──
   const handleConfirmDecline = async () => {
     if (!selectedDutyForDecline) return;
     const finalReason =
@@ -233,13 +240,14 @@ export default function MyServiceScreen({ navigation, route }: any) {
         selectedDutyForDecline.roleId,
         memberId,
         'decline',
-        finalReason
+        finalReason,
+        member?.name
       );
 
       setSelectedDutyForDecline(null);
       Alert.alert(
         'Response Recorded',
-        'Thank you for informing us. The ministry coordinator and replacement ladder have been notified.'
+        'Thank you for informing us. The slot is available for other eligible volunteers.'
       );
       fetchDuties();
     } catch (err: any) {
@@ -249,15 +257,15 @@ export default function MyServiceScreen({ navigation, route }: any) {
     }
   };
 
-  // ── Delete / Cancel Duty Assignment ──
+  // ── Delete / Cancel Responsibility Assignment ──
   const handleDeleteOrCancelDuty = (duty: MemberServiceDuty) => {
     Alert.alert(
-      'Delete & Remove Duty',
-      `Are you sure you want to remove your assignment for "${duty.roleTitle}" on ${formatDateMonthYear(duty.date)}?`,
+      'Cancel Responsibility',
+      `Are you sure you want to cancel your responsibility for "${duty.roleTitle}" on ${formatDateMonthYear(duty.date)}? This will make the slot available for other eligible members.`,
       [
-        { text: 'Keep Assignment', style: 'cancel' },
+        { text: 'Keep Responsibility', style: 'cancel' },
         {
-          text: 'Delete Duty',
+          text: 'Cancel Responsibility',
           style: 'destructive',
           onPress: async () => {
             try {
@@ -272,10 +280,10 @@ export default function MyServiceScreen({ navigation, route }: any) {
               );
               // Optimistically remove from local state
               setDuties(prev => prev.filter(d => d.id !== duty.id && !(d.serviceId === duty.serviceId && d.roleId === duty.roleId)));
-              Alert.alert('Duty Removed', 'Your assignment has been removed.');
+              Alert.alert('Responsibility Cancelled', 'Your responsibility has been removed and reopened for other members.');
               fetchDuties();
             } catch (err: any) {
-              Alert.alert('Error', err.message || 'Failed to remove duty.');
+              Alert.alert('Error', err.message || 'Failed to cancel responsibility.');
             } finally {
               setSubmittingResponse(false);
             }
@@ -425,7 +433,7 @@ export default function MyServiceScreen({ navigation, route }: any) {
             <TouchableOpacity
               style={[
                 styles.tabBtn,
-                activeTab === 'duties' ? {
+                activeTab === 'responsibilities' ? {
                   backgroundColor: primaryBtnBg,
                   borderColor: primaryBtnBg,
                 } : {
@@ -433,20 +441,20 @@ export default function MyServiceScreen({ navigation, route }: any) {
                   borderColor,
                 }
               ]}
-              onPress={() => setActiveTab('duties')}
+              onPress={() => setActiveTab('responsibilities')}
               activeOpacity={0.8}
             >
               <Calendar
                 size={14}
-                color={activeTab === 'duties' ? primaryBtnText : secondaryText}
+                color={activeTab === 'responsibilities' ? primaryBtnText : secondaryText}
               />
               <Text
                 style={[
                   styles.tabBtnTxt,
-                  activeTab === 'duties' ? { color: primaryBtnText, fontWeight: '800' } : { color: secondaryText }
+                  activeTab === 'responsibilities' ? { color: primaryBtnText, fontWeight: '800' } : { color: secondaryText }
                 ]}
               >
-                My Duties ({duties.length})
+                My Responsibilities ({duties.length})
               </Text>
             </TouchableOpacity>
           </ScrollView>
@@ -863,9 +871,9 @@ export default function MyServiceScreen({ navigation, route }: any) {
           )}
 
           {/* =========================================================================
-              TAB 1: UPCOMING DUTIES & PENDING INVITATIONS
+              TAB 1: UPCOMING RESPONSIBILITIES & PENDING INVITATIONS
               ========================================================================= */}
-          {activeTab === 'duties' && (
+          {activeTab === 'responsibilities' && (
             <View>
               {/* SECTION: PENDING ACTIONABLE INVITATIONS */}
               {pendingInvitations.length > 0 && (
@@ -877,7 +885,7 @@ export default function MyServiceScreen({ navigation, route }: any) {
                     </Text>
                   </View>
                   <Text style={[styles.pendingSectionSub, { color: secondaryText }]}>
-                    Please accept or decline your assigned duty so coordinators can finalize the roster.
+                    Please accept or decline your assigned responsibility so coordinators can finalize the roster.
                   </Text>
 
                   {pendingInvitations.map((duty) => (
@@ -889,7 +897,9 @@ export default function MyServiceScreen({ navigation, route }: any) {
                       <View style={styles.pendingDutyHeader}>
                         <View style={styles.pendingPill}>
                           <Clock size={11} color="#FFFFFF" style={{ marginRight: 4 }} />
-                          <Text style={styles.pendingPillTxt}>INVITATION PENDING</Text>
+                          <Text style={styles.pendingPillTxt}>
+                            {duty.instructions?.includes('First-come') ? 'OPEN RESPONSIBILITY · FIRST-COME' : 'INVITATION PENDING'}
+                          </Text>
                         </View>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                           <Text style={[styles.dutyDateTxt, { color: secondaryText }]}>
@@ -974,7 +984,7 @@ export default function MyServiceScreen({ navigation, route }: any) {
                           disabled={submittingResponse}
                         >
                           <CheckCircle2 size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-                          <Text style={styles.dutyAcceptBtnTxt}>Accept Duty</Text>
+                          <Text style={styles.dutyAcceptBtnTxt}>Accept Responsibility</Text>
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -992,10 +1002,10 @@ export default function MyServiceScreen({ navigation, route }: any) {
                   <View style={[styles.emptyCard, { backgroundColor: cardSurface, borderColor }]}>
                     <Smile size={38} color="#94A3B8" style={{ marginBottom: 10 }} />
                     <Text style={[styles.emptyTitle, { color: primaryText }]}>
-                      No Upcoming Duties Scheduled
+                      No Upcoming Responsibilities Scheduled
                     </Text>
                     <Text style={[styles.emptySub, { color: secondaryText }]}>
-                      You currently have no scheduled service assignments. You will automatically receive a push notification when coordinators assign a service role.
+                      You currently have no scheduled service responsibilities. You will automatically receive a push notification when coordinators publish a service with matching skills.
                     </Text>
                   </View>
                 ) : (
@@ -1093,7 +1103,7 @@ export default function MyServiceScreen({ navigation, route }: any) {
                           activeOpacity={0.8}
                         >
                           <Trash2 size={13} color="#DC2626" style={{ marginRight: 5 }} />
-                          <Text style={styles.cancelDutyBtnTxt}>Cancel Duty</Text>
+                          <Text style={styles.cancelDutyBtnTxt}>Cancel Responsibility</Text>
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -1174,7 +1184,7 @@ export default function MyServiceScreen({ navigation, route }: any) {
             <View style={styles.modalHeader}>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.modalTitle, { color: primaryText }]}>
-                  Decline Service Duty
+                  Decline Service Responsibility
                 </Text>
                 <Text style={[styles.modalSub, { color: secondaryText }]}>
                   {selectedDutyForDecline?.roleTitle} · {selectedDutyForDecline?.date}
@@ -1233,7 +1243,7 @@ export default function MyServiceScreen({ navigation, route }: any) {
                 onPress={() => setSelectedDutyForDecline(null)}
                 activeOpacity={0.8}
               >
-                <Text style={[styles.modalCancelBtnTxt, { color: primaryText }]}>Keep Duty</Text>
+                <Text style={[styles.modalCancelBtnTxt, { color: primaryText }]}>Keep Responsibility</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
