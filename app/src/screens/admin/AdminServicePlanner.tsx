@@ -45,6 +45,7 @@ import {
   Check,
   X,
   Share2,
+  Bookmark,
   Award,
   ShieldCheck,
   UserCheck,
@@ -394,11 +395,19 @@ export default function AdminServicePlanner({ navigation }: any) {
   const [editType, setEditType] = useState<ServiceType>('sunday_worship');
   const [editDate, setEditDate] = useState('');
   const [editStartTime, setEditStartTime] = useState('');
+  const [editEndTime, setEditEndTime] = useState('');
+  const [isEditEndTimePickerVisible, setEditEndTimePickerVisible] = useState(false);
   const [editLocation, setEditLocation] = useState('');
   const [editPreacher, setEditPreacher] = useState('');
   const [editTheme, setEditTheme] = useState('');
   const [editScripture, setEditScripture] = useState('');
   const [editDescription, setEditDescription] = useState('');
+
+  // Save Service as Reusable Template Modal
+  const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
+  const [newTemplateName, setNewTemplateName] = useState('');
+  const [newTemplateDesc, setNewTemplateDesc] = useState('');
+  const [savingTemplate, setSavingTemplate] = useState(false);
 
   // Service Worship Band Modal (Whole Service Assignment)
   const [showBandModal, setShowBandModal] = useState(false);
@@ -985,6 +994,13 @@ export default function AdminServicePlanner({ navigation }: any) {
     const m = String(selectedTime.getMinutes()).padStart(2, '0');
     setEditStartTime(`${h}:${m}`);
     setEditStartTimePickerVisible(false);
+  };
+
+  const handleConfirmEditEndTime = (selectedTime: Date) => {
+    const h = String(selectedTime.getHours()).padStart(2, '0');
+    const m = String(selectedTime.getMinutes()).padStart(2, '0');
+    setEditEndTime(`${h}:${m}`);
+    setEditEndTimePickerVisible(false);
   };
 
   const DEFAULT_FORM_DUTIES = [
@@ -1767,12 +1783,13 @@ export default function AdminServicePlanner({ navigation }: any) {
 
   const openEditDetailsModal = () => {
     if (!selectedPlan) return;
-    setEditTitle(selectedPlan.serviceTitle);
-    setEditType(selectedPlan.serviceType);
-    setEditDate(selectedPlan.date);
+    setEditTitle(selectedPlan.serviceTitle || '');
+    setEditType(selectedPlan.serviceType || 'sunday_worship');
+    setEditDate(selectedPlan.date || '');
     setEditStartTime(formatTimeTo12Hour(selectedPlan.startTime) || '10:00 AM');
-    setEditLocation(selectedPlan.location);
-    setEditPreacher(selectedPlan.preacher);
+    setEditEndTime(formatTimeTo12Hour(selectedPlan.endTime) || '12:00 PM');
+    setEditLocation(selectedPlan.location || '');
+    setEditPreacher(selectedPlan.preacher || '');
     setEditTheme(selectedPlan.theme || '');
     setEditScripture(selectedPlan.bibleReference || '');
     setEditDescription(selectedPlan.description || '');
@@ -1787,6 +1804,7 @@ export default function AdminServicePlanner({ navigation }: any) {
         serviceType: editType,
         date: editDate.trim(),
         startTime: editStartTime.trim(),
+        endTime: editEndTime.trim(),
         location: editLocation.trim(),
         preacher: editPreacher.trim(),
         theme: editTheme.trim(),
@@ -1801,6 +1819,36 @@ export default function AdminServicePlanner({ navigation }: any) {
       Alert.alert('Saved', 'Service details updated.');
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to save details.');
+    }
+  };
+
+  const openSaveAsTemplateModal = () => {
+    if (!selectedPlan) return;
+    setNewTemplateName(`${selectedPlan.serviceTitle} Template`);
+    setNewTemplateDesc(selectedPlan.description || `Reusable service order based on ${selectedPlan.serviceTitle}`);
+    setShowSaveTemplateModal(true);
+  };
+
+  const handleSaveCurrentAsTemplate = async () => {
+    if (!selectedPlan) return;
+    if (!newTemplateName.trim()) {
+      Alert.alert('Required', 'Please enter a template name.');
+      return;
+    }
+    setSavingTemplate(true);
+    try {
+      const created = await ServiceRosterService.createServiceTemplate(churchId, {
+        name: newTemplateName.trim(),
+        description: newTemplateDesc.trim(),
+        runSheetTemplate: selectedPlan.runSheet || []
+      });
+      setTemplates(prev => [created, ...prev]);
+      setShowSaveTemplateModal(false);
+      Alert.alert('Success 🎉', `Template "${created.name}" saved! You can now reuse this service structure anytime when creating new services.`);
+    } catch (tErr: any) {
+      Alert.alert('Error', tErr?.message || 'Failed to save template');
+    } finally {
+      setSavingTemplate(false);
     }
   };
 
@@ -3420,6 +3468,14 @@ export default function AdminServicePlanner({ navigation }: any) {
                             </TouchableOpacity>
                           )}
                           <TouchableOpacity
+                            style={[styles.cardManageBtn, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: cardBorder }]}
+                            onPress={() => openEditServiceInForm(plan)}
+                            activeOpacity={0.8}
+                          >
+                            <Edit3 size={12} color={primaryText} style={{ marginRight: 4 }} />
+                            <Text style={[styles.cardManageBtnTxt, { color: primaryText }]}>Edit</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
                             style={[styles.cardManageBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
                             onPress={() => {
                               setSelectedPlan(plan);
@@ -3503,6 +3559,12 @@ export default function AdminServicePlanner({ navigation }: any) {
                       onPress={openEditDetailsModal}
                     >
                       <Edit3 size={14} color={secondaryBtnText} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.bannerActionBtn, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: cardBorder }]}
+                      onPress={openSaveAsTemplateModal}
+                    >
+                      <Bookmark size={14} color={secondaryBtnText} />
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.bannerActionBtn, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: cardBorder }]}
@@ -3960,25 +4022,33 @@ export default function AdminServicePlanner({ navigation }: any) {
                         ) : null}
                       </View>
 
-                      {/* Action Col */}
-                      <View style={styles.setlistActionCol}>
+                      {/* Action Row below song details - Clean, professional, dark-mode compliant */}
+                      <View style={{ width: '100%', flexDirection: 'row', gap: 8, alignItems: 'center', marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: isDark ? '#27272A' : '#E2E8F0' }}>
                         <TouchableOpacity
-                          style={styles.lyricsBtn}
+                          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}
                           onPress={() => openLyricsModal(item)}
+                          activeOpacity={0.7}
                         >
-                          <FileText size={14} color={secondaryBtnText} />
+                          <FileText size={13} color={primaryText} />
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: primaryText }}>Lyrics</Text>
                         </TouchableOpacity>
+
                         <TouchableOpacity
-                          style={styles.itemEditBtn}
+                          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}
                           onPress={() => openEditSetlistItem(item, index)}
+                          activeOpacity={0.7}
                         >
-                          <Sliders size={14} color={secondaryBtnText} />
+                          <Sliders size={13} color={primaryText} />
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: primaryText }}>Edit / Key</Text>
                         </TouchableOpacity>
+
                         <TouchableOpacity
-                          style={styles.itemDeleteBtn}
+                          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, backgroundColor: isDark ? 'rgba(220, 38, 38, 0.15)' : '#FEF2F2', borderWidth: 1, borderColor: isDark ? 'rgba(220, 38, 38, 0.3)' : '#FECACA' }}
                           onPress={() => handleRemoveSetlistSong(item.id)}
+                          activeOpacity={0.7}
                         >
-                          <Trash2 size={14} color="#DC2626" />
+                          <Trash2 size={13} color="#DC2626" />
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: '#DC2626' }}>Delete</Text>
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -6715,14 +6785,33 @@ export default function AdminServicePlanner({ navigation }: any) {
         >
           <View style={[styles.modalBox, { backgroundColor: cardSurface, maxHeight: '92%' }]}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: primaryText }]}>Edit Service Information</Text>
-              <TouchableOpacity
-                style={[styles.modalCloseCircle, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}
-                onPress={() => setShowEditDetailsModal(false)}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <X size={18} color={secondaryText} />
-              </TouchableOpacity>
+              <View style={{ flex: 1, paddingRight: 8 }}>
+                <Text style={[styles.modalTitle, { color: primaryText }]}>Edit Service Information</Text>
+                <Text style={[styles.modalSubtitle, { color: secondaryText }]} numberOfLines={1}>
+                  Update service schedule, title, preacher & sanctuary details
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                {selectedPlan && (
+                  <TouchableOpacity
+                    style={[styles.bannerActionBtn, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: cardBorder }]}
+                    onPress={() => {
+                      setShowEditDetailsModal(false);
+                      openEditServiceInForm(selectedPlan);
+                    }}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  >
+                    <Layers size={14} color={secondaryBtnText} />
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={[styles.modalCloseCircle, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}
+                  onPress={() => setShowEditDetailsModal(false)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <X size={18} color={secondaryText} />
+                </TouchableOpacity>
+              </View>
             </View>
 
             <ScrollView
@@ -6731,6 +6820,30 @@ export default function AdminServicePlanner({ navigation }: any) {
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={true}
             >
+              {/* Service Type Selection */}
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Service Type</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  {(['sunday_worship', 'midweek_bible_study', 'prayer_fasting', 'youth_fellowship', 'special_event'] as ServiceType[]).map(st => {
+                    const active = editType === st;
+                    return (
+                      <TouchableOpacity
+                        key={st}
+                        style={[
+                          styles.filterChip,
+                          active ? styles.filterChipActive : { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: cardBorder }
+                        ]}
+                        onPress={() => setEditType(st)}
+                      >
+                        <Text style={[styles.filterChipTxt, active && styles.filterChipTxtActive]}>
+                          {SERVICE_TYPE_LABELS[st] || st}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+
               <Text style={[styles.fieldLabel, { color: primaryText }]}>Service Title *</Text>
               <TextInput
                 style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
@@ -6740,28 +6853,26 @@ export default function AdminServicePlanner({ navigation }: any) {
                 onChangeText={setEditTitle}
               />
 
-              <View style={styles.formRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Date</Text>
-                  <TouchableOpacity
-                    style={[styles.pickerInputBtn, { backgroundColor: inputBg, borderColor: inputBorder }]}
-                    onPress={() => setEditDatePickerVisible(true)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={[styles.pickerIconContainer, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
-                      <Calendar size={16} color={primaryText} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.pickerValueText, { color: primaryText }]} numberOfLines={1}>
-                        {formatDisplayDate(editDate)}
-                      </Text>
-                      <Text style={[styles.pickerSubText, { color: secondaryText }]} numberOfLines={1}>
-                        {editDate ? `${formatDateMonthYear(editDate)} (Date Month Year)` : 'Select date'}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Date</Text>
+              <TouchableOpacity
+                style={[styles.pickerInputBtn, { backgroundColor: inputBg, borderColor: inputBorder, marginBottom: 12 }]}
+                onPress={() => setEditDatePickerVisible(true)}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.pickerIconContainer, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+                  <Calendar size={16} color={primaryText} />
                 </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.pickerValueText, { color: primaryText }]} numberOfLines={1}>
+                    {formatDisplayDate(editDate)}
+                  </Text>
+                  <Text style={[styles.pickerSubText, { color: secondaryText }]} numberOfLines={1}>
+                    {editDate ? `${formatDateMonthYear(editDate)} (Date Month Year)` : 'Select date'}
+                  </Text>
+                </View>
+              </TouchableOpacity>
 
+              <View style={styles.formRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.fieldLabel, { color: primaryText }]}>Start Time</Text>
                   <TouchableOpacity
@@ -6770,21 +6881,42 @@ export default function AdminServicePlanner({ navigation }: any) {
                     activeOpacity={0.7}
                   >
                     <View style={[styles.pickerIconContainer, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
-                        <Clock size={16} color={primaryText} />
+                      <Clock size={16} color={primaryText} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.pickerValueText, { color: primaryText }]} numberOfLines={1}>
                         {formatDisplayTime(editStartTime)}
                       </Text>
                       <Text style={[styles.pickerSubText, { color: secondaryText }]} numberOfLines={1}>
-                        {editStartTime ? `${formatDisplayTime(editStartTime)} (12-hour format)` : 'Select start time'}
+                        {editStartTime ? `${formatDisplayTime(editStartTime)}` : 'Start time'}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.fieldLabel, { color: primaryText }]}>End Time</Text>
+                  <TouchableOpacity
+                    style={[styles.pickerInputBtn, { backgroundColor: inputBg, borderColor: inputBorder }]}
+                    onPress={() => setEditEndTimePickerVisible(true)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.pickerIconContainer, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+                      <Clock size={16} color={primaryText} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.pickerValueText, { color: primaryText }]} numberOfLines={1}>
+                        {formatDisplayTime(editEndTime)}
+                      </Text>
+                      <Text style={[styles.pickerSubText, { color: secondaryText }]} numberOfLines={1}>
+                        {editEndTime ? `${formatDisplayTime(editEndTime)}` : 'End time'}
                       </Text>
                     </View>
                   </TouchableOpacity>
                 </View>
               </View>
 
-              <Text style={[styles.fieldLabel, { color: primaryText }]}>Location</Text>
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Location / Sanctuary</Text>
               <TextInput
                 style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                 placeholder="e.g. Main Church Sanctuary / Hall"
@@ -6824,6 +6956,16 @@ export default function AdminServicePlanner({ navigation }: any) {
                   />
                 </View>
               </View>
+
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Description / Notes</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder, height: 60 }]}
+                placeholder="Additional service details or notes for volunteers..."
+                placeholderTextColor="#94A3B8"
+                multiline
+                value={editDescription}
+                onChangeText={setEditDescription}
+              />
             </ScrollView>
 
             <View style={styles.modalFooter}>
@@ -6857,6 +6999,98 @@ export default function AdminServicePlanner({ navigation }: any) {
               onConfirm={handleConfirmEditStartTime}
               onCancel={() => setEditStartTimePickerVisible(false)}
             />
+            <DateTimePickerModal
+              isVisible={isEditEndTimePickerVisible}
+              mode="time"
+              date={parseTimeForPicker(editEndTime)}
+              is24Hour={false}
+              onConfirm={handleConfirmEditEndTime}
+              onCancel={() => setEditEndTimePickerVisible(false)}
+            />
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      {/* MODAL: SAVE AS REUSABLE TEMPLATE (ISSUE 6) */}
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      <Modal visible={showSaveTemplateModal} animationType="slide" transparent>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={[styles.modalBox, { backgroundColor: cardSurface, maxHeight: '90%' }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1, paddingRight: 8 }}>
+                <Text style={[styles.modalTitle, { color: primaryText }]}>Save as Service Template</Text>
+                <Text style={[styles.modalSubtitle, { color: secondaryText }]}>
+                  Save this customized order of service as a reusable template for future services
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.modalCloseCircle, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}
+                onPress={() => setShowSaveTemplateModal(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <X size={18} color={secondaryText} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled">
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Template Name *</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
+                placeholder="e.g. Sunday Celebration Order, Midweek Service"
+                placeholderTextColor="#94A3B8"
+                value={newTemplateName}
+                onChangeText={setNewTemplateName}
+              />
+
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Description</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder, height: 60 }]}
+                placeholder="Describe when to use this template..."
+                placeholderTextColor="#94A3B8"
+                multiline
+                value={newTemplateDesc}
+                onChangeText={setNewTemplateDesc}
+              />
+
+              <View style={[styles.templatePreviewBox, { backgroundColor: isDark ? '#18181B' : '#F8FAFC', borderColor: cardBorder }]}>
+                <Text style={[styles.templatePreviewTitle, { color: primaryText }]}>
+                  📋 Included Activities ({selectedPlan?.runSheet?.length || 0})
+                </Text>
+                {(selectedPlan?.runSheet || []).map((item, idx) => (
+                  <View key={item.id ? `prv_${item.id}` : `prv_${idx}`} style={styles.templatePreviewRow}>
+                    <Text style={[styles.templatePreviewNum, { color: secondaryText }]}>{idx + 1}.</Text>
+                    <Text style={[styles.templatePreviewTxt, { color: primaryText }]} numberOfLines={1}>
+                      {item.program} ({item.durationMinutes}m)
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setShowSaveTemplateModal(false)}
+                disabled={savingTemplate}
+              >
+                <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalConfirmBtn}
+                onPress={handleSaveCurrentAsTemplate}
+                disabled={savingTemplate}
+              >
+                {savingTemplate ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalConfirmBtnTxt}>Save Template 💾</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -8440,6 +8674,33 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.04,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
+  },
+  templatePreviewBox: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  templatePreviewTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  templatePreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 3,
+  },
+  templatePreviewNum: {
+    fontSize: 12,
+    fontWeight: '600',
+    width: 20,
+  },
+  templatePreviewTxt: {
+    fontSize: 12.5,
+    flex: 1,
   },
   keyBadge: {
     backgroundColor: '#F1F5F9',
