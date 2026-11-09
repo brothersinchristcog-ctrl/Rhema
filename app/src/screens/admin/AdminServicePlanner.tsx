@@ -375,7 +375,7 @@ export default function AdminServicePlanner({ navigation }: any) {
   // Data Loading
   // ─────────────────────────────────────────────────────────────────────────────
 
-  const fetchPlans = async () => {
+  const fetchPlans = async (): Promise<ServicePlan[]> => {
     try {
       setLoading(true);
       const data = await ServiceRosterService.getServicePlans(churchId);
@@ -390,8 +390,10 @@ export default function AdminServicePlanner({ navigation }: any) {
       } else {
         setSelectedPlan(null);
       }
+      return data;
     } catch (err) {
       console.error('Error loading service plans:', err);
+      return [];
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -1131,17 +1133,87 @@ export default function AdminServicePlanner({ navigation }: any) {
     setShowAddDutyQuickModal(false);
   };
 
-  const handleQuickPublishPlan = async (plan: ServicePlan) => {
-    try {
-      setSavingService(true);
-      await ServiceRosterService.updateServiceStatus(churchId, plan.id, 'published');
-      Alert.alert('Service Published 🚀', `"${plan.serviceTitle}" is now published.`);
-      await fetchPlans();
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to publish service.');
-    } finally {
-      setSavingService(false);
-    }
+  const handlePublishServiceWithCascade = (plan: ServicePlan) => {
+    Alert.alert(
+      'Publish Service & Dispatch Notifications 🚀',
+      `Publish "${plan.serviceTitle}" (${plan.date}) and send push notifications to assigned volunteers with a 2-hour response deadline?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Publish & Notify',
+          style: 'default',
+          onPress: async () => {
+            try {
+              setSavingService(true);
+              await ServiceRosterService.updateServiceStatus(churchId, plan.id, 'published');
+
+              let dispatchedCount = 0;
+              const timeoutMinutes = 120; // 2 hours default
+
+              if (plan.assignments) {
+                for (const [roleId, memberName] of Object.entries(plan.assignments)) {
+                  if (!memberName) continue;
+                  const memberId = plan.assignmentMemberIds?.[roleId];
+                  if (!memberId) continue;
+
+                  const roleObj = serviceRolesList.find(r => r.roleId === roleId);
+                  const roleTitle = roleObj?.roleTitle || roleId.replace('role_', '').replace('act_', '');
+
+                  const backupCandidates: Array<{ candidateId: string; candidateName: string; candidatePhone?: string }> = [];
+                  try {
+                    const recs = await ServiceRosterService.getEligibleCandidatesForRole(churchId, plan.date, {
+                      requiredSkill: roleObj?.suggestedSkill || roleTitle,
+                      roleTitle
+                    });
+                    for (const r of recs) {
+                      if (r.memberId !== memberId && backupCandidates.length < 2) {
+                        backupCandidates.push({
+                          candidateId: r.memberId,
+                          candidateName: r.memberName,
+                          candidatePhone: r.memberPhone
+                        });
+                      }
+                    }
+                  } catch (e) {
+                    console.warn('Backup fetch error for role:', roleTitle, e);
+                  }
+
+                  const ladder = [
+                    { candidateId: memberId, candidateName: memberName },
+                    ...backupCandidates
+                  ];
+
+                  await ServiceRosterService.dispatchAssignmentQueue(churchId, plan.id, {
+                    roleId,
+                    roleTitle,
+                    candidates: ladder,
+                    timeoutMinutes
+                  });
+                  dispatchedCount++;
+                }
+              }
+
+              const updatedPlan = { ...plan, status: 'published' as ServiceStatus };
+              setSelectedPlan(updatedPlan);
+              setPlans(plans.map(p => p.id === plan.id ? updatedPlan : p));
+
+              Alert.alert(
+                'Service Published! 🚀',
+                `"${plan.serviceTitle}" is now published!\n\n${dispatchedCount > 0 ? `${dispatchedCount} push notification(s) dispatched to assigned volunteers with a 2-hour response window.\n\n` : ''}Rhema's automated cloud engine will monitor responses and automatically notify verified backups if any volunteer declines or times out.`
+              );
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Failed to publish service.');
+            } finally {
+              setSavingService(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleQuickPublishPlan = (plan: ServicePlan) => {
+    handlePublishServiceWithCascade(plan);
   };
 
   const handlePublishService = async (publishNow: boolean = true) => {
@@ -1278,13 +1350,22 @@ export default function AdminServicePlanner({ navigation }: any) {
         );
       } else {
         Alert.alert(
-          'Saved as Draft 💾',
-          `"${createTitle}" has been saved as a draft. You can publish it and send volunteer notifications whenever you're ready.`
+          isEditingExistingPlan ? 'Service Updated 💾' : 'Service Created! 📋',
+          isEditingExistingPlan
+            ? `"${createTitle}" details have been updated.`
+            : `"${createTitle}" created successfully. You are now in the dedicated Order Builder workspace to prepare your run sheet timeline, setlist, and responsibilities.`
         );
       }
 
       setShowCreateModal(false);
-      await fetchPlans();
+      const updatedPlans = await fetchPlans();
+      if (targetPlanId && updatedPlans) {
+        const fresh = updatedPlans.find(p => p.id === targetPlanId);
+        if (fresh) {
+          setSelectedPlan(fresh);
+        }
+      }
+      setActivePlannerTab('builder');
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to save service.');
     } finally {
@@ -1292,8 +1373,8 @@ export default function AdminServicePlanner({ navigation }: any) {
     }
   };
 
-  // Backwards compatibility alias
-  const handleCreateService = () => handlePublishService(true);
+  // Alias for clean creation button
+  const handleCreateService = () => handlePublishService(false);
 
   const handleUpdateStatus = async (newStatus: ServiceStatus) => {
     if (!selectedPlan) return;
@@ -1928,7 +2009,7 @@ export default function AdminServicePlanner({ navigation }: any) {
     setTargetRoleTitle(roleTitle);
     setTargetActivityId(activityId);
     setTargetActivityName(activityName);
-    setDispatchTimeoutHours(24);
+    setDispatchTimeoutHours(2); // 2 hours default deadline for prompt auto-cascade
 
     // Check if queue already exists to prefill ladder
     const existing = assignmentQueues.find(q => q.roleId === roleId);
@@ -2455,7 +2536,7 @@ export default function AdminServicePlanner({ navigation }: any) {
           )}
         </View>
 
-        {/* ─── Simplified Navigation Tabs ─── */}
+        {/* ─── Navigation Tabs ─── */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsScroll}>
           <TouchableOpacity
             style={[styles.tabBtn, activePlannerTab === 'calendar' && styles.tabBtnActive]}
@@ -2464,6 +2545,39 @@ export default function AdminServicePlanner({ navigation }: any) {
             <CalendarDays size={14} color={activePlannerTab === 'calendar' ? '#1E3A8A' : secondaryText} />
             <Text style={[styles.tabBtnTxt, activePlannerTab === 'calendar' && styles.tabBtnTxtActive]}>
               Services ({plans.length})
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabBtn, activePlannerTab === 'builder' && styles.tabBtnActive]}
+            onPress={() => setActivePlannerTab('builder')}
+            disabled={!selectedPlan}
+          >
+            <Layers size={14} color={activePlannerTab === 'builder' ? '#1E3A8A' : secondaryText} />
+            <Text style={[styles.tabBtnTxt, activePlannerTab === 'builder' && styles.tabBtnTxtActive]}>
+              Order Builder {selectedPlan ? `(${selectedPlan.runSheet?.length || 0})` : ''}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabBtn, activePlannerTab === 'setlist' && styles.tabBtnActive]}
+            onPress={() => setActivePlannerTab('setlist')}
+            disabled={!selectedPlan}
+          >
+            <Music size={14} color={activePlannerTab === 'setlist' ? '#1E3A8A' : secondaryText} />
+            <Text style={[styles.tabBtnTxt, activePlannerTab === 'setlist' && styles.tabBtnTxtActive]}>
+              Worship Setlist {selectedPlan ? `(${selectedPlan.setlist?.length || 0})` : ''}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabBtn, activePlannerTab === 'queue' && styles.tabBtnActive]}
+            onPress={() => setActivePlannerTab('queue')}
+            disabled={!selectedPlan}
+          >
+            <ListOrdered size={14} color={activePlannerTab === 'queue' ? '#1E3A8A' : secondaryText} />
+            <Text style={[styles.tabBtnTxt, activePlannerTab === 'queue' && styles.tabBtnTxtActive]}>
+              Assignments {selectedPlan ? `(${assignmentQueues.length})` : ''}
             </Text>
           </TouchableOpacity>
 
@@ -2556,7 +2670,10 @@ export default function AdminServicePlanner({ navigation }: any) {
                         isSelected && styles.planCardSelected
                       ]}
                       activeOpacity={0.85}
-                      onPress={() => openEditServiceInForm(plan)}
+                      onPress={() => {
+                        setSelectedPlan(plan);
+                        setActivePlannerTab('builder');
+                      }}
                     >
                       <View style={styles.planCardTop}>
                         <View style={styles.dateBadge}>
@@ -2612,11 +2729,14 @@ export default function AdminServicePlanner({ navigation }: any) {
                           )}
                           <TouchableOpacity
                             style={styles.cardManageBtn}
-                            onPress={() => openEditServiceInForm(plan)}
+                            onPress={() => {
+                              setSelectedPlan(plan);
+                              setActivePlannerTab('builder');
+                            }}
                             activeOpacity={0.8}
                           >
-                            <Edit3 size={12} color="#1E3A8A" style={{ marginRight: 4 }} />
-                            <Text style={styles.cardManageBtnTxt}>Edit & Manage</Text>
+                            <Layers size={12} color="#1E3A8A" style={{ marginRight: 4 }} />
+                            <Text style={styles.cardManageBtnTxt}>Order Builder</Text>
                           </TouchableOpacity>
                           <TouchableOpacity
                             style={styles.cardDeleteBtn}
@@ -2691,27 +2811,42 @@ export default function AdminServicePlanner({ navigation }: any) {
                 </View>
 
                 {/* Status Switcher Bar */}
-                <View style={styles.statusSwitcherRow}>
-                  <Text style={[styles.statusSwitcherLabel, { color: secondaryText }]}>Service Status:</Text>
-                  <View style={styles.statusButtonsGroup}>
-                    {(['draft', 'published', 'completed', 'cancelled'] as ServiceStatus[]).map(st => (
-                      <TouchableOpacity
-                        key={st}
-                        style={[
-                          styles.statusToggleBtn,
-                          selectedPlan.status === st && styles.statusToggleBtnActive
-                        ]}
-                        onPress={() => handleUpdateStatus(st)}
-                      >
-                        <Text style={[
-                          styles.statusToggleBtnTxt,
-                          selectedPlan.status === st && styles.statusToggleBtnTxtActive
-                        ]}>
-                          {st.toUpperCase()}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
+                <View style={[styles.statusSwitcherRow, { flexWrap: 'wrap', gap: 8 }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={[styles.statusSwitcherLabel, { color: secondaryText }]}>Status:</Text>
+                    <View style={styles.statusButtonsGroup}>
+                      {(['draft', 'published', 'completed', 'cancelled'] as ServiceStatus[]).map(st => (
+                        <TouchableOpacity
+                          key={st}
+                          style={[
+                            styles.statusToggleBtn,
+                            selectedPlan.status === st && styles.statusToggleBtnActive
+                          ]}
+                          onPress={() => handleUpdateStatus(st)}
+                        >
+                          <Text style={[
+                            styles.statusToggleBtnTxt,
+                            selectedPlan.status === st && styles.statusToggleBtnTxtActive
+                          ]}>
+                            {st.toUpperCase()}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
                   </View>
+
+                  {selectedPlan.status === 'draft' && (
+                    <TouchableOpacity
+                      style={[styles.publishServiceBtn, { paddingVertical: 6, paddingHorizontal: 12 }]}
+                      onPress={() => handlePublishServiceWithCascade(selectedPlan)}
+                      activeOpacity={0.85}
+                    >
+                      <Send size={12} color="#FFFFFF" />
+                      <Text style={[styles.publishServiceBtnTxt, { fontSize: 11 }]}>
+                        🚀 Publish & Dispatch Notifications
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
 
                 {/* Run-sheet PDF & CSV Export Toolbar (Phase 9) */}
@@ -3061,6 +3196,85 @@ export default function AdminServicePlanner({ navigation }: any) {
           {/* TAB: ASSIGNMENT QUEUES & CASCADE WORKFLOW (PHASE 4) */}
           {activePlannerTab === 'queue' && selectedPlan && (
             <View style={styles.tabContent}>
+              {/* Selected Service Banner in Assignments tab */}
+              <View style={[styles.selectedBanner, { backgroundColor: cardSurface, borderColor, marginBottom: 12 }]}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <View style={{ flex: 1, paddingRight: 8 }}>
+                    <Text style={styles.selectedBannerTag}>SERVICE RESPONSIBILITY ASSIGNMENTS</Text>
+                    <Text style={[styles.selectedBannerTitle, { color: primaryText }]}>
+                      {selectedPlan.serviceTitle}
+                    </Text>
+                    <Text style={[styles.selectedBannerMeta, { color: secondaryText }]}>
+                      📅 {selectedPlan.date} · ⏰ {selectedPlan.startTime} - {selectedPlan.endTime} · 📍 {selectedPlan.location}
+                    </Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: 6 }}>
+                    <TouchableOpacity
+                      style={styles.bannerActionBtn}
+                      onPress={openEditDetailsModal}
+                    >
+                      <Edit3 size={14} color="#1E3A8A" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.bannerActionBtn, { borderColor: '#FCA5A5' }]}
+                      onPress={handleDeleteService}
+                    >
+                      <Trash2 size={14} color="#DC2626" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* Status and Publish button */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: borderColor }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={{ fontSize: 12, color: secondaryText, fontWeight: '600' }}>Service Status:</Text>
+                    <View style={[
+                      styles.miniStatusPill,
+                      selectedPlan.status === 'published' ? styles.statusPillPublished : styles.statusPillDraft
+                    ]}>
+                      <Text style={styles.miniStatusPillTxt}>{selectedPlan.status.toUpperCase()}</Text>
+                    </View>
+                  </View>
+
+                  {selectedPlan.status === 'draft' ? (
+                    <TouchableOpacity
+                      style={[styles.publishServiceBtn, { paddingVertical: 8, paddingHorizontal: 12 }]}
+                      onPress={() => handlePublishServiceWithCascade(selectedPlan)}
+                      activeOpacity={0.85}
+                    >
+                      <Send size={13} color="#FFFFFF" />
+                      <Text style={[styles.publishServiceBtnTxt, { fontSize: 12 }]}>
+                        🚀 Publish & Dispatch Notifications
+                      </Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity
+                      style={[styles.outlineActionBtn, { paddingVertical: 6, paddingHorizontal: 10, borderColor: '#059669' }]}
+                      onPress={() => handlePublishServiceWithCascade(selectedPlan)}
+                      activeOpacity={0.85}
+                    >
+                      <CheckCircle2 size={13} color="#059669" />
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#059669' }}>
+                        Published · Re-dispatch / Notify
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              {/* Automatic Background Notifications Alert Box */}
+              <View style={[styles.cascadeAlertBox, { backgroundColor: isDark ? '#1E293B' : '#EFF6FF', borderColor: '#93C5FD', marginBottom: 12 }]}>
+                <Send size={15} color="#1E3A8A" style={{ marginTop: 2 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.cascadeAlertTitle, { color: '#1E3A8A' }]}>
+                    Automatic Background Notifications & Replacement
+                  </Text>
+                  <Text style={[styles.cascadeAlertBody, { color: secondaryText }]}>
+                    When assigned or published, volunteers receive instant push notifications with Accept/Decline options and a 2-hour response window. If declined or timed out, Rhema automatically contacts the next eligible member with verified skills in the background.
+                  </Text>
+                </View>
+              </View>
+
               {/* Summary banner */}
               <View style={[styles.queueSummaryBanner, { backgroundColor: cardSurface, borderColor }]}>
                 <View style={styles.queueSummaryCol}>
@@ -3245,7 +3459,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                       >
                         <Send size={12} color="#FFFFFF" />
                         <Text style={styles.dispatchQueueBtnTxt}>
-                          {notDispatched ? 'Dispatch Queue' : 'Reconfigure Ladder'}
+                          {notDispatched ? '⚡ Auto-Assign (Queue)' : 'Reconfigure Ladder'}
                         </Text>
                       </TouchableOpacity>
 
@@ -3254,7 +3468,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                         onPress={() => openManualOverrideModal(role.roleId, role.roleTitle)}
                       >
                         <UserCheck size={12} color="#1E3A8A" />
-                        <Text style={styles.overrideBtnTxt}>Manual Override</Text>
+                        <Text style={styles.overrideBtnTxt}>Direct Assign</Text>
                       </TouchableOpacity>
 
                       {isPending && queue && (
@@ -4740,7 +4954,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                       selectedTemplateForNew === 'blank' && styles.tplSelectChipActive,
                       selectedTemplateForNew !== 'blank' && { backgroundColor: isDark ? '#334155' : '#F8FAFC', borderColor }
                     ]}
-                    onPress={() => setSelectedTemplateForNew('blank')}
+                    onPress={() => handleSelectTemplateForForm('blank')}
                     activeOpacity={0.8}
                   >
                     {selectedTemplateForNew === 'blank' && (
@@ -4765,7 +4979,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                           isSelected && styles.tplSelectChipActive,
                           !isSelected && { backgroundColor: isDark ? '#334155' : '#F8FAFC', borderColor }
                         ]}
-                        onPress={() => setSelectedTemplateForNew(tpl.id)}
+                        onPress={() => handleSelectTemplateForForm(tpl.id)}
                         activeOpacity={0.8}
                       >
                         {isSelected && (
@@ -4780,384 +4994,18 @@ export default function AdminServicePlanner({ navigation }: any) {
                 </ScrollView>
               </View>
 
-              {/* CARD 5: ORDER OF SERVICE (RUN SHEET) */}
-              <View style={[styles.formSectionCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor }]}>
-                <View style={[styles.formCardHeaderRow, { borderBottomColor: borderColor }]}>
-                  <Layers size={14} color="#1E3A8A" />
-                  <Text style={[styles.formCardHeaderText, { color: primaryText }]}>
-                    ORDER OF SERVICE (RUN SHEET) ({createRunSheet.length})
-                  </Text>
-                </View>
-
-                {createRunSheet.length === 0 ? (
-                  <View style={{ paddingVertical: 14, alignItems: 'center' }}>
-                    <Text style={{ fontSize: 12, color: secondaryText }}>
-                      No activities added yet. Choose a template above or add an activity below.
-                    </Text>
-                  </View>
-                ) : (
-                  createRunSheet.map((act, actIdx) => (
-                    <View
-                      key={act.id ? `act_card_${act.id}_${actIdx}` : `act_card_${actIdx}`}
-                      style={[styles.activityItemCard, { backgroundColor: isDark ? '#334155' : '#F8FAFC', borderColor }]}
-                    >
-                      <View style={styles.activityOrderBadge}>
-                        <Text style={styles.activityOrderTxt}>{act.order || actIdx + 1}</Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.activityTitle, { color: primaryText }]}>{act.program || (act as any).title || 'Activity'}</Text>
-                        <Text style={[styles.activityMeta, { color: secondaryText }]}>
-                          ⏰ {act.startTime} - {act.endTime} ({act.durationMinutes || 10}m) · {act.category?.toUpperCase() || 'GENERAL'}
-                        </Text>
-                      </View>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
-                        {actIdx > 0 && (
-                          <TouchableOpacity
-                            style={styles.activityActionBtn}
-                            onPress={() => handleMoveRunSheetItem(actIdx, 'up')}
-                            hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-                          >
-                            <ChevronUp size={16} color="#64748B" />
-                          </TouchableOpacity>
-                        )}
-                        {actIdx < createRunSheet.length - 1 && (
-                          <TouchableOpacity
-                            style={styles.activityActionBtn}
-                            onPress={() => handleMoveRunSheetItem(actIdx, 'down')}
-                            hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-                          >
-                            <ChevronDown size={16} color="#64748B" />
-                          </TouchableOpacity>
-                        )}
-                        <TouchableOpacity
-                          style={styles.activityActionBtn}
-                          onPress={() => handleDeleteRunSheetItem(actIdx)}
-                          hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-                        >
-                          <Trash2 size={15} color="#DC2626" />
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  ))
-                )}
-
-                <TouchableOpacity
-                  style={[styles.outlineActionBtn, { borderColor }]}
-                  onPress={() => setShowAddActivityQuickModal(true)}
-                  activeOpacity={0.8}
-                >
-                  <Plus size={14} color="#1E3A8A" />
-                  <Text style={styles.outlineActionBtnTxt}>+ Add Activity Item</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* CARD 6: WORSHIP SETLIST */}
-              <View style={[styles.formSectionCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor }]}>
-                <View style={[styles.formCardHeaderRow, { borderBottomColor: borderColor }]}>
-                  <Music size={14} color="#1E3A8A" />
-                  <Text style={[styles.formCardHeaderText, { color: primaryText }]}>
-                    WORSHIP SETLIST ({createSetlist.length} SONGS)
-                  </Text>
-                </View>
-
-                {createSetlist.length === 0 ? (
-                  <View style={{ paddingVertical: 14, alignItems: 'center' }}>
-                    <Text style={{ fontSize: 12, color: secondaryText }}>
-                      No songs in setlist yet. Tap below to select from your song library.
-                    </Text>
-                  </View>
-                ) : (
-                  createSetlist.map((songItem, sIdx) => (
-                    <View
-                      key={songItem.id ? `set_card_${songItem.id}_${sIdx}` : `set_card_${sIdx}`}
-                      style={[styles.songItemCard, { backgroundColor: isDark ? '#334155' : '#F8FAFC', borderColor }]}
-                    >
-                      <View style={styles.songOrderBadge}>
-                        <Text style={styles.activityOrderTxt}>{sIdx + 1}</Text>
-                      </View>
-                      <View style={{ flex: 1, paddingRight: 6 }}>
-                        <Text style={[styles.activityTitle, { color: primaryText }]}>{songItem.title}</Text>
-                        {songItem.titleTe ? (
-                          <Text style={{ fontSize: 11, color: '#D97706', fontWeight: '600' }}>
-                            {songItem.titleTe}
-                          </Text>
-                        ) : null}
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                          <View style={styles.songKeyBadge}>
-                            <Text style={styles.songKeyBadgeTxt}>Key: {songItem.key || 'G'}</Text>
-                          </View>
-                          <Text style={[styles.activityMeta, { color: secondaryText }]}>
-                            {songItem.artist || 'Traditional Worship'}
-                          </Text>
-                        </View>
-                      </View>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
-                        {sIdx > 0 && (
-                          <TouchableOpacity
-                            style={styles.activityActionBtn}
-                            onPress={() => handleMoveSetlistItem(sIdx, 'up')}
-                            hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-                          >
-                            <ChevronUp size={16} color="#64748B" />
-                          </TouchableOpacity>
-                        )}
-                        {sIdx < createSetlist.length - 1 && (
-                          <TouchableOpacity
-                            style={styles.activityActionBtn}
-                            onPress={() => handleMoveSetlistItem(sIdx, 'down')}
-                            hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-                          >
-                            <ChevronDown size={16} color="#64748B" />
-                          </TouchableOpacity>
-                        )}
-                        <TouchableOpacity
-                          style={styles.activityActionBtn}
-                          onPress={() => handleDeleteSetlistItem(sIdx)}
-                          hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-                        >
-                          <Trash2 size={15} color="#DC2626" />
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  ))
-                )}
-
-                <TouchableOpacity
-                  style={[styles.outlineActionBtn, { borderColor }]}
-                  onPress={() => {
-                    setSongLibrarySearch('');
-                    setShowSongPickerModal(true);
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <Music size={14} color="#1E3A8A" />
-                  <Text style={styles.outlineActionBtnTxt}>+ Add Song from Library</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* CARD 7: RESPONSIBILITY ASSIGNMENTS & NOTIFICATIONS */}
-              <View style={[styles.formSectionCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor }]}>
-                <View style={[styles.formCardHeaderRow, { borderBottomColor: borderColor }]}>
-                  <Users size={14} color="#1E3A8A" />
-                  <Text style={[styles.formCardHeaderText, { color: primaryText }]}>
-                    RESPONSIBILITY ASSIGNMENTS ({createAssignments.filter(a => a.assignedMemberId).length}/{createAssignments.length} FILLED)
-                  </Text>
-                </View>
-
-                {/* Auto-cascade Info Alert */}
-                <View style={[styles.cascadeAlertBox, { backgroundColor: isDark ? '#1E293B' : '#EFF6FF', borderColor: '#93C5FD' }]}>
-                  <Send size={15} color="#1E3A8A" style={{ marginTop: 2 }} />
+              {/* Guidance Info Card */}
+              <View style={[styles.nextStepsCard, { backgroundColor: isDark ? '#1E293B' : '#EFF6FF', borderColor: '#93C5FD' }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+                  <Layers size={20} color="#1E3A8A" style={{ marginTop: 2 }} />
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.cascadeAlertTitle, { color: '#1E3A8A' }]}>
-                      Automatic Background Notifications
+                    <Text style={[styles.nextStepsTitle, { color: '#1E3A8A' }]}>
+                      Dedicated Workspace Preparation
                     </Text>
-                    <Text style={[styles.cascadeAlertBody, { color: secondaryText }]}>
-                      When published, assigned volunteers receive instant push notifications with Accept/Decline options. If a member declines or does not respond within the deadline, Rhema automatically contacts the next eligible member with verified skill in the background.
+                    <Text style={[styles.nextStepsBody, { color: secondaryText }]}>
+                      Once you click Create Service below, Rhema will open the dedicated Order Builder workspace where you can comfortably prepare the timeline run sheet, pick worship songs, and assign volunteer roles.
                     </Text>
                   </View>
-                </View>
-
-                {/* Response Window Chips */}
-                <View style={{ marginVertical: 10 }}>
-                  <Text style={[styles.fieldLabel, { color: primaryText, marginBottom: 6 }]}>
-                    Volunteer Response Window (Configurable)
-                  </Text>
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    {[
-                      { hours: 2, label: '2 Hours (Recommended)' },
-                      { hours: 3, label: '3 Hours' }
-                    ].map(opt => {
-                      const isSelected = responseTimeoutHours === opt.hours;
-                      return (
-                        <TouchableOpacity
-                          key={opt.hours}
-                          style={[
-                            styles.timeoutChip,
-                            isSelected && styles.timeoutChipActive,
-                            !isSelected && { backgroundColor: isDark ? '#334155' : '#F8FAFC', borderColor }
-                          ]}
-                          onPress={() => setResponseTimeoutHours(opt.hours)}
-                          activeOpacity={0.8}
-                        >
-                          <Clock size={13} color={isSelected ? '#FFFFFF' : secondaryText} />
-                          <Text style={[styles.timeoutChipTxt, isSelected && styles.timeoutChipTxtActive]}>
-                            {opt.label}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </View>
-
-                {/* List of Duty Roles */}
-                {createAssignments.map((duty, dIdx) => {
-                  const isAssigned = !!duty.assignedMemberId;
-                  return (
-                    <View
-                      key={duty.id ? `duty_card_${duty.id}_${dIdx}` : `duty_card_${dIdx}`}
-                      style={[styles.dutyItemCard, { backgroundColor: isDark ? '#334155' : '#F8FAFC', borderColor }]}
-                    >
-                      <View style={styles.dutyHeaderRow}>
-                        <View style={{ flex: 1, paddingRight: 6 }}>
-                          <Text style={[styles.dutyRoleTitle, { color: primaryText }]}>{duty.roleTitle}</Text>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                            <Award size={11} color="#64748B" />
-                            <Text style={styles.dutySkillTagTxt}>
-                              Verified Skill: {duty.requiredSkill || duty.roleTitle}
-                            </Text>
-                          </View>
-                        </View>
-                        <View style={[styles.dutyCascadePill, { backgroundColor: isDark ? '#1E293B' : '#EFF6FF' }]}>
-                          <Clock size={10} color="#1E3A8A" />
-                          <Text style={styles.dutyCascadePillTxt}>{responseTimeoutHours}h auto-cascade</Text>
-                        </View>
-                      </View>
-
-                      {isAssigned ? (
-                        <View style={[styles.dutyAssigneeRow, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor }]}>
-                          <View style={styles.dutyAssigneeAvatar}>
-                            <Check size={14} color="#10B981" strokeWidth={3} />
-                          </View>
-                          <View style={{ flex: 1, paddingHorizontal: 8 }}>
-                            <Text style={[styles.dutyAssigneeName, { color: primaryText }]}>
-                              {duty.assignedMemberName}
-                            </Text>
-                            <Text style={[styles.dutyAssigneePhone, { color: secondaryText }]}>
-                              {duty.assignedMemberPhone || 'Push notification will be sent'}
-                            </Text>
-                          </View>
-                          <TouchableOpacity
-                            style={styles.dutyChangeBtn}
-                            onPress={() => handleOpenAssignMemberModal(dIdx)}
-                            activeOpacity={0.8}
-                          >
-                            <Text style={styles.dutyChangeBtnTxt}>Change</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={styles.dutyClearBtn}
-                            onPress={() => handleClearDutyAssignment(dIdx)}
-                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                          >
-                            <X size={14} color="#DC2626" />
-                          </TouchableOpacity>
-                        </View>
-                      ) : (
-                        <TouchableOpacity
-                          style={[styles.dutyAssignBtn, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor }]}
-                          onPress={() => handleOpenAssignMemberModal(dIdx)}
-                          activeOpacity={0.8}
-                        >
-                          <UserPlus size={14} color="#1E3A8A" />
-                          <Text style={styles.dutyAssignBtnTxt}>Assign Church Member</Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  );
-                })}
-
-                <TouchableOpacity
-                  style={[styles.outlineActionBtn, { borderColor, marginTop: 4 }]}
-                  onPress={() => setShowAddDutyQuickModal(true)}
-                  activeOpacity={0.8}
-                >
-                  <Plus size={14} color="#1E3A8A" />
-                  <Text style={styles.outlineActionBtnTxt}>+ Add Custom Responsibility</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* CARD 8: FINAL REVIEW & ACTIONS */}
-              <View style={[styles.formSectionCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: '#1E3A8A' }]}>
-                <View style={[styles.formCardHeaderRow, { borderBottomColor: borderColor }]}>
-                  <Sparkles size={14} color="#1E3A8A" />
-                  <Text style={[styles.formCardHeaderText, { color: primaryText }]}>
-                    REVIEW & PUBLISH SUMMARY
-                  </Text>
-                </View>
-
-                <View style={styles.reviewSummaryRow}>
-                  <Text style={[styles.reviewLabel, { color: secondaryText }]}>Service:</Text>
-                  <Text style={[styles.reviewValue, { color: primaryText }]}>
-                    {createTitle || 'Untitled'} ({createType.toUpperCase()})
-                  </Text>
-                </View>
-                <View style={styles.reviewSummaryRow}>
-                  <Text style={[styles.reviewLabel, { color: secondaryText }]}>Date & Time:</Text>
-                  <Text style={[styles.reviewValue, { color: primaryText }]}>
-                    📅 {formatDisplayDate(createDate)} · ⏰ {formatDisplayTime(createStartTime)} - {formatDisplayTime(createEndTime)}
-                  </Text>
-                </View>
-                <View style={styles.reviewSummaryRow}>
-                  <Text style={[styles.reviewLabel, { color: secondaryText }]}>Location:</Text>
-                  <Text style={[styles.reviewValue, { color: primaryText }]}>
-                    📍 {createLocation || 'Main Sanctuary'}
-                  </Text>
-                </View>
-                <View style={styles.reviewSummaryRow}>
-                  <Text style={[styles.reviewLabel, { color: secondaryText }]}>Preacher:</Text>
-                  <Text style={[styles.reviewValue, { color: primaryText }]}>
-                    🎤 {createPreacher || 'Pastor'}
-                  </Text>
-                </View>
-                <View style={styles.reviewSummaryRow}>
-                  <Text style={[styles.reviewLabel, { color: secondaryText }]}>Run Sheet:</Text>
-                  <Text style={[styles.reviewValue, { color: primaryText }]}>
-                    📋 {createRunSheet.length} activities scheduled
-                  </Text>
-                </View>
-                <View style={styles.reviewSummaryRow}>
-                  <Text style={[styles.reviewLabel, { color: secondaryText }]}>Worship Setlist:</Text>
-                  <Text style={[styles.reviewValue, { color: primaryText }]}>
-                    🎵 {createSetlist.length} songs selected
-                  </Text>
-                </View>
-                <View style={styles.reviewSummaryRow}>
-                  <Text style={[styles.reviewLabel, { color: secondaryText }]}>Duty Assignments:</Text>
-                  <Text style={[styles.reviewValue, { color: primaryText }]}>
-                    👥 {createAssignments.filter(a => a.assignedMemberId).length} volunteers assigned ({responseTimeoutHours}h response deadline)
-                  </Text>
-                </View>
-
-                <View style={{ marginTop: 14 }}>
-                  <TouchableOpacity
-                    style={styles.publishServiceBtn}
-                    disabled={savingService}
-                    onPress={() => handlePublishService(true)}
-                    activeOpacity={0.85}
-                  >
-                    {savingService ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <>
-                        <Send size={16} color="#FFFFFF" />
-                        <Text style={styles.publishServiceBtnTxt}>
-                          🚀 Publish Service & Send Notifications
-                        </Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.saveDraftBtn, { borderColor }]}
-                    disabled={savingService}
-                    onPress={() => handlePublishService(false)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={[styles.saveDraftBtnTxt, { color: primaryText }]}>
-                      💾 Save as Draft (No Notifications Yet)
-                    </Text>
-                  </TouchableOpacity>
-
-                  {isEditingExistingPlan && editingPlanId && (
-                    <TouchableOpacity
-                      style={styles.deleteServiceFormBtn}
-                      disabled={savingService}
-                      onPress={() => handleDeleteServicePlan(editingPlanId, createTitle || 'This service', createDate)}
-                      activeOpacity={0.8}
-                    >
-                      <Trash2 size={15} color="#DC2626" />
-                      <Text style={styles.deleteServiceFormBtnTxt}>Delete Service Permanently</Text>
-                    </TouchableOpacity>
-                  )}
                 </View>
               </View>
             </ScrollView>
@@ -5176,23 +5024,24 @@ export default function AdminServicePlanner({ navigation }: any) {
               <TouchableOpacity
                 style={[styles.modalDraftBtn, { borderColor }]}
                 disabled={savingService}
-                onPress={() => handlePublishService(false)}
+                onPress={() => setShowCreateModal(false)}
                 activeOpacity={0.8}
               >
-                <Text style={[styles.modalDraftBtnTxt, { color: primaryText }]}>💾 Save Draft</Text>
+                <Text style={[styles.modalDraftBtnTxt, { color: secondaryText }]}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.modalPublishBtn}
                 disabled={savingService}
-                onPress={() => handlePublishService(true)}
+                onPress={handleCreateService}
                 activeOpacity={0.85}
               >
                 {savingService ? (
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Send size={15} color="#FFFFFF" />
-                    <Text style={styles.modalPublishBtnTxt}>🚀 Publish & Notify</Text>
+                    <Text style={styles.modalPublishBtnTxt}>
+                      {isEditingExistingPlan ? 'Save Changes' : 'Create Service & Prepare Order ➔'}
+                    </Text>
                   </View>
                 )}
               </TouchableOpacity>
@@ -6098,14 +5947,20 @@ export default function AdminServicePlanner({ navigation }: any) {
               {/* Timeout selector */}
               <Text style={[styles.fieldLabel, { color: primaryText }]}>Response Timeout (Before Cascade)</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-                {[2, 6, 12, 24, 48].map(hrs => (
+                {[
+                  { hrs: 2, label: '2 Hours (Recommended)' },
+                  { hrs: 3, label: '3 Hours' },
+                  { hrs: 6, label: '6 Hours' },
+                  { hrs: 12, label: '12 Hours' },
+                  { hrs: 24, label: '24 Hours' }
+                ].map(opt => (
                   <TouchableOpacity
-                    key={hrs}
-                    style={[styles.timeoutChip, dispatchTimeoutHours === hrs && styles.timeoutChipActive]}
-                    onPress={() => setDispatchTimeoutHours(hrs)}
+                    key={opt.hrs}
+                    style={[styles.timeoutChip, dispatchTimeoutHours === opt.hrs && styles.timeoutChipActive]}
+                    onPress={() => setDispatchTimeoutHours(opt.hrs)}
                   >
-                    <Text style={[styles.timeoutChipTxt, dispatchTimeoutHours === hrs && styles.timeoutChipTxtActive]}>
-                      {hrs} Hours
+                    <Text style={[styles.timeoutChipTxt, dispatchTimeoutHours === opt.hrs && styles.timeoutChipTxtActive]}>
+                      {opt.label}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -7723,6 +7578,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 14,
     marginBottom: 14,
+  },
+  nextStepsCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 14,
+  },
+  nextStepsTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  nextStepsBody: {
+    fontSize: 12,
+    lineHeight: 18,
   },
   formCardHeaderRow: {
     flexDirection: 'row',
