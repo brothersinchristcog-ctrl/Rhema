@@ -15,6 +15,7 @@ import {
   KeyboardAvoidingView
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import {
   Calendar,
   CalendarDays,
@@ -281,7 +282,7 @@ export default function AdminServicePlanner({ navigation }: any) {
 
   // Service Creation Wizard Modal
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [createTitle, setCreateTitle] = useState('Sunday Worship Celebration');
+  const [createTitle, setCreateTitle] = useState('');
   const [createType, setCreateType] = useState<ServiceType>('sunday_worship');
   const [createDate, setCreateDate] = useState(() => {
     const nextSunday = new Date();
@@ -290,15 +291,56 @@ export default function AdminServicePlanner({ navigation }: any) {
   });
   const [createStartTime, setCreateStartTime] = useState('10:00');
   const [createEndTime, setCreateEndTime] = useState('12:00');
-  const [createLocation, setCreateLocation] = useState('Church of God Sanctuary');
-  const [createPreacher, setCreatePreacher] = useState('Bro. Y. Rajesh');
-  const [createTheme, setCreateTheme] = useState("God's Grace");
-  const [createScripture, setCreateScripture] = useState('Romans 8:1');
+  const [createLocation, setCreateLocation] = useState('');
+  const [createPreacher, setCreatePreacher] = useState('');
+  const [createTheme, setCreateTheme] = useState('');
+  const [createScripture, setCreateScripture] = useState('');
   const [createDescription, setCreateDescription] = useState('');
   const [createRecurrence, setCreateRecurrence] = useState<'one_time' | 'weekly' | 'monthly'>('one_time');
   const [createOccurrencesCount, setCreateOccurrencesCount] = useState(4);
   const [selectedTemplateForNew, setSelectedTemplateForNew] = useState<string>('tpl_sunday_worship');
   const [savingService, setSavingService] = useState(false);
+
+  // ─── Unified All-In-One Roster Form State ───
+  const [createRunSheet, setCreateRunSheet] = useState<RunSheetItem[]>([]);
+  const [createSetlist, setCreateSetlist] = useState<SetlistItem[]>([]);
+  const [createAssignments, setCreateAssignments] = useState<Array<{
+    id: string;
+    roleTitle: string;
+    activityId?: string;
+    activityName?: string;
+    assignedMemberId?: string;
+    assignedMemberName?: string;
+    assignedMemberPhone?: string;
+    requiredSkill?: string;
+    timeoutMinutes: number;
+  }>>([]);
+  const [responseTimeoutHours, setResponseTimeoutHours] = useState<number>(2);
+  const [isEditingExistingPlan, setIsEditingExistingPlan] = useState(false);
+  const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
+
+  // Quick Sub-modals for Unified Form
+  const [showAssignMemberModal, setShowAssignMemberModal] = useState(false);
+  const [selectedDutyIndexForAssign, setSelectedDutyIndexForAssign] = useState<number | null>(null);
+  const [assignMemberSearch, setAssignMemberSearch] = useState('');
+
+  const [showAddActivityQuickModal, setShowAddActivityQuickModal] = useState(false);
+  const [quickActTitle, setQuickActTitle] = useState('');
+  const [quickActCategory, setQuickActCategory] = useState<ActivityCategory>('worship_songs');
+  const [quickActDuration, setQuickActDuration] = useState('15');
+
+  const [showAddDutyQuickModal, setShowAddDutyQuickModal] = useState(false);
+  const [quickDutyTitle, setQuickDutyTitle] = useState('');
+  const [quickDutySkill, setQuickDutySkill] = useState('');
+
+  // Date and Time Picker state (Service Creation)
+  const [isDatePickerVisible, setDatePickerVisible] = useState(false);
+  const [isStartTimePickerVisible, setStartTimePickerVisible] = useState(false);
+  const [isEndTimePickerVisible, setEndTimePickerVisible] = useState(false);
+
+  // Date and Time Picker state (Service Edit)
+  const [isEditDatePickerVisible, setEditDatePickerVisible] = useState(false);
+  const [isEditStartTimePickerVisible, setEditStartTimePickerVisible] = useState(false);
 
   // Activity Item Modal (Add / Edit)
   const [showActivityModal, setShowActivityModal] = useState(false);
@@ -697,39 +739,453 @@ export default function AdminServicePlanner({ navigation }: any) {
   // Service Plan Actions
   // ─────────────────────────────────────────────────────────────────────────────
 
-  const handleCreateService = async () => {
+  // Helper to format ISO YYYY-MM-DD to human readable string (e.g., "Sun, Nov 15, 2026")
+  const formatDisplayDate = (dateStr: string) => {
+    if (!dateStr) return 'Select Date';
+    try {
+      const parts = dateStr.split('-');
+      if (parts.length === 3) {
+        const y = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10) - 1;
+        const d = parseInt(parts[2], 10);
+        const dateObj = new Date(y, m, d);
+        if (!isNaN(dateObj.getTime())) {
+          return dateObj.toLocaleDateString('en-US', {
+            weekday: 'short',
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric'
+          });
+        }
+      }
+    } catch {}
+    return dateStr;
+  };
+
+  // Helper to format HH:mm (24h) to 12h readable time (e.g., "10:00 AM")
+  const formatDisplayTime = (timeStr: string) => {
+    if (!timeStr) return 'Select Time';
+    try {
+      const parts = timeStr.split(':');
+      if (parts.length >= 2) {
+        const h = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10);
+        if (!isNaN(h) && !isNaN(m)) {
+          const period = h >= 12 ? 'PM' : 'AM';
+          const displayH = h % 12 === 0 ? 12 : h % 12;
+          return `${displayH}:${String(m).padStart(2, '0')} ${period}`;
+        }
+      }
+    } catch {}
+    return timeStr;
+  };
+
+  const parseDateForPicker = (dateStr: string): Date => {
+    try {
+      if (dateStr) {
+        const parts = dateStr.split('-');
+        if (parts.length === 3) {
+          const y = parseInt(parts[0], 10);
+          const m = parseInt(parts[1], 10) - 1;
+          const d = parseInt(parts[2], 10);
+          const dt = new Date(y, m, d);
+          if (!isNaN(dt.getTime())) return dt;
+        }
+      }
+    } catch {}
+    return new Date();
+  };
+
+  const parseTimeForPicker = (timeStr: string): Date => {
+    try {
+      if (timeStr) {
+        const parts = timeStr.split(':');
+        if (parts.length >= 2) {
+          const h = parseInt(parts[0], 10);
+          const m = parseInt(parts[1], 10);
+          if (!isNaN(h) && !isNaN(m)) {
+            const dt = new Date();
+            dt.setHours(h, m, 0, 0);
+            return dt;
+          }
+        }
+      }
+    } catch {}
+    return new Date();
+  };
+
+  const handleConfirmCreateDate = (selectedDate: Date) => {
+    const y = selectedDate.getFullYear();
+    const m = String(selectedDate.getMonth() + 1).padStart(2, '0');
+    const d = String(selectedDate.getDate()).padStart(2, '0');
+    setCreateDate(`${y}-${m}-${d}`);
+    setDatePickerVisible(false);
+  };
+
+  const handleConfirmCreateStartTime = (selectedTime: Date) => {
+    const h = String(selectedTime.getHours()).padStart(2, '0');
+    const m = String(selectedTime.getMinutes()).padStart(2, '0');
+    setCreateStartTime(`${h}:${m}`);
+    setStartTimePickerVisible(false);
+  };
+
+  const handleConfirmCreateEndTime = (selectedTime: Date) => {
+    const h = String(selectedTime.getHours()).padStart(2, '0');
+    const m = String(selectedTime.getMinutes()).padStart(2, '0');
+    setCreateEndTime(`${h}:${m}`);
+    setEndTimePickerVisible(false);
+  };
+
+  const handleConfirmEditDate = (selectedDate: Date) => {
+    const y = selectedDate.getFullYear();
+    const m = String(selectedDate.getMonth() + 1).padStart(2, '0');
+    const d = String(selectedDate.getDate()).padStart(2, '0');
+    setEditDate(`${y}-${m}-${d}`);
+    setEditDatePickerVisible(false);
+  };
+
+  const handleConfirmEditStartTime = (selectedTime: Date) => {
+    const h = String(selectedTime.getHours()).padStart(2, '0');
+    const m = String(selectedTime.getMinutes()).padStart(2, '0');
+    setEditStartTime(`${h}:${m}`);
+    setEditStartTimePickerVisible(false);
+  };
+
+  const DEFAULT_FORM_DUTIES = [
+    { id: 'duty_preacher', roleTitle: 'Preacher / Speaker', requiredSkill: 'Preaching', timeoutMinutes: 120 },
+    { id: 'duty_worship_lead', roleTitle: 'Worship Leader', requiredSkill: 'Worship Leading', timeoutMinutes: 120 },
+    { id: 'duty_keyboard', roleTitle: 'Keyboardist / Pianist', requiredSkill: 'Keyboard', timeoutMinutes: 120 },
+    { id: 'duty_guitar', roleTitle: 'Guitarist (Acoustic/Electric)', requiredSkill: 'Guitar', timeoutMinutes: 120 },
+    { id: 'duty_drums', roleTitle: 'Drummer', requiredSkill: 'Drums', timeoutMinutes: 120 },
+    { id: 'duty_sound', roleTitle: 'Sound & Audio Engineer', requiredSkill: 'Sound & Audio', timeoutMinutes: 120 },
+    { id: 'duty_media', roleTitle: 'Media & Slide Projection', requiredSkill: 'Media & Projection', timeoutMinutes: 120 },
+    { id: 'duty_livestream', roleTitle: 'Livestream Steward', requiredSkill: 'Livestream', timeoutMinutes: 120 },
+    { id: 'duty_usher', roleTitle: 'Head Usher / Greeter', requiredSkill: 'Hospitality / Ushering', timeoutMinutes: 120 },
+  ];
+
+  const recalculateRunSheetTimes = (items: RunSheetItem[], startTime: string): RunSheetItem[] => {
+    let cur = startTime || '10:00';
+    return items.map((item, idx) => {
+      const dur = item.durationMinutes || 10;
+      const s = cur;
+      const e = ServiceRosterService.addMinutesToTime(cur, dur);
+      cur = e;
+      return {
+        ...item,
+        order: idx + 1,
+        startTime: s,
+        endTime: e,
+        durationMinutes: dur
+      };
+    });
+  };
+
+  const openCreateModal = () => {
+    setCreateTitle('');
+    setCreateType('sunday_worship');
+    const nextSunday = new Date();
+    nextSunday.setDate(nextSunday.getDate() + ((7 - nextSunday.getDay()) % 7 || 7));
+    const y = nextSunday.getFullYear();
+    const m = String(nextSunday.getMonth() + 1).padStart(2, '0');
+    const d = String(nextSunday.getDate()).padStart(2, '0');
+    setCreateDate(`${y}-${m}-${d}`);
+    setCreateStartTime('10:00');
+    setCreateEndTime('12:00');
+    setCreateLocation('');
+    setCreatePreacher('');
+    setCreateTheme('');
+    setCreateScripture('');
+    setCreateDescription('');
+    setCreateRecurrence('one_time');
+    setCreateOccurrencesCount(4);
+    setSelectedTemplateForNew('tpl_sunday_worship');
+
+    // Populate default run sheet from template
+    const foundTpl = templates.find(t => t.id === 'tpl_sunday_worship') || templates[0];
+    if (foundTpl && foundTpl.runSheetTemplate) {
+      let cur = '10:00';
+      const initialItems: RunSheetItem[] = foundTpl.runSheetTemplate.map((item, idx) => {
+        const dur = item.durationMinutes || 10;
+        const s = cur;
+        const e = ServiceRosterService.addMinutesToTime(cur, dur);
+        cur = e;
+        return {
+          ...item,
+          id: `act_${Date.now()}_${idx}`,
+          order: idx + 1,
+          startTime: s,
+          durationMinutes: dur,
+          endTime: e,
+          assignmentStatus: 'unassigned',
+          completionStatus: 'pending'
+        };
+      });
+      setCreateRunSheet(initialItems);
+    } else {
+      setCreateRunSheet([]);
+    }
+
+    setCreateSetlist([]);
+    setCreateAssignments(DEFAULT_FORM_DUTIES.map(d => ({ ...d })));
+    setResponseTimeoutHours(2);
+    setIsEditingExistingPlan(false);
+    setEditingPlanId(null);
+    setShowCreateModal(true);
+  };
+
+  const openEditServiceInForm = (plan: ServicePlan) => {
+    setCreateTitle(plan.serviceTitle || '');
+    setCreateType(plan.serviceType || 'sunday_worship');
+    setCreateDate(plan.date || '');
+    setCreateStartTime(plan.startTime || '10:00');
+    setCreateEndTime(plan.endTime || '12:00');
+    setCreateLocation(plan.location || '');
+    setCreatePreacher(plan.preacher || '');
+    setCreateTheme(plan.theme || '');
+    setCreateScripture(plan.bibleReference || '');
+    setCreateDescription(plan.description || '');
+    setCreateRecurrence('one_time');
+    setSelectedTemplateForNew('blank');
+
+    setCreateRunSheet(plan.runSheet || []);
+    setCreateSetlist(plan.setlist || []);
+
+    // Load assignments
+    const loadedAssignments: any[] = [];
+    const usedRoleIds = new Set<string>();
+
+    assignmentQueues.forEach(q => {
+      usedRoleIds.add(q.roleId);
+      const activeCandidate = q.candidates?.[q.currentCandidateIndex || 0];
+      loadedAssignments.push({
+        id: q.roleId,
+        roleTitle: q.roleTitle,
+        activityId: q.activityId,
+        activityName: q.activityName,
+        assignedMemberId: activeCandidate?.candidateId || q.assignedMemberId,
+        assignedMemberName: activeCandidate?.candidateName || q.assignedMemberName,
+        assignedMemberPhone: activeCandidate?.candidatePhone,
+        requiredSkill: q.roleTitle,
+        timeoutMinutes: q.timeoutMinutes || 120
+      });
+    });
+
+    DEFAULT_FORM_DUTIES.forEach(d => {
+      if (!usedRoleIds.has(d.id)) {
+        let prefilledMemberId: string | undefined = undefined;
+        let prefilledMemberName: string | undefined = undefined;
+        if (d.id === 'duty_preacher' && plan.preacher) {
+          const match = churchMembers.find(m =>
+            (m.name || `${m.firstName || ''} ${m.lastName || ''}`).trim().toLowerCase() === plan.preacher?.trim().toLowerCase()
+          );
+          if (match) {
+            prefilledMemberId = match.id;
+            prefilledMemberName = match.name || `${match.firstName || ''} ${match.lastName || ''}`.trim();
+          }
+        }
+        loadedAssignments.push({
+          ...d,
+          assignedMemberId: prefilledMemberId,
+          assignedMemberName: prefilledMemberName
+        });
+      }
+    });
+
+    setCreateAssignments(loadedAssignments);
+    setResponseTimeoutHours(2);
+    setIsEditingExistingPlan(true);
+    setEditingPlanId(plan.id);
+    setSelectedPlan(plan);
+    setShowCreateModal(true);
+  };
+
+  const handleSelectTemplateForForm = (templateId: string) => {
+    setSelectedTemplateForNew(templateId);
+    if (templateId === 'blank') {
+      setCreateRunSheet([]);
+      return;
+    }
+    const found = templates.find(t => t.id === templateId);
+    if (found && found.runSheetTemplate) {
+      let cur = createStartTime || '10:00';
+      const items: RunSheetItem[] = found.runSheetTemplate.map((item, idx) => {
+        const dur = item.durationMinutes || 10;
+        const s = cur;
+        const e = ServiceRosterService.addMinutesToTime(cur, dur);
+        cur = e;
+        return {
+          ...item,
+          id: `act_${Date.now()}_${idx}`,
+          order: idx + 1,
+          startTime: s,
+          durationMinutes: dur,
+          endTime: e,
+          assignmentStatus: 'unassigned',
+          completionStatus: 'pending'
+        };
+      });
+      setCreateRunSheet(items);
+    }
+  };
+
+  const handleMoveRunSheetItem = (index: number, direction: 'up' | 'down') => {
+    const target = direction === 'up' ? index - 1 : index + 1;
+    if (target < 0 || target >= createRunSheet.length) return;
+    const updated = [...createRunSheet];
+    const [moved] = updated.splice(index, 1);
+    updated.splice(target, 0, moved);
+    setCreateRunSheet(recalculateRunSheetTimes(updated, createStartTime));
+  };
+
+  const handleDeleteRunSheetItem = (index: number) => {
+    const updated = createRunSheet.filter((_, idx) => idx !== index);
+    setCreateRunSheet(recalculateRunSheetTimes(updated, createStartTime));
+  };
+
+  const handleMoveSetlistItem = (index: number, direction: 'up' | 'down') => {
+    const target = direction === 'up' ? index - 1 : index + 1;
+    if (target < 0 || target >= createSetlist.length) return;
+    const updated = [...createSetlist];
+    const [moved] = updated.splice(index, 1);
+    updated.splice(target, 0, moved);
+    setCreateSetlist(updated);
+  };
+
+  const handleDeleteSetlistItem = (index: number) => {
+    setCreateSetlist(createSetlist.filter((_, idx) => idx !== index));
+  };
+
+  const handleOpenAssignMemberModal = (index: number) => {
+    setSelectedDutyIndexForAssign(index);
+    setAssignMemberSearch('');
+    setShowAssignMemberModal(true);
+  };
+
+  const handleSelectMemberForDuty = (memberItem: any) => {
+    if (selectedDutyIndexForAssign === null) return;
+    const memberName = memberItem.name || `${memberItem.firstName || ''} ${memberItem.lastName || ''}`.trim() || 'Volunteer';
+    const updated = [...createAssignments];
+    updated[selectedDutyIndexForAssign] = {
+      ...updated[selectedDutyIndexForAssign],
+      assignedMemberId: memberItem.id,
+      assignedMemberName: memberName,
+      assignedMemberPhone: memberItem.phone || memberItem.mobile || memberItem.phoneNumber || ''
+    };
+    setCreateAssignments(updated);
+    setShowAssignMemberModal(false);
+    setSelectedDutyIndexForAssign(null);
+  };
+
+  const handleClearDutyAssignment = (index: number) => {
+    const updated = [...createAssignments];
+    updated[index] = {
+      ...updated[index],
+      assignedMemberId: undefined,
+      assignedMemberName: undefined,
+      assignedMemberPhone: undefined
+    };
+    setCreateAssignments(updated);
+  };
+
+  const handleAddQuickActivity = () => {
+    if (!quickActTitle.trim()) {
+      Alert.alert('Required', 'Please enter activity title.');
+      return;
+    }
+    const dur = parseInt(quickActDuration) || 10;
+    const lastItem = createRunSheet[createRunSheet.length - 1];
+    const sTime = lastItem?.endTime || createStartTime || '10:00';
+    const eTime = ServiceRosterService.addMinutesToTime(sTime, dur);
+
+    const newItem: RunSheetItem = {
+      id: `act_${Date.now()}`,
+      order: createRunSheet.length + 1,
+      title: quickActTitle.trim(),
+      category: quickActCategory,
+      startTime: sTime,
+      durationMinutes: dur,
+      endTime: eTime,
+      assignmentStatus: 'unassigned',
+      completionStatus: 'pending'
+    };
+
+    setCreateRunSheet([...createRunSheet, newItem]);
+    setQuickActTitle('');
+    setShowAddActivityQuickModal(false);
+  };
+
+  const handleAddQuickDuty = () => {
+    if (!quickDutyTitle.trim()) {
+      Alert.alert('Required', 'Please enter duty role title.');
+      return;
+    }
+    const newDuty = {
+      id: `duty_custom_${Date.now()}`,
+      roleTitle: quickDutyTitle.trim(),
+      requiredSkill: quickDutySkill.trim() || quickDutyTitle.trim(),
+      timeoutMinutes: responseTimeoutHours * 60
+    };
+    setCreateAssignments([...createAssignments, newDuty]);
+    setQuickDutyTitle('');
+    setQuickDutySkill('');
+    setShowAddDutyQuickModal(false);
+  };
+
+  const handleQuickPublishPlan = async (plan: ServicePlan) => {
+    try {
+      setSavingService(true);
+      await ServiceRosterService.updateServiceStatus(churchId, plan.id, 'published');
+      Alert.alert('Service Published 🚀', `"${plan.serviceTitle}" is now published.`);
+      await fetchPlans();
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to publish service.');
+    } finally {
+      setSavingService(false);
+    }
+  };
+
+  const handlePublishService = async (publishNow: boolean = true) => {
     if (!createTitle.trim()) {
       Alert.alert('Required', 'Please enter a service name.');
       return;
     }
     if (!createDate.trim()) {
-      Alert.alert('Required', 'Please enter service date (YYYY-MM-DD).');
+      Alert.alert('Required', 'Please enter a service date (YYYY-MM-DD).');
+      return;
+    }
+    if (!createStartTime.trim()) {
+      Alert.alert('Required', 'Please select a start time.');
       return;
     }
 
     try {
       setSavingService(true);
-      let initialRunSheet: RunSheetItem[] = [];
 
-      if (selectedTemplateForNew !== 'blank') {
-        const foundTpl = templates.find(t => t.id === selectedTemplateForNew);
-        if (foundTpl) {
-          initialRunSheet = foundTpl.runSheetTemplate.map((item, idx) => ({
-            ...item,
-            id: `act_${Date.now()}_${idx}`,
-            order: idx + 1,
-            startTime: item.startTime || createStartTime,
-            durationMinutes: item.durationMinutes || 10,
-            endTime: item.endTime || ServiceRosterService.addMinutesToTime(createStartTime, item.durationMinutes || 10),
-            assignmentStatus: 'unassigned',
-            completionStatus: 'pending'
-          }));
-        }
-      }
+      // 1. Recalculate Run Sheet times
+      let runningTime = createStartTime;
+      const finalRunSheet: RunSheetItem[] = createRunSheet.map((item, idx) => {
+        const dur = item.durationMinutes || 10;
+        const sTime = runningTime;
+        const eTime = ServiceRosterService.addMinutesToTime(runningTime, dur);
+        runningTime = eTime;
+        return {
+          ...item,
+          id: item.id || `act_${Date.now()}_${idx}`,
+          order: idx + 1,
+          startTime: sTime,
+          endTime: eTime,
+          durationMinutes: dur,
+          assignmentStatus: item.assignmentStatus || 'unassigned',
+          completionStatus: item.completionStatus || 'pending'
+        };
+      });
 
-      const created = await ServiceRosterService.createServicePlan(
-        churchId,
-        {
+      const finalStatus: ServiceStatus = publishNow ? 'published' : 'draft';
+
+      let targetPlanId: string | undefined = editingPlanId || undefined;
+
+      if (isEditingExistingPlan && editingPlanId) {
+        await ServiceRosterService.updateServicePlan(churchId, editingPlanId, {
           serviceTitle: createTitle.trim(),
           serviceType: createType,
           date: createDate,
@@ -740,29 +1196,104 @@ export default function AdminServicePlanner({ navigation }: any) {
           theme: createTheme.trim(),
           bibleReference: createScripture.trim(),
           description: createDescription.trim(),
-          status: 'draft',
-          runSheet: initialRunSheet,
-          setlist: []
-        },
-        createRecurrence !== 'one_time' ? {
-          frequency: createRecurrence,
-          count: createOccurrencesCount
-        } : undefined
-      );
+          status: finalStatus,
+          runSheet: finalRunSheet,
+          setlist: createSetlist
+        });
+      } else {
+        const created = await ServiceRosterService.createServicePlan(
+          churchId,
+          {
+            serviceTitle: createTitle.trim(),
+            serviceType: createType,
+            date: createDate,
+            startTime: createStartTime,
+            endTime: createEndTime,
+            location: createLocation.trim(),
+            preacher: createPreacher.trim(),
+            theme: createTheme.trim(),
+            bibleReference: createScripture.trim(),
+            description: createDescription.trim(),
+            status: finalStatus,
+            runSheet: finalRunSheet,
+            setlist: createSetlist
+          },
+          createRecurrence !== 'one_time' ? {
+            frequency: createRecurrence,
+            count: createOccurrencesCount
+          } : undefined
+        );
+        targetPlanId = created[0]?.id;
+      }
+
+      // 2. If publishing, dispatch assignment queues for each assigned duty role
+      if (publishNow && targetPlanId) {
+        const timeoutMinutes = responseTimeoutHours * 60;
+        let dispatchedCount = 0;
+
+        for (const duty of createAssignments) {
+          if (!duty.assignedMemberId) continue;
+
+          // Primary candidate
+          const primaryCandidate = {
+            candidateId: duty.assignedMemberId,
+            candidateName: duty.assignedMemberName || 'Volunteer',
+            candidatePhone: duty.assignedMemberPhone
+          };
+
+          // Fetch up to 2 backup candidates who have the verified skill for this duty
+          const backupCandidates: Array<{ candidateId: string; candidateName: string; candidatePhone?: string }> = [];
+          try {
+            const recs = await ServiceRosterService.getEligibleCandidatesForRole(churchId, createDate, {
+              requiredSkill: duty.requiredSkill || duty.roleTitle,
+              roleTitle: duty.roleTitle
+            });
+            for (const r of recs) {
+              if (r.memberId !== duty.assignedMemberId && backupCandidates.length < 2) {
+                backupCandidates.push({
+                  candidateId: r.memberId,
+                  candidateName: r.memberName,
+                  candidatePhone: r.memberPhone
+                });
+              }
+            }
+          } catch (e) {
+            console.warn('Could not auto-fetch backup candidates for role:', duty.roleTitle, e);
+          }
+
+          const ladder = [primaryCandidate, ...backupCandidates];
+
+          await ServiceRosterService.dispatchAssignmentQueue(churchId, targetPlanId, {
+            roleId: duty.id,
+            roleTitle: duty.roleTitle,
+            candidates: ladder,
+            timeoutMinutes
+          });
+          dispatchedCount++;
+        }
+
+        Alert.alert(
+          'Service Published! 🚀',
+          `"${createTitle}" is now published!\n\n${dispatchedCount} push notification(s) dispatched to assigned volunteers with a ${responseTimeoutHours}-hour response deadline.\n\nRhema's automated cloud engine will monitor responses and automatically notify verified backups if any volunteer declines or times out.`
+        );
+      } else {
+        Alert.alert(
+          'Saved as Draft 💾',
+          `"${createTitle}" has been saved as a draft. You can publish it and send volunteer notifications whenever you're ready.`
+        );
+      }
 
       setShowCreateModal(false);
-      Alert.alert('Success', `Created ${created.length} service occurrence(s) successfully.`);
       await fetchPlans();
-      if (created.length > 0) {
-        setSelectedPlan(created[0]);
-        setActivePlannerTab('builder');
-      }
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to create service.');
+      Alert.alert('Error', err.message || 'Failed to save service.');
     } finally {
       setSavingService(false);
     }
   };
+
+  // Backwards compatibility alias
+  const handleCreateService = () => handlePublishService(true);
 
   const handleUpdateStatus = async (newStatus: ServiceStatus) => {
     if (!selectedPlan) return;
@@ -989,22 +1520,48 @@ export default function AdminServicePlanner({ navigation }: any) {
     setShowSongPickerModal(true);
   };
 
-  const handleSelectSongFromLibrary = (song: WorshipSong) => {
-    setSelectedSongForSetlist(song);
-    setEditingSetlistIndex(null);
-    setSongKeyInput(song.key || 'G');
-    setSongBpmInput(song.tempo || '120');
-    setSongTimeSigInput(song.timeSignature || '4/4');
-    setSongDurationInput('6');
-    setSongLeaderInput(selectedPlan?.preacher ? 'Worship Leader' : '');
-    setSongKeyboardInput('');
-    setSongAcousticInput('');
-    setSongElectricInput('');
-    setSongBassInput('');
-    setSongDrumsInput('');
-    setSongNotesInput('');
-    setShowSongPickerModal(false);
-    setShowConfigureSongModal(true);
+  const handleSelectSongFromLibrary = async (song: WorshipSong) => {
+    try {
+      const newSetlistItem: SetlistItem = {
+        id: `set_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        songId: song.id,
+        title: song.title || song.titleEn || song.titleTe || 'Worship Song',
+        titleTe: song.titleTe || '',
+        titleEn: song.titleEn || '',
+        artist: song.artist || '',
+        key: song.key || 'G',
+        tempo: song.tempo || '120',
+        timeSignature: song.timeSignature || '4/4',
+        durationMinutes: 5,
+        ledBy: 'Worship Leader',
+        musicianAssignments: {},
+        rehearsalNotes: ''
+      };
+
+      if (showCreateModal) {
+        if (createSetlist.some(s => s.songId === song.id)) {
+          Alert.alert('Notice', 'Song is already added to the setlist.');
+          return;
+        }
+        setCreateSetlist(prev => [...prev, newSetlistItem]);
+        setShowSongPickerModal(false);
+        Alert.alert('Song Added 🎵', `Added "${newSetlistItem.title}" to setlist.`);
+        return;
+      }
+
+      if (!selectedPlan) return;
+      setShowSongPickerModal(false);
+
+      await ServiceRosterService.addSongToSetlist(churchId, selectedPlan.id, newSetlistItem);
+
+      const freshPlan = await ServiceRosterService.getServicePlanById(churchId, selectedPlan.id);
+      if (freshPlan) {
+        setSelectedPlan(freshPlan);
+        setPlans(plans.map(p => p.id === freshPlan.id ? freshPlan : p));
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to add song to setlist.');
+    }
   };
 
   const openEditSetlistItem = (item: SetlistItem, index: number) => {
@@ -1059,10 +1616,10 @@ export default function AdminServicePlanner({ navigation }: any) {
         const newSetlistItem: SetlistItem = {
           id: `set_${Date.now()}`,
           songId: selectedSongForSetlist.id,
-          title: selectedSongForSetlist.title || 'Worship Song',
-          titleTe: selectedSongForSetlist.titleTe,
-          titleEn: selectedSongForSetlist.titleEn,
-          artist: selectedSongForSetlist.artist,
+          title: selectedSongForSetlist.title || selectedSongForSetlist.titleEn || selectedSongForSetlist.titleTe || 'Worship Song',
+          titleTe: selectedSongForSetlist.titleTe || '',
+          titleEn: selectedSongForSetlist.titleEn || '',
+          artist: selectedSongForSetlist.artist || '',
           key: songKeyInput,
           tempo: songBpmInput,
           timeSignature: songTimeSigInput,
@@ -1877,7 +2434,7 @@ export default function AdminServicePlanner({ navigation }: any) {
           ) : (
             <TouchableOpacity
               style={styles.newServiceBtn}
-              onPress={() => setShowCreateModal(true)}
+              onPress={openCreateModal}
               activeOpacity={0.85}
             >
               <Plus size={16} color="#FFFFFF" />
@@ -1886,7 +2443,7 @@ export default function AdminServicePlanner({ navigation }: any) {
           )}
         </View>
 
-        {/* ─── Navigation Tabs (Phase 1 + 2 + 3) ─── */}
+        {/* ─── Simplified Navigation Tabs ─── */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsScroll}>
           <TouchableOpacity
             style={[styles.tabBtn, activePlannerTab === 'calendar' && styles.tabBtnActive]}
@@ -1894,95 +2451,7 @@ export default function AdminServicePlanner({ navigation }: any) {
           >
             <CalendarDays size={14} color={activePlannerTab === 'calendar' ? '#1E3A8A' : secondaryText} />
             <Text style={[styles.tabBtnTxt, activePlannerTab === 'calendar' && styles.tabBtnTxtActive]}>
-              Calendar ({plans.length})
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabBtn, activePlannerTab === 'builder' && styles.tabBtnActive]}
-            onPress={() => setActivePlannerTab('builder')}
-            disabled={!selectedPlan}
-          >
-            <Layers size={14} color={activePlannerTab === 'builder' ? '#1E3A8A' : secondaryText} />
-            <Text style={[styles.tabBtnTxt, activePlannerTab === 'builder' && styles.tabBtnTxtActive]}>
-              Order Builder {selectedPlan ? `(${selectedPlan.runSheet?.length || 0})` : ''}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabBtn, activePlannerTab === 'setlist' && styles.tabBtnActive]}
-            onPress={() => setActivePlannerTab('setlist')}
-            disabled={!selectedPlan}
-          >
-            <Music size={14} color={activePlannerTab === 'setlist' ? '#1E3A8A' : secondaryText} />
-            <Text style={[styles.tabBtnTxt, activePlannerTab === 'setlist' && styles.tabBtnTxtActive]}>
-              Worship Setlist {selectedPlan ? `(${selectedPlan.setlist?.length || 0})` : ''}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabBtn, activePlannerTab === 'queue' && styles.tabBtnActive]}
-            onPress={() => setActivePlannerTab('queue')}
-            disabled={!selectedPlan}
-          >
-            <ListOrdered size={14} color={activePlannerTab === 'queue' ? '#1E3A8A' : secondaryText} />
-            <Text style={[styles.tabBtnTxt, activePlannerTab === 'queue' && styles.tabBtnTxtActive]}>
-              Assignment Queue {selectedPlan ? `(${assignmentQueues.length})` : ''}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabBtn, activePlannerTab === 'rehearsals' && styles.tabBtnActive]}
-            onPress={() => setActivePlannerTab('rehearsals')}
-            disabled={!selectedPlan}
-          >
-            <Clock size={14} color={activePlannerTab === 'rehearsals' ? '#1E3A8A' : secondaryText} />
-            <Text style={[styles.tabBtnTxt, activePlannerTab === 'rehearsals' && styles.tabBtnTxtActive]}>
-              Rehearsals {selectedPlan ? `(${rehearsals.length})` : ''}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabBtn, activePlannerTab === 'attendance' && styles.tabBtnActive]}
-            onPress={() => setActivePlannerTab('attendance')}
-            disabled={!selectedPlan}
-          >
-            <UserCheck size={14} color={activePlannerTab === 'attendance' ? '#1E3A8A' : secondaryText} />
-            <Text style={[styles.tabBtnTxt, activePlannerTab === 'attendance' && styles.tabBtnTxtActive]}>
-              Attendance {selectedPlan ? `(${serviceVolunteers.length})` : ''}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabBtn, activePlannerTab === 'analytics' && styles.tabBtnActive]}
-            onPress={() => {
-              setActivePlannerTab('analytics');
-              fetchAnalytics();
-            }}
-          >
-            <BarChart2 size={14} color={activePlannerTab === 'analytics' ? '#1E3A8A' : secondaryText} />
-            <Text style={[styles.tabBtnTxt, activePlannerTab === 'analytics' && styles.tabBtnTxtActive]}>
-              Analytics & Health
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabBtn, { backgroundColor: '#7C3AED' }]}
-            onPress={() => {
-              if (selectedPlan) {
-                navigation.navigate('LiveStageHUD', {
-                  serviceId: selectedPlan.id,
-                  churchId,
-                  plan: selectedPlan
-                });
-              } else {
-                Alert.alert('Select Service', 'Please select a service from the calendar first.');
-              }
-            }}
-          >
-            <Radio size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
-            <Text style={[styles.tabBtnTxt, { color: '#FFFFFF', fontWeight: '800' }]}>
-              Stage HUD
+              Services ({plans.length})
             </Text>
           </TouchableOpacity>
 
@@ -2002,7 +2471,7 @@ export default function AdminServicePlanner({ navigation }: any) {
           >
             <Award size={14} color={activePlannerTab === 'skills' ? '#1E3A8A' : secondaryText} />
             <Text style={[styles.tabBtnTxt, activePlannerTab === 'skills' && styles.tabBtnTxtActive]}>
-              Skills {pendingSkillsCount > 0 ? `(${pendingSkillsCount} ⚠️)` : `(${memberSkills.length})`}
+              Verified Skills {pendingSkillsCount > 0 ? `(${pendingSkillsCount} ⚠️)` : `(${memberSkills.length})`}
             </Text>
           </TouchableOpacity>
 
@@ -2056,29 +2525,26 @@ export default function AdminServicePlanner({ navigation }: any) {
                   </Text>
                   <TouchableOpacity
                     style={styles.createEmptyBtn}
-                    onPress={() => setShowCreateModal(true)}
+                    onPress={openCreateModal}
                   >
                     <Plus size={15} color="#FFFFFF" />
                     <Text style={styles.createEmptyBtnTxt}>Create Service</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
-                filteredPlans.map(plan => {
+                filteredPlans.map((plan, planIdx) => {
                   const isSelected = selectedPlan?.id === plan.id;
                   const typeLabel = SERVICE_TYPE_LABELS[plan.serviceType] || plan.serviceType;
                   return (
                     <TouchableOpacity
-                      key={plan.id}
+                      key={plan.id ? `plan_${plan.id}_${planIdx}` : `plan_${planIdx}`}
                       style={[
                         styles.planCard,
                         { backgroundColor: cardSurface, borderColor },
                         isSelected && styles.planCardSelected
                       ]}
                       activeOpacity={0.85}
-                      onPress={() => {
-                        setSelectedPlan(plan);
-                        setActivePlannerTab('builder');
-                      }}
+                      onPress={() => openEditServiceInForm(plan)}
                     >
                       <View style={styles.planCardTop}>
                         <View style={styles.dateBadge}>
@@ -2122,21 +2588,25 @@ export default function AdminServicePlanner({ navigation }: any) {
                           </Text>
                         </View>
 
-                        <TouchableOpacity
-                          style={styles.openHudBtn}
-                          onPress={() => {
-                            setSelectedPlan(plan);
-                            navigation.navigate('LiveStageHUD', {
-                              serviceId: plan.id,
-                              churchId,
-                              plan
-                            });
-                          }}
-                          activeOpacity={0.8}
-                        >
-                          <Radio size={12} color="#FFFFFF" style={{ marginRight: 4 }} />
-                          <Text style={styles.openHudBtnTxt}>Stage HUD</Text>
-                        </TouchableOpacity>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          {plan.status === 'draft' && (
+                            <TouchableOpacity
+                              style={styles.cardQuickPublishBtn}
+                              onPress={() => handleQuickPublishPlan(plan)}
+                              activeOpacity={0.8}
+                            >
+                              <Text style={styles.cardQuickPublishBtnTxt}>🚀 Publish</Text>
+                            </TouchableOpacity>
+                          )}
+                          <TouchableOpacity
+                            style={styles.cardManageBtn}
+                            onPress={() => openEditServiceInForm(plan)}
+                            activeOpacity={0.8}
+                          >
+                            <Edit3 size={12} color="#1E3A8A" style={{ marginRight: 4 }} />
+                            <Text style={styles.cardManageBtnTxt}>Edit & Manage</Text>
+                          </TouchableOpacity>
+                        </View>
                       </View>
                     </TouchableOpacity>
                   );
@@ -2335,7 +2805,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                   const catStyle = CATEGORY_COLORS[item.category] || CATEGORY_COLORS.other;
                   return (
                     <View
-                      key={item.id}
+                      key={item.id ? `run_${item.id}_${index}` : `run_${index}`}
                       style={[styles.runSheetItemCard, { backgroundColor: cardSurface, borderColor }]}
                     >
                       <View style={styles.reorderColumn}>
@@ -2456,7 +2926,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                   const musicians = item.musicianAssignments || {};
                   return (
                     <View
-                      key={item.id}
+                      key={item.id ? `set_${item.id}_${index}` : `set_${index}`}
                       style={[styles.setlistCard, { backgroundColor: cardSurface, borderColor }]}
                     >
                       {/* Reorder Arrows */}
@@ -2600,7 +3070,7 @@ export default function AdminServicePlanner({ navigation }: any) {
               </View>
 
               {/* Roles list */}
-              {serviceRolesList.map(role => {
+              {serviceRolesList.map((role, rIdx) => {
                 const queue = assignmentQueues.find(q => q.roleId === role.roleId);
                 const curIdx = queue?.currentCandidateIndex || 0;
                 const activeCandidate = queue?.candidates?.[curIdx];
@@ -2611,7 +3081,7 @@ export default function AdminServicePlanner({ navigation }: any) {
 
                 return (
                   <View
-                    key={role.roleId}
+                    key={role.roleId ? `role_${role.roleId}_${rIdx}` : `role_${rIdx}`}
                     style={[
                       styles.queueRoleCard,
                       { backgroundColor: cardSurface, borderColor },
@@ -2691,7 +3161,7 @@ export default function AdminServicePlanner({ navigation }: any) {
 
                           return (
                             <View
-                              key={cand.candidateId + idx}
+                              key={cand.candidateId ? `cand_${cand.candidateId}_${idx}` : `cand_${idx}`}
                               style={[
                                 styles.ladderCandidateRow,
                                 isCurrentActive && styles.ladderCandidateRowActive,
@@ -2879,10 +3349,10 @@ export default function AdminServicePlanner({ navigation }: any) {
                       {/* Assigned Teams Pills */}
                       {reh.assignedTeamIds && reh.assignedTeamIds.length > 0 && (
                         <View style={styles.rehearsalTeamsRow}>
-                          {reh.assignedTeamIds.map(tId => {
+                          {reh.assignedTeamIds.map((tId, tIdx) => {
                             const teamObj = ministryTeams.find(t => t.id === tId);
                             return (
-                              <View key={tId} style={[styles.rehTeamPill, { backgroundColor: teamObj?.color ? `${teamObj.color}15` : '#E0E7FF' }]}>
+                              <View key={tId ? `team_${tId}_${tIdx}` : `team_${tIdx}`} style={[styles.rehTeamPill, { backgroundColor: teamObj?.color ? `${teamObj.color}15` : '#E0E7FF' }]}>
                                 <Users size={11} color={teamObj?.color || '#1E3A8A'} />
                                 <Text style={[styles.rehTeamPillTxt, { color: teamObj?.color || '#1E3A8A' }]}>
                                   {teamObj?.name || tId}
@@ -2899,8 +3369,8 @@ export default function AdminServicePlanner({ navigation }: any) {
                           <Text style={[styles.rehSectionSubheading, { color: secondaryText }]}>
                             SONGS FOR PRACTICE ({practiceSongs.length})
                           </Text>
-                          {practiceSongs.map(s => (
-                            <View key={s.id} style={styles.rehSongItemRow}>
+                          {practiceSongs.map((s, sIdx) => (
+                            <View key={s.id ? `prac_${s.id}_${sIdx}` : `prac_${sIdx}`} style={styles.rehSongItemRow}>
                               <Music size={12} color="#1E3A8A" />
                               <Text style={[styles.rehSongTitle, { color: primaryText }]} numberOfLines={1}>
                                 {s.title} {s.titleTe ? `(${s.titleTe})` : ''}
@@ -3327,7 +3797,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                       </Text>
                     ) : (
                       analyticsData.topWorshipSongs.map((song, sIdx) => (
-                        <View key={song.songId} style={[styles.topSongRow, { borderColor }]}>
+                        <View key={song.songId ? `top_${song.songId}_${sIdx}` : `top_${sIdx}`} style={[styles.topSongRow, { borderColor }]}>
                           <View style={styles.songRankBadge}>
                             <Text style={styles.songRankTxt}>#{sIdx + 1}</Text>
                           </View>
@@ -3658,27 +4128,46 @@ export default function AdminServicePlanner({ navigation }: any) {
               <ActivityIndicator size="small" color="#1E3A8A" style={{ marginVertical: 30 }} />
             ) : (
               <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
-                {filteredLibrarySongs.map(song => (
-                  <TouchableOpacity
-                    key={song.id}
-                    style={[styles.songPickItem, { borderColor }]}
-                    onPress={() => handleSelectSongFromLibrary(song)}
-                  >
-                    <View style={styles.songPickIconBox}>
-                      <Music size={16} color="#1E3A8A" />
-                    </View>
-                    <View style={{ flex: 1, paddingHorizontal: 10 }}>
-                      <Text style={[styles.songPickTitle, { color: primaryText }]}>{song.title}</Text>
-                      {song.titleTe ? (
-                        <Text style={[styles.songPickTe, { color: '#D97706' }]}>{song.titleTe}</Text>
-                      ) : null}
-                      <Text style={[styles.songPickMeta, { color: secondaryText }]}>
-                        Key: {song.key || 'G'} · {song.artist || 'Traditional Worship'}
-                      </Text>
-                    </View>
-                    <Plus size={16} color="#1E3A8A" />
-                  </TouchableOpacity>
-                ))}
+                {filteredLibrarySongs.map((song, songIdx) => {
+                  const alreadyInSetlist = selectedPlan?.setlist?.some(s => s.songId === song.id);
+                  return (
+                    <TouchableOpacity
+                      key={song.id ? `song_${song.id}_${songIdx}` : `song_${songIdx}`}
+                      style={[
+                        styles.songPickItem,
+                        { borderColor },
+                        alreadyInSetlist && { backgroundColor: isDark ? '#1E293B' : '#EFF6FF', borderColor: '#1E3A8A' }
+                      ]}
+                      onPress={() => handleSelectSongFromLibrary(song)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.songPickIconBox, alreadyInSetlist && { backgroundColor: '#1E3A8A' }]}>
+                        {alreadyInSetlist ? (
+                          <Check size={16} color="#FFFFFF" strokeWidth={3} />
+                        ) : (
+                          <Music size={16} color="#1E3A8A" />
+                        )}
+                      </View>
+                      <View style={{ flex: 1, paddingHorizontal: 10 }}>
+                        <Text style={[styles.songPickTitle, { color: primaryText }]}>{song.title}</Text>
+                        {song.titleTe ? (
+                          <Text style={[styles.songPickTe, { color: '#D97706' }]}>{song.titleTe}</Text>
+                        ) : null}
+                        <Text style={[styles.songPickMeta, { color: secondaryText }]}>
+                          Key: {song.key || 'G'} · {song.artist || 'Traditional Worship'}
+                        </Text>
+                      </View>
+                      {alreadyInSetlist ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <Check size={14} color="#1E3A8A" strokeWidth={3} />
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#1E3A8A' }}>Added</Text>
+                        </View>
+                      ) : (
+                        <Plus size={16} color="#1E3A8A" />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
               </ScrollView>
             )}
 
@@ -3947,116 +4436,199 @@ export default function AdminServicePlanner({ navigation }: any) {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.modalOverlay}
         >
-          <View style={[styles.modalBox, { backgroundColor: cardSurface }]}>
+          <View style={[styles.modalBox, { backgroundColor: cardSurface, maxHeight: '92%' }]}>
+            {/* Modal Drag Indicator */}
+            <View style={styles.modalDragHandle} />
+
+            {/* Modal Header */}
             <View style={styles.modalHeader}>
-              <View>
-                <Text style={[styles.modalTitle, { color: primaryText }]}>Create New Worship Service</Text>
-                <Text style={[styles.modalSubtitle, { color: secondaryText }]}>
-                  Schedule a service, configure preaching details, or set recurring weekly worship.
-                </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                <View style={[styles.modalHeaderIconBadge, { backgroundColor: isDark ? '#1E293B' : '#EFF6FF' }]}>
+                  <CalendarDays size={20} color="#1E3A8A" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.modalTitle, { color: primaryText }]}>
+                    {isEditingExistingPlan ? 'Edit & Publish Service' : 'Create Worship Service'}
+                  </Text>
+                  <Text style={[styles.modalSubtitle, { color: secondaryText }]} numberOfLines={1}>
+                    All-in-one service schedule, run sheet & volunteer roster
+                  </Text>
+                </View>
               </View>
-              <TouchableOpacity onPress={() => setShowCreateModal(false)}>
-                <X size={20} color={secondaryText} />
+              <TouchableOpacity
+                style={[styles.modalCloseCircle, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}
+                onPress={() => setShowCreateModal(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <X size={18} color={secondaryText} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ maxHeight: 480 }} showsVerticalScrollIndicator={false}>
-              <Text style={[styles.fieldLabel, { color: primaryText }]}>Service Name *</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
-                placeholder="e.g. Sunday Morning Worship"
-                placeholderTextColor="#94A3B8"
-                value={createTitle}
-                onChangeText={setCreateTitle}
-              />
+            <ScrollView
+              style={{ flexShrink: 1 }}
+              contentContainerStyle={{ paddingBottom: 20 }}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={true}
+            >
+              {/* CARD 1: BASIC INFORMATION */}
+              <View style={[styles.formSectionCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor }]}>
+                <View style={[styles.formCardHeaderRow, { borderBottomColor: borderColor }]}>
+                  <Sparkles size={14} color="#1E3A8A" />
+                  <Text style={[styles.formCardHeaderText, { color: primaryText }]}>BASIC INFORMATION</Text>
+                </View>
 
-              <Text style={[styles.fieldLabel, { color: primaryText }]}>Service Type</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-                {(Object.keys(SERVICE_TYPE_LABELS) as ServiceType[]).map(st => (
-                  <TouchableOpacity
-                    key={st}
-                    style={[styles.typeSelectChip, createType === st && styles.typeSelectChipActive]}
-                    onPress={() => setCreateType(st)}
-                  >
-                    <Text style={[styles.typeSelectChipTxt, createType === st && styles.typeSelectChipTxtActive]}>
-                      {SERVICE_TYPE_LABELS[st]}
+                <Text style={[styles.fieldLabel, { color: primaryText }]}>Service Name *</Text>
+                <View style={[styles.modernInputContainer, { backgroundColor: screenBg, borderColor }]}>
+                  <TextInput
+                    style={[styles.modernInput, { color: primaryText }]}
+                    placeholder="e.g. Sunday Morning Worship"
+                    placeholderTextColor="#94A3B8"
+                    value={createTitle}
+                    onChangeText={setCreateTitle}
+                  />
+                </View>
+
+                <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 12 }]}>Service Type</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
+                  {(Object.keys(SERVICE_TYPE_LABELS) as ServiceType[]).map(st => (
+                    <TouchableOpacity
+                      key={st}
+                      style={[styles.typeSelectChip, createType === st && styles.typeSelectChipActive]}
+                      onPress={() => setCreateType(st)}
+                    >
+                      <Text style={[styles.typeSelectChipTxt, createType === st && styles.typeSelectChipTxtActive]}>
+                        {SERVICE_TYPE_LABELS[st]}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+
+              {/* CARD 2: DATE & SCHEDULE */}
+              <View style={[styles.formSectionCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor }]}>
+                <View style={[styles.formCardHeaderRow, { borderBottomColor: borderColor }]}>
+                  <Calendar size={14} color="#1E3A8A" />
+                  <Text style={[styles.formCardHeaderText, { color: primaryText }]}>DATE & SCHEDULE</Text>
+                </View>
+
+                <Text style={[styles.fieldLabel, { color: primaryText }]}>Service Date *</Text>
+                <TouchableOpacity
+                  style={[styles.pickerInputBtn, { backgroundColor: screenBg, borderColor }]}
+                  onPress={() => setDatePickerVisible(true)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.pickerIconContainer}>
+                    <Calendar size={18} color="#1E3A8A" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.pickerValueText, { color: primaryText }]}>
+                      {formatDisplayDate(createDate)}
                     </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+                    <Text style={[styles.pickerSubText, { color: secondaryText }]}>
+                      {createDate || 'Tap to select service date'}
+                    </Text>
+                  </View>
+                  <ChevronDown size={16} color={secondaryText} />
+                </TouchableOpacity>
 
-              <View style={styles.formRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Date (YYYY-MM-DD) *</Text>
-                  <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
-                    placeholder="2026-11-08"
-                    placeholderTextColor="#94A3B8"
-                    value={createDate}
-                    onChangeText={setCreateDate}
-                  />
-                </View>
-                <View style={{ width: 100 }}>
-                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Start Time</Text>
-                  <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
-                    placeholder="10:00"
-                    placeholderTextColor="#94A3B8"
-                    value={createStartTime}
-                    onChangeText={setCreateStartTime}
-                  />
-                </View>
-                <View style={{ width: 100 }}>
-                  <Text style={[styles.fieldLabel, { color: primaryText }]}>End Time</Text>
-                  <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
-                    placeholder="12:00"
-                    placeholderTextColor="#94A3B8"
-                    value={createEndTime}
-                    onChangeText={setCreateEndTime}
-                  />
+                <View style={[styles.formRow, { marginTop: 6 }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.fieldLabel, { color: primaryText }]}>Start Time *</Text>
+                    <TouchableOpacity
+                      style={[styles.pickerInputBtn, { backgroundColor: screenBg, borderColor }]}
+                      onPress={() => setStartTimePickerVisible(true)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.pickerIconContainer}>
+                        <Clock size={16} color="#1E3A8A" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.pickerValueText, { color: primaryText }]} numberOfLines={1}>
+                          {formatDisplayTime(createStartTime)}
+                        </Text>
+                        <Text style={[styles.pickerSubText, { color: secondaryText }]} numberOfLines={1}>
+                          {createStartTime ? `${createStartTime} (24h)` : 'Select start time'}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.fieldLabel, { color: primaryText }]}>End Time *</Text>
+                    <TouchableOpacity
+                      style={[styles.pickerInputBtn, { backgroundColor: screenBg, borderColor }]}
+                      onPress={() => setEndTimePickerVisible(true)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.pickerIconContainer, { backgroundColor: '#FEF3C7' }]}>
+                        <Clock size={16} color="#D97706" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.pickerValueText, { color: primaryText }]} numberOfLines={1}>
+                          {formatDisplayTime(createEndTime)}
+                        </Text>
+                        <Text style={[styles.pickerSubText, { color: secondaryText }]} numberOfLines={1}>
+                          {createEndTime ? `${createEndTime} (24h)` : 'Select end time'}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
 
-              <View style={styles.formRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Location</Text>
+              {/* CARD 3: LOCATION & SERMON DETAILS */}
+              <View style={[styles.formSectionCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor }]}>
+                <View style={[styles.formCardHeaderRow, { borderBottomColor: borderColor }]}>
+                  <MapPin size={14} color="#1E3A8A" />
+                  <Text style={[styles.formCardHeaderText, { color: primaryText }]}>LOCATION & SERMON DETAILS</Text>
+                </View>
+
+                {/* Location */}
+                <Text style={[styles.fieldLabel, { color: primaryText }]}>Service Location</Text>
+                <View style={[styles.modernInputContainer, { backgroundColor: screenBg, borderColor }]}>
+                  <MapPin size={16} color="#64748B" style={styles.inputLeftIcon} />
                   <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
-                    placeholder="Church Sanctuary"
+                    style={[styles.modernInput, { color: primaryText }]}
+                    placeholder="e.g. Main Church Sanctuary / Hall"
                     placeholderTextColor="#94A3B8"
                     value={createLocation}
                     onChangeText={setCreateLocation}
                   />
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Preacher / Speaker</Text>
+
+                {/* Preacher / Speaker */}
+                <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 12 }]}>Preacher / Speaker</Text>
+                <View style={[styles.modernInputContainer, { backgroundColor: screenBg, borderColor }]}>
+                  <Mic size={16} color="#64748B" style={styles.inputLeftIcon} />
                   <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
-                    placeholder="Bro. Y. Rajesh"
+                    style={[styles.modernInput, { color: primaryText }]}
+                    placeholder="e.g. Pastor / Guest Speaker Name"
                     placeholderTextColor="#94A3B8"
                     value={createPreacher}
                     onChangeText={setCreatePreacher}
                   />
                 </View>
-              </View>
 
-              <View style={styles.formRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Theme</Text>
+                {/* Sermon Theme */}
+                <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 12 }]}>Sermon Theme</Text>
+                <View style={[styles.modernInputContainer, { backgroundColor: screenBg, borderColor }]}>
+                  <BookOpen size={16} color="#64748B" style={styles.inputLeftIcon} />
                   <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
-                    placeholder="God's Grace"
+                    style={[styles.modernInput, { color: primaryText }]}
+                    placeholder="e.g. Living by Faith, Walking in the Spirit"
                     placeholderTextColor="#94A3B8"
                     value={createTheme}
                     onChangeText={setCreateTheme}
                   />
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Bible Scripture</Text>
+
+                {/* Bible Scripture */}
+                <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 12 }]}>Bible Scripture</Text>
+                <View style={[styles.modernInputContainer, { backgroundColor: screenBg, borderColor }]}>
+                  <FileText size={16} color="#64748B" style={styles.inputLeftIcon} />
                   <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
-                    placeholder="Romans 8:1"
+                    style={[styles.modernInput, { color: primaryText }]}
+                    placeholder="e.g. Romans 8:1-4, Psalm 23"
                     placeholderTextColor="#94A3B8"
                     value={createScripture}
                     onChangeText={setCreateScripture}
@@ -4064,85 +4636,803 @@ export default function AdminServicePlanner({ navigation }: any) {
                 </View>
               </View>
 
-              <Text style={[styles.fieldLabel, { color: primaryText }]}>Service Recurrence</Text>
-              <View style={styles.recurrenceOptionRow}>
-                {[
-                  { id: 'one_time', label: 'One-Time' },
-                  { id: 'weekly', label: 'Weekly (Sundays)' },
-                  { id: 'monthly', label: 'Monthly' }
-                ].map(r => (
+              {/* CARD 4: RECURRENCE & STARTING TEMPLATE */}
+              <View style={[styles.formSectionCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor }]}>
+                <View style={[styles.formCardHeaderRow, { borderBottomColor: borderColor }]}>
+                  <RotateCcw size={14} color="#1E3A8A" />
+                  <Text style={[styles.formCardHeaderText, { color: primaryText }]}>RECURRENCE & ORDER TEMPLATE</Text>
+                </View>
+
+                <Text style={[styles.fieldLabel, { color: primaryText }]}>Service Recurrence</Text>
+                <View style={styles.recurrenceOptionRow}>
+                  {[
+                    { id: 'one_time', label: 'One-Time' },
+                    { id: 'weekly', label: 'Weekly (Sundays)' },
+                    { id: 'monthly', label: 'Monthly' }
+                  ].map(r => {
+                    const isSelected = createRecurrence === r.id;
+                    return (
+                      <TouchableOpacity
+                        key={r.id}
+                        style={[
+                          styles.recurrenceBtn,
+                          isSelected && styles.recurrenceBtnActive,
+                          !isSelected && { backgroundColor: isDark ? '#334155' : '#F8FAFC', borderColor }
+                        ]}
+                        onPress={() => setCreateRecurrence(r.id as any)}
+                        activeOpacity={0.8}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          {isSelected && <Check size={13} color="#FFFFFF" strokeWidth={3} />}
+                          <Text style={[styles.recurrenceBtnTxt, isSelected && styles.recurrenceBtnTxtActive]}>
+                            {r.label}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {createRecurrence !== 'one_time' && (
+                  <View style={{ marginTop: 10, marginBottom: 4 }}>
+                    <Text style={[styles.fieldLabel, { color: primaryText }]}>Occurrences Count</Text>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      {[2, 4, 8, 12].map(n => {
+                        const isSelected = createOccurrencesCount === n;
+                        return (
+                          <TouchableOpacity
+                            key={n}
+                            style={[
+                              styles.countChip,
+                              isSelected && styles.countChipActive,
+                              !isSelected && { backgroundColor: isDark ? '#334155' : '#F1F5F9' }
+                            ]}
+                            onPress={() => setCreateOccurrencesCount(n)}
+                            activeOpacity={0.8}
+                          >
+                            <Text style={[styles.countChipTxt, isSelected && styles.countChipTxtActive]}>
+                              {n} Weeks
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                )}
+
+                <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 12 }]}>Order of Service Template</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
                   <TouchableOpacity
-                    key={r.id}
-                    style={[styles.recurrenceBtn, createRecurrence === r.id && styles.recurrenceBtnActive]}
-                    onPress={() => setCreateRecurrence(r.id as any)}
+                    style={[
+                      styles.tplSelectChip,
+                      selectedTemplateForNew === 'blank' && styles.tplSelectChipActive,
+                      selectedTemplateForNew !== 'blank' && { backgroundColor: isDark ? '#334155' : '#F8FAFC', borderColor }
+                    ]}
+                    onPress={() => setSelectedTemplateForNew('blank')}
+                    activeOpacity={0.8}
                   >
-                    <Text style={[styles.recurrenceBtnTxt, createRecurrence === r.id && styles.recurrenceBtnTxtActive]}>
-                      {r.label}
+                    {selectedTemplateForNew === 'blank' && (
+                      <Check size={13} color="#FFFFFF" strokeWidth={3} />
+                    )}
+                    <Text
+                      style={[
+                        styles.tplSelectChipTxt,
+                        selectedTemplateForNew === 'blank' && styles.tplSelectChipTxtActive
+                      ]}
+                    >
+                      Start Blank
                     </Text>
                   </TouchableOpacity>
-                ))}
-              </View>
-
-              {createRecurrence !== 'one_time' && (
-                <View style={{ marginTop: 8, marginBottom: 12 }}>
-                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Occurrences Count</Text>
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    {[2, 4, 8, 12].map(n => (
+                  {templates.map((tpl, tplIdx) => {
+                    const isSelected = selectedTemplateForNew === tpl.id;
+                    return (
                       <TouchableOpacity
-                        key={n}
-                        style={[styles.countChip, createOccurrencesCount === n && styles.countChipActive]}
-                        onPress={() => setCreateOccurrencesCount(n)}
+                        key={tpl.id ? `tpl_${tpl.id}_${tplIdx}` : `tpl_${tplIdx}`}
+                        style={[
+                          styles.tplSelectChip,
+                          isSelected && styles.tplSelectChipActive,
+                          !isSelected && { backgroundColor: isDark ? '#334155' : '#F8FAFC', borderColor }
+                        ]}
+                        onPress={() => setSelectedTemplateForNew(tpl.id)}
+                        activeOpacity={0.8}
                       >
-                        <Text style={[styles.countChipTxt, createOccurrencesCount === n && styles.countChipTxtActive]}>
-                          {n} Weeks
+                        {isSelected && (
+                          <Check size={13} color="#FFFFFF" strokeWidth={3} />
+                        )}
+                        <Text style={[styles.tplSelectChipTxt, isSelected && styles.tplSelectChipTxtActive]}>
+                          {tpl.name}
                         </Text>
                       </TouchableOpacity>
-                    ))}
+                    );
+                  })}
+                </ScrollView>
+              </View>
+
+              {/* CARD 5: ORDER OF SERVICE (RUN SHEET) */}
+              <View style={[styles.formSectionCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor }]}>
+                <View style={[styles.formCardHeaderRow, { borderBottomColor: borderColor }]}>
+                  <Layers size={14} color="#1E3A8A" />
+                  <Text style={[styles.formCardHeaderText, { color: primaryText }]}>
+                    ORDER OF SERVICE (RUN SHEET) ({createRunSheet.length})
+                  </Text>
+                </View>
+
+                {createRunSheet.length === 0 ? (
+                  <View style={{ paddingVertical: 14, alignItems: 'center' }}>
+                    <Text style={{ fontSize: 12, color: secondaryText }}>
+                      No activities added yet. Choose a template above or add an activity below.
+                    </Text>
+                  </View>
+                ) : (
+                  createRunSheet.map((act, actIdx) => (
+                    <View
+                      key={act.id ? `act_card_${act.id}_${actIdx}` : `act_card_${actIdx}`}
+                      style={[styles.activityItemCard, { backgroundColor: isDark ? '#334155' : '#F8FAFC', borderColor }]}
+                    >
+                      <View style={styles.activityOrderBadge}>
+                        <Text style={styles.activityOrderTxt}>{act.order || actIdx + 1}</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.activityTitle, { color: primaryText }]}>{act.title}</Text>
+                        <Text style={[styles.activityMeta, { color: secondaryText }]}>
+                          ⏰ {act.startTime} - {act.endTime} ({act.durationMinutes || 10}m) · {act.category?.toUpperCase() || 'GENERAL'}
+                        </Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                        {actIdx > 0 && (
+                          <TouchableOpacity
+                            style={styles.activityActionBtn}
+                            onPress={() => handleMoveRunSheetItem(actIdx, 'up')}
+                            hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+                          >
+                            <ChevronUp size={16} color="#64748B" />
+                          </TouchableOpacity>
+                        )}
+                        {actIdx < createRunSheet.length - 1 && (
+                          <TouchableOpacity
+                            style={styles.activityActionBtn}
+                            onPress={() => handleMoveRunSheetItem(actIdx, 'down')}
+                            hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+                          >
+                            <ChevronDown size={16} color="#64748B" />
+                          </TouchableOpacity>
+                        )}
+                        <TouchableOpacity
+                          style={styles.activityActionBtn}
+                          onPress={() => handleDeleteRunSheetItem(actIdx)}
+                          hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+                        >
+                          <Trash2 size={15} color="#DC2626" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))
+                )}
+
+                <TouchableOpacity
+                  style={[styles.outlineActionBtn, { borderColor }]}
+                  onPress={() => setShowAddActivityQuickModal(true)}
+                  activeOpacity={0.8}
+                >
+                  <Plus size={14} color="#1E3A8A" />
+                  <Text style={styles.outlineActionBtnTxt}>+ Add Activity Item</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* CARD 6: WORSHIP SETLIST */}
+              <View style={[styles.formSectionCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor }]}>
+                <View style={[styles.formCardHeaderRow, { borderBottomColor: borderColor }]}>
+                  <Music size={14} color="#1E3A8A" />
+                  <Text style={[styles.formCardHeaderText, { color: primaryText }]}>
+                    WORSHIP SETLIST ({createSetlist.length} SONGS)
+                  </Text>
+                </View>
+
+                {createSetlist.length === 0 ? (
+                  <View style={{ paddingVertical: 14, alignItems: 'center' }}>
+                    <Text style={{ fontSize: 12, color: secondaryText }}>
+                      No songs in setlist yet. Tap below to select from your song library.
+                    </Text>
+                  </View>
+                ) : (
+                  createSetlist.map((songItem, sIdx) => (
+                    <View
+                      key={songItem.id ? `set_card_${songItem.id}_${sIdx}` : `set_card_${sIdx}`}
+                      style={[styles.songItemCard, { backgroundColor: isDark ? '#334155' : '#F8FAFC', borderColor }]}
+                    >
+                      <View style={styles.songOrderBadge}>
+                        <Text style={styles.activityOrderTxt}>{sIdx + 1}</Text>
+                      </View>
+                      <View style={{ flex: 1, paddingRight: 6 }}>
+                        <Text style={[styles.activityTitle, { color: primaryText }]}>{songItem.title}</Text>
+                        {songItem.titleTe ? (
+                          <Text style={{ fontSize: 11, color: '#D97706', fontWeight: '600' }}>
+                            {songItem.titleTe}
+                          </Text>
+                        ) : null}
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                          <View style={styles.songKeyBadge}>
+                            <Text style={styles.songKeyBadgeTxt}>Key: {songItem.key || 'G'}</Text>
+                          </View>
+                          <Text style={[styles.activityMeta, { color: secondaryText }]}>
+                            {songItem.artist || 'Traditional Worship'}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                        {sIdx > 0 && (
+                          <TouchableOpacity
+                            style={styles.activityActionBtn}
+                            onPress={() => handleMoveSetlistItem(sIdx, 'up')}
+                            hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+                          >
+                            <ChevronUp size={16} color="#64748B" />
+                          </TouchableOpacity>
+                        )}
+                        {sIdx < createSetlist.length - 1 && (
+                          <TouchableOpacity
+                            style={styles.activityActionBtn}
+                            onPress={() => handleMoveSetlistItem(sIdx, 'down')}
+                            hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+                          >
+                            <ChevronDown size={16} color="#64748B" />
+                          </TouchableOpacity>
+                        )}
+                        <TouchableOpacity
+                          style={styles.activityActionBtn}
+                          onPress={() => handleDeleteSetlistItem(sIdx)}
+                          hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+                        >
+                          <Trash2 size={15} color="#DC2626" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))
+                )}
+
+                <TouchableOpacity
+                  style={[styles.outlineActionBtn, { borderColor }]}
+                  onPress={() => {
+                    setSongLibrarySearch('');
+                    setShowSongPickerModal(true);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Music size={14} color="#1E3A8A" />
+                  <Text style={styles.outlineActionBtnTxt}>+ Add Song from Library</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* CARD 7: RESPONSIBILITY ASSIGNMENTS & NOTIFICATIONS */}
+              <View style={[styles.formSectionCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor }]}>
+                <View style={[styles.formCardHeaderRow, { borderBottomColor: borderColor }]}>
+                  <Users size={14} color="#1E3A8A" />
+                  <Text style={[styles.formCardHeaderText, { color: primaryText }]}>
+                    RESPONSIBILITY ASSIGNMENTS ({createAssignments.filter(a => a.assignedMemberId).length}/{createAssignments.length} FILLED)
+                  </Text>
+                </View>
+
+                {/* Auto-cascade Info Alert */}
+                <View style={[styles.cascadeAlertBox, { backgroundColor: isDark ? '#1E293B' : '#EFF6FF', borderColor: '#93C5FD' }]}>
+                  <Send size={15} color="#1E3A8A" style={{ marginTop: 2 }} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.cascadeAlertTitle, { color: '#1E3A8A' }]}>
+                      Automatic Background Notifications
+                    </Text>
+                    <Text style={[styles.cascadeAlertBody, { color: secondaryText }]}>
+                      When published, assigned volunteers receive instant push notifications with Accept/Decline options. If a member declines or does not respond within the deadline, Rhema automatically contacts the next eligible member with verified skill in the background.
+                    </Text>
                   </View>
                 </View>
-              )}
 
-              <Text style={[styles.fieldLabel, { color: primaryText }]}>Starting Order Template</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-                <TouchableOpacity
-                  style={[styles.tplSelectChip, selectedTemplateForNew === 'blank' && styles.tplSelectChipActive]}
-                  onPress={() => setSelectedTemplateForNew('blank')}
-                >
-                  <Text style={[styles.tplSelectChipTxt, selectedTemplateForNew === 'blank' && styles.tplSelectChipTxtActive]}>
-                    Start Blank
+                {/* Response Window Chips */}
+                <View style={{ marginVertical: 10 }}>
+                  <Text style={[styles.fieldLabel, { color: primaryText, marginBottom: 6 }]}>
+                    Volunteer Response Window (Configurable)
                   </Text>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {[
+                      { hours: 2, label: '2 Hours (Recommended)' },
+                      { hours: 3, label: '3 Hours' }
+                    ].map(opt => {
+                      const isSelected = responseTimeoutHours === opt.hours;
+                      return (
+                        <TouchableOpacity
+                          key={opt.hours}
+                          style={[
+                            styles.timeoutChip,
+                            isSelected && styles.timeoutChipActive,
+                            !isSelected && { backgroundColor: isDark ? '#334155' : '#F8FAFC', borderColor }
+                          ]}
+                          onPress={() => setResponseTimeoutHours(opt.hours)}
+                          activeOpacity={0.8}
+                        >
+                          <Clock size={13} color={isSelected ? '#FFFFFF' : secondaryText} />
+                          <Text style={[styles.timeoutChipTxt, isSelected && styles.timeoutChipTxtActive]}>
+                            {opt.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* List of Duty Roles */}
+                {createAssignments.map((duty, dIdx) => {
+                  const isAssigned = !!duty.assignedMemberId;
+                  return (
+                    <View
+                      key={duty.id ? `duty_card_${duty.id}_${dIdx}` : `duty_card_${dIdx}`}
+                      style={[styles.dutyItemCard, { backgroundColor: isDark ? '#334155' : '#F8FAFC', borderColor }]}
+                    >
+                      <View style={styles.dutyHeaderRow}>
+                        <View style={{ flex: 1, paddingRight: 6 }}>
+                          <Text style={[styles.dutyRoleTitle, { color: primaryText }]}>{duty.roleTitle}</Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                            <Award size={11} color="#64748B" />
+                            <Text style={styles.dutySkillTagTxt}>
+                              Verified Skill: {duty.requiredSkill || duty.roleTitle}
+                            </Text>
+                          </View>
+                        </View>
+                        <View style={[styles.dutyCascadePill, { backgroundColor: isDark ? '#1E293B' : '#EFF6FF' }]}>
+                          <Clock size={10} color="#1E3A8A" />
+                          <Text style={styles.dutyCascadePillTxt}>{responseTimeoutHours}h auto-cascade</Text>
+                        </View>
+                      </View>
+
+                      {isAssigned ? (
+                        <View style={[styles.dutyAssigneeRow, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor }]}>
+                          <View style={styles.dutyAssigneeAvatar}>
+                            <Check size={14} color="#10B981" strokeWidth={3} />
+                          </View>
+                          <View style={{ flex: 1, paddingHorizontal: 8 }}>
+                            <Text style={[styles.dutyAssigneeName, { color: primaryText }]}>
+                              {duty.assignedMemberName}
+                            </Text>
+                            <Text style={[styles.dutyAssigneePhone, { color: secondaryText }]}>
+                              {duty.assignedMemberPhone || 'Push notification will be sent'}
+                            </Text>
+                          </View>
+                          <TouchableOpacity
+                            style={styles.dutyChangeBtn}
+                            onPress={() => handleOpenAssignMemberModal(dIdx)}
+                            activeOpacity={0.8}
+                          >
+                            <Text style={styles.dutyChangeBtnTxt}>Change</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.dutyClearBtn}
+                            onPress={() => handleClearDutyAssignment(dIdx)}
+                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                          >
+                            <X size={14} color="#DC2626" />
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        <TouchableOpacity
+                          style={[styles.dutyAssignBtn, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor }]}
+                          onPress={() => handleOpenAssignMemberModal(dIdx)}
+                          activeOpacity={0.8}
+                        >
+                          <UserPlus size={14} color="#1E3A8A" />
+                          <Text style={styles.dutyAssignBtnTxt}>Assign Church Member</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  );
+                })}
+
+                <TouchableOpacity
+                  style={[styles.outlineActionBtn, { borderColor, marginTop: 4 }]}
+                  onPress={() => setShowAddDutyQuickModal(true)}
+                  activeOpacity={0.8}
+                >
+                  <Plus size={14} color="#1E3A8A" />
+                  <Text style={styles.outlineActionBtnTxt}>+ Add Custom Responsibility</Text>
                 </TouchableOpacity>
-                {templates.map(tpl => (
+              </View>
+
+              {/* CARD 8: FINAL REVIEW & ACTIONS */}
+              <View style={[styles.formSectionCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: '#1E3A8A' }]}>
+                <View style={[styles.formCardHeaderRow, { borderBottomColor: borderColor }]}>
+                  <Sparkles size={14} color="#1E3A8A" />
+                  <Text style={[styles.formCardHeaderText, { color: primaryText }]}>
+                    REVIEW & PUBLISH SUMMARY
+                  </Text>
+                </View>
+
+                <View style={styles.reviewSummaryRow}>
+                  <Text style={[styles.reviewLabel, { color: secondaryText }]}>Service:</Text>
+                  <Text style={[styles.reviewValue, { color: primaryText }]}>
+                    {createTitle || 'Untitled'} ({createType.toUpperCase()})
+                  </Text>
+                </View>
+                <View style={styles.reviewSummaryRow}>
+                  <Text style={[styles.reviewLabel, { color: secondaryText }]}>Date & Time:</Text>
+                  <Text style={[styles.reviewValue, { color: primaryText }]}>
+                    📅 {formatDisplayDate(createDate)} · ⏰ {formatDisplayTime(createStartTime)} - {formatDisplayTime(createEndTime)}
+                  </Text>
+                </View>
+                <View style={styles.reviewSummaryRow}>
+                  <Text style={[styles.reviewLabel, { color: secondaryText }]}>Location:</Text>
+                  <Text style={[styles.reviewValue, { color: primaryText }]}>
+                    📍 {createLocation || 'Main Sanctuary'}
+                  </Text>
+                </View>
+                <View style={styles.reviewSummaryRow}>
+                  <Text style={[styles.reviewLabel, { color: secondaryText }]}>Preacher:</Text>
+                  <Text style={[styles.reviewValue, { color: primaryText }]}>
+                    🎤 {createPreacher || 'Pastor'}
+                  </Text>
+                </View>
+                <View style={styles.reviewSummaryRow}>
+                  <Text style={[styles.reviewLabel, { color: secondaryText }]}>Run Sheet:</Text>
+                  <Text style={[styles.reviewValue, { color: primaryText }]}>
+                    📋 {createRunSheet.length} activities scheduled
+                  </Text>
+                </View>
+                <View style={styles.reviewSummaryRow}>
+                  <Text style={[styles.reviewLabel, { color: secondaryText }]}>Worship Setlist:</Text>
+                  <Text style={[styles.reviewValue, { color: primaryText }]}>
+                    🎵 {createSetlist.length} songs selected
+                  </Text>
+                </View>
+                <View style={styles.reviewSummaryRow}>
+                  <Text style={[styles.reviewLabel, { color: secondaryText }]}>Duty Assignments:</Text>
+                  <Text style={[styles.reviewValue, { color: primaryText }]}>
+                    👥 {createAssignments.filter(a => a.assignedMemberId).length} volunteers assigned ({responseTimeoutHours}h response deadline)
+                  </Text>
+                </View>
+
+                <View style={{ marginTop: 14 }}>
                   <TouchableOpacity
-                    key={tpl.id}
-                    style={[styles.tplSelectChip, selectedTemplateForNew === tpl.id && styles.tplSelectChipActive]}
-                    onPress={() => setSelectedTemplateForNew(tpl.id)}
+                    style={styles.publishServiceBtn}
+                    disabled={savingService}
+                    onPress={() => handlePublishService(true)}
+                    activeOpacity={0.85}
                   >
-                    <Text style={[styles.tplSelectChipTxt, selectedTemplateForNew === tpl.id && styles.tplSelectChipTxtActive]}>
-                      {tpl.name}
+                    {savingService ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <Send size={16} color="#FFFFFF" />
+                        <Text style={styles.publishServiceBtnTxt}>
+                          🚀 Publish Service & Send Notifications
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.saveDraftBtn, { borderColor }]}
+                    disabled={savingService}
+                    onPress={() => handlePublishService(false)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.saveDraftBtnTxt, { color: primaryText }]}>
+                      💾 Save as Draft (No Notifications Yet)
                     </Text>
                   </TouchableOpacity>
-                ))}
-              </ScrollView>
+                </View>
+              </View>
+            </ScrollView>
+
+            <View style={[styles.modalFooterRow, { borderTopColor: borderColor }]}>
+              <TouchableOpacity
+                style={[styles.modalDraftBtn, { borderColor }]}
+                disabled={savingService}
+                onPress={() => handlePublishService(false)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.modalDraftBtnTxt, { color: primaryText }]}>💾 Save Draft</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalPublishBtn}
+                disabled={savingService}
+                onPress={() => handlePublishService(true)}
+                activeOpacity={0.85}
+              >
+                {savingService ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Send size={15} color="#FFFFFF" />
+                    <Text style={styles.modalPublishBtnTxt}>🚀 Publish & Notify</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {/* DateTimePicker Modals for Service Creation */}
+            <DateTimePickerModal
+              isVisible={isDatePickerVisible}
+              mode="date"
+              date={parseDateForPicker(createDate)}
+              onConfirm={handleConfirmCreateDate}
+              onCancel={() => setDatePickerVisible(false)}
+            />
+            <DateTimePickerModal
+              isVisible={isStartTimePickerVisible}
+              mode="time"
+              date={parseTimeForPicker(createStartTime)}
+              is24Hour={false}
+              onConfirm={handleConfirmCreateStartTime}
+              onCancel={() => setStartTimePickerVisible(false)}
+            />
+            <DateTimePickerModal
+              isVisible={isEndTimePickerVisible}
+              mode="time"
+              date={parseTimeForPicker(createEndTime)}
+              is24Hour={false}
+              onConfirm={handleConfirmCreateEndTime}
+              onCancel={() => setEndTimePickerVisible(false)}
+            />
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      {/* MODAL: ASSIGN MEMBER TO RESPONSIBILITY WITH VERIFIED SKILL HIGHLIGHT */}
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      <Modal visible={showAssignMemberModal} animationType="slide" transparent>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={[styles.modalBox, { backgroundColor: cardSurface, maxHeight: '85%' }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.modalTitle, { color: primaryText }]}>
+                  Assign Volunteer
+                </Text>
+                <Text style={[styles.modalSubtitle, { color: secondaryText }]} numberOfLines={1}>
+                  {selectedDutyIndexForAssign !== null && createAssignments[selectedDutyIndexForAssign]
+                    ? `Role: ${createAssignments[selectedDutyIndexForAssign].roleTitle} (Skill: ${createAssignments[selectedDutyIndexForAssign].requiredSkill})`
+                    : 'Select a member'}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowAssignMemberModal(false)}>
+                <X size={20} color={secondaryText} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Member Search */}
+            <View style={[styles.searchBox, { backgroundColor: screenBg, borderColor }]}>
+              <Search size={16} color="#94A3B8" />
+              <TextInput
+                style={[styles.searchInput, { color: primaryText }]}
+                placeholder="Search member name or phone..."
+                placeholderTextColor="#94A3B8"
+                value={assignMemberSearch}
+                onChangeText={setAssignMemberSearch}
+              />
+              {assignMemberSearch.length > 0 && (
+                <TouchableOpacity onPress={() => setAssignMemberSearch('')}>
+                  <X size={14} color="#94A3B8" />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
+              {(() => {
+                const currentDuty = selectedDutyIndexForAssign !== null ? createAssignments[selectedDutyIndexForAssign] : null;
+                const reqSkill = (currentDuty?.requiredSkill || currentDuty?.roleTitle || '').toLowerCase();
+
+                // Sort members: verified skill first
+                const sorted = [...churchMembers].filter(m => {
+                  if (!assignMemberSearch.trim()) return true;
+                  const q = assignMemberSearch.toLowerCase();
+                  const name = (m.name || `${m.firstName || ''} ${m.lastName || ''}`).toLowerCase();
+                  const phone = (m.phone || m.mobile || m.phoneNumber || '').toLowerCase();
+                  return name.includes(q) || phone.includes(q);
+                }).sort((a, b) => {
+                  const aVerified = memberSkills.some(s => s.memberId === a.id && s.verificationStatus === 'verified' && s.skillName.toLowerCase().includes(reqSkill));
+                  const bVerified = memberSkills.some(s => s.memberId === b.id && s.verificationStatus === 'verified' && s.skillName.toLowerCase().includes(reqSkill));
+                  if (aVerified && !bVerified) return -1;
+                  if (!aVerified && bVerified) return 1;
+                  return 0;
+                });
+
+                if (sorted.length === 0) {
+                  return (
+                    <View style={{ padding: 20, alignItems: 'center' }}>
+                      <Text style={{ color: secondaryText, fontSize: 13 }}>No matching members found.</Text>
+                    </View>
+                  );
+                }
+
+                return sorted.map((m, mIdx) => {
+                  const name = m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim() || 'Church Member';
+                  const phone = m.phone || m.mobile || m.phoneNumber || '';
+                  const verifiedSkill = memberSkills.find(s => s.memberId === m.id && s.verificationStatus === 'verified' && s.skillName.toLowerCase().includes(reqSkill));
+
+                  return (
+                    <TouchableOpacity
+                      key={m.id ? `member_assign_${m.id}_${mIdx}` : `member_assign_${mIdx}`}
+                      style={[
+                        styles.memberAssignCard,
+                        { borderColor },
+                        verifiedSkill && { backgroundColor: isDark ? '#064E3B' : '#ECFDF5', borderColor: '#10B981' }
+                      ]}
+                      onPress={() => handleSelectMemberForDuty(m)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.memberAvatarCircle, verifiedSkill && { backgroundColor: '#10B981' }]}>
+                        <Text style={styles.memberAvatarTxt}>
+                          {name.substring(0, 2).toUpperCase()}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1, paddingHorizontal: 10 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={[styles.memberAssignName, { color: primaryText }]}>{name}</Text>
+                          {verifiedSkill && (
+                            <View style={styles.verifiedSkillBadge}>
+                              <Check size={10} color="#FFFFFF" strokeWidth={3} />
+                              <Text style={styles.verifiedSkillBadgeTxt}>Verified</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={[styles.memberAssignPhone, { color: secondaryText }]}>
+                          {phone || 'No phone recorded'}
+                          {verifiedSkill ? ` · 🎯 ${verifiedSkill.skillName}` : ''}
+                        </Text>
+                      </View>
+                      <Plus size={16} color={verifiedSkill ? '#10B981' : '#1E3A8A'} />
+                    </TouchableOpacity>
+                  );
+                });
+              })()}
             </ScrollView>
 
             <View style={styles.modalFooter}>
               <TouchableOpacity
                 style={styles.modalCancelBtn}
-                onPress={() => setShowCreateModal(false)}
+                onPress={() => setShowAssignMemberModal(false)}
+              >
+                <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      {/* MODAL: ADD ACTIVITY TO RUN SHEET */}
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      <Modal visible={showAddActivityQuickModal} animationType="fade" transparent>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={[styles.modalBox, { backgroundColor: cardSurface }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: primaryText }]}>Add Activity to Run Sheet</Text>
+              <TouchableOpacity onPress={() => setShowAddActivityQuickModal(false)}>
+                <X size={20} color={secondaryText} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ paddingVertical: 10 }}>
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Activity Name *</Text>
+              <View style={[styles.modernInputContainer, { backgroundColor: screenBg, borderColor }]}>
+                <TextInput
+                  style={[styles.modernInput, { color: primaryText }]}
+                  placeholder="e.g. Special Testimony / Scripture Reading"
+                  placeholderTextColor="#94A3B8"
+                  value={quickActTitle}
+                  onChangeText={setQuickActTitle}
+                />
+              </View>
+
+              <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 12 }]}>Category</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
+                {[
+                  { id: 'worship_songs', label: 'Worship' },
+                  { id: 'sermon_word', label: 'Word' },
+                  { id: 'prayer', label: 'Prayer' },
+                  { id: 'welcome_announcements', label: 'Welcome' },
+                  { id: 'offering_tithe', label: 'Offering' },
+                  { id: 'communion', label: 'Communion' },
+                  { id: 'benediction', label: 'Benediction' }
+                ].map(cat => (
+                  <TouchableOpacity
+                    key={cat.id}
+                    style={[styles.typeSelectChip, quickActCategory === cat.id && styles.typeSelectChipActive]}
+                    onPress={() => setQuickActCategory(cat.id as any)}
+                  >
+                    <Text style={[styles.typeSelectChipTxt, quickActCategory === cat.id && styles.typeSelectChipTxtActive]}>
+                      {cat.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 12 }]}>Planned Duration (Minutes)</Text>
+              <View style={[styles.modernInputContainer, { backgroundColor: screenBg, borderColor }]}>
+                <Clock size={16} color="#64748B" style={styles.inputLeftIcon} />
+                <TextInput
+                  style={[styles.modernInput, { color: primaryText }]}
+                  placeholder="e.g. 10"
+                  placeholderTextColor="#94A3B8"
+                  keyboardType="numeric"
+                  value={quickActDuration}
+                  onChangeText={setQuickActDuration}
+                />
+              </View>
+            </View>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setShowAddActivityQuickModal(false)}
               >
                 <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.modalConfirmBtn}
-                disabled={savingService}
-                onPress={handleCreateService}
+                onPress={handleAddQuickActivity}
               >
-                {savingService ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.modalConfirmBtnTxt}>Create Service</Text>
-                )}
+                <Text style={styles.modalConfirmBtnTxt}>Add Activity</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      {/* MODAL: ADD CUSTOM DUTY ROLE */}
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      <Modal visible={showAddDutyQuickModal} animationType="fade" transparent>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={[styles.modalBox, { backgroundColor: cardSurface }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: primaryText }]}>Add Responsibility / Duty</Text>
+              <TouchableOpacity onPress={() => setShowAddDutyQuickModal(false)}>
+                <X size={20} color={secondaryText} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ paddingVertical: 10 }}>
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Duty / Role Title *</Text>
+              <View style={[styles.modernInputContainer, { backgroundColor: screenBg, borderColor }]}>
+                <TextInput
+                  style={[styles.modernInput, { color: primaryText }]}
+                  placeholder="e.g. Scripture Reading Steward"
+                  placeholderTextColor="#94A3B8"
+                  value={quickDutyTitle}
+                  onChangeText={setQuickDutyTitle}
+                />
+              </View>
+
+              <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 12 }]}>Required Verified Skill</Text>
+              <View style={[styles.modernInputContainer, { backgroundColor: screenBg, borderColor }]}>
+                <Award size={16} color="#64748B" style={styles.inputLeftIcon} />
+                <TextInput
+                  style={[styles.modernInput, { color: primaryText }]}
+                  placeholder="e.g. Scripture Reading / Public Speaking"
+                  placeholderTextColor="#94A3B8"
+                  value={quickDutySkill}
+                  onChangeText={setQuickDutySkill}
+                />
+              </View>
+            </View>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setShowAddDutyQuickModal(false)}
+              >
+                <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalConfirmBtn}
+                onPress={handleAddQuickDuty}
+              >
+                <Text style={styles.modalConfirmBtnTxt}>Add Role</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -4289,7 +5579,7 @@ export default function AdminServicePlanner({ navigation }: any) {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.modalOverlay}
         >
-          <View style={[styles.modalBox, { backgroundColor: cardSurface }]}>
+          <View style={[styles.modalBox, { backgroundColor: cardSurface, maxHeight: '92%' }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: primaryText }]}>Edit Service Information</Text>
               <TouchableOpacity onPress={() => setShowEditDetailsModal(false)}>
@@ -4297,10 +5587,17 @@ export default function AdminServicePlanner({ navigation }: any) {
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={{ flexShrink: 1 }}
+              contentContainerStyle={{ paddingBottom: 16 }}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={true}
+            >
               <Text style={[styles.fieldLabel, { color: primaryText }]}>Service Title *</Text>
               <TextInput
                 style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                placeholder="e.g. Sunday Morning Worship"
+                placeholderTextColor="#94A3B8"
                 value={editTitle}
                 onChangeText={setEditTitle}
               />
@@ -4308,25 +5605,52 @@ export default function AdminServicePlanner({ navigation }: any) {
               <View style={styles.formRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.fieldLabel, { color: primaryText }]}>Date</Text>
-                  <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
-                    value={editDate}
-                    onChangeText={setEditDate}
-                  />
+                  <TouchableOpacity
+                    style={[styles.pickerInputBtn, { backgroundColor: screenBg, borderColor }]}
+                    onPress={() => setEditDatePickerVisible(true)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.pickerIconContainer}>
+                      <Calendar size={16} color="#1E3A8A" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.pickerValueText, { color: primaryText }]} numberOfLines={1}>
+                        {formatDisplayDate(editDate)}
+                      </Text>
+                      <Text style={[styles.pickerSubText, { color: secondaryText }]} numberOfLines={1}>
+                        {editDate || 'Select date'}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
                 </View>
-                <View style={{ width: 100 }}>
+
+                <View style={{ flex: 1 }}>
                   <Text style={[styles.fieldLabel, { color: primaryText }]}>Start Time</Text>
-                  <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
-                    value={editStartTime}
-                    onChangeText={setEditStartTime}
-                  />
+                  <TouchableOpacity
+                    style={[styles.pickerInputBtn, { backgroundColor: screenBg, borderColor }]}
+                    onPress={() => setEditStartTimePickerVisible(true)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.pickerIconContainer}>
+                      <Clock size={16} color="#1E3A8A" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.pickerValueText, { color: primaryText }]} numberOfLines={1}>
+                        {formatDisplayTime(editStartTime)}
+                      </Text>
+                      <Text style={[styles.pickerSubText, { color: secondaryText }]} numberOfLines={1}>
+                        {editStartTime ? `${editStartTime} (24h)` : 'Select start time'}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
                 </View>
               </View>
 
               <Text style={[styles.fieldLabel, { color: primaryText }]}>Location</Text>
               <TextInput
                 style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                placeholder="e.g. Main Church Sanctuary / Hall"
+                placeholderTextColor="#94A3B8"
                 value={editLocation}
                 onChangeText={setEditLocation}
               />
@@ -4334,6 +5658,8 @@ export default function AdminServicePlanner({ navigation }: any) {
               <Text style={[styles.fieldLabel, { color: primaryText }]}>Preacher / Speaker</Text>
               <TextInput
                 style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                placeholder="e.g. Pastor / Speaker Name"
+                placeholderTextColor="#94A3B8"
                 value={editPreacher}
                 onChangeText={setEditPreacher}
               />
@@ -4343,6 +5669,8 @@ export default function AdminServicePlanner({ navigation }: any) {
                   <Text style={[styles.fieldLabel, { color: primaryText }]}>Theme</Text>
                   <TextInput
                     style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    placeholder="e.g. God's Grace / Living by Faith"
+                    placeholderTextColor="#94A3B8"
                     value={editTheme}
                     onChangeText={setEditTheme}
                   />
@@ -4351,6 +5679,8 @@ export default function AdminServicePlanner({ navigation }: any) {
                   <Text style={[styles.fieldLabel, { color: primaryText }]}>Bible Scripture</Text>
                   <TextInput
                     style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    placeholder="e.g. Romans 8:1, Psalm 23"
+                    placeholderTextColor="#94A3B8"
                     value={editScripture}
                     onChangeText={setEditScripture}
                   />
@@ -4372,6 +5702,23 @@ export default function AdminServicePlanner({ navigation }: any) {
                 <Text style={styles.modalConfirmBtnTxt}>Save Changes</Text>
               </TouchableOpacity>
             </View>
+
+            {/* DateTimePicker Modals for Service Edit */}
+            <DateTimePickerModal
+              isVisible={isEditDatePickerVisible}
+              mode="date"
+              date={parseDateForPicker(editDate)}
+              onConfirm={handleConfirmEditDate}
+              onCancel={() => setEditDatePickerVisible(false)}
+            />
+            <DateTimePickerModal
+              isVisible={isEditStartTimePickerVisible}
+              mode="time"
+              date={parseTimeForPicker(editStartTime)}
+              is24Hour={false}
+              onConfirm={handleConfirmEditStartTime}
+              onCancel={() => setEditStartTimePickerVisible(false)}
+            />
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -4395,9 +5742,9 @@ export default function AdminServicePlanner({ navigation }: any) {
             </View>
 
             <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
-              {templates.map(tpl => (
+              {templates.map((tpl, tplIdx) => (
                 <TouchableOpacity
-                  key={tpl.id}
+                  key={tpl.id ? `apply_tpl_${tpl.id}_${tplIdx}` : `apply_tpl_${tplIdx}`}
                   style={[styles.applyTplItem, { borderColor }]}
                   onPress={() => handleApplyTemplate(tpl.id)}
                 >
@@ -4726,7 +6073,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                 </View>
               ) : (
                 ladderCandidates.map((cand, idx) => (
-                  <View key={cand.candidateId + idx} style={styles.ladderSelectedCard}>
+                  <View key={cand.candidateId ? `ladder_${cand.candidateId}_${idx}` : `ladder_${idx}`} style={styles.ladderSelectedCard}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
                       <View style={styles.ladderRankBadge}>
                         <Text style={styles.ladderRankBadgeTxt}>{idx + 1}</Text>
@@ -4756,11 +6103,11 @@ export default function AdminServicePlanner({ navigation }: any) {
                 Ranked by verified skills, ministry team membership, and blockout availability.
               </Text>
 
-              {candidateRecommendations.slice(0, 10).map(rec => {
+              {candidateRecommendations.slice(0, 10).map((rec, recIdx) => {
                 const isAdded = ladderCandidates.some(c => c.candidateId === rec.memberId);
                 return (
                   <View
-                    key={rec.memberId}
+                    key={rec.memberId ? `rec_${rec.memberId}_${recIdx}` : `rec_${recIdx}`}
                     style={[
                       styles.recMemberCard,
                       { backgroundColor: cardSurface, borderColor },
@@ -5156,11 +6503,11 @@ export default function AdminServicePlanner({ navigation }: any) {
                   No songs in worship setlist yet. Add songs from Worship Setlist tab.
                 </Text>
               ) : (
-                (selectedPlan?.setlist || []).map(song => {
+                (selectedPlan?.setlist || []).map((song, sIdx) => {
                   const isSelected = rehearsalSongPracticeIds.includes(song.id);
                   return (
                     <TouchableOpacity
-                      key={song.id}
+                      key={song.id ? `reh_song_${song.id}_${sIdx}` : `reh_song_${sIdx}`}
                       style={[
                         styles.rehSongPickRow,
                         { borderColor },
@@ -5275,11 +6622,11 @@ export default function AdminServicePlanner({ navigation }: any) {
                   );
                 }
 
-                return participantMembers.map(m => {
+                return participantMembers.map((m, mIdx) => {
                   const curStatus = activeRehearsalForAttendance?.attendance?.[m.id];
                   return (
                     <View
-                      key={m.id}
+                      key={m.id ? `part_${m.id}_${mIdx}` : `part_${mIdx}`}
                       style={[styles.attMemberCard, { backgroundColor: screenBg, borderColor }]}
                     >
                       <View style={{ flex: 1, paddingRight: 8 }}>
@@ -6266,6 +7613,29 @@ const styles = StyleSheet.create({
     padding: 20,
     maxHeight: '90%',
   },
+  modalDragHandle: {
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#CBD5E1',
+    alignSelf: 'center',
+    marginBottom: 12,
+  },
+  modalHeaderIconBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCloseCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -6294,6 +7664,41 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginBottom: 10,
   },
+  formSectionCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 14,
+  },
+  formCardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 12,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+  },
+  formCardHeaderText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  modernInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    minHeight: 46,
+  },
+  modernInput: {
+    flex: 1,
+    fontSize: 13.5,
+    paddingVertical: 10,
+  },
+  inputLeftIcon: {
+    marginRight: 8,
+  },
   textArea: {
     borderWidth: 1,
     borderRadius: 8,
@@ -6303,6 +7708,33 @@ const styles = StyleSheet.create({
     height: 70,
     textAlignVertical: 'top',
     marginBottom: 10,
+  },
+  pickerInputBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginBottom: 10,
+    minHeight: 48,
+  },
+  pickerIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 7,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  pickerValueText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  pickerSubText: {
+    fontSize: 10.5,
+    marginTop: 1,
   },
   formRow: {
     flexDirection: 'row',
@@ -6333,16 +7765,17 @@ const styles = StyleSheet.create({
   },
   recurrenceBtn: {
     flex: 1,
-    paddingVertical: 8,
+    paddingVertical: 9,
     borderRadius: 8,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#E2E8F0',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#F8FAFC',
   },
   recurrenceBtnActive: {
     borderColor: '#1E3A8A',
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#1E3A8A',
   },
   recurrenceBtnTxt: {
     fontSize: 11.5,
@@ -6350,11 +7783,12 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   recurrenceBtnTxtActive: {
-    color: '#1E3A8A',
+    color: '#FFFFFF',
+    fontWeight: '800',
   },
   countChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     borderRadius: 8,
     backgroundColor: '#F1F5F9',
   },
@@ -6362,25 +7796,29 @@ const styles = StyleSheet.create({
     backgroundColor: '#1E3A8A',
   },
   countChipTxt: {
-    fontSize: 11,
+    fontSize: 11.5,
     fontWeight: '700',
     color: '#475569',
   },
   countChipTxtActive: {
     color: '#FFFFFF',
+    fontWeight: '800',
   },
   tplSelectChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 7,
     borderRadius: 8,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#E2E8F0',
     marginRight: 8,
     backgroundColor: '#F8FAFC',
   },
   tplSelectChipActive: {
     borderColor: '#1E3A8A',
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#1E3A8A',
   },
   tplSelectChipTxt: {
     fontSize: 11.5,
@@ -6388,7 +7826,8 @@ const styles = StyleSheet.create({
     color: '#475569',
   },
   tplSelectChipTxtActive: {
-    color: '#1E3A8A',
+    color: '#FFFFFF',
+    fontWeight: '800',
   },
   categorySelectChip: {
     paddingHorizontal: 10,

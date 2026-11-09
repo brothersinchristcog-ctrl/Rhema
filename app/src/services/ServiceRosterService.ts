@@ -536,6 +536,26 @@ class ServiceRosterService {
   }
 
   /**
+   * Remove undefined fields recursively before writing to Firestore
+   */
+  sanitizeForFirestore<T>(data: T): T {
+    if (data === null || data === undefined) return data;
+    if (Array.isArray(data)) {
+      return data.map(item => this.sanitizeForFirestore(item)) as any;
+    }
+    if (typeof data === 'object' && !(data instanceof Date) && !(data as any)?._methodName) {
+      const sanitized: any = {};
+      for (const [key, val] of Object.entries(data)) {
+        if (val !== undefined) {
+          sanitized[key] = this.sanitizeForFirestore(val);
+        }
+      }
+      return sanitized;
+    }
+    return data;
+  }
+
+  /**
    * Update an existing service plan
    */
   async updateServicePlan(churchId: string, planId: string, updates: Partial<ServicePlan>): Promise<void> {
@@ -549,12 +569,14 @@ class ServiceRosterService {
       totalDuration = this.calculateTotalDurationMinutes(updatedRunSheet);
     }
 
-    await docRef.update({
+    const payload = this.sanitizeForFirestore({
       ...updates,
       ...(updatedRunSheet ? { runSheet: updatedRunSheet } : {}),
       ...(totalDuration !== undefined ? { totalDurationMinutes: totalDuration } : {}),
       updatedAt: firestore.FieldValue.serverTimestamp()
     });
+
+    await docRef.update(payload);
   }
 
   /**
@@ -1092,8 +1114,9 @@ class ServiceRosterService {
     const plan = await this.getServicePlanById(churchId, serviceId);
     if (!plan) throw new Error('Service plan not found');
 
+    const sanitizedItem = this.sanitizeForFirestore(songItem);
     const currentSetlist = plan.setlist || [];
-    const updated = [...currentSetlist, songItem];
+    const updated = [...currentSetlist, sanitizedItem];
 
     await this.updateServicePlan(churchId, serviceId, {
       setlist: updated
