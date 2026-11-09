@@ -1829,7 +1829,7 @@ export const getSynchronousVersesForToday = (date: Date = new Date()): DailyVers
     return indices.map((idx, pIdx) => {
       const bv = bulk[idx] || {};
       const period = PERIODS[pIdx];
-      const bgUrl = bv.backgroundUrl || getVerseBackgroundUrl(bv, period, idx);
+      const bgUrl = getVerseBackgroundUrl({ ...bv, index: idx }, period, idx, date);
       return {
         id: `today_verse_${idx}_${pIdx}`,
         index: idx,
@@ -1850,7 +1850,7 @@ export const getSynchronousVersesForToday = (date: Date = new Date()): DailyVers
     ];
     return defs.map((d, pIdx) => ({
       ...d,
-      backgroundUrl: getVerseBackgroundUrl(d, PERIODS[pIdx], d.index),
+      backgroundUrl: getVerseBackgroundUrl(d, PERIODS[pIdx], d.index, date),
     }));
   }
 };
@@ -2984,21 +2984,30 @@ export default function HomeScreen() {
             });
 
             const freshList: DailyVerse[] = [];
+            const nowDate = new Date();
             for (let i = 0; i < 4; i++) {
               const idx = todayIndices[i];
               if (map[idx]) {
                 const v = { ...map[idx] };
-                if (!v.backgroundUrl) {
-                  v.backgroundUrl = getVerseBackgroundUrl(v, PERIODS[i], idx);
-                }
+                v.backgroundUrl = getVerseBackgroundUrl(v, PERIODS[i], idx, nowDate);
                 freshList.push(v);
               }
             }
 
             if (freshList.length >= 4) {
-              cachedTodayFourVersesDateStr = new Date().toDateString();
+              cachedTodayFourVersesDateStr = nowDate.toDateString();
               cachedTodayFourVerses = freshList;
               setTodayFourVerses(freshList);
+
+              // Enrich today's 4 verses with fresh, verse-relevant Unsplash Search API images
+              VerseNotificationService.enrichDayVersesWithUnsplash(freshList, nowDate)
+                .then(enriched => {
+                  if (enriched && enriched.length >= 4) {
+                    cachedTodayFourVerses = [...enriched];
+                    setTodayFourVerses([...enriched]);
+                  }
+                })
+                .catch(() => {});
 
               // Synchronize todayVerse for current period
               const currentPeriod = getCurrentPeriod();
@@ -3853,7 +3862,7 @@ export default function HomeScreen() {
                           onPress={() => navigation.navigate('VerseOfTheDay', { verseId: verse.id, period })}
                         >
                           <ImageBackground
-                            source={{ uri: getVerseBackgroundUrl(verse, period, idx) }}
+                            source={{ uri: getVerseBackgroundUrl(verse, period, typeof verse.index === 'number' ? verse.index : idx, currentTime) }}
                             style={[
                               styles.vdCleanWhiteCard, 
                               {
@@ -5090,7 +5099,7 @@ export default function HomeScreen() {
           <ViewShot ref={captureVerseRef} options={{ format: 'png', quality: 1 }}>
             <View style={{ width, height: width * 1.5, backgroundColor: '#0a1945' }} collapsable={false}>
               <Image
-                  source={{ uri: getVerseBackgroundUrl(captureVerseConfig.verse, captureVerseConfig.period) }}
+                  source={{ uri: getVerseBackgroundUrl(captureVerseConfig.verse, captureVerseConfig.period, captureVerseConfig.verse?.index ?? 0, currentTime) }}
                   style={StyleSheet.absoluteFillObject}
                   resizeMode="cover"
                 />

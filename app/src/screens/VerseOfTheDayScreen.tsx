@@ -582,7 +582,7 @@ export default function VerseOfTheDayScreen() {
                     return (
                       <View key={periodIndex} style={[styles.cardWrapper, { width }]}>
                         <ImageBackground 
-                          source={{ uri: getVerseBackgroundUrl(verse, period, periodIndex) }} 
+                          source={{ uri: getVerseBackgroundUrl(verse, period, typeof verse.index === 'number' ? verse.index : periodIndex, dayData.date) }} 
                           style={styles.cardGradient}
                           imageStyle={{ borderRadius: 24 }}
                           resizeMode="cover"
@@ -763,7 +763,7 @@ export default function VerseOfTheDayScreen() {
           <View style={[styles.cardWrapper, { width, height: width * 1.5 }]} collapsable={false}>
             <View style={[styles.cardGradient, { backgroundColor: '#111' }]} collapsable={false}>
                 <Image 
-                  source={{ uri: getVerseBackgroundUrl(verse, captureConfig?.period, 0) }} 
+                  source={{ uri: getVerseBackgroundUrl(verse, captureConfig?.period, typeof verse.index === 'number' ? verse.index : (captureConfig?.periodIndex ?? 0), captureConfig?.date) }} 
                   style={[StyleSheet.absoluteFillObject, { borderRadius: 24 }]} 
                   resizeMode="cover"
                 />

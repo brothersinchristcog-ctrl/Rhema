@@ -4,9 +4,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { BibleService } from './BibleService';
 import { SupportedLanguage } from '../locales';
-import { getVerseBackgroundUrl } from '../constants/VerseBackgrounds';
+import {
+  getVerseBackgroundUrl,
+  fetchRelevantUnsplashForVerse,
+  getCalendarDayNumber,
+  isStaticCuratedBackgroundUrl,
+} from '../constants/VerseBackgrounds';
 
 const VERSES_CACHE_KEY = '@rhema_verses_cache';
+const USED_UNSPLASH_URLS_KEY = '@rhema_used_unsplash_urls_v2';
 
 // Stable notification ID prefix — used to deduplicate / cancel by slot
 const NOTIF_ID_PREFIX = 'daily_verse_';
@@ -313,9 +319,7 @@ class VerseNotificationService {
       if (!forceRefresh && cacheStr) {
         const cache: Record<number, DailyVerse> = JSON.parse(cacheStr);
         if (cache[targetIndex]) {
-          if (!cache[targetIndex].backgroundUrl) {
-            cache[targetIndex].backgroundUrl = getVerseBackgroundUrl(cache[targetIndex], period, targetIndex);
-          }
+          cache[targetIndex].backgroundUrl = getVerseBackgroundUrl(cache[targetIndex], period, targetIndex, date);
           return cache[targetIndex];
         }
       }
@@ -330,9 +334,7 @@ class VerseNotificationService {
           return tB - tA;
         });
         const vData = docs[0];
-        if (!vData.backgroundUrl) {
-          vData.backgroundUrl = getVerseBackgroundUrl(vData, period, targetIndex);
-        }
+        vData.backgroundUrl = getVerseBackgroundUrl(vData, period, targetIndex, date);
         try {
           const cache = cacheStr ? JSON.parse(cacheStr) : {};
           cache[targetIndex] = vData;
@@ -372,7 +374,12 @@ class VerseNotificationService {
           const idx = dailyIndices[pIdx];
           const bv = bundledVerses[idx] || {};
           const period = PERIODS[pIdx];
-          const bgUrl = bv.backgroundUrl || getVerseBackgroundUrl(bv, period, idx);
+          const bgUrl = getVerseBackgroundUrl(
+            { ...bv, index: idx },
+            period,
+            idx,
+            d
+          );
           versesForDay.push({
             id: `bundled_${idx}_${pIdx}`,
             index: idx,
@@ -391,6 +398,97 @@ class VerseNotificationService {
       console.warn('[VerseNotificationService] Error in getSynchronousInitialVerses:', e);
       return [];
     }
+  }
+
+  /**
+   * Dynamically enriches the 4 daily verses for a given date using the live Unsplash Search API
+   * based on each Bible verse's specific scripture theme & keywords + time slot.
+   * Ensures 4 fresh, non-repeating, verse-relevant images every day.
+   */
+  async enrichDayVersesWithUnsplash(
+    verses: DailyVerse[],
+    date: Date = new Date()
+  ): Promise<DailyVerse[]> {
+    if (!verses || verses.length === 0) return verses;
+    const PERIODS = ['Morning', 'Afternoon', 'Evening', 'Night'];
+    const dayNumber = getCalendarDayNumber(date);
+    const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+    try {
+      const usedStr = await AsyncStorage.getItem(USED_UNSPLASH_URLS_KEY);
+      const usedArr: string[] = usedStr ? JSON.parse(usedStr) : [];
+      const usedSet = new Set<string>(usedArr);
+
+      let cacheChanged = false;
+      const cacheStr = await AsyncStorage.getItem(VERSES_CACHE_KEY);
+      const cache: Record<number, DailyVerse> = cacheStr ? JSON.parse(cacheStr) : {};
+
+      // Add already-assigned dynamic URLs from this day's slots to usedSet so no two slots can match
+      for (const v of verses) {
+        if (v?.backgroundUrl && !isStaticCuratedBackgroundUrl(v.backgroundUrl)) {
+          usedSet.add(v.backgroundUrl);
+        }
+      }
+
+      for (let i = 0; i < verses.length; i++) {
+        const v = verses[i];
+        const period = PERIODS[i] || 'Morning';
+        if (!v) continue;
+
+        const hasFreshDynamic =
+          v.isDynamicUnsplash === true &&
+          v.backgroundDateKey === dateKey &&
+          v.backgroundUrl &&
+          !isStaticCuratedBackgroundUrl(v.backgroundUrl);
+
+        if (hasFreshDynamic) continue;
+
+        const fetched = await fetchRelevantUnsplashForVerse(v, period, dayNumber, usedSet);
+        if (fetched && fetched.url) {
+          v.backgroundUrl = fetched.url;
+          v.isDynamicUnsplash = true;
+          v.backgroundDateKey = dateKey;
+          v.unsplashPhotographer = fetched.photographer;
+          v.backgroundTheme = fetched.theme;
+          cacheChanged = true;
+
+          if (typeof v.index === 'number') {
+            cache[v.index] = { ...(cache[v.index] || {}), ...v };
+          }
+
+          // Persist to Firestore if this verse has a real document ID
+          if (v.id && !v.id.startsWith('bundled_') && !v.id.startsWith('verse_') && !v.id.startsWith('today_verse_')) {
+            firestore()
+              .collection('daily_verses')
+              .doc(v.id)
+              .set(
+                {
+                  backgroundUrl: fetched.url,
+                  isDynamicUnsplash: true,
+                  backgroundDateKey: dateKey,
+                  unsplashPhotographer: fetched.photographer,
+                  backgroundTheme: fetched.theme,
+                },
+                { merge: true }
+              )
+              .catch(() => {});
+          }
+        } else {
+          // Ensure deterministic verse-relevant image is applied
+          v.backgroundUrl = getVerseBackgroundUrl(v, period, v.index ?? i, date);
+        }
+      }
+
+      if (cacheChanged) {
+        await AsyncStorage.setItem(VERSES_CACHE_KEY, JSON.stringify(cache)).catch(() => {});
+        const trimmedUsed = Array.from(usedSet).slice(-240);
+        await AsyncStorage.setItem(USED_UNSPLASH_URLS_KEY, JSON.stringify(trimmedUsed)).catch(() => {});
+      }
+    } catch (err) {
+      // Fallback silently to deterministic verse-relevant gallery
+    }
+
+    return verses;
   }
 
   /**
@@ -510,15 +608,19 @@ class VerseNotificationService {
         for (let i = 0; i < 4; i++) {
           const idx = dailyIndices[i];
           if (cache[idx]) {
-            const v = cache[idx];
-            if (!v.backgroundUrl) {
-              v.backgroundUrl = getVerseBackgroundUrl(v, PERIODS[i], idx);
-            }
+            const v = { ...cache[idx] };
+            v.backgroundUrl = getVerseBackgroundUrl(v, PERIODS[i], idx, d);
             versesForDay.push(v);
           }
         }
         results.push({ date: d, verses: versesForDay });
       }
+
+      // Enrich today's 4 verses with fresh, verse-relevant Unsplash Search API images
+      if (results.length > 0 && includeToday) {
+        await this.enrichDayVersesWithUnsplash(results[0].verses, results[0].date);
+      }
+
       return results;
     } catch (e) {
       console.error('[VerseNotificationService] Error in getRecentVerses:', e);
