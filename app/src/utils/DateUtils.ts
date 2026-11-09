@@ -309,3 +309,71 @@ export const formatDatesInText = (text: string): string => {
   if (!text || typeof text !== 'string') return text || '';
   return text.replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (_match, y, m, d) => `${d}-${m}-${y}`);
 };
+
+/**
+ * Formats any date string, Date object, or timestamp to Date Month Year format
+ * e.g., "15 November 2026"
+ */
+export const formatDateMonthYear = (dateVal: any): string => {
+  if (!dateVal) return '';
+  const MONTHS = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  try {
+    let y = 0, m = -1, d = 0;
+    if (typeof dateVal === 'string') {
+      const clean = dateVal.trim();
+      if (/^\d{1,2}\s+[A-Za-z]+\s+\d{4}$/.test(clean)) return clean;
+      const parts = clean.split('T')[0].split(/[-/]/);
+      if (parts.length === 3) {
+        if (parts[0].length === 4) {
+          y = parseInt(parts[0], 10);
+          m = parseInt(parts[1], 10) - 1;
+          d = parseInt(parts[2], 10);
+        } else if (parts[2].length === 4) {
+          d = parseInt(parts[0], 10);
+          m = parseInt(parts[1], 10) - 1;
+          y = parseInt(parts[2], 10);
+        }
+      }
+    } else if (dateVal instanceof Date && !isNaN(dateVal.getTime())) {
+      y = dateVal.getFullYear();
+      m = dateVal.getMonth();
+      d = dateVal.getDate();
+    }
+    if (y > 0 && d > 0 && m >= 0 && m < 12) {
+      const dayStr = String(d).padStart(2, '0');
+      return `${dayStr} ${MONTHS[m]} ${y}`;
+    }
+  } catch {}
+  return String(dateVal || '');
+};
+
+/**
+ * Formats a 24-hour or raw time string into a clean 12-hour AM/PM format
+ * e.g., "10:00" -> "10:00 AM", "14:30" -> "02:30 PM", "09:15" -> "09:15 AM"
+ */
+export const formatTimeTo12Hour = (timeVal: any): string => {
+  if (!timeVal) return '';
+  try {
+    const clean = String(timeVal).trim();
+    if (/^(1[0-2]|0?[1-9]):[0-5][0-9]\s*(AM|PM)$/i.test(clean)) {
+      return clean.toUpperCase();
+    }
+    const isPM = /pm/i.test(clean);
+    const isAM = /am/i.test(clean);
+    const parts = clean.replace(/[^\d:]/g, '').split(':').map(Number);
+    if (parts.length >= 2) {
+      let h = parts[0] || 0;
+      const m = parts[1] || 0;
+      let period = 'AM';
+      if (isPM) period = 'PM';
+      else if (isAM) period = 'AM';
+      else period = h >= 12 ? 'PM' : 'AM';
+      const displayH = h % 12 === 0 ? 12 : h % 12;
+      return `${String(displayH).padStart(2, '0')}:${String(m).padStart(2, '0')} ${period}`;
+    }
+  } catch {}
+  return String(timeVal || '');
+};

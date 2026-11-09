@@ -67,6 +67,7 @@ import {
 } from 'lucide-react-native';
 
 import { useAdminTheme } from '../../utils/adminThemeHelper';
+import { formatDateMonthYear, formatTimeTo12Hour } from '../../utils/DateUtils';
 import { useChurch } from '../../context/ChurchContext';
 import { useAuth } from '../../context/AuthContext';
 import { AdminTabContext } from '../../context/AdminTabContext';
@@ -279,8 +280,8 @@ export default function AdminServicePlanner({ navigation }: any) {
   const [editingRehearsalId, setEditingRehearsalId] = useState<string | null>(null);
   const [rehearsalNameInput, setRehearsalNameInput] = useState('Saturday Full Band Rehearsal');
   const [rehearsalDateInput, setRehearsalDateInput] = useState('');
-  const [rehearsalStartTimeInput, setRehearsalStartTimeInput] = useState('18:00');
-  const [rehearsalEndTimeInput, setRehearsalEndTimeInput] = useState('19:30');
+  const [rehearsalStartTimeInput, setRehearsalStartTimeInput] = useState('06:00 PM');
+  const [rehearsalEndTimeInput, setRehearsalEndTimeInput] = useState('07:30 PM');
   const [rehearsalLocationInput, setRehearsalLocationInput] = useState('Church Sanctuary');
   const [rehearsalTeamIds, setRehearsalTeamIds] = useState<string[]>(['team_worship', 'team_music']);
   const [rehearsalParticipantIds, setRehearsalParticipantIds] = useState<string[]>([]);
@@ -320,8 +321,8 @@ export default function AdminServicePlanner({ navigation }: any) {
     nextSunday.setDate(nextSunday.getDate() + ((7 - nextSunday.getDay()) % 7 || 7));
     return nextSunday.toISOString().split('T')[0];
   });
-  const [createStartTime, setCreateStartTime] = useState('10:00');
-  const [createEndTime, setCreateEndTime] = useState('12:00');
+  const [createStartTime, setCreateStartTime] = useState('10:00 AM');
+  const [createEndTime, setCreateEndTime] = useState('12:00 PM');
   const [createLocation, setCreateLocation] = useState('');
   const [createPreacher, setCreatePreacher] = useState('');
   const [createTheme, setCreateTheme] = useState('');
@@ -922,8 +923,8 @@ export default function AdminServicePlanner({ navigation }: any) {
     const m = String(nextSunday.getMonth() + 1).padStart(2, '0');
     const d = String(nextSunday.getDate()).padStart(2, '0');
     setCreateDate(`${y}-${m}-${d}`);
-    setCreateStartTime('10:00');
-    setCreateEndTime('12:00');
+    setCreateStartTime('10:00 AM');
+    setCreateEndTime('12:00 PM');
     setCreateLocation('');
     setCreatePreacher('');
     setCreateTheme('');
@@ -970,8 +971,8 @@ export default function AdminServicePlanner({ navigation }: any) {
     setCreateTitle(plan.serviceTitle || '');
     setCreateType(plan.serviceType || 'sunday_worship');
     setCreateDate(plan.date || '');
-    setCreateStartTime(plan.startTime || '10:00');
-    setCreateEndTime(plan.endTime || '12:00');
+    setCreateStartTime(formatTimeTo12Hour(plan.startTime) || '10:00 AM');
+    setCreateEndTime(formatTimeTo12Hour(plan.endTime) || '12:00 PM');
     setCreateLocation(plan.location || '');
     setCreatePreacher(plan.preacher || '');
     setCreateTheme(plan.theme || '');
@@ -1462,7 +1463,7 @@ export default function AdminServicePlanner({ navigation }: any) {
     setEditTitle(selectedPlan.serviceTitle);
     setEditType(selectedPlan.serviceType);
     setEditDate(selectedPlan.date);
-    setEditStartTime(selectedPlan.startTime);
+    setEditStartTime(formatTimeTo12Hour(selectedPlan.startTime) || '10:00 AM');
     setEditLocation(selectedPlan.location);
     setEditPreacher(selectedPlan.preacher);
     setEditTheme(selectedPlan.theme || '');
@@ -2238,8 +2239,8 @@ export default function AdminServicePlanner({ navigation }: any) {
     svcDate.setDate(svcDate.getDate() - 1);
     const prevDate = svcDate.toISOString().split('T')[0];
     setRehearsalDateInput(prevDate || selectedPlan.date);
-    setRehearsalStartTimeInput('18:00');
-    setRehearsalEndTimeInput('19:30');
+    setRehearsalStartTimeInput('06:00 PM');
+    setRehearsalEndTimeInput('07:30 PM');
     setRehearsalLocationInput('Church Sanctuary');
     setRehearsalTeamIds(['team_worship', 'team_music']);
     setRehearsalParticipantIds([]);
@@ -2252,8 +2253,8 @@ export default function AdminServicePlanner({ navigation }: any) {
     setEditingRehearsalId(rehearsal.id);
     setRehearsalNameInput(rehearsal.rehearsalName);
     setRehearsalDateInput(rehearsal.date);
-    setRehearsalStartTimeInput(rehearsal.startTime);
-    setRehearsalEndTimeInput(rehearsal.endTime);
+    setRehearsalStartTimeInput(formatTimeTo12Hour(rehearsal.startTime) || '06:00 PM');
+    setRehearsalEndTimeInput(formatTimeTo12Hour(rehearsal.endTime) || '07:30 PM');
     setRehearsalLocationInput(rehearsal.location);
     setRehearsalTeamIds(rehearsal.assignedTeamIds || []);
     setRehearsalParticipantIds(rehearsal.participantMemberIds || []);
@@ -2500,7 +2501,7 @@ export default function AdminServicePlanner({ navigation }: any) {
             <Text style={[styles.headerSubtitle, { color: secondaryText }]} numberOfLines={1}>
               {activePlannerTab === 'setlist' ? `${selectedPlan?.setlist?.length || 0} songs · ~${totalSetlistMinutes}m praise` :
                 activePlannerTab === 'queue' ? `${assignmentQueues.filter(q => q.status === 'confirmed').length} confirmed · ${assignmentQueues.filter(q => q.status === 'pending').length} pending` :
-                selectedPlan ? `📅 ${selectedPlan.date} · ${selectedPlan.startTime} - ${selectedPlan.endTime}` : 'Plan & coordinate church worship'}
+                selectedPlan ? `📅 ${formatDateMonthYear(selectedPlan.date)} · ${formatDisplayTime(selectedPlan.startTime)} - ${formatDisplayTime(selectedPlan.endTime)}` : 'Plan & coordinate church worship'}
             </Text>
           </View>
 
@@ -3082,7 +3083,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                           <View style={styles.timeBadge}>
                             <Clock size={11} color={secondaryText} />
                             <Text style={styles.timeBadgeTxt}>
-                              {item.startTime} - {item.endTime} ({item.durationMinutes}m)
+                              {formatDisplayTime(item.startTime)} - {formatDisplayTime(item.endTime)} ({item.durationMinutes}m)
                             </Text>
                           </View>
                         </View>
@@ -3135,7 +3136,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.selectedBannerTag}>WORSHIP SETLIST</Text>
                     <Text style={[styles.selectedBannerTitle, { color: primaryText }]}>
-                      {selectedPlan.serviceTitle} ({selectedPlan.date})
+                      {selectedPlan.serviceTitle} ({formatDateMonthYear(selectedPlan.date)})
                     </Text>
                     <Text style={[styles.selectedBannerMeta, { color: secondaryText }]}>
                       🎵 {selectedPlan.setlist?.length || 0} Songs Selected · Total Worship Time: ~{totalSetlistMinutes} mins
@@ -4877,7 +4878,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                       {formatDisplayDate(createDate)}
                     </Text>
                     <Text style={[styles.pickerSubText, { color: secondaryText }]}>
-                      {createDate || 'Tap to select service date'}
+                      {createDate ? `${formatDateMonthYear(createDate)} (Date Month Year)` : 'Tap to select service date'}
                     </Text>
                   </View>
                   <ChevronDown size={16} color={secondaryText} />
@@ -4899,7 +4900,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                           {formatDisplayTime(createStartTime)}
                         </Text>
                         <Text style={[styles.pickerSubText, { color: secondaryText }]} numberOfLines={1}>
-                          {createStartTime ? `${createStartTime} (24h)` : 'Select start time'}
+                          {createStartTime ? `${formatDisplayTime(createStartTime)} (12-hour format)` : 'Select start time'}
                         </Text>
                       </View>
                     </TouchableOpacity>
@@ -4920,7 +4921,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                           {formatDisplayTime(createEndTime)}
                         </Text>
                         <Text style={[styles.pickerSubText, { color: secondaryText }]} numberOfLines={1}>
-                          {createEndTime ? `${createEndTime} (24h)` : 'Select end time'}
+                          {createEndTime ? `${formatDisplayTime(createEndTime)} (12-hour format)` : 'Select end time'}
                         </Text>
                       </View>
                     </TouchableOpacity>
@@ -5639,7 +5640,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                         {formatDisplayDate(editDate)}
                       </Text>
                       <Text style={[styles.pickerSubText, { color: secondaryText }]} numberOfLines={1}>
-                        {editDate || 'Select date'}
+                        {editDate ? `${formatDateMonthYear(editDate)} (Date Month Year)` : 'Select date'}
                       </Text>
                     </View>
                   </TouchableOpacity>
@@ -5660,7 +5661,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                         {formatDisplayTime(editStartTime)}
                       </Text>
                       <Text style={[styles.pickerSubText, { color: secondaryText }]} numberOfLines={1}>
-                        {editStartTime ? `${editStartTime} (24h)` : 'Select start time'}
+                        {editStartTime ? `${formatDisplayTime(editStartTime)} (12-hour format)` : 'Select start time'}
                       </Text>
                     </View>
                   </TouchableOpacity>
@@ -6421,7 +6422,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                 </Text>
                 {selectedPlan && (
                   <Text style={[styles.modalSubtitle, { color: secondaryText }]}>
-                    Service: {selectedPlan.serviceTitle} ({selectedPlan.date})
+                    Service: {selectedPlan.serviceTitle} ({formatDateMonthYear(selectedPlan.date)})
                   </Text>
                 )}
               </View>

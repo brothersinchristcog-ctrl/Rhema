@@ -6,6 +6,64 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 
 const RHEMA_ROOT_COLLECTION = 'Rhema Church';
 
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
+
+function formatDateMonthYear(dateStr: any): string {
+  if (!dateStr) return '';
+  try {
+    const clean = String(dateStr).trim();
+    if (/^\d{1,2}\s+[A-Za-z]+\s+\d{4}$/.test(clean)) return clean;
+    const datePart = clean.split('T')[0] ?? '';
+    const parts = datePart.split(/[-/]/);
+    if (parts.length === 3) {
+      let y = 0, m = -1, d = 0;
+      const p0 = parts[0] ?? '';
+      const p1 = parts[1] ?? '';
+      const p2 = parts[2] ?? '';
+      if (p0.length === 4) {
+        y = parseInt(p0, 10);
+        m = parseInt(p1, 10) - 1;
+        d = parseInt(p2, 10);
+      } else if (p2.length === 4) {
+        d = parseInt(p0, 10);
+        m = parseInt(p1, 10) - 1;
+        y = parseInt(p2, 10);
+      }
+      if (y > 0 && d > 0 && m >= 0 && m < 12) {
+        return `${String(d).padStart(2, '0')} ${MONTH_NAMES[m]} ${y}`;
+      }
+    }
+  } catch {}
+  return String(dateStr);
+}
+
+function formatTimeTo12Hour(timeStr: any): string {
+  if (!timeStr) return '';
+  try {
+    const clean = String(timeStr).trim();
+    if (/^(1[0-2]|0?[1-9]):[0-5][0-9]\s*(AM|PM)$/i.test(clean)) {
+      return clean.toUpperCase();
+    }
+    const isPM = /pm/i.test(clean);
+    const isAM = /am/i.test(clean);
+    const parts = clean.replace(/[^\d:]/g, '').split(':').map(Number);
+    if (parts.length >= 2) {
+      let h = parts[0] || 0;
+      const m = parts[1] || 0;
+      let period = 'AM';
+      if (isPM) period = 'PM';
+      else if (isAM) period = 'AM';
+      else period = h >= 12 ? 'PM' : 'AM';
+      const displayH = h % 12 === 0 ? 12 : h % 12;
+      return `${String(displayH).padStart(2, '0')}:${String(m).padStart(2, '0')} ${period}`;
+    }
+  } catch {}
+  return String(timeStr);
+}
+
 /**
  * 🔔 1. ON SERVICE ASSIGNMENT QUEUE DISPATCHED
  * Fired when an assignment queue is created or when a new candidate becomes active.
@@ -63,7 +121,7 @@ export const onServiceAssignmentQueueDispatched = onDocumentCreated(
     const roleTitle = queueData.roleTitle || 'Ministry Responsibility';
 
     const title = `New Service Assignment: ${roleTitle}`;
-    const body = `You are requested to serve as ${roleTitle} for "${serviceTitle}" on ${serviceDate} at ${serviceTime}.`;
+    const body = `You are requested to serve as ${roleTitle} for "${serviceTitle}" on ${formatDateMonthYear(serviceDate)} at ${formatTimeTo12Hour(serviceTime)}.`;
 
     try {
       await getMessaging().send({
@@ -76,8 +134,8 @@ export const onServiceAssignmentQueueDispatched = onDocumentCreated(
           roleId,
           roleTitle,
           serviceTitle,
-          serviceDate,
-          serviceTime,
+          serviceDate: formatDateMonthYear(serviceDate),
+          serviceTime: formatTimeTo12Hour(serviceTime),
           location,
           candidateId: activeCandidate.candidateId,
           click_action: 'OPEN_SERVICE_ASSIGNMENT'
@@ -86,7 +144,7 @@ export const onServiceAssignmentQueueDispatched = onDocumentCreated(
           priority: 'high',
           notification: {
             channelId: 'church_alerts',
-            color: '#1E3A8A'
+            color: '#2E6B4F'
           }
         }
       });
@@ -179,7 +237,7 @@ export const onServiceAssignmentResponded = onDocumentUpdated(
 
           const serviceData = serviceDoc.data() || {};
           const title = `Service Assignment Request: ${afterData.roleTitle}`;
-          const body = `You are next in queue to serve as ${afterData.roleTitle} for "${serviceData.serviceTitle || 'Worship Service'}" on ${serviceData.date}. Tap to accept or decline.`;
+          const body = `You are next in queue to serve as ${afterData.roleTitle} for "${serviceData.serviceTitle || 'Worship Service'}" on ${formatDateMonthYear(serviceData.date)} at ${formatTimeTo12Hour(serviceData.startTime)}. Tap to accept or decline.`;
 
           await getMessaging().send({
             token: fcmToken.trim(),
@@ -191,12 +249,13 @@ export const onServiceAssignmentResponded = onDocumentUpdated(
               roleId,
               roleTitle: afterData.roleTitle || '',
               serviceTitle: serviceData.serviceTitle || '',
-              serviceDate: serviceData.date || '',
+              serviceDate: formatDateMonthYear(serviceData.date),
+              serviceTime: formatTimeTo12Hour(serviceData.startTime),
               candidateId: nextCandidate.candidateId
             },
             android: {
               priority: 'high',
-              notification: { channelId: 'church_alerts', color: '#1E3A8A' }
+              notification: { channelId: 'church_alerts', color: '#2E6B4F' }
             }
           });
 
@@ -320,17 +379,17 @@ export const sendServiceRosterRemindersCron = onSchedule(
               token: fcmToken.trim(),
               notification: {
                 title: `Reminder: Serving Tomorrow as ${roleTitle}`,
-                body: `Service: ${svcTitle} starts tomorrow at ${svcTime}. Please arrive 30 mins prior for prayer & sound check.`
+                body: `Service: ${svcTitle} starts tomorrow at ${formatTimeTo12Hour(svcTime)}. Please arrive 30 mins prior for prayer & sound check.`
               },
               data: {
                 type: 'service_reminder',
                 serviceId: sDoc.id,
                 roleTitle: roleTitle,
-                serviceDate: tomorrowStr
+                serviceDate: formatDateMonthYear(tomorrowStr)
               },
               android: {
                 priority: 'high',
-                notification: { channelId: 'church_alerts', color: '#1E3A8A' }
+                notification: { channelId: 'church_alerts', color: '#2E6B4F' }
               }
             });
           }
@@ -403,7 +462,7 @@ export const onServiceRehearsalCreated = onDocumentCreated(
     const serviceTitle = serviceDoc.data()?.serviceTitle || 'Upcoming Service';
 
     const title = `Rehearsal Scheduled: ${rehearsalName}`;
-    const body = `Practice for "${serviceTitle}" on ${date} at ${startTime} (${location}). Tap to review songs & notes.`;
+    const body = `Practice for "${serviceTitle}" on ${formatDateMonthYear(date)} at ${formatTimeTo12Hour(startTime)} (${location}). Tap to review songs & notes.`;
 
     for (const memberId of participantSet) {
       try {
@@ -418,13 +477,13 @@ export const onServiceRehearsalCreated = onDocumentCreated(
               churchId,
               serviceId,
               rehearsalId: event.params.rehearsalId,
-              date,
-              startTime,
+              date: formatDateMonthYear(date),
+              startTime: formatTimeTo12Hour(startTime),
               location
             },
             android: {
               priority: 'high',
-              notification: { channelId: 'church_alerts', color: '#1E3A8A' }
+              notification: { channelId: 'church_alerts', color: '#2E6B4F' }
             }
           });
         }

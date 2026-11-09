@@ -1,5 +1,6 @@
 import { firestore } from './firebaseConfig';
 import { RHEMA_ROOT_COLLECTION } from '../constants/ChurchConfig';
+import { formatDateMonthYear, formatTimeTo12Hour } from '../utils/DateUtils';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -2197,14 +2198,14 @@ class ServiceRosterService {
    * Generates clean, high-fidelity print-ready HTML for Order of Worship Run-Sheet
    */
   generateRunSheetHtml(plan: ServicePlan, churchName: string = 'Rhema Global Ministries'): string {
-    const formattedDate = plan.date || 'Worship Service';
+    const formattedDate = formatDateMonthYear(plan.date) || 'Worship Service';
     const runSheetItems = plan.runSheet || [];
     const setlistItems = plan.setlist || [];
 
     const runSheetRows = runSheetItems.map(item => `
       <tr>
         <td style="text-align: center; font-weight: bold; width: 35px;">${item.order || '-'}</td>
-        <td style="white-space: nowrap; font-weight: 600; width: 100px;">${item.startTime} - ${item.endTime}</td>
+        <td style="white-space: nowrap; font-weight: 600; width: 110px;">${formatTimeTo12Hour(item.startTime)} - ${formatTimeTo12Hour(item.endTime)}</td>
         <td>
           <div style="font-weight: 700; font-size: 13.5px; color: #0F172A;">${item.program}</div>
           ${item.instructions ? `<div style="font-size: 11px; color: #64748B; margin-top: 2px;">${item.instructions}</div>` : ''}
@@ -2361,8 +2362,8 @@ class ServiceRosterService {
 
     // Header info
     lines.push(`Service Title,${escapeCsv(plan.serviceTitle)}`);
-    lines.push(`Date,${escapeCsv(plan.date)}`);
-    lines.push(`Scheduled Time,${escapeCsv(`${plan.startTime} - ${plan.endTime}`)}`);
+    lines.push(`Date,${escapeCsv(formatDateMonthYear(plan.date))}`);
+    lines.push(`Scheduled Time,${escapeCsv(`${formatTimeTo12Hour(plan.startTime)} - ${formatTimeTo12Hour(plan.endTime)}`)}`);
     lines.push(`Location,${escapeCsv(plan.location)}`);
     lines.push(`Preacher,${escapeCsv(plan.preacher)}`);
     lines.push(`Theme,${escapeCsv(plan.theme)}`);
@@ -2605,19 +2606,38 @@ class ServiceRosterService {
 
   timeStringToMinutes(timeStr: string): number {
     if (!timeStr) return 0;
-    const [h, m] = timeStr.split(':').map(Number);
-    return (h || 0) * 60 + (m || 0);
+    const clean = String(timeStr).trim();
+    const isPM = /pm/i.test(clean);
+    const isAM = /am/i.test(clean);
+    const numbersOnly = clean.replace(/[^\d:]/g, '');
+    const parts = numbersOnly.split(':').map(Number);
+    let h = parts[0] || 0;
+    const m = parts[1] || 0;
+    if (isPM && h < 12) h += 12;
+    if (isAM && h === 12) h = 0;
+    return (h % 24) * 60 + m;
   }
 
   minutesToTimeString(minutes: number): string {
-    const h = Math.floor(minutes / 60) % 24;
-    const m = Math.floor(minutes % 60);
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    const totalMinutes = ((minutes % 1440) + 1440) % 1440;
+    const rawH = Math.floor(totalMinutes / 60);
+    const m = Math.floor(totalMinutes % 60);
+    const period = rawH >= 12 ? 'PM' : 'AM';
+    const displayH = rawH % 12 === 0 ? 12 : rawH % 12;
+    return `${String(displayH).padStart(2, '0')}:${String(m).padStart(2, '0')} ${period}`;
   }
 
   addMinutesToTime(timeStr: string, minutesToAdd: number): string {
     const total = this.timeStringToMinutes(timeStr) + minutesToAdd;
     return this.minutesToTimeString(total);
+  }
+
+  formatDateMonthYear(dateVal: any): string {
+    return formatDateMonthYear(dateVal);
+  }
+
+  formatTimeTo12Hour(timeVal: any): string {
+    return formatTimeTo12Hour(timeVal);
   }
 }
 
