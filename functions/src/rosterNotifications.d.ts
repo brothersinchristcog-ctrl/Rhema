@@ -1,9 +1,41 @@
 /**
- * 🔔 1. ON SERVICE ASSIGNMENT QUEUE DISPATCHED
- * Fired when an assignment queue is created or when a new candidate becomes active.
- * Sends an FCM push notification directly to the active candidate with Accept/Decline action payload.
+ * 🔍 HELPER: Resolves valid FCM tokens for a member or candidate across:
+ * 1. Rhema Church/{churchId}/members/{candidateId} (fcmToken, fcmTokens, and auth user pointer)
+ * 2. users/{candidateId}
+ * 3. Legacy churches/{churchId}/members/{candidateId}
+ * 4. Phone number search if provided
+ * 5. Display name search in members
  */
-export declare const onServiceAssignmentQueueDispatched: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+export declare function resolveCandidateFcmTokens(db: FirebaseFirestore.Firestore, churchId: string, candidateId: string, candidatePhone?: string, candidateName?: string): Promise<string[]>;
+/**
+ * 📲 HELPER: Sends assignment push notification & records in-app notification
+ */
+export declare function sendCandidateAssignmentPush(params: {
+    db: FirebaseFirestore.Firestore;
+    churchId: string;
+    serviceId: string;
+    roleId: string;
+    roleTitle: string;
+    candidate: {
+        candidateId: string;
+        candidateName: string;
+        candidatePhone?: string;
+    };
+    candidateIndex: number;
+    queueRef: FirebaseFirestore.DocumentReference;
+    timeoutMinutes: number;
+    isCascade?: boolean;
+}): Promise<{
+    success: boolean;
+    tokensCount: number;
+    error?: string | undefined;
+}>;
+/**
+ * 🔔 1. ON SERVICE ASSIGNMENT QUEUE DISPATCHED (Written: Create + Update)
+ * Fired whenever an assignment queue document is created or updated in Firestore.
+ * Sends targeted push notifications to the active candidate with Accept/Decline options.
+ */
+export declare const onServiceAssignmentQueueDispatched: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").DocumentSnapshot> | undefined, {
     churchId: string;
     serviceId: string;
     roleId: string;
@@ -35,6 +67,10 @@ export declare const sendServiceRosterRemindersCron: import("firebase-functions/
  * 🌐 5. HTTP TRIGGER TO TEST ROSTER TIMEOUTS
  */
 export declare const triggerCheckRosterTimeoutsHttp: import("firebase-functions/v2/https").HttpsFunction;
+/**
+ * 🌐 5B. HTTP TRIGGER TO MANUALLY DISPATCH OR RETRY ASSIGNMENT NOTIFICATION
+ */
+export declare const dispatchServiceAssignmentNotificationHttp: import("firebase-functions/v2/https").HttpsFunction;
 /**
  * 🎶 6. ON SERVICE REHEARSAL CREATED
  * Fired when a rehearsal is scheduled for a worship service.

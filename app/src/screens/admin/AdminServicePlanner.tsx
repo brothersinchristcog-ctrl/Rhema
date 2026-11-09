@@ -192,6 +192,8 @@ export default function AdminServicePlanner({ navigation }: any) {
   const [loadingSongs, setLoadingSongs] = useState(false);
   const [songLibrarySearch, setSongLibrarySearch] = useState('');
   const [showSongPickerModal, setShowSongPickerModal] = useState(false);
+  const [selectedSongIdsForBatch, setSelectedSongIdsForBatch] = useState<string[]>([]);
+  const [addingBatchSongs, setAddingBatchSongs] = useState(false);
   const [showConfigureSongModal, setShowConfigureSongModal] = useState(false);
   const [selectedSongForSetlist, setSelectedSongForSetlist] = useState<WorshipSong | null>(null);
   const [editingSetlistIndex, setEditingSetlistIndex] = useState<number | null>(null);
@@ -1168,7 +1170,7 @@ export default function AdminServicePlanner({ navigation }: any) {
   const handlePublishServiceWithCascade = (plan: ServicePlan) => {
     Alert.alert(
       'Publish Service & Dispatch Notifications 🚀',
-      `Publish "${plan.serviceTitle}" (${plan.date}) and send push notifications to assigned volunteers with a 2-hour response deadline?`,
+      `Publish "${plan.serviceTitle}" (${formatDateMonthYear(plan.date)}) and send push notifications to assigned volunteers with a 2-hour response deadline?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -1179,59 +1181,168 @@ export default function AdminServicePlanner({ navigation }: any) {
               setSavingService(true);
               await ServiceRosterService.updateServiceStatus(churchId, plan.id, 'published');
 
-              let dispatchedCount = 0;
               const timeoutMinutes = 120; // 2 hours default
+              const dispatchedDuties: string[] = [];
+              const seenRoleKeys = new Set<string>();
 
-              if (plan.assignments) {
-                for (const [roleId, memberName] of Object.entries(plan.assignments)) {
-                  if (!memberName) continue;
-                  const memberId = plan.assignmentMemberIds?.[roleId];
-                  if (!memberId) continue;
+              // Helper to resolve member ID from member name or phone
+              const resolveMemberId = (rawId?: string, rawName?: string): { id?: string; name: string; phone?: string } => {
+                const name = (rawName || '').trim();
+                if (rawId && churchMembers.some(m => m.id === rawId)) {
+                  const m = churchMembers.find(m => m.id === rawId);
+                  return { id: rawId, name: m?.name || name, phone: m?.phone };
+                }
+                if (name) {
+                  const found = churchMembers.find(m =>
+                    (m.name && m.name.toLowerCase().trim() === name.toLowerCase().trim()) ||
+                    (m.firstName && m.firstName.toLowerCase().trim() === name.toLowerCase().trim()) ||
+                    (m.phone && m.phone === name)
+                  );
+                  if (found) {
+                    return { id: found.id, name: found.name || name, phone: found.phone };
+                  }
+                }
+                return { id: rawId, name, phone: undefined };
+              };
 
-                  const roleObj = serviceRolesList.find(r => r.roleId === roleId);
-                  const roleTitle = roleObj?.roleTitle || roleId.replace('role_', '').replace('act_', '');
+              // Collect duties across RunSheet, Setlist, and Assignments
+              const allDuties: Array<{
+                roleId: string;
+                roleTitle: string;
+                activityId?: string;
+                activityName?: string;
+                memberId: string;
+                memberName: string;
+                memberPhone?: string;
+                requiredSkill?: string;
+              }> = [];
 
-                  const backupCandidates: Array<{ candidateId: string; candidateName: string; candidatePhone?: string }> = [];
-                  try {
-                    const recs = await ServiceRosterService.getEligibleCandidatesForRole(churchId, plan.date, {
-                      requiredSkill: roleObj?.suggestedSkill || roleTitle,
-                      roleTitle
+              // 1. RunSheet activities (Order of Service)
+              (plan.runSheet || []).forEach((item, idx) => {
+                if (item.responsiblePerson && item.responsiblePerson.trim()) {
+                  const resolved = resolveMemberId(item.responsibleMemberId, item.responsiblePerson);
+                  const roleId = item.id || `act_${idx}`;
+                  if (resolved.id && !seenRoleKeys.has(roleId)) {
+                    seenRoleKeys.add(roleId);
+                    allDuties.push({
+                      roleId,
+                      roleTitle: item.program || 'Service Activity',
+                      activityId: item.id,
+                      activityName: item.program,
+                      memberId: resolved.id,
+                      memberName: resolved.name,
+                      memberPhone: resolved.phone,
+                      requiredSkill: item.category
                     });
-                    for (const r of recs) {
-                      if (r.memberId !== memberId && backupCandidates.length < 2) {
-                        backupCandidates.push({
-                          candidateId: r.memberId,
-                          candidateName: r.memberName,
-                          candidatePhone: r.memberPhone
+                  }
+                }
+              });
+
+              // 2. Setlist songs (Worship leaders & band musicians)
+              (plan.setlist || []).forEach((song, idx) => {
+                if (song.ledBy && song.ledBy.trim()) {
+                  const resolved = resolveMemberId(song.ledByMemberId, song.ledBy);
+                  const roleId = `worship_lead_${song.id || idx}`;
+                  if (resolved.id && !seenRoleKeys.has(roleId)) {
+                    seenRoleKeys.add(roleId);
+                    allDuties.push({
+                      roleId,
+                      roleTitle: `Worship Lead (${song.title})`,
+                      memberId: resolved.id,
+                      memberName: resolved.name,
+                      memberPhone: resolved.phone,
+                      requiredSkill: 'Worship Leader'
+                    });
+                  }
+                }
+                if (song.musicianAssignments) {
+                  Object.entries(song.musicianAssignments).forEach(([instrument, assignment]) => {
+                    if (assignment?.memberName && assignment.memberName.trim()) {
+                      const resolved = resolveMemberId(assignment.memberId, assignment.memberName);
+                      const roleId = `band_${song.id || idx}_${instrument}`;
+                      if (resolved.id && !seenRoleKeys.has(roleId)) {
+                        seenRoleKeys.add(roleId);
+                        allDuties.push({
+                          roleId,
+                          roleTitle: `${instrument.charAt(0).toUpperCase() + instrument.slice(1)} (${song.title})`,
+                          memberId: resolved.id,
+                          memberName: resolved.name,
+                          memberPhone: resolved.phone,
+                          requiredSkill: instrument
                         });
                       }
                     }
-                  } catch (e) {
-                    console.warn('Backup fetch error for role:', roleTitle, e);
-                  }
-
-                  const ladder = [
-                    { candidateId: memberId, candidateName: memberName },
-                    ...backupCandidates
-                  ];
-
-                  await ServiceRosterService.dispatchAssignmentQueue(churchId, plan.id, {
-                    roleId,
-                    roleTitle,
-                    candidates: ladder,
-                    timeoutMinutes
                   });
-                  dispatchedCount++;
                 }
+              });
+
+              // 3. Plan general assignments
+              if (plan.assignments) {
+                for (const [roleId, memberName] of Object.entries(plan.assignments)) {
+                  if (!memberName || !memberName.trim()) continue;
+                  const resolved = resolveMemberId(plan.assignmentMemberIds?.[roleId], memberName);
+                  if (resolved.id && !seenRoleKeys.has(roleId)) {
+                    seenRoleKeys.add(roleId);
+                    const roleObj = serviceRolesList.find(r => r.roleId === roleId);
+                    const roleTitle = roleObj?.roleTitle || roleId.replace('role_', '').replace('act_', '');
+                    allDuties.push({
+                      roleId,
+                      roleTitle,
+                      memberId: resolved.id,
+                      memberName: resolved.name,
+                      memberPhone: resolved.phone,
+                      requiredSkill: roleObj?.suggestedSkill || roleTitle
+                    });
+                  }
+                }
+              }
+
+              // Dispatch queue for each duty
+              for (const duty of allDuties) {
+                const backupCandidates: Array<{ candidateId: string; candidateName: string; candidatePhone?: string }> = [];
+                try {
+                  const recs = await ServiceRosterService.getEligibleCandidatesForRole(churchId, plan.date, {
+                    requiredSkill: duty.requiredSkill || duty.roleTitle,
+                    roleTitle: duty.roleTitle
+                  });
+                  for (const r of recs) {
+                    if (r.memberId !== duty.memberId && backupCandidates.length < 2) {
+                      backupCandidates.push({
+                        candidateId: r.memberId,
+                        candidateName: r.memberName,
+                        candidatePhone: r.memberPhone
+                      });
+                    }
+                  }
+                } catch (e) {
+                  console.warn('Backup fetch error for role:', duty.roleTitle, e);
+                }
+
+                const ladder = [
+                  { candidateId: duty.memberId, candidateName: duty.memberName, candidatePhone: duty.memberPhone },
+                  ...backupCandidates
+                ];
+
+                await ServiceRosterService.dispatchAssignmentQueue(churchId, plan.id, {
+                  roleId: duty.roleId,
+                  roleTitle: duty.roleTitle,
+                  activityId: duty.activityId,
+                  activityName: duty.activityName,
+                  candidates: ladder,
+                  timeoutMinutes
+                });
+
+                dispatchedDuties.push(`${duty.memberName} (${duty.roleTitle})`);
               }
 
               const updatedPlan = { ...plan, status: 'published' as ServiceStatus };
               setSelectedPlan(updatedPlan);
               setPlans(plans.map(p => p.id === plan.id ? updatedPlan : p));
 
+              const count = dispatchedDuties.length;
               Alert.alert(
                 'Service Published! 🚀',
-                `"${plan.serviceTitle}" is now published!\n\n${dispatchedCount > 0 ? `${dispatchedCount} push notification(s) dispatched to assigned volunteers with a 2-hour response window.\n\n` : ''}Rhema's automated cloud engine will monitor responses and automatically notify verified backups if any volunteer declines or times out.`
+                `"${plan.serviceTitle}" is now live!\n\n${count > 0 ? `${count} volunteer push notification(s) dispatched:\n${dispatchedDuties.slice(0, 6).map(d => `• ${d}`).join('\n')}${dispatchedDuties.length > 6 ? `\n...and ${dispatchedDuties.length - 6} more` : ''}\n\nResponse deadline: 2 hours.` : 'No volunteers were assigned to this service yet.'}\n\nRhema's automated cloud engine will track responses and automatically notify verified backups if any volunteer declines or times out.`
               );
             } catch (err: any) {
               Alert.alert('Error', err.message || 'Failed to publish service.');
@@ -1642,13 +1753,27 @@ export default function AdminServicePlanner({ navigation }: any) {
 
   const openSongPicker = () => {
     setSongLibrarySearch('');
+    setSelectedSongIdsForBatch([]);
     setShowSongPickerModal(true);
   };
 
-  const handleSelectSongFromLibrary = async (song: WorshipSong) => {
+  const toggleSongSelectionForBatch = (songId: string) => {
+    setSelectedSongIdsForBatch(prev =>
+      prev.includes(songId)
+        ? prev.filter(id => id !== songId)
+        : [...prev, songId]
+    );
+  };
+
+  const handleBatchAddSongsToSetlist = async () => {
+    if (selectedSongIdsForBatch.length === 0) return;
     try {
-      const newSetlistItem: SetlistItem = {
-        id: `set_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      setAddingBatchSongs(true);
+      const chosenSongs = churchSongs.filter(s => selectedSongIdsForBatch.includes(s.id));
+      if (chosenSongs.length === 0) return;
+
+      const newItems: SetlistItem[] = chosenSongs.map((song, idx) => ({
+        id: `set_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`,
         songId: song.id,
         title: song.title || song.titleEn || song.titleTe || 'Worship Song',
         titleTe: song.titleTe || '',
@@ -1661,32 +1786,39 @@ export default function AdminServicePlanner({ navigation }: any) {
         ledBy: 'Worship Leader',
         musicianAssignments: {},
         rehearsalNotes: ''
-      };
+      }));
 
       if (showCreateModal) {
-        if (createSetlist.some(s => s.songId === song.id)) {
-          Alert.alert('Notice', 'Song is already added to the setlist.');
-          return;
-        }
-        setCreateSetlist(prev => [...prev, newSetlistItem]);
+        setCreateSetlist(prev => [...prev, ...newItems]);
         setShowSongPickerModal(false);
-        Alert.alert('Song Added 🎵', `Added "${newSetlistItem.title}" to setlist.`);
+        setSelectedSongIdsForBatch([]);
+        Alert.alert('Songs Added 🎵', `Added ${newItems.length} songs to setlist.`);
         return;
       }
 
       if (!selectedPlan) return;
-      setShowSongPickerModal(false);
 
-      await ServiceRosterService.addSongToSetlist(churchId, selectedPlan.id, newSetlistItem);
+      await ServiceRosterService.addMultipleSongsToSetlist(churchId, selectedPlan.id, newItems);
 
       const freshPlan = await ServiceRosterService.getServicePlanById(churchId, selectedPlan.id);
       if (freshPlan) {
         setSelectedPlan(freshPlan);
         setPlans(plans.map(p => p.id === freshPlan.id ? freshPlan : p));
       }
+
+      setShowSongPickerModal(false);
+      setSelectedSongIdsForBatch([]);
+      Alert.alert('Setlist Updated 🎵', `Added ${newItems.length} song(s) to "${selectedPlan.serviceTitle}" setlist.`);
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to add song to setlist.');
+      console.error('Failed to batch add songs:', err);
+      Alert.alert('Error', err?.message || 'Failed to add songs to setlist.');
+    } finally {
+      setAddingBatchSongs(false);
     }
+  };
+
+  const handleSelectSongFromLibrary = async (song: WorshipSong) => {
+    toggleSongSelectionForBatch(song.id);
   };
 
   const openEditSetlistItem = (item: SetlistItem, index: number) => {
@@ -2469,12 +2601,19 @@ export default function AdminServicePlanner({ navigation }: any) {
             <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.2} />
           </TouchableOpacity>
 
-          <View style={{ flex: 1, paddingHorizontal: 10 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <View style={styles.headerBadge}>
-                <Sparkles size={11} color="#D97706" />
-                <Text style={styles.headerBadgeTxt}>WORSHIP OPERATIONS</Text>
-              </View>
+          <View style={{ flex: 1, paddingHorizontal: 10, justifyContent: 'center' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'nowrap' }}>
+              <Text style={[styles.headerTitle, { color: primaryText, flexShrink: 1 }]} numberOfLines={1}>
+                {activePlannerTab === 'setlist' ? 'Worship Setlist' :
+                  activePlannerTab === 'queue' ? 'Assignment Queue' :
+                    activePlannerTab === 'rehearsals' ? 'Service Rehearsals' :
+                      activePlannerTab === 'attendance' ? 'Volunteer Attendance' :
+                        activePlannerTab === 'analytics' ? 'Roster Analytics' :
+                          activePlannerTab === 'teams' ? 'Ministry Teams' :
+                            activePlannerTab === 'skills' ? 'Verified Skills' :
+                              activePlannerTab === 'templates' ? 'Service Templates' :
+                                selectedPlan ? selectedPlan.serviceTitle : 'Service Roster'}
+              </Text>
               {selectedPlan && (activePlannerTab === 'builder' || activePlannerTab === 'setlist') && (
                 <View style={[
                   styles.statusPill,
@@ -2483,21 +2622,18 @@ export default function AdminServicePlanner({ navigation }: any) {
                       selectedPlan.status === 'completed' ? styles.statusPillCompleted :
                         styles.statusPillDraft
                 ]}>
-                  <Text style={styles.statusPillTxt}>{selectedPlan.status.toUpperCase()}</Text>
+                  <Text style={[
+                    styles.statusPillTxt,
+                    selectedPlan.status === 'published' ? { color: '#047857' } :
+                      selectedPlan.status === 'live' ? { color: '#DC2626' } :
+                        selectedPlan.status === 'completed' ? { color: '#475569' } :
+                          { color: '#64748B' }
+                  ]}>
+                    {selectedPlan.status.toUpperCase()}
+                  </Text>
                 </View>
               )}
             </View>
-            <Text style={[styles.headerTitle, { color: primaryText }]} numberOfLines={1}>
-              {activePlannerTab === 'setlist' ? 'Worship Setlist' :
-                activePlannerTab === 'queue' ? 'Assignment Queue' :
-                  activePlannerTab === 'rehearsals' ? 'Service Rehearsals' :
-                    activePlannerTab === 'attendance' ? 'Volunteer Attendance' :
-                      activePlannerTab === 'analytics' ? 'Roster Analytics' :
-                        activePlannerTab === 'teams' ? 'Ministry Teams' :
-                          activePlannerTab === 'skills' ? 'Verified Skills' :
-                            activePlannerTab === 'templates' ? 'Service Templates' :
-                              selectedPlan ? selectedPlan.serviceTitle : 'Service Roster'}
-            </Text>
             <Text style={[styles.headerSubtitle, { color: secondaryText }]} numberOfLines={1}>
               {activePlannerTab === 'setlist' ? `${selectedPlan?.setlist?.length || 0} songs · ~${totalSetlistMinutes}m praise` :
                 activePlannerTab === 'queue' ? `${assignmentQueues.filter(q => q.status === 'confirmed').length} confirmed · ${assignmentQueues.filter(q => q.status === 'pending').length} pending` :
@@ -2512,6 +2648,7 @@ export default function AdminServicePlanner({ navigation }: any) {
               {
                 backgroundColor: primaryBtnBg,
                 borderColor: primaryBtnBg,
+                flexShrink: 0
               }
             ]}
             onPress={
@@ -2789,7 +2926,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                             {plan.serviceTitle}
                           </Text>
                           <Text style={[styles.planMeta, { color: secondaryText }]} numberOfLines={1}>
-                            ⏰ {plan.startTime} - {plan.endTime} ({plan.totalDurationMinutes || 120}m) · 📍 {plan.location}
+                            ⏰ {formatDisplayTime(plan.startTime)} - {formatDisplayTime(plan.endTime)} ({plan.totalDurationMinutes || 120}m) · 📍 {plan.location}
                           </Text>
                         </View>
                         <ChevronRight size={18} color="#94A3B8" />
@@ -2858,7 +2995,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                       {selectedPlan.serviceTitle}
                     </Text>
                     <Text style={[styles.selectedBannerMeta, { color: secondaryText }]}>
-                      📅 {selectedPlan.date} · ⏰ {selectedPlan.startTime} - {selectedPlan.endTime} · 📍 {selectedPlan.location}
+                      📅 {formatDateMonthYear(selectedPlan.date)} · ⏰ {formatDisplayTime(selectedPlan.startTime)} - {formatDisplayTime(selectedPlan.endTime)} · 📍 {selectedPlan.location}
                     </Text>
                     {selectedPlan.theme ? (
                       <Text style={[styles.selectedBannerTheme, { color: '#D97706' }]}>
@@ -2869,7 +3006,7 @@ export default function AdminServicePlanner({ navigation }: any) {
 
                   <View style={{ flexDirection: 'row', gap: 6 }}>
                     <TouchableOpacity
-                      style={[styles.bannerActionBtn, { backgroundColor: '#7C3AED', borderColor: '#7C3AED' }]}
+                      style={[styles.bannerActionBtn, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: cardBorder }]}
                       onPress={() => {
                         navigation.navigate('LiveStageHUD', {
                           serviceId: selectedPlan.id,
@@ -2878,7 +3015,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                         });
                       }}
                     >
-                      <Radio size={14} color="#FFFFFF" />
+                      <Radio size={14} color={secondaryBtnText} />
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.bannerActionBtn, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: cardBorder }]}
@@ -2901,91 +3038,58 @@ export default function AdminServicePlanner({ navigation }: any) {
                   </View>
                 </View>
 
-                {/* Status Switcher Bar */}
-                <View style={[styles.statusSwitcherRow, { flexWrap: 'wrap', gap: 8 }]}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                {/* Status Indicator & Main Action (Publish / Print) */}
+                <View style={[styles.bannerBottomRow, { borderTopColor: borderColor, marginTop: 12, paddingTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <Text style={[styles.statusSwitcherLabel, { color: secondaryText }]}>Status:</Text>
-                    <View style={styles.statusButtonsGroup}>
-                      {(['draft', 'published', 'completed', 'cancelled'] as ServiceStatus[]).map(st => (
-                        <TouchableOpacity
-                          key={st}
-                          style={[
-                            styles.statusToggleBtn,
-                            selectedPlan.status === st && styles.statusToggleBtnActive
-                          ]}
-                          onPress={() => handleUpdateStatus(st)}
-                        >
-                          <Text style={[
-                            styles.statusToggleBtnTxt,
-                            selectedPlan.status === st && styles.statusToggleBtnTxtActive
-                          ]}>
-                            {st.toUpperCase()}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
+                    <View style={[
+                      styles.statusPill,
+                      selectedPlan.status === 'published' ? styles.statusPillPublished :
+                        selectedPlan.status === 'live' ? styles.statusPillLive :
+                          selectedPlan.status === 'completed' ? styles.statusPillCompleted :
+                            styles.statusPillDraft
+                    ]}>
+                      <Text style={[
+                        styles.statusPillTxt,
+                        selectedPlan.status === 'published' ? { color: '#047857' } :
+                          selectedPlan.status === 'live' ? { color: '#DC2626' } :
+                            selectedPlan.status === 'completed' ? { color: '#475569' } :
+                              { color: '#64748B' }
+                      ]}>
+                        {selectedPlan.status.toUpperCase()}
+                      </Text>
                     </View>
                   </View>
 
-                  {selectedPlan.status === 'draft' && (
-                    <TouchableOpacity
-                      style={[styles.publishServiceBtn, { paddingVertical: 6, paddingHorizontal: 12 }]}
-                      onPress={() => handlePublishServiceWithCascade(selectedPlan)}
-                      activeOpacity={0.85}
-                    >
-                      <Send size={12} color="#FFFFFF" />
-                      <Text style={[styles.publishServiceBtnTxt, { fontSize: 11 }]}>
-                        🚀 Publish & Dispatch Notifications
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-
-                {/* Run-sheet PDF & CSV Export Toolbar (Phase 9) */}
-                <View style={styles.exportToolbar}>
-                  <TouchableOpacity
-                    style={[styles.exportBtn, { backgroundColor: primaryBtnBg }]}
-                    onPress={handleExportPdf}
-                    disabled={exportingPdf}
-                  >
-                    {exportingPdf ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    {selectedPlan.status === 'draft' ? (
+                      <TouchableOpacity
+                        style={[styles.publishServiceBtn, { paddingVertical: 8, paddingHorizontal: 14 }]}
+                        onPress={() => handlePublishServiceWithCascade(selectedPlan)}
+                        activeOpacity={0.85}
+                      >
+                        <Send size={13} color="#FFFFFF" />
+                        <Text style={styles.publishServiceBtnTxt}>
+                          🚀 Publish Service & Notify Volunteers
+                        </Text>
+                      </TouchableOpacity>
                     ) : (
-                      <>
-                        <FileText size={13} color="#FFFFFF" />
-                        <Text style={styles.exportBtnTxt}>Export PDF</Text>
-                      </>
+                      <TouchableOpacity
+                        style={[styles.printSheetBtn, { backgroundColor: isDark ? '#27272A' : '#FFFFFF', borderColor: cardBorder }]}
+                        onPress={handlePrintDirectly}
+                        disabled={printingSheet}
+                      >
+                        {printingSheet ? (
+                          <ActivityIndicator size="small" color={primaryText} />
+                        ) : (
+                          <>
+                            <Printer size={13} color={secondaryBtnText} />
+                            <Text style={[styles.printSheetBtnTxt, { color: secondaryBtnText }]}>Print Sheet</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
                     )}
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.exportBtn, { backgroundColor: '#059669' }]}
-                    onPress={handleExportCsv}
-                    disabled={exportingCsv}
-                  >
-                    {exportingCsv ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <>
-                        <Download size={13} color="#FFFFFF" />
-                        <Text style={styles.exportBtnTxt}>Export CSV</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.exportBtn, { backgroundColor: '#475569' }]}
-                    onPress={handlePrintDirectly}
-                    disabled={printingSheet}
-                  >
-                    {printingSheet ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <>
-                        <Printer size={13} color="#FFFFFF" />
-                        <Text style={styles.exportBtnTxt}>Print Sheet</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
+                  </View>
                 </View>
               </View>
 
@@ -3296,7 +3400,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                       {selectedPlan.serviceTitle}
                     </Text>
                     <Text style={[styles.selectedBannerMeta, { color: secondaryText }]}>
-                      📅 {selectedPlan.date} · ⏰ {selectedPlan.startTime} - {selectedPlan.endTime} · 📍 {selectedPlan.location}
+                      📅 {formatDateMonthYear(selectedPlan.date)} · ⏰ {formatDisplayTime(selectedPlan.startTime)} - {formatDisplayTime(selectedPlan.endTime)} · 📍 {selectedPlan.location}
                     </Text>
                   </View>
                   <View style={{ flexDirection: 'row', gap: 6 }}>
@@ -3754,7 +3858,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                       {selectedPlan.serviceTitle}
                     </Text>
                     <Text style={[styles.selectedBannerMeta, { color: secondaryText }]}>
-                      📅 {selectedPlan.date} · ⏰ {selectedPlan.startTime} - {selectedPlan.endTime} · 📍 {selectedPlan.location}
+                      📅 {formatDateMonthYear(selectedPlan.date)} · ⏰ {formatDisplayTime(selectedPlan.startTime)} - {formatDisplayTime(selectedPlan.endTime)} · 📍 {selectedPlan.location}
                     </Text>
                   </View>
                   <View style={styles.turnoutCircle}>
@@ -3986,9 +4090,9 @@ export default function AdminServicePlanner({ navigation }: any) {
                     <View style={[styles.kpiCard, { backgroundColor: cardSurface, borderColor }]}>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                         <Text style={[styles.kpiLabel, { color: secondaryText }]}>Active Volunteers</Text>
-                        <Users size={16} color="#7C3AED" />
+                        <Users size={16} color="#2E6B4F" />
                       </View>
-                      <Text style={[styles.kpiValue, { color: '#7C3AED' }]}>
+                      <Text style={[styles.kpiValue, { color: '#2E6B4F' }]}>
                         {analyticsData.volunteerServingCounts.length}
                       </Text>
                       <Text style={[styles.kpiSub, { color: secondaryText }]}>
@@ -4424,7 +4528,7 @@ export default function AdminServicePlanner({ navigation }: any) {
               <View style={{ flex: 1 }}>
                 <Text style={[styles.modalTitle, { color: primaryText }]}>Select Songs from Library</Text>
                 <Text style={[styles.modalSubtitle, { color: secondaryText }]}>
-                  Choose from {churchSongs.length} Telugu & English praise songs.
+                  {selectedSongIdsForBatch.length > 0 ? `${selectedSongIdsForBatch.length} song(s) selected · ` : ''}Choose from {churchSongs.length} Telugu & English praise songs.
                 </Text>
               </View>
               <TouchableOpacity
@@ -4453,47 +4557,61 @@ export default function AdminServicePlanner({ navigation }: any) {
               )}
             </View>
 
-            {/* Song List */}
+            {/* Song List with Multi-Selection Checkboxes */}
             {loadingSongs ? (
               <ActivityIndicator size="small" color={primaryBtnBg} style={{ marginVertical: 30 }} />
             ) : (
               <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
                 {filteredLibrarySongs.map((song, songIdx) => {
-                  const alreadyInSetlist = selectedPlan?.setlist?.some(s => s.songId === song.id);
+                  const isAlreadyInSetlist = (showCreateModal ? createSetlist : (selectedPlan?.setlist || [])).some(s => s.songId === song.id);
+                  const isSelected = selectedSongIdsForBatch.includes(song.id);
                   return (
                     <TouchableOpacity
                       key={song.id ? `song_${song.id}_${songIdx}` : `song_${songIdx}`}
                       style={[
                         styles.songPickItem,
                         { borderColor: cardBorder },
-                        alreadyInSetlist && { backgroundColor: isDark ? 'rgba(46, 107, 79, 0.2)' : '#ECFDF5', borderColor: publishBtnBg }
+                        isSelected && { backgroundColor: isDark ? 'rgba(46, 107, 79, 0.25)' : '#ECFDF5', borderColor: publishBtnBg },
+                        isAlreadyInSetlist && { opacity: 0.65, backgroundColor: isDark ? '#1E293B' : '#F8FAFC' }
                       ]}
-                      onPress={() => handleSelectSongFromLibrary(song)}
+                      onPress={() => {
+                        if (isAlreadyInSetlist) {
+                          Alert.alert('Already Added', `"${song.title}" is already in the setlist.`);
+                          return;
+                        }
+                        toggleSongSelectionForBatch(song.id);
+                      }}
                       activeOpacity={0.7}
                     >
-                      <View style={[styles.songPickIconBox, alreadyInSetlist && { backgroundColor: publishBtnBg }]}>
-                        {alreadyInSetlist ? (
-                          <Check size={16} color="#FFFFFF" strokeWidth={3} />
-                        ) : (
-                          <Music size={16} color={primaryText} />
+                      <View style={[
+                        styles.songCheckbox,
+                        isSelected && styles.songCheckboxSelected,
+                        isAlreadyInSetlist && { backgroundColor: '#10B981', borderColor: '#10B981' }
+                      ]}>
+                        {(isSelected || isAlreadyInSetlist) && (
+                          <Check size={14} color="#FFFFFF" strokeWidth={3} />
                         )}
                       </View>
-                      <View style={{ flex: 1, paddingHorizontal: 10 }}>
-                        <Text style={[styles.songPickTitle, { color: primaryText }]}>{song.title}</Text>
+                      <View style={{ flex: 1, paddingHorizontal: 6 }}>
+                        <Text style={[styles.songPickTitle, { color: primaryText }]} numberOfLines={1}>{song.title}</Text>
                         {song.titleTe ? (
-                          <Text style={[styles.songPickTe, { color: '#D97706' }]}>{song.titleTe}</Text>
+                          <Text style={[styles.songPickTe, { color: '#D97706' }]} numberOfLines={1}>{song.titleTe}</Text>
                         ) : null}
-                        <Text style={[styles.songPickMeta, { color: secondaryText }]}>
+                        <Text style={[styles.songPickMeta, { color: secondaryText }]} numberOfLines={1}>
                           Key: {song.key || 'G'} · {song.artist || 'Traditional Worship'}
                         </Text>
                       </View>
-                      {alreadyInSetlist ? (
+                      {isAlreadyInSetlist ? (
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                          <Check size={14} color={publishBtnBg} strokeWidth={3} />
-                          <Text style={{ fontSize: 11, fontWeight: '700', color: publishBtnBg }}>Added</Text>
+                          <Check size={13} color="#10B981" strokeWidth={2.5} />
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#10B981' }}>Added</Text>
+                        </View>
+                      ) : isSelected ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: publishBtnBg, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 }}>
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFFFFF' }}>Selected</Text>
                         </View>
                       ) : (
-                        <Plus size={16} color={primaryText} />
+                        <Plus size={16} color={secondaryText} />
                       )}
                     </TouchableOpacity>
                   );
@@ -4507,6 +4625,34 @@ export default function AdminServicePlanner({ navigation }: any) {
                 onPress={() => setShowSongPickerModal(false)}
               >
                 <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.modalConfirmBtn,
+                  {
+                    backgroundColor: selectedSongIdsForBatch.length > 0 ? publishBtnBg : '#94A3B8',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 6
+                  }
+                ]}
+                disabled={selectedSongIdsForBatch.length === 0 || addingBatchSongs}
+                onPress={handleBatchAddSongsToSetlist}
+                activeOpacity={0.85}
+              >
+                {addingBatchSongs ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Music size={14} color="#FFFFFF" />
+                    <Text style={styles.modalConfirmBtnTxt}>
+                      {selectedSongIdsForBatch.length > 0
+                        ? `Add (${selectedSongIdsForBatch.length}) Songs to Setlist`
+                        : 'Select Songs to Add'}
+                    </Text>
+                  </>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -7050,7 +7196,7 @@ const styles = StyleSheet.create({
   openHudBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#7C3AED',
+    backgroundColor: '#2E6B4F',
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 8,
@@ -7104,6 +7250,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#F8FAFC',
+  },
+  bannerBottomRow: {
+    borderTopWidth: 1,
   },
   statusSwitcherRow: {
     marginTop: 14,
@@ -7425,6 +7574,21 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     padding: 0,
+  },
+  songCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+    backgroundColor: '#FFFFFF',
+  },
+  songCheckboxSelected: {
+    backgroundColor: '#2E6B4F',
+    borderColor: '#2E6B4F',
   },
   songPickItem: {
     flexDirection: 'row',
@@ -8850,6 +9014,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  printSheetBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  printSheetBtnTxt: {
+    fontSize: 12,
+    fontWeight: '700',
   },
 
   // Phase 9 Volunteer Attendance Roster

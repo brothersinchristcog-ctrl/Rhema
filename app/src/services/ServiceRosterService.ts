@@ -1125,6 +1125,23 @@ class ServiceRosterService {
   }
 
   /**
+   * Add multiple songs to service setlist in a single atomic update
+   */
+  async addMultipleSongsToSetlist(churchId: string, serviceId: string, songItems: SetlistItem[]): Promise<void> {
+    if (!songItems || songItems.length === 0) return;
+    const plan = await this.getServicePlanById(churchId, serviceId);
+    if (!plan) throw new Error('Service plan not found');
+
+    const sanitizedItems = songItems.map(item => this.sanitizeForFirestore(item));
+    const currentSetlist = plan.setlist || [];
+    const updated = [...currentSetlist, ...sanitizedItems];
+
+    await this.updateServicePlan(churchId, serviceId, {
+      setlist: updated
+    });
+  }
+
+  /**
    * Update setlist item
    */
   async updateSetlistSong(churchId: string, serviceId: string, songItemId: string, updates: Partial<SetlistItem>): Promise<void> {
@@ -1276,6 +1293,43 @@ class ServiceRosterService {
       [`assignmentStatus.${params.roleId}`]: 'pending',
       updatedAt: firestore.FieldValue.serverTimestamp()
     });
+
+    // Write in-app notification to the active candidate immediately
+    try {
+      const activeCand = formattedCandidates[0];
+      if (activeCand?.candidateId) {
+        const notifDoc = {
+          type: 'service_assignment',
+          title: `New Service Assignment: ${params.roleTitle}`,
+          body: `You are requested to serve as ${params.roleTitle}. Please respond within ${Math.max(1, Math.round(timeoutMinutes / 60))} hours.`,
+          churchId,
+          serviceId,
+          roleId: params.roleId,
+          roleTitle: params.roleTitle,
+          activityId: params.activityId || '',
+          activityName: params.activityName || '',
+          candidateId: activeCand.candidateId,
+          status: 'pending',
+          read: false,
+          createdAt: firestore.FieldValue.serverTimestamp()
+        };
+        await firestore()
+          .collection(RHEMA_ROOT_COLLECTION)
+          .doc(churchId || 'rhema')
+          .collection('members')
+          .doc(activeCand.candidateId)
+          .collection('notifications')
+          .add(notifDoc)
+          .catch(() => {});
+
+        await firestore()
+          .collection('users')
+          .doc(activeCand.candidateId)
+          .collection('notifications')
+          .add(notifDoc)
+          .catch(() => {});
+      }
+    } catch (_) {}
   }
 
   /**

@@ -1,4 +1,4 @@
-import { onDocumentCreated, onDocumentUpdated } from 'firebase-functions/v2/firestore';
+import { onDocumentCreated, onDocumentUpdated, onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { onRequest } from 'firebase-functions/v2/https';
 import { getMessaging } from 'firebase-admin/messaging';
@@ -69,41 +69,142 @@ function formatTimeTo12Hour(timeStr) {
     return String(timeStr);
 }
 /**
- * 🔔 1. ON SERVICE ASSIGNMENT QUEUE DISPATCHED
- * Fired when an assignment queue is created or when a new candidate becomes active.
- * Sends an FCM push notification directly to the active candidate with Accept/Decline action payload.
+ * 🔍 HELPER: Resolves valid FCM tokens for a member or candidate across:
+ * 1. Rhema Church/{churchId}/members/{candidateId} (fcmToken, fcmTokens, and auth user pointer)
+ * 2. users/{candidateId}
+ * 3. Legacy churches/{churchId}/members/{candidateId}
+ * 4. Phone number search if provided
+ * 5. Display name search in members
  */
-export const onServiceAssignmentQueueDispatched = onDocumentCreated({
-    document: `${RHEMA_ROOT_COLLECTION}/{churchId}/servicePlans/{serviceId}/assignmentQueues/{roleId}`,
-    region: 'asia-south1',
-}, async (event) => {
-    const snap = event.data;
-    if (!snap)
-        return;
-    const { churchId, serviceId, roleId } = event.params;
-    const db = getFirestore();
-    const queueRef = snap.ref;
-    const queueData = snap.data();
-    if (queueData.status !== 'pending')
-        return;
-    const currentIdx = queueData.currentCandidateIndex || 0;
-    const candidates = queueData.candidates || [];
-    const activeCandidate = candidates[currentIdx];
-    if (!activeCandidate || activeCandidate.notificationSent)
-        return;
-    // Fetch candidate's member record for FCM token
-    const memberDoc = await db
-        .collection(RHEMA_ROOT_COLLECTION)
-        .doc(churchId)
-        .collection('members')
-        .doc(activeCandidate.candidateId)
-        .get();
-    const fcmToken = memberDoc.data()?.fcmToken;
-    if (!fcmToken || typeof fcmToken !== 'string' || fcmToken.trim().length < 10) {
-        console.log(`[RosterNotification] Candidate ${activeCandidate.candidateName} has no valid FCM token.`);
-        return;
+export async function resolveCandidateFcmTokens(db, churchId, candidateId, candidatePhone, candidateName) {
+    const tokens = new Set();
+    const addToken = (t) => {
+        if (typeof t === 'string' && t.trim().length > 10) {
+            tokens.add(t.trim());
+        }
+    };
+    const addTokensFromArray = (arr) => {
+        if (Array.isArray(arr)) {
+            arr.forEach(t => addToken(t));
+        }
+    };
+    if (!candidateId && !candidatePhone && !candidateName)
+        return [];
+    // 1. Direct candidateId lookup in Rhema Church/{churchId}/members/{candidateId}
+    if (candidateId) {
+        try {
+            const memDoc = await db
+                .collection(RHEMA_ROOT_COLLECTION)
+                .doc(churchId || 'rhema')
+                .collection('members')
+                .doc(candidateId)
+                .get();
+            if (memDoc.exists) {
+                const data = memDoc.data() || {};
+                addToken(data.fcmToken);
+                addTokensFromArray(data.fcmTokens);
+                // If member record has auth pointer to users/{uid}
+                const authUid = data.uid || data.userId || data.authUid;
+                if (authUid && authUid !== candidateId) {
+                    try {
+                        const uDoc = await db.collection('users').doc(authUid).get();
+                        if (uDoc.exists) {
+                            const uData = uDoc.data() || {};
+                            addToken(uData.fcmToken);
+                            addTokensFromArray(uData.fcmTokens);
+                        }
+                    }
+                    catch (_) { }
+                }
+            }
+        }
+        catch (e) {
+            console.warn(`[RosterNotification] Error resolving memberDoc for ${candidateId}:`, e);
+        }
+        // 2. Direct candidateId check in users/{candidateId}
+        try {
+            const uDoc = await db.collection('users').doc(candidateId).get();
+            if (uDoc.exists) {
+                const uData = uDoc.data() || {};
+                addToken(uData.fcmToken);
+                addTokensFromArray(uData.fcmTokens);
+            }
+        }
+        catch (e) {
+            console.warn(`[RosterNotification] Error resolving userDoc for ${candidateId}:`, e);
+        }
+        // 3. Fallback to legacy churches/{churchId}/members/{candidateId}
+        try {
+            const legacyDoc = await db
+                .collection('churches')
+                .doc(churchId || 'rhema')
+                .collection('members')
+                .doc(candidateId)
+                .get();
+            if (legacyDoc.exists) {
+                const data = legacyDoc.data() || {};
+                addToken(data.fcmToken);
+                addTokensFromArray(data.fcmTokens);
+            }
+        }
+        catch (_) { }
     }
-    // Fetch parent service details for context
+    // 4. Query users or members by phone number if tokens not yet found
+    if (tokens.size === 0 && candidatePhone) {
+        const cleanPhone = candidatePhone.replace(/[^\d+]/g, '');
+        if (cleanPhone.length >= 7) {
+            try {
+                const uSnap = await db.collection('users').where('phone', '==', cleanPhone).limit(3).get();
+                uSnap.forEach(d => {
+                    addToken(d.data()?.fcmToken);
+                    addTokensFromArray(d.data()?.fcmTokens);
+                });
+            }
+            catch (_) { }
+            try {
+                const mSnap = await db
+                    .collection(RHEMA_ROOT_COLLECTION)
+                    .doc(churchId || 'rhema')
+                    .collection('members')
+                    .where('phone', '==', cleanPhone)
+                    .limit(3)
+                    .get();
+                mSnap.forEach(d => {
+                    addToken(d.data()?.fcmToken);
+                    addTokensFromArray(d.data()?.fcmTokens);
+                });
+            }
+            catch (_) { }
+        }
+    }
+    // 5. Query members by name if tokens not yet found
+    if (tokens.size === 0 && candidateName) {
+        const trimmedName = candidateName.trim();
+        if (trimmedName.length > 2) {
+            try {
+                const mSnap = await db
+                    .collection(RHEMA_ROOT_COLLECTION)
+                    .doc(churchId || 'rhema')
+                    .collection('members')
+                    .where('name', '==', trimmedName)
+                    .limit(3)
+                    .get();
+                mSnap.forEach(d => {
+                    addToken(d.data()?.fcmToken);
+                    addTokensFromArray(d.data()?.fcmTokens);
+                });
+            }
+            catch (_) { }
+        }
+    }
+    return Array.from(tokens);
+}
+/**
+ * 📲 HELPER: Sends assignment push notification & records in-app notification
+ */
+export async function sendCandidateAssignmentPush(params) {
+    const { db, churchId, serviceId, roleId, roleTitle, candidate, candidateIndex, queueRef, timeoutMinutes, isCascade } = params;
+    // 1. Fetch parent service details for context
     const serviceDoc = await db
         .collection(RHEMA_ROOT_COLLECTION)
         .doc(churchId)
@@ -111,49 +212,166 @@ export const onServiceAssignmentQueueDispatched = onDocumentCreated({
         .doc(serviceId)
         .get();
     const serviceData = serviceDoc.data() || {};
-    const serviceTitle = serviceData.serviceTitle || 'Worship Service';
-    const serviceDate = serviceData.date || '';
-    const serviceTime = serviceData.startTime || '10:00';
-    const location = serviceData.location || 'Church Sanctuary';
-    const roleTitle = queueData.roleTitle || 'Ministry Responsibility';
-    const title = `New Service Assignment: ${roleTitle}`;
-    const body = `You are requested to serve as ${roleTitle} for "${serviceTitle}" on ${formatDateMonthYear(serviceDate)} at ${formatTimeTo12Hour(serviceTime)}.`;
+    const serviceTitle = String(serviceData.serviceTitle || 'Worship Service');
+    const serviceDate = String(serviceData.date || '');
+    const serviceTime = String(serviceData.startTime || '10:00');
+    const location = String(serviceData.location || 'Church Sanctuary');
+    const timeoutHours = Math.max(1, Math.round(timeoutMinutes / 60));
+    const title = isCascade
+        ? `Service Assignment Request: ${roleTitle}`
+        : `New Service Assignment: ${roleTitle}`;
+    const body = `You are requested to serve as ${roleTitle} for "${serviceTitle}" on ${formatDateMonthYear(serviceDate)} at ${formatTimeTo12Hour(serviceTime)} (${location}). Response deadline: ${timeoutHours} hour(s). Tap to Accept or Decline.`;
+    // 2. In-app notification payload
+    const inAppPayload = {
+        type: 'service_assignment',
+        title,
+        body,
+        churchId,
+        serviceId,
+        roleId,
+        roleTitle,
+        serviceTitle,
+        serviceDate: formatDateMonthYear(serviceDate),
+        serviceTime: formatTimeTo12Hour(serviceTime),
+        location,
+        candidateId: candidate.candidateId,
+        candidateName: candidate.candidateName,
+        timeoutMinutes,
+        status: 'pending',
+        read: false,
+        createdAt: FieldValue.serverTimestamp()
+    };
     try {
-        await getMessaging().send({
-            token: fcmToken.trim(),
-            notification: { title, body },
-            data: {
-                type: 'service_assignment',
-                churchId,
-                serviceId,
-                roleId,
-                roleTitle,
-                serviceTitle,
-                serviceDate: formatDateMonthYear(serviceDate),
-                serviceTime: formatTimeTo12Hour(serviceTime),
-                location,
-                candidateId: activeCandidate.candidateId,
-                click_action: 'OPEN_SERVICE_ASSIGNMENT'
-            },
-            android: {
-                priority: 'high',
-                notification: {
-                    channelId: 'church_alerts',
-                    color: '#2E6B4F'
-                }
-            }
-        });
-        // Mark candidate as notified atomically
+        await db
+            .collection(RHEMA_ROOT_COLLECTION)
+            .doc(churchId)
+            .collection('members')
+            .doc(candidate.candidateId)
+            .collection('notifications')
+            .add(inAppPayload);
+    }
+    catch (e) {
+        console.warn(`[RosterNotification] Could not write member in-app notif for ${candidate.candidateName}:`, e);
+    }
+    try {
+        await db
+            .collection('users')
+            .doc(candidate.candidateId)
+            .collection('notifications')
+            .add(inAppPayload);
+    }
+    catch (_) { }
+    // 3. Resolve FCM tokens
+    const tokens = await resolveCandidateFcmTokens(db, churchId, candidate.candidateId, candidate.candidatePhone, candidate.candidateName);
+    if (tokens.length === 0) {
+        console.log(`[RosterNotification] Candidate ${candidate.candidateName} (${candidate.candidateId}) has no registered FCM push token. (In-app notification saved).`);
+        // Still mark notification as attempted in queue record
         await queueRef.update({
-            [`candidates.${currentIdx}.notificationSent`]: true,
-            [`candidates.${currentIdx}.notifiedAt`]: FieldValue.serverTimestamp(),
+            [`candidates.${candidateIndex}.notificationSent`]: true,
+            [`candidates.${candidateIndex}.notifiedAt`]: FieldValue.serverTimestamp(),
+            [`candidates.${candidateIndex}.noFcmToken`]: true,
             updatedAt: FieldValue.serverTimestamp()
         });
-        console.log(`[RosterNotification] Push sent to candidate ${activeCandidate.candidateName} for ${roleTitle}`);
+        return { success: true, tokensCount: 0 };
     }
-    catch (err) {
-        console.error(`[RosterNotification] Failed to send push to ${activeCandidate.candidateName}:`, err);
+    // 4. Dispatch FCM push to each device token
+    let sentCount = 0;
+    let lastError;
+    for (const token of tokens) {
+        try {
+            await getMessaging().send({
+                token,
+                notification: { title, body },
+                data: {
+                    type: 'service_assignment',
+                    churchId,
+                    serviceId,
+                    roleId,
+                    roleTitle,
+                    serviceTitle,
+                    serviceDate: formatDateMonthYear(serviceDate),
+                    serviceTime: formatTimeTo12Hour(serviceTime),
+                    location,
+                    candidateId: candidate.candidateId,
+                    timeoutHours: String(timeoutHours),
+                    click_action: 'OPEN_SERVICE_ASSIGNMENT'
+                },
+                android: {
+                    priority: 'high',
+                    notification: {
+                        channelId: 'church_alerts',
+                        color: '#2E6B4F',
+                        sound: 'default'
+                    }
+                },
+                apns: {
+                    headers: {
+                        'apns-priority': '10'
+                    },
+                    payload: {
+                        aps: {
+                            sound: 'default',
+                            badge: 1
+                        }
+                    }
+                }
+            });
+            sentCount++;
+            console.log(`[RosterNotification] Push sent to candidate ${candidate.candidateName} for ${roleTitle} (${token.slice(0, 10)}...)`);
+        }
+        catch (err) {
+            console.error(`[RosterNotification] Push send failed to token for ${candidate.candidateName}:`, err);
+            lastError = err?.message || String(err);
+        }
     }
+    // 5. Update queue document state
+    await queueRef.update({
+        [`candidates.${candidateIndex}.notificationSent`]: true,
+        [`candidates.${candidateIndex}.notifiedAt`]: FieldValue.serverTimestamp(),
+        [`candidates.${candidateIndex}.pushSentCount`]: sentCount,
+        updatedAt: FieldValue.serverTimestamp()
+    });
+    return { success: sentCount > 0, tokensCount: sentCount, error: lastError };
+}
+/**
+ * 🔔 1. ON SERVICE ASSIGNMENT QUEUE DISPATCHED (Written: Create + Update)
+ * Fired whenever an assignment queue document is created or updated in Firestore.
+ * Sends targeted push notifications to the active candidate with Accept/Decline options.
+ */
+export const onServiceAssignmentQueueDispatched = onDocumentWritten({
+    document: `${RHEMA_ROOT_COLLECTION}/{churchId}/servicePlans/{serviceId}/assignmentQueues/{roleId}`,
+    region: 'asia-south1',
+}, async (event) => {
+    const afterSnap = event.data?.after;
+    if (!afterSnap || !afterSnap.exists)
+        return;
+    const { churchId, serviceId, roleId } = event.params;
+    const db = getFirestore();
+    const queueRef = afterSnap.ref;
+    const queueData = afterSnap.data();
+    if (!queueData)
+        return;
+    if (queueData.status !== 'pending')
+        return;
+    const currentIdx = queueData.currentCandidateIndex || 0;
+    const candidates = queueData.candidates || [];
+    const activeCandidate = candidates[currentIdx];
+    // Only dispatch if active candidate has not yet received push notification
+    if (!activeCandidate || activeCandidate.notificationSent === true)
+        return;
+    console.log(`[RosterNotification] Processing assignment queue push for role "${queueData.roleTitle}" (Candidate: ${activeCandidate.candidateName})`);
+    await sendCandidateAssignmentPush({
+        db,
+        churchId,
+        serviceId,
+        roleId,
+        roleTitle: queueData.roleTitle || 'Ministry Responsibility',
+        candidate: activeCandidate,
+        candidateIndex: currentIdx,
+        queueRef,
+        timeoutMinutes: queueData.timeoutMinutes || 120,
+        isCascade: currentIdx > 0
+    });
 });
 /**
  * ⚡ 2. ON SERVICE ASSIGNMENT RESPONDED (CASCADE ADVANCER)
@@ -167,7 +385,6 @@ export const onServiceAssignmentResponded = onDocumentUpdated({
     const change = event.data;
     if (!change)
         return;
-    const beforeData = change.before.data();
     const afterData = change.after.data();
     const queueRef = change.after.ref;
     const { churchId, serviceId, roleId } = event.params;
@@ -184,7 +401,7 @@ export const onServiceAssignmentResponded = onDocumentUpdated({
         if (nextIdx < candidates.length) {
             // Cascade to next candidate
             const nextCandidate = candidates[nextIdx];
-            const timeoutMinutes = afterData.timeoutMinutes || 1440; // Default 24 hours
+            const timeoutMinutes = afterData.timeoutMinutes || 120; // 2 hours default
             const deadlineDate = new Date(Date.now() + timeoutMinutes * 60 * 1000);
             await db.runTransaction(async (transaction) => {
                 transaction.update(queueRef, {
@@ -198,52 +415,26 @@ export const onServiceAssignmentResponded = onDocumentUpdated({
                         timestamp: new Date().toISOString(),
                         action: `auto_cascade_to_candidate_${nextIdx + 1}`,
                         candidateId: nextCandidate.candidateId,
-                        candidateName: nextCandidate.candidateName
+                        candidateName: nextCandidate.candidateName,
+                        details: `Cascaded to Candidate #${nextIdx + 1} (${nextCandidate.candidateName}) after Candidate #${curIdx + 1} ${activeCandidate.status}.`
                     }),
                     updatedAt: FieldValue.serverTimestamp()
                 });
             });
-            // Fetch next candidate's FCM token and dispatch notification
-            const memberDoc = await db
-                .collection(RHEMA_ROOT_COLLECTION)
-                .doc(churchId)
-                .collection('members')
-                .doc(nextCandidate.candidateId)
-                .get();
-            const fcmToken = memberDoc.data()?.fcmToken;
-            if (fcmToken && typeof fcmToken === 'string' && fcmToken.trim().length > 10) {
-                const serviceDoc = await db
-                    .collection(RHEMA_ROOT_COLLECTION)
-                    .doc(churchId)
-                    .collection('servicePlans')
-                    .doc(serviceId)
-                    .get();
-                const serviceData = serviceDoc.data() || {};
-                const title = `Service Assignment Request: ${afterData.roleTitle}`;
-                const body = `You are next in queue to serve as ${afterData.roleTitle} for "${serviceData.serviceTitle || 'Worship Service'}" on ${formatDateMonthYear(serviceData.date)} at ${formatTimeTo12Hour(serviceData.startTime)}. Tap to accept or decline.`;
-                await getMessaging().send({
-                    token: fcmToken.trim(),
-                    notification: { title, body },
-                    data: {
-                        type: 'service_assignment',
-                        churchId,
-                        serviceId,
-                        roleId,
-                        roleTitle: afterData.roleTitle || '',
-                        serviceTitle: serviceData.serviceTitle || '',
-                        serviceDate: formatDateMonthYear(serviceData.date),
-                        serviceTime: formatTimeTo12Hour(serviceData.startTime),
-                        candidateId: nextCandidate.candidateId
-                    },
-                    android: {
-                        priority: 'high',
-                        notification: { channelId: 'church_alerts', color: '#2E6B4F' }
-                    }
-                });
-                await queueRef.update({
-                    [`candidates.${nextIdx}.notificationSent`]: true
-                });
-            }
+            console.log(`[RosterNotification] Auto-cascading role "${afterData.roleTitle}" to Candidate #${nextIdx + 1} (${nextCandidate.candidateName})`);
+            // Send push notification to the newly activated candidate
+            await sendCandidateAssignmentPush({
+                db,
+                churchId,
+                serviceId,
+                roleId,
+                roleTitle: afterData.roleTitle || 'Ministry Responsibility',
+                candidate: nextCandidate,
+                candidateIndex: nextIdx,
+                queueRef,
+                timeoutMinutes,
+                isCascade: true
+            });
         }
         else {
             // Queue exhausted! No more candidates left in queue
@@ -251,7 +442,8 @@ export const onServiceAssignmentResponded = onDocumentUpdated({
                 status: 'exhausted',
                 history: FieldValue.arrayUnion({
                     timestamp: new Date().toISOString(),
-                    action: 'queue_exhausted_all_declined'
+                    action: 'queue_exhausted_all_declined',
+                    details: `All ${candidates.length} candidate(s) declined or timed out. Admin manual assignment required.`
                 }),
                 updatedAt: FieldValue.serverTimestamp()
             });
@@ -332,29 +524,32 @@ export const sendServiceRosterRemindersCron = onSchedule({
             const qData = qDoc.data();
             if (qData.confirmedCandidateId) {
                 const churchId = sData.churchId || 'rhema';
-                const memberDoc = await db.collection(RHEMA_ROOT_COLLECTION).doc(churchId).collection('members').doc(qData.confirmedCandidateId).get();
-                const fcmToken = memberDoc.data()?.fcmToken;
-                if (fcmToken && typeof fcmToken === 'string' && fcmToken.trim().length > 10) {
-                    const roleTitle = String(qData.roleTitle || 'Volunteer');
-                    const svcTitle = String(sData.serviceTitle || 'Worship Service');
-                    const svcTime = String(sData.startTime || '10:00');
-                    await getMessaging().send({
-                        token: fcmToken.trim(),
-                        notification: {
-                            title: `Reminder: Serving Tomorrow as ${roleTitle}`,
-                            body: `Service: ${svcTitle} starts tomorrow at ${formatTimeTo12Hour(svcTime)}. Please arrive 30 mins prior for prayer & sound check.`
-                        },
-                        data: {
-                            type: 'service_reminder',
-                            serviceId: sDoc.id,
-                            roleTitle: roleTitle,
-                            serviceDate: formatDateMonthYear(tomorrowStr)
-                        },
-                        android: {
-                            priority: 'high',
-                            notification: { channelId: 'church_alerts', color: '#2E6B4F' }
-                        }
-                    });
+                const tokens = await resolveCandidateFcmTokens(db, churchId, qData.confirmedCandidateId, undefined, qData.confirmedCandidateName);
+                const roleTitle = String(qData.roleTitle || 'Volunteer');
+                const svcTitle = String(sData.serviceTitle || 'Worship Service');
+                const svcTime = String(sData.startTime || '10:00');
+                const title = `Reminder: Serving Tomorrow as ${roleTitle}`;
+                const body = `Service: ${svcTitle} starts tomorrow at ${formatTimeTo12Hour(svcTime)}. Please arrive 30 mins prior for prayer & sound check.`;
+                for (const token of tokens) {
+                    try {
+                        await getMessaging().send({
+                            token,
+                            notification: { title, body },
+                            data: {
+                                type: 'service_reminder',
+                                serviceId: sDoc.id,
+                                roleTitle: roleTitle,
+                                serviceDate: formatDateMonthYear(tomorrowStr)
+                            },
+                            android: {
+                                priority: 'high',
+                                notification: { channelId: 'church_alerts', color: '#2E6B4F', sound: 'default' }
+                            }
+                        });
+                    }
+                    catch (remErr) {
+                        console.error(`[RosterCron] Failed sending reminder to ${qData.confirmedCandidateName}:`, remErr);
+                    }
                 }
             }
         }
@@ -370,6 +565,57 @@ export const triggerCheckRosterTimeoutsHttp = onRequest({ cors: true, region: 'a
         res.json({ success: true, pendingQueuesCount: snap.size });
     }
     catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+/**
+ * 🌐 5B. HTTP TRIGGER TO MANUALLY DISPATCH OR RETRY ASSIGNMENT NOTIFICATION
+ */
+export const dispatchServiceAssignmentNotificationHttp = onRequest({ cors: true, region: 'asia-south1' }, async (req, res) => {
+    try {
+        const { churchId, serviceId, roleId } = req.body || req.query;
+        if (!serviceId || !roleId) {
+            res.status(400).json({ error: 'serviceId and roleId are required' });
+            return;
+        }
+        const db = getFirestore();
+        const targetChurch = String(churchId || 'rhema');
+        const queueRef = db
+            .collection(RHEMA_ROOT_COLLECTION)
+            .doc(targetChurch)
+            .collection('servicePlans')
+            .doc(String(serviceId))
+            .collection('assignmentQueues')
+            .doc(String(roleId));
+        const qSnap = await queueRef.get();
+        if (!qSnap.exists) {
+            res.status(404).json({ error: 'Assignment queue document not found' });
+            return;
+        }
+        const qData = qSnap.data() || {};
+        const curIdx = qData.currentCandidateIndex || 0;
+        const candidates = qData.candidates || [];
+        const activeCandidate = candidates[curIdx];
+        if (!activeCandidate) {
+            res.status(400).json({ error: 'No active candidate in assignment queue' });
+            return;
+        }
+        const result = await sendCandidateAssignmentPush({
+            db,
+            churchId: targetChurch,
+            serviceId: String(serviceId),
+            roleId: String(roleId),
+            roleTitle: qData.roleTitle || 'Ministry Responsibility',
+            candidate: activeCandidate,
+            candidateIndex: curIdx,
+            queueRef,
+            timeoutMinutes: qData.timeoutMinutes || 120,
+            isCascade: curIdx > 0
+        });
+        res.json({ ...result, candidate: activeCandidate.candidateName });
+    }
+    catch (err) {
+        console.error('dispatchServiceAssignmentNotificationHttp error:', err);
         res.status(500).json({ error: err.message });
     }
 });

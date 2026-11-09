@@ -1779,5 +1779,6 @@ export {
   checkServiceAssignmentTimeoutsCron,
   sendServiceRosterRemindersCron,
   triggerCheckRosterTimeoutsHttp,
+  dispatchServiceAssignmentNotificationHttp,
   onServiceRehearsalCreated,
 } from './rosterNotifications.js';
