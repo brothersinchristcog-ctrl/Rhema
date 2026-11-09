@@ -1562,6 +1562,94 @@ class ServiceRosterService {
   }
 
   /**
+   * Cancel or delete a duty assignment for a member (from pending or confirmed state).
+   * Updates plan assignments, runsheet, and queue.
+   */
+  async cancelOrDeleteDutyAssignment(
+    churchId: string,
+    serviceId: string,
+    roleId: string,
+    memberId: string,
+    memberName?: string,
+    reason: string = 'Member requested deletion / cancellation'
+  ): Promise<void> {
+    if (!churchId || !serviceId || !roleId) return;
+
+    try {
+      const planRef = this.getServicePlansCol(churchId).doc(serviceId);
+      const planSnap = await planRef.get();
+      if (planSnap.exists) {
+        const plan = planSnap.data() as ServicePlan;
+        const updates: Record<string, any> = {
+          updatedAt: firestore.FieldValue.serverTimestamp()
+        };
+
+        // 1. Remove from whole-service assignments if present
+        updates[`assignments.${roleId}`] = firestore.FieldValue.delete();
+        updates[`assignmentMemberIds.${roleId}`] = firestore.FieldValue.delete();
+        updates[`assignmentStatus.${roleId}`] = 'declined';
+
+        // 2. Check runSheet activities
+        if (plan.runSheet) {
+          const cleanRoleId = roleId.replace(/^(role_)?(act_)+/, '');
+          let changedRunsheet = false;
+          const updatedRunsheet = plan.runSheet.map(item => {
+            const isMatch = item.id === roleId ||
+              item.id === `act_${cleanRoleId}` ||
+              item.id.replace(/^(act_)+/, '') === cleanRoleId ||
+              (item.responsibleMemberId === memberId && Boolean(memberId)) ||
+              (memberName && item.responsiblePerson && item.responsiblePerson.toLowerCase().trim() === memberName.toLowerCase().trim() && item.id === roleId);
+
+            if (isMatch) {
+              changedRunsheet = true;
+              return {
+                ...item,
+                responsiblePerson: '',
+                responsibleMemberId: '',
+                assignmentStatus: 'declined' as const
+              };
+            }
+            return item;
+          });
+
+          if (changedRunsheet) {
+            updates.runSheet = updatedRunsheet;
+          }
+        }
+
+        await planRef.update(updates);
+      }
+
+      // 3. Update queue if exists
+      try {
+        const queueRef = this.getAssignmentQueuesCol(churchId, serviceId).doc(roleId);
+        const qSnap = await queueRef.get();
+        if (qSnap.exists) {
+          const qData = qSnap.data() as ServiceAssignmentQueue;
+          const candidates = [...(qData.candidates || [])];
+          const curIdx = qData.currentCandidateIndex || 0;
+          if (candidates[curIdx]) {
+            candidates[curIdx] = {
+              ...candidates[curIdx],
+              status: 'declined',
+              declineReason: reason,
+              respondedAt: new Date().toISOString()
+            };
+            await queueRef.update({
+              candidates,
+              status: 'declined',
+              updatedAt: firestore.FieldValue.serverTimestamp()
+            });
+          }
+        }
+      } catch (_) {}
+    } catch (err) {
+      console.error('[ServiceRosterService] cancelOrDeleteDutyAssignment error:', err);
+      throw err;
+    }
+  }
+
+  /**
    * Intelligent candidate recommendation engine for a specific role
    */
   async getEligibleCandidatesForRole(
@@ -2053,8 +2141,8 @@ class ServiceRosterService {
    * Fetch all upcoming service duties and invitations for a specific church member.
    * Scans published plans, runsheet assignments, setlist assignments, sequential queues, and rehearsals.
    */
-  async getMemberUpcomingDuties(churchId: string, memberId: string): Promise<MemberServiceDuty[]> {
-    if (!churchId || !memberId) return [];
+  async getMemberUpcomingDuties(churchId: string, memberId: string, memberName?: string): Promise<MemberServiceDuty[]> {
+    if (!churchId || (!memberId && !memberName)) return [];
     try {
       const today = new Date().toISOString().split('T')[0];
       const plansSnap = await this.getServicePlansCol(churchId).get();
@@ -2081,7 +2169,9 @@ class ServiceRosterService {
 
         // 1. Check direct runSheet assignments
         (plan.runSheet || []).forEach(item => {
-          if (item.responsibleMemberId === memberId) {
+          const isAssigned = item.responsibleMemberId === memberId ||
+            (memberName && item.responsiblePerson && item.responsiblePerson.toLowerCase().trim() === memberName.toLowerCase().trim());
+          if (isAssigned) {
             duties.push({
               id: `${plan.id}_${item.id}`,
               serviceId: plan.id,
@@ -2108,7 +2198,9 @@ class ServiceRosterService {
 
         // 2. Check Setlist assignments (Song leader or Musician)
         (plan.setlist || []).forEach(song => {
-          if (song.ledByMemberId === memberId) {
+          const isSongLead = song.ledByMemberId === memberId ||
+            (memberName && song.ledBy && song.ledBy.toLowerCase().trim() === memberName.toLowerCase().trim());
+          if (isSongLead) {
             duties.push({
               id: `${plan.id}_setlist_lead_${song.id}`,
               serviceId: plan.id,
@@ -2131,7 +2223,10 @@ class ServiceRosterService {
           }
           if (song.musicianAssignments) {
             Object.entries(song.musicianAssignments).forEach(([roleKey, mus]) => {
-              if (mus.memberId === memberId) {
+              const musName = mus.memberName || (mus as any).name;
+              const isMusician = mus.memberId === memberId ||
+                (memberName && musName && musName.toLowerCase().trim() === memberName.toLowerCase().trim());
+              if (isMusician) {
                 duties.push({
                   id: `${plan.id}_setlist_mus_${song.id}_${roleKey}`,
                   serviceId: plan.id,
@@ -2156,6 +2251,84 @@ class ServiceRosterService {
           }
         });
 
+        // 2b. Check Whole-Service Band & General Assignments (plan.assignmentMemberIds & plan.assignments)
+        const bandRoleTitles: Record<string, string> = {
+          role_keyboard: 'Keyboardist / Pianist',
+          role_drums: 'Drummer / Percussionist',
+          role_bass: 'Bass Guitarist',
+          role_acoustic: 'Acoustic Guitarist',
+          role_electric: 'Electric Guitarist',
+          role_sound: 'Sound & Audio Engineer',
+          role_worship_leader: 'Worship Leader'
+        };
+
+        const resolveRoleTitle = (rId: string): string => {
+          if (bandRoleTitles[rId]) return bandRoleTitles[rId];
+          const cleanId = rId.replace(/^(role_)?(act_)+/, '');
+          const found = (plan.runSheet || []).find(it =>
+            it.id === rId ||
+            it.id === `act_${cleanId}` ||
+            it.id.replace(/^(act_)+/, '') === cleanId
+          );
+          if (found?.program && found.program.trim()) return found.program;
+          if (rId.includes('act_')) return 'Order of Service Responsibility';
+          return rId.replace(/^role_/, '').replace(/_/g, ' ').toUpperCase();
+        };
+
+        if (plan.assignmentMemberIds) {
+          for (const [rId, mId] of Object.entries(plan.assignmentMemberIds)) {
+            const isAssignedBand = mId === memberId ||
+              (memberName && plan.assignments?.[rId] && plan.assignments[rId].toLowerCase().trim() === memberName.toLowerCase().trim());
+            if (isAssignedBand && !duties.some(d => d.roleId === rId && d.serviceId === plan.id)) {
+              const rTitle = resolveRoleTitle(rId);
+              duties.push({
+                id: `${plan.id}_${rId}_band`,
+                serviceId: plan.id,
+                serviceTitle: plan.serviceTitle,
+                serviceType: plan.serviceType,
+                date: plan.date,
+                startTime: plan.startTime,
+                endTime: plan.endTime,
+                location: plan.location,
+                preacher: plan.preacher,
+                roleId: rId,
+                roleTitle: rTitle,
+                activityName: rTitle,
+                callTime: defaultCallTime,
+                status: (plan.assignmentStatus?.[rId] === 'pending') ? 'pending' : 'confirmed',
+                rehearsals,
+                setlist: plan.setlist || []
+              });
+            }
+          }
+        }
+
+        if (plan.assignments && memberName) {
+          for (const [rId, name] of Object.entries(plan.assignments)) {
+            if (name && name.toLowerCase().trim() === memberName.toLowerCase().trim() && !duties.some(d => d.roleId === rId && d.serviceId === plan.id)) {
+              const rTitle = resolveRoleTitle(rId);
+              duties.push({
+                id: `${plan.id}_${rId}_band_name`,
+                serviceId: plan.id,
+                serviceTitle: plan.serviceTitle,
+                serviceType: plan.serviceType,
+                date: plan.date,
+                startTime: plan.startTime,
+                endTime: plan.endTime,
+                location: plan.location,
+                preacher: plan.preacher,
+                roleId: rId,
+                roleTitle: rTitle,
+                activityName: rTitle,
+                callTime: defaultCallTime,
+                status: (plan.assignmentStatus?.[rId] === 'pending') ? 'pending' : 'confirmed',
+                rehearsals,
+                setlist: plan.setlist || []
+              });
+            }
+          }
+        }
+
         // 3. Check sequential assignment queues (Pending invitations or Confirmed)
         try {
           const queuesSnap = await this.getAssignmentQueuesCol(churchId, plan.id).get();
@@ -2164,6 +2337,11 @@ class ServiceRosterService {
             const candidates = queue.candidates || [];
             const curIdx = queue.currentCandidateIndex ?? 0;
             const activeCand = candidates[curIdx];
+
+            let qRoleTitle = queue.roleTitle || '';
+            if (!qRoleTitle || qRoleTitle.toLowerCase().includes('act_') || qRoleTitle.toLowerCase().startsWith('act act')) {
+              qRoleTitle = resolveRoleTitle(queue.roleId);
+            }
 
             // If this member is the current active candidate and status is pending -> INVITATION!
             if (activeCand && activeCand.candidateId === memberId && activeCand.status === 'pending' && queue.status === 'pending') {
@@ -2179,8 +2357,8 @@ class ServiceRosterService {
                   location: plan.location,
                   preacher: plan.preacher,
                   roleId: queue.roleId,
-                  roleTitle: queue.roleTitle,
-                  activityName: queue.activityName || queue.roleTitle,
+                  roleTitle: qRoleTitle,
+                  activityName: queue.activityName || qRoleTitle,
                   callTime: defaultCallTime,
                   status: 'pending',
                   deadline: activeCand.deadline,
@@ -2203,8 +2381,8 @@ class ServiceRosterService {
                   location: plan.location,
                   preacher: plan.preacher,
                   roleId: queue.roleId,
-                  roleTitle: queue.roleTitle,
-                  activityName: queue.activityName || queue.roleTitle,
+                  roleTitle: qRoleTitle,
+                  activityName: queue.activityName || qRoleTitle,
                   callTime: defaultCallTime,
                   status: 'confirmed',
                   rehearsals,
