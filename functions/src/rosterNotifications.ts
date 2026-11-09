@@ -229,7 +229,7 @@ export const onServiceAssignmentResponded = onDocumentUpdated(
  */
 export const checkServiceAssignmentTimeoutsCron = onSchedule(
   {
-    schedule: '*/15 * * * *',
+    schedule: '*/5 * * * *',
     timeZone: 'Asia/Kolkata',
     region: 'asia-south1',
   },

@@ -201,7 +201,7 @@ export const onServiceAssignmentResponded = onDocumentUpdated({
  * if their deadline has elapsed, allowing the cascade trigger above to take over.
  */
 export const checkServiceAssignmentTimeoutsCron = onSchedule({
-    schedule: '*/15 * * * *',
+    schedule: '*/5 * * * *',
     timeZone: 'Asia/Kolkata',
     region: 'asia-south1',
 }, async () => {
