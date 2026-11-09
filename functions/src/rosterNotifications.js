@@ -933,13 +933,27 @@ export async function findEligibleMembersForResponsibility(db, churchId, service
             }
             catch (_) { }
         }
+        const fullName = m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim() || 'Church Member';
+        const normName = fullName.trim().toLowerCase().replace(/\s+/g, ' ');
+        const existingIdx = eligible.findIndex(e => e.memberId === m.id ||
+            (normName && normName !== 'church member' && e.memberName.trim().toLowerCase().replace(/\s+/g, ' ') === normName));
         const tokens = await resolveCandidateFcmTokens(db, targetChurch, m.id, m.phone, m.name);
-        eligible.push({
-            memberId: m.id,
-            memberName: m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim() || 'Church Member',
-            memberPhone: m.phone,
-            fcmTokens: tokens
-        });
+        const existingEntry = existingIdx !== -1 ? eligible[existingIdx] : undefined;
+        if (existingEntry) {
+            const mergedTokens = Array.from(new Set([...existingEntry.fcmTokens, ...tokens]));
+            existingEntry.fcmTokens = mergedTokens;
+            if (!existingEntry.memberPhone && m.phone) {
+                existingEntry.memberPhone = m.phone;
+            }
+        }
+        else {
+            eligible.push({
+                memberId: m.id,
+                memberName: fullName,
+                memberPhone: m.phone,
+                fcmTokens: tokens
+            });
+        }
     }
     return eligible;
 }
@@ -1279,22 +1293,24 @@ export const bookResponsibilitySlotHttp = onRequest({ cors: true, region: 'asia-
             if (qData.status === 'confirmed' || qData.confirmedCandidateId) {
                 return { booked: false, message: 'This responsibility slot has already been booked by another member.', bookedBy: qData.confirmedCandidateName };
             }
-            if ((qData.declinedMemberIds || []).includes(memberId)) {
-                return { booked: false, message: 'You previously declined this responsibility.' };
-            }
             const nowIso = new Date().toISOString();
             const candidateName = String(memberName || 'Volunteer');
+            const normTargetName = candidateName.trim().toLowerCase().replace(/\s+/g, ' ');
+            const isSameCand = (c) => c.candidateId === memberId ||
+                (normTargetName && normTargetName !== 'volunteer' && String(c.candidateName || '').trim().toLowerCase().replace(/\s+/g, ' ') === normTargetName);
             const updatedCandidates = (qData.candidates || []).map((c) => {
-                if (c.candidateId === memberId) {
-                    return { ...c, status: 'accepted', respondedAt: nowIso };
+                if (isSameCand(c)) {
+                    return { ...c, status: 'accepted', declineReason: null, respondedAt: nowIso };
                 }
                 return { ...c, status: c.status === 'declined' ? 'declined' : 'missed' };
             });
+            const updatedDeclinedIds = (qData.declinedMemberIds || []).filter(id => id !== memberId);
             transaction.update(queueRef, {
                 status: 'confirmed',
                 confirmedCandidateId: memberId,
                 confirmedCandidateName: candidateName,
                 bookedAt: nowIso,
+                declinedMemberIds: updatedDeclinedIds,
                 candidates: updatedCandidates,
                 history: FieldValue.arrayUnion({
                     timestamp: nowIso,
@@ -1358,8 +1374,11 @@ export const declineResponsibilitySlotHttp = onRequest({ cors: true, region: 'as
             const eligibleList = qData.eligibleMemberIds || [];
             const isCurrentConfirmed = qData.confirmedCandidateId === memberId;
             const nowIso = new Date().toISOString();
+            const normTargetName = String(memberName || '').trim().toLowerCase().replace(/\s+/g, ' ');
+            const isSameCand = (c) => c.candidateId === memberId ||
+                (normTargetName && normTargetName !== 'volunteer' && String(c.candidateName || '').trim().toLowerCase().replace(/\s+/g, ' ') === normTargetName);
             const updatedCandidates = (qData.candidates || []).map((c) => {
-                if (c.candidateId === memberId) {
+                if (isSameCand(c)) {
                     return { ...c, status: 'declined', declineReason: reason || 'Unavailable', respondedAt: nowIso };
                 }
                 return c;

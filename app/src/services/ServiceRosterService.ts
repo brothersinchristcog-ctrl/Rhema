@@ -1203,15 +1203,78 @@ class ServiceRosterService {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
+   * Deduplicate candidate entries by candidateId and normalized candidateName,
+   * preserving the most definitive response status ('accepted' > 'declined' > 'timed_out' > 'pending' > 'waiting').
+   */
+  deduplicateCandidates(candidates: CandidateEntry[] = []): CandidateEntry[] {
+    if (!Array.isArray(candidates) || candidates.length <= 1) return candidates || [];
+    const statusPriority: Record<string, number> = {
+      accepted: 5,
+      declined: 4,
+      timed_out: 3,
+      missed: 2,
+      pending: 1,
+      waiting: 0,
+    };
+
+    const result: CandidateEntry[] = [];
+    for (const cand of candidates) {
+      if (!cand) continue;
+      const cId = (cand.candidateId || '').trim();
+      const cName = (cand.candidateName || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+      const existingIdx = result.findIndex(existing => {
+        const eId = (existing.candidateId || '').trim();
+        const eName = (existing.candidateName || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        if (cId && eId && cId === eId) return true;
+        if (cName && eName && cName !== 'volunteer' && cName !== 'member' && cName === eName) return true;
+        return false;
+      });
+
+      if (existingIdx === -1) {
+        result.push({ ...cand });
+      } else {
+        const existing = result[existingIdx];
+        const pNew = statusPriority[cand.status] ?? 0;
+        const pOld = statusPriority[existing.status] ?? 0;
+        if (pNew >= pOld) {
+          result[existingIdx] = {
+            ...existing,
+            ...cand,
+            candidateId: existing.candidateId || cand.candidateId,
+            candidateName: cand.candidateName || existing.candidateName,
+            candidatePhone: cand.candidatePhone || existing.candidatePhone,
+            declineReason: cand.declineReason || existing.declineReason,
+            respondedAt: cand.respondedAt || existing.respondedAt,
+          };
+        } else {
+          result[existingIdx] = {
+            ...cand,
+            ...existing,
+            candidatePhone: existing.candidatePhone || cand.candidatePhone,
+            declineReason: existing.declineReason || cand.declineReason,
+            respondedAt: existing.respondedAt || cand.respondedAt,
+          };
+        }
+      }
+    }
+    return result;
+  }
+
+  /**
    * Fetch all assignment queues for a service plan
    */
   async getAssignmentQueues(churchId: string, serviceId: string): Promise<ServiceAssignmentQueue[]> {
     try {
       const snap = await this.getAssignmentQueuesCol(churchId, serviceId).get();
-      return snap.docs.map((doc: any) => ({
-        id: doc.id,
-        ...doc.data()
-      })) as ServiceAssignmentQueue[];
+      return snap.docs.map((doc: any) => {
+        const data = doc.data() || {};
+        return {
+          id: doc.id,
+          ...data,
+          candidates: this.deduplicateCandidates(data.candidates || [])
+        };
+      }) as ServiceAssignmentQueue[];
     } catch (err) {
       console.error('[ServiceRosterService] getAssignmentQueues error:', err);
       return [];
@@ -1228,10 +1291,14 @@ class ServiceRosterService {
   ): () => void {
     return this.getAssignmentQueuesCol(churchId, serviceId).onSnapshot(
       (snap: any) => {
-        const queues = snap.docs.map((doc: any) => ({
-          id: doc.id,
-          ...doc.data()
-        })) as ServiceAssignmentQueue[];
+        const queues = snap.docs.map((doc: any) => {
+          const data = doc.data() || {};
+          return {
+            id: doc.id,
+            ...data,
+            candidates: this.deduplicateCandidates(data.candidates || [])
+          };
+        }) as ServiceAssignmentQueue[];
         onUpdate(queues);
       },
       (err: any) => {
@@ -1546,6 +1613,14 @@ class ServiceRosterService {
       // 1. FIRST-COME, FIRST-SERVED AUTOMATIC SLOT BOOKING
       // ─────────────────────────────────────────────────────────────────────────
       const isFCFS = (qData as any).mode === 'first_come_first_served';
+      const normTargetName = (candidateName || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      const isSameCandidate = (c: CandidateEntry) => {
+        if (candidateId && c.candidateId === candidateId) return true;
+        const cNorm = (c.candidateName || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        if (normTargetName && cNorm && normTargetName !== 'volunteer' && cNorm === normTargetName) return true;
+        return false;
+      };
+
       if (isFCFS) {
         if (action === 'accept') {
           // Concurrency check: Ensure slot is not already booked!
@@ -1555,43 +1630,46 @@ class ServiceRosterService {
             }
             return;
           }
-          if (((qData as any).declinedMemberIds || []).includes(candidateId)) {
-            throw new Error('You have previously declined this responsibility.');
-          }
 
-          const resolvedName = candidateName ||
-            candidates.find(c => c.candidateId === candidateId)?.candidateName ||
-            'Volunteer';
+          const matchedCand = candidates.find(c => isSameCandidate(c));
+          const resolvedId = matchedCand?.candidateId || candidateId;
+          const resolvedName = candidateName || matchedCand?.candidateName || 'Volunteer';
 
-          const updatedCandidates = candidates.map(c => {
-            if (c.candidateId === candidateId) {
-              return { ...c, status: 'accepted' as const, respondedAt: nowIso };
+          let updatedCandidates: CandidateEntry[] = candidates.map((c): CandidateEntry => {
+            if (isSameCandidate(c)) {
+              return { ...c, status: 'accepted', declineReason: undefined, respondedAt: nowIso };
             }
-            return { ...c, status: c.status === 'declined' ? ('declined' as const) : ('missed' as const) };
+            return { ...c, status: c.status === 'declined' ? 'declined' : 'waiting' };
           });
 
-          if (!updatedCandidates.some(c => c.candidateId === candidateId)) {
+          if (!updatedCandidates.some(c => isSameCandidate(c))) {
             updatedCandidates.push({
-              candidateId,
+              candidateId: resolvedId,
               candidateName: resolvedName,
-              status: 'accepted' as const,
+              status: 'accepted',
               respondedAt: nowIso
             });
           }
+          updatedCandidates = this.deduplicateCandidates(updatedCandidates);
+
+          const updatedDeclinedIds = (((qData as any).declinedMemberIds || []) as string[]).filter(
+            id => id !== candidateId && id !== resolvedId
+          );
 
           const historyEntry = {
             timestamp: nowIso,
             action: 'slot_booked_first_come',
-            candidateId,
+            candidateId: resolvedId,
             candidateName: resolvedName,
             details: `Booked by ${resolvedName} (First to accept)`
           };
 
           transaction.update(queueRef, this.sanitizeForFirestore({
             status: 'confirmed',
-            confirmedCandidateId: candidateId,
+            confirmedCandidateId: resolvedId,
             confirmedCandidateName: resolvedName,
             bookedAt: nowIso,
+            declinedMemberIds: updatedDeclinedIds,
             candidates: updatedCandidates,
             history: firestore.FieldValue.arrayUnion(historyEntry),
             updatedAt: firestore.FieldValue.serverTimestamp()
@@ -1599,37 +1677,46 @@ class ServiceRosterService {
 
           transaction.update(planRef, this.sanitizeForFirestore({
             [`assignments.${roleId}`]: resolvedName,
-            [`assignmentMemberIds.${roleId}`]: candidateId,
+            [`assignmentMemberIds.${roleId}`]: resolvedId,
             [`assignmentStatus.${roleId}`]: 'confirmed',
             updatedAt: firestore.FieldValue.serverTimestamp()
           }));
           return;
         } else {
           // Decline in FCFS mode
-          const declinedList = Array.from(new Set([...((qData as any).declinedMemberIds || []), candidateId]));
-          const eligibleList = (qData as any).eligibleMemberIds || [];
-          const isCurrentConfirmed = qData.confirmedCandidateId === candidateId;
+          const matchedCand = candidates.find(c => isSameCandidate(c));
+          const resolvedId = matchedCand?.candidateId || candidateId;
+          const resolvedName = candidateName || matchedCand?.candidateName || 'Volunteer';
 
-          const updatedCandidates = candidates.map(c => {
-            if (c.candidateId === candidateId) {
+          const declinedList = Array.from(new Set([
+            ...((qData as any).declinedMemberIds || []),
+            resolvedId,
+            ...(candidateId ? [candidateId] : [])
+          ]));
+          const eligibleList = (qData as any).eligibleMemberIds || [];
+          const isCurrentConfirmed = qData.confirmedCandidateId === candidateId || qData.confirmedCandidateId === resolvedId;
+
+          let updatedCandidates = candidates.map(c => {
+            if (isSameCandidate(c)) {
               return { ...c, status: 'declined' as const, declineReason: reason || 'Unavailable', respondedAt: nowIso };
             }
             return c;
           });
 
-          if (!updatedCandidates.some(c => c.candidateId === candidateId)) {
+          if (!updatedCandidates.some(c => isSameCandidate(c))) {
             updatedCandidates.push({
-              candidateId,
-              candidateName: candidateName || 'Volunteer',
+              candidateId: resolvedId,
+              candidateName: resolvedName,
               status: 'declined' as const,
               declineReason: reason || 'Unavailable',
               respondedAt: nowIso
             });
           }
+          updatedCandidates = this.deduplicateCandidates(updatedCandidates);
 
           if (isCurrentConfirmed) {
             // Re-open the slot!
-            const remainingCount = eligibleList.filter((id: string) => !declinedList.includes(id)).length;
+            const remainingCount = updatedCandidates.filter(c => c.status !== 'declined').length;
             transaction.update(queueRef, this.sanitizeForFirestore({
               status: remainingCount > 0 ? 'pending' : 'exhausted',
               confirmedCandidateId: firestore.FieldValue.delete(),
@@ -1639,9 +1726,9 @@ class ServiceRosterService {
               history: firestore.FieldValue.arrayUnion({
                 timestamp: nowIso,
                 action: 'confirmed_member_cancelled_slot_reopened',
-                candidateId,
-                candidateName: candidateName || 'Volunteer',
-                details: `Cancelled by ${candidateName}: ${reason || 'Unavailable'}. Slot re-opened.`
+                candidateId: resolvedId,
+                candidateName: resolvedName,
+                details: `Cancelled by ${resolvedName}: ${reason || 'Unavailable'}. Slot re-opened.`
               }),
               updatedAt: firestore.FieldValue.serverTimestamp()
             }));
@@ -1653,7 +1740,7 @@ class ServiceRosterService {
               updatedAt: firestore.FieldValue.serverTimestamp()
             }));
           } else {
-            const allDeclined = eligibleList.length > 0 && declinedList.length >= eligibleList.length;
+            const allDeclined = updatedCandidates.length > 0 && updatedCandidates.every(c => c.status === 'declined');
             transaction.update(queueRef, this.sanitizeForFirestore({
               status: allDeclined ? 'exhausted' : qData.status,
               declinedMemberIds: declinedList,
@@ -1661,8 +1748,8 @@ class ServiceRosterService {
               history: firestore.FieldValue.arrayUnion({
                 timestamp: nowIso,
                 action: 'candidate_declined',
-                candidateId,
-                candidateName: candidateName || 'Volunteer',
+                candidateId: resolvedId,
+                candidateName: resolvedName,
                 details: `Declined: ${reason || 'Unavailable'}`
               }),
               updatedAt: firestore.FieldValue.serverTimestamp()
@@ -2076,15 +2163,36 @@ class ServiceRosterService {
           reasons.push('Blocked Out');
         }
 
-        results.push({
-          memberId: m.id,
-          memberName: m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim() || 'Church Member',
-          memberPhone: m.phone,
-          matchScore: score,
-          matchReasons: reasons,
-          isAvailable: availCheck.isAvailable,
-          availabilityReason: availCheck.reason
-        });
+        const fullName = m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim() || 'Church Member';
+        const normName = fullName.trim().toLowerCase().replace(/\s+/g, ' ');
+        const existingIdx = results.findIndex(r =>
+          r.memberId === m.id ||
+          (normName && normName !== 'church member' && r.memberName.trim().toLowerCase().replace(/\s+/g, ' ') === normName)
+        );
+
+        if (existingIdx !== -1) {
+          if (score > results[existingIdx].matchScore) {
+            results[existingIdx] = {
+              memberId: m.id,
+              memberName: fullName,
+              memberPhone: m.phone || results[existingIdx].memberPhone,
+              matchScore: score,
+              matchReasons: reasons,
+              isAvailable: availCheck.isAvailable,
+              availabilityReason: availCheck.reason
+            };
+          }
+        } else {
+          results.push({
+            memberId: m.id,
+            memberName: fullName,
+            memberPhone: m.phone,
+            matchScore: score,
+            matchReasons: reasons,
+            isAvailable: availCheck.isAvailable,
+            availabilityReason: availCheck.reason
+          });
+        }
       }
 
       // Sort descending by score

@@ -2642,17 +2642,21 @@ export default function AdminServicePlanner({ navigation }: any) {
     }
   };
 
-  const openSimulateModal = (queue: ServiceAssignmentQueue) => {
+  const openSimulateModal = (queue: ServiceAssignmentQueue, initialAction: 'accept' | 'decline' = 'accept') => {
     setActiveQueueForSimulate(queue);
-    setSimulateAction('accept');
+    setSimulateAction(initialAction);
     setSimulateDeclineReason('Out of town for personal engagement');
     setShowSimulateModal(true);
   };
 
   const handleSimulateResponseSubmit = async () => {
     if (!selectedPlan || !activeQueueForSimulate) return;
+    const uniqueCands = ServiceRosterService.deduplicateCandidates(activeQueueForSimulate.candidates || []);
     const curIdx = activeQueueForSimulate.currentCandidateIndex || 0;
-    const candidate = activeQueueForSimulate.candidates?.[curIdx];
+    const pendingCand = uniqueCands.find(c => c.status === 'pending' || c.status === 'waiting');
+    const candidate = activeQueueForSimulate.mode === 'first_come_first_served'
+      ? (pendingCand || uniqueCands[0])
+      : (uniqueCands[curIdx] || pendingCand || uniqueCands[0]);
     if (!candidate) {
       Alert.alert('Error', 'No active candidate found in this queue.');
       return;
@@ -2666,7 +2670,8 @@ export default function AdminServicePlanner({ navigation }: any) {
         activeQueueForSimulate.roleId,
         candidate.candidateId,
         simulateAction,
-        simulateAction === 'decline' ? simulateDeclineReason : undefined
+        simulateAction === 'decline' ? simulateDeclineReason : undefined,
+        candidate.candidateName
       );
 
       setShowSimulateModal(false);
@@ -3937,89 +3942,92 @@ export default function AdminServicePlanner({ navigation }: any) {
                       key={item.id ? `set_${item.id}_${index}` : `set_${index}`}
                       style={[styles.setlistCard, { backgroundColor: cardSurface, borderColor }]}
                     >
-                      {/* Reorder Arrows */}
-                      <View style={styles.reorderColumn}>
-                        <TouchableOpacity
-                          style={[styles.reorderArrow, index === 0 && { opacity: 0.2 }]}
-                          disabled={index === 0}
-                          onPress={() => handleMoveSetlistSong(index, 'up')}
-                        >
-                          <ChevronUp size={16} color="#64748B" />
-                        </TouchableOpacity>
-                        <Text style={styles.orderNumberText}>{index + 1}</Text>
-                        <TouchableOpacity
-                          style={[styles.reorderArrow, index === selectedPlan.setlist.length - 1 && { opacity: 0.2 }]}
-                          disabled={index === selectedPlan.setlist.length - 1}
-                          onPress={() => handleMoveSetlistSong(index, 'down')}
-                        >
-                          <ChevronDown size={16} color="#64748B" />
-                        </TouchableOpacity>
-                      </View>
-
-                      {/* Song Details */}
-                      <View style={{ flex: 1, paddingHorizontal: 10 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                          <View style={styles.keyBadge}>
-                            <Text style={styles.keyBadgeTxt}>Key {item.key || 'G'}</Text>
-                          </View>
-                          <View style={styles.bpmBadge}>
-                            <Text style={styles.bpmBadgeTxt}>{item.tempo || '120'} BPM</Text>
-                          </View>
-                          <View style={styles.timeSigBadge}>
-                            <Text style={styles.timeSigBadgeTxt}>{item.timeSignature || '4/4'}</Text>
-                          </View>
-                          <Text style={[styles.durationTxt, { color: secondaryText }]}>
-                            ⏱️ ~{item.durationMinutes || 6}m
-                          </Text>
+                      {/* Top Row: Reorder Arrows + Song Details */}
+                      <View style={{ flexDirection: 'row', alignItems: 'flex-start', width: '100%' }}>
+                        {/* Reorder Arrows */}
+                        <View style={styles.reorderColumn}>
+                          <TouchableOpacity
+                            style={[styles.reorderArrow, index === 0 && { opacity: 0.2 }]}
+                            disabled={index === 0}
+                            onPress={() => handleMoveSetlistSong(index, 'up')}
+                          >
+                            <ChevronUp size={16} color="#64748B" />
+                          </TouchableOpacity>
+                          <Text style={styles.orderNumberText}>{index + 1}</Text>
+                          <TouchableOpacity
+                            style={[styles.reorderArrow, index === selectedPlan.setlist.length - 1 && { opacity: 0.2 }]}
+                            disabled={index === selectedPlan.setlist.length - 1}
+                            onPress={() => handleMoveSetlistSong(index, 'down')}
+                          >
+                            <ChevronDown size={16} color="#64748B" />
+                          </TouchableOpacity>
                         </View>
 
-                        <Text style={[styles.setlistSongTitle, { color: primaryText }]}>
-                          {item.title}
-                        </Text>
-                        {item.titleTe ? (
-                          <Text style={[styles.setlistSongTe, { color: '#D97706' }]}>
-                            {item.titleTe}
+                        {/* Song Details */}
+                        <View style={{ flex: 1, paddingHorizontal: 10 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <View style={styles.keyBadge}>
+                              <Text style={styles.keyBadgeTxt}>Key {item.key || 'G'}</Text>
+                            </View>
+                            <View style={styles.bpmBadge}>
+                              <Text style={styles.bpmBadgeTxt}>{item.tempo || '120'} BPM</Text>
+                            </View>
+                            <View style={styles.timeSigBadge}>
+                              <Text style={styles.timeSigBadgeTxt}>{item.timeSignature || '4/4'}</Text>
+                            </View>
+                            <Text style={[styles.durationTxt, { color: secondaryText }]}>
+                              ⏱️ ~{item.durationMinutes || 6}m
+                            </Text>
+                          </View>
+
+                          <Text style={[styles.setlistSongTitle, { color: primaryText }]}>
+                            {item.title}
                           </Text>
-                        ) : null}
+                          {item.titleTe ? (
+                            <Text style={[styles.setlistSongTe, { color: '#D97706' }]}>
+                              {item.titleTe}
+                            </Text>
+                          ) : null}
 
-                        <Text style={[styles.setlistLeaderTxt, { color: secondaryText }]}>
-                          🎤 Song Leader: <Text style={{ fontWeight: '700', color: primaryText }}>{item.ledBy || 'Worship Leader'}</Text>
-                        </Text>
+                          <Text style={[styles.setlistLeaderTxt, { color: secondaryText }]}>
+                            🎤 Song Leader: <Text style={{ fontWeight: '700', color: primaryText }}>{item.ledBy || 'Worship Leader'}</Text>
+                          </Text>
 
-                        {/* Musicians Breakdown (Inherits from Whole-Service Band) */}
-                        <View style={styles.musiciansChipRow}>
-                          {(musicians.keyboard?.memberName || selectedPlan.assignments?.['role_keyboard']) && (
-                            <View style={styles.musicianChip}>
-                              <Text style={styles.musicianChipTxt}>🎹 Keys: {musicians.keyboard?.memberName || selectedPlan.assignments?.['role_keyboard']}</Text>
-                            </View>
-                          )}
-                          {(musicians.drums?.memberName || selectedPlan.assignments?.['role_drums']) && (
-                            <View style={styles.musicianChip}>
-                              <Text style={styles.musicianChipTxt}>🥁 Drums: {musicians.drums?.memberName || selectedPlan.assignments?.['role_drums']}</Text>
-                            </View>
-                          )}
-                          {(musicians.bass?.memberName || selectedPlan.assignments?.['role_bass']) && (
-                            <View style={styles.musicianChip}>
-                              <Text style={styles.musicianChipTxt}>🎸 Bass: {musicians.bass?.memberName || selectedPlan.assignments?.['role_bass']}</Text>
-                            </View>
-                          )}
-                          {(musicians.acoustic?.memberName || selectedPlan.assignments?.['role_acoustic']) && (
-                            <View style={styles.musicianChip}>
-                              <Text style={styles.musicianChipTxt}>🎸 Acoustic: {musicians.acoustic?.memberName || selectedPlan.assignments?.['role_acoustic']}</Text>
-                            </View>
-                          )}
-                          {(musicians.electric?.memberName || selectedPlan.assignments?.['role_electric']) && (
-                            <View style={styles.musicianChip}>
-                              <Text style={styles.musicianChipTxt}>⚡ Electric: {musicians.electric?.memberName || selectedPlan.assignments?.['role_electric']}</Text>
-                            </View>
-                          )}
+                          {/* Musicians Breakdown (Inherits from Whole-Service Band) */}
+                          <View style={styles.musiciansChipRow}>
+                            {(musicians.keyboard?.memberName || selectedPlan.assignments?.['role_keyboard']) && (
+                              <View style={styles.musicianChip}>
+                                <Text style={styles.musicianChipTxt}>🎹 Keys: {musicians.keyboard?.memberName || selectedPlan.assignments?.['role_keyboard']}</Text>
+                              </View>
+                            )}
+                            {(musicians.drums?.memberName || selectedPlan.assignments?.['role_drums']) && (
+                              <View style={styles.musicianChip}>
+                                <Text style={styles.musicianChipTxt}>🥁 Drums: {musicians.drums?.memberName || selectedPlan.assignments?.['role_drums']}</Text>
+                              </View>
+                            )}
+                            {(musicians.bass?.memberName || selectedPlan.assignments?.['role_bass']) && (
+                              <View style={styles.musicianChip}>
+                                <Text style={styles.musicianChipTxt}>🎸 Bass: {musicians.bass?.memberName || selectedPlan.assignments?.['role_bass']}</Text>
+                              </View>
+                            )}
+                            {(musicians.acoustic?.memberName || selectedPlan.assignments?.['role_acoustic']) && (
+                              <View style={styles.musicianChip}>
+                                <Text style={styles.musicianChipTxt}>🎸 Acoustic: {musicians.acoustic?.memberName || selectedPlan.assignments?.['role_acoustic']}</Text>
+                              </View>
+                            )}
+                            {(musicians.electric?.memberName || selectedPlan.assignments?.['role_electric']) && (
+                              <View style={styles.musicianChip}>
+                                <Text style={styles.musicianChipTxt}>⚡ Electric: {musicians.electric?.memberName || selectedPlan.assignments?.['role_electric']}</Text>
+                              </View>
+                            )}
+                          </View>
+
+                          {item.rehearsalNotes ? (
+                            <Text style={[styles.rehearsalNotesTxt, { color: secondaryText }]} numberOfLines={2}>
+                              📝 Arrangement: {item.rehearsalNotes}
+                            </Text>
+                          ) : null}
                         </View>
-
-                        {item.rehearsalNotes ? (
-                          <Text style={[styles.rehearsalNotesTxt, { color: secondaryText }]} numberOfLines={2}>
-                            📝 Arrangement: {item.rehearsalNotes}
-                          </Text>
-                        ) : null}
                       </View>
 
                       {/* Action Row below song details - Clean, professional, dark-mode compliant */}
@@ -4267,133 +4275,129 @@ export default function AdminServicePlanner({ navigation }: any) {
                     )}
 
                     {/* Candidate Ladder / Eligible Members when queue exists */}
-                    {queue && queue.candidates && queue.candidates.length > 0 && (
-                      <View style={[
-                        styles.candidateLadderBox,
-                        {
-                          backgroundColor: isDark ? '#27272A' : '#F8FAFC',
-                          borderColor: isDark ? '#3F3F46' : '#E2E8F0',
-                          borderWidth: 1,
-                        }
-                      ]}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                          <Text style={[styles.candidateLadderHeading, { color: isDark ? '#A1A1AA' : '#64748B', marginBottom: 0 }]}>
-                            {queue.mode === 'first_come_first_served'
-                              ? `ELIGIBLE MEMBERS & RESPONSES (${queue.candidates.length} volunteers)`
-                              : `CANDIDATE REPLACEMENT LADDER (${queue.candidates.length} candidates)`}
-                          </Text>
-                          <Text style={{ fontSize: 10, color: isDark ? '#71717A' : '#94A3B8' }}>
-                            Timeout: {Math.round((queue.timeoutMinutes || 1440) / 60)}h{queue.mode === 'first_come_first_served' ? ' · First-Come' : ''}
-                          </Text>
-                        </View>
-                        {queue.candidates.map((cand, idx) => {
-                          const isCurrentActive = idx === curIdx && isPending;
-                          const isCandAccepted = cand.status === 'accepted';
-                          const isCandDeclined = cand.status === 'declined';
-                          const isCandTimedOut = cand.status === 'timed_out';
+                    {queue && queue.candidates && queue.candidates.length > 0 && (() => {
+                      const uniqueCandidates = ServiceRosterService.deduplicateCandidates(queue.candidates);
+                      return (
+                        <View style={[
+                          styles.candidateLadderBox,
+                          {
+                            backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                            borderColor: isDark ? '#3F3F46' : '#E2E8F0',
+                            borderWidth: 1,
+                          }
+                        ]}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                            <Text style={[styles.candidateLadderHeading, { color: isDark ? '#A1A1AA' : '#64748B', marginBottom: 0 }]}>
+                              {queue.mode === 'first_come_first_served'
+                                ? `ELIGIBLE MEMBERS & RESPONSES (${uniqueCandidates.length} ${uniqueCandidates.length === 1 ? 'volunteer' : 'volunteers'})`
+                                : `CANDIDATE REPLACEMENT LADDER (${uniqueCandidates.length} ${uniqueCandidates.length === 1 ? 'candidate' : 'candidates'})`}
+                            </Text>
+                            <Text style={{ fontSize: 10, color: isDark ? '#71717A' : '#94A3B8' }}>
+                              Timeout: {Math.round((queue.timeoutMinutes || 1440) / 60)}h{queue.mode === 'first_come_first_served' ? ' · First-Come' : ''}
+                            </Text>
+                          </View>
+                          {uniqueCandidates.map((cand, idx) => {
+                            const isCurrentActive = idx === curIdx && isPending;
+                            const isCandAccepted = cand.status === 'accepted';
+                            const isCandDeclined = cand.status === 'declined';
+                            const isCandTimedOut = cand.status === 'timed_out';
 
-                          return (
-                            <View
-                              key={cand.candidateId ? `cand_${cand.candidateId}_${idx}` : `cand_${idx}`}
-                              style={[
-                                styles.ladderCandidateRow,
-                                { borderBottomColor: isDark ? '#3F3F46' : '#F1F5F9' },
-                                isCurrentActive && [
-                                  styles.ladderCandidateRowActive,
-                                  { backgroundColor: isDark ? 'rgba(217, 119, 6, 0.2)' : '#FEF3C7' }
-                                ],
-                                isCandAccepted && [
-                                  styles.ladderCandidateRowAccepted,
-                                  { backgroundColor: isDark ? 'rgba(5, 150, 105, 0.2)' : '#ECFDF5' }
-                                ]
-                              ]}
-                            >
-                              <View style={[
-                                styles.rankCircle,
-                                isCurrentActive ? styles.rankCircleActive :
-                                  isCandAccepted ? styles.rankCircleAccepted :
-                                    isCandDeclined ? styles.rankCircleDeclined :
-                                      styles.rankCircleIdle
-                              ]}>
-                                <Text style={styles.rankCircleTxt}>{idx + 1}</Text>
-                              </View>
+                            return (
+                              <View
+                                key={cand.candidateId ? `cand_${cand.candidateId}_${idx}` : `cand_${idx}`}
+                                style={[
+                                  styles.ladderCandidateRow,
+                                  { borderBottomColor: isDark ? '#3F3F46' : '#F1F5F9' },
+                                  isCurrentActive && [
+                                    styles.ladderCandidateRowActive,
+                                    { backgroundColor: isDark ? 'rgba(217, 119, 6, 0.2)' : '#FEF3C7' }
+                                  ],
+                                  isCandAccepted && [
+                                    styles.ladderCandidateRowAccepted,
+                                    { backgroundColor: isDark ? 'rgba(5, 150, 105, 0.2)' : '#ECFDF5' }
+                                  ]
+                                ]}
+                              >
+                                <View style={[
+                                  styles.rankCircle,
+                                  isCurrentActive ? styles.rankCircleActive :
+                                    isCandAccepted ? styles.rankCircleAccepted :
+                                      isCandDeclined ? styles.rankCircleDeclined :
+                                        styles.rankCircleIdle
+                                ]}>
+                                  <Text style={styles.rankCircleTxt}>{idx + 1}</Text>
+                                </View>
 
-                              <View style={{ flex: 1, paddingHorizontal: 8 }}>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                  <Text style={[styles.ladderCandName, { color: primaryText }]}>
-                                    {cand.candidateName}
+                                <View style={{ flex: 1, paddingHorizontal: 8 }}>
+                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                    <Text style={[styles.ladderCandName, { color: primaryText }]}>
+                                      {cand.candidateName}
+                                    </Text>
+                                    {queue.mode !== 'first_come_first_served' && !isCandDeclined && !isCandAccepted && (
+                                      <View style={{
+                                        paddingHorizontal: 5,
+                                        paddingVertical: 1,
+                                        borderRadius: 4,
+                                        backgroundColor: isDark ? 'rgba(217, 119, 6, 0.2)' : '#FFFBEB'
+                                      }}>
+                                        <Text style={{
+                                          fontSize: 9.5,
+                                          fontWeight: '700',
+                                          color: isDark ? '#FBBF24' : '#D97706'
+                                        }}>
+                                          {idx === 0 ? 'Primary' : idx === 1 ? '1st Backup' : '2nd Backup'}
+                                        </Text>
+                                      </View>
+                                    )}
+                                  </View>
+                                  <Text style={[
+                                    styles.ladderCandMeta,
+                                    {
+                                      color: isCandAccepted ? (isDark ? '#34D399' : '#059669') :
+                                        isCandDeclined ? (isDark ? '#F87171' : '#DC2626') :
+                                          isCurrentActive ? (isDark ? '#FBBF24' : '#D97706') :
+                                            secondaryText
+                                    }
+                                  ]}>
+                                    {isCandAccepted ? '✅ Accepted & confirmed (Slot Booked)' :
+                                      isCandDeclined ? `❌ Declined: ${cand.declineReason || 'Unavailable'}` :
+                                        isCandTimedOut ? '⏰ Response deadline expired' :
+                                          queue.mode === 'first_come_first_served'
+                                            ? (queue.status === 'confirmed' ? 'Slot booked by another member' : `⏳ Awaiting response · First to accept gets booked`)
+                                            : (isCurrentActive ? `⏳ Awaiting response · Deadline in ~${Math.round(queue.timeoutMinutes / 60)}h` :
+                                                idx === 1 ? 'In reserve (1st Backup)' : 'In reserve (2nd Backup)')}
                                   </Text>
-                                  <View style={{
-                                    paddingHorizontal: 5,
-                                    paddingVertical: 1,
-                                    borderRadius: 4,
-                                    backgroundColor: isCandAccepted
-                                      ? (isDark ? 'rgba(5, 150, 105, 0.2)' : '#ECFDF5')
-                                      : isCandDeclined
-                                        ? (isDark ? 'rgba(220, 38, 38, 0.2)' : '#FEF2F2')
-                                        : (isDark ? 'rgba(217, 119, 6, 0.2)' : '#FFFBEB')
-                                  }}>
-                                    <Text style={{
-                                      fontSize: 9.5,
-                                      fontWeight: '700',
-                                      color: isCandAccepted
-                                        ? (isDark ? '#34D399' : '#059669')
-                                        : isCandDeclined
-                                          ? (isDark ? '#F87171' : '#DC2626')
-                                          : (isDark ? '#FBBF24' : '#D97706')
-                                    }}>
-                                      {queue.mode === 'first_come_first_served'
-                                        ? (isCandAccepted ? 'Booked' : isCandDeclined ? 'Declined' : 'Eligible')
-                                        : (idx === 0 ? 'Primary' : idx === 1 ? '1st Backup' : '2nd Backup')}
+                                </View>
+
+                                {!isCandDeclined && (
+                                  <View style={[
+                                    styles.candStatusMiniPill,
+                                    isCandAccepted ? styles.candPillAccepted :
+                                      isCandTimedOut ? styles.candPillTimedOut :
+                                        isCurrentActive ? styles.candPillActive :
+                                          [styles.candPillWaiting, { backgroundColor: isDark ? '#3F3F46' : '#E2E8F0' }]
+                                  ]}>
+                                    <Text style={[
+                                      styles.candStatusMiniTxt,
+                                      (!isCandAccepted && !isCandTimedOut && !isCurrentActive) ? {
+                                        color: isDark ? '#D4D4D8' : '#64748B'
+                                      } : { color: '#FFFFFF' }
+                                    ]}>
+                                      {isCandAccepted ? 'BOOKED' : (queue.mode === 'first_come_first_served' ? 'OFFERED' : cand.status.toUpperCase())}
                                     </Text>
                                   </View>
-                                </View>
-                                <Text style={[
-                                  styles.ladderCandMeta,
-                                  {
-                                    color: isCandAccepted ? (isDark ? '#34D399' : '#059669') :
-                                      isCandDeclined ? (isDark ? '#F87171' : '#DC2626') :
-                                        isCurrentActive ? (isDark ? '#FBBF24' : '#D97706') :
-                                          secondaryText
-                                  }
-                                ]}>
-                                  {isCandAccepted ? '✅ Accepted & confirmed (Slot Booked)' :
-                                    isCandDeclined ? `❌ Declined: ${cand.declineReason || 'Unavailable'}` :
-                                      isCandTimedOut ? '⏰ Response deadline expired' :
-                                        queue.mode === 'first_come_first_served'
-                                          ? (queue.status === 'confirmed' ? 'Slot booked by another member' : `⏳ Awaiting response · First to accept gets booked`)
-                                          : (isCurrentActive ? `⏳ Awaiting response · Deadline in ~${Math.round(queue.timeoutMinutes / 60)}h` :
-                                              idx === 1 ? 'In reserve (1st Backup)' : 'In reserve (2nd Backup)')}
-                                </Text>
+                                )}
                               </View>
+                            );
+                          })}
+                        </View>
+                      );
+                    })()}
 
-                              <View style={[
-                                styles.candStatusMiniPill,
-                                isCandAccepted ? styles.candPillAccepted :
-                                  isCandDeclined ? styles.candPillDeclined :
-                                    isCandTimedOut ? styles.candPillTimedOut :
-                                      isCurrentActive ? styles.candPillActive :
-                                        [styles.candPillWaiting, { backgroundColor: isDark ? '#3F3F46' : '#E2E8F0' }]
-                              ]}>
-                                <Text style={[
-                                  styles.candStatusMiniTxt,
-                                  (!isCandAccepted && !isCandDeclined && !isCandTimedOut && !isCurrentActive) ? {
-                                    color: isDark ? '#D4D4D8' : '#64748B'
-                                  } : { color: '#FFFFFF' }
-                                ]}>
-                                  {isCandAccepted ? 'BOOKED' : isCandDeclined ? 'DECLINED' : (queue.mode === 'first_come_first_served' ? 'OFFERED' : cand.status.toUpperCase())}
-                                </Text>
-                              </View>
-                            </View>
-                          );
-                        })}
-                      </View>
-                    )}
-
-                    {/* Actions: Row 1 (Primary 2-column balanced action buttons) */}
+                    {/* Actions: Row 1 (Primary 2-column balanced action buttons: Broadcast & Direct Assign) */}
                     <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
                       <TouchableOpacity
-                        style={[styles.dispatchQueueBtn, { flex: 1, paddingVertical: 9, justifyContent: 'center' }]}
+                        style={[styles.dispatchQueueBtn, { flex: 1, paddingVertical: 9, paddingHorizontal: 10, justifyContent: 'center' }]}
                         onPress={() => openDispatchQueueModal(
                           role.roleId,
                           role.roleTitle,
@@ -4405,8 +4409,8 @@ export default function AdminServicePlanner({ navigation }: any) {
                         activeOpacity={0.8}
                       >
                         <Send size={12} color="#FFFFFF" />
-                        <Text style={styles.dispatchQueueBtnTxt}>
-                          {notDispatched ? '⚡ Auto-Assign' : (queue?.mode === 'first_come_first_served' ? '⚡ Broadcast / Configure' : 'Reconfigure Ladder')}
+                        <Text style={styles.dispatchQueueBtnTxt} numberOfLines={1}>
+                          {notDispatched ? '⚡ Auto-Assign' : (queue?.mode === 'first_come_first_served' ? '⚡ Broadcast' : '⚡ Reconfigure')}
                         </Text>
                       </TouchableOpacity>
 
@@ -4416,6 +4420,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                           {
                             flex: 1,
                             paddingVertical: 9,
+                            paddingHorizontal: 10,
                             justifyContent: 'center',
                             backgroundColor: isDark ? '#27272A' : '#F8FAFC',
                             borderColor: isDark ? '#3F3F46' : '#CBD5E1'
@@ -4425,46 +4430,81 @@ export default function AdminServicePlanner({ navigation }: any) {
                         activeOpacity={0.8}
                       >
                         <UserCheck size={13} color={primaryText} />
-                        <Text style={[styles.overrideBtnTxt, { color: primaryText }]}>Direct Assign</Text>
+                        <Text style={[styles.overrideBtnTxt, { color: primaryText }]} numberOfLines={1}>Direct Assign</Text>
                       </TouchableOpacity>
                     </View>
 
-                    {/* Actions: Row 2 (Secondary actions: Simulate & Delete/Reset) */}
+                    {/* Actions: Row 2 (Accept, Decline & Reset buttons cleanly aligned) */}
                     {queue && (
                       <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-                        {isPending ? (
-                          <TouchableOpacity
-                            style={[
-                              styles.simulateBtn,
-                              {
-                                flex: 1,
-                                paddingVertical: 8,
-                                justifyContent: 'center',
-                                backgroundColor: isDark ? 'rgba(217, 119, 6, 0.15)' : '#FFFBEB',
-                                borderColor: isDark ? 'rgba(217, 119, 6, 0.35)' : '#FDE68A'
-                              }
-                            ]}
-                            onPress={() => openSimulateModal(queue)}
-                            activeOpacity={0.8}
-                          >
-                            <RefreshCw size={12} color="#D97706" />
-                            <Text style={[styles.simulateBtnTxt, { color: isDark ? '#FBBF24' : '#B45309' }]}>
-                              Simulate Member
-                            </Text>
-                          </TouchableOpacity>
-                        ) : null}
+                        <TouchableOpacity
+                          style={[
+                            styles.simulateBtn,
+                            {
+                              flex: 1,
+                              paddingVertical: 8,
+                              paddingHorizontal: 8,
+                              justifyContent: 'center',
+                              backgroundColor: isDark ? 'rgba(5, 150, 105, 0.15)' : '#ECFDF5',
+                              borderColor: isDark ? 'rgba(5, 150, 105, 0.35)' : '#A7F3D0'
+                            }
+                          ]}
+                          onPress={() => {
+                            if (queue.candidates && queue.candidates.length > 0) {
+                              openSimulateModal(queue, 'accept');
+                            } else {
+                              openManualOverrideModal(role.roleId, role.roleTitle);
+                            }
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          <CheckCircle2 size={12} color={isDark ? '#34D399' : '#059669'} />
+                          <Text style={[styles.simulateBtnTxt, { color: isDark ? '#34D399' : '#059669' }]} numberOfLines={1}>
+                            Accept
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.simulateBtn,
+                            {
+                              flex: 1,
+                              paddingVertical: 8,
+                              paddingHorizontal: 8,
+                              justifyContent: 'center',
+                              backgroundColor: isDark ? 'rgba(217, 119, 6, 0.15)' : '#FFFBEB',
+                              borderColor: isDark ? 'rgba(217, 119, 6, 0.35)' : '#FDE68A'
+                            }
+                          ]}
+                          onPress={() => {
+                            if (queue.candidates && queue.candidates.length > 0) {
+                              openSimulateModal(queue, 'decline');
+                            } else {
+                              Alert.alert(
+                                'No Candidates in Queue',
+                                `No candidate is currently queued for "${role.roleTitle}". Tap "⚡ Broadcast" to add candidates first.`
+                              );
+                            }
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          <X size={12} color={isDark ? '#FBBF24' : '#D97706'} />
+                          <Text style={[styles.simulateBtnTxt, { color: isDark ? '#FBBF24' : '#B45309' }]} numberOfLines={1}>
+                            Decline
+                          </Text>
+                        </TouchableOpacity>
 
                         <TouchableOpacity
                           style={[
                             styles.deleteQueueBtn,
                             {
-                              flex: isPending ? 0 : 1,
+                              flex: 1,
                               paddingVertical: 8,
-                              paddingHorizontal: 12,
+                              paddingHorizontal: 8,
                               flexDirection: 'row',
                               alignItems: 'center',
                               justifyContent: 'center',
-                              gap: 6,
+                              gap: 5,
                               backgroundColor: isDark ? 'rgba(220, 38, 38, 0.15)' : '#FEF2F2',
                               borderColor: isDark ? 'rgba(220, 38, 38, 0.35)' : '#FECACA'
                             }
@@ -4472,9 +4512,9 @@ export default function AdminServicePlanner({ navigation }: any) {
                           onPress={() => handleDeleteQueue(role.roleId, role.roleTitle)}
                           activeOpacity={0.8}
                         >
-                          <Trash2 size={13} color="#DC2626" />
-                          <Text style={{ fontSize: 11.5, fontWeight: '700', color: '#DC2626' }}>
-                            {isPending ? 'Reset' : 'Reset Queue'}
+                          <Trash2 size={12} color="#DC2626" />
+                          <Text style={{ fontSize: 11.5, fontWeight: '700', color: '#DC2626' }} numberOfLines={1}>
+                            Reset
                           </Text>
                         </TouchableOpacity>
                       </View>
@@ -8663,8 +8703,8 @@ const styles = StyleSheet.create({
   },
   // Phase 3: Setlist Styles
   setlistCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'column',
+    alignItems: 'stretch',
     borderRadius: 14,
     borderWidth: 1.2,
     padding: 13,
@@ -9837,13 +9877,13 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   dispatchQueueBtn: {
-    height: 38,
+    minHeight: 38,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
     backgroundColor: '#2E6B4F',
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     borderRadius: 8,
   },
   dispatchQueueBtnTxt: {
@@ -9852,12 +9892,12 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   overrideBtn: {
-    height: 38,
+    minHeight: 38,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     borderRadius: 8,
     borderWidth: 1,
   },
@@ -9866,7 +9906,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   simulateBtn: {
-    height: 34,
+    minHeight: 36,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -9880,7 +9920,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   deleteQueueBtn: {
-    height: 34,
+    minHeight: 36,
     paddingHorizontal: 10,
     borderRadius: 8,
     borderWidth: 1,
