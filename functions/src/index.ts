@@ -1781,4 +1781,7 @@ export {
   triggerCheckRosterTimeoutsHttp,
   dispatchServiceAssignmentNotificationHttp,
   onServiceRehearsalCreated,
+  onServicePlanPublished,
+  bookResponsibilitySlotHttp,
+  declineResponsibilitySlotHttp,
 } from './rosterNotifications.js';

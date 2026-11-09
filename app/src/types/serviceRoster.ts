@@ -260,9 +260,14 @@ export interface ServiceAssignmentQueue {
   roleTitle: string;
   activityId?: string;
   activityName?: string;
+  mode?: 'sequential' | 'first_come_first_served';
   status: 'draft' | 'pending' | 'confirmed' | 'exhausted' | 'manual_required' | 'cancelled';
   confirmedCandidateId?: string;
   confirmedCandidateName?: string;
+  bookedAt?: string;
+  deadline?: string;
+  eligibleMemberIds?: string[];
+  declinedMemberIds?: string[];
   currentCandidateIndex: number;
   timeoutMinutes: number; // e.g. 1440 (24 hours)
   candidates: CandidateEntry[];

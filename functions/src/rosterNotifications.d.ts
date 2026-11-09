@@ -81,4 +81,48 @@ export declare const onServiceRehearsalCreated: import("firebase-functions/core"
     serviceId: string;
     rehearsalId: string;
 }>>;
+/**
+ * 🔍 HELPER: Identifies all eligible church members with matching skills and availability
+ */
+export declare function findEligibleMembersForResponsibility(db: FirebaseFirestore.Firestore, churchId: string, serviceDate: string, roleId: string, roleTitle: string, requiredSkill?: string, category?: string): Promise<Array<{
+    memberId: string;
+    memberName: string;
+    memberPhone?: string;
+    fcmTokens: string[];
+}>>;
+/**
+ * 📢 HELPER: Alerts Church Admins and Pastors when manual action is needed
+ */
+export declare function notifyChurchAdmins(db: FirebaseFirestore.Firestore, churchId: string, params: {
+    title: string;
+    body: string;
+    serviceId: string;
+    roleId?: string;
+    serviceTitle?: string;
+}): Promise<void>;
+/**
+ * ⚡ DISPATCH AUTOMATIC RESPONSIBILITIES WHEN SERVICE IS PUBLISHED
+ */
+export declare function autoDispatchPublishedServiceResponsibilities(params: {
+    db: FirebaseFirestore.Firestore;
+    churchId: string;
+    serviceId: string;
+    plan: any;
+}): Promise<void>;
+/**
+ * 🚀 ON SERVICE PLAN PUBLISHED:
+ * Automatically runs First-Come, First-Served auto-assignment broadcast to all eligible members!
+ */
+export declare const onServicePlanPublished: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").DocumentSnapshot> | undefined, {
+    churchId: string;
+    serviceId: string;
+}>>;
+/**
+ * 🔒 HTTP TRIGGER: SAFE TRANSACTIONAL FIRST-COME SLOT BOOKING
+ */
+export declare const bookResponsibilitySlotHttp: import("firebase-functions/v2/https").HttpsFunction;
+/**
+ * ❌ HTTP TRIGGER: SAFE TRANSACTIONAL DECLINE & AUTO-REASSIGNMENT
+ */
+export declare const declineResponsibilitySlotHttp: import("firebase-functions/v2/https").HttpsFunction;
 //# sourceMappingURL=rosterNotifications.d.ts.map

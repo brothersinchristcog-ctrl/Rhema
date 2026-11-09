@@ -1511,14 +1511,30 @@ export default function AdminServicePlanner({ navigation }: any) {
                 }
               }
 
+              // Automatically dispatch First-Come, First-Served broadcast for all unassigned responsibilities
+              let fcfsDispatchedCount = 0;
+              try {
+                const fcfsRes = await ServiceRosterService.autoDispatchFirstComeResponsibilities(churchId, plan.id);
+                fcfsDispatchedCount = fcfsRes.dispatchedCount;
+              } catch (fcfsErr) {
+                console.warn('[PublishService] autoDispatchFirstComeResponsibilities error:', fcfsErr);
+              }
+
               const updatedPlan = { ...plan, status: 'published' as ServiceStatus };
               setSelectedPlan(updatedPlan);
               setPlans(plans.map(p => p.id === plan.id ? updatedPlan : p));
 
               const count = dispatchedDuties.length;
               Alert.alert(
-                'Service Published! 🚀',
-                `"${plan.serviceTitle}" is now live!\n\n${count > 0 ? `${count} volunteer push notification(s) dispatched:\n${dispatchedDuties.slice(0, 6).map(d => `• ${d}`).join('\n')}${dispatchedDuties.length > 6 ? `\n...and ${dispatchedDuties.length - 6} more` : ''}\n\nResponse deadline: 2 hours.` : 'No volunteers were assigned to this service yet.'}\n\nRhema's automated cloud engine will track responses and automatically notify verified backups if any volunteer declines or times out.`
+                'Service Published & Broadcasted! 🚀',
+                `"${plan.serviceTitle}" is now published!\n\n` +
+                (fcfsDispatchedCount > 0
+                  ? `⚡ ${fcfsDispatchedCount} open responsibility slot(s) automatically broadcasted to all verified musicians & members (First-Come, First-Served).\n\n`
+                  : '') +
+                (count > 0
+                  ? `👤 ${count} volunteer notification(s) dispatched.\n\n`
+                  : '') +
+                `The first eligible member to accept each slot gets booked immediately!`
               );
             } catch (err: any) {
               Alert.alert('Error', err.message || 'Failed to publish service.');
@@ -2607,14 +2623,24 @@ export default function AdminServicePlanner({ navigation }: any) {
 
       setShowSimulateModal(false);
       if (simulateAction === 'accept') {
-        Alert.alert('Confirmed!', `${candidate.candidateName} accepted the duty. Assignment status updated to CONFIRMED.`);
+        Alert.alert(
+          'Slot Booked! 🎉',
+          `${candidate.candidateName} accepted the responsibility. Slot is now BOOKED and locked.`
+        );
       } else {
-        const nextCand = activeQueueForSimulate.candidates?.[curIdx + 1];
-        if (nextCand) {
-          const nextPriorityLabel = curIdx + 1 === 1 ? '1st Backup' : '2nd Backup';
-          Alert.alert('Declined & Cascaded!', `${candidate.candidateName} declined ("${simulateDeclineReason}"). Auto-cascade advanced immediately to ${nextPriorityLabel}: ${nextCand.candidateName}!`);
+        if (activeQueueForSimulate.mode === 'first_come_first_served') {
+          Alert.alert(
+            'Declined!',
+            `${candidate.candidateName} declined ("${simulateDeclineReason}"). Slot remains available for other eligible volunteers.`
+          );
         } else {
-          Alert.alert('Queue Exhausted!', `${candidate.candidateName} declined and no more candidates remain in the ladder. Queue marked as EXHAUSTED.`);
+          const nextCand = activeQueueForSimulate.candidates?.[curIdx + 1];
+          if (nextCand) {
+            const nextPriorityLabel = curIdx + 1 === 1 ? '1st Backup' : '2nd Backup';
+            Alert.alert('Declined & Cascaded!', `${candidate.candidateName} declined ("${simulateDeclineReason}"). Auto-cascade advanced immediately to ${nextPriorityLabel}: ${nextCand.candidateName}!`);
+          } else {
+            Alert.alert('Queue Exhausted!', `${candidate.candidateName} declined and no more candidates remain in the ladder. Queue marked as EXHAUSTED.`);
+          }
         }
       }
     } catch (err: any) {
@@ -4036,10 +4062,10 @@ export default function AdminServicePlanner({ navigation }: any) {
                 <Send size={15} color={isDark ? '#10B981' : '#2E6B4F'} style={{ marginTop: 2 }} />
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.cascadeAlertTitle, { color: isDark ? '#10B981' : '#2E6B4F' }]}>
-                    Automatic Background Notifications & Replacement
+                    Automatic Responsibility Assignment & Slot Booking
                   </Text>
                   <Text style={[styles.cascadeAlertBody, { color: secondaryText }]}>
-                    When assigned or published, volunteers receive instant push notifications with Accept/Decline options and a 2-hour response window. If declined or timed out, Rhema automatically contacts the next eligible member with verified skills in the background.
+                    When a service is published, Rhema automatically identifies all eligible members based on verified skills (Keyboards, Drums, Guitars, Audio, Order of Service) and broadcasts simultaneous notifications (First-Come, First-Served). The first member to accept books the slot immediately.
                   </Text>
                 </View>
               </View>
@@ -4118,21 +4144,27 @@ export default function AdminServicePlanner({ navigation }: any) {
                       {isConfirmed && (
                         <View style={[styles.queueStatusBadge, styles.badgeConfirmed]}>
                           <CheckCircle2 size={12} color="#059669" />
-                          <Text style={styles.badgeConfirmedTxt}>CONFIRMED</Text>
+                          <Text style={styles.badgeConfirmedTxt}>
+                            {queue?.mode === 'first_come_first_served' ? 'BOOKED' : 'CONFIRMED'}
+                          </Text>
                         </View>
                       )}
                       {isPending && (
                         <View style={[styles.queueStatusBadge, styles.badgePending]}>
                           <Timer size={12} color="#D97706" />
                           <Text style={styles.badgePendingTxt}>
-                            PENDING ({curIdx === 0 ? 'Primary' : curIdx === 1 ? '1st Backup' : '2nd Backup'})
+                            {queue?.mode === 'first_come_first_served'
+                              ? `AVAILABLE (${queue.eligibleMemberIds?.length || queue.candidates?.length || 0} Eligible)`
+                              : `PENDING (${curIdx === 0 ? 'Primary' : curIdx === 1 ? '1st Backup' : '2nd Backup'})`}
                           </Text>
                         </View>
                       )}
                       {isExhausted && (
                         <View style={[styles.queueStatusBadge, styles.badgeExhausted]}>
                           <AlertCircle size={12} color="#DC2626" />
-                          <Text style={styles.badgeExhaustedTxt}>EXHAUSTED</Text>
+                          <Text style={styles.badgeExhaustedTxt}>
+                            {queue?.mode === 'first_come_first_served' ? 'NO MEMBERS AVAILABLE' : 'EXHAUSTED'}
+                          </Text>
                         </View>
                       )}
                       {notDispatched && (
@@ -4158,13 +4190,13 @@ export default function AdminServicePlanner({ navigation }: any) {
                             {queue?.confirmedCandidateName || selectedPlan.assignments?.[role.roleId] || 'Assigned Volunteer'}
                           </Text>
                           <Text style={[styles.confirmedVolunteerSub, { color: isDark ? '#A7F3D0' : '#047857' }]}>
-                            Ready for service duty · Contact: {activeCandidate?.candidatePhone || 'In church directory'}
+                            Ready for service responsibility · Contact: {activeCandidate?.candidatePhone || 'In church directory'}
                           </Text>
                         </View>
                       </View>
                     )}
 
-                    {/* Candidate Ladder when queue exists */}
+                    {/* Candidate Ladder / Eligible Members when queue exists */}
                     {queue && queue.candidates && queue.candidates.length > 0 && (
                       <View style={[
                         styles.candidateLadderBox,
@@ -4176,10 +4208,12 @@ export default function AdminServicePlanner({ navigation }: any) {
                       ]}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                           <Text style={[styles.candidateLadderHeading, { color: isDark ? '#A1A1AA' : '#64748B', marginBottom: 0 }]}>
-                            CANDIDATE REPLACEMENT LADDER ({queue.candidates.length} candidates)
+                            {queue.mode === 'first_come_first_served'
+                              ? `ELIGIBLE MEMBERS & RESPONSES (${queue.candidates.length} volunteers)`
+                              : `CANDIDATE REPLACEMENT LADDER (${queue.candidates.length} candidates)`}
                           </Text>
                           <Text style={{ fontSize: 10, color: isDark ? '#71717A' : '#94A3B8' }}>
-                            Timeout: {Math.round((queue.timeoutMinutes || 1440) / 60)}h
+                            Timeout: {Math.round((queue.timeoutMinutes || 1440) / 60)}h{queue.mode === 'first_come_first_served' ? ' · First-Come' : ''}
                           </Text>
                         </View>
                         {queue.candidates.map((cand, idx) => {
@@ -4223,18 +4257,24 @@ export default function AdminServicePlanner({ navigation }: any) {
                                     paddingHorizontal: 5,
                                     paddingVertical: 1,
                                     borderRadius: 4,
-                                    backgroundColor: idx === 0
+                                    backgroundColor: isCandAccepted
                                       ? (isDark ? 'rgba(5, 150, 105, 0.2)' : '#ECFDF5')
-                                      : (isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9')
+                                      : isCandDeclined
+                                        ? (isDark ? 'rgba(220, 38, 38, 0.2)' : '#FEF2F2')
+                                        : (isDark ? 'rgba(217, 119, 6, 0.2)' : '#FFFBEB')
                                   }}>
                                     <Text style={{
                                       fontSize: 9.5,
                                       fontWeight: '700',
-                                      color: idx === 0
+                                      color: isCandAccepted
                                         ? (isDark ? '#34D399' : '#059669')
-                                        : (isDark ? '#A1A1AA' : '#64748B')
+                                        : isCandDeclined
+                                          ? (isDark ? '#F87171' : '#DC2626')
+                                          : (isDark ? '#FBBF24' : '#D97706')
                                     }}>
-                                      {idx === 0 ? 'Primary' : idx === 1 ? '1st Backup' : '2nd Backup'}
+                                      {queue.mode === 'first_come_first_served'
+                                        ? (isCandAccepted ? 'Booked' : isCandDeclined ? 'Declined' : 'Eligible')
+                                        : (idx === 0 ? 'Primary' : idx === 1 ? '1st Backup' : '2nd Backup')}
                                     </Text>
                                   </View>
                                 </View>
@@ -4247,11 +4287,13 @@ export default function AdminServicePlanner({ navigation }: any) {
                                           secondaryText
                                   }
                                 ]}>
-                                  {isCandAccepted ? '✅ Accepted & confirmed' :
+                                  {isCandAccepted ? '✅ Accepted & confirmed (Slot Booked)' :
                                     isCandDeclined ? `❌ Declined: ${cand.declineReason || 'Unavailable'}` :
-                                      isCandTimedOut ? '⏰ No response (Timed Out)' :
-                                        isCurrentActive ? `⏳ Awaiting response · Deadline in ~${Math.round(queue.timeoutMinutes / 60)}h` :
-                                          idx === 1 ? 'In reserve (1st Backup)' : 'In reserve (2nd Backup)'}
+                                      isCandTimedOut ? '⏰ Response deadline expired' :
+                                        queue.mode === 'first_come_first_served'
+                                          ? (queue.status === 'confirmed' ? 'Slot booked by another member' : `⏳ Awaiting response · First to accept gets booked`)
+                                          : (isCurrentActive ? `⏳ Awaiting response · Deadline in ~${Math.round(queue.timeoutMinutes / 60)}h` :
+                                              idx === 1 ? 'In reserve (1st Backup)' : 'In reserve (2nd Backup)')}
                                 </Text>
                               </View>
 
@@ -4269,7 +4311,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                                     color: isDark ? '#D4D4D8' : '#64748B'
                                   } : { color: '#FFFFFF' }
                                 ]}>
-                                  {cand.status.toUpperCase()}
+                                  {isCandAccepted ? 'BOOKED' : isCandDeclined ? 'DECLINED' : (queue.mode === 'first_come_first_served' ? 'OFFERED' : cand.status.toUpperCase())}
                                 </Text>
                               </View>
                             </View>
@@ -4294,7 +4336,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                       >
                         <Send size={12} color="#FFFFFF" />
                         <Text style={styles.dispatchQueueBtnTxt}>
-                          {notDispatched ? '⚡ Auto-Assign' : 'Reconfigure Ladder'}
+                          {notDispatched ? '⚡ Auto-Assign' : (queue?.mode === 'first_come_first_served' ? '⚡ Broadcast / Configure' : 'Reconfigure Ladder')}
                         </Text>
                       </TouchableOpacity>
 
