@@ -37,6 +37,7 @@ import {
 } from 'lucide-react-native';
 import CareCellService from '../../../../services/CareCellService';
 import { useAuth } from '../../../../context/AuthContext';
+import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
 import GrantAdminAccessModal from '../components/GrantAdminAccessModal';
 import { CareCell, CareCellStatus } from '../../../../types/CareCellTypes';
 
@@ -59,6 +60,16 @@ export default function CareCellsManageTab({
   onManageMembers,
   onViewMeetings,
 }: CareCellsManageTabProps) {
+  const { isDark, primaryText, secondaryText, cardSurface, secondarySurface, borderColor } = useAdminTheme();
+  const primaryBtnBg = isDark ? '#FFFFFF' : '#0F172A';
+  const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
+  const secondaryBtnBg = isDark ? '#27272A' : '#F8FAFC';
+  const secondaryBtnBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1';
+  const secondaryBtnText = isDark ? '#E4E4E7' : '#334155';
+  const dangerBtnBg = isDark ? 'rgba(220, 38, 38, 0.14)' : '#FEF2F2';
+  const dangerBtnBorder = isDark ? 'rgba(248, 113, 113, 0.35)' : '#FECACA';
+  const dangerBtnText = isDark ? '#F87171' : '#DC2626';
+
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'All' | 'Active' | 'Inactive' | 'Archived'>('All');
 
@@ -223,15 +234,15 @@ export default function CareCellsManageTab({
           {item.leaderPhoto ? (
             <Image source={{ uri: item.leaderPhoto }} style={styles.leaderAvatar} />
           ) : (
-            <View style={styles.leaderAvatarFallback}>
-              <User size={16} color="#1A2D5A" />
+            <View style={[styles.leaderAvatarFallback, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder, borderWidth: 1 }]}>
+              <User size={16} color={primaryText} />
             </View>
           )}
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <Text style={styles.leaderName}>{item.leaderName || 'Unassigned Leader'}</Text>
-              <View style={styles.leaderRoleBadge}>
-                <Text style={styles.leaderRoleBadgeTxt}>Leader</Text>
+              <View style={[styles.leaderRoleBadge, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder, borderWidth: 1 }]}>
+                <Text style={[styles.leaderRoleBadgeTxt, { color: secondaryBtnText }]}>Leader</Text>
               </View>
             </View>
             {item.leaderPhone ? <Text style={styles.leaderPhone}>{item.leaderPhone}</Text> : null}
@@ -242,7 +253,7 @@ export default function CareCellsManageTab({
         {item.assistantLeaderName ? (
           <View style={styles.asstLeaderRow}>
             <Text style={styles.asstLeaderTxt}>
-              Assistant: <Text style={{ fontWeight: '700', color: '#1A2D5A' }}>{item.assistantLeaderName}</Text>
+              Assistant: <Text style={{ fontWeight: '700', color: primaryText }}>{item.assistantLeaderName}</Text>
             </Text>
           </View>
         ) : null}
@@ -250,16 +261,16 @@ export default function CareCellsManageTab({
         {/* Schedule & Venue Meta */}
         <View style={styles.metaRow}>
           <View style={styles.metaItem}>
-            <Calendar size={13} color="#64748B" style={{ marginRight: 4 }} />
+            <Calendar size={13} color={secondaryText} style={{ marginRight: 4 }} />
             <Text style={styles.metaTxt}>{item.meetingDay || 'Friday'}</Text>
           </View>
           <View style={styles.metaItem}>
-            <Clock size={13} color="#64748B" style={{ marginRight: 4 }} />
+            <Clock size={13} color={secondaryText} style={{ marginRight: 4 }} />
             <Text style={styles.metaTxt}>{item.meetingTime || '19:00'}{item.meetingEndTime ? ` – ${item.meetingEndTime}` : ''}</Text>
           </View>
           {item.location ? (
             <View style={[styles.metaItem, { flex: 1 }]}>
-              <MapPin size={13} color="#64748B" style={{ marginRight: 4 }} />
+              <MapPin size={13} color={secondaryText} style={{ marginRight: 4 }} />
               <Text style={styles.metaTxt} numberOfLines={1}>{item.location}</Text>
             </View>
           ) : null}
@@ -267,8 +278,8 @@ export default function CareCellsManageTab({
 
         {isPlatformSuperAdmin && item.assignedAdminIds && item.assignedAdminIds.length > 0 && (
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, paddingHorizontal: 4 }}>
-            <Shield size={12} color="#4338CA" style={{ marginRight: 4 }} />
-            <Text style={{ fontSize: 11.5, color: '#4338CA', fontWeight: '600' }}>
+            <Shield size={12} color={isDark ? '#818CF8' : '#4338CA'} style={{ marginRight: 4 }} />
+            <Text style={{ fontSize: 11.5, color: isDark ? '#818CF8' : '#4338CA', fontWeight: '600' }}>
               Assigned to {item.assignedAdminIds.length} Admin(s)
             </Text>
           </View>
@@ -278,83 +289,103 @@ export default function CareCellsManageTab({
         <View style={styles.divider} />
 
         {/* Action Buttons Row */}
-        <View style={styles.cardActionsRow}>
-          {/* Manage Members */}
-          <TouchableOpacity
-            style={styles.cardActionBtn}
-            onPress={() => onManageMembers(item)}
-            activeOpacity={0.8}
-          >
-            <Users size={14} color="#1A2D5A" style={{ marginRight: 5 }} />
-            <Text style={styles.cardActionBtnTxt}>Members</Text>
-          </TouchableOpacity>
-
-          {/* View Meetings */}
-          <TouchableOpacity
-            style={styles.cardActionBtn}
-            onPress={() => onViewMeetings(item)}
-            activeOpacity={0.8}
-          >
-            <Calendar size={14} color="#1A2D5A" style={{ marginRight: 5 }} />
-            <Text style={styles.cardActionBtnTxt}>Meetings</Text>
-          </TouchableOpacity>
-
-          {/* Grant Admin Access (Super Admin Only) */}
-          {isPlatformSuperAdmin && (
+        <View style={styles.cardActionsContainer}>
+          <View style={styles.cardActionsRow}>
+            {/* Manage Members */}
             <TouchableOpacity
-              style={[styles.cardActionBtn, { backgroundColor: '#EEF2FF', borderColor: '#C7D2FE' }]}
-              onPress={() => {
-                setGrantAccessCell(item);
-                setGrantAccessModalVisible(true);
-              }}
+              style={[styles.cardActionBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
+              onPress={() => onManageMembers(item)}
               activeOpacity={0.8}
             >
-              <Shield size={14} color="#1E3A8A" style={{ marginRight: 4 }} />
-              <Text style={[styles.cardActionBtnTxt, { color: '#1E3A8A', fontWeight: '700' }]}>
-                Access
+              <Users size={14} color={secondaryBtnText} style={{ marginRight: 6 }} />
+              <Text style={[styles.cardActionBtnTxt, { color: secondaryBtnText }]} numberOfLines={1}>
+                Members
               </Text>
             </TouchableOpacity>
-          )}
 
-          {/* Edit Button */}
-          <TouchableOpacity
-            style={styles.cardIconBtn}
-            onPress={() => onEditCell(item)}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Edit2 size={16} color="#64748B" />
-          </TouchableOpacity>
-
-          {/* Delete Button */}
-          <TouchableOpacity
-            style={[styles.cardIconBtn, styles.deleteCardIconBtn]}
-            onPress={() => handleDeleteCell(item)}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Trash2 size={16} color="#DC2626" />
-          </TouchableOpacity>
-
-          {/* Toggle Active / Inactive (Super Admin Only) */}
-          {isPlatformSuperAdmin && (
+            {/* View Meetings */}
             <TouchableOpacity
-              style={styles.cardIconBtn}
-              onPress={() => handleToggleStatus(item)}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={[styles.cardActionBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
+              onPress={() => onViewMeetings(item)}
+              activeOpacity={0.8}
             >
-              {isActive ? <XCircle size={16} color="#D97706" /> : <CheckCircle size={16} color="#059669" />}
+              <Calendar size={14} color={secondaryBtnText} style={{ marginRight: 6 }} />
+              <Text style={[styles.cardActionBtnTxt, { color: secondaryBtnText }]} numberOfLines={1}>
+                Meetings
+              </Text>
             </TouchableOpacity>
-          )}
 
-          {/* Archive (Super Admin Only) */}
-          {isPlatformSuperAdmin && !isArchived && (
+            {/* Grant Admin Access (Super Admin Only) */}
+            {isPlatformSuperAdmin && (
+              <TouchableOpacity
+                style={[styles.cardActionBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
+                onPress={() => {
+                  setGrantAccessCell(item);
+                  setGrantAccessModalVisible(true);
+                }}
+                activeOpacity={0.8}
+              >
+                <Shield size={14} color={secondaryBtnText} style={{ marginRight: 6 }} />
+                <Text style={[styles.cardActionBtnTxt, { color: secondaryBtnText }]} numberOfLines={1}>
+                  Access
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <View style={styles.cardUtilityRow}>
+            {/* Edit Button */}
             <TouchableOpacity
-              style={styles.cardIconBtn}
-              onPress={() => handleArchiveCell(item)}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={[styles.cardActionBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
+              onPress={() => onEditCell(item)}
+              activeOpacity={0.8}
             >
-              <Archive size={16} color="#DC2626" />
+              <Edit2 size={13.5} color={secondaryBtnText} style={{ marginRight: 5 }} />
+              <Text style={[styles.cardActionBtnTxt, { color: secondaryBtnText }]} numberOfLines={1}>
+                Edit
+              </Text>
             </TouchableOpacity>
-          )}
+
+            {/* Toggle Active / Inactive (Super Admin Only) */}
+            {isPlatformSuperAdmin && (
+              <TouchableOpacity
+                style={[styles.cardActionBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
+                onPress={() => handleToggleStatus(item)}
+                activeOpacity={0.8}
+              >
+                {isActive ? (
+                  <XCircle size={14} color="#D97706" style={{ marginRight: 5 }} />
+                ) : (
+                  <CheckCircle size={14} color="#059669" style={{ marginRight: 5 }} />
+                )}
+                <Text style={[styles.cardActionBtnTxt, { color: secondaryBtnText }]} numberOfLines={1}>
+                  {isActive ? 'Deactivate' : 'Activate'}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Archive (Super Admin Only) */}
+            {isPlatformSuperAdmin && !isArchived && (
+              <TouchableOpacity
+                style={[styles.cardIconBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
+                onPress={() => handleArchiveCell(item)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                activeOpacity={0.8}
+              >
+                <Archive size={15} color={secondaryBtnText} />
+              </TouchableOpacity>
+            )}
+
+            {/* Delete Button */}
+            <TouchableOpacity
+              style={[styles.cardIconBtn, { backgroundColor: dangerBtnBg, borderColor: dangerBtnBorder }]}
+              onPress={() => handleDeleteCell(item)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              activeOpacity={0.8}
+            >
+              <Trash2 size={15} color={dangerBtnText} />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     );
@@ -388,18 +419,29 @@ export default function CareCellsManageTab({
 
       {/* Clean Status Filter Chips */}
       <View style={styles.statusFilterRow}>
-        {(['All', 'Active', 'Inactive', 'Archived'] as const).map((st) => (
-          <TouchableOpacity
-            key={st}
-            style={[styles.statusFilterChip, statusFilter === st && styles.statusFilterChipActive]}
-            onPress={() => setStatusFilter(st)}
-            activeOpacity={0.75}
-          >
-            <Text style={[styles.statusFilterChipTxt, statusFilter === st && styles.statusFilterChipTxtActive]}>
-              {st} ({statusCounts[st]})
-            </Text>
-          </TouchableOpacity>
-        ))}
+        {(['All', 'Active', 'Inactive', 'Archived'] as const).map((st) => {
+          const isSelected = statusFilter === st;
+          return (
+            <TouchableOpacity
+              key={st}
+              style={[
+                styles.statusFilterChip,
+                isSelected && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+              ]}
+              onPress={() => setStatusFilter(st)}
+              activeOpacity={0.75}
+            >
+              <Text
+                style={[
+                  styles.statusFilterChipTxt,
+                  isSelected && { color: primaryBtnText, fontWeight: '800' },
+                ]}
+              >
+                {st} ({statusCounts[st]})
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       {/* List */}
@@ -617,14 +659,16 @@ export default function CareCellsManageTab({
             )}
 
             <TouchableOpacity
-              style={styles.deleteSuccessDoneBtn}
+              style={[styles.deleteSuccessDoneBtn, { backgroundColor: primaryBtnBg }]}
               onPress={() => {
                 setDeleteSuccessModalVisible(false);
                 setDeletedCellSummary(null);
               }}
               activeOpacity={0.85}
             >
-              <Text style={styles.deleteSuccessDoneBtnTxt}>Done & Return to Care Cells</Text>
+              <Text style={[styles.deleteSuccessDoneBtnTxt, { color: primaryBtnText }]}>
+                Done & Return to Care Cells
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -633,10 +677,10 @@ export default function CareCellsManageTab({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FAF7F2',
   },
   topBar: {
     paddingHorizontal: 16,
@@ -681,23 +725,23 @@ const styles = StyleSheet.create({
   statusFilterRow: {
     flexDirection: 'row',
     paddingHorizontal: 16,
-    paddingBottom: 8,
+    paddingBottom: 10,
     gap: 8,
   },
   statusFilterChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingHorizontal: 13,
+    paddingVertical: 7,
+    borderRadius: 10,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#CBD5E1',
   },
   statusFilterChipActive: {
-    backgroundColor: '#1A2D5A',
-    borderColor: '#1A2D5A',
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
   },
   statusFilterChipTxt: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
     color: '#64748B',
   },
@@ -724,7 +768,6 @@ const styles = StyleSheet.create({
   },
   cellCardInactive: {
     opacity: 0.85,
-    backgroundColor: '#FAF9F6',
   },
   cardHeader: {
     flexDirection: 'row',
@@ -733,18 +776,18 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   codeBadge: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#BFDBFE',
+    borderColor: '#CBD5E1',
   },
   codeBadgeTxt: {
     fontFamily: 'monospace',
     fontSize: 11.5,
     fontWeight: '800',
-    color: '#1A2D5A',
+    color: '#0F172A',
   },
   statusChip: {
     paddingHorizontal: 8,
@@ -865,7 +908,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
     marginVertical: 12,
   },
+  cardActionsContainer: {
+    gap: 8,
+  },
   cardActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cardUtilityRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -875,24 +926,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#EFF6FF',
-    paddingVertical: 8,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.2,
+    borderColor: '#CBD5E1',
+    paddingVertical: 9,
+    paddingHorizontal: 10,
     borderRadius: 10,
   },
   cardActionBtnTxt: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#1A2D5A',
+    color: '#334155',
   },
   deleteCardIconBtn: {
     backgroundColor: '#FEF2F2',
     borderColor: '#FECACA',
   },
   cardIconBtn: {
-    width: 34,
-    height: 34,
+    width: 38,
+    height: 36,
     borderRadius: 10,
-    backgroundColor: '#F1F5F9',
+    borderWidth: 1.2,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#F8FAFC',
     justifyContent: 'center',
     alignItems: 'center',
   },

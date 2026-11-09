@@ -49,6 +49,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
 import CareCellService from '../../services/CareCellService';
 import { formatDateDisplay } from '../../utils/DateUtils';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 import {
   CareCell,
   CareCellMembership,
@@ -69,6 +70,13 @@ import CareCellMapModal from '../admin/care_cells/components/CareCellMapModal';
 const { width } = Dimensions.get('window');
 
 export default function CareCellScreen({ navigation, route }: any) {
+  const { isDark, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor } = useAdminTheme();
+  const primaryBtnBg = isDark ? '#FFFFFF' : '#0F172A';
+  const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
+  const secondaryBtnBg = isDark ? '#27272A' : '#F8FAFC';
+  const secondaryBtnBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1';
+  const secondaryBtnText = isDark ? '#E4E4E7' : '#334155';
+
   const insets = useSafeAreaInsets();
   const { member, user } = useAuth();
   const { activeChurch } = useChurch();
@@ -362,17 +370,17 @@ export default function CareCellScreen({ navigation, route }: any) {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={screenBg} />
 
       {/* Screen Header */}
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
-          style={styles.circularBackBtn}
+          style={[styles.circularBackBtn, { backgroundColor: cardSurface, borderColor }]}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           activeOpacity={0.7}
         >
-          <ArrowLeft size={20} color="#1A2D5A" strokeWidth={2.2} />
+          <ArrowLeft size={20} color={primaryText} strokeWidth={2.2} />
         </TouchableOpacity>
 
         <View style={styles.headerTitleWrap}>
@@ -385,17 +393,17 @@ export default function CareCellScreen({ navigation, route }: any) {
 
       {loading ? (
         <View style={styles.centerLoading}>
-          <ActivityIndicator size="large" color="#1A2D5A" />
+          <ActivityIndicator size="large" color={primaryText} />
           <Text style={styles.loadingTxt}>Fetching your Care Cell fellowship...</Text>
         </View>
       ) : !careCell ? (
         /* Empty State: Unassigned Member */
         <ScrollView
           contentContainerStyle={styles.emptyContainer}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#1A2D5A']} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[primaryBtnBg]} />}
         >
-          <View style={styles.emptyIllustrationBox}>
-            <Users size={56} color="#94A3B8" />
+          <View style={[styles.emptyIllustrationBox, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder, borderWidth: 1 }]}>
+            <Users size={52} color={secondaryText} />
           </View>
           <Text style={styles.emptyTitle}>No Care Cell Assigned</Text>
           <Text style={styles.emptySubtitle}>
@@ -403,17 +411,17 @@ export default function CareCellScreen({ navigation, route }: any) {
           </Text>
 
           <View style={styles.contactChurchCard}>
-            <Text style={styles.contactChurchCardTitle}>Want to join a Care Cell?</Text>
+            <Text style={[styles.contactChurchCardTitle, { color: primaryText }]}>Want to join a Care Cell?</Text>
             <Text style={styles.contactChurchCardDesc}>
               Care Cells meet weekly for prayer, biblical encouragement, and mutual fellowship. Reach out to the pastoral team to find the nearest fellowship group.
             </Text>
             <TouchableOpacity
-              style={styles.contactAdminBtn}
+              style={[styles.contactAdminBtn, { backgroundColor: primaryBtnBg }]}
               onPress={() => navigation.navigate('ContactUs')}
               activeOpacity={0.85}
             >
-              <Phone size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
-              <Text style={styles.contactAdminBtnTxt}>Contact Church Office</Text>
+              <Phone size={15} color={primaryBtnText} style={{ marginRight: 6 }} />
+              <Text style={[styles.contactAdminBtnTxt, { color: primaryBtnText }]}>Contact Church Office</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -423,10 +431,10 @@ export default function CareCellScreen({ navigation, route }: any) {
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#1A2D5A']} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[primaryBtnBg]} />}
         >
           {/* Care Cell Hero Card */}
-          <View style={styles.heroCard}>
+          <View style={[styles.heroCard, isDark && { backgroundColor: '#18181B', borderWidth: 1, borderColor: '#27272A' }]}>
             <View style={styles.heroTopRow}>
               <View style={styles.heroCodeBadge}>
                 <Text style={styles.heroCodeBadgeTxt}>{careCell.cellCode}</Text>
@@ -465,62 +473,43 @@ export default function CareCellScreen({ navigation, route }: any) {
 
           {/* Horizontal Tabs Selection */}
           <View style={styles.memberTabsRow}>
-            <TouchableOpacity
-              style={[styles.memberTabPill, activeTab === 'gatherings' && styles.memberTabPillActive]}
-              onPress={() => setActiveTab('gatherings')}
-              activeOpacity={0.8}
-            >
-              <Calendar size={13} color={activeTab === 'gatherings' ? '#FFFFFF' : '#64748B'} style={{ marginRight: 5 }} />
-              <Text style={[styles.memberTabPillTxt, activeTab === 'gatherings' && styles.memberTabPillTxtActive]}>
-                Gatherings
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.memberTabPill, activeTab === 'visits' && styles.memberTabPillActive]}
-              onPress={() => setActiveTab('visits')}
-              activeOpacity={0.8}
-            >
-              <Home size={13} color={activeTab === 'visits' ? '#FFFFFF' : '#64748B'} style={{ marginRight: 5 }} />
-              <Text style={[styles.memberTabPillTxt, activeTab === 'visits' && styles.memberTabPillTxtActive]}>
-                Visits {cellVisits.length > 0 ? `(${cellVisits.length})` : ''}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.memberTabPill, activeTab === 'prayers' && styles.memberTabPillActive]}
-              onPress={() => setActiveTab('prayers')}
-              activeOpacity={0.8}
-            >
-              <HeartHandshake size={13} color={activeTab === 'prayers' ? '#FFFFFF' : '#64748B'} style={{ marginRight: 5 }} />
-              <Text style={[styles.memberTabPillTxt, activeTab === 'prayers' && styles.memberTabPillTxtActive]}>
-                Prayers {cellPrayers.length > 0 ? `(${cellPrayers.length})` : ''}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.memberTabPill, activeTab === 'notices' && styles.memberTabPillActive]}
-              onPress={() => setActiveTab('notices')}
-              activeOpacity={0.8}
-            >
-              <Megaphone size={13} color={activeTab === 'notices' ? '#FFFFFF' : '#64748B'} style={{ marginRight: 5 }} />
-              <Text style={[styles.memberTabPillTxt, activeTab === 'notices' && styles.memberTabPillTxtActive]}>
-                Notices {cellAnnouncements.length > 0 ? `(${cellAnnouncements.length})` : ''}
-              </Text>
-            </TouchableOpacity>
-
-            {isLeader && (
-              <TouchableOpacity
-                style={[styles.memberTabPill, activeTab === 'leader' && styles.memberTabPillActive]}
-                onPress={() => setActiveTab('leader')}
-                activeOpacity={0.8}
-              >
-                <ShieldCheck size={13} color={activeTab === 'leader' ? '#FFFFFF' : '#059669'} style={{ marginRight: 5 }} />
-                <Text style={[styles.memberTabPillTxt, activeTab === 'leader' && styles.memberTabPillTxtActive]}>
-                  Leader Tools
-                </Text>
-              </TouchableOpacity>
-            )}
+            {(
+              [
+                { key: 'gatherings' as const, label: 'Gatherings', icon: Calendar },
+                { key: 'visits' as const, label: `Visits${cellVisits.length > 0 ? ` (${cellVisits.length})` : ''}`, icon: Home },
+                { key: 'prayers' as const, label: `Prayers${cellPrayers.length > 0 ? ` (${cellPrayers.length})` : ''}`, icon: HeartHandshake },
+                { key: 'notices' as const, label: `Notices${cellAnnouncements.length > 0 ? ` (${cellAnnouncements.length})` : ''}`, icon: Megaphone },
+                ...(isLeader ? [{ key: 'leader' as const, label: 'Leader Tools', icon: ShieldCheck }] : []),
+              ]
+            ).map((tab) => {
+              const isSelected = activeTab === tab.key;
+              const Icon = tab.icon;
+              return (
+                <TouchableOpacity
+                  key={tab.key}
+                  style={[
+                    styles.memberTabPill,
+                    isSelected && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+                  ]}
+                  onPress={() => setActiveTab(tab.key)}
+                  activeOpacity={0.8}
+                >
+                  <Icon
+                    size={13}
+                    color={isSelected ? primaryBtnText : tab.key === 'leader' ? '#059669' : secondaryText}
+                    style={{ marginRight: 5 }}
+                  />
+                  <Text
+                    style={[
+                      styles.memberTabPillTxt,
+                      isSelected && { color: primaryBtnText, fontWeight: '800' },
+                    ]}
+                  >
+                    {tab.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
           {/* ══════════════════════════════════════════════════════════════ */}
@@ -602,11 +591,11 @@ export default function CareCellScreen({ navigation, route }: any) {
                     {careCell.leaderPhone ? (
                       <>
                         <TouchableOpacity
-                          style={styles.callLeaderBtn}
+                          style={[styles.callLeaderBtn, { backgroundColor: primaryBtnBg }]}
                           onPress={() => handleCall(careCell.leaderPhone)}
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         >
-                          <Phone size={16} color="#FFFFFF" />
+                          <Phone size={16} color={primaryBtnText} />
                         </TouchableOpacity>
                         <TouchableOpacity
                           style={styles.whatsAppLeaderBtn}
@@ -912,12 +901,12 @@ export default function CareCellScreen({ navigation, route }: any) {
               <View style={styles.sectionHeaderRow}>
                 <Text style={styles.sectionHeaderTitle}>CELL PRAYER WALL</Text>
                 <TouchableOpacity
-                  style={styles.addSectionBtn}
+                  style={[styles.addSectionBtn, { backgroundColor: primaryBtnBg }]}
                   onPress={() => setPrayerModalVisible(true)}
                   activeOpacity={0.85}
                 >
-                  <Plus size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
-                  <Text style={styles.addSectionBtnTxt}>New Request</Text>
+                  <Plus size={14} color={primaryBtnText} style={{ marginRight: 4 }} />
+                  <Text style={[styles.addSectionBtnTxt, { color: primaryBtnText }]}>New Request</Text>
                 </TouchableOpacity>
               </View>
 
@@ -984,12 +973,12 @@ export default function CareCellScreen({ navigation, route }: any) {
                 <Text style={styles.sectionHeaderTitle}>CELL NOTICES</Text>
                 {isLeader && (
                   <TouchableOpacity
-                    style={styles.addSectionBtn}
+                    style={[styles.addSectionBtn, { backgroundColor: primaryBtnBg }]}
                     onPress={() => setAnnounceModalVisible(true)}
                     activeOpacity={0.85}
                   >
-                    <Plus size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
-                    <Text style={styles.addSectionBtnTxt}>Post Notice</Text>
+                    <Plus size={14} color={primaryBtnText} style={{ marginRight: 4 }} />
+                    <Text style={[styles.addSectionBtnTxt, { color: primaryBtnText }]}>Post Notice</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -1035,41 +1024,41 @@ export default function CareCellScreen({ navigation, route }: any) {
                 {/* Direct Action Buttons */}
                 <View style={styles.leaderActionRow}>
                   <TouchableOpacity
-                    style={styles.leaderActionBtnPrimary}
+                    style={[styles.leaderActionBtnPrimary, { backgroundColor: primaryBtnBg }]}
                     onPress={() => setAnnounceModalVisible(true)}
                   >
-                    <Megaphone size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
-                    <Text style={styles.leaderActionBtnPrimaryTxt}>Post Notice</Text>
+                    <Megaphone size={14} color={primaryBtnText} style={{ marginRight: 6 }} />
+                    <Text style={[styles.leaderActionBtnPrimaryTxt, { color: primaryBtnText }]}>Post Notice</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={styles.leaderActionBtnSecondary}
+                    style={[styles.leaderActionBtnSecondary, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
                     onPress={() => {
                       setTargetFollowupMember(null);
                       setFollowupModalVisible(true);
                     }}
                   >
-                    <Heart size={14} color="#1A2D5A" style={{ marginRight: 6 }} />
-                    <Text style={styles.leaderActionBtnSecondaryTxt}>Log Follow-up</Text>
+                    <Heart size={14} color={secondaryBtnText} style={{ marginRight: 6 }} />
+                    <Text style={[styles.leaderActionBtnSecondaryTxt, { color: secondaryBtnText }]}>Log Follow-up</Text>
                   </TouchableOpacity>
                 </View>
 
                 {/* Google Maps & House Visit Planner Trigger */}
                 <TouchableOpacity
-                  style={styles.leaderMapBannerBtn}
+                  style={[styles.leaderMapBannerBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
                   onPress={() => setMapModalVisible(true)}
                   activeOpacity={0.85}
                 >
-                  <View style={styles.mapIconCircle}>
-                    <Navigation size={18} color="#FFFFFF" />
+                  <View style={[styles.mapIconCircle, { backgroundColor: primaryBtnBg }]}>
+                    <Navigation size={18} color={primaryBtnText} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.leaderMapBannerTitle}>Member Map & House Visits</Text>
+                    <Text style={[styles.leaderMapBannerTitle, { color: primaryText }]}>Member Map & House Visits</Text>
                     <Text style={styles.leaderMapBannerSub}>
                       Google Maps navigation, member houses & route planning
                     </Text>
                   </View>
-                  <ChevronRight size={18} color="#1A2D5A" />
+                  <ChevronRight size={18} color={primaryText} />
                 </TouchableOpacity>
               </View>
 
@@ -1433,17 +1422,17 @@ export default function CareCellScreen({ navigation, route }: any) {
 
               {/* Submit Button */}
               <TouchableOpacity
-                style={styles.confirmVisitResponseBtn}
+                style={[styles.confirmVisitResponseBtn, { backgroundColor: primaryBtnBg }]}
                 onPress={handleConfirmVisitResponse}
                 disabled={respondingVisitId !== null}
                 activeOpacity={0.85}
               >
                 {respondingVisitId ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <ActivityIndicator size="small" color={primaryBtnText} />
                 ) : (
                   <>
-                    <CheckCircle2 size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
-                    <Text style={styles.confirmVisitResponseBtnTxt}>
+                    <CheckCircle2 size={16} color={primaryBtnText} style={{ marginRight: 8 }} />
+                    <Text style={[styles.confirmVisitResponseBtnTxt, { color: primaryBtnText }]}>
                       {visitResponseStatus === 'Accepted'
                         ? 'Confirm Visit & Preferred Time'
                         : 'Submit Unavailable Response'}
@@ -1460,23 +1449,23 @@ export default function CareCellScreen({ navigation, route }: any) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FAF7F2',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingTop: 8,
-    paddingBottom: 10,
+    paddingBottom: 12,
     backgroundColor: 'transparent',
   },
   circularBackBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -1486,17 +1475,18 @@ const styles = StyleSheet.create({
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
-    shadowRadius: 2,
+    shadowRadius: 3,
     elevation: 2,
   },
   headerTitleWrap: {
     justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '800',
-    color: '#1A2D5A',
-    letterSpacing: -0.5,
+    color: '#0F172A',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    letterSpacing: -0.4,
   },
   headerSubtitle: {
     fontSize: 12,
@@ -1587,15 +1577,15 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   heroCard: {
-    backgroundColor: '#1A2D5A',
+    backgroundColor: '#0F172A',
     borderRadius: 20,
     padding: 18,
     marginBottom: 14,
-    shadowColor: '#1A2D5A',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.18,
     shadowRadius: 10,
-    elevation: 6,
+    elevation: 5,
   },
   heroTopRow: {
     flexDirection: 'row',
@@ -1945,19 +1935,19 @@ const styles = StyleSheet.create({
   memberTabPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8.5,
     borderRadius: 20,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#CBD5E1',
   },
   memberTabPillActive: {
-    backgroundColor: '#1A2D5A',
-    borderColor: '#1A2D5A',
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
   },
   memberTabPillTxt: {
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '700',
     color: '#64748B',
   },
@@ -1970,14 +1960,14 @@ const styles = StyleSheet.create({
   addSectionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1A2D5A',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
+    backgroundColor: '#0F172A',
+    paddingHorizontal: 12,
+    paddingVertical: 6.5,
+    borderRadius: 10,
   },
   addSectionBtnTxt: {
     fontSize: 11.5,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#FFFFFF',
   },
   emptyTabCard: {

@@ -25,6 +25,7 @@ import {
   Users,
 } from 'lucide-react-native';
 import CareCellService from '../../../../services/CareCellService';
+import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
 import {
   CareCell,
   CareCellPrayerRequest,
@@ -39,6 +40,13 @@ interface CareCellAnnouncePrayerTabProps {
 }
 
 export default function CareCellAnnouncePrayerTab({ churchId }: CareCellAnnouncePrayerTabProps) {
+  const { isDark, primaryText, secondaryText, cardSurface, secondarySurface, borderColor } = useAdminTheme();
+  const primaryBtnBg = isDark ? '#FFFFFF' : '#0F172A';
+  const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
+  const secondaryBtnBg = isDark ? '#27272A' : '#F8FAFC';
+  const secondaryBtnBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1';
+  const secondaryBtnText = isDark ? '#E4E4E7' : '#334155';
+
   const [section, setSection] = useState<'prayers' | 'announcements'>('prayers');
   const [cells, setCells] = useState<CareCell[]>([]);
   const [selectedCell, setSelectedCell] = useState<string>('ALL');
@@ -164,21 +172,47 @@ export default function CareCellAnnouncePrayerTab({ churchId }: CareCellAnnounce
       <View style={styles.segmentWrap}>
         <View style={styles.segmentBar}>
           <TouchableOpacity
-            style={[styles.segmentBtn, section === 'prayers' && styles.segmentBtnActive]}
+            style={[
+              styles.segmentBtn,
+              section === 'prayers' && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+            ]}
             onPress={() => setSection('prayers')}
+            activeOpacity={0.8}
           >
-            <HeartHandshake size={15} color={section === 'prayers' ? '#1A2D5A' : '#64748B'} style={{ marginRight: 6 }} />
-            <Text style={[styles.segmentBtnTxt, section === 'prayers' && styles.segmentBtnTxtActive]}>
+            <HeartHandshake
+              size={15}
+              color={section === 'prayers' ? primaryBtnText : secondaryText}
+              style={{ marginRight: 6 }}
+            />
+            <Text
+              style={[
+                styles.segmentBtnTxt,
+                section === 'prayers' && { color: primaryBtnText, fontWeight: '800' },
+              ]}
+            >
               Prayer Requests ({prayers.length})
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.segmentBtn, section === 'announcements' && styles.segmentBtnActive]}
+            style={[
+              styles.segmentBtn,
+              section === 'announcements' && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+            ]}
             onPress={() => setSection('announcements')}
+            activeOpacity={0.8}
           >
-            <Megaphone size={15} color={section === 'announcements' ? '#1A2D5A' : '#64748B'} style={{ marginRight: 6 }} />
-            <Text style={[styles.segmentBtnTxt, section === 'announcements' && styles.segmentBtnTxtActive]}>
+            <Megaphone
+              size={15}
+              color={section === 'announcements' ? primaryBtnText : secondaryText}
+              style={{ marginRight: 6 }}
+            />
+            <Text
+              style={[
+                styles.segmentBtnTxt,
+                section === 'announcements' && { color: primaryBtnText, fontWeight: '800' },
+              ]}
+            >
               Announcements ({announcements.length})
             </Text>
           </TouchableOpacity>
@@ -196,10 +230,19 @@ export default function CareCellAnnouncePrayerTab({ churchId }: CareCellAnnounce
             const isSelected = selectedCell === item.id;
             return (
               <TouchableOpacity
-                style={[styles.cellChip, isSelected && styles.cellChipSelected]}
+                style={[
+                  styles.cellChip,
+                  isSelected && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+                ]}
                 onPress={() => setSelectedCell(item.id)}
+                activeOpacity={0.75}
               >
-                <Text style={[styles.cellChipTxt, isSelected && styles.cellChipTxtSelected]}>
+                <Text
+                  style={[
+                    styles.cellChipTxt,
+                    isSelected && { color: primaryBtnText, fontWeight: '800' },
+                  ]}
+                >
                   {item.cellCode || item.name}
                 </Text>
               </TouchableOpacity>
@@ -211,7 +254,7 @@ export default function CareCellAnnouncePrayerTab({ churchId }: CareCellAnnounce
       {/* Main Content Area */}
       {loading ? (
         <View style={styles.centerLoading}>
-          <ActivityIndicator size="large" color="#1A2D5A" />
+          <ActivityIndicator size="large" color={primaryText} />
           <Text style={styles.loadingTxt}>Loading records...</Text>
         </View>
       ) : section === 'prayers' ? (
@@ -220,7 +263,7 @@ export default function CareCellAnnouncePrayerTab({ churchId }: CareCellAnnounce
           data={prayers}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#1A2D5A']} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[primaryBtnBg]} />}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <HeartHandshake size={44} color="#CBD5E1" />
@@ -274,20 +317,20 @@ export default function CareCellAnnouncePrayerTab({ churchId }: CareCellAnnounce
                     />
                     <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
                       <TouchableOpacity
-                        style={styles.cancelEditorBtn}
+                        style={[styles.cancelEditorBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
                         onPress={() => {
                           setEditingPrayerId(null);
                           setPastoralResponseText('');
                         }}
                       >
-                        <Text style={styles.cancelEditorBtnTxt}>Cancel</Text>
+                        <Text style={[styles.cancelEditorBtnTxt, { color: secondaryBtnText }]}>Cancel</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        style={styles.saveEditorBtn}
+                        style={[styles.saveEditorBtn, { backgroundColor: primaryBtnBg }]}
                         onPress={() => handleSavePastoralResponse(item.id)}
                       >
-                        <Send size={12} color="#FFFFFF" style={{ marginRight: 4 }} />
-                        <Text style={styles.saveEditorBtnTxt}>Send Guidance</Text>
+                        <Send size={12} color={primaryBtnText} style={{ marginRight: 5 }} />
+                        <Text style={[styles.saveEditorBtnTxt, { color: primaryBtnText }]}>Send Guidance</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -295,36 +338,42 @@ export default function CareCellAnnouncePrayerTab({ churchId }: CareCellAnnounce
 
                 {/* Card Action Row */}
                 <View style={styles.prayerCardFooter}>
-                  <View style={{ flexDirection: 'row', gap: 6 }}>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
                     <TouchableOpacity
-                      style={styles.statusActionBtn}
+                      style={[styles.statusActionBtn, { backgroundColor: primaryBtnBg }]}
                       onPress={() => handleUpdatePrayerStatus(item.id, isPraying ? 'Answered' : 'Praying')}
+                      activeOpacity={0.85}
                     >
-                      <Text style={styles.statusActionBtnTxt}>
+                      <Text style={[styles.statusActionBtnTxt, { color: primaryBtnText }]}>
                         {isPraying ? '✓ Mark Answered' : '🙏 Mark Praying'}
                       </Text>
                     </TouchableOpacity>
 
                     {!isEditing && (
                       <TouchableOpacity
-                        style={styles.statusActionBtnOutline}
+                        style={[styles.statusActionBtnOutline, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
                         onPress={() => {
                           setEditingPrayerId(item.id);
                           setPastoralResponseText(item.pastoralResponse || '');
                         }}
+                        activeOpacity={0.8}
                       >
-                        <Text style={styles.statusActionBtnOutlineTxt}>Respond</Text>
+                        <Text style={[styles.statusActionBtnOutlineTxt, { color: secondaryBtnText }]}>Respond</Text>
                       </TouchableOpacity>
                     )}
                   </View>
 
                   {item.memberPhone ? (
                     <TouchableOpacity
-                      style={styles.whatsAppBtn}
+                      style={[
+                        styles.whatsAppBtn,
+                        isDark && { backgroundColor: 'rgba(22, 163, 74, 0.16)', borderColor: 'rgba(34, 197, 94, 0.35)' },
+                      ]}
                       onPress={() => handleWhatsApp(item.memberPhone, item.memberName, item.title)}
+                      activeOpacity={0.8}
                     >
-                      <MessageCircle size={13} color="#16A34A" style={{ marginRight: 4 }} />
-                      <Text style={styles.whatsAppBtnTxt}>WhatsApp</Text>
+                      <MessageCircle size={13} color={isDark ? '#4ADE80' : '#16A34A'} style={{ marginRight: 4 }} />
+                      <Text style={[styles.whatsAppBtnTxt, isDark && { color: '#4ADE80' }]}>WhatsApp</Text>
                     </TouchableOpacity>
                   ) : null}
                 </View>
@@ -338,15 +387,16 @@ export default function CareCellAnnouncePrayerTab({ churchId }: CareCellAnnounce
           data={announcements}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#1A2D5A']} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[primaryBtnBg]} />}
           ListHeaderComponent={
             <View style={{ marginBottom: 12 }}>
               <TouchableOpacity
-                style={styles.postAnnounceBtn}
+                style={[styles.postAnnounceBtn, { backgroundColor: primaryBtnBg }]}
                 onPress={() => setAnnounceModalVisible(true)}
+                activeOpacity={0.85}
               >
-                <Plus size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-                <Text style={styles.postAnnounceBtnTxt}>Post New Announcement</Text>
+                <Plus size={16} color={primaryBtnText} style={{ marginRight: 6 }} />
+                <Text style={[styles.postAnnounceBtnTxt, { color: primaryBtnText }]}>Post New Announcement</Text>
               </TouchableOpacity>
             </View>
           }
@@ -424,10 +474,10 @@ export default function CareCellAnnouncePrayerTab({ churchId }: CareCellAnnounce
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FAF7F2',
   },
   segmentWrap: {
     paddingHorizontal: 16,
@@ -436,33 +486,30 @@ const styles = StyleSheet.create({
   },
   segmentBar: {
     flexDirection: 'row',
-    backgroundColor: '#E2E8F0',
-    borderRadius: 12,
-    padding: 3,
+    gap: 8,
   },
   segmentBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
+    paddingVertical: 9,
     borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
   },
   segmentBtnActive: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 2,
-    elevation: 1,
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
   },
   segmentBtnTxt: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 12.5,
+    fontWeight: '700',
     color: '#64748B',
   },
   segmentBtnTxtActive: {
-    color: '#1A2D5A',
+    color: '#FFFFFF',
     fontWeight: '800',
   },
   cellSelectorRow: {
@@ -470,17 +517,17 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   cellChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+    paddingHorizontal: 13,
+    paddingVertical: 7,
+    borderRadius: 10,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#CBD5E1',
     marginRight: 8,
   },
   cellChipSelected: {
-    backgroundColor: '#1A2D5A',
-    borderColor: '#1A2D5A',
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
   },
   cellChipTxt: {
     fontSize: 12,
@@ -615,68 +662,73 @@ const styles = StyleSheet.create({
     minHeight: 60,
   },
   cancelEditorBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6.5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#F8FAFC',
   },
   cancelEditorBtnTxt: {
     fontSize: 11.5,
-    color: '#64748B',
-    fontWeight: '600',
+    color: '#475569',
+    fontWeight: '700',
   },
   saveEditorBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1A2D5A',
+    backgroundColor: '#0F172A',
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
+    paddingVertical: 6.5,
+    borderRadius: 8,
   },
   saveEditorBtnTxt: {
     fontSize: 11.5,
     color: '#FFFFFF',
-    fontWeight: '700',
+    fontWeight: '800',
   },
   prayerCardFooter: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginTop: 10,
-    paddingTop: 8,
+    paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
   },
   statusActionBtn: {
-    backgroundColor: '#EEF2FF',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
+    backgroundColor: '#0F172A',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
   },
   statusActionBtnTxt: {
     fontSize: 11.5,
-    color: '#1A2D5A',
-    fontWeight: '700',
+    color: '#FFFFFF',
+    fontWeight: '800',
   },
   statusActionBtnOutline: {
-    borderWidth: 1,
+    borderWidth: 1.2,
     borderColor: '#CBD5E1',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
   },
   statusActionBtnOutlineTxt: {
     fontSize: 11.5,
-    color: '#475569',
-    fontWeight: '600',
+    color: '#334155',
+    fontWeight: '700',
   },
   whatsAppBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F0FDF4',
-    borderWidth: 1,
+    borderWidth: 1.2,
     borderColor: '#BBF7D0',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
+    paddingHorizontal: 11,
+    paddingVertical: 6.5,
+    borderRadius: 8,
   },
   whatsAppBtnTxt: {
     fontSize: 11.5,
@@ -687,18 +739,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1A2D5A',
+    backgroundColor: '#0F172A',
     paddingVertical: 12,
     borderRadius: 12,
-    shadowColor: '#1A2D5A',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.14,
     shadowRadius: 4,
     elevation: 2,
   },
   postAnnounceBtnTxt: {
     fontSize: 13.5,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#FFFFFF',
   },
   announceCard: {

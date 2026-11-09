@@ -30,6 +30,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import CareCellService from '../../../../services/CareCellService';
 import { formatDateDisplay } from '../../../../utils/DateUtils';
+import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
 import {
   CareCell,
   CareCellMeeting,
@@ -58,6 +59,13 @@ export default function CareCellAttendanceTab({
   selectedMeeting,
   onClearSelectedMeeting,
 }: CareCellAttendanceTabProps) {
+  const { isDark, primaryText, secondaryText, cardSurface, secondarySurface, borderColor } = useAdminTheme();
+  const primaryBtnBg = isDark ? '#FFFFFF' : '#0F172A';
+  const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
+  const secondaryBtnBg = isDark ? '#27272A' : '#F8FAFC';
+  const secondaryBtnBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1';
+  const secondaryBtnText = isDark ? '#E4E4E7' : '#334155';
+
   const [selectedCellId, setSelectedCellId] = useState<string>(
     selectedMeeting?.cellId || cells[0]?.id || ''
   );
@@ -340,39 +348,51 @@ export default function CareCellAttendanceTab({
       {/* Top Cell Selector Scroll */}
       <View style={styles.cellSelectorRow}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.cellSelectorScroll}>
-          {cells.map((c) => (
-            <TouchableOpacity
-              key={c.id}
-              style={[styles.cellChip, selectedCellId === c.id && styles.cellChipActive]}
-              onPress={() => {
-                setSelectedCellId(c.id);
-                onClearSelectedMeeting();
-              }}
-            >
-              <Text style={[styles.cellChipTxt, selectedCellId === c.id && styles.cellChipTxtActive]}>
-                {c.cellCode}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {cells.map((c) => {
+            const isSelected = selectedCellId === c.id;
+            return (
+              <TouchableOpacity
+                key={c.id}
+                style={[
+                  styles.cellChip,
+                  isSelected && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+                ]}
+                onPress={() => {
+                  setSelectedCellId(c.id);
+                  onClearSelectedMeeting();
+                }}
+                activeOpacity={0.75}
+              >
+                <Text
+                  style={[
+                    styles.cellChipTxt,
+                    isSelected && { color: primaryBtnText, fontWeight: '800' },
+                  ]}
+                >
+                  {c.cellCode}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
       </View>
 
       {/* Meeting Picker Trigger Banner */}
       <View style={styles.meetingHeaderBox}>
         <TouchableOpacity
-          style={styles.meetingDropdown}
+          style={[styles.meetingDropdown, { backgroundColor: cardSurface, borderColor: secondaryBtnBorder }]}
           onPress={() => setShowMeetingPicker(true)}
           activeOpacity={0.8}
         >
           <View style={{ flex: 1 }}>
-            <Text style={styles.meetingLabel}>CURRENT MEETING ROLL-CALL</Text>
-            <Text style={styles.meetingTitleTxt} numberOfLines={1}>
+            <Text style={[styles.meetingLabel, { color: secondaryText }]}>CURRENT MEETING ROLL-CALL</Text>
+            <Text style={[styles.meetingTitleTxt, { color: primaryText }]} numberOfLines={1}>
               {currentMeeting
                 ? `${currentMeeting.title} (${formatDateDisplay(currentMeeting.date)})`
                 : 'Select a Meeting to Mark Attendance'}
             </Text>
           </View>
-          <ChevronDown size={18} color="#1A2D5A" />
+          <ChevronDown size={18} color={primaryText} />
         </TouchableOpacity>
       </View>
 
@@ -392,22 +412,35 @@ export default function CareCellAttendanceTab({
             <View style={[styles.miniBadge, { backgroundColor: '#FEE2E2' }]}>
               <Text style={[styles.miniBadgeTxt, { color: '#DC2626' }]}>A: {counts.absent}</Text>
             </View>
-            <View style={styles.rateBadge}>
-              <Text style={styles.rateBadgeTxt}>{counts.rate}%</Text>
+            <View style={[styles.rateBadge, { backgroundColor: primaryBtnBg }]}>
+              <Text style={[styles.rateBadgeTxt, { color: primaryBtnText }]}>{counts.rate}%</Text>
             </View>
           </View>
 
           {/* Quick Mark All & Export */}
           <View style={styles.quickMarkRow}>
-            <TouchableOpacity style={styles.quickMarkBtn} onPress={() => setAllStatus('Present')}>
-              <Text style={styles.quickMarkBtnTxt}>All Present</Text>
+            <TouchableOpacity
+              style={[styles.quickMarkBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
+              onPress={() => setAllStatus('Present')}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.quickMarkBtnTxt, { color: secondaryBtnText }]}>All Present</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.quickMarkBtn} onPress={() => setAllStatus('Absent')}>
-              <Text style={styles.quickMarkBtnTxt}>All Absent</Text>
+            <TouchableOpacity
+              style={[styles.quickMarkBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
+              onPress={() => setAllStatus('Absent')}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.quickMarkBtnTxt, { color: secondaryBtnText }]}>All Absent</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.exportAttBtn} onPress={handleExportAttendanceCSV} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Download size={13} color="#1A2D5A" style={{ marginRight: 4 }} />
-              <Text style={styles.exportAttBtnTxt}>CSV</Text>
+            <TouchableOpacity
+              style={[styles.exportAttBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
+              onPress={handleExportAttendanceCSV}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              activeOpacity={0.8}
+            >
+              <Download size={13} color={secondaryBtnText} style={{ marginRight: 4 }} />
+              <Text style={[styles.exportAttBtnTxt, { color: secondaryBtnText }]}>CSV</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -448,17 +481,21 @@ export default function CareCellAttendanceTab({
       {currentMeeting && rosterRows.length > 0 && (
         <View style={styles.footer}>
           <TouchableOpacity
-            style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
+            style={[
+              styles.saveBtn,
+              { backgroundColor: primaryBtnBg },
+              saving && styles.saveBtnDisabled,
+            ]}
             onPress={handleSaveAttendance}
             disabled={saving}
             activeOpacity={0.85}
           >
             {saving ? (
-              <ActivityIndicator color="#FFFFFF" />
+              <ActivityIndicator color={primaryBtnText} />
             ) : (
               <>
-                <Save size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
-                <Text style={styles.saveBtnTxt}>SAVE ATTENDANCE ROLL-CALL</Text>
+                <Save size={18} color={primaryBtnText} style={{ marginRight: 8 }} />
+                <Text style={[styles.saveBtnTxt, { color: primaryBtnText }]}>SAVE ATTENDANCE ROLL-CALL</Text>
               </>
             )}
           </TouchableOpacity>
@@ -469,7 +506,7 @@ export default function CareCellAttendanceTab({
       <Modal visible={showMeetingPicker} transparent animationType="fade" onRequestClose={() => setShowMeetingPicker(false)}>
         <TouchableOpacity style={styles.subModalOverlay} activeOpacity={1} onPress={() => setShowMeetingPicker(false)}>
           <View style={styles.subModalContainer}>
-            <Text style={styles.subModalTitle}>Select Meeting</Text>
+            <Text style={[styles.subModalTitle, { color: primaryText }]}>Select Meeting</Text>
             <ScrollView style={{ maxHeight: 300 }}>
               {meetings.length === 0 ? (
                 <Text style={styles.noMeetingsTxt}>No meetings scheduled for this cell.</Text>
@@ -489,7 +526,7 @@ export default function CareCellAttendanceTab({
                         {formatDateDisplay(m.date)} · {m.startTime} · {m.status}
                       </Text>
                     </View>
-                    {currentMeeting?.id === m.id && <Check size={16} color="#1A2D5A" />}
+                    {currentMeeting?.id === m.id && <Check size={16} color={primaryText} />}
                   </TouchableOpacity>
                 ))
               )}
@@ -501,10 +538,10 @@ export default function CareCellAttendanceTab({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FAF7F2',
   },
   cellSelectorRow: {
     paddingHorizontal: 16,
@@ -515,17 +552,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   cellChip: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 13,
     paddingVertical: 7,
     borderRadius: 10,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#CBD5E1',
     marginRight: 8,
   },
   cellChipActive: {
-    backgroundColor: '#1A2D5A',
-    borderColor: '#1A2D5A',
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
   },
   cellChipTxt: {
     fontSize: 12,
@@ -546,14 +583,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 14,
     borderWidth: 1.2,
-    borderColor: '#BFDBFE',
+    borderColor: '#CBD5E1',
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 11,
   },
   meetingLabel: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#1A2D5A',
+    color: '#64748B',
     letterSpacing: 0.5,
   },
   meetingTitleTxt: {
@@ -566,12 +603,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 8,
     backgroundColor: '#FFFFFF',
     marginHorizontal: 16,
     marginBottom: 8,
     borderRadius: 12,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
@@ -590,7 +629,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   rateBadge: {
-    backgroundColor: '#1A2D5A',
+    backgroundColor: '#0F172A',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
@@ -605,30 +644,32 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   quickMarkBtn: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 8,
   },
   quickMarkBtnTxt: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#475569',
+    color: '#334155',
   },
   exportAttBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#EEF2FF',
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: '#C7D2FE',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 8,
   },
   exportAttBtnTxt: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#1A2D5A',
+    color: '#334155',
   },
   listContent: {
     paddingHorizontal: 16,
