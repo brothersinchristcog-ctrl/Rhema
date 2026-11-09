@@ -102,13 +102,15 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
   }, []);
 
   // Compute Fast Future Schedule:
-  // Starts strictly at TODAY (index 0). Every verse index is mapped forward into future dates.
-  // 0 past dates exist in the schedule.
+  // Dynamically aligned with the global anchor schedule
   const getFastSchedule = useCallback((index: number) => {
     const total = totalVerses || 5863;
     const safeIdx = ((typeof index === 'number' && index >= 0) ? index : 0) % total;
 
-    const daysOffset = Math.floor(safeIdx / 4);
+    const todayIndices = VerseNotificationService.getIndicesForDate(new Date(), total);
+    const todayBase = todayIndices[0];
+    const diffIndex = safeIdx - todayBase;
+    const daysOffset = Math.floor(diffIndex / 4);
     const periodIndex = safeIdx % 4;
     const period = PERIOD_NAMES[periodIndex] || 'Morning';
     const periodTime = PERIOD_TIMES[periodIndex] || '6:00 AM';
@@ -165,11 +167,13 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
       cachedTotalVerses = total;
 
       const COUNT = 120; // Next 30 upcoming days (4 per day)
+      const todayIndices = VerseNotificationService.getIndicesForDate(new Date(), total);
+      const todayBase = todayIndices[0] || 0;
       let fetched: any[] = [];
       try {
         const snap = await firestore().collection('daily_verses')
-          .where('index', '>=', 0)
-          .where('index', '<', COUNT)
+          .where('index', '>=', todayBase)
+          .where('index', '<', todayBase + COUNT)
           .get();
         fetched = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       } catch (fErr) {
@@ -180,7 +184,8 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
       if (fetched.length === 0) {
         try {
           const bundled = bundledBulkVerses;
-          for (let idx = 0; idx < COUNT && idx < bundled.length; idx++) {
+          for (let offset = 0; offset < COUNT; offset++) {
+            const idx = (todayBase + offset) % total;
             const bv = bundled[idx];
             if (bv) {
               fetched.push({
@@ -420,7 +425,8 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
       }
 
       const periodIdx = PERIOD_NAMES.indexOf(newVerse.period);
-      const targetIndex = (periodIdx >= 0 ? periodIdx : 0);
+      const todayIndices = VerseNotificationService.getIndicesForDate(new Date(), totalVerses || 5863);
+      const targetIndex = todayIndices[periodIdx >= 0 ? periodIdx : 0] ?? (periodIdx >= 0 ? periodIdx : 0);
 
       // Check if a document already exists with this index to prevent duplicates
       const existingSnap = await firestore().collection('daily_verses').where('index', '==', targetIndex).get();

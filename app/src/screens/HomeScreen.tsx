@@ -17,6 +17,7 @@ import {
   Share,
   Modal,
   Linking,
+  AppState,
   Animated,
   Easing,
   Pressable,
@@ -2156,20 +2157,40 @@ export default function HomeScreen() {
     outputRange: ['0deg', '-18deg', '16deg', '-12deg', '8deg', '-4deg', '2deg', '0deg'],
   });
 
-  // Load today's daily verse
+  // Load today's daily verse & listen to foreground resume for date advancement
   useEffect(() => {
-    const period = getCurrentPeriod();
-    setTodayPeriod(period);
-    VerseNotificationService.getVerseForDate(new Date(), period, true).then(async v => {
-      if (v) {
-        if (language !== 'en') {
-          const lv = await VerseNotificationService.localizeVerse(v, language as any);
-          setTodayVerse(lv);
-        } else {
-          setTodayVerse(v);
+    let active = true;
+    const loadCurrentVerse = () => {
+      const period = getCurrentPeriod();
+      setTodayPeriod(period);
+      VerseNotificationService.getVerseForDate(new Date(), period, true).then(async v => {
+        if (!active) return;
+        if (v) {
+          if (language !== 'en') {
+            const lv = await VerseNotificationService.localizeVerse(v, language as any);
+            if (active) setTodayVerse(lv);
+          } else {
+            if (active) setTodayVerse(v);
+          }
         }
+      }).catch(() => {});
+    };
+
+    loadCurrentVerse();
+
+    // Re-check periodically & on app focus so date/period changes reflect immediately
+    const interval = setInterval(loadCurrentVerse, 60000);
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        loadCurrentVerse();
       }
-    }).catch(() => {});
+    });
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+      sub.remove();
+    };
   }, [language]);
 
   const fetchLiveCelebrations = async () => {
@@ -3024,6 +3045,10 @@ export default function HomeScreen() {
         async (metaSnap) => {
           if (!metaSnap || !metaSnap.exists) return;
           try {
+            const mData = metaSnap.data();
+            if (mData?.scheduleStartDate) {
+              (VerseNotificationService as any).cachedScheduleStartDate = mData.scheduleStartDate;
+            }
             await VerseNotificationService.invalidateCache();
             const fresh = await VerseNotificationService.getTodayVerses(true);
             if (fresh && fresh.length >= 4) {
