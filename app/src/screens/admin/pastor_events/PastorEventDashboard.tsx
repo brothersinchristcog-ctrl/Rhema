@@ -7,34 +7,44 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StyleSheet,
+  SafeAreaView,
   RefreshControl,
   StatusBar,
   TextInput,
-  Alert
+  Platform
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { ChevronLeft, Plus , ArrowLeft } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { colors, spacing, radius, typography, shadow } from '../../../theme/Theme';
+import { spacing, radius, typography, shadow } from '../../../theme/Theme';
+import { useTheme } from '../../../context/ThemeContext';
 import { PastorEvent } from '../../../types/event';
 import FirestoreService from '../../../services/FirestoreService';
 import EventTypeBadge from '../../../components/EventTypeBadge';
 import DistanceBadge from '../../../components/DistanceBadge';
 import { getStartingLocation, saveStartingLocation, formatDuration } from '../../../utils/locationStore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRoute } from '@react-navigation/native';
+import { useRoute, useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { openInMaps } from '../../../utils/maps';
-import { AdminTabContext } from '../../../context/AdminTabContext';
 import LiveJourneyTracker from '../../../components/LiveJourneyTracker';
-import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
+import { AdminTabContext } from '../../../context/AdminTabContext';
 
 export const PastorEventDashboard = ({ navigation }: { navigation: any }) => {
-  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const route = useRoute<any>();
   const insets = useSafeAreaInsets();
-  const { setActiveTab: setAdminActiveTab } = React.useContext(AdminTabContext);
+  const adminTab = React.useContext(AdminTabContext) as any;
+  const handleBack = () => {
+    if (adminTab?.setActiveTab) {
+      adminTab.setActiveTab(0);
+    } else if (adminTab?.goBack) {
+      adminTab.goBack();
+    } else if (navigation?.canGoBack?.()) {
+      navigation.goBack();
+    }
+  };
+  const { colors, isDark } = useTheme();
+  const styles = getStyles(colors, isDark);
   const [events, setEvents] = useState<PastorEvent[]>([]);
   const [activeTab, setActiveTab] = useState<'today' | 'upcoming' | 'past'>('today');
   const [loading, setLoading] = useState(true);
@@ -44,9 +54,9 @@ export const PastorEventDashboard = ({ navigation }: { navigation: any }) => {
   const [tempPickerDate, setTempPickerDate] = useState(new Date());
   const [enrichedEvents, setEnrichedEvents] = useState<PastorEvent[]>([]);
 
-  const fetchEvents = async () => {
+  const fetchEvents = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const sfEvents = await FirestoreService.getPastorEvents();
       if (sfEvents && sfEvents.length > 0) {
         // Categorize into today, upcoming, past
@@ -73,7 +83,7 @@ export const PastorEventDashboard = ({ navigation }: { navigation: any }) => {
       console.warn('Error querying Firestore events:', e);
       setEvents([]);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
       setRefreshing(false);
     }
   };
@@ -82,12 +92,40 @@ export const PastorEventDashboard = ({ navigation }: { navigation: any }) => {
     fetchEvents();
   }, []);
 
+  useFocusEffect(
+    useCallback(() => {
+      fetchEvents(true);
+    }, [])
+  );
+
   useEffect(() => {
+    if (route.params?.optimisticEvent) {
+       const evt = route.params.optimisticEvent;
+       setEvents(prev => {
+          const filtered = prev.filter(e => e.id !== evt.id);
+          const now = new Date();
+          const y = now.getFullYear();
+          const m = String(now.getMonth() + 1).padStart(2, '0');
+          const d = String(now.getDate()).padStart(2, '0');
+          const todayStr = `${y}-${m}-${d}`;
+          let section: 'today' | 'upcoming' | 'past' = 'upcoming';
+          if (evt.date === todayStr) section = 'today';
+          else if (evt.date < todayStr) section = 'past';
+          return [...filtered, { ...evt, section }];
+       });
+       navigation.setParams({ optimisticEvent: undefined });
+       fetchEvents(true);
+    }
+    if (route.params?.deleteEventId) {
+       setEvents(prev => prev.filter(e => e.id !== route.params.deleteEventId));
+       navigation.setParams({ deleteEventId: undefined });
+       fetchEvents(true);
+    }
     if (route.params?.refresh) {
-      fetchEvents();
+      fetchEvents(false);
       navigation.setParams({ refresh: undefined });
     }
-  }, [route.params?.refresh]);
+  }, [route.params?.refresh, route.params?.optimisticEvent, route.params?.deleteEventId]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -200,6 +238,40 @@ export const PastorEventDashboard = ({ navigation }: { navigation: any }) => {
         const newEnrichedEvents = [...filteredEvents];
         for (let i = 0; i < newEnrichedEvents.length; i++) {
           const evt = newEnrichedEvents[i];
+          if (!evt.lat || !evt.lng) {
+            const geocodeQuery = evt.city ? `${evt.address?.trim() || ''}, ${evt.city?.trim() || ''}` : (evt.address?.trim() || evt.venue?.trim() || '');
+            let geocodeSuccess = false;
+            
+            const GOOGLE_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY || '';
+            if (GOOGLE_KEY) {
+              try {
+                const geoResp = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(geocodeQuery)}&key=${GOOGLE_KEY}`);
+                const geoData = await geoResp.json();
+                if (geoData.status === 'OK' && geoData.results.length > 0) {
+                  evt.lat = geoData.results[0].geometry.location.lat;
+                  evt.lng = geoData.results[0].geometry.location.lng;
+                  geocodeSuccess = true;
+                }
+              } catch (e: any) {
+              }
+            }
+            
+            // Fallback to free OpenStreetMap Nominatim API if Google Maps fails (e.g., due to billing issues)
+            if (!geocodeSuccess) {
+              try {
+                const fallbackQuery = evt.city ? `${evt.venue?.trim() || ''}, ${evt.city?.trim() || ''}` : geocodeQuery;
+                const osmResp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fallbackQuery)}`);
+                const osmData = await osmResp.json();
+                if (osmData && osmData.length > 0) {
+                  evt.lat = parseFloat(osmData[0].lat);
+                  evt.lng = parseFloat(osmData[0].lon);
+                  geocodeSuccess = true;
+                }
+              } catch (e: any) {
+              }
+            }
+          }
+
           if (evt.lat && evt.lng) {
             if (evt.date !== currentDayStr) {
               currentDayStr = evt.date;
@@ -228,12 +300,24 @@ export const PastorEventDashboard = ({ navigation }: { navigation: any }) => {
                   const res = { distance: el.distance.value, duration: el.duration.value };
                   AsyncStorage.setItem(cacheKey, JSON.stringify(res)).catch(()=>{});
                   return res;
-                } else {
-                  console.warn('⚠️ [Distance API Failed]:', distData);
                 }
-              } catch (e) {
-                console.warn('⚠️ [Distance API Error]:', e);
-              }
+              } catch (e) {}
+              
+              // Fallback to OSRM (Open Source Routing Machine) if Google Maps fails
+              try {
+                const [origLat, origLng] = orig.split(',');
+                const [destLat, destLng] = dest.split(',');
+                const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${origLng},${origLat};${destLng},${destLat}?overview=false`;
+                const osrmResp = await fetch(osrmUrl);
+                const osrmData = await osrmResp.json();
+                if (osrmData.code === 'Ok' && osrmData.routes.length > 0) {
+                  const r = osrmData.routes[0];
+                  const res = { distance: r.distance, duration: r.duration };
+                  AsyncStorage.setItem(cacheKey, JSON.stringify(res)).catch(()=>{});
+                  return res;
+                }
+              } catch (e) {}
+              
               return { distance: 0, duration: 0 };
             };
             
@@ -262,7 +346,7 @@ export const PastorEventDashboard = ({ navigation }: { navigation: any }) => {
                 originName: currentOriginName
               };
               
-              if (!isFirstValidEvent && homeDistanceValue > 0) {
+              if (!isFirstValidEvent && homeDistanceValue >= 0) {
                 travelData.homeDistKm = homeDistanceValue / 1000;
                 travelData.homeCar = Math.round(homeDurationValue / 60);
                 travelData.homeLat = homeLat;
@@ -305,10 +389,7 @@ export const PastorEventDashboard = ({ navigation }: { navigation: any }) => {
   const handleAddressSubmit = async (newAddress: string) => {
     if (!newAddress.trim()) return;
     const GOOGLE_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY || '';
-    if (!GOOGLE_KEY) {
-      Alert.alert('Error', 'Google Maps API Key is missing.');
-      return;
-    }
+    if (!GOOGLE_KEY) return;
     
     setIsGeocoding(true);
     try {
@@ -322,12 +403,9 @@ export const PastorEventDashboard = ({ navigation }: { navigation: any }) => {
         // or just let currentLocName trigger it if we added it to deps. But wait, we didn't. 
         // Let's just fetchEvents() or we can just update the events state implicitly.
         fetchEvents();
-      } else {
-        Alert.alert('Location Not Found', `Google Maps could not find this location: ${geoData.status}`);
       }
     } catch (e) {
       console.log('Geocoding failed');
-      Alert.alert('Error', 'Network request failed while searching for location.');
     } finally {
       setIsGeocoding(false);
     }
@@ -362,77 +440,70 @@ export const PastorEventDashboard = ({ navigation }: { navigation: any }) => {
         activeOpacity={0.9}
         onPress={() => navigation.navigate('EventDetail', { event: item, allEvents: events })}
       >
-        <Text style={[styles.titleText, { marginBottom: 12 }]}>{item.title}</Text>
+        <Text style={[styles.titleText, { marginBottom: 12, color: isDark ? '#C6A66B' : '#98713D' }]}>{item.title}</Text>
         
         <View style={{ gap: 6, marginBottom: 8 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Ionicons name="calendar-outline" size={14} color={colors.primary} />
+            <Ionicons name="calendar-outline" size={14} color={isDark ? '#FFFFFF' : '#000000'} />
             <Text style={[styles.timeText, { marginLeft: 6 }]}>{formatEventDate(item.date)}</Text>
           </View>
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-            <Ionicons name="time-outline" size={14} color="#64748b" />
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Ionicons name="time-outline" size={14} color={isDark ? '#FFFFFF' : '#000000'} />
             <Text style={[styles.timeText, { marginLeft: 6 }]}>
               Start: {item.startTime}{item.endTime ? ` | End: ${item.endTime}` : ''}
             </Text>
           </View>
 
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Ionicons name="hourglass-outline" size={14} color="#64748b" />
-            <Text style={[styles.timeText, { marginLeft: 6 }]}>
+            <Ionicons name="hourglass-outline" size={14} color={isDark ? '#FFFFFF' : '#000000'} />
+            <Text style={[styles.timeText, { marginLeft: 6, color: isDark ? '#94A3B8' : '#64748B' }]}>
               Meeting length: {item.durationMins >= 60 ? `${Math.round(item.durationMins / 60 * 10) / 10} hours` : `${item.durationMins} mins`}
             </Text>
           </View>
         </View>
 
         {/* Venue & Location Section */}
-        <View style={{ marginTop: 8, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border }}>
-          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.primaryDark, textTransform: 'uppercase', marginBottom: 4 }}>Venue & Location</Text>
-          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary, marginBottom: 2 }}>{item.venue || 'No venue provided'}</Text>
+        <View style={{ marginTop: 8, paddingTop: 12, borderTopWidth: 1.5, borderTopColor: isDark ? '#3F3F46' : '#CBD5E1' }}>
+          <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#B9C8BD' : '#315C50', textTransform: 'uppercase', marginBottom: 4 }}>Venue & Location</Text>
+          <Text style={{ fontSize: 14, fontWeight: '600', color: isDark ? '#FFFFFF' : '#111827', marginBottom: 2 }}>{item.venue || 'No venue provided'}</Text>
           {item.city && (
-            <Text style={{ fontSize: 13, fontWeight: '600', color: colors.primary, marginBottom: 2 }}>{item.city}</Text>
+            <Text style={{ fontSize: 13, fontWeight: '600', color: isDark ? '#B9C8BD' : '#315C50', marginBottom: 2 }}>{item.city}</Text>
           )}
           {item.address && item.address !== item.venue && (
-            <Text style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 8 }}>{item.address}</Text>
+            <Text style={{ fontSize: 12, color: isDark ? '#A1A1AA' : '#64748B', marginBottom: 8 }}>{item.address}</Text>
           )}
           <TouchableOpacity 
-            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', borderWidth: 1, borderColor: colors.primary, paddingVertical: 8, paddingHorizontal: 12, borderRadius: radius.sm, alignSelf: 'flex-start', marginTop: 4, marginBottom: 12 }}
+            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? '#27272A' : '#FFFFFF', borderWidth: 1, borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : '#CBD5E1', paddingVertical: 8, paddingHorizontal: 12, borderRadius: radius.sm, alignSelf: 'flex-start', marginTop: 4, marginBottom: 12 }}
             onPress={() => openInMaps(item.lat || 0, item.lng || 0, item.title, [item.venue, item.address, item.city].filter(Boolean).join(', '))}
           >
-            <Ionicons name="navigate-outline" size={16} color={colors.primary} />
-            <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primary, marginLeft: 6 }}>Get Directions</Text>
+            <Ionicons name="navigate-outline" size={16} color={isDark ? '#FFFFFF' : '#0F172A'} />
+            <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#FFFFFF' : '#0F172A', marginLeft: 6 }}>Get Directions</Text>
           </TouchableOpacity>
           
           {/* Travel Distance Info - Live Tracker */}
-          {!process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY ? (
-            <View style={{ marginTop: 12, backgroundColor: '#fef3c7', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#fbbf24' }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                <Ionicons name="warning" size={16} color="#d97706" />
-                <Text style={{ fontSize: 11, fontWeight: '700', color: '#d97706', textTransform: 'uppercase', marginLeft: 6 }}>Live Tracking Disabled</Text>
-              </View>
-              <Text style={{ fontSize: 12, color: '#92400e' }}>Google Maps API Key is missing in .env file. Add EXPO_PUBLIC_GOOGLE_MAPS_KEY to enable route tracking.</Text>
-            </View>
-          ) : item.travel && item.lat && item.lng && (
+          {!!item.lat && !!item.lng && (
             <View style={{ marginTop: 12 }}>
-              <Text style={{ fontSize: 11, fontWeight: '700', color: colors.primaryDark, textTransform: 'uppercase', marginBottom: 8 }}>Live Journey Tracker</Text>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#A78BFA' : '#6D28D9', textTransform: 'uppercase', marginBottom: 8, letterSpacing: 0.5 }}>Live Journey Tracker</Text>
               <LiveJourneyTracker
+                eventId={item.id || Math.random().toString()}
                 home={{ 
-                  lat: item.travel.originLat || 15.8281, 
-                  lng: item.travel.originLng || 78.0373, 
-                  name: item.travel.originName || (item.travel.isHomeToEvent ? 'Home' : 'Previous Location') 
+                  lat: item.travel?.originLat || 15.8281, 
+                  lng: item.travel?.originLng || 78.0373, 
+                  name: item.travel?.originName || (item.travel?.isHomeToEvent ? 'Home' : 'Previous Location') 
                 }}
                 destination={{ lat: item.lat, lng: item.lng }}
                 destinationName={item.city || (item.address || item.venue || 'Event').split(',')[0].trim()}
-                initialDistanceKm={item.travel.distKm}
-                initialDurationMins={item.travel.car}
+                initialDistanceKm={item.travel?.distKm || 0}
+                initialDurationMins={item.travel?.car || 0}
                 isDisabled={item.section !== 'today'}
-                altHome={(!item.travel.isHomeToEvent && item.travel.homeLat && item.travel.homeLng) ? {
+                altHome={(!item.travel?.isHomeToEvent && item.travel?.homeLat && item.travel?.homeLng) ? {
                   lat: item.travel.homeLat,
                   lng: item.travel.homeLng,
                   name: item.travel.homeName || 'Home'
                 } : undefined}
-                altInitialDistanceKm={item.travel.homeDistKm}
-                altInitialDurationMins={item.travel.homeCar || 0}
+                altInitialDistanceKm={item.travel?.homeDistKm || 0}
+                altInitialDurationMins={item.travel?.homeCar || 0}
               />
             </View>
           )}
@@ -442,47 +513,59 @@ export const PastorEventDashboard = ({ navigation }: { navigation: any }) => {
   };
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
+    <SafeAreaView style={[styles.container, { backgroundColor: isDark ? '#000000' : '#FFFFFF' }]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={isDark ? "#000000" : "#FFFFFF"} />
       
-      {/* ── Hero Section ── */}
-      <View style={[styles.hero, { paddingTop: insets.top }]}>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', flex: 1, marginRight: 10 }}>
-            <TouchableOpacity
-              onPress={() => {
-                if (navigation.canGoBack()) {
-                  navigation.goBack();
-                } else {
-                  setAdminActiveTab(0);
-                }
-              }}
-              style={styles.circularBackBtn}
+      {/* ── Top Header (Centered Title, Border Line, No Blue) ── */}
+      <View style={[
+        styles.headerContainer,
+        {
+          backgroundColor: isDark ? '#000000' : '#FFFFFF',
+          borderBottomWidth: 1.5,
+          borderBottomColor: isDark ? '#27272A' : '#CBD5E1',
+        }
+      ]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%', justifyContent: 'space-between' }}>
+          
+          <TouchableOpacity 
+            onPress={handleBack} 
+            style={{ padding: 6 }}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="arrow-back" size={24} color={isDark ? '#FFFFFF' : '#0F172A'} />
+          </TouchableOpacity>
+
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <Text style={[styles.headerTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>Pastor's Itinerary</Text>
+          </View>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <TouchableOpacity 
+              onPress={() => setShowDatePicker(true)} 
+              style={{ padding: 6 }}
               activeOpacity={0.7}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
+              <Ionicons name="calendar-outline" size={22} color={isDark ? '#FFFFFF' : '#0F172A'} />
             </TouchableOpacity>
-            <View style={{ flex: 1, minWidth: 0, marginLeft: 12 }}>
-              <Text style={styles.heroTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>Pastor Events</Text>
-              <Text style={[styles.heroSub, { marginTop: 2 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>Manage schedule & travel</Text>
-            </View>
-          </View>
-          <View style={{ flexShrink: 0, marginLeft: 8 }}>
+            
             <TouchableOpacity 
-              style={styles.newBtn} 
-              onPress={() => navigation.navigate('CreateEvent')}
+              onPress={() => navigation.navigate('CreateEvent', { allEvents: events })} 
+              style={{ padding: 6 }}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Plus size={16} color="#1a2d5a" />
-              <Text style={styles.newBtnTxt}>New</Text>
+              <Ionicons name="add" size={26} color={isDark ? '#FFFFFF' : '#0F172A'} />
             </TouchableOpacity>
           </View>
+
         </View>
       </View>
 
       <ScrollView 
-        contentContainerStyle={styles.scroll}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#1a2d5a']} />}
+        contentContainerStyle={{ paddingBottom: Platform.OS === 'android' ? 140 : 120 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />}
       >
 
       {showDatePicker && (
@@ -503,15 +586,31 @@ export const PastorEventDashboard = ({ navigation }: { navigation: any }) => {
         />
       )}
 
-      {/* Tabs and Icons */}
-      <View style={styles.tabsContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexDirection: 'row', alignItems: 'center', paddingRight: 8 }}>
-          {(['today', 'upcoming', 'past'] as const).map(tab => (
+      {/* Tabs */}
+      <View style={[
+        styles.tabsContainer,
+        {
+          backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+          borderWidth: 1.5,
+          borderColor: isDark ? 'rgba(255, 255, 255, 0.25)' : '#CBD5E1',
+        }
+      ]}>
+        {(['today', 'upcoming', 'past'] as const).map((tab) => {
+          const isActive = activeTab === tab && !selectedDateFilter;
+
+          return (
             <TouchableOpacity
               key={tab}
               style={[
                 styles.tab, 
-                activeTab === tab && !selectedDateFilter && styles.activeTab,
+                isActive && {
+                  backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: isDark ? 0.25 : 0.15,
+                  shadowRadius: 3,
+                  elevation: 2,
+                },
                 selectedDateFilter && styles.disabledTab
               ]}
               onPress={() => {
@@ -519,27 +618,21 @@ export const PastorEventDashboard = ({ navigation }: { navigation: any }) => {
                 setActiveTab(tab);
               }}
               disabled={loading}
+              activeOpacity={0.8}
             >
-              <Text style={[styles.tabText, activeTab === tab && !selectedDateFilter && styles.activeTabText]}>
+              <Text style={[
+                styles.tabText,
+                { color: isDark ? '#A1A1AA' : '#64748B' },
+                isActive && {
+                  color: isDark ? '#000000' : '#FFFFFF',
+                  fontWeight: '800'
+                }
+              ]}>
                 {tab.charAt(0).toUpperCase() + tab.slice(1)}
               </Text>
             </TouchableOpacity>
-          ))}
-        </ScrollView>
-        <View style={{ flexDirection: 'row', gap: 8, paddingRight: 8, flexShrink: 0 }}>
-          <TouchableOpacity 
-            style={[styles.heroIconBtn, { backgroundColor: '#fff', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 3 }]} 
-            onPress={() => setShowDatePicker(true)}
-          >
-            <Ionicons name="calendar-outline" size={18} color="#1a2d5a" />
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.heroIconBtn, { backgroundColor: '#fff', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 3 }]} 
-            onPress={() => navigation.navigate('AIAssistant')}
-          >
-            <MaterialCommunityIcons name="robot-outline" size={18} color="#1a2d5a" />
-          </TouchableOpacity>
-        </View>
+          );
+        })}
       </View>
 
       {/* Date Filter Indicator Banner */}
@@ -562,145 +655,173 @@ export const PastorEventDashboard = ({ navigation }: { navigation: any }) => {
       )}
 
       {/* Starting Location Bar */}
-      <View style={{ backgroundColor: '#fff', padding: spacing.md, marginHorizontal: spacing.md, marginBottom: spacing.sm, borderRadius: radius.md, elevation: 1 }}>
-        <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginBottom: 4 }}>
+      <View style={{
+        backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+        padding: spacing.md,
+        marginHorizontal: spacing.lg,
+        marginBottom: spacing.sm,
+        borderRadius: radius.md,
+        borderWidth: 1,
+        borderColor: isDark ? '#27272A' : '#E2E8F0',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: isDark ? 0.25 : 0.06,
+        shadowRadius: 6,
+        elevation: 2,
+      }}>
+        <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#A1A1AA' : '#64748B', marginBottom: 6 }}>
           STARTING FROM
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <TextInput
-            style={{ flex: 1, backgroundColor: colors.bgSecondary, padding: 8, borderRadius: radius.sm, fontSize: 14, color: colors.textPrimary }}
+            style={{
+              flex: 1,
+              backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+              padding: 10,
+              borderRadius: radius.sm,
+              fontSize: 14,
+              color: isDark ? '#FFFFFF' : '#0F172A',
+              borderWidth: 1.5,
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.25)' : '#CBD5E1',
+            }}
             value={currentLocName}
             onChangeText={setCurrentLocName}
             onSubmitEditing={(e) => handleAddressSubmit(e.nativeEvent.text)}
             placeholder="Type starting address..."
-            placeholderTextColor={colors.textTertiary}
+            placeholderTextColor={isDark ? '#94A3B8' : '#94A3B8'}
           />
           <TouchableOpacity 
-            style={{ marginLeft: spacing.sm, backgroundColor: colors.primary, paddingHorizontal: spacing.md, paddingVertical: 10, borderRadius: radius.sm }}
+            style={{
+              marginLeft: spacing.sm,
+              backgroundColor: isDark ? '#FFFFFF' : '#000000',
+              paddingHorizontal: spacing.md,
+              paddingVertical: 10,
+              borderRadius: radius.sm
+            }}
             onPress={() => handleAddressSubmit(currentLocName)}
             disabled={isGeocoding}
           >
             {isGeocoding ? (
-              <ActivityIndicator size="small" color="#FFF" />
+              <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
             ) : (
-              <Text style={{ color: '#fff', fontWeight: '600', fontSize: 13 }}>Update</Text>
+              <Text style={{ color: isDark ? '#000000' : '#FFFFFF', fontWeight: '800', fontSize: 13 }}>Update</Text>
             )}
           </TouchableOpacity>
         </View>
-        <Text style={{ fontSize: 10, color: colors.textTertiary, marginTop: 4 }}>
+        <Text style={{ fontSize: 11, color: isDark ? '#A1A1AA' : '#64748B', marginTop: 6 }}>
           {isGeocoding ? 'Calculating new distances...' : 'Type address and press Update'}
         </Text>
       </View>
 
-      {/* ── Stats Dashboard ── */}
-      <View style={[styles.statsGrid, { backgroundColor: 'transparent', borderRadius: 16, padding: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', elevation: 4, shadowColor: '#1a2d5a', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8 }]}>
-        <View style={{ alignItems: 'center', flex: 1 }}>
-          <Text style={{ color: '#aac4e8', fontSize: 11, fontWeight: '600', marginBottom: 4, textTransform: 'uppercase' }}>Total Events</Text>
-          <Text style={{ fontSize: 24, fontWeight: '800', color: '#fff' }}>{totalEvents}</Text>
+      {/* Stats Strip */}
+      <View style={styles.statsStrip}>
+        <View style={[styles.statBox, { flex: 0.8 }]}>
+          <Text style={styles.statVal}>{totalEvents}</Text>
+          <Text style={styles.statLbl}>Events</Text>
         </View>
-        <View style={{ width: 1, height: '80%', backgroundColor: 'rgba(255,255,255,0.2)' }} />
-        <View style={{ alignItems: 'center', flex: 1 }}>
-          <Text style={{ color: '#aac4e8', fontSize: 11, fontWeight: '600', marginBottom: 4, textTransform: 'uppercase' }}>Travel Dist</Text>
-          <Text style={{ fontSize: 18, fontWeight: '700', color: '#fff' }}>{Math.round(totalDistance)} km</Text>
+        <View style={styles.statDivider} />
+        <View style={[styles.statBox, { flex: 1.1 }]}>
+          <Text style={styles.statVal} numberOfLines={1}>{Math.round(totalDistance)} km</Text>
+          <Text style={styles.statLbl}>Travel Dist</Text>
         </View>
-        <View style={{ width: 1, height: '80%', backgroundColor: 'rgba(255,255,255,0.2)' }} />
-        <View style={{ alignItems: 'center', flex: 1 }}>
-          <Text style={{ color: '#aac4e8', fontSize: 11, fontWeight: '600', marginBottom: 4, textTransform: 'uppercase' }}>Travel Time</Text>
-          <Text style={{ fontSize: 18, fontWeight: '700', color: '#fff' }}>{formatDuration(totalTravelTimeCar)}</Text>
+        <View style={styles.statDivider} />
+        <View style={[styles.statBox, { flex: 1.4 }]}>
+          <Text style={styles.statVal} numberOfLines={1}>{formatDuration(totalTravelTimeCar)}</Text>
+          <Text style={styles.statLbl}>Travel Time</Text>
         </View>
       </View>
 
       {/* List */}
-      <Text style={styles.listLabel}>Schedule</Text>
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#1a2d5a" />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : enrichedEvents.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Ionicons name="calendar-outline" size={48} color="#94a3b8" />
-          <Text style={styles.emptyStateText}>No events found for {activeTab}</Text>
+        <View style={styles.emptyContainer}>
+          <Ionicons name="calendar-outline" size={64} color={colors.textSecondary} />
+          <Text style={styles.emptyText}>No events found for {activeTab}</Text>
         </View>
       ) : (
-        <View style={{ paddingBottom: 120 }}>
+        <View style={{ padding: spacing.lg, paddingBottom: 40 }}>
           {enrichedEvents.map((item, index) => renderEventCard({ item, index }))}
         </View>
       )}
       </ScrollView>
 
       {/* Floating Buttons */}
-      <View style={styles.floatingButtonsContainer}>
+      <View style={[
+        styles.floatingButtonsContainer,
+        {
+          bottom: Platform.OS === 'android' ? Math.max(insets.bottom, 24) + 24 : Math.max(insets.bottom, 16) + 16,
+        }
+      ]}>
         <TouchableOpacity
-          style={[styles.floatingButton, { backgroundColor: colors.success }]}
+          style={[
+            styles.floatingButton,
+            {
+              backgroundColor: isDark ? '#FFFFFF' : '#000000',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: isDark ? 0.35 : 0.2,
+              shadowRadius: 8,
+              elevation: 6,
+            }
+          ]}
           activeOpacity={0.8}
           onPress={() => navigation.navigate('RoutePlanner', { events: filteredEvents })}
         >
-          <Ionicons name="trail-sign" size={24} color="#FFF" />
-          <Text style={styles.floatingButtonText}>Route Plan</Text>
+          <Ionicons name="trail-sign" size={20} color={isDark ? '#000000' : '#FFFFFF'} />
+          <Text style={[styles.floatingButtonText, { color: isDark ? '#000000' : '#FFFFFF', fontWeight: '800' }]}>
+            Route Plan
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.floatingButton}
+          style={[
+            styles.floatingButton,
+            {
+              backgroundColor: isDark ? '#27272A' : '#1E293B',
+              borderWidth: 1,
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : '#334155',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: isDark ? 0.35 : 0.2,
+              shadowRadius: 8,
+              elevation: 6,
+            }
+          ]}
           activeOpacity={0.8}
           onPress={() => navigation.navigate('EventMap', { events: filteredEvents })}
         >
-          <Ionicons name="map" size={24} color="#FFF" />
-          <Text style={styles.floatingButtonText}>Map View</Text>
+          <Ionicons name="map" size={20} color="#FFFFFF" />
+          <Text style={[styles.floatingButtonText, { color: '#FFFFFF', fontWeight: '800' }]}>
+            Map View
+          </Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </SafeAreaView>
   );
 };
 
-const styles = createAdminThemedStyles(StyleSheet.create({
-  circularBackBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+function getStyles(colors: any, isDark: boolean) { return StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: isDark ? '#000000' : '#F8FAFC',
   },
-  container: { flex: 1, backgroundColor: '#EDE8DC' },
-  hero: {
-    backgroundColor: '#1a2d5a',
+  headerContainer: {
     paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 12 : 12,
     paddingBottom: 14,
-    
-    
+    marginBottom: 4,
   },
-  heroTitle: { color: '#1a2d5a', fontSize: 20, fontWeight: '700' },
-  heroSub: { color: '#64748b', fontSize: 13, fontWeight: '500' },
-  heroIconBtn: { padding: 6, backgroundColor: '#fff', borderRadius: 20 },
-  newBtn: {
-    backgroundColor: '#FCD34D',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 10,
-    gap: 4
-  },
-  newBtnTxt: { color: '#1a2d5a', fontWeight: '700', fontSize: 13 },
-  scroll: { padding: 20, paddingTop: 10 },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: isDark ? '#FFFFFF' : '#0F172A',
   },
   welcomeText: {
     ...typography.h1,
-    color: colors.primaryDark
+    color: colors.text
   },
   subtitleText: {
     ...typography.caption,
@@ -708,62 +829,89 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   },
   refreshButton: {
     padding: spacing.sm,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.border,
     borderRadius: radius.full
   },
-  tabsContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 24, marginHorizontal: -20, paddingHorizontal: 20 },
-  tab: {
-    backgroundColor: '#e2e8f0',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginRight: 10,
-    alignSelf: 'flex-start'
-  },
-  activeTab: { backgroundColor: '#1a2d5a' },
-  tabText: { color: '#475569', fontSize: 13, fontWeight: '600' },
-  activeTabText: { color: '#fff' },
-  statsGrid: { marginBottom: 20, marginTop: 10 },
-  statsRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 },
-  statCardFull: {
-    backgroundColor: '#1a2d5a',
-    borderRadius: 16,
-    padding: 24,
-    shadowColor: '#1a2d5a',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 15,
-    elevation: 8,
-  },
-  statCardHalf: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    width: '48%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 3,
-  },
-  statLblFull: { color: '#aac4e8', fontSize: 13, fontWeight: '600', marginBottom: 4 },
-  statNumFull: { fontSize: 32, fontWeight: '800', color: '#fff' },
-  statLbl: { color: '#64748b', fontSize: 12, fontWeight: '600', marginBottom: 4 },
-  statNum: { fontSize: 20, fontWeight: '800' },
-  
-  listLabel: { color: '#1e293b', fontSize: 18, fontWeight: '700', marginBottom: 16 },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    elevation: 2,
+  tabsContainer: {
+    flexDirection: 'row',
+    marginHorizontal: spacing.lg,
+    borderRadius: 12,
+    marginVertical: spacing.sm,
     borderWidth: 1,
-    borderColor: '#f1f5f9'
+    padding: 4,
+    alignItems: 'center',
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 9,
+  },
+  activeTab: {
+    // handled dynamically in JSX now
+  },
+  tabText: {
+    fontSize: 13,
+    fontWeight: '600'
+  },
+  activeTabText: {
+    // handled dynamically in JSX now
+  },
+  statsStrip: {
+    flexDirection: 'row',
+    backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+    marginHorizontal: spacing.lg,
+    marginVertical: spacing.xs,
+    paddingVertical: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: isDark ? '#27272A' : '#CBD5E1',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: isDark ? 0.25 : 0.06,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  statBox: {
+    alignItems: 'center',
+    flex: 1
+  },
+  statVal: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: isDark ? '#FFFFFF' : '#0F172A',
+  },
+  statLbl: {
+    fontSize: 10,
+    color: isDark ? '#A1A1AA' : '#64748B',
+    textTransform: 'uppercase',
+    marginTop: 2
+  },
+  statDivider: {
+    width: 2,
+    height: 28,
+    backgroundColor: isDark ? '#3F3F46' : '#94A3B8',
+    borderRadius: 1,
+  },
+  listContent: {
+    padding: spacing.lg,
+    paddingBottom: 100
+  },
+  card: {
+    backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: isDark ? '#27272A' : '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: isDark ? 0.25 : 0.06,
+    shadowRadius: 6,
+    elevation: 2,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -774,12 +922,12 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   timeText: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.primary
+    color: isDark ? '#F1F5F9' : '#0F172A',
   },
   titleText: {
     ...typography.h3,
-    color: colors.textPrimary,
-    marginBottom: spacing.sm
+    color: isDark ? '#C6A66B' : '#98713D',
+    marginBottom: spacing.sm,
   },
   venueRow: {
     flexDirection: 'row',
@@ -799,7 +947,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   },
   addressText: {
     fontSize: 12,
-    color: colors.textTertiary
+    color: colors.textSecondary
   },
   travelContainer: {
     borderTopWidth: 1,
@@ -824,11 +972,26 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 14
   },
-  emptyState: { alignItems: 'center', paddingVertical: 40 },
-  emptyStateText: { color: '#64748b', marginTop: 12, fontSize: 14, fontWeight: '500' },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.xl
+  },
+  emptyText: {
+    ...typography.h3,
+    color: colors.textSecondary,
+    marginTop: spacing.md
+  },
+  emptySubtext: {
+    ...typography.caption,
+    textAlign: 'center',
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.lg
+  },
   floatingButtonsContainer: {
     position: 'absolute',
-    bottom: 40,
+    bottom: spacing.lg,
     left: spacing.lg,
     right: spacing.lg,
     flexDirection: 'row',
@@ -847,8 +1010,8 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   },
   floatingButtonText: {
     color: '#FFF',
-    fontSize: 14,
-    fontWeight: '600'
+    fontSize: 12,
+    fontWeight: '700'
   },
   headerActions: {
     flexDirection: 'row',
@@ -856,7 +1019,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   },
   actionIconButton: {
     padding: spacing.sm,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.border,
     borderRadius: radius.full,
     alignItems: 'center',
     justifyContent: 'center',
@@ -870,15 +1033,19 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: isDark ? '#18181B' : '#FFFFFF',
     marginHorizontal: spacing.lg,
     paddingVertical: 10,
     paddingHorizontal: spacing.md,
     borderRadius: radius.md,
-    borderWidth: 1.5,
-    borderColor: colors.primary,
+    borderWidth: 1,
+    borderColor: isDark ? '#27272A' : '#E2E8F0',
     marginVertical: spacing.xs,
-    ...shadow.card
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: isDark ? 0.25 : 0.06,
+    shadowRadius: 6,
+    elevation: 2,
   },
   filterBannerLeft: {
     flexDirection: 'row',
@@ -900,6 +1067,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     fontWeight: '600',
     color: colors.primary
   }
-}));
+});
+}
 
 export default PastorEventDashboard;

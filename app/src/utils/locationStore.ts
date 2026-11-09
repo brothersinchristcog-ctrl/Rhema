@@ -35,8 +35,9 @@ export const getStartingLocation = async (): Promise<SavedLocation> => {
 };
 
 export const formatDuration = (mins: number) => {
-  if (mins < 60) return `${mins} mins`;
+  if (!mins || mins <= 0) return '0 m';
+  if (mins < 60) return `${mins} m`;
   const h = Math.floor(mins / 60);
   const m = mins % 60;
-  return m === 0 ? `${h} hrs` : `${h} hrs ${m} mins`;
+  return m === 0 ? `${h} hr` : `${h} hr ${m} m`;
 };

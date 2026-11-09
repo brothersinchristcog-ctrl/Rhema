@@ -8,9 +8,12 @@ import {
   SafeAreaView,
   StatusBar,
   TextInput,
-  ActivityIndicator
+  ActivityIndicator,
+  Platform
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme } from '../../../context/ThemeContext';
 import { colors, spacing, radius, typography, shadow } from '../../../theme/Theme';
 import { PastorEvent, TransportMode } from '../../../types/event';
 import { openRoute } from '../../../utils/maps';
@@ -18,11 +21,12 @@ import { detectConflicts } from '../../../utils/conflicts';
 import { saveStartingLocation, getStartingLocation, formatDuration } from '../../../utils/locationStore';
 import TransportToggle from '../../../components/TransportToggle';
 import RouteChain, { RouteStop, RouteLeg } from '../../../components/RouteChain';
-import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
 
 export const PastorEventRoutePlanner = ({ route, navigation }: { route: any; navigation: any }) => {
-  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const { events = [] } = route.params as { events: PastorEvent[] };
+  const { isDark } = useTheme();
+  const styles = getStyles(isDark);
+  const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<TransportMode>('car');
   const [stops, setStops] = useState<RouteStop[]>([]);
   const [legs, setLegs] = useState<RouteLeg[]>([]);
@@ -212,15 +216,33 @@ export const PastorEventRoutePlanner = ({ route, navigation }: { route: any; nav
   const totalDuration = legs.reduce((acc, curr) => acc + curr.minutes, 0);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.bgPrimary} />
+    <SafeAreaView style={[styles.container, { backgroundColor: isDark ? '#000000' : '#FFFFFF' }]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={isDark ? "#000000" : "#FFFFFF"} />
       
       {/* Header */}
-      <View style={styles.navBar}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
+      <View style={[
+        styles.navBar,
+        {
+          backgroundColor: isDark ? '#000000' : '#FFFFFF',
+          borderBottomWidth: 1.5,
+          borderBottomColor: isDark ? '#27272A' : '#CBD5E1',
+          paddingTop: Platform.OS === 'android' ? Math.max(insets.top, StatusBar.currentHeight || 24) + 10 : Math.max(insets.top, 12),
+          paddingBottom: 14,
+          paddingHorizontal: 16,
+          height: 'auto',
+        }
+      ]}>
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.7}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="arrow-back" size={24} color={isDark ? '#FFFFFF' : '#0F172A'} />
         </TouchableOpacity>
-        <Text style={styles.navTitle}>Route Planner</Text>
+        <Text style={[styles.navTitle, { color: isDark ? '#FFFFFF' : '#0F172A', fontSize: 18, fontWeight: '800' }]}>
+          Route Planner
+        </Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -234,13 +256,13 @@ export const PastorEventRoutePlanner = ({ route, navigation }: { route: any; nav
               <Text style={styles.statLbl}>Appointments</Text>
             </View>
             <View style={styles.statDivider} />
-            <View style={styles.statBox}>
-              <Text style={styles.statVal}>{Math.round(totalDistance)} km</Text>
+            <View style={[styles.statBox, { flex: 1.1 }]}>
+              <Text style={styles.statVal} numberOfLines={1}>{Math.round(totalDistance)} km</Text>
               <Text style={styles.statLbl}>Total Distance</Text>
             </View>
             <View style={styles.statDivider} />
-            <View style={styles.statBox}>
-              <Text style={styles.statVal}>{formatDuration(totalDuration)}</Text>
+            <View style={[styles.statBox, { flex: 1.4 }]}>
+              <Text style={styles.statVal} numberOfLines={1}>{formatDuration(totalDuration)}</Text>
               <Text style={styles.statLbl}>Travel Time</Text>
             </View>
           </View>
@@ -268,39 +290,39 @@ export const PastorEventRoutePlanner = ({ route, navigation }: { route: any; nav
           </View>
         )}
 
-        <View style={{ backgroundColor: '#fff', padding: spacing.md, borderRadius: radius.md, marginBottom: spacing.md, elevation: 2 }}>
-          <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
+        <View style={{ backgroundColor: isDark ? '#18181B' : '#FFFFFF', padding: spacing.md, borderRadius: radius.md, marginBottom: spacing.md, borderWidth: 1, borderColor: isDark ? '#27272A' : '#E2E8F0', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: isDark ? 0.25 : 0.06, shadowRadius: 6, elevation: 2 }}>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? '#B9C8BD' : '#315C50', marginBottom: 8, textTransform: 'uppercase' }}>
             STARTING FROM
           </Text>
           {isLocLoading ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: colors.bgSecondary, borderRadius: radius.sm }}>
-              <ActivityIndicator size="small" color={colors.primary} />
-              <Text style={{ marginLeft: 8, color: colors.textSecondary, fontSize: 14 }}>Loading saved location...</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: isDark ? '#27272A' : colors.bgSecondary, borderRadius: radius.sm }}>
+              <ActivityIndicator size="small" color={isDark ? '#B9C8BD' : '#315C50'} />
+              <Text style={{ marginLeft: 8, color: isDark ? '#A1A1AA' : colors.textSecondary, fontSize: 14 }}>Loading saved location...</Text>
             </View>
           ) : (
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <TextInput
-                style={{ flex: 1, backgroundColor: colors.bgSecondary, padding: 12, borderRadius: radius.sm, fontSize: 16, color: colors.textPrimary }}
+                style={{ flex: 1, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: isDark ? '#3F3F46' : '#E2E8F0', padding: 12, borderRadius: radius.sm, fontSize: 15, color: isDark ? '#FFFFFF' : '#0F172A' }}
                 value={currentLocName}
                 onChangeText={setCurrentLocName}
                 onSubmitEditing={(e) => handleAddressSubmit(e.nativeEvent.text)}
                 placeholder="Type starting address..."
-                placeholderTextColor={colors.textTertiary}
+                placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
               />
               <TouchableOpacity
-                style={{ marginLeft: spacing.sm, backgroundColor: colors.primary, paddingHorizontal: spacing.md, paddingVertical: 12, borderRadius: radius.sm }}
+                style={{ marginLeft: spacing.sm, backgroundColor: isDark ? '#FFFFFF' : '#000000', paddingHorizontal: spacing.md, paddingVertical: 12, borderRadius: radius.sm }}
                 onPress={() => handleAddressSubmit(currentLocName)}
                 disabled={isGeocoding}
               >
                 {isGeocoding ? (
-                  <ActivityIndicator size="small" color="#FFF" />
+                  <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
                 ) : (
-                  <Text style={{ color: '#fff', fontWeight: '600', fontSize: 14 }}>Update</Text>
+                  <Text style={{ color: isDark ? '#000000' : '#FFFFFF', fontWeight: '700', fontSize: 14 }}>Update</Text>
                 )}
               </TouchableOpacity>
             </View>
           )}
-          <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 4 }}>
+          <Text style={{ fontSize: 11, color: isDark ? '#A1A1AA' : colors.textTertiary, marginTop: 6 }}>
             {isLocLoading ? 'Fetching your saved location...' : isGeocoding ? 'Calculating new route...' : 'Type address and press Update'}
           </Text>
         </View>
@@ -317,7 +339,7 @@ export const PastorEventRoutePlanner = ({ route, navigation }: { route: any; nav
           activeOpacity={0.8}
           onPress={handleLaunchGoogleMaps}
         >
-          <Ionicons name="logo-google" size={18} color="#FFF" />
+          <Ionicons name="logo-google" size={18} color={isDark ? '#000000' : '#FFFFFF'} />
           <Text style={styles.actionButtonText}>Open Route in Google Maps</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -325,10 +347,10 @@ export const PastorEventRoutePlanner = ({ route, navigation }: { route: any; nav
   );
 };
 
-const styles = createAdminThemedStyles(StyleSheet.create({
+const getStyles = (isDark: boolean) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bgSecondary
+    backgroundColor: isDark ? '#000000' : '#FFFFFF'
   },
   navBar: {
     flexDirection: 'row',
@@ -336,16 +358,16 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     height: 56,
-    backgroundColor: colors.bgPrimary,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border
+    backgroundColor: isDark ? '#000000' : '#FFFFFF',
+    borderBottomWidth: 1.5,
+    borderBottomColor: isDark ? '#27272A' : '#CBD5E1'
   },
   backButton: {
     padding: spacing.xs
   },
   navTitle: {
     ...typography.h2,
-    color: colors.textPrimary,
+    color: isDark ? '#FFFFFF' : '#0F172A',
     flex: 1,
     textAlign: 'center'
   },
@@ -354,17 +376,21 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     gap: spacing.md
   },
   summaryCard: {
-    backgroundColor: colors.bgPrimary,
+    backgroundColor: isDark ? '#18181B' : '#FFFFFF',
     borderRadius: radius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    ...shadow.card
+    borderColor: isDark ? '#27272A' : '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: isDark ? 0.25 : 0.06,
+    shadowRadius: 6,
+    elevation: 2,
   },
   cardLabel: {
     fontSize: 11,
-    fontWeight: '600',
-    color: colors.textTertiary,
+    fontWeight: '700',
+    color: isDark ? '#B9C8BD' : '#315C50',
     textTransform: 'uppercase',
     marginBottom: spacing.sm
   },
@@ -381,22 +407,22 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   statVal: {
     fontSize: 15,
     fontWeight: '700',
-    color: colors.textPrimary
+    color: isDark ? '#FFFFFF' : '#0F172A'
   },
   statLbl: {
     fontSize: 10,
-    color: colors.textTertiary,
+    color: isDark ? '#A1A1AA' : '#64748B',
     marginTop: 2
   },
   statDivider: {
     width: 1,
     height: 20,
-    backgroundColor: colors.border
+    backgroundColor: isDark ? '#27272A' : '#E2E8F0'
   },
   sectionTitle: {
     fontSize: 12,
     fontWeight: '700',
-    color: colors.textSecondary,
+    color: isDark ? '#B9C8BD' : '#315C50',
     textTransform: 'uppercase',
     marginTop: spacing.sm,
     marginBottom: spacing.xs
@@ -404,8 +430,8 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   warningCard: {
     flexDirection: 'row',
     gap: spacing.sm,
-    backgroundColor: colors.warningLight,
-    borderColor: '#F3D299',
+    backgroundColor: isDark ? 'rgba(234, 179, 8, 0.12)' : colors.warningLight,
+    borderColor: isDark ? 'rgba(234, 179, 8, 0.25)' : '#F3D299',
     borderWidth: 1,
     borderRadius: radius.md,
     padding: spacing.md
@@ -413,12 +439,12 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   warningTitle: {
     fontSize: 14,
     fontWeight: '700',
-    color: colors.warning,
+    color: isDark ? '#FACC15' : colors.warning,
     marginBottom: spacing.xs
   },
   warningText: {
     fontSize: 12,
-    color: colors.warning,
+    color: isDark ? '#FEF08A' : colors.warning,
     lineHeight: 16,
     marginTop: 2
   },
@@ -426,8 +452,8 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    backgroundColor: colors.successLight,
-    borderColor: '#AEE4D4',
+    backgroundColor: isDark ? 'rgba(34, 197, 94, 0.12)' : colors.successLight,
+    borderColor: isDark ? 'rgba(34, 197, 94, 0.25)' : '#AEE4D4',
     borderWidth: 1,
     borderRadius: radius.md,
     padding: spacing.md
@@ -435,33 +461,41 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   successText: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.success
+    color: isDark ? '#86EFAC' : colors.success
   },
   chainCard: {
-    backgroundColor: colors.bgPrimary,
+    backgroundColor: isDark ? '#18181B' : '#FFFFFF',
     borderRadius: radius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    ...shadow.card
+    borderColor: isDark ? '#27272A' : '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: isDark ? 0.25 : 0.06,
+    shadowRadius: 6,
+    elevation: 2,
   },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.primary,
-    borderRadius: radius.sm,
-    paddingVertical: 12,
+    backgroundColor: isDark ? '#FFFFFF' : '#000000',
+    borderRadius: radius.full,
+    paddingVertical: 14,
     gap: 8,
     marginTop: spacing.md,
     marginBottom: spacing.xl,
-    ...shadow.card
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: isDark ? 0.3 : 0.15,
+    shadowRadius: 4,
+    elevation: 3,
   },
   actionButtonText: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: '600'
+    color: isDark ? '#000000' : '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700'
   }
-}));
+});
 
 export default PastorEventRoutePlanner;

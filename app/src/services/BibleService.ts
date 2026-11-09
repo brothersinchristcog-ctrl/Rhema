@@ -310,6 +310,21 @@ export const BibleService = {
   },
 
   /**
+   * Get total number of verses in a specific chapter (1-based chapter number)
+   */
+  getVerseCount(bookIndex: number, chapter: number): number {
+    try {
+      const verses = LOCAL_TELUGU_BIBLE?.Book?.[bookIndex]?.Chapter?.[chapter - 1]?.Verse;
+      if (Array.isArray(verses) && verses.length > 0) {
+        return verses.length;
+      }
+    } catch (e) {
+      // ignore fallback error
+    }
+    return 30;
+  },
+
+  /**
    * Determine whether a book index is Old Testament or New Testament
    */
   getTestament(bookIndex: number): 'OT' | 'NT' {

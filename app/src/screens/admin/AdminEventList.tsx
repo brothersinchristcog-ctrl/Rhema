@@ -13,7 +13,7 @@ import {
   Modal,
   Alert
 } from 'react-native';
-import { MapPin, Clock, Calendar, Trash2, ChevronLeft, ChevronRight, Plus, Users, QrCode, Download, Share2, X , ArrowLeft, Vote } from 'lucide-react-native';
+import { MapPin, Clock, Calendar, Trash2, ChevronLeft, ChevronRight, Plus, Users, QrCode, Download, Share2, X , ArrowLeft, Edit2, CheckCircle2, Vote } from 'lucide-react-native';
 import EventRsvpAnalyticsModal from './EventRsvpAnalyticsModal';
 import QRCode from 'react-native-qrcode-svg';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -22,6 +22,7 @@ import * as MediaLibrary from 'expo-media-library';
 import AttendanceService from '../../services/AttendanceService';
 import { useNavigation } from '@react-navigation/native';
 import { AdminTabContext } from '../../context/AdminTabContext';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import FirestoreService from '../../services/FirestoreService';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
@@ -248,6 +249,11 @@ export default function AdminEventList() {
 
   const upcomingCount = events.filter(e => !isEventCompleted(e)).length;
   const pastCount = events.filter(e => isEventCompleted(e)).length;
+  const publishedCount = events.filter(e => 
+    !e.status || 
+    e.status.toLowerCase().includes('pub') || 
+    e.status.toLowerCase().includes('act')
+  ).length;
 
   const formatDate = (sfDate: string) => {
     if (!sfDate) return '';
@@ -318,68 +324,228 @@ export default function AdminEventList() {
 
   if (loading && events.length === 0) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#FCD34D" />
+      <View style={[styles.loadingContainer, { backgroundColor: isDark ? '#000000' : '#FFFFFF' }]}>
+        <ActivityIndicator size="large" color={isDark ? '#FFFFFF' : '#1A2D5A'} />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" />
-      
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* ── Hero Section ── */}
-        <View style={styles.hero}>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-              <TouchableOpacity
-                onPress={() => setActiveTab(0)}
-                style={styles.circularBackBtn}
-                activeOpacity={0.7}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
-              </TouchableOpacity>
-              <View style={{ marginLeft: 12 }}>
-                <Text style={styles.heroTitle}>Events</Text>
-                <Text style={[styles.heroSub, { marginTop: 2 }]}>{events.length} total · {upcomingCount} upcoming</Text>
-              </View>
-            </View>
+    <View style={[styles.container, { backgroundColor: isDark ? '#000000' : '#FFFFFF' }]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
+
+      {/* ── Top Header Card (with border line) ── */}
+      <View style={[
+        styles.hero,
+        {
+          backgroundColor: isDark ? '#000000' : '#FFFFFF',
+          borderBottomWidth: 1.5,
+          borderBottomColor: isDark ? '#27272A' : '#CBD5E1',
+          paddingHorizontal: 16,
+          paddingTop: Platform.OS === 'ios' ? 12 : 10,
+          paddingBottom: 14,
+          marginBottom: 4,
+        }
+      ]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+          {/* Left: Circular Back Button */}
+          <View style={{ minWidth: 40, alignItems: 'flex-start', justifyContent: 'center' }}>
+            <TouchableOpacity
+              onPress={() => setActiveTab(0)}
+              style={[
+                styles.circularBackBtn,
+                {
+                  backgroundColor: isDark ? '#000000' : '#FFFFFF',
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : '#CBD5E1',
+                  borderWidth: 1.5,
+                }
+              ]}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.2} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Middle: Events Title */}
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 }}>
+            <Text
+              style={[
+                styles.heroTitle,
+                {
+                  color: isDark ? '#FFFFFF' : '#0F172A',
+                  textAlign: 'center',
+                  fontSize: 20,
+                  fontWeight: '800',
+                  fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+                  letterSpacing: -0.4,
+                }
+              ]}
+              numberOfLines={1}
+            >
+              Events
+            </Text>
+          </View>
+
+          {/* Right: + New Button */}
+          <View style={{ minWidth: 40, alignItems: 'flex-end', justifyContent: 'center' }}>
             <TouchableOpacity 
-              style={[styles.newBtn, { flexShrink: 0 }]} 
+              style={[
+                styles.newBtn,
+                {
+                  backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                  borderColor: isDark ? '#FFFFFF' : '#000000',
+                  borderWidth: 1.5,
+                  paddingHorizontal: 14,
+                  paddingVertical: 7,
+                  borderRadius: 20,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 4,
+                  shadowOpacity: 0,
+                  elevation: 0,
+                }
+              ]} 
               onPress={() => { setEditingData(null); if (setTabByName) setTabByName('New Event'); else setActiveTab(10); }}
               activeOpacity={0.8}
             >
-              <Plus size={15} color="#1a2d5a" strokeWidth={2.5} />
-              <Text style={styles.newBtnTxt} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>New Event</Text>
+              <Plus size={14} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.5} />
+              <Text 
+                style={[
+                  styles.newBtnTxt, 
+                  { 
+                    color: isDark ? '#000000' : '#FFFFFF',
+                    fontSize: 13,
+                    fontWeight: '800',
+                    letterSpacing: 0.3
+                  }
+                ]}
+                numberOfLines={1}
+              >
+                New
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
+      </View>
+      
+      <ScrollView 
+        style={{ backgroundColor: isDark ? '#000000' : '#FFFFFF' }} 
+        contentContainerStyle={[styles.scroll, { backgroundColor: isDark ? '#000000' : '#FFFFFF' }]} 
+        showsVerticalScrollIndicator={false}
+      >
 
-        {/* ── Stats Row ── */}
+        {/* ── Stats Row (Matching Members Screen Glassmorphic Stat Cards) ── */}
         <View style={styles.statsRow}>
-          <TouchableOpacity style={[styles.statCard, filterType === 'Published' && styles.activeStatCard]} onPress={() => setFilterType('Published')}>
-            <Text style={[styles.statNum, { color: '#15803D' }]}>
-              {events.filter(e => 
-                !e.status || 
-                e.status.toLowerCase().includes('pub') || 
-                e.status.toLowerCase().includes('act')
-              ).length}
-            </Text>
-            <Text style={styles.statLbl}>Published</Text>
+          {/* 1. Published Card */}
+          <TouchableOpacity 
+            style={[
+              styles.statBox, 
+              {
+                backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                borderColor: isDark ? '#34D399' : '#15803D',
+                borderWidth: filterType === 'Published' ? 2 : 1.5,
+                paddingVertical: 0,
+                overflow: 'hidden',
+              }
+            ]}
+            onPress={() => setFilterType('Published')}
+            activeOpacity={0.75}
+          >
+            <LinearGradient
+              colors={
+                isDark
+                  ? ['rgba(52, 211, 153, 0.14)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)']
+                  : ['#FFFFFF', '#F7FCF9', '#ECFDF5']
+              }
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.statGlassInner}
+            >
+              <View style={[styles.statNotch, { backgroundColor: isDark ? '#34D399' : '#15803D' }]} />
+              <Text style={[styles.num, { color: isDark ? '#34D399' : '#15803D' }]}>{publishedCount}</Text>
+              <View style={styles.statLabelRow}>
+                <Text style={[styles.statLabel, { color: isDark ? '#E4E4E7' : '#475569' }, filterType === 'Published' && { color: isDark ? '#34D399' : '#15803D' }]}>Published</Text>
+                {filterType === 'Published' && <View style={[styles.activeIndicatorDot, { backgroundColor: isDark ? '#34D399' : '#15803D' }]} />}
+              </View>
+              <Text style={[styles.statHintTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>{filterType === 'Published' ? 'Active ✓' : 'Tap to filter'}</Text>
+            </LinearGradient>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.statCard, filterType === 'Upcoming' && styles.activeStatCard]} onPress={() => setFilterType('Upcoming')}>
-            <Text style={[styles.statNum, { color: '#c0392b' }]}>{upcomingCount}</Text>
-            <Text style={styles.statLbl}>Upcoming</Text>
+
+          {/* 2. Upcoming Card */}
+          <TouchableOpacity 
+            style={[
+              styles.statBox, 
+              {
+                backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                borderColor: isDark ? '#60A5FA' : '#1A2D5A',
+                borderWidth: filterType === 'Upcoming' ? 2 : 1.5,
+                paddingVertical: 0,
+                overflow: 'hidden',
+              }
+            ]}
+            onPress={() => setFilterType('Upcoming')}
+            activeOpacity={0.75}
+          >
+            <LinearGradient
+              colors={
+                isDark
+                  ? ['rgba(59, 130, 246, 0.14)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)']
+                  : ['#FFFFFF', '#F8FAFC', '#EFF6FF']
+              }
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.statGlassInner}
+            >
+              <View style={[styles.statNotch, { backgroundColor: isDark ? '#60A5FA' : '#1A2D5A' }]} />
+              <Text style={[styles.num, { color: isDark ? '#60A5FA' : '#1A2D5A' }]}>{upcomingCount}</Text>
+              <View style={styles.statLabelRow}>
+                <Text style={[styles.statLabel, { color: isDark ? '#E4E4E7' : '#475569' }, filterType === 'Upcoming' && { color: isDark ? '#60A5FA' : '#1A2D5A' }]}>Upcoming</Text>
+                {filterType === 'Upcoming' && <View style={[styles.activeIndicatorDot, { backgroundColor: isDark ? '#60A5FA' : '#1A2D5A' }]} />}
+              </View>
+              <Text style={[styles.statHintTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>{filterType === 'Upcoming' ? 'Active ✓' : 'Tap to filter'}</Text>
+            </LinearGradient>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.statCard, filterType === 'Past' && styles.activeStatCard]} onPress={() => setFilterType('Past')}>
-            <Text style={[styles.statNum, { color: '#1a2d5a' }]}>{pastCount}</Text>
-            <Text style={styles.statLbl}>Past Events</Text>
+
+          {/* 3. Past Card */}
+          <TouchableOpacity 
+            style={[
+              styles.statBox, 
+              {
+                backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                borderColor: isDark ? '#F87171' : '#DC2626',
+                borderWidth: filterType === 'Past' ? 2 : 1.5,
+                paddingVertical: 0,
+                overflow: 'hidden',
+              }
+            ]}
+            onPress={() => setFilterType('Past')}
+            activeOpacity={0.75}
+          >
+            <LinearGradient
+              colors={
+                isDark
+                  ? ['rgba(248, 113, 113, 0.14)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)']
+                  : ['#FFFFFF', '#FFF9F8', '#FEE2E2']
+              }
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.statGlassInner}
+            >
+              <View style={[styles.statNotch, { backgroundColor: isDark ? '#F87171' : '#DC2626' }]} />
+              <Text style={[styles.num, { color: isDark ? '#F87171' : '#DC2626' }]}>{pastCount}</Text>
+              <View style={styles.statLabelRow}>
+                <Text style={[styles.statLabel, { color: isDark ? '#E4E4E7' : '#475569' }, filterType === 'Past' && { color: isDark ? '#F87171' : '#DC2626' }]}>Past</Text>
+                {filterType === 'Past' && <View style={[styles.activeIndicatorDot, { backgroundColor: isDark ? '#F87171' : '#DC2626' }]} />}
+              </View>
+              <Text style={[styles.statHintTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>{filterType === 'Past' ? 'Active ✓' : 'Tap to filter'}</Text>
+            </LinearGradient>
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.listLabel}>{filterType === 'Upcoming' ? 'Upcoming events' : filterType === 'Published' ? 'Published events' : 'Past events'}</Text>
+        <Text style={[styles.listLabel, isDark && { color: '#E4E4E7' }]}>
+          {filterType === 'Upcoming' ? 'Upcoming events' : filterType === 'Published' ? 'Published events' : 'Past events'}
+        </Text>
 
         {events
           .filter(e => {
@@ -401,89 +567,125 @@ export default function AdminEventList() {
           .map((event, idx) => {
             const completed = isEventCompleted(event);
             return (
-          <View key={event.id} style={[styles.eventItem, idx === 0 && styles.featuredItem]}>
-            <View style={{ flexDirection: 'row', alignItems: 'stretch', width: '100%' }}>
-              <TouchableOpacity style={[styles.eiThumb, { backgroundColor: event.bannerColor || '#1a2d5a', alignSelf: 'flex-start' }]} onPress={() => handleEdit(event)}>
+          <View 
+            key={event.id} 
+            style={[
+              styles.eventItem, 
+              isDark ? { 
+                backgroundColor: '#18181B', 
+                borderColor: 'rgba(255, 255, 255, 0.22)',
+                borderWidth: 1.5,
+                shadowColor: '#000000',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.35,
+                shadowRadius: 8,
+                elevation: 4,
+              } : {
+                backgroundColor: '#FFFFFF',
+                borderColor: '#CBD5E1',
+                borderWidth: 1.5,
+                shadowColor: '#000000',
+                shadowOffset: { width: 0, height: 3 },
+                shadowOpacity: 0.08,
+                shadowRadius: 8,
+                elevation: 3,
+              }
+            ]}
+          >
+            {/* ── Top Event Details Row ── */}
+            <View style={styles.eventCardTop}>
+              <TouchableOpacity 
+                style={[
+                  styles.eiThumb, 
+                  { 
+                    backgroundColor: event.bannerColor || (isDark ? '#27272A' : '#1a2d5a'),
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1',
+                    borderWidth: 1,
+                  }
+                ]} 
+                onPress={() => handleEdit(event)}
+                activeOpacity={0.8}
+              >
                 {event.bannerUrl ? (
                   <Image source={{ uri: event.bannerUrl }} style={styles.eiThumbImg} resizeMode="cover" />
                 ) : (
-                  <Text style={styles.eiThumbTxt}>IMG</Text>
+                  <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+                    <Calendar size={20} color={isDark ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.75)'} />
+                    <Text style={[styles.eiThumbTxt, { marginTop: 3 }]}>EVENT</Text>
+                  </View>
                 )}
               </TouchableOpacity>
+
               <View style={styles.eiBody}>
-                <Text style={styles.eiTitle} numberOfLines={1}>{event.name || 'No Title'}</Text>
-                <Text style={styles.eiTe} numberOfLines={1}>{event.titleTe || ''}</Text>
+                <Text style={[styles.eiTitle, { color: isDark ? '#FFFFFF' : '#0F172A', flexShrink: 1 }]} numberOfLines={2}>
+                  {event.name || 'No Title'}
+                </Text>
+                {!!event.titleTe && (
+                  <Text style={[styles.eiTe, { color: isDark ? '#94A3B8' : '#64748B', flexShrink: 1 }]} numberOfLines={1}>
+                    {event.titleTe}
+                  </Text>
+                )}
+                
                 <View style={styles.eiMetaRow}>
-                  <Calendar size={11} color="#c0392b" />
-                  <Text style={[styles.eiMetaTxt, { color: '#c0392b', fontWeight: '700' }]}>{formatDate(event.date)}</Text>
+                  <Calendar size={12} color={isDark ? '#F87171' : '#c0392b'} />
+                  <Text style={[styles.eiMetaTxt, { color: isDark ? '#FCA5A5' : '#c0392b', fontWeight: '700' }]}>
+                    {formatDate(event.date)}
+                  </Text>
                 </View>
+
                 <View style={styles.eiMetaRow}>
-                  <Clock size={11} color="#6B7280" />
-                  <Text style={styles.eiMetaTxt} numberOfLines={1}>
+                  <Clock size={12} color={isDark ? '#A1A1AA' : '#64748B'} />
+                  <Text style={[styles.eiMetaTxt, { color: isDark ? '#E4E4E7' : '#334155', flexShrink: 1 }]} numberOfLines={1}>
                     {formatDisplayTime(event.startTime)}
                     {event.endTime ? ` — ${formatDisplayTime(event.endTime)}` : ''}
                   </Text>
                 </View>
+
                 <View style={styles.eiMetaRow}>
-                  <MapPin size={11} color="#6B7280" />
-                  <Text style={styles.eiMetaTxt} numberOfLines={1}>{event.venueEn || event.location || 'No Venue'}</Text>
-                </View>
-                <View style={styles.eiFoot}>
-                  <View
-                    style={
-                      completed
-                        ? styles.badgeCompleted
-                        : event.status?.toLowerCase().includes('dra')
-                        ? styles.badgeDraft
-                        : styles.badgePub
-                    }
-                  >
-                    <Text
-                      style={
-                        completed
-                          ? styles.badgeCompletedTxt
-                          : event.status?.toLowerCase().includes('dra')
-                          ? styles.badgeDraftTxt
-                          : styles.badgePubTxt
-                      }
-                      numberOfLines={1}
-                    >
-                      {completed ? 'COMPLETED' : (event.status || 'Published').toUpperCase()}
-                    </Text>
-                  </View>
-                  {(event.requireEventQR === true || event.requireEventQr === true) && (
-                    <View style={styles.badgeQrReq}>
-                      <QrCode size={10} color="#78350F" style={{ marginRight: 3 }} />
-                      <Text style={styles.badgeQrReqTxt}>QR REQUIRED</Text>
-                    </View>
-                  )}
+                  <MapPin size={12} color={isDark ? '#A1A1AA' : '#64748B'} />
+                  <Text style={[styles.eiMetaTxt, { color: isDark ? '#E4E4E7' : '#334155', flexShrink: 1 }]} numberOfLines={1}>
+                    {event.venueEn || event.location || 'No Venue'}
+                  </Text>
                 </View>
               </View>
-              <View style={styles.actionsContainer}>
-                <TouchableOpacity 
-                  onPress={() => setSelectedQrEvent(event)} 
-                  style={styles.qrAction}
-                  activeOpacity={0.7}
-                >
-                  <QrCode size={12} color="#1A2D5A" />
-                  <Text style={styles.qrActionTxt}>QR</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  onPress={() => navigation.navigate('EventAttendees', { eventId: event.id, eventName: event.name || event.title })} 
-                  style={styles.attendeesAction}
-                  activeOpacity={0.7}
-                >
-                  <Users size={12} color="#047857" />
-                  <Text style={styles.attendeesActionTxt}>Attend</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => handleEdit(event)} style={styles.editAction}>
-                  <Text style={styles.editActionTxt}>Edit</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => handleDelete(event)} style={styles.deleteAction}>
-                  <Trash2 size={13} color="#DC2626" />
-                  <Text style={styles.deleteActionTxt}>Del</Text>
-                </TouchableOpacity>
-              </View>
+            </View>
+
+            {/* ── Status Row: Displayed under image card with dot separator ── */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, paddingHorizontal: 2 }}>
+              {completed ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <CheckCircle2 size={13} color={isDark ? '#94A3B8' : '#64748B'} strokeWidth={2.5} />
+                  <Text style={{ color: isDark ? '#94A3B8' : '#64748B', fontSize: 12, fontWeight: '700' }}>
+                    Completed
+                  </Text>
+                </View>
+              ) : event.status?.toLowerCase().includes('dra') ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: isDark ? '#94A3B8' : '#64748B' }} />
+                  <Text style={{ color: isDark ? '#94A3B8' : '#64748B', fontSize: 12, fontWeight: '700' }}>
+                    Draft
+                  </Text>
+                </View>
+              ) : (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <CheckCircle2 size={13} color={isDark ? '#34D399' : '#15803D'} strokeWidth={2.5} />
+                  <Text style={{ color: isDark ? '#34D399' : '#15803D', fontSize: 12, fontWeight: '700' }}>
+                    Published
+                  </Text>
+                </View>
+              )}
+
+              {(event.requireEventQR === true || event.requireEventQr === true) && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <Text style={{ color: isDark ? '#71717A' : '#94A3B8', fontSize: 12, marginHorizontal: 6 }}>
+                    •
+                  </Text>
+                  <QrCode size={12} color={isDark ? '#FBBF24' : '#B45309'} />
+                  <Text style={{ color: isDark ? '#FBBF24' : '#B45309', fontSize: 12, fontWeight: '700' }}>
+                    QR Required
+                  </Text>
+                </View>
+              )}
             </View>
 
             {/* ── Modern RSVP Analytics Banner Across Card ── */}
@@ -513,6 +715,76 @@ export default function AdminEventList() {
                 </View>
               </TouchableOpacity>
             )}
+
+            {/* ── Divider Line (Crisp and visible in white theme) ── */}
+            <View style={[styles.cardDivider, { height: 1.5, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.18)' : '#CBD5E1', marginTop: 10, marginBottom: 10 }]} />
+
+            {/* ── Bottom Single Row Action Buttons (Natural Style) ── */}
+            <View style={styles.cardActionsRow}>
+              {/* 1. QR Button */}
+              <TouchableOpacity 
+                onPress={() => setSelectedQrEvent(event)} 
+                style={[
+                  styles.cardActionBtn,
+                  {
+                    backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1',
+                  }
+                ]}
+                activeOpacity={0.7}
+              >
+                <QrCode size={14} color={isDark ? '#E4E4E7' : '#334155'} />
+                <Text style={[styles.cardActionTxt, { color: isDark ? '#E4E4E7' : '#334155' }]}>QR</Text>
+              </TouchableOpacity>
+
+              {/* 2. Attend Button */}
+              <TouchableOpacity 
+                onPress={() => navigation.navigate('EventAttendees', { eventId: event.id, eventName: event.name || event.title })} 
+                style={[
+                  styles.cardActionBtn,
+                  {
+                    backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1',
+                  }
+                ]}
+                activeOpacity={0.7}
+              >
+                <Users size={14} color={isDark ? '#E4E4E7' : '#334155'} />
+                <Text style={[styles.cardActionTxt, { color: isDark ? '#E4E4E7' : '#334155' }]}>Attend</Text>
+              </TouchableOpacity>
+
+              {/* 3. Edit Button */}
+              <TouchableOpacity 
+                onPress={() => handleEdit(event)} 
+                style={[
+                  styles.cardActionBtn,
+                  {
+                    backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1',
+                  }
+                ]}
+                activeOpacity={0.7}
+              >
+                <Edit2 size={13} color={isDark ? '#E4E4E7' : '#334155'} />
+                <Text style={[styles.cardActionTxt, { color: isDark ? '#E4E4E7' : '#334155' }]}>Edit</Text>
+              </TouchableOpacity>
+
+              {/* 4. Delete Button */}
+              <TouchableOpacity 
+                onPress={() => handleDelete(event)} 
+                style={[
+                  styles.cardActionBtn,
+                  {
+                    backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                    borderColor: isDark ? 'rgba(248, 113, 113, 0.35)' : '#FECACA',
+                  }
+                ]}
+                activeOpacity={0.7}
+              >
+                <Trash2 size={13} color={isDark ? '#F87171' : '#DC2626'} />
+                <Text style={[styles.cardActionTxt, { color: isDark ? '#F87171' : '#DC2626' }]}>Del</Text>
+              </TouchableOpacity>
+            </View>
           </View>
             );
           })}
@@ -661,8 +933,8 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     height: 40,
     borderRadius: 20,
     backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
@@ -671,14 +943,12 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     shadowRadius: 2,
     elevation: 1,
   },
-  container: { flex: 1, backgroundColor: '#EDE8DC' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#EDE8DC' },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFFFFF' },
   scroll: { paddingBottom: 80 },
 
   hero: {
-    backgroundColor: 'transparent',
-    
-    
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 12,
@@ -687,63 +957,142 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     marginBottom: 6,
   },
   heroTitleRow: { flexDirection: 'row', alignItems: 'center' },
-  heroTitle: { color: '#1a2d5a', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '600', letterSpacing: -0.5 },
+  heroTitle: { color: '#0F172A', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '800', letterSpacing: -0.4 },
   heroSub: { color: '#64748b', fontSize: 13 },
   
   newBtn: { 
-    backgroundColor: '#C9A84C', 
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 12, 
-    paddingVertical: 6, 
-    borderRadius: 10,
-    shadowColor: '#C9A84C',
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 4
+    paddingHorizontal: 14, 
+    paddingVertical: 7, 
+    borderRadius: 20,
   },
-  newBtnTxt: { color: '#1a2d5a', fontSize: 13, fontWeight: '800', letterSpacing: 0.3 },
+  newBtnTxt: { fontSize: 13, fontWeight: '800', letterSpacing: 0.3 },
 
-  statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 20, marginBottom: 20 },
-  statCard: { flex: 1, backgroundColor: '#fff', borderRadius: 12, paddingVertical: 12, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(26,45,90,0.05)', shadowColor: '#1a2d5a', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5, elevation: 1 },
-  activeStatCard: { borderColor: '#1a2d5a', borderWidth: 1.5, backgroundColor: '#F8FAFC' },
+  statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16, marginBottom: 16, marginTop: 12 },
+  statBox: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  statGlassInner: {
+    width: '100%',
+    paddingVertical: 12,
+    alignItems: 'center',
+    position: 'relative',
+  },
+  statNotch: {
+    position: 'absolute',
+    top: -1,
+    width: 32,
+    height: 3.5,
+    borderBottomLeftRadius: 4,
+    borderBottomRightRadius: 4,
+  },
+  num: {
+    fontSize: 22,
+    fontWeight: '800',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    marginBottom: 4,
+  },
+  statLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  statLabel: { fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.8, color: '#475569', fontWeight: '700' },
+  activeIndicatorDot: { width: 6, height: 6, borderRadius: 3 },
+  statHintTxt: { fontSize: 8.5, color: '#94A3B8', fontWeight: '600', marginTop: 2, letterSpacing: 0.3 },
+  statCard: { flex: 1, backgroundColor: '#fff', borderRadius: 14, paddingVertical: 14, alignItems: 'center', borderWidth: 1.5, borderColor: '#CBD5E1', shadowColor: '#1a2d5a', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5, elevation: 1 },
+  activeStatCard: { borderColor: '#1a2d5a', borderWidth: 2, backgroundColor: '#F8FAFC' },
   statNum: { fontSize: 22, fontWeight: '800', fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif' },
   statLbl: { fontSize: 9, color: '#64748B', marginTop: 2, textTransform: 'uppercase', fontWeight: '800', letterSpacing: 0.5 },
 
-  listLabel: { fontSize: 12, fontWeight: '800', color: '#1a2d5a', marginBottom: 12, marginTop: 4, paddingHorizontal: 20, textTransform: 'uppercase', letterSpacing: 0.5 },
+  listLabel: { fontSize: 12, fontWeight: '800', color: '#1a2d5a', marginBottom: 12, marginTop: 4, paddingHorizontal: 16, textTransform: 'uppercase', letterSpacing: 0.5 },
 
-  eventItem: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginHorizontal: 20, marginBottom: 12, flexDirection: 'row', flexWrap: 'wrap', gap: 14, alignItems: 'flex-start', shadowColor: '#1a2d5a', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5, elevation: 2 },
-  featuredItem: { borderWidth: 1.5, borderColor: '#1a2d5a' },
-  eiThumb: { width: 90, height: 60, backgroundColor: '#1a2d5a', borderRadius: 10, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
+  eventItem: { 
+    backgroundColor: '#fff', 
+    borderRadius: 16, 
+    padding: 14, 
+    marginHorizontal: 16, 
+    marginBottom: 14, 
+    borderWidth: 1.5, 
+    borderColor: '#CBD5E1', 
+    shadowColor: '#000000', 
+    shadowOffset: { width: 0, height: 3 }, 
+    shadowOpacity: 0.08, 
+    shadowRadius: 8, 
+    elevation: 3 
+  },
+  eventCardTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  eiThumb: { 
+    width: 104, 
+    height: 62, 
+    backgroundColor: '#1a2d5a', 
+    borderRadius: 12, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    overflow: 'hidden' 
+  },
   eiThumbImg: { width: '100%', height: '100%' },
-  eiThumbTxt: { color: '#fff', fontSize: 10, fontWeight: '800' },
+  eiThumbTxt: { color: '#fff', fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
   
-  eiBody: { flex: 1, paddingRight: 10 },
-  eiTitle: { fontSize: 14, fontWeight: '700', color: '#1a2d5a', marginBottom: 2 },
-  eiTe: { fontSize: 12, color: '#64748B', marginBottom: 8 },
+  eiBody: { flex: 1 },
+  eiTitle: { fontSize: 15, fontWeight: '800', color: '#0F172A', marginBottom: 2, letterSpacing: -0.2 },
+  eiTe: { fontSize: 12, color: '#64748B', marginBottom: 4 },
   
-  eiMetaRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 5 },
+  eiMetaRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
   eiMetaTxt: { fontSize: 11.5, color: '#64748B', marginLeft: 6, flexShrink: 1 },
   
-  eiFoot: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 8 },
-  badgePub: { backgroundColor: '#F0FDF4', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  eiFoot: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' },
+  badgePub: { backgroundColor: '#F0FDF4', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#86EFAC' },
   badgePubTxt: { color: '#15803D', fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
-  badgeDraft: { backgroundColor: '#F8FAFC', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  badgePubDark: { backgroundColor: 'rgba(16, 185, 129, 0.18)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(52, 211, 153, 0.4)' },
+  badgePubTxtDark: { color: '#34D399', fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+  badgeDraft: { backgroundColor: '#F8FAFC', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#CBD5E1' },
   badgeDraftTxt: { color: '#64748B', fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+  badgeDraftDark: { backgroundColor: 'rgba(148, 163, 184, 0.18)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(148, 163, 184, 0.3)' },
+  badgeDraftTxtDark: { color: '#94A3B8', fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+  badgeQrReq: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FEF3C7', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#FDE68A' },
+  badgeQrReqDark: { backgroundColor: 'rgba(245, 158, 11, 0.18)', borderColor: 'rgba(245, 158, 11, 0.4)' },
+  badgeQrReqTxt: { color: '#78350F', fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
   badgeCompleted: { backgroundColor: '#F1F5F9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#CBD5E1' },
   badgeCompletedTxt: { color: '#475569', fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
-  
-  eiEdit: { position: 'absolute', top: 0, right: 0, padding: 4 },
-  
-  actionsContainer: { borderLeftWidth: 1.5, borderLeftColor: '#E2E8F0', paddingLeft: 10, marginLeft: 6, justifyContent: 'center', width: 62 },
-  attendeesAction: { paddingVertical: 6, alignItems: 'center', justifyContent: 'center', gap: 2, flex: 1 },
-  attendeesActionTxt: { fontSize: 8.5, fontWeight: '800', color: '#047857', textTransform: 'uppercase', letterSpacing: 0.4 },
-  editAction: { paddingVertical: 6, alignItems: 'center', justifyContent: 'center', gap: 2, flex: 1, borderTopWidth: 1, borderTopColor: '#E2E8F0' },
-  editActionTxt: { fontSize: 8.5, fontWeight: '800', color: '#1a2d5a', textTransform: 'uppercase', letterSpacing: 0.4 },
-  deleteAction: { paddingVertical: 6, alignItems: 'center', justifyContent: 'center', gap: 2, flex: 1, borderTopWidth: 1, borderTopColor: '#E2E8F0' },
-  deleteActionTxt: { fontSize: 8.5, fontWeight: '800', color: '#DC2626', textTransform: 'uppercase', letterSpacing: 0.4 },
+
+  cardDivider: {
+    height: 1.5,
+    backgroundColor: '#CBD5E1',
+    marginTop: 10,
+    marginBottom: 10,
+  },
+
+  cardActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cardActionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1.2,
+    gap: 4,
+  },
+  cardActionTxt: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
   
   eiLocRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 4, marginTop: 6 },
   eiLocTxt: { fontSize: 11, color: COLORS.inkSoft, flexShrink: 1 },
@@ -841,37 +1190,6 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     fontWeight: '700',
     color: '#4F46E5',
   },
-  badgeQrReq: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#FDE68A',
-  },
-  badgeQrReqTxt: {
-    color: '#92400E',
-    fontSize: 8.5,
-    fontWeight: '800',
-    letterSpacing: 0.4,
-  },
-  qrAction: {
-    paddingVertical: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 2,
-    flex: 1,
-  },
-  qrActionTxt: {
-    fontSize: 8.5,
-    fontWeight: '800',
-    color: '#1A2D5A',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-
   // QR Modal Styles
   qrModalOverlay: {
     flex: 1,

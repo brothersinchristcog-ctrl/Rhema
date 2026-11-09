@@ -1190,42 +1190,196 @@ export default function AdminSongEditor() {
     }
   };
 
-  const renderSongItem = ({ item, index }: { item: WorshipSong; index: number }) => {
+    const renderSongItem = ({ item, index }: { item: WorshipSong; index: number }) => {
     const isTheme = (item.category || '').split(';').map(c => c.trim()).includes('Theme Songs');
+    const songIndex = postedSongs.findIndex(s => s.id === item.id) + 1 || (index + 1);
+
     return (
-      <TouchableOpacity style={styles.songItem} onPress={() => setAdminSelectedSong(item)}>
-        <View style={styles.songIconBox}>
-          <Music size={16} color="#1a2d5a" />
+      <TouchableOpacity
+        style={[
+          styles.songItem,
+          {
+            backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+            borderColor: isDark ? 'rgba(255, 255, 255, 0.28)' : '#94A3B8',
+            borderWidth: 1.5,
+            borderRadius: 16,
+            padding: 14,
+            marginBottom: 12,
+            shadowColor: isDark ? '#000000' : '#0F172A',
+            shadowOffset: { width: 0, height: 3 },
+            shadowOpacity: isDark ? 0.35 : 0.08,
+            shadowRadius: 8,
+            elevation: isDark ? 3 : 2,
+          },
+        ]}
+        activeOpacity={0.75}
+        onPress={() => setAdminSelectedSong(item)}
+      >
+        {/* Top Row: Song Number + Title & Telugu/Info */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          {/* Song Index Avatar */}
+          <View
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: 10,
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9',
+              borderWidth: 1,
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0',
+              justifyContent: 'center',
+              alignItems: 'center',
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 13,
+                fontWeight: '800',
+                color: isDark ? '#F1F5F9' : '#1E293B',
+              }}
+            >
+              {songIndex}
+            </Text>
+          </View>
+
+          {/* Title and Secondary info */}
+          <View style={{ flex: 1, justifyContent: 'center' }}>
+            <Text
+              style={{
+                fontSize: 15,
+                fontWeight: '700',
+                color: isDark ? '#FFFFFF' : '#0F172A',
+                letterSpacing: 0.2,
+                lineHeight: 20,
+              }}
+              numberOfLines={1}
+            >
+              {item.title}
+              {item.isDefault ? (
+                <Text style={{ color: '#EF4444', fontSize: 10, fontWeight: '800' }}> [GLOBAL]</Text>
+              ) : null}
+            </Text>
+            {item.titleTe ? (
+              <Text
+                style={{
+                  fontSize: 12.5,
+                  fontWeight: '500',
+                  color: isDark ? '#A1A1AA' : '#64748B',
+                  marginTop: 2,
+                }}
+                numberOfLines={1}
+              >
+                {item.titleTe}
+              </Text>
+            ) : null}
+          </View>
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.songItemTitle} numberOfLines={1}>
-            {postedSongs.findIndex(s => s.id === item.id) + 1}. {item.title}
-            {item.isDefault ? <Text style={{color: '#c0392b', fontSize: 10}}> [GLOBAL]</Text> : null}
-          </Text>
-          <Text style={styles.songItemSub} numberOfLines={1}>
-            {item.category || 'Other'}{item.ledBy ? ` · 🎤 ${item.ledBy}` : ''}{item.key ? ` (${item.key})` : ''}
-          </Text>
-        </View>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-          <TouchableOpacity 
-            onPress={() => handleToggleTheme(item)} 
-            style={{ 
-              paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, borderWidth: 1, 
-              borderColor: isTheme ? '#f59e0b' : '#e2e8f0', 
-              backgroundColor: isTheme ? '#fef3c7' : '#f8fafc',
-              flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 4 
-            }}>
-            <Star size={12} color={isTheme ? "#d97706" : "#94a3b8"} fill={isTheme ? "#f59e0b" : "none"} />
-            <Text style={{ fontSize: 10, fontWeight: '700', color: isTheme ? '#d97706' : '#64748b' }}>
+
+        {/* Divider */}
+        <View
+          style={{
+            height: 1,
+            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.14)' : '#CBD5E1',
+            marginVertical: 10,
+          }}
+        />
+
+        {/* Bottom Row: Make Theme Badge + Edit & Delete in One Row */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          {/* MAKE THEME / THEME SONG BADGE */}
+          <TouchableOpacity
+            onPress={() => handleToggleTheme(item)}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 5,
+              paddingHorizontal: 11,
+              paddingVertical: 6,
+              borderRadius: 999,
+              borderWidth: 1.2,
+              flexShrink: 0,
+              backgroundColor: isTheme
+                ? isDark
+                  ? 'rgba(245, 158, 11, 0.18)'
+                  : '#FEF3C7'
+                : isDark
+                ? 'rgba(255, 255, 255, 0.06)'
+                : '#F8FAFC',
+              borderColor: isTheme
+                ? '#F59E0B'
+                : isDark
+                ? 'rgba(255, 255, 255, 0.22)'
+                : '#CBD5E1',
+            }}
+          >
+            <Star
+              size={12}
+              color={
+                isTheme
+                  ? isDark
+                    ? '#FBBF24'
+                    : '#D97706'
+                  : isDark
+                  ? '#A1A1AA'
+                  : '#64748B'
+              }
+              fill={isTheme ? '#F59E0B' : 'none'}
+            />
+            <Text
+              style={{
+                fontSize: 10.5,
+                fontWeight: '800',
+                letterSpacing: 0.3,
+                color: isTheme
+                  ? isDark
+                    ? '#FBBF24'
+                    : '#B45309'
+                  : isDark
+                  ? '#E2E8F0'
+                  : '#334155',
+              }}
+            >
               {isTheme ? 'THEME SONG' : 'MAKE THEME'}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => openEdit(item)} style={{ padding: 4 }}>
-            <Pencil size={15} color="#1a2d5a" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setSongToDelete({ id: item.id, title: item.title })} style={{ padding: 4 }}>
-            <Trash2 size={16} color="#ef4444" />
-          </TouchableOpacity>
+
+          {/* Action Buttons: Edit & Delete */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TouchableOpacity
+              onPress={() => openEdit(item)}
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 17,
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9',
+                borderWidth: 1,
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0',
+                justifyContent: 'center',
+                alignItems: 'center',
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Pencil size={14} color={isDark ? '#E2E8F0' : '#475569'} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setSongToDelete({ id: item.id, title: item.title })}
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 17,
+                backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2',
+                borderWidth: 1,
+                borderColor: isDark ? 'rgba(239, 68, 68, 0.25)' : '#FECACA',
+                justifyContent: 'center',
+                alignItems: 'center',
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Trash2 size={14} color="#EF4444" />
+            </TouchableOpacity>
+          </View>
         </View>
       </TouchableOpacity>
     );
@@ -1313,17 +1467,36 @@ export default function AdminSongEditor() {
         </View>
 
         {/* Search */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginBottom: 8,
-          borderRadius: 12, paddingHorizontal: 14, height: 48, backgroundColor: '#FFFFFF',
-          elevation: 2, shadowColor: '#1a2d5a', shadowOpacity: 0.05, shadowRadius: 5, borderWidth: 1, borderColor: 'rgba(26,45,90,0.05)' }}>
-          <Music size={16} color="#1a2d5a" />
+        <View style={{ 
+          flexDirection: 'row', 
+          alignItems: 'center', 
+          marginHorizontal: 16, 
+          marginBottom: 12,
+          borderRadius: 999, 
+          paddingHorizontal: 16, 
+          height: 48, 
+          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(255, 255, 255, 0.9)',
+          elevation: 2, 
+          shadowColor: '#0F172A', 
+          shadowOpacity: isDark ? 0.25 : 0.06, 
+          shadowRadius: 8, 
+          shadowOffset: { width: 0, height: 3 },
+          borderWidth: 1.5, 
+          borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : '#CBD5E1' 
+        }}>
+          <Search size={18} color={isDark ? '#A1A1AA' : '#64748B'} style={{ marginRight: 10 }} />
           <TextInput
             placeholder={memberTab === 'browse' ? 'Search songs...' : 'Search theme songs...'}
-            placeholderTextColor="#9CA3AF"
-            style={{ flex: 1, fontSize: 13, fontWeight: '600', marginLeft: 8, color: '#1a2d5a' }}
+            placeholderTextColor={isDark ? '#A1A1AA' : '#64748B'}
+            style={{ flex: 1, fontSize: 13.5, fontWeight: '600', color: isDark ? '#FFFFFF' : '#0F172A' }}
             value={memberSearch}
             onChangeText={setMemberSearch}
           />
+          {memberSearch.length > 0 && (
+            <TouchableOpacity onPress={() => setMemberSearch('')} style={{ padding: 4 }}>
+              <X size={16} color={isDark ? '#A1A1AA' : '#64748B'} />
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Song List */}
@@ -1378,24 +1551,58 @@ export default function AdminSongEditor() {
   };
 
   // ── POST SONG FORM UI ────────────────────────────
-  const renderPostForm = () => (
+  const renderPostForm = () => {
+    const cardStyle = [
+      styles.studioCard,
+      {
+        backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+        borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1',
+        borderWidth: 1.5,
+      }
+    ];
+
+    const inputStyle = [
+      styles.studioInput,
+      {
+        backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+        borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1',
+        borderWidth: 1.2,
+        color: isDark ? '#FFFFFF' : '#0F172A',
+      }
+    ];
+
+    const labelStyle = [
+      styles.studioLabel,
+      {
+        color: isDark ? '#CBD5E1' : '#334155',
+      }
+    ];
+
+    const cardTitleStyle = [
+      styles.studioCardTitle,
+      {
+        color: isDark ? '#F1F5F9' : '#1a2d5a',
+      }
+    ];
+
+    return (
     <View style={{ flex: 1 }}>
       {/* ── CARD 1: SONG DETAILS & LEADER ── */}
-      <View style={styles.studioCard}>
+      <View style={cardStyle}>
         <View style={styles.studioCardHeader}>
           <View style={styles.studioCardTitleRow}>
-            <Music size={16} color="#1a2d5a" />
-            <Text style={styles.studioCardTitle}>SONG IDENTITY & LEADER</Text>
+            <Music size={16} color={isDark ? '#60A5FA' : '#1a2d5a'} />
+            <Text style={cardTitleStyle}>SONG IDENTITY & LEADER</Text>
           </View>
         </View>
 
         {/* English Title */}
         <View style={styles.inputGroup}>
-          <Text style={styles.studioLabel}>SONG TITLE (ENGLISH) *</Text>
+          <Text style={labelStyle}>SONG TITLE (ENGLISH) *</Text>
           <TextInput
-            style={styles.studioInput}
+            style={inputStyle}
             placeholder="e.g. Amazing Grace, Way Maker..."
-            placeholderTextColor="#94A3B8"
+            placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
             value={titleEn}
             onChangeText={setTitleEn}
           />
@@ -1403,11 +1610,11 @@ export default function AdminSongEditor() {
 
         {/* Telugu Title */}
         <View style={styles.inputGroup}>
-          <Text style={styles.studioLabel}>SONG TITLE (TELUGU)</Text>
+          <Text style={labelStyle}>SONG TITLE (TELUGU)</Text>
           <TextInput
-            style={styles.studioInput}
+            style={inputStyle}
             placeholder="ఉదాహరణ: అద్భుతమైన కృప..."
-            placeholderTextColor="#94A3B8"
+            placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
             value={titleTe}
             onChangeText={setTitleTe}
           />
@@ -1415,19 +1622,28 @@ export default function AdminSongEditor() {
 
         {/* YouTube Video Link */}
         <View style={styles.inputGroup}>
-          <Text style={styles.studioLabel}>YOUTUBE VIDEO LINK</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, paddingHorizontal: 12, height: 46 }}>
+          <Text style={labelStyle}>YOUTUBE VIDEO LINK</Text>
+          <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+            borderWidth: 1.2,
+            borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1',
+            borderRadius: 10,
+            paddingHorizontal: 12,
+            height: 46
+          }}>
             <Text style={{ fontSize: 11, fontWeight: '800', color: '#DC2626', marginRight: 6 }}>▶ YouTube</Text>
             <TextInput
-              style={{ flex: 1, fontSize: 13, color: '#1a2d5a', fontWeight: '600' }}
+              style={{ flex: 1, fontSize: 13, color: isDark ? '#FFFFFF' : '#0F172A', fontWeight: '600' }}
               placeholder="https://youtu.be/... or Video ID"
-              placeholderTextColor="#94A3B8"
+              placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
               value={youtubeId}
               onChangeText={setYoutubeId}
             />
             {youtubeId.length > 0 && (
               <TouchableOpacity onPress={() => setYoutubeId('')}>
-                <X size={15} color="#94A3B8" />
+                <X size={15} color={isDark ? '#A1A1AA' : '#94A3B8'} />
               </TouchableOpacity>
             )}
           </View>
@@ -1435,40 +1651,41 @@ export default function AdminSongEditor() {
 
         {/* Artist / Band */}
         <View style={styles.inputGroup}>
-          <Text style={styles.studioLabel}>ARTIST / BAND (Optional)</Text>
+          <Text style={labelStyle}>ARTIST / BAND (Optional)</Text>
           <TextInput
-            style={styles.studioInput}
+            style={inputStyle}
             placeholder="e.g. Hillsong, Bethel, Local Choir..."
-            placeholderTextColor="#94A3B8"
+            placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
             value={artist}
             onChangeText={setArtist}
           />
         </View>
 
         {/* Song Leader Search Section */}
-        <View style={{ marginTop: 6, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <Text style={styles.studioLabel}>SONG LEADER / LEADING PERSON</Text>
+        <View style={{ marginTop: 6, paddingTop: 14, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#F1F5F9' }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <Text style={[labelStyle, { marginBottom: 0 }]}>SONG LEADING PERSON</Text>
             <TouchableOpacity
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',
-                gap: 4,
-                backgroundColor: '#EFF6FF',
-                paddingHorizontal: 8,
-                paddingVertical: 4,
-                borderRadius: 6,
-                borderWidth: 1,
-                borderColor: '#BFDBFE'
+                gap: 5,
+                backgroundColor: isDark ? 'rgba(37, 99, 235, 0.2)' : '#EFF6FF',
+                paddingHorizontal: 10,
+                paddingVertical: 5,
+                borderRadius: 999,
+                borderWidth: 1.2,
+                borderColor: isDark ? 'rgba(59, 130, 246, 0.4)' : '#BFDBFE'
               }}
+              activeOpacity={0.75}
               onPress={() => {
                 setMemberPickerTarget('post');
                 setMemberSearchQuery('');
                 setShowMemberPickerModal(true);
               }}
             >
-              <Users size={12} color="#1D4ED8" />
-              <Text style={{ fontSize: 10, fontWeight: '800', color: '#1D4ED8' }}>Browse Directory</Text>
+              <Users size={12} color={isDark ? '#60A5FA' : '#1D4ED8'} />
+              <Text style={{ fontSize: 10.5, fontWeight: '700', color: isDark ? '#93C5FD' : '#1D4ED8', letterSpacing: 0.2 }}>Browse Directory</Text>
             </TouchableOpacity>
           </View>
 
@@ -1478,9 +1695,9 @@ export default function AdminSongEditor() {
               flexDirection: 'row',
               alignItems: 'center',
               justifyContent: 'space-between',
-              backgroundColor: '#F0FDF4',
+              backgroundColor: isDark ? 'rgba(21, 128, 61, 0.25)' : '#F0FDF4',
               borderWidth: 1,
-              borderColor: '#BBF7D0',
+              borderColor: isDark ? 'rgba(34, 197, 94, 0.45)' : '#BBF7D0',
               borderRadius: 12,
               padding: 10
             }}>
@@ -1491,15 +1708,15 @@ export default function AdminSongEditor() {
                   </Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '800', color: '#14532D' }} numberOfLines={1}>{postLedBy}</Text>
-                  <Text style={{ fontSize: 10, fontWeight: '700', color: '#16A34A' }}>🎤 Designated Song Leader</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: isDark ? '#86EFAC' : '#14532D' }} numberOfLines={1}>{postLedBy}</Text>
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: isDark ? '#4ADE80' : '#16A34A' }}>🎤 Designated Song Leader</Text>
                 </View>
               </View>
               <TouchableOpacity
                 onPress={() => { setPostLedBy(''); setPostLeaderSearch(''); }}
-                style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: '#DCFCE7' }}
+                style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: isDark ? 'rgba(34, 197, 94, 0.3)' : '#DCFCE7' }}
               >
-                <Text style={{ fontSize: 11, fontWeight: '800', color: '#15803D' }}>Change</Text>
+                <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#86EFAC' : '#15803D' }}>Change</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -1508,24 +1725,24 @@ export default function AdminSongEditor() {
               <View style={{
                 flexDirection: 'row',
                 alignItems: 'center',
-                backgroundColor: '#F8FAFC',
-                borderWidth: 1,
-                borderColor: '#CBD5E1',
+                backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                borderWidth: 1.2,
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1',
                 borderRadius: 10,
                 paddingHorizontal: 12,
                 height: 46
               }}>
-                <Search size={16} color="#3B82F6" />
+                <Search size={16} color={isDark ? '#60A5FA' : '#3B82F6'} />
                 <TextInput
-                  style={{ flex: 1, fontSize: 13, color: '#1a2d5a', fontWeight: '600', marginLeft: 8 }}
+                  style={{ flex: 1, fontSize: 13, color: isDark ? '#FFFFFF' : '#0F172A', fontWeight: '600', marginLeft: 8 }}
                   value={postLeaderSearch}
                   onChangeText={setPostLeaderSearch}
                   placeholder="Type member name or phone to search..."
-                  placeholderTextColor="#94A3B8"
+                  placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                 />
                 {postLeaderSearch.length > 0 && (
                   <TouchableOpacity onPress={() => setPostLeaderSearch('')} style={{ padding: 4 }}>
-                    <X size={16} color="#94A3B8" />
+                    <X size={16} color={isDark ? '#A1A1AA' : '#94A3B8'} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -1534,10 +1751,10 @@ export default function AdminSongEditor() {
               {postLeaderSearch.trim().length > 0 && (
                 <View style={{
                   marginTop: 6,
-                  backgroundColor: '#FFFFFF',
+                  backgroundColor: isDark ? '#1F1F23' : '#FFFFFF',
                   borderRadius: 10,
-                  borderWidth: 1,
-                  borderColor: '#CBD5E1',
+                  borderWidth: 1.2,
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1',
                   maxHeight: 180,
                   overflow: 'hidden',
                   elevation: 3
@@ -1549,19 +1766,19 @@ export default function AdminSongEditor() {
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         padding: 10,
-                        backgroundColor: '#EFF6FF',
+                        backgroundColor: isDark ? 'rgba(37, 99, 235, 0.25)' : '#EFF6FF',
                         borderBottomWidth: 1,
-                        borderBottomColor: '#DBEAFE'
+                        borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#DBEAFE'
                       }}
                       onPress={() => {
                         setPostLedBy(postLeaderSearch.trim());
                         setPostLeaderSearch('');
                       }}
                     >
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#1D4ED8' }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#93C5FD' : '#1D4ED8' }}>
                         Use: "{postLeaderSearch.trim()}"
                       </Text>
-                      <CheckCircle size={14} color="#1D4ED8" />
+                      <CheckCircle size={14} color={isDark ? '#93C5FD' : '#1D4ED8'} />
                     </TouchableOpacity>
 
                     {churchMembers
@@ -1583,7 +1800,7 @@ export default function AdminSongEditor() {
                               alignItems: 'center',
                               padding: 10,
                               borderBottomWidth: 1,
-                              borderBottomColor: '#F1F5F9'
+                              borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9'
                             }}
                             onPress={() => {
                               setPostLedBy(name);
@@ -1594,7 +1811,7 @@ export default function AdminSongEditor() {
                               width: 28,
                               height: 28,
                               borderRadius: 14,
-                              backgroundColor: '#1a2d5a',
+                              backgroundColor: isDark ? '#3B82F6' : '#1a2d5a',
                               alignItems: 'center',
                               justifyContent: 'center',
                               marginRight: 10
@@ -1604,10 +1821,10 @@ export default function AdminSongEditor() {
                               </Text>
                             </View>
                             <View style={{ flex: 1 }}>
-                              <Text style={{ fontSize: 13, fontWeight: '700', color: '#1a2d5a' }}>{name}</Text>
-                              {m.phone && <Text style={{ fontSize: 10, color: '#64748B' }}>{m.phone}</Text>}
+                              <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? '#FFFFFF' : '#1a2d5a' }}>{name}</Text>
+                              {m.phone && <Text style={{ fontSize: 10, color: isDark ? '#A1A1AA' : '#64748B' }}>{m.phone}</Text>}
                             </View>
-                            <Text style={{ fontSize: 11, fontWeight: '800', color: '#2563EB' }}>Select</Text>
+                            <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#60A5FA' : '#2563EB' }}>Select</Text>
                           </TouchableOpacity>
                         );
                       })}
@@ -1620,14 +1837,11 @@ export default function AdminSongEditor() {
       </View>
 
       {/* ── CARD 2: MUSICAL ARRANGEMENT & BAND FLOW ── */}
-      <View style={styles.studioCard}>
+      <View style={cardStyle}>
         <View style={styles.studioCardHeader}>
           <View style={styles.studioCardTitleRow}>
-            <Sliders size={15} color="#1a2d5a" />
-            <Text style={styles.studioCardTitle}>MUSICAL ARRANGEMENT & BAND FLOW</Text>
-          </View>
-          <View style={{ backgroundColor: '#EFF6FF', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 }}>
-            <Text style={{ fontSize: 9, fontWeight: '800', color: '#1D4ED8' }}>SETLIST CHART</Text>
+            <Sliders size={15} color={isDark ? '#60A5FA' : '#1a2d5a'} />
+            <Text style={cardTitleStyle}>MUSICAL ARRANGEMENT & BAND FLOW</Text>
           </View>
         </View>
 
@@ -1635,7 +1849,7 @@ export default function AdminSongEditor() {
         <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
           {/* KEY */}
           <View style={{ flex: 1 }}>
-            <Text style={styles.colHeaderLabel} numberOfLines={1}>KEY</Text>
+            <Text style={[styles.colHeaderLabel, { color: isDark ? '#A1A1AA' : '#64748B' }]} numberOfLines={1}>KEY</Text>
             <TouchableOpacity
               style={[
                 styles.colInputBox,
@@ -1644,8 +1858,9 @@ export default function AdminSongEditor() {
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: 4,
-                  backgroundColor: songKey ? '#EFF6FF' : '#F8FAFC',
-                  borderColor: songKey ? '#2563EB' : '#CBD5E1',
+                  backgroundColor: songKey ? (isDark ? 'rgba(37, 99, 235, 0.3)' : '#EFF6FF') : (isDark ? '#27272A' : '#F8FAFC'),
+                  borderColor: songKey ? (isDark ? '#3B82F6' : '#2563EB') : (isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1'),
+                  borderWidth: 1.2,
                 }
               ]}
               onPress={() => setShowKeyPicker(true)}
@@ -1654,25 +1869,29 @@ export default function AdminSongEditor() {
                 style={{
                   fontSize: songKey ? 13 : 12,
                   fontWeight: songKey ? '900' : '700',
-                  color: songKey ? '#1D4ED8' : '#94A3B8',
+                  color: songKey ? (isDark ? '#93C5FD' : '#1D4ED8') : (isDark ? '#71717A' : '#94A3B8'),
                   textAlign: 'center'
                 }}
                 numberOfLines={1}
               >
                 {songKey || 'Select'}
               </Text>
-              <ChevronDown size={12} color={songKey ? '#1D4ED8' : '#94A3B8'} />
+              <ChevronDown size={12} color={songKey ? (isDark ? '#93C5FD' : '#1D4ED8') : (isDark ? '#71717A' : '#94A3B8')} />
             </TouchableOpacity>
           </View>
 
           {/* TIME SIGNATURE */}
           <View style={{ flex: 1 }}>
-            <Text style={styles.colHeaderLabel} numberOfLines={1}>TIME SIG</Text>
-            <View style={styles.colInputBox}>
+            <Text style={[styles.colHeaderLabel, { color: isDark ? '#A1A1AA' : '#64748B' }]} numberOfLines={1}>TIME SIG</Text>
+            <View style={[styles.colInputBox, {
+              backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1',
+              borderWidth: 1.2
+            }]}>
               <TextInput
-                style={styles.colInputText}
+                style={[styles.colInputText, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
                 placeholder="4/4"
-                placeholderTextColor="#94A3B8"
+                placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                 value={timeSignature}
                 onChangeText={setTimeSignature}
               />
@@ -1681,28 +1900,37 @@ export default function AdminSongEditor() {
 
           {/* TEMPO WITH EMBEDDED BPM BADGE */}
           <View style={{ flex: 1 }}>
-            <Text style={styles.colHeaderLabel} numberOfLines={1}>TEMPO</Text>
-            <View style={[styles.colInputBox, { paddingHorizontal: 6 }]}>
+            <Text style={[styles.colHeaderLabel, { color: isDark ? '#A1A1AA' : '#64748B' }]} numberOfLines={1}>TEMPO</Text>
+            <View style={[styles.colInputBox, {
+              paddingHorizontal: 6,
+              backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1',
+              borderWidth: 1.2
+            }]}>
               <TextInput
-                style={[styles.colInputText, { paddingRight: 2 }]}
+                style={[styles.colInputText, { paddingRight: 2, color: isDark ? '#FFFFFF' : '#0F172A' }]}
                 placeholder="100"
-                placeholderTextColor="#94A3B8"
+                placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                 keyboardType="numeric"
                 value={tempo}
                 onChangeText={setTempo}
               />
-              <Text style={{ fontSize: 8, fontWeight: '900', color: '#94A3B8' }}>BPM</Text>
+              <Text style={{ fontSize: 8, fontWeight: '900', color: isDark ? '#A1A1AA' : '#94A3B8' }}>BPM</Text>
             </View>
           </View>
 
           {/* VERSES */}
           <View style={{ flex: 1 }}>
-            <Text style={styles.colHeaderLabel} numberOfLines={1}>VERSES</Text>
-            <View style={styles.colInputBox}>
+            <Text style={[styles.colHeaderLabel, { color: isDark ? '#A1A1AA' : '#64748B' }]} numberOfLines={1}>VERSES</Text>
+            <View style={[styles.colInputBox, {
+              backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1',
+              borderWidth: 1.2
+            }]}>
               <TextInput
-                style={styles.colInputText}
+                style={[styles.colInputText, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
                 placeholder="4V"
-                placeholderTextColor="#94A3B8"
+                placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                 value={verses}
                 onChangeText={setVerses}
               />
@@ -1710,9 +1938,9 @@ export default function AdminSongEditor() {
           </View>
         </View>
 
-        {/* Quick Tempo Presets Ribbon (Horizontal Scroll so it never wraps awkwardly!) */}
+        {/* Quick Tempo Presets Ribbon */}
         <View style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Text style={{ fontSize: 9, fontWeight: '800', color: '#94A3B8' }}>TEMPO:</Text>
+          <Text style={{ fontSize: 9, fontWeight: '800', color: isDark ? '#A1A1AA' : '#94A3B8' }}>TEMPO:</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
             {[
               { label: 'Slow (72 BPM)', val: '72' },
@@ -1729,12 +1957,12 @@ export default function AdminSongEditor() {
                     paddingHorizontal: 9,
                     paddingVertical: 4,
                     borderRadius: 8,
-                    backgroundColor: isSelected ? '#1a2d5a' : '#F1F5F9',
+                    backgroundColor: isSelected ? (isDark ? '#FFFFFF' : '#1a2d5a') : (isDark ? '#27272A' : '#F1F5F9'),
                     borderWidth: 1,
-                    borderColor: isSelected ? '#1a2d5a' : '#E2E8F0'
+                    borderColor: isSelected ? (isDark ? '#FFFFFF' : '#1a2d5a') : (isDark ? 'rgba(255, 255, 255, 0.16)' : '#E2E8F0')
                   }}
                 >
-                  <Text style={{ fontSize: 10, fontWeight: '800', color: isSelected ? '#FFFFFF' : '#475569' }}>
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: isSelected ? (isDark ? '#000000' : '#FFFFFF') : (isDark ? '#D4D4D8' : '#475569') }}>
                     {p.label}
                   </Text>
                 </TouchableOpacity>
@@ -1743,81 +1971,79 @@ export default function AdminSongEditor() {
           </ScrollView>
         </View>
 
-        {/* Prelude & Interlude Live Arrangement */}
-        <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            {/* Prelude */}
-            <View style={{ flex: 1 }}>
-              <Text style={styles.studioLabel}>PRELUDE INSTRUMENTS</Text>
-              <TextInput
-                style={[styles.studioInput, { marginBottom: 6 }]}
-                placeholder="e.g. Acoustic + Drum"
-                placeholderTextColor="#94A3B8"
-                value={prelude}
-                onChangeText={setPrelude}
-              />
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 4 }}>
-                {PRELUDE_SUGGESTIONS.map(sug => {
-                  const isSelected = prelude === sug;
-                  return (
-                    <TouchableOpacity
-                      key={sug}
-                      style={{
-                        paddingHorizontal: 8,
-                        paddingVertical: 4,
-                        borderRadius: 8,
-                        backgroundColor: isSelected ? '#0D9488' : '#F0FDFA',
-                        borderWidth: 1,
-                        borderColor: isSelected ? '#0D9488' : '#CCFBF1'
-                      }}
-                      onPress={() => setPrelude(sug)}
-                    >
-                      <Text style={{ fontSize: 10, fontWeight: '700', color: isSelected ? '#fff' : '#0F766E' }}>{sug}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            </View>
+        {/* Prelude & Interlude Live Arrangement - Two Full Rows */}
+        <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#F1F5F9' }}>
+          {/* Row 1: Prelude */}
+          <View style={{ marginBottom: 14 }}>
+            <Text style={labelStyle}>PRELUDE INSTRUMENTS</Text>
+            <TextInput
+              style={[inputStyle, { marginBottom: 6 }]}
+              placeholder="e.g. Acoustic + Drum"
+              placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+              value={prelude}
+              onChangeText={setPrelude}
+            />
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 4 }}>
+              {PRELUDE_SUGGESTIONS.map(sug => {
+                const isSelected = prelude === sug;
+                return (
+                  <TouchableOpacity
+                    key={sug}
+                    style={{
+                      paddingHorizontal: 8,
+                      paddingVertical: 4,
+                      borderRadius: 8,
+                      backgroundColor: isSelected ? '#0D9488' : (isDark ? 'rgba(13, 148, 136, 0.2)' : '#F0FDFA'),
+                      borderWidth: 1,
+                      borderColor: isSelected ? '#0D9488' : (isDark ? 'rgba(13, 148, 136, 0.4)' : '#CCFBF1')
+                    }}
+                    onPress={() => setPrelude(sug)}
+                  >
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: isSelected ? '#fff' : (isDark ? '#5EEAD4' : '#0F766E') }}>{sug}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
 
-            {/* Interlude */}
-            <View style={{ flex: 1 }}>
-              <Text style={styles.studioLabel}>INTERLUDE ARRANGEMENT</Text>
-              <TextInput
-                style={[styles.studioInput, { marginBottom: 6 }]}
-                placeholder="e.g. Keys + Elec"
-                placeholderTextColor="#94A3B8"
-                value={interlude}
-                onChangeText={setInterlude}
-              />
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 4 }}>
-                {INTERLUDE_SUGGESTIONS.map(sug => {
-                  const isSelected = interlude === sug;
-                  return (
-                    <TouchableOpacity
-                      key={sug}
-                      style={{
-                        paddingHorizontal: 8,
-                        paddingVertical: 4,
-                        borderRadius: 8,
-                        backgroundColor: isSelected ? '#2563EB' : '#EFF6FF',
-                        borderWidth: 1,
-                        borderColor: isSelected ? '#2563EB' : '#DBEAFE'
-                      }}
-                      onPress={() => setInterlude(sug)}
-                    >
-                      <Text style={{ fontSize: 10, fontWeight: '700', color: isSelected ? '#fff' : '#1D4ED8' }}>{sug}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            </View>
+          {/* Row 2: Interlude */}
+          <View>
+            <Text style={labelStyle}>INTERLUDE ARRANGEMENT</Text>
+            <TextInput
+              style={[inputStyle, { marginBottom: 6 }]}
+              placeholder="e.g. Keys + Elec"
+              placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+              value={interlude}
+              onChangeText={setInterlude}
+            />
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 4 }}>
+              {INTERLUDE_SUGGESTIONS.map(sug => {
+                const isSelected = interlude === sug;
+                return (
+                  <TouchableOpacity
+                    key={sug}
+                    style={{
+                      paddingHorizontal: 8,
+                      paddingVertical: 4,
+                      borderRadius: 8,
+                      backgroundColor: isSelected ? '#2563EB' : (isDark ? 'rgba(37, 99, 235, 0.2)' : '#EFF6FF'),
+                      borderWidth: 1,
+                      borderColor: isSelected ? '#2563EB' : (isDark ? 'rgba(37, 99, 235, 0.4)' : '#DBEAFE')
+                    }}
+                    onPress={() => setInterlude(sug)}
+                  >
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: isSelected ? '#fff' : (isDark ? '#93C5FD' : '#1D4ED8') }}>{sug}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
           </View>
         </View>
 
         {/* Thematic Notes */}
-        <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
+        <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#F1F5F9' }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-            <Text style={styles.studioLabel}>WORSHIP & THEMATIC NOTES</Text>
+            <Text style={labelStyle}>WORSHIP & THEMATIC NOTES</Text>
             {notes ? (
               <TouchableOpacity onPress={() => setNotes('')}>
                 <Text style={{ fontSize: 10, fontWeight: '700', color: '#DC2626' }}>Clear</Text>
@@ -1825,10 +2051,10 @@ export default function AdminSongEditor() {
             ) : null}
           </View>
           <TextInput
-            style={[styles.studioInput, { height: 56, textAlignVertical: 'top', paddingTop: 8, marginBottom: 8 }]}
+            style={[inputStyle, { height: 56, textAlignVertical: 'top', paddingTop: 8, marginBottom: 8 }]}
             multiline
             placeholder="e.g. Celebrate God's power, grace and praise..."
-            placeholderTextColor="#94A3B8"
+            placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
             value={notes}
             onChangeText={setNotes}
           />
@@ -1842,16 +2068,16 @@ export default function AdminSongEditor() {
                     paddingHorizontal: 9,
                     paddingVertical: 4,
                     borderRadius: 8,
-                    backgroundColor: isAdded ? '#F59E0B' : '#FEF3C7',
+                    backgroundColor: isAdded ? '#F59E0B' : (isDark ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7'),
                     borderWidth: 1,
-                    borderColor: isAdded ? '#D97706' : '#FDE68A'
+                    borderColor: isAdded ? '#D97706' : (isDark ? 'rgba(245, 158, 11, 0.4)' : '#FDE68A')
                   }}
                   onPress={() => {
                     if (!notes.trim()) setNotes(sug);
                     else if (!notes.includes(sug)) setNotes(`${notes} • ${sug}`);
                   }}
                 >
-                  <Text style={{ fontSize: 10, fontWeight: '700', color: isAdded ? '#fff' : '#92400E' }}>
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: isAdded ? '#fff' : (isDark ? '#FCD34D' : '#92400E') }}>
                     {isAdded ? '✓ ' : '+ '}{sug}
                   </Text>
                 </TouchableOpacity>
@@ -1862,13 +2088,13 @@ export default function AdminSongEditor() {
       </View>
 
       {/* ── CARD 3: CATEGORIES, LYRICS & PUBLISH STATUS ── */}
-      <View style={styles.studioCard}>
+      <View style={cardStyle}>
         {/* Categories */}
         <View style={styles.studioCardHeader}>
           <View style={styles.studioCardTitleRow}>
-            <Text style={styles.studioCardTitle}>CATEGORIES & THEMES</Text>
+            <Text style={cardTitleStyle}>CATEGORIES & THEMES</Text>
           </View>
-          <Text style={{ fontSize: 10, color: '#64748B', fontWeight: '700' }}>
+          <Text style={{ fontSize: 10, color: isDark ? '#A1A1AA' : '#64748B', fontWeight: '700' }}>
             {categories.length} Selected
           </Text>
         </View>
@@ -1884,9 +2110,13 @@ export default function AdminSongEditor() {
                   paddingHorizontal: 11,
                   paddingVertical: 6,
                   borderRadius: 14,
-                  borderWidth: 1,
-                  borderColor: isSelected ? (isThemeCat ? '#D97706' : '#1a2d5a') : '#E2E8F0',
-                  backgroundColor: isSelected ? (isThemeCat ? '#FEF3C7' : '#1a2d5a') : '#F8FAFC',
+                  borderWidth: 1.2,
+                  borderColor: isSelected
+                    ? (isThemeCat ? '#D97706' : (isDark ? '#FFFFFF' : '#1a2d5a'))
+                    : (isDark ? 'rgba(255, 255, 255, 0.18)' : '#CBD5E1'),
+                  backgroundColor: isSelected
+                    ? (isThemeCat ? (isDark ? 'rgba(245, 158, 11, 0.25)' : '#FEF3C7') : (isDark ? '#FFFFFF' : '#1a2d5a'))
+                    : (isDark ? '#27272A' : '#F8FAFC'),
                   flexDirection: 'row',
                   alignItems: 'center',
                   gap: 4
@@ -1897,11 +2127,13 @@ export default function AdminSongEditor() {
                   );
                 }}
               >
-                {isThemeCat && <Star size={11} color={isSelected ? '#D97706' : '#94A3B8'} fill={isSelected ? '#F59E0B' : 'none'} />}
+                {isThemeCat && <Star size={11} color={isSelected ? '#D97706' : (isDark ? '#A1A1AA' : '#94A3B8')} fill={isSelected ? '#F59E0B' : 'none'} />}
                 <Text style={{
                   fontSize: 11,
                   fontWeight: '700',
-                  color: isSelected ? (isThemeCat ? '#B45309' : '#FFFFFF') : '#475569'
+                  color: isSelected
+                    ? (isThemeCat ? (isDark ? '#FCD34D' : '#B45309') : (isDark ? '#000000' : '#FFFFFF'))
+                    : (isDark ? '#CBD5E1' : '#475569')
                 }}>
                   {cat}
                 </Text>
@@ -1910,21 +2142,21 @@ export default function AdminSongEditor() {
           })}
         </View>
 
-        {/* Song Lyrics & Scripts (Clean, no +Verse/+Chorus/+Bridge buttons) */}
-        <View style={{ paddingTop: 14, borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
-          <Text style={[styles.studioLabel, { marginBottom: 8 }]}>SONG LYRICS & SCRIPTS *</Text>
+        {/* Song Lyrics & Scripts */}
+        <View style={{ paddingTop: 14, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#F1F5F9' }}>
+          <Text style={[labelStyle, { marginBottom: 8 }]}>SONG LYRICS & SCRIPTS *</Text>
           <TextInput
-            style={[styles.studioInput, {
+            style={[inputStyle, {
               height: 240,
               textAlignVertical: 'top',
               paddingTop: 12,
               paddingHorizontal: 12,
               lineHeight: 20,
               fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-              fontSize: 13
+              fontSize: 13,
             }]}
             placeholder={`Verse 1:\nAmazing grace! How sweet the sound...\n\nChorus:\nMy chains are gone, I've been set free...`}
-            placeholderTextColor="#94A3B8"
+            placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
             multiline
             value={lyrics}
             onChangeText={setLyrics}
@@ -1932,25 +2164,41 @@ export default function AdminSongEditor() {
         </View>
 
         {/* Publish Status Toggle */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#F1F5F9' }}>
           <View>
-            <Text style={{ fontSize: 13, fontWeight: '800', color: '#1a2d5a' }}>Publish Status</Text>
-            <Text style={{ fontSize: 11, color: '#64748B' }}>
+            <Text style={{ fontSize: 13, fontWeight: '800', color: isDark ? '#FFFFFF' : '#1a2d5a' }}>Publish Status</Text>
+            <Text style={{ fontSize: 11, color: isDark ? '#A1A1AA' : '#64748B' }}>
               {status === 'Published' ? 'Visible in church library' : 'Saved as private draft'}
             </Text>
           </View>
           <View style={{ flexDirection: 'row', gap: 6 }}>
             <TouchableOpacity
-              style={[{ paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1 }, status === 'Published' ? { backgroundColor: '#15803D', borderColor: '#15803D' } : { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' }]}
+              style={[{
+                paddingVertical: 8,
+                paddingHorizontal: 14,
+                borderRadius: 8,
+                borderWidth: 1
+              }, status === 'Published'
+                ? { backgroundColor: '#15803D', borderColor: '#15803D' }
+                : { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : '#CBD5E1' }
+              ]}
               onPress={() => setStatus('Published')}
             >
-              <Text style={{ fontSize: 12, fontWeight: '800', color: status === 'Published' ? '#fff' : '#64748B' }}>Published</Text>
+              <Text style={{ fontSize: 12, fontWeight: '800', color: status === 'Published' ? '#fff' : (isDark ? '#CBD5E1' : '#64748B') }}>Published</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[{ paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1 }, status === 'Draft' ? { backgroundColor: '#1a2d5a', borderColor: '#1a2d5a' } : { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' }]}
+              style={[{
+                paddingVertical: 8,
+                paddingHorizontal: 14,
+                borderRadius: 8,
+                borderWidth: 1
+              }, status === 'Draft'
+                ? { backgroundColor: isDark ? '#3B82F6' : '#1a2d5a', borderColor: isDark ? '#3B82F6' : '#1a2d5a' }
+                : { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : '#CBD5E1' }
+              ]}
               onPress={() => setStatus('Draft')}
             >
-              <Text style={{ fontSize: 12, fontWeight: '800', color: status === 'Draft' ? '#fff' : '#64748B' }}>Draft</Text>
+              <Text style={{ fontSize: 12, fontWeight: '800', color: status === 'Draft' ? '#fff' : (isDark ? '#CBD5E1' : '#64748B') }}>Draft</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1959,63 +2207,70 @@ export default function AdminSongEditor() {
       {/* Bottom Save Action Button */}
       <TouchableOpacity
         style={[{
-          backgroundColor: '#15803D',
-          height: 52,
-          borderRadius: 14,
+          backgroundColor: isDark ? '#FFFFFF' : '#000000',
+          height: 50,
+          borderRadius: 999,
+          borderWidth: 1.5,
+          borderColor: isDark ? '#FFFFFF' : '#000000',
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'center',
           gap: 10,
-          elevation: 4,
-          shadowColor: '#15803D',
-          shadowOpacity: 0.3,
-          shadowRadius: 8,
-          shadowOffset: { width: 0, height: 3 },
-          marginTop: 6
-        }, submitting && { backgroundColor: '#94A3B8' }]}
+          elevation: 3,
+          shadowColor: '#000000',
+          shadowOpacity: isDark ? 0.25 : 0.2,
+          shadowRadius: 6,
+          shadowOffset: { width: 0, height: 2 },
+          marginTop: 10,
+          marginBottom: 10,
+        }, submitting && { opacity: 0.6 }]}
         onPress={handlePublishSong}
         disabled={submitting}
+        activeOpacity={0.8}
       >
         {submitting ? (
-          <ActivityIndicator size="small" color="#fff" />
+          <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
         ) : (
           <>
-            <Save size={18} color="#fff" />
-            <Text style={{ color: '#fff', fontSize: 15, fontWeight: '900', letterSpacing: 0.5 }}>Publish Song to Church Library</Text>
+            <Save size={18} color={isDark ? '#000000' : '#FFFFFF'} />
+            <Text style={{ color: isDark ? '#000000' : '#FFFFFF', fontSize: 15, fontWeight: '900', letterSpacing: 0.3 }}>
+              Publish Song to Church Library
+            </Text>
           </>
         )}
       </TouchableOpacity>
     </View>
   );
+};
 
   const renderPostModal = () => (
     <Modal visible={showPostModal} animationType="slide" onRequestClose={() => setShowPostModal(false)}>
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
-        {/* Top App Bar with Close and Centered Title - NO duplicate Publish button! */}
+      <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#000000' : '#F8FAFC' }}>
+        {/* Top App Bar with Close and Centered Title */}
         <View style={{
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
           paddingHorizontal: 16,
           paddingVertical: 12,
-          backgroundColor: '#FFFFFF',
+          backgroundColor: isDark ? '#000000' : '#FFFFFF',
           borderBottomWidth: 1,
-          borderBottomColor: '#E2E8F0',
+          borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0',
           elevation: 2,
-          shadowColor: '#1a2d5a',
-          shadowOpacity: 0.05,
+          shadowColor: '#000000',
+          shadowOpacity: isDark ? 0.35 : 0.05,
           shadowRadius: 4
         }}>
           <TouchableOpacity
-            style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' }}
+            style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#F1F5F9', alignItems: 'center', justifyContent: 'center' }}
             onPress={() => setShowPostModal(false)}
           >
-            <X size={20} color="#334155" />
+            <X size={20} color={isDark ? '#FFFFFF' : '#334155'} />
           </TouchableOpacity>
 
           <View style={{ alignItems: 'center' }}>
-            <Text style={{ fontSize: 16, fontWeight: '900', color: '#1a2d5a' }}>Publish New Song</Text>
-            <Text style={{ fontSize: 11, fontWeight: '600', color: '#64748B' }}>Worship Library & Setlist Charts</Text>
+            <Text style={{ fontSize: 16, fontWeight: '900', color: isDark ? '#FFFFFF' : '#1a2d5a' }}>Publish New Song</Text>
+            <Text style={{ fontSize: 11, fontWeight: '600', color: isDark ? '#A1A1AA' : '#64748B' }}>Worship Library & Setlist Charts</Text>
           </View>
 
           {/* Balanced spacer so title is centered without duplicate button */}
@@ -2024,7 +2279,7 @@ export default function AdminSongEditor() {
 
         {/* Full-Height Smooth Scrollable Content with Ample Bottom Room */}
         <ScrollView
-          style={{ flex: 1 }}
+          style={{ flex: 1, backgroundColor: isDark ? '#000000' : '#F8FAFC' }}
           contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 140 }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={true}
@@ -2046,26 +2301,45 @@ export default function AdminSongEditor() {
         <>
           <View style={{ paddingHorizontal: 16, paddingTop: 16 }}>
             <View style={styles.listHeaderRow}>
-              <Text style={styles.listHeaderTitle}>{screenTab === 'theme' ? 'Theme Songs' : 'All Worship Songs'}</Text>
-              <View style={styles.countBadge}>
-                <Text style={styles.countTxt}>{postedSongs.filter(s => {
-                  if (screenTab === 'theme' && !(s.category || '').includes('Theme Songs')) return false;
-                  return true;
-                }).length} Total</Text>
+              <Text style={[styles.listHeaderTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                {screenTab === 'theme' ? 'Theme Songs' : 'All Worship Songs'}
+              </Text>
+              <View style={[styles.countBadge, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9', borderColor: isDark ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0', borderWidth: 1 }]}>
+                <Text style={[styles.countTxt, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                  {postedSongs.filter(s => {
+                    if (screenTab === 'theme' && !(s.category || '').includes('Theme Songs')) return false;
+                    return true;
+                  }).length} Total
+                </Text>
               </View>
             </View>
             <View style={{ marginBottom: 16 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#f1f5f9', borderRadius: 10, paddingHorizontal: 12, borderWidth: 1, borderColor: '#e2e8f0' }}>
+              <View style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(255, 255, 255, 0.9)',
+                borderRadius: 999,
+                paddingHorizontal: 16,
+                height: 48,
+                borderWidth: 1.5,
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : '#CBD5E1',
+                shadowColor: '#0F172A',
+                shadowOffset: { width: 0, height: 3 },
+                shadowOpacity: isDark ? 0.25 : 0.06,
+                shadowRadius: 8,
+                elevation: 2,
+              }}>
+                <Search size={18} color={isDark ? '#A1A1AA' : '#64748B'} style={{ marginRight: 10 }} />
                 <TextInput
-                  style={[styles.textInput, { flex: 1, borderWidth: 0, backgroundColor: 'transparent', marginBottom: 0, paddingHorizontal: 0 }]}
+                  style={[styles.textInput, { flex: 1, borderWidth: 0, backgroundColor: 'transparent', marginBottom: 0, paddingHorizontal: 0, fontSize: 13.5, fontWeight: '600', color: isDark ? '#FFFFFF' : '#0F172A' }]}
                   placeholder="Search songs by title or artist..."
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor={isDark ? '#A1A1AA' : '#64748B'}
                   value={listSearchQuery}
                   onChangeText={setListSearchQuery}
                 />
                 {listSearchQuery.length > 0 && (
                   <TouchableOpacity onPress={() => setListSearchQuery('')} style={{ padding: 4 }}>
-                    <X size={16} color="#94a3b8" />
+                    <X size={16} color={isDark ? '#A1A1AA' : '#64748B'} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -4948,32 +5222,50 @@ export default function AdminSongEditor() {
   // ── CHURCH MEMBER DIRECTORY MODAL (Leading Person Picker) ──
   const renderMemberPickerModal = () => (
     <Modal transparent animationType="slide" visible={showMemberPickerModal} onRequestClose={() => setShowMemberPickerModal(false)}>
-      <View style={styles.modalOverlay}>
-        <View style={[styles.pickerModalBox, { maxHeight: '82%', maxWidth: 420, width: '92%', padding: 18 }]}>
+      <View style={[styles.modalOverlay, { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.8)' : 'rgba(15, 23, 42, 0.6)' }]}>
+        <View style={[styles.pickerModalBox, {
+          maxHeight: '82%',
+          maxWidth: 420,
+          width: '92%',
+          padding: 18,
+          backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+          borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1',
+          borderWidth: 1.5,
+        }]}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <View>
-              <Text style={{ fontSize: 16, fontWeight: '800', color: '#1a2d5a' }}>Church Members Directory</Text>
-              <Text style={{ fontSize: 11, color: '#64748B' }}>Search and assign worship leader</Text>
+              <Text style={{ fontSize: 16, fontWeight: '800', color: isDark ? '#FFFFFF' : '#1a2d5a' }}>Church Members Directory</Text>
+              <Text style={{ fontSize: 11, color: isDark ? '#A1A1AA' : '#64748B' }}>Search and assign worship leader</Text>
             </View>
             <TouchableOpacity onPress={() => setShowMemberPickerModal(false)} style={{ padding: 4 }}>
-              <X size={20} color="#64748B" />
+              <X size={20} color={isDark ? '#FFFFFF' : '#64748B'} />
             </TouchableOpacity>
           </View>
 
           {/* Search bar */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F1F5F9', borderRadius: 10, paddingHorizontal: 12, height: 44, marginBottom: 10, borderWidth: 1, borderColor: '#E2E8F0' }}>
-            <Search size={16} color="#94A3B8" />
+          <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: isDark ? '#27272A' : '#F1F5F9',
+            borderRadius: 10,
+            paddingHorizontal: 12,
+            height: 44,
+            marginBottom: 10,
+            borderWidth: 1.2,
+            borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : '#E2E8F0'
+          }}>
+            <Search size={16} color={isDark ? '#A1A1AA' : '#94A3B8'} />
             <TextInput
-              style={{ flex: 1, fontSize: 13, color: '#1a2d5a', marginLeft: 8, fontWeight: '700' }}
+              style={{ flex: 1, fontSize: 13, color: isDark ? '#FFFFFF' : '#1a2d5a', marginLeft: 8, fontWeight: '700' }}
               placeholder="Search member name or phone..."
-              placeholderTextColor="#94A3B8"
+              placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
               value={memberSearchQuery}
               onChangeText={setMemberSearchQuery}
               autoFocus
             />
             {memberSearchQuery.length > 0 && (
               <TouchableOpacity onPress={() => setMemberSearchQuery('')}>
-                <X size={16} color="#94A3B8" />
+                <X size={16} color={isDark ? '#A1A1AA' : '#94A3B8'} />
               </TouchableOpacity>
             )}
           </View>
@@ -5036,7 +5328,7 @@ export default function AdminSongEditor() {
                   return (
                     <TouchableOpacity
                       key={m?.id || name}
-                      style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}
+                      style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9' }}
                       onPress={() => {
                         if (memberPickerTarget === 'setlist') {
                           setSetlistForm(prev => ({ ...prev, ledBy: name }));
@@ -5055,7 +5347,7 @@ export default function AdminSongEditor() {
                         </Text>
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 14, fontWeight: '700', color: '#1a2d5a' }}>{name}</Text>
+                        <Text style={{ fontSize: 14, fontWeight: '700', color: isDark ? '#FFFFFF' : '#1a2d5a' }}>{name}</Text>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
                           {m.primarySkill ? (
                             <View style={{ backgroundColor: '#EEF2FF', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 }}>
@@ -5082,70 +5374,191 @@ export default function AdminSongEditor() {
   );
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
+    <View style={[styles.container, { backgroundColor: isDark ? '#000000' : '#F8FAFC' }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
-      {/* ── Hero Section ── */}
-      <View style={styles.hero}>
+      {/* ── Hero Section (Top Mini Card Header) ── */}
+      <View style={[styles.hero, {
+        backgroundColor: isDark ? '#000000' : '#FFFFFF',
+        borderBottomWidth: 1,
+        borderBottomColor: isDark ? '#27272A' : '#E2E8F0',
+        paddingBottom: 14,
+        marginBottom: 8
+      }]}>
         <View style={[styles.heroTitleRow, { alignItems: 'center', justifyContent: 'space-between', width: '100%' }]}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }}>
-            <TouchableOpacity
-              onPress={() => setActiveTab(0)}
-              style={styles.circularBackBtn}
-              activeOpacity={0.7}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          <TouchableOpacity
+            onPress={() => setActiveTab(0)}
+            style={[
+              styles.circularBackBtn,
+              {
+                backgroundColor: isDark ? '#000000' : '#FFFFFF',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : '#E2E8F0',
+                borderWidth: 1.5,
+              }
+            ]}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#0F172A'} strokeWidth={2.2} />
+          </TouchableOpacity>
+
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 }}>
+            <Text
+              style={[
+                styles.heroTitle,
+                {
+                  color: isDark ? '#FFFFFF' : '#0F172A',
+                  textAlign: 'center',
+                  fontSize: 20,
+                  fontWeight: '800',
+                  fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+                  letterSpacing: -0.4,
+                }
+              ]}
+              numberOfLines={1}
             >
-              <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
-            </TouchableOpacity>
-            <Text style={[styles.heroTitle, { flexShrink: 1, marginLeft: 12 }]} numberOfLines={1}>Song Manager</Text>
+              Songs
+            </Text>
           </View>
-          <TouchableOpacity style={styles.newBtn} onPress={() => setShowPostModal(true)}>
-            <Plus size={16} color="#1a2d5a" />
-            <Text style={styles.newBtnTxt}>New</Text>
+
+          <TouchableOpacity
+            style={[
+              styles.newBtn,
+              {
+                flexShrink: 0,
+                backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                borderRadius: 999,
+                paddingHorizontal: 15,
+                paddingVertical: 7.5,
+                borderWidth: 1.5,
+                borderColor: isDark ? '#FFFFFF' : '#000000',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }
+            ]}
+            onPress={() => setShowPostModal(true)}
+            activeOpacity={0.8}
+          >
+            <Text
+              style={[
+                styles.newBtnTxt,
+                {
+                  color: isDark ? '#000000' : '#FFFFFF',
+                  fontWeight: '800',
+                  fontSize: 12,
+                }
+              ]}
+              numberOfLines={1}
+            >
+              New
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Screen Tabs */}
-      <View style={styles.screenTabBar}>
+      {/* Screen Tabs — Long circle pill badge (White in Dark theme, Black in White theme) */}
+      <View style={[
+        styles.screenTabBar, 
+        { 
+          backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+          borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : '#94A3B8',
+          borderRadius: 999,
+          borderWidth: 1.5,
+          padding: 4,
+          shadowColor: '#0F172A',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: isDark ? 0 : 0.04,
+          shadowRadius: 4,
+          elevation: 1,
+        }
+      ]}>
         <TouchableOpacity
-          style={[styles.screenTab, screenTab === 'list' && styles.screenTabActive]}
-          onPress={() => { setScreenTab('list'); setSelectedCategory('All'); }}>
-          <Text style={[styles.screenTabTxt, screenTab === 'list' && styles.screenTabTxtActive]}>All Songs</Text>
+          style={[
+            styles.screenTab,
+            { borderRadius: 999 },
+            screenTab === 'list' && {
+              backgroundColor: isDark ? '#FFFFFF' : '#000000',
+            }
+          ]}
+          onPress={() => { setScreenTab('list'); setSelectedCategory('All'); }}
+          activeOpacity={0.8}
+        >
+          <Text style={[
+            styles.screenTabTxt,
+            {
+              color: screenTab === 'list' 
+                ? (isDark ? '#000000' : '#FFFFFF') 
+                : (isDark ? '#A1A1AA' : '#64748B'),
+              fontWeight: screenTab === 'list' ? '800' : '700',
+              fontSize: 12,
+            }
+          ]}>
+            All Songs
+          </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.screenTab, screenTab === 'theme' && styles.screenTabActive]}
-          onPress={() => { setScreenTab('theme'); setSelectedCategory('All'); }}>
-          <Text style={[styles.screenTabTxt, screenTab === 'theme' && styles.screenTabTxtActive]}>Theme Songs</Text>
+          style={[
+            styles.screenTab,
+            { borderRadius: 999 },
+            screenTab === 'theme' && {
+              backgroundColor: isDark ? '#FFFFFF' : '#000000',
+            }
+          ]}
+          onPress={() => { setScreenTab('theme'); setSelectedCategory('All'); }}
+          activeOpacity={0.8}
+        >
+          <Text style={[
+            styles.screenTabTxt,
+            {
+              color: screenTab === 'theme' 
+                ? (isDark ? '#000000' : '#FFFFFF') 
+                : (isDark ? '#A1A1AA' : '#64748B'),
+              fontWeight: screenTab === 'theme' ? '800' : '700',
+              fontSize: 12,
+            }
+          ]}>
+            Theme Songs
+          </Text>
         </TouchableOpacity>
       </View>
 
-      {/* Category Filter Ribbon (Only shown for song library views, not for setlist flow) */}
-      <View style={{ marginBottom: 12 }}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}>
-            {['All', ...CATEGORIES.filter(c => c !== 'Theme Songs')].map((cat) => (
+      {/* Category Filter Ribbon — Circle Badges (White in Dark theme, Black in White theme) */}
+      <View style={{ marginBottom: 14 }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}>
+          {['All', ...CATEGORIES.filter(c => c !== 'Theme Songs')].map((cat) => {
+            const isSelected = selectedCategory === cat;
+            return (
               <TouchableOpacity
                 key={cat}
                 style={{
                   paddingHorizontal: 16,
-                  paddingVertical: 8,
-                  borderRadius: 20,
-                  backgroundColor: selectedCategory === cat ? '#1a2d5a' : '#fff',
-                  borderWidth: 1,
-                  borderColor: selectedCategory === cat ? '#1a2d5a' : '#cbd5e1',
+                  paddingVertical: 7.5,
+                  borderRadius: 999,
+                  borderWidth: 1.5,
+                  borderColor: isSelected 
+                    ? (isDark ? '#FFFFFF' : '#000000') 
+                    : (isDark ? 'rgba(255, 255, 255, 0.18)' : '#CBD5E1'),
+                  backgroundColor: isSelected 
+                    ? (isDark ? '#FFFFFF' : '#000000') 
+                    : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#FFFFFF'),
                 }}
                 onPress={() => setSelectedCategory(cat)}
+                activeOpacity={0.8}
               >
-                <Text style={{ fontSize: 13, fontWeight: '700', color: selectedCategory === cat ? '#fff' : '#64748b' }}>
+                <Text style={{ 
+                  fontSize: 12.5, 
+                  fontWeight: '800', 
+                  color: isSelected 
+                    ? (isDark ? '#000000' : '#FFFFFF') 
+                    : (isDark ? '#E4E4E7' : '#374151') 
+                }}>
                   {cat}
                 </Text>
               </TouchableOpacity>
-            ))}
-          </ScrollView>
-          <Text style={{ fontSize: 11, color: '#475569', fontWeight: '500', fontStyle: 'italic', textAlign: 'center', marginTop: 12, marginHorizontal: 20 }}>
-            Note: If you are not interested in the Global Songs, please contact the WeChristian app team to disable them for your church.
-          </Text>
-        </View>
+            );
+          })}
+        </ScrollView>
+      </View>
 
       {/* Content */}
       {renderPostedList()}
@@ -5164,8 +5577,15 @@ export default function AdminSongEditor() {
         <Modal transparent animationType="fade" visible onRequestClose={() => setShowKeyPicker(false)}>
           <TouchableOpacity style={styles.modalOverlay} activeOpacity={1}
             onPress={() => setShowKeyPicker(false)}>
-            <View style={styles.pickerModalBox}>
-              <Text style={styles.pickerModalTitle}>Select Key</Text>
+            <View style={[styles.pickerModalBox, {
+              backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1',
+              borderWidth: 1.5,
+            }]}>
+              <Text style={[styles.pickerModalTitle, {
+                color: isDark ? '#FFFFFF' : '#1a2d5a',
+                borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#F1F5F9'
+              }]}>Select Key</Text>
               <ScrollView>
                 <TouchableOpacity style={styles.pickerModalItem}
                   onPress={() => { setSongKey(''); setShowKeyPicker(false); }}>
@@ -5284,7 +5704,7 @@ export default function AdminSongEditor() {
       {/* ── Edit Song Modal ── */}
       {editingSong && (
         <Modal visible animationType="slide" onRequestClose={() => setEditingSong(null)}>
-          <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+          <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#000000' : '#F8FAFC' }}>
             {/* Top App Bar with Close and Centered Title - NO duplicate Save button */}
             <View style={{
               flexDirection: 'row',
@@ -5292,24 +5712,24 @@ export default function AdminSongEditor() {
               justifyContent: 'space-between',
               paddingHorizontal: 16,
               paddingVertical: 12,
-              backgroundColor: '#FFFFFF',
+              backgroundColor: isDark ? '#000000' : '#FFFFFF',
               borderBottomWidth: 1,
-              borderBottomColor: '#E2E8F0',
+              borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0',
               elevation: 2,
-              shadowColor: '#1a2d5a',
-              shadowOpacity: 0.05,
+              shadowColor: '#000000',
+              shadowOpacity: isDark ? 0.35 : 0.05,
               shadowRadius: 4
             }}>
               <TouchableOpacity
-                style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' }}
+                style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#F1F5F9', alignItems: 'center', justifyContent: 'center' }}
                 onPress={() => setEditingSong(null)}
               >
-                <X size={20} color="#334155" />
+                <X size={20} color={isDark ? '#FFFFFF' : '#334155'} />
               </TouchableOpacity>
 
               <View style={{ alignItems: 'center' }}>
-                <Text style={{ fontSize: 16, fontWeight: '900', color: '#1a2d5a' }}>Edit Worship Song</Text>
-                <Text style={{ fontSize: 11, fontWeight: '600', color: '#64748B' }}>Update Details & Setlist Chart</Text>
+                <Text style={{ fontSize: 16, fontWeight: '900', color: isDark ? '#FFFFFF' : '#1a2d5a' }}>Edit Worship Song</Text>
+                <Text style={{ fontSize: 11, fontWeight: '600', color: isDark ? '#A1A1AA' : '#64748B' }}>Update Details & Setlist Chart</Text>
               </View>
 
               {/* Balanced spacer so title is centered without duplicate button */}
@@ -5317,27 +5737,31 @@ export default function AdminSongEditor() {
             </View>
 
             <ScrollView
-              style={{ flex: 1 }}
+              style={{ flex: 1, backgroundColor: isDark ? '#000000' : '#F8FAFC' }}
               contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 140 }}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={true}
             >
               {/* ── CARD 1: SONG DETAILS & LEADER ── */}
-              <View style={styles.studioCard}>
+              <View style={[styles.studioCard, {
+                backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1',
+                borderWidth: 1.5,
+              }]}>
                 <View style={styles.studioCardHeader}>
                   <View style={styles.studioCardTitleRow}>
                     <Music size={16} color="#1a2d5a" />
-                    <Text style={styles.studioCardTitle}>SONG IDENTITY & LEADER</Text>
+                    <Text style={[styles.studioCardTitle, { color: isDark ? '#F1F5F9' : '#1a2d5a' }]}>SONG IDENTITY & LEADER</Text>
                   </View>
                 </View>
 
                 {/* English Title */}
                 <View style={styles.inputGroup}>
-                  <Text style={styles.studioLabel}>SONG TITLE (ENGLISH) *</Text>
+                  <Text style={[styles.studioLabel, { color: isDark ? '#CBD5E1' : '#334155' }]}>SONG TITLE (ENGLISH) *</Text>
                   <TextInput
-                    style={styles.studioInput}
+                    style={[styles.studioInput, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1', color: isDark ? '#FFFFFF' : '#0F172A' }]}
                     placeholder="e.g. Amazing Grace, Way Maker..."
-                    placeholderTextColor="#94A3B8"
+                    placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                     value={editTitle}
                     onChangeText={setEditTitle}
                   />
@@ -5345,11 +5769,11 @@ export default function AdminSongEditor() {
 
                 {/* Telugu Title */}
                 <View style={styles.inputGroup}>
-                  <Text style={styles.studioLabel}>SONG TITLE (TELUGU)</Text>
+                  <Text style={[styles.studioLabel, { color: isDark ? '#CBD5E1' : '#334155' }]}>SONG TITLE (TELUGU)</Text>
                   <TextInput
-                    style={styles.studioInput}
+                    style={[styles.studioInput, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1', color: isDark ? '#FFFFFF' : '#0F172A' }]}
                     placeholder="ఉదాహరణ: అద్భుతమైన కృప..."
-                    placeholderTextColor="#94A3B8"
+                    placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                     value={editTitleTe}
                     onChangeText={setEditTitleTe}
                   />
@@ -5357,13 +5781,13 @@ export default function AdminSongEditor() {
 
                 {/* YouTube Video Link */}
                 <View style={styles.inputGroup}>
-                  <Text style={styles.studioLabel}>YOUTUBE VIDEO LINK</Text>
+                  <Text style={[styles.studioLabel, { color: isDark ? '#CBD5E1' : '#334155' }]}>YOUTUBE VIDEO LINK</Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, paddingHorizontal: 12, height: 46 }}>
                     <Text style={{ fontSize: 11, fontWeight: '800', color: '#DC2626', marginRight: 6 }}>▶ YouTube</Text>
                     <TextInput
                       style={{ flex: 1, fontSize: 13, color: '#1a2d5a', fontWeight: '600' }}
                       placeholder="https://youtu.be/... or Video ID"
-                      placeholderTextColor="#94A3B8"
+                      placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                       value={editYoutubeId}
                       onChangeText={setEditYoutubeId}
                     />
@@ -5377,40 +5801,41 @@ export default function AdminSongEditor() {
 
                 {/* Artist / Band */}
                 <View style={styles.inputGroup}>
-                  <Text style={styles.studioLabel}>ARTIST / BAND (Optional)</Text>
+                  <Text style={[styles.studioLabel, { color: isDark ? '#CBD5E1' : '#334155' }]}>ARTIST / BAND (Optional)</Text>
                   <TextInput
-                    style={styles.studioInput}
+                    style={[styles.studioInput, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1', color: isDark ? '#FFFFFF' : '#0F172A' }]}
                     placeholder="e.g. Hillsong, Bethel, Local Choir..."
-                    placeholderTextColor="#94A3B8"
+                    placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                     value={editArtist}
                     onChangeText={setEditArtist}
                   />
                 </View>
 
                 {/* Song Leader Search Section */}
-                <View style={{ marginTop: 6, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <Text style={styles.studioLabel}>SONG LEADER / LEADING PERSON</Text>
+                <View style={{ marginTop: 6, paddingTop: 14, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#F1F5F9' }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <Text style={[styles.studioLabel, { color: isDark ? '#CBD5E1' : '#334155', marginBottom: 0 }]}>SONG LEADING PERSON</Text>
                     <TouchableOpacity
                       style={{
                         flexDirection: 'row',
                         alignItems: 'center',
-                        gap: 4,
-                        backgroundColor: '#EFF6FF',
-                        paddingHorizontal: 8,
-                        paddingVertical: 4,
-                        borderRadius: 6,
-                        borderWidth: 1,
-                        borderColor: '#BFDBFE'
+                        gap: 5,
+                        backgroundColor: isDark ? 'rgba(37, 99, 235, 0.2)' : '#EFF6FF',
+                        paddingHorizontal: 10,
+                        paddingVertical: 5,
+                        borderRadius: 999,
+                        borderWidth: 1.2,
+                        borderColor: isDark ? 'rgba(59, 130, 246, 0.4)' : '#BFDBFE'
                       }}
+                      activeOpacity={0.75}
                       onPress={() => {
                         setMemberPickerTarget('edit');
                         setMemberSearchQuery('');
                         setShowMemberPickerModal(true);
                       }}
                     >
-                      <Users size={12} color="#1D4ED8" />
-                      <Text style={{ fontSize: 10, fontWeight: '800', color: '#1D4ED8' }}>Browse Directory</Text>
+                      <Users size={12} color={isDark ? '#60A5FA' : '#1D4ED8'} />
+                      <Text style={{ fontSize: 10.5, fontWeight: '700', color: isDark ? '#93C5FD' : '#1D4ED8', letterSpacing: 0.2 }}>Browse Directory</Text>
                     </TouchableOpacity>
                   </View>
 
@@ -5463,7 +5888,7 @@ export default function AdminSongEditor() {
                           value={editLeaderSearch}
                           onChangeText={setEditLeaderSearch}
                           placeholder="Type member name or phone to search..."
-                          placeholderTextColor="#94A3B8"
+                          placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                         />
                         {editLeaderSearch.length > 0 && (
                           <TouchableOpacity onPress={() => setEditLeaderSearch('')} style={{ padding: 4 }}>
@@ -5562,14 +5987,15 @@ export default function AdminSongEditor() {
               </View>
 
               {/* ── CARD 2: MUSICAL ARRANGEMENT & BAND FLOW ── */}
-              <View style={styles.studioCard}>
+              <View style={[styles.studioCard, {
+                backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1',
+                borderWidth: 1.5,
+              }]}>
                 <View style={styles.studioCardHeader}>
                   <View style={styles.studioCardTitleRow}>
-                    <Sliders size={15} color="#1a2d5a" />
-                    <Text style={styles.studioCardTitle}>MUSICAL ARRANGEMENT & BAND FLOW</Text>
-                  </View>
-                  <View style={{ backgroundColor: '#EFF6FF', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 }}>
-                    <Text style={{ fontSize: 9, fontWeight: '800', color: '#1D4ED8' }}>SETLIST CHART</Text>
+                    <Sliders size={15} color={isDark ? '#60A5FA' : '#1a2d5a'} />
+                    <Text style={[styles.studioCardTitle, { color: isDark ? '#F1F5F9' : '#1a2d5a' }]}>MUSICAL ARRANGEMENT & BAND FLOW</Text>
                   </View>
                 </View>
 
@@ -5614,7 +6040,7 @@ export default function AdminSongEditor() {
                       <TextInput
                         style={styles.colInputText}
                         placeholder="4/4"
-                        placeholderTextColor="#94A3B8"
+                        placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                         value={editTimeSignature}
                         onChangeText={setEditTimeSignature}
                       />
@@ -5628,7 +6054,7 @@ export default function AdminSongEditor() {
                       <TextInput
                         style={[styles.colInputText, { paddingRight: 2 }]}
                         placeholder="100"
-                        placeholderTextColor="#94A3B8"
+                        placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                         keyboardType="numeric"
                         value={editTempo}
                         onChangeText={setEditTempo}
@@ -5644,7 +6070,7 @@ export default function AdminSongEditor() {
                       <TextInput
                         style={styles.colInputText}
                         placeholder="4V"
-                        placeholderTextColor="#94A3B8"
+                        placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                         value={editVerses}
                         onChangeText={setEditVerses}
                       />
@@ -5685,16 +6111,14 @@ export default function AdminSongEditor() {
                   </ScrollView>
                 </View>
 
-                {/* Prelude & Interlude Live Arrangement */}
-                <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
-                  <View style={{ flexDirection: 'row', gap: 10 }}>
-                    {/* Prelude */}
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.studioLabel}>PRELUDE INSTRUMENTS</Text>
+                {/* Prelude & Interlude Live Arrangement - Two Rows */}
+                <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#F1F5F9' }}>
+                  <View style={{ marginBottom: 14 }}>
+                      <Text style={[styles.studioLabel, { color: isDark ? '#CBD5E1' : '#334155' }]}>PRELUDE INSTRUMENTS</Text>
                       <TextInput
                         style={[styles.studioInput, { marginBottom: 6 }]}
                         placeholder="e.g. Acoustic + Drum"
-                        placeholderTextColor="#94A3B8"
+                        placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                         value={editPrelude}
                         onChangeText={setEditPrelude}
                       />
@@ -5719,15 +6143,15 @@ export default function AdminSongEditor() {
                           );
                         })}
                       </ScrollView>
-                    </View>
+                  </View>
 
-                    {/* Interlude */}
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.studioLabel}>INTERLUDE ARRANGEMENT</Text>
+                  {/* Interlude */}
+                  <View>
+                      <Text style={[styles.studioLabel, { color: isDark ? '#CBD5E1' : '#334155' }]}>INTERLUDE ARRANGEMENT</Text>
                       <TextInput
                         style={[styles.studioInput, { marginBottom: 6 }]}
                         placeholder="e.g. Keys + Elec"
-                        placeholderTextColor="#94A3B8"
+                        placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                         value={editInterlude}
                         onChangeText={setEditInterlude}
                       />
@@ -5752,14 +6176,13 @@ export default function AdminSongEditor() {
                           );
                         })}
                       </ScrollView>
-                    </View>
                   </View>
                 </View>
 
                 {/* Thematic Notes */}
                 <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                    <Text style={styles.studioLabel}>WORSHIP & THEMATIC NOTES</Text>
+                    <Text style={[styles.studioLabel, { color: isDark ? '#CBD5E1' : '#334155' }]}>WORSHIP & THEMATIC NOTES</Text>
                     {editNotes ? (
                       <TouchableOpacity onPress={() => setEditNotes('')}>
                         <Text style={{ fontSize: 10, fontWeight: '700', color: '#DC2626' }}>Clear</Text>
@@ -5770,7 +6193,7 @@ export default function AdminSongEditor() {
                     style={[styles.studioInput, { height: 56, textAlignVertical: 'top', paddingTop: 8, marginBottom: 8 }]}
                     multiline
                     placeholder="e.g. Celebrate God's power, grace and praise..."
-                    placeholderTextColor="#94A3B8"
+                    placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                     value={editNotes}
                     onChangeText={setEditNotes}
                   />
@@ -5804,11 +6227,15 @@ export default function AdminSongEditor() {
               </View>
 
               {/* ── CARD 3: CATEGORIES, LYRICS & PUBLISH STATUS ── */}
-              <View style={styles.studioCard}>
+              <View style={[styles.studioCard, {
+                backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#CBD5E1',
+                borderWidth: 1.5,
+              }]}>
                 {/* Categories */}
                 <View style={styles.studioCardHeader}>
                   <View style={styles.studioCardTitleRow}>
-                    <Text style={styles.studioCardTitle}>CATEGORIES & THEMES</Text>
+                    <Text style={[styles.studioCardTitle, { color: isDark ? '#F1F5F9' : '#1a2d5a' }]}>CATEGORIES & THEMES</Text>
                   </View>
                   <Text style={{ fontSize: 10, color: '#64748B', fontWeight: '700' }}>
                     {editCategories.length} Selected
@@ -5866,7 +6293,7 @@ export default function AdminSongEditor() {
                       fontSize: 13
                     }]}
                     placeholder={`Verse 1:\nAmazing grace! How sweet the sound...\n\nChorus:\nMy chains are gone, I've been set free...`}
-                    placeholderTextColor="#94A3B8"
+                    placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                     multiline
                     value={editLyrics}
                     onChangeText={setEditLyrics}
@@ -5901,29 +6328,35 @@ export default function AdminSongEditor() {
               {/* Bottom Save Action Button */}
               <TouchableOpacity
                 style={[{
-                  backgroundColor: '#1a2d5a',
-                  height: 52,
-                  borderRadius: 14,
+                  backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                  height: 50,
+                  borderRadius: 999,
+                  borderWidth: 1.5,
+                  borderColor: isDark ? '#FFFFFF' : '#000000',
                   flexDirection: 'row',
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: 10,
-                  elevation: 4,
-                  shadowColor: '#1a2d5a',
-                  shadowOpacity: 0.3,
-                  shadowRadius: 8,
-                  shadowOffset: { width: 0, height: 3 },
-                  marginTop: 6
-                }, savingEdit && { backgroundColor: '#94A3B8' }]}
+                  elevation: 3,
+                  shadowColor: '#000000',
+                  shadowOpacity: isDark ? 0.25 : 0.2,
+                  shadowRadius: 6,
+                  shadowOffset: { width: 0, height: 2 },
+                  marginTop: 10,
+                  marginBottom: 10,
+                }, savingEdit && { opacity: 0.6 }]}
                 onPress={handleSaveEdit}
                 disabled={savingEdit}
+                activeOpacity={0.8}
               >
                 {savingEdit ? (
-                  <ActivityIndicator size="small" color="#fff" />
+                  <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
                 ) : (
                   <>
-                    <Save size={18} color="#fff" />
-                    <Text style={{ color: '#fff', fontSize: 15, fontWeight: '900', letterSpacing: 0.5 }}>Save Changes</Text>
+                    <Save size={18} color={isDark ? '#000000' : '#FFFFFF'} />
+                    <Text style={{ color: isDark ? '#000000' : '#FFFFFF', fontSize: 15, fontWeight: '900', letterSpacing: 0.3 }}>
+                      Save Changes
+                    </Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -6349,48 +6782,53 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   
   // Hero Section
   hero: {
-    backgroundColor: '#1a2d5a',
-    
-    
+    backgroundColor: 'transparent',
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 12,
-    marginBottom: 10,
+    marginBottom: 4,
   },
   heroTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 0 },
-  heroTitle: { color: '#1a2d5a', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '600', letterSpacing: -0.5 },
+  heroTitle: { color: '#0F172A', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '800', letterSpacing: -0.4 },
   
   newBtn: { 
-    backgroundColor: '#C9A84C', 
+    backgroundColor: '#000000', 
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 12, 
-    paddingVertical: 6, 
-    borderRadius: 10,
-    shadowColor: '#C9A84C',
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3
+    paddingHorizontal: 13, 
+    paddingVertical: 7.5, 
+    borderRadius: 999,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
   },
-  newBtnTxt: { color: '#1a2d5a', fontSize: 12, fontWeight: '800', letterSpacing: 0.3 },
+  newBtnTxt: { color: '#FFFFFF', fontSize: 12, fontWeight: '800', letterSpacing: 0.2 },
 
   // Screen Tab Bar
   screenTabBar: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F1F5F9',
     marginHorizontal: 16,
     marginBottom: 16,
-    borderRadius: 14,
+    borderRadius: 999,
     padding: 4,
     gap: 4,
-    elevation: 2, shadowColor: '#1a2d5a', shadowOpacity: 0.05, shadowRadius: 5, borderWidth: 1, borderColor: 'rgba(26,45,90,0.05)'
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
   },
-  screenTab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, paddingHorizontal: 4, borderRadius: 10, gap: 6 },
-  screenTabActive: { backgroundColor: '#1a2d5a' },
-  screenTabTxt: { fontSize: 11, fontWeight: '700', color: '#64748B', textAlign: 'center' },
-  screenTabTxtActive: { color: '#fff' },
+  screenTab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, paddingHorizontal: 4, borderRadius: 999, gap: 6 },
+  screenTabActive: { backgroundColor: '#000000' },
+  screenTabTxt: { fontSize: 12, fontWeight: '700', color: '#64748B', textAlign: 'center' },
+  screenTabTxtActive: { color: '#FFFFFF', fontWeight: '800' },
 
   scroll: { padding: 14 },
   
@@ -6442,21 +6880,21 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   listHeaderTitle: { fontSize: 16, fontWeight: '800', color: '#1a2d5a' },
   countBadge: { backgroundColor: '#E0E7FF', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
   countTxt: { fontSize: 11, fontWeight: '800', color: '#3730A3' },
-  songItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 10, elevation: 2, shadowColor: '#1a2d5a', shadowOpacity: 0.05, shadowRadius: 4, borderWidth: 1, borderColor: 'rgba(26,45,90,0.05)' },
+  songItem: { borderRadius: 16, marginBottom: 12 },
   songIconBox: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
   songItemTitle: { fontSize: 13, fontWeight: '800', color: '#1a2d5a' },
   songItemSub: { fontSize: 11, color: '#64748B', marginTop: 2, fontWeight: '600' },
   editBtn: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center' },
 
   // Picker Modal
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(26,45,90, 0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.7)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   pickerModalBox: { backgroundColor: '#fff', borderRadius: 16, width: '92%', maxWidth: 320, maxHeight: '65%', paddingVertical: 15, elevation: 10 },
   pickerModalTitle: { fontSize: 13, fontWeight: '800', color: '#1a2d5a', paddingHorizontal: 20, paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', marginBottom: 5, letterSpacing: 0.5 },
   pickerModalItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#F8FAFC' },
   pickerModalTxt: { fontSize: 15, color: '#1a2d5a', fontWeight: '600' },
 
   // Edit Modal
-  editModalBg: { flex: 1, backgroundColor: 'rgba(26,45,90,0.5)', justifyContent: 'flex-end' },
+  editModalBg: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.7)', justifyContent: 'flex-end' },
   editModalCard: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 26, borderTopRightRadius: 26, height: height * 0.88 },
   editModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: 'rgba(26,45,90,0.08)' },
   editModalTitle: { fontSize: 18, fontWeight: '900', color: '#1a2d5a' },

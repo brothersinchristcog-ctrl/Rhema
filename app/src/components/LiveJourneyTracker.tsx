@@ -13,6 +13,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import Geolocation from '@react-native-community/geolocation';
 import { colors, spacing, radius, typography, shadow } from '../theme/Theme';
+import { useTheme } from '../context/ThemeContext';
 
 interface LatLng {
   lat: number;
@@ -21,6 +22,7 @@ interface LatLng {
 }
 
 interface LiveJourneyTrackerProps {
+  eventId?: string;
   home: LatLng;
   destination: LatLng;
   destinationName: string;
@@ -45,6 +47,7 @@ const LiveJourneyTracker: React.FC<LiveJourneyTrackerProps> = ({
   altInitialDurationMins,
   isDisabled = false,
 }) => {
+  const { isDark } = useTheme();
   const [selectedMode, setSelectedMode] = useState<'primary' | 'alt'>('primary');
   const activeHome = selectedMode === 'primary' ? home : (altHome || home);
   const [isTracking, setIsTracking] = useState(false);
@@ -325,20 +328,20 @@ const LiveJourneyTracker: React.FC<LiveJourneyTrackerProps> = ({
     let icon = 'ellipse';
 
     if (status === 'Traveling') {
-      bgColor = '#E6F4EA'; // light green
-      textColor = '#137333'; // dark green
+      bgColor = isDark ? 'rgba(34, 197, 94, 0.2)' : '#E6F4EA';
+      textColor = isDark ? '#86EFAC' : '#137333';
       icon = 'radio-button-on';
     } else if (status === 'Stopped') {
-      bgColor = '#FEF7E0'; // light yellow
-      textColor = '#B06000'; // dark yellow
+      bgColor = isDark ? 'rgba(234, 179, 8, 0.2)' : '#FEF7E0';
+      textColor = isDark ? '#FDE047' : '#B06000';
       icon = 'alert-circle';
     } else if (status === 'Paused') {
-      bgColor = '#FFF3E0'; // light orange
-      textColor = '#E65100'; // dark orange
+      bgColor = isDark ? 'rgba(249, 115, 22, 0.2)' : '#FFF3E0';
+      textColor = isDark ? '#FDBA74' : '#E65100';
       icon = 'pause-circle';
     } else if (status === 'Arrived') {
-      bgColor = '#E8EAF6'; // light blue
-      textColor = '#283593'; // dark blue
+      bgColor = isDark ? 'rgba(99, 102, 241, 0.2)' : '#E8EAF6';
+      textColor = isDark ? '#A5B4FC' : '#283593';
       icon = 'checkmark-circle';
     }
 
@@ -351,12 +354,14 @@ const LiveJourneyTracker: React.FC<LiveJourneyTrackerProps> = ({
   };
 
   return (
-    <View style={styles.card}>
-      <View style={[styles.headerRow, { flexWrap: 'wrap', gap: 8 }]}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1, flexWrap: 'wrap', gap: 6 }}>
-          <Text style={styles.cardLabel}>{isSimulating ? 'Live Tracker (Simulation)' : 'Live Journey Tracker'}</Text>
-          <View style={{ backgroundColor: '#FFF', borderWidth: 1, borderColor: colors.primary, paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.full }}>
-            <Text style={{ fontSize: 10, fontWeight: '700', color: colors.primary }}>
+    <View style={[styles.card, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? '#27272A' : '#E2E8F0' }]}>
+      <View style={styles.headerRow}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 }}>
+          <Text style={[styles.cardLabel, { marginBottom: 0, color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+            {isSimulating ? 'Live Tracker (Simulation)' : 'Live Journey Tracker'}
+          </Text>
+          <View style={{ backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: isDark ? '#3F3F46' : '#CBD5E1', paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.full }}>
+            <Text style={{ fontSize: 10, fontWeight: '700', color: isDark ? '#FFFFFF' : '#0F172A' }}>
               {remainingKm.toFixed(1)} km • {remainingMins >= 60 ? `${Math.floor(remainingMins / 60)}h ${remainingMins % 60}m` : `${remainingMins}m`}
             </Text>
           </View>
@@ -377,16 +382,16 @@ const LiveJourneyTracker: React.FC<LiveJourneyTrackerProps> = ({
               </View>
               <View style={{ flexDirection: 'row', backgroundColor: colors.bgSecondary, borderRadius: radius.full, padding: 4 }}>
                 <TouchableOpacity 
-                  style={{ flex: 1, paddingVertical: 8, paddingHorizontal: 4, alignItems: 'center', backgroundColor: selectedMode === 'primary' ? colors.primary : 'transparent', borderRadius: radius.full, ...((selectedMode === 'primary') ? shadow.card : {}) }}
+                  style={{ flex: 1, paddingVertical: 8, paddingHorizontal: 4, alignItems: 'center', backgroundColor: selectedMode === 'primary' ? (isDark ? '#FFFFFF' : '#000000') : 'transparent', borderRadius: radius.full, ...((selectedMode === 'primary') ? shadow.card : {}) }}
                   onPress={() => { setSelectedMode('primary'); setIsTracking(false); setStatus('Traveling'); carProgress.setValue(0); }}
                 >
-                  <Text numberOfLines={1} ellipsizeMode="tail" style={{ fontSize: 11, fontWeight: '700', color: selectedMode === 'primary' ? '#FFF' : colors.textSecondary }}>{home.name || 'Origin'}</Text>
+                  <Text numberOfLines={1} ellipsizeMode="tail" style={{ fontSize: 11, fontWeight: '700', color: selectedMode === 'primary' ? (isDark ? '#000000' : '#FFFFFF') : colors.textSecondary }}>{home.name || 'Origin'}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity 
-                  style={{ flex: 1, paddingVertical: 8, paddingHorizontal: 4, alignItems: 'center', backgroundColor: selectedMode === 'alt' ? colors.primary : 'transparent', borderRadius: radius.full, ...((selectedMode === 'alt') ? shadow.card : {}) }}
+                  style={{ flex: 1, paddingVertical: 8, paddingHorizontal: 4, alignItems: 'center', backgroundColor: selectedMode === 'alt' ? (isDark ? '#FFFFFF' : '#000000') : 'transparent', borderRadius: radius.full, ...((selectedMode === 'alt') ? shadow.card : {}) }}
                   onPress={() => { setSelectedMode('alt'); setIsTracking(false); setStatus('Traveling'); carProgress.setValue(0); }}
                 >
-                  <Text numberOfLines={1} ellipsizeMode="tail" style={{ fontSize: 11, fontWeight: '700', color: selectedMode === 'alt' ? '#FFF' : colors.textSecondary }}>{altHome.name || 'Alt Origin'}</Text>
+                  <Text numberOfLines={1} ellipsizeMode="tail" style={{ fontSize: 11, fontWeight: '700', color: selectedMode === 'alt' ? (isDark ? '#000000' : '#FFFFFF') : colors.textSecondary }}>{altHome.name || 'Alt Origin'}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -394,17 +399,17 @@ const LiveJourneyTracker: React.FC<LiveJourneyTrackerProps> = ({
 
           <View style={styles.endpointsRow}>
             <View style={styles.endpoint}>
-              <Ionicons name="location" size={16} color={colors.primary} />
-              <Text style={styles.endpointText} numberOfLines={1}>{activeHome.name || 'Origin'}</Text>
+              <Ionicons name="location" size={16} color={isDark ? '#B9C8BD' : '#315C50'} />
+              <Text style={[styles.endpointText, { color: isDark ? '#FFFFFF' : '#0F172A' }]} numberOfLines={1}>{activeHome.name || 'Origin'}</Text>
             </View>
             <View style={[styles.endpoint, { alignItems: 'flex-end' }]}>
-              <Ionicons name="flag" size={16} color={colors.primary} />
-              <Text style={styles.endpointText} numberOfLines={1}>{destinationName}</Text>
+              <Ionicons name="flag" size={16} color={isDark ? '#B9C8BD' : '#315C50'} />
+              <Text style={[styles.endpointText, { color: isDark ? '#FFFFFF' : '#0F172A', textAlign: 'right' }]} numberOfLines={1}>{destinationName}</Text>
             </View>
           </View>
 
         <View style={styles.trackContainer}>
-          <View style={styles.trackLine} />
+          <View style={[styles.trackLine, { backgroundColor: isDark ? '#3F3F46' : '#E2E8F0' }]} />
           {isTracking || currentLocation ? (
             <Animated.View
               style={[
@@ -418,12 +423,12 @@ const LiveJourneyTracker: React.FC<LiveJourneyTrackerProps> = ({
               ]}
             >
               <Animated.View style={{ opacity: blinkAnim }}>
-                <MaterialCommunityIcons name="car-side" size={26} color={colors.primary} />
+                <MaterialCommunityIcons name="car-side" size={26} color={isDark ? '#B9C8BD' : '#315C50'} />
               </Animated.View>
             </Animated.View>
           ) : (
             <View style={[styles.carIconContainer, { left: '0%' }]}>
-              <MaterialCommunityIcons name="car-side" size={26} color={colors.textSecondary} />
+              <MaterialCommunityIcons name="car-side" size={26} color={isDark ? '#A1A1AA' : colors.textSecondary} />
             </View>
           )}
         </View>
@@ -431,29 +436,29 @@ const LiveJourneyTracker: React.FC<LiveJourneyTrackerProps> = ({
 
       {/* Stats Area */}
       {isTracking || currentLocation ? (
-        <View style={styles.statsContainer}>
+        <View style={[styles.statsContainer, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: isDark ? '#3F3F46' : '#E2E8F0', borderWidth: 1 }]}>
           <View style={styles.statBox}>
-            <Text style={styles.statLabel}>Current Location</Text>
+            <Text style={[styles.statLabel, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Current Location</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <Ionicons name="location" size={16} color={colors.error} />
-              <Text style={styles.statValue} numberOfLines={2}>
+              <Text style={[styles.statValue, { color: isDark ? '#FFFFFF' : '#0F172A' }]} numberOfLines={2}>
                 {currentLocationName}
               </Text>
             </View>
           </View>
 
-          <View style={styles.statDivider} />
+          <View style={[styles.statDivider, { backgroundColor: isDark ? '#3F3F46' : '#E2E8F0' }]} />
 
           <View style={styles.statBox}>
-            <Text style={styles.statLabel}>Remaining</Text>
+            <Text style={[styles.statLabel, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Remaining</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Ionicons name="map-outline" size={16} color={colors.primary} />
-                <Text style={styles.statValueSmall}>{remainingKm.toFixed(1)} km</Text>
+                <Ionicons name="map-outline" size={16} color={isDark ? '#B9C8BD' : '#315C50'} />
+                <Text style={[styles.statValueSmall, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>{remainingKm.toFixed(1)} km</Text>
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Ionicons name="time-outline" size={16} color={colors.primary} />
-                <Text style={styles.statValueSmall}>
+                <Ionicons name="time-outline" size={16} color={isDark ? '#B9C8BD' : '#315C50'} />
+                <Text style={[styles.statValueSmall, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
                   {remainingMins >= 60 ? `${Math.floor(remainingMins / 60)}h ${remainingMins % 60}m` : `${remainingMins}m`}
                 </Text>
               </View>
@@ -471,9 +476,25 @@ const LiveJourneyTracker: React.FC<LiveJourneyTrackerProps> = ({
               <Text style={[styles.startButtonText, { color: colors.textSecondary }]}>Available on event day</Text>
             </View>
           ) : (
-            <TouchableOpacity style={styles.startButton} onPress={isPaused ? handleResumeTracking : handleStartTracking}>
-              <Ionicons name="play" size={18} color="#FFF" />
-              <Text style={styles.startButtonText}>{isPaused ? 'Resume Journey' : 'Start Journey'}</Text>
+            <TouchableOpacity 
+              style={[
+                styles.startButton,
+                {
+                  backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: isDark ? 0.3 : 0.15,
+                  shadowRadius: 4,
+                  elevation: 3,
+                }
+              ]} 
+              onPress={isPaused ? handleResumeTracking : handleStartTracking}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="play" size={18} color={isDark ? '#000000' : '#FFFFFF'} />
+              <Text style={[styles.startButtonText, { color: isDark ? '#000000' : '#FFFFFF', fontWeight: '800' }]}>
+                {isPaused ? 'Resume Journey' : 'Start Journey'}
+              </Text>
             </TouchableOpacity>
           )
         ) : isTracking && !isPaused ? (

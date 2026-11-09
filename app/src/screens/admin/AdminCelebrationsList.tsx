@@ -242,12 +242,20 @@ export default function AdminCelebrationsList({ category, activeTab, onSelectMem
       <ScrollView contentContainerStyle={styles.content}>
 
         <View style={[styles.searchRow, { marginRight: 0 }]}>
-          <View style={[styles.searchBox, { marginRight: 0 }]}>
-            <Search size={18} color="#9CA3AF" style={styles.searchIcon} />
+          <View style={[
+            styles.searchBox, 
+            { 
+              marginRight: 0,
+              borderWidth: 1.5,
+              borderColor: isDark ? '#3F3F46' : '#94A3B8',
+              backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+            }
+          ]}>
+            <Search size={18} color={isDark ? '#A1A1AA' : '#64748B'} style={styles.searchIcon} />
             <TextInput 
-              style={styles.searchInput}
+              style={[styles.searchInput, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
               placeholder="Search by name..."
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
               value={searchQuery}
               onChangeText={setSearchQuery}
             />
@@ -256,23 +264,22 @@ export default function AdminCelebrationsList({ category, activeTab, onSelectMem
 
         <View style={styles.listHeaderRow}>
           <Text style={styles.foundText}>{filteredMembers.length} members found</Text>
-          {activeTab === 'Today' && filteredMembers.length > 0 && (
-            <TouchableOpacity style={styles.autoSendBtn} onPress={handleAutoSendAll} disabled={isSendingAll}>
-              {isSendingAll ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <>
-                  <Send size={14} color="#fff" style={{ marginRight: 6 }} />
-                  <Text style={styles.autoSendBtnTxt}>Auto-Send All</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          )}
         </View>
 
         {/* List */}
         {filteredMembers.map((member, idx) => (
-          <TouchableOpacity key={member.id || idx} style={styles.memberCard} onPress={() => onSelectMember(member)}>
+          <TouchableOpacity 
+            key={member.id || idx} 
+            style={[
+              styles.memberCard,
+              {
+                borderWidth: 1.5,
+                borderColor: isDark ? '#27272A' : '#CBD5E1',
+              }
+            ]} 
+            onPress={() => onSelectMember(member)}
+            activeOpacity={0.75}
+          >
             
             {/* Avatar */}
             <MemberAvatar 
@@ -440,8 +447,8 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     borderRadius: 20,
     paddingHorizontal: 16,
     height: 48,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderWidth: 1.5,
+    borderColor: '#94A3B8',
     marginRight: 12,
   },
   searchIcon: {
@@ -474,6 +481,8 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     padding: 16,
     marginBottom: 16,
     alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.03,

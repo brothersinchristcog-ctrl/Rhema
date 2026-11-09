@@ -46,14 +46,39 @@ export default function AdminCelebrationsMemberDetails({ member, category, onBac
   if (!member) {
     return (
       <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.circularBackBtn} onPress={onBack} activeOpacity={0.7}>
-          <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
-        </TouchableOpacity>
-          <View style={styles.heroTitles}>
-            <Text style={styles.headerTitle}>Member Details</Text>
-            <Text style={styles.headerSub}>CELEBRATION</Text>
+        <View style={[
+          styles.header,
+          {
+            backgroundColor: isDark ? '#000000' : '#FFFFFF',
+            borderBottomWidth: 1.5,
+            borderBottomColor: isDark ? '#27272A' : '#CBD5E1',
+            paddingBottom: 14,
+            paddingTop: 12,
+            paddingHorizontal: 20,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }
+        ]}>
+          <TouchableOpacity 
+            style={[
+              styles.circularBackBtn,
+              {
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#FFFFFF',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.3)' : '#CBD5E1',
+                borderWidth: 1.5,
+              }
+            ]} 
+            onPress={onBack} 
+            activeOpacity={0.7}
+          >
+            <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.2} />
+          </TouchableOpacity>
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={[styles.headerTitle, { color: isDark ? '#FFFFFF' : '#0F172A', textAlign: 'center' }]}>Member Details</Text>
+            <Text style={[styles.headerSub, { color: isDark ? '#A1A1AA' : '#64748B', textAlign: 'center' }]}>CELEBRATION</Text>
           </View>
+          <View style={{ width: 40 }} />
         </View>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <Text style={{ color: '#64748B', fontSize: 14, fontWeight: '700' }}>No member details selected</Text>
@@ -64,15 +89,40 @@ export default function AdminCelebrationsMemberDetails({ member, category, onBac
 
   return (
     <View style={styles.container}>
-            {/* ── Fixed Header ── */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.circularBackBtn} onPress={onBack} activeOpacity={0.7}>
-          <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
+      {/* ── Fixed Header ── */}
+      <View style={[
+        styles.header,
+        {
+          backgroundColor: isDark ? '#000000' : '#FFFFFF',
+          borderBottomWidth: 1.5,
+          borderBottomColor: isDark ? '#27272A' : '#CBD5E1',
+          paddingBottom: 14,
+          paddingTop: 12,
+          paddingHorizontal: 20,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }
+      ]}>
+        <TouchableOpacity 
+          style={[
+            styles.circularBackBtn,
+            {
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#FFFFFF',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.3)' : '#CBD5E1',
+              borderWidth: 1.5,
+            }
+          ]} 
+          onPress={onBack} 
+          activeOpacity={0.7}
+        >
+          <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.2} />
         </TouchableOpacity>
-        <View style={styles.heroTitles}>
-          <Text style={styles.headerTitle}>Member Details</Text>
-          <Text style={styles.headerSub}>CELEBRATION</Text>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={[styles.headerTitle, { color: isDark ? '#FFFFFF' : '#0F172A', textAlign: 'center' }]}>Member Details</Text>
+          <Text style={[styles.headerSub, { color: isDark ? '#A1A1AA' : '#64748B', textAlign: 'center' }]}>CELEBRATION</Text>
         </View>
+        <View style={{ width: 40 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
@@ -134,12 +184,12 @@ export default function AdminCelebrationsMemberDetails({ member, category, onBac
               : '--';
             return displayPhone ? (
               <TouchableOpacity onPress={() => Linking.openURL(`tel:${displayPhone}`)}>
-                <Text style={[styles.cardValue, { color: '#1a2d5a', textDecorationLine: 'underline' }]}>
+                <Text style={[styles.cardValue, { color: isDark ? '#60A5FA' : '#1a2d5a', textDecorationLine: 'underline' }]}>
                   {displayLabel}
                 </Text>
               </TouchableOpacity>
             ) : (
-              <Text style={styles.cardValue}>--</Text>
+              <Text style={[styles.cardValue, { color: isDark ? '#FFFFFF' : '#111827' }]}>--</Text>
             );
           })()}
           {member.isReferencePhone && (
@@ -150,9 +200,21 @@ export default function AdminCelebrationsMemberDetails({ member, category, onBac
         </View>
 
         {/* Action Button */}
-        <TouchableOpacity style={styles.primaryBtn} onPress={onPrepareWish}>
-          <Gift size={20} color="#162057" style={{ marginRight: 8 }} />
-          <Text style={styles.primaryBtnTxt}>Prepare Wish</Text>
+        <TouchableOpacity 
+          style={[
+            styles.primaryBtn,
+            {
+              backgroundColor: isDark ? '#FFFFFF' : '#000000',
+              borderColor: isDark ? '#FFFFFF' : '#000000',
+              borderWidth: 1,
+              shadowColor: isDark ? '#FFFFFF' : '#000000',
+            }
+          ]} 
+          onPress={onPrepareWish}
+          activeOpacity={0.8}
+        >
+          <Gift size={20} color={isDark ? '#000000' : '#FFFFFF'} style={{ marginRight: 8 }} />
+          <Text style={[styles.primaryBtnTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>Prepare Wish</Text>
         </TouchableOpacity>
 
       </ScrollView>

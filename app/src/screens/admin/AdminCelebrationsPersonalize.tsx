@@ -70,38 +70,112 @@ export default function AdminCelebrationsPersonalize({
   return (
     <View style={styles.container}>
             {/* ── Fixed Header ── */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.circularBackBtn} onPress={onBack} activeOpacity={0.7}>
-          <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
+      <View style={[
+        styles.header,
+        {
+          backgroundColor: isDark ? '#000000' : '#FFFFFF',
+          borderBottomWidth: 1.5,
+          borderBottomColor: isDark ? '#27272A' : '#CBD5E1',
+          paddingBottom: 14,
+          paddingTop: 12,
+          paddingHorizontal: 20,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }
+      ]}>
+        <TouchableOpacity 
+          style={[
+            styles.circularBackBtn,
+            {
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#FFFFFF',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.3)' : '#CBD5E1',
+              borderWidth: 1.5,
+            }
+          ]} 
+          onPress={onBack} 
+          activeOpacity={0.7}
+        >
+          <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.2} />
         </TouchableOpacity>
-        <View style={[styles.heroTitles, { borderLeftWidth: 0, paddingLeft: 0, marginLeft: 12 }]}>
-          <Text style={styles.headerTitle}>Personalize</Text>
-          <Text style={styles.headerSub}>PREPARE WISH</Text>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={[styles.headerTitle, { color: isDark ? '#FFFFFF' : '#0F172A', textAlign: 'center' }]}>Personalize</Text>
+          <Text style={[styles.headerSub, { color: isDark ? '#A1A1AA' : '#64748B', textAlign: 'center' }]}>PREPARE WISH</Text>
         </View>
+        <View style={{ width: 40 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
         
         {/* Intro */}
-        <Text style={styles.sectionTitle}>PERSONALIZE THE GREETING</Text>
-        <Text style={styles.forText}>
-          for <Text style={styles.forName}>{member?.name}</Text>
+        <Text style={[styles.sectionTitle, { color: isDark ? '#B9C8BD' : '#315C50' }]}>PERSONALIZE THE GREETING</Text>
+        <Text style={[styles.forText, { color: isDark ? '#B9C8BD' : '#315C50' }]}>
+          for <Text style={[styles.forName, { color: isDark ? '#B9C8BD' : '#315C50' }]}>{member?.name}</Text>
         </Text>
 
         {/* Layout Toggle */}
-        <Text style={[styles.sectionTitle, { marginTop: 32, marginBottom: 12 }]}>CARD LAYOUT</Text>
-        <View style={styles.toggleContainer}>
+        <Text style={[styles.sectionTitle, { marginTop: 32, marginBottom: 12, color: isDark ? '#C6A66B' : '#98713D' }]}>CARD LAYOUT</Text>
+        <View style={[
+          styles.toggleContainer,
+          {
+            backgroundColor: isDark ? '#18181B' : '#F1F5F9',
+            borderColor: isDark ? '#27272A' : '#CBD5E1',
+            borderWidth: 1.5,
+          }
+        ]}>
           <TouchableOpacity 
-            style={[styles.toggleBtn, layout === 'theme' && styles.toggleBtnActive]}
+            style={[
+              styles.toggleBtn, 
+              layout === 'theme' ? {
+                backgroundColor: isDark ? '#FFFFFF' : '#000000',
+              } : {
+                backgroundColor: 'transparent',
+              }
+            ]}
             onPress={() => onLayoutChange('theme')}
+            activeOpacity={0.75}
           >
-            <Text style={[styles.toggleTxt, layout === 'theme' && styles.toggleTxtActive]}>Theme & Circle Photo</Text>
+            <Text 
+              style={[
+                styles.toggleTxt, 
+                layout === 'theme' ? {
+                  color: isDark ? '#000000' : '#FFFFFF',
+                  fontWeight: '700',
+                } : {
+                  color: isDark ? '#A1A1AA' : '#64748B',
+                  fontWeight: '600',
+                }
+              ]}
+            >
+              Theme & Circle Photo
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity 
-            style={[styles.toggleBtn, layout === 'photo' && styles.toggleBtnActive]}
+            style={[
+              styles.toggleBtn, 
+              layout === 'photo' ? {
+                backgroundColor: isDark ? '#FFFFFF' : '#000000',
+              } : {
+                backgroundColor: 'transparent',
+              }
+            ]}
             onPress={() => onLayoutChange('photo')}
+            activeOpacity={0.75}
           >
-            <Text style={[styles.toggleTxt, layout === 'photo' && styles.toggleTxtActive]}>Only Photo</Text>
+            <Text 
+              style={[
+                styles.toggleTxt, 
+                layout === 'photo' ? {
+                  color: isDark ? '#000000' : '#FFFFFF',
+                  fontWeight: '700',
+                } : {
+                  color: isDark ? '#A1A1AA' : '#64748B',
+                  fontWeight: '600',
+                }
+              ]}
+            >
+              Only Photo
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -142,7 +216,7 @@ export default function AdminCelebrationsPersonalize({
         </TouchableOpacity>
 
         {/* Overlays */}
-        <Text style={[styles.sectionTitle, { marginTop: 32 }]}>CARD OVERLAYS (Optional)</Text>
+        <Text style={[styles.sectionTitle, { marginTop: 32, color: isDark ? '#F2F0E8' : '#202923' }]}>CARD OVERLAYS (Optional)</Text>
 
         <Text style={styles.label}>Title Overlay</Text>
         <TextInput 
@@ -163,7 +237,7 @@ export default function AdminCelebrationsPersonalize({
         />
 
         {/* Greeting Message */}
-        <Text style={[styles.sectionTitle, { marginTop: 32 }]}>GREETING MESSAGE</Text>
+        <Text style={[styles.sectionTitle, { marginTop: 32, color: isDark ? '#D99A8C' : '#9F4A3E' }]}>GREETING MESSAGE</Text>
         <TextInput 
           style={[styles.input, styles.textArea]}
           value={greetingMessage}
@@ -175,9 +249,22 @@ export default function AdminCelebrationsPersonalize({
         />
 
         {/* Action Button */}
-        <TouchableOpacity style={styles.primaryBtn} onPress={onPreview}>
-          <Eye size={20} color="#162057" style={{ marginRight: 8 }} />
-          <Text style={styles.primaryBtnTxt}>Preview Greeting</Text>
+        <TouchableOpacity 
+          style={[
+            styles.primaryBtn,
+            {
+              backgroundColor: isDark ? '#FFFFFF' : '#000000',
+              borderColor: isDark ? '#FFFFFF' : '#000000',
+              borderWidth: 1,
+              shadowColor: isDark ? '#FFFFFF' : '#000000',
+              marginBottom: 40,
+            }
+          ]} 
+          onPress={onPreview}
+          activeOpacity={0.8}
+        >
+          <Eye size={20} color={isDark ? '#000000' : '#FFFFFF'} style={{ marginRight: 8 }} />
+          <Text style={[styles.primaryBtnTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>Preview Greeting</Text>
         </TouchableOpacity>
 
       </ScrollView>
@@ -227,7 +314,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   content: {
     padding: 20,
     paddingTop: 10,
-    paddingBottom: 40,
+    paddingBottom: 60,
   },
   sectionTitle: {
     color: '#64748B',
