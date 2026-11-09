@@ -529,7 +529,7 @@ class ServiceRosterService {
         updatedAt: firestore.FieldValue.serverTimestamp()
       };
 
-      await newDocRef.set(newPlan);
+      await newDocRef.set(this.sanitizeForFirestore(newPlan));
       createdPlans.push(newPlan);
     }
 
@@ -538,20 +538,35 @@ class ServiceRosterService {
 
   /**
    * Remove undefined fields recursively before writing to Firestore
+   * Prevents Firestore "Unsupported field value: undefined" errors
    */
   sanitizeForFirestore<T>(data: T): T {
-    if (data === null || data === undefined) return data;
+    if (data === null || data === undefined) return null as any;
     if (Array.isArray(data)) {
-      return data.map(item => this.sanitizeForFirestore(item)) as any;
+      return data
+        .filter(item => item !== undefined)
+        .map(item => this.sanitizeForFirestore(item)) as any;
     }
-    if (typeof data === 'object' && !(data instanceof Date) && !(data as any)?._methodName) {
-      const sanitized: any = {};
-      for (const [key, val] of Object.entries(data)) {
+    if (typeof data === 'object') {
+      // Preserve Firestore FieldValue, Timestamp, FieldPath, and Date instances
+      if (
+        (data as any).constructor &&
+        ((data as any).constructor.name === 'FieldValue' ||
+          (data as any).constructor.name === 'Timestamp' ||
+          (data as any).constructor.name === 'FieldPath' ||
+          (data as any)._methodName ||
+          (data as any)._fieldValue ||
+          data instanceof Date)
+      ) {
+        return data;
+      }
+      const sanitized: Record<string, any> = {};
+      for (const [key, val] of Object.entries(data as Record<string, any>)) {
         if (val !== undefined) {
           sanitized[key] = this.sanitizeForFirestore(val);
         }
       }
-      return sanitized;
+      return sanitized as any;
     }
     return data;
   }
@@ -1244,27 +1259,35 @@ class ServiceRosterService {
       throw new Error('At least one candidate is required to dispatch an assignment queue.');
     }
 
+    const safeRoleId = (params.roleId || 'role').replace(/[^a-zA-Z0-9_-]/g, '_');
     const timeoutMinutes = params.timeoutMinutes || 1440; // Default 24 hours
     const nowIso = new Date().toISOString();
     const deadlineIso = new Date(Date.now() + timeoutMinutes * 60 * 1000).toISOString();
 
-    const formattedCandidates: CandidateEntry[] = params.candidates.map((c, idx) => ({
-      candidateId: c.candidateId,
-      candidateName: c.candidateName,
-      candidatePhone: c.candidatePhone,
-      status: idx === 0 ? 'pending' : 'waiting',
-      requestedAt: idx === 0 ? nowIso : undefined,
-      deadline: idx === 0 ? deadlineIso : undefined,
-    }));
+    const formattedCandidates: CandidateEntry[] = params.candidates.map((c, idx) => {
+      const entry: CandidateEntry = {
+        candidateId: c.candidateId || '',
+        candidateName: c.candidateName || 'Volunteer',
+        status: idx === 0 ? 'pending' : 'waiting'
+      };
+      if (c.candidatePhone) {
+        entry.candidatePhone = c.candidatePhone;
+      }
+      if (idx === 0) {
+        entry.requestedAt = nowIso;
+        entry.deadline = deadlineIso;
+      }
+      return entry;
+    });
 
-    const queueRecord: ServiceAssignmentQueue = {
-      id: params.roleId,
+    const primaryCandidate = formattedCandidates[0];
+
+    const queueRecord: Record<string, any> = {
+      id: safeRoleId,
       serviceId,
       churchId: churchId || 'rhema',
-      roleId: params.roleId,
-      roleTitle: params.roleTitle,
-      activityId: params.activityId,
-      activityName: params.activityName,
+      roleId: safeRoleId,
+      roleTitle: params.roleTitle || 'Ministry Responsibility',
       status: 'pending',
       currentCandidateIndex: 0,
       timeoutMinutes,
@@ -1273,46 +1296,59 @@ class ServiceRosterService {
         {
           timestamp: nowIso,
           action: 'queue_dispatched',
-          candidateId: formattedCandidates[0]?.candidateId,
-          candidateName: formattedCandidates[0]?.candidateName,
-          details: `Dispatched to Candidate #1 (${formattedCandidates[0]?.candidateName}) with ${timeoutMinutes / 60}h deadline.`
+          candidateId: primaryCandidate?.candidateId || '',
+          candidateName: primaryCandidate?.candidateName || 'Volunteer',
+          details: `Dispatched to Candidate #1 (${primaryCandidate?.candidateName || 'Volunteer'}) with ${Math.round(timeoutMinutes / 60)}h deadline.`
         }
       ],
       createdAt: firestore.FieldValue.serverTimestamp(),
       updatedAt: firestore.FieldValue.serverTimestamp()
     };
 
-    const queueRef = this.getAssignmentQueuesCol(churchId, serviceId).doc(params.roleId);
-    await queueRef.set(queueRecord);
+    if (params.activityId) {
+      queueRecord.activityId = params.activityId;
+    }
+    if (params.activityName) {
+      queueRecord.activityName = params.activityName;
+    }
+
+    const sanitizedQueue = this.sanitizeForFirestore(queueRecord);
+    const queueRef = this.getAssignmentQueuesCol(churchId, serviceId).doc(safeRoleId);
+    await queueRef.set(sanitizedQueue);
 
     // Sync state to parent service plan
     const planRef = this.getServicePlansCol(churchId).doc(serviceId);
-    await planRef.update({
-      [`assignments.${params.roleId}`]: formattedCandidates[0]?.candidateName,
-      [`assignmentMemberIds.${params.roleId}`]: formattedCandidates[0]?.candidateId,
-      [`assignmentStatus.${params.roleId}`]: 'pending',
+    const planUpdates: Record<string, any> = {
       updatedAt: firestore.FieldValue.serverTimestamp()
-    });
+    };
+    if (primaryCandidate?.candidateName) {
+      planUpdates[`assignments.${safeRoleId}`] = primaryCandidate.candidateName;
+    }
+    if (primaryCandidate?.candidateId) {
+      planUpdates[`assignmentMemberIds.${safeRoleId}`] = primaryCandidate.candidateId;
+    }
+    planUpdates[`assignmentStatus.${safeRoleId}`] = 'pending';
+    await planRef.update(this.sanitizeForFirestore(planUpdates));
 
     // Write in-app notification to the active candidate immediately
     try {
       const activeCand = formattedCandidates[0];
       if (activeCand?.candidateId) {
-        const notifDoc = {
+        const notifDoc = this.sanitizeForFirestore({
           type: 'service_assignment',
-          title: `New Service Assignment: ${params.roleTitle}`,
-          body: `You are requested to serve as ${params.roleTitle}. Please respond within ${Math.max(1, Math.round(timeoutMinutes / 60))} hours.`,
-          churchId,
+          title: `New Service Assignment: ${params.roleTitle || 'Ministry Responsibility'}`,
+          body: `You are requested to serve as ${params.roleTitle || 'volunteer'}. Please respond within ${Math.max(1, Math.round(timeoutMinutes / 60))} hours.`,
+          churchId: churchId || 'rhema',
           serviceId,
-          roleId: params.roleId,
-          roleTitle: params.roleTitle,
+          roleId: safeRoleId,
+          roleTitle: params.roleTitle || 'Ministry Responsibility',
           activityId: params.activityId || '',
           activityName: params.activityName || '',
           candidateId: activeCand.candidateId,
           status: 'pending',
           read: false,
           createdAt: firestore.FieldValue.serverTimestamp()
-        };
+        });
         await firestore()
           .collection(RHEMA_ROOT_COLLECTION)
           .doc(churchId || 'rhema')
@@ -1379,21 +1415,21 @@ class ServiceRosterService {
           details: `Confirmed as ${qData.roleTitle}`
         };
 
-        transaction.update(queueRef, {
+        transaction.update(queueRef, this.sanitizeForFirestore({
           status: 'confirmed',
           confirmedCandidateId: activeCandidate.candidateId,
           confirmedCandidateName: activeCandidate.candidateName,
           candidates,
           history: firestore.FieldValue.arrayUnion(historyEntry),
           updatedAt: firestore.FieldValue.serverTimestamp()
-        });
+        }));
 
-        transaction.update(planRef, {
-          [`assignments.${roleId}`]: activeCandidate.candidateName,
-          [`assignmentMemberIds.${roleId}`]: activeCandidate.candidateId,
+        transaction.update(planRef, this.sanitizeForFirestore({
+          [`assignments.${roleId}`]: activeCandidate.candidateName || '',
+          [`assignmentMemberIds.${roleId}`]: activeCandidate.candidateId || '',
           [`assignmentStatus.${roleId}`]: 'confirmed',
           updatedAt: firestore.FieldValue.serverTimestamp()
-        });
+        }));
       } else {
         // Decline and auto-cascade to next candidate in queue
         candidates[curIdx] = {
@@ -1424,20 +1460,20 @@ class ServiceRosterService {
             details: `Declined: ${reason || 'Unavailable'}. Cascaded to Candidate #${nextIdx + 1} (${nextCand?.candidateName}).`
           };
 
-          transaction.update(queueRef, {
+          transaction.update(queueRef, this.sanitizeForFirestore({
             status: 'pending',
             currentCandidateIndex: nextIdx,
             candidates,
             history: firestore.FieldValue.arrayUnion(historyEntry),
             updatedAt: firestore.FieldValue.serverTimestamp()
-          });
+          }));
 
-          transaction.update(planRef, {
-            [`assignments.${roleId}`]: nextCand?.candidateName,
-            [`assignmentMemberIds.${roleId}`]: nextCand?.candidateId,
+          transaction.update(planRef, this.sanitizeForFirestore({
+            [`assignments.${roleId}`]: nextCand?.candidateName || '',
+            [`assignmentMemberIds.${roleId}`]: nextCand?.candidateId || '',
             [`assignmentStatus.${roleId}`]: 'pending',
             updatedAt: firestore.FieldValue.serverTimestamp()
-          });
+          }));
         } else {
           // All candidates exhausted!
           const historyEntry = {
@@ -1448,17 +1484,17 @@ class ServiceRosterService {
             details: `Declined: ${reason || 'Unavailable'}. All candidates in queue have declined or timed out.`
           };
 
-          transaction.update(queueRef, {
+          transaction.update(queueRef, this.sanitizeForFirestore({
             status: 'exhausted',
             candidates,
             history: firestore.FieldValue.arrayUnion(historyEntry),
             updatedAt: firestore.FieldValue.serverTimestamp()
-          });
+          }));
 
-          transaction.update(planRef, {
+          transaction.update(planRef, this.sanitizeForFirestore({
             [`assignmentStatus.${roleId}`]: 'declined',
             updatedAt: firestore.FieldValue.serverTimestamp()
-          });
+          }));
         }
       }
     });
@@ -1487,7 +1523,7 @@ class ServiceRosterService {
       details: notes || 'Admin manual assignment override'
     };
 
-    await queueRef.set({
+    await queueRef.set(this.sanitizeForFirestore({
       id: roleId,
       serviceId,
       churchId: churchId || 'rhema',
@@ -1497,15 +1533,18 @@ class ServiceRosterService {
       confirmedCandidateName: memberName,
       history: firestore.FieldValue.arrayUnion(historyEntry),
       updatedAt: firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
+    }), { merge: true });
 
-    await planRef.update({
-      [`assignments.${roleId}`]: memberName,
-      [`assignmentMemberIds.${roleId}`]: memberId,
+    const planUpdates: Record<string, any> = {
+      [`assignments.${roleId}`]: memberName || '',
+      [`assignmentMemberIds.${roleId}`]: memberId || '',
       [`assignmentStatus.${roleId}`]: 'confirmed',
-      ...(notes ? { [`assignmentNotes.${roleId}`]: notes } : {}),
       updatedAt: firestore.FieldValue.serverTimestamp()
-    });
+    };
+    if (notes) {
+      planUpdates[`assignmentNotes.${roleId}`] = notes;
+    }
+    await planRef.update(this.sanitizeForFirestore(planUpdates));
   }
 
   /**
@@ -1663,14 +1702,14 @@ class ServiceRosterService {
   async createOrUpdateRehearsal(churchId: string, serviceId: string, rehearsal: Partial<ServiceRehearsal>): Promise<void> {
     const col = this.getRehearsalsCol(churchId, serviceId);
     const docId = rehearsal.id || col.doc().id;
-    await col.doc(docId).set({
+    await col.doc(docId).set(this.sanitizeForFirestore({
       ...rehearsal,
       id: docId,
       serviceId,
       churchId: churchId || 'rhema',
       updatedAt: firestore.FieldValue.serverTimestamp(),
       ...(rehearsal.id ? {} : { createdAt: firestore.FieldValue.serverTimestamp() })
-    }, { merge: true });
+    }), { merge: true });
   }
 
   async deleteRehearsal(churchId: string, serviceId: string, rehearsalId: string): Promise<void> {
@@ -1724,7 +1763,7 @@ class ServiceRosterService {
     record: Partial<VolunteerAttendanceRecord>
   ): Promise<void> {
     const docId = `${serviceId}_${record.memberId}_${record.roleId || 'role'}`;
-    await this.getAttendanceCol(churchId, serviceId).doc(docId).set({
+    await this.getAttendanceCol(churchId, serviceId).doc(docId).set(this.sanitizeForFirestore({
       id: docId,
       serviceId,
       churchId: churchId || 'rhema',
@@ -1737,7 +1776,7 @@ class ServiceRosterService {
       markedByName: record.markedByName || 'Administrator',
       markedAt: firestore.FieldValue.serverTimestamp(),
       notes: record.notes || ''
-    }, { merge: true });
+    }), { merge: true });
   }
 
   async bulkMarkVolunteerAttendance(
@@ -1751,7 +1790,7 @@ class ServiceRosterService {
     records.forEach(record => {
       const docId = `${serviceId}_${record.memberId}_${record.roleId || 'role'}`;
       const docRef = col.doc(docId);
-      batch.set(docRef, {
+      batch.set(docRef, this.sanitizeForFirestore({
         id: docId,
         serviceId,
         churchId: churchId || 'rhema',
@@ -1764,7 +1803,7 @@ class ServiceRosterService {
         markedByName: record.markedByName || 'Administrator',
         markedAt: firestore.FieldValue.serverTimestamp(),
         notes: record.notes || ''
-      }, { merge: true });
+      }), { merge: true });
     });
 
     await batch.commit();

@@ -266,12 +266,28 @@ export async function sendCandidateAssignmentPush(params) {
     if (tokens.length === 0) {
         console.log(`[RosterNotification] Candidate ${candidate.candidateName} (${candidate.candidateId}) has no registered FCM push token. (In-app notification saved).`);
         // Still mark notification as attempted in queue record
-        await queueRef.update({
-            [`candidates.${candidateIndex}.notificationSent`]: true,
-            [`candidates.${candidateIndex}.notifiedAt`]: FieldValue.serverTimestamp(),
-            [`candidates.${candidateIndex}.noFcmToken`]: true,
-            updatedAt: FieldValue.serverTimestamp()
-        });
+        try {
+            const qSnap = await queueRef.get();
+            if (qSnap.exists) {
+                const qData = qSnap.data() || {};
+                const cands = [...(qData.candidates || [])];
+                if (cands[candidateIndex]) {
+                    cands[candidateIndex] = {
+                        ...cands[candidateIndex],
+                        notificationSent: true,
+                        notifiedAt: new Date().toISOString(),
+                        noFcmToken: true
+                    };
+                    await queueRef.update({
+                        candidates: cands,
+                        updatedAt: FieldValue.serverTimestamp()
+                    });
+                }
+            }
+        }
+        catch (e) {
+            console.warn(`[RosterNotification] Could not update queue for noFcmToken:`, e);
+        }
         return { success: true, tokensCount: 0 };
     }
     // 4. Dispatch FCM push to each device token
@@ -325,12 +341,28 @@ export async function sendCandidateAssignmentPush(params) {
         }
     }
     // 5. Update queue document state
-    await queueRef.update({
-        [`candidates.${candidateIndex}.notificationSent`]: true,
-        [`candidates.${candidateIndex}.notifiedAt`]: FieldValue.serverTimestamp(),
-        [`candidates.${candidateIndex}.pushSentCount`]: sentCount,
-        updatedAt: FieldValue.serverTimestamp()
-    });
+    try {
+        const qSnap = await queueRef.get();
+        if (qSnap.exists) {
+            const qData = qSnap.data() || {};
+            const cands = [...(qData.candidates || [])];
+            if (cands[candidateIndex]) {
+                cands[candidateIndex] = {
+                    ...cands[candidateIndex],
+                    notificationSent: true,
+                    notifiedAt: new Date().toISOString(),
+                    pushSentCount: sentCount
+                };
+                await queueRef.update({
+                    candidates: cands,
+                    updatedAt: FieldValue.serverTimestamp()
+                });
+            }
+        }
+    }
+    catch (e) {
+        console.warn(`[RosterNotification] Could not update queue candidate state:`, e);
+    }
     return { success: sentCount > 0, tokensCount: sentCount, error: lastError };
 }
 /**
@@ -404,13 +436,24 @@ export const onServiceAssignmentResponded = onDocumentUpdated({
             const timeoutMinutes = afterData.timeoutMinutes || 120; // 2 hours default
             const deadlineDate = new Date(Date.now() + timeoutMinutes * 60 * 1000);
             await db.runTransaction(async (transaction) => {
+                const freshSnap = await transaction.get(queueRef);
+                if (!freshSnap.exists)
+                    return;
+                const freshData = freshSnap.data() || {};
+                const freshCands = [...(freshData.candidates || [])];
+                if (freshCands[nextIdx]) {
+                    freshCands[nextIdx] = {
+                        ...freshCands[nextIdx],
+                        status: 'pending',
+                        requestedAt: new Date().toISOString(),
+                        deadline: deadlineDate.toISOString(),
+                        notificationSent: false
+                    };
+                }
                 transaction.update(queueRef, {
                     currentCandidateIndex: nextIdx,
                     status: 'pending',
-                    [`candidates.${nextIdx}.status`]: 'pending',
-                    [`candidates.${nextIdx}.requestedAt`]: FieldValue.serverTimestamp(),
-                    [`candidates.${nextIdx}.deadline`]: deadlineDate.toISOString(),
-                    [`candidates.${nextIdx}.notificationSent`]: false,
+                    candidates: freshCands,
                     history: FieldValue.arrayUnion({
                         timestamp: new Date().toISOString(),
                         action: `auto_cascade_to_candidate_${nextIdx + 1}`,
@@ -480,9 +523,16 @@ export const checkServiceAssignmentTimeoutsCron = onSchedule({
             const deadlineDate = new Date(activeCandidate.deadline);
             if (now > deadlineDate) {
                 console.log(`[RosterCron] Candidate ${activeCandidate.candidateName} timed out on doc ${doc.id}`);
+                const freshCands = [...candidates];
+                if (freshCands[curIdx]) {
+                    freshCands[curIdx] = {
+                        ...freshCands[curIdx],
+                        status: 'timed_out',
+                        timedOutAt: new Date().toISOString()
+                    };
+                }
                 await doc.ref.update({
-                    [`candidates.${curIdx}.status`]: 'timed_out',
-                    [`candidates.${curIdx}.timedOutAt`]: FieldValue.serverTimestamp(),
+                    candidates: freshCands,
                     history: FieldValue.arrayUnion({
                         timestamp: new Date().toISOString(),
                         action: `candidate_${curIdx + 1}_timed_out`,

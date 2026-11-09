@@ -1187,22 +1187,47 @@ export default function AdminServicePlanner({ navigation }: any) {
 
               // Helper to resolve member ID from member name or phone
               const resolveMemberId = (rawId?: string, rawName?: string): { id?: string; name: string; phone?: string } => {
-                const name = (rawName || '').trim();
-                if (rawId && churchMembers.some(m => m.id === rawId)) {
+                const cleanName = (rawName || '').trim();
+                const lowerName = cleanName.toLowerCase();
+
+                if (rawId && rawId.trim()) {
                   const m = churchMembers.find(m => m.id === rawId);
-                  return { id: rawId, name: m?.name || name, phone: m?.phone };
+                  if (m) {
+                    const mName = m.name || m.fullName || `${m.firstName || ''} ${m.lastName || ''}`.trim() || cleanName;
+                    return { id: rawId, name: mName, phone: m.phone || m.phoneNumber };
+                  }
+                  return { id: rawId, name: cleanName, phone: undefined };
                 }
-                if (name) {
-                  const found = churchMembers.find(m =>
-                    (m.name && m.name.toLowerCase().trim() === name.toLowerCase().trim()) ||
-                    (m.firstName && m.firstName.toLowerCase().trim() === name.toLowerCase().trim()) ||
-                    (m.phone && m.phone === name)
-                  );
-                  if (found) {
-                    return { id: found.id, name: found.name || name, phone: found.phone };
+
+                if (lowerName) {
+                  // 1. Exact match
+                  const exactMatch = churchMembers.find(m => {
+                    const mName = (m.name || m.fullName || `${m.firstName || ''} ${m.lastName || ''}`.trim() || '').toLowerCase();
+                    const mPhone = (m.phone || m.phoneNumber || '').trim();
+                    return mName === lowerName || mPhone === cleanName;
+                  });
+                  if (exactMatch) {
+                    const mName = exactMatch.name || exactMatch.fullName || `${exactMatch.firstName || ''} ${exactMatch.lastName || ''}`.trim() || cleanName;
+                    return { id: exactMatch.id, name: mName, phone: exactMatch.phone || exactMatch.phoneNumber };
+                  }
+
+                  // 2. Inclusion / substring match
+                  const partialMatch = churchMembers.find(m => {
+                    const mName = (m.name || m.fullName || `${m.firstName || ''} ${m.lastName || ''}`.trim() || '').toLowerCase();
+                    const mFirst = (m.firstName || '').toLowerCase().trim();
+                    const mLast = (m.lastName || '').toLowerCase().trim();
+                    return (
+                      (mName && (mName.includes(lowerName) || lowerName.includes(mName))) ||
+                      (mFirst && lowerName.includes(mFirst)) ||
+                      (mLast && lowerName.includes(mLast))
+                    );
+                  });
+                  if (partialMatch) {
+                    const mName = partialMatch.name || partialMatch.fullName || `${partialMatch.firstName || ''} ${partialMatch.lastName || ''}`.trim() || cleanName;
+                    return { id: partialMatch.id, name: mName, phone: partialMatch.phone || partialMatch.phoneNumber };
                   }
                 }
-                return { id: rawId, name, phone: undefined };
+                return { id: rawId || undefined, name: cleanName, phone: undefined };
               };
 
               // Collect duties across RunSheet, Setlist, and Assignments
@@ -1299,40 +1324,48 @@ export default function AdminServicePlanner({ navigation }: any) {
 
               // Dispatch queue for each duty
               for (const duty of allDuties) {
-                const backupCandidates: Array<{ candidateId: string; candidateName: string; candidatePhone?: string }> = [];
                 try {
-                  const recs = await ServiceRosterService.getEligibleCandidatesForRole(churchId, plan.date, {
-                    requiredSkill: duty.requiredSkill || duty.roleTitle,
-                    roleTitle: duty.roleTitle
-                  });
-                  for (const r of recs) {
-                    if (r.memberId !== duty.memberId && backupCandidates.length < 2) {
-                      backupCandidates.push({
-                        candidateId: r.memberId,
-                        candidateName: r.memberName,
-                        candidatePhone: r.memberPhone
-                      });
+                  const backupCandidates: Array<{ candidateId: string; candidateName: string; candidatePhone?: string }> = [];
+                  try {
+                    const recs = await ServiceRosterService.getEligibleCandidatesForRole(churchId, plan.date, {
+                      requiredSkill: duty.requiredSkill || duty.roleTitle,
+                      roleTitle: duty.roleTitle
+                    });
+                    for (const r of recs) {
+                      if (r.memberId !== duty.memberId && backupCandidates.length < 2) {
+                        backupCandidates.push({
+                          candidateId: r.memberId,
+                          candidateName: r.memberName || 'Volunteer',
+                          candidatePhone: r.memberPhone || undefined
+                        });
+                      }
                     }
+                  } catch (e) {
+                    console.warn('Backup fetch error for role:', duty.roleTitle, e);
                   }
-                } catch (e) {
-                  console.warn('Backup fetch error for role:', duty.roleTitle, e);
+
+                  const ladder = [
+                    {
+                      candidateId: duty.memberId,
+                      candidateName: duty.memberName || 'Volunteer',
+                      candidatePhone: duty.memberPhone || undefined
+                    },
+                    ...backupCandidates
+                  ];
+
+                  await ServiceRosterService.dispatchAssignmentQueue(churchId, plan.id, {
+                    roleId: duty.roleId,
+                    roleTitle: duty.roleTitle,
+                    ...(duty.activityId ? { activityId: duty.activityId } : {}),
+                    ...(duty.activityName ? { activityName: duty.activityName } : {}),
+                    candidates: ladder,
+                    timeoutMinutes
+                  });
+
+                  dispatchedDuties.push(`${duty.memberName} (${duty.roleTitle})`);
+                } catch (dutyErr: any) {
+                  console.warn(`[PublishService] Error dispatching queue for ${duty.roleTitle}:`, dutyErr);
                 }
-
-                const ladder = [
-                  { candidateId: duty.memberId, candidateName: duty.memberName, candidatePhone: duty.memberPhone },
-                  ...backupCandidates
-                ];
-
-                await ServiceRosterService.dispatchAssignmentQueue(churchId, plan.id, {
-                  roleId: duty.roleId,
-                  roleTitle: duty.roleTitle,
-                  activityId: duty.activityId,
-                  activityName: duty.activityName,
-                  candidates: ladder,
-                  timeoutMinutes
-                });
-
-                dispatchedDuties.push(`${duty.memberName} (${duty.roleTitle})`);
               }
 
               const updatedPlan = { ...plan, status: 'published' as ServiceStatus };
@@ -1449,42 +1482,46 @@ export default function AdminServicePlanner({ navigation }: any) {
         for (const duty of createAssignments) {
           if (!duty.assignedMemberId) continue;
 
-          // Primary candidate
-          const primaryCandidate = {
-            candidateId: duty.assignedMemberId,
-            candidateName: duty.assignedMemberName || 'Volunteer',
-            candidatePhone: duty.assignedMemberPhone
-          };
-
-          // Fetch up to 2 backup candidates who have the verified skill for this duty
-          const backupCandidates: Array<{ candidateId: string; candidateName: string; candidatePhone?: string }> = [];
           try {
-            const recs = await ServiceRosterService.getEligibleCandidatesForRole(churchId, createDate, {
-              requiredSkill: duty.requiredSkill || duty.roleTitle,
-              roleTitle: duty.roleTitle
-            });
-            for (const r of recs) {
-              if (r.memberId !== duty.assignedMemberId && backupCandidates.length < 2) {
-                backupCandidates.push({
-                  candidateId: r.memberId,
-                  candidateName: r.memberName,
-                  candidatePhone: r.memberPhone
-                });
+            // Primary candidate
+            const primaryCandidate = {
+              candidateId: duty.assignedMemberId,
+              candidateName: duty.assignedMemberName || 'Volunteer',
+              candidatePhone: duty.assignedMemberPhone || undefined
+            };
+
+            // Fetch up to 2 backup candidates who have the verified skill for this duty
+            const backupCandidates: Array<{ candidateId: string; candidateName: string; candidatePhone?: string }> = [];
+            try {
+              const recs = await ServiceRosterService.getEligibleCandidatesForRole(churchId, createDate, {
+                requiredSkill: duty.requiredSkill || duty.roleTitle,
+                roleTitle: duty.roleTitle
+              });
+              for (const r of recs) {
+                if (r.memberId !== duty.assignedMemberId && backupCandidates.length < 2) {
+                  backupCandidates.push({
+                    candidateId: r.memberId,
+                    candidateName: r.memberName || 'Volunteer',
+                    candidatePhone: r.memberPhone || undefined
+                  });
+                }
               }
+            } catch (e) {
+              console.warn('Could not auto-fetch backup candidates for role:', duty.roleTitle, e);
             }
-          } catch (e) {
-            console.warn('Could not auto-fetch backup candidates for role:', duty.roleTitle, e);
+
+            const ladder = [primaryCandidate, ...backupCandidates];
+
+            await ServiceRosterService.dispatchAssignmentQueue(churchId, targetPlanId, {
+              roleId: duty.id,
+              roleTitle: duty.roleTitle,
+              candidates: ladder,
+              timeoutMinutes
+            });
+            dispatchedCount++;
+          } catch (dutyErr) {
+            console.warn(`[CreatePublish] Error dispatching queue for ${duty.roleTitle}:`, dutyErr);
           }
-
-          const ladder = [primaryCandidate, ...backupCandidates];
-
-          await ServiceRosterService.dispatchAssignmentQueue(churchId, targetPlanId, {
-            roleId: duty.id,
-            roleTitle: duty.roleTitle,
-            candidates: ladder,
-            timeoutMinutes
-          });
-          dispatchedCount++;
         }
 
         Alert.alert(
