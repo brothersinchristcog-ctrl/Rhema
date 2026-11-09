@@ -117,7 +117,7 @@ class NotificationService {
       const pushTitle = title || data?.pushTitle || data?.title || '🔴 We Are LIVE Now!';
       const pushBody = body || data?.pushBody || data?.body || "Join us for a time of worship, prayer and God's Word. Our live service is now streaming on YouTube. Be blessed!";
 
-      const liveUrl = (data && data.url) || 'https://www.youtube.com/@Brothersinchristfellowship/live';
+      const liveUrl = (data && data.url) || '';
       const videoId = (data && data.videoId) || '';
       const churchId = (data && data.churchId) || 'rhema';
 
@@ -181,8 +181,17 @@ class NotificationService {
           break;
         }
         case 'event':
-          nav.navigate('Events');
+        case 'church_event':
+        case 'event_rsvp': {
+          const eventId = rawData.eventId || rawData.id || id;
+          console.log('📅 [NotificationService] Routing to EventDetails:', { eventId });
+          if (eventId) {
+            nav.navigate('EventDetails', { eventId, id: eventId });
+          } else {
+            nav.navigate('Events');
+          }
           break;
+        }
         case 'online_meeting':
           try {
             nav.navigate('OnlineMeetings');
@@ -240,7 +249,7 @@ class NotificationService {
           break;
         }
         case 'youtube_live': {
-          const liveUrl = (remoteMessage?.data && remoteMessage.data.url) || rawData?.url || 'https://www.youtube.com/@Brothersinchristfellowship/live';
+          const liveUrl = (remoteMessage?.data && remoteMessage.data.url) || rawData?.url || '';
           const videoId = rawData.videoId || (remoteMessage?.data && remoteMessage.data.videoId) || '';
           const title = rawData.title || (remoteMessage?.notification && remoteMessage.notification.title) || '';
           const targetChurchId = rawData.churchId || (remoteMessage?.data && remoteMessage.data.churchId) || 'rhema';
@@ -292,10 +301,14 @@ class NotificationService {
           break;
         }
         case 'care_cell':
+        case 'care_cell_visit':
         case 'care_cell_announcement':
         case 'care_cell_meeting':
         case 'care_cell_prayer': {
-          nav.navigate('CareCell');
+          nav.navigate('CareCell', {
+            visitId: rawData.visitId,
+            initialTab: rawData.type === 'care_cell_visit' ? 'visits' : undefined,
+          });
           break;
         }
         default:
@@ -320,22 +333,35 @@ class NotificationService {
   async subscribeToChurchTopic(churchId: string) {
     if (!churchId) return;
     try {
-      // Check permission first to prevent silent failures on fresh installs (especially iOS APNS)
-      const authStatus = await messaging().hasPermission();
-      const enabled =
-        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
-        
-      if (!enabled) {
-        console.log(`⚠️ Cannot subscribe to church_${churchId} yet: Permissions not granted.`);
-        return;
+      if (Platform.OS === 'ios') {
+        const authStatus = await messaging().hasPermission();
+        const enabled =
+          authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+          authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+          
+        if (!enabled) {
+          const granted = await this.requestUserPermission();
+          if (!granted) {
+            console.log(`⚠️ Cannot subscribe to church_${churchId} yet: Permissions not granted on iOS.`);
+            return;
+          }
+        }
+      } else if (Platform.OS === 'android' && Platform.Version >= 33) {
+        // On Android 13+, check POST_NOTIFICATIONS and request if needed without blocking topic subscription
+        PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS)
+          .then(granted => {
+            if (!granted) {
+              this.requestUserPermission().catch(() => {});
+            }
+          })
+          .catch(() => {});
       }
 
       const topicName = `church_${churchId}`;
       await messaging().subscribeToTopic(topicName);
       console.log(`📡 Subscribed to FCM topic: ${topicName}`);
-    } catch (error) {
-      console.error(`❌ Failed to subscribe to topic church_${churchId}:`, error);
+    } catch (error: any) {
+      console.warn(`Failed to subscribe to topic church_${churchId}:`, error?.message || error);
     }
   }
 
@@ -409,7 +435,13 @@ class NotificationService {
   // Handle notifications when the app is open (foreground)
   setupForegroundListener(navigation?: any) {
     return messaging().onMessage(async remoteMessage => {
-      console.log('⚡ Foreground push received:', remoteMessage?.notification?.title);
+      const title = remoteMessage?.notification?.title || remoteMessage?.data?.title || remoteMessage?.data?.type || 'Notification';
+      const body = remoteMessage?.notification?.body || remoteMessage?.data?.body || '';
+      console.log('⚡ Foreground push received:', title, {
+        body,
+        data: remoteMessage?.data,
+        hasNotification: !!remoteMessage?.notification,
+      });
       // Foreground notifications are cleanly displayed via the in-app sliding banner in App.js
       // System modal Alert.alert is suppressed to avoid duplicate intrusive popups
     });

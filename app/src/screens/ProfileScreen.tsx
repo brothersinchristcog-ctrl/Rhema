@@ -23,6 +23,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { 
   ArrowLeft,
+  Calendar,
   Camera,
   Palette,
   ChevronRight, 
@@ -573,6 +574,14 @@ export default function ProfileScreen({ navigation }: any) {
             title={t('profile.givingHistory')} 
             sub={t('profile.givingHistorySub')} 
             onPress={() => navigation.navigate('GivingHistory')}
+            textColor={colors.text}
+            subColor={colors.textSecondary}
+          />
+          <MenuItem 
+            icon={<Calendar size={22} color="#2563EB" strokeWidth={1.8} />} 
+            title="My Service Duties" 
+            sub="Roster assignments, call times & rehearsals" 
+            onPress={() => navigation.navigate('MyService')}
             textColor={colors.text}
             subColor={colors.textSecondary}
           />

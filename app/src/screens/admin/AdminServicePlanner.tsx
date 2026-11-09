@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useContext } from 'react';
 import {
   View,
   Text,
@@ -6,479 +6,781 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Modal,
   ActivityIndicator,
-  Share,
-  Platform,
-  Dimensions,
+  Modal,
   Alert,
-  StatusBar
+  Dimensions,
+  Platform,
+  RefreshControl,
+  KeyboardAvoidingView
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
+  Calendar,
   CalendarDays,
-  Plus,
-  ChevronLeft,
-  ChevronRight,
-  Share2,
   Clock,
-  Music,
-  Users,
-  CheckCircle2,
-  Edit2,
+  Plus,
   Trash2,
-  Search,
-  X,
-  Copy,
-  BookOpen,
-  Mic,
-  Video,
+  Edit3,
+  ChevronDown,
+  ChevronUp,
+  ChevronRight,
+  ChevronLeft,
+  CheckCircle2,
+  AlertCircle,
   Sparkles,
-  AlertTriangle,
-  Check,
+  Layers,
+  Settings,
+  Filter,
+  Users,
+  Music,
   MapPin,
+  Mic,
+  BookOpen,
+  ArrowRight,
+  Copy,
+  RotateCcw,
+  Check,
+  X,
+  Share2,
+  Award,
+  ShieldCheck,
+  UserCheck,
+  UserPlus,
+  UserX,
+  Search,
+  FileText,
+  Sliders,
+  PlayCircle,
+  ListOrdered,
+  Timer,
+  Send,
   RefreshCw,
-  MessageCircle,
   Radio,
   Tv,
-  Heart,
-  Baby
-, ArrowLeft } from 'lucide-react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import firestore from '@react-native-firebase/firestore';
+  Printer,
+  Download,
+  BarChart2,
+  AlertTriangle
+} from 'lucide-react-native';
+
+import { useAdminTheme } from '../../utils/adminThemeHelper';
 import { useChurch } from '../../context/ChurchContext';
 import { useAuth } from '../../context/AuthContext';
 import { AdminTabContext } from '../../context/AdminTabContext';
-import FirestoreService from '../../services/FirestoreService';
-import ServiceRosterService, {
+import FirestoreService, { WorshipSong } from '../../services/FirestoreService';
+import ServiceRosterService from '../../services/ServiceRosterService';
+import {
   ServicePlan,
-  DEFAULT_DEPARTMENTS,
-  SetlistItem,
+  ServiceStatus,
+  ServiceType,
   RunSheetItem,
-  ServiceDepartment,
-  TimetableCategory
-} from '../../services/ServiceRosterService';
-import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
+  SetlistItem,
+  ActivityCategory,
+  ServiceTemplate,
+  MinistryTeam,
+  MemberSkillRecord,
+  ServiceAssignmentQueue,
+  CandidateEntry,
+  ServiceRehearsal,
+  VolunteerAttendanceRecord,
+  RosterAnalyticsData,
+  VolunteerServingStat,
+  SongUsageStat
+} from '../../types/serviceRoster';
 
 const { width } = Dimensions.get('window');
 
-const PRELUDE_SUGGESTIONS = [
-  'Acoustic + Drum',
-  'Keys',
-  'Elec',
-  'Acoustic',
-  'Keys + Acoustic',
-  'Full Band',
-  'Pads',
-  'Drums Only',
-  'None'
+const SERVICE_TYPE_LABELS: Record<ServiceType, string> = {
+  sunday_worship: 'Sunday Worship',
+  holy_communion: 'Holy Communion',
+  bible_study: 'Bible Study',
+  fasting_prayer: 'Fasting Prayer',
+  christmas_celebration: 'Christmas Celebration',
+  easter_service: 'Easter Service',
+  special_meeting: 'Special Meeting',
+  youth_service: 'Youth Service',
+  prayer_meeting: 'Prayer Meeting',
+  other: 'Special Service'
+};
+
+const CATEGORY_COLORS: Record<ActivityCategory, { bg: string; text: string }> = {
+  preparation: { bg: '#F3F4F6', text: '#4B5563' },
+  starting_prayer: { bg: '#FEF3C7', text: '#92400E' },
+  opening_song: { bg: '#EDE9FE', text: '#5B21B6' },
+  worship_songs: { bg: '#FDF2F8', text: '#9D174D' },
+  music: { bg: '#E0E7FF', text: '#3730A3' },
+  bible_reading: { bg: '#E0F2FE', text: '#0369A1' },
+  offering: { bg: '#ECFDF5', text: '#065F46' },
+  announcements: { bg: '#FFFBEB', text: '#B45309' },
+  sermon: { bg: '#EFF6FF', text: '#1E40AF' },
+  communion: { bg: '#FCE7F3', text: '#831843' },
+  special_performance: { bg: '#F5F3FF', text: '#6D28D9' },
+  closing_prayer: { bg: '#FEF2F2', text: '#991B1B' },
+  benediction: { bg: '#F0FDF4', text: '#166534' },
+  break: { bg: '#F3F4F6', text: '#6B7280' },
+  other: { bg: '#F1F5F9', text: '#334155' }
+};
+
+const SKILL_CATEGORIES = [
+  { id: 'all', label: 'All Skills' },
+  { id: 'pending', label: 'Pending Approvals' },
+  { id: 'music', label: 'Music & Band' },
+  { id: 'worship', label: 'Worship & Choir' },
+  { id: 'technical', label: 'Audio & Media' },
+  { id: 'church_ministry', label: 'Church Ministry' }
 ];
 
-const INTERLUDE_SUGGESTIONS = [
-  'Keys + Elec (Alt)',
-  'Keys/ Elec Alt',
-  'Elec + Keys (Alt)',
-  '(Elec + Keys)',
-  'Acoustic Solo',
-  'Elec Lead',
-  'Full Band Dynamics',
-  'None'
-];
-
-const NOTES_SUGGESTIONS = [
-  "Celebrate God's power, strength, and salvation",
-  "Prep for 2nd Coming",
-  "God just wants our heart",
-  "You washed us clean with your Blood",
-  "Call to Worship & Praise",
-  "Intimate Surrender & Holy Spirit",
-  "Maintain purity and be Holy",
-  "Giving our best to God (Offertory)"
-];
+const STANDARD_KEYS = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B', 'Em', 'Am', 'Dm', 'Bm'];
 
 export default function AdminServicePlanner({ navigation }: any) {
-  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
   const insets = useSafeAreaInsets();
+  const { isDark, screenBg, cardSurface, primaryText, secondaryText, borderColor } = useAdminTheme();
   const { activeChurch } = useChurch();
-  const { setActiveTab } = useContext(AdminTabContext);
   const { member } = useAuth();
+  const { setActiveTab } = useContext(AdminTabContext);
 
-  // State: Plans list & loading
+  const churchId = activeChurch?.id || 'rhema';
+
+  // Navigation / Tab state: Added 'setlist' (Phase 3), 'queue' (Phase 4), 'rehearsals' (Phase 6), 'attendance' & 'analytics' (Phase 9)
+  const [activePlannerTab, setActivePlannerTab] = useState<'calendar' | 'builder' | 'setlist' | 'queue' | 'rehearsals' | 'attendance' | 'analytics' | 'teams' | 'skills' | 'templates'>('calendar');
+
+  // Service Plans state
   const [plans, setPlans] = useState<ServicePlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<ServicePlan | null>(null);
-  const [activePlanTab, setActivePlanTab] = useState<'roster' | 'setlist' | 'runSheet' | 'export'>('roster');
 
-  // State: Church Events for quick planning
-  const [churchEvents, setChurchEvents] = useState<any[]>([]);
-
-  // State: Church Members for assignment picker
+  // Church Members state
   const [churchMembers, setChurchMembers] = useState<any[]>([]);
-  const [memberSearchQuery, setMemberSearchQuery] = useState('');
-  const [assigningRoleId, setAssigningRoleId] = useState<string | null>(null);
-  const [assigningRoleName, setAssigningRoleName] = useState<string>('');
-  const [customAssigneeName, setCustomAssigneeName] = useState('');
-  const [showMemberPickerModal, setShowMemberPickerModal] = useState(false);
 
-  // State: Create / Edit Plan Modal & Detailed Timetable
-  const [showCreatePlanModal, setShowCreatePlanModal] = useState(false);
-  const [planFormDate, setPlanFormDate] = useState(new Date().toISOString().split('T')[0]);
-  const [planFormTitle, setPlanFormTitle] = useState('');
-  const [planFormType, setPlanFormType] = useState<'sunday_service' | 'special_event' | 'conference'>('sunday_service');
-  const [planFormStartTime, setPlanFormStartTime] = useState('09:00');
-  const [planFormEndTime, setPlanFormEndTime] = useState('11:00');
-  const [planFormLocation, setPlanFormLocation] = useState('');
-  const [planFormTimetable, setPlanFormTimetable] = useState<RunSheetItem[]>([]);
-  const [editingTimetableItemIndex, setEditingTimetableItemIndex] = useState<number | null>(null);
-  const [showActivityEditorModal, setShowActivityEditorModal] = useState(false);
-  const [activityEditorForm, setActivityEditorForm] = useState<RunSheetItem>({
-    id: '',
-    time: '09:00 to 09:20',
-    startTime: '09:00',
-    endTime: '09:20',
-    durationMinutes: 20,
-    program: '',
-    category: 'starting_prayer',
-    assignedTo: '',
-    songTitle: '',
-    musicians: '',
-    passage: '',
-    place: '',
-    notes: '',
+  // Church Songs Library state (Phase 3)
+  const [churchSongs, setChurchSongs] = useState<WorshipSong[]>([]);
+  const [loadingSongs, setLoadingSongs] = useState(false);
+  const [songLibrarySearch, setSongLibrarySearch] = useState('');
+  const [showSongPickerModal, setShowSongPickerModal] = useState(false);
+  const [showConfigureSongModal, setShowConfigureSongModal] = useState(false);
+  const [selectedSongForSetlist, setSelectedSongForSetlist] = useState<WorshipSong | null>(null);
+  const [editingSetlistIndex, setEditingSetlistIndex] = useState<number | null>(null);
+
+  // Setlist Item form state (Phase 3)
+  const [songKeyInput, setSongKeyInput] = useState('G');
+  const [songBpmInput, setSongBpmInput] = useState('120');
+  const [songTimeSigInput, setSongTimeSigInput] = useState('4/4');
+  const [songDurationInput, setSongDurationInput] = useState('6');
+  const [songLeaderInput, setSongLeaderInput] = useState('');
+  const [songKeyboardInput, setSongKeyboardInput] = useState('');
+  const [songAcousticInput, setSongAcousticInput] = useState('');
+  const [songElectricInput, setSongElectricInput] = useState('');
+  const [songBassInput, setSongBassInput] = useState('');
+  const [songDrumsInput, setSongDrumsInput] = useState('');
+  const [songNotesInput, setSongNotesInput] = useState('');
+  const [savingSetlistSong, setSavingSetlistSong] = useState(false);
+
+  // Setlist Lyrics Modal (Phase 3)
+  const [showLyricsModal, setShowLyricsModal] = useState(false);
+  const [viewingLyricsSong, setViewingLyricsSong] = useState<any>(null);
+
+  // Ministry Teams state (Phase 2)
+  const [ministryTeams, setMinistryTeams] = useState<MinistryTeam[]>([]);
+  const [loadingTeams, setLoadingTeams] = useState(false);
+  const [showTeamModal, setShowTeamModal] = useState(false);
+  const [selectedTeam, setSelectedTeam] = useState<MinistryTeam | null>(null);
+  const [teamNameInput, setTeamNameInput] = useState('');
+  const [teamDescInput, setTeamDescInput] = useState('');
+  const [teamColorInput, setTeamColorInput] = useState('#1E3A8A');
+  const [teamLeaderId, setTeamLeaderId] = useState<string | undefined>(undefined);
+  const [teamMemberIds, setTeamMemberIds] = useState<string[]>([]);
+  const [savingTeam, setSavingTeam] = useState(false);
+
+  // Member Skills state (Phase 2)
+  const [memberSkills, setMemberSkills] = useState<MemberSkillRecord[]>([]);
+  const [loadingSkills, setLoadingSkills] = useState(false);
+  const [skillCategoryFilter, setSkillCategoryFilter] = useState('all');
+  const [showAddSkillModal, setShowAddSkillModal] = useState(false);
+  const [skillMemberId, setSkillMemberId] = useState('');
+  const [skillCategory, setSkillCategory] = useState<'music' | 'worship' | 'technical' | 'church_ministry'>('music');
+  const [skillNameInput, setSkillNameInput] = useState('Keyboard');
+  const [skillProficiency, setSkillProficiency] = useState<'beginner' | 'intermediate' | 'advanced' | 'lead'>('intermediate');
+  const [savingSkill, setSavingSkill] = useState(false);
+
+  // Assignment Queue & Auto-Replacement Cascade state (Phase 4)
+  const [assignmentQueues, setAssignmentQueues] = useState<ServiceAssignmentQueue[]>([]);
+  const [loadingQueues, setLoadingQueues] = useState(false);
+  const [showDispatchQueueModal, setShowDispatchQueueModal] = useState(false);
+  const [showOverrideModal, setShowOverrideModal] = useState(false);
+  const [showSimulateModal, setShowSimulateModal] = useState(false);
+  const [targetRoleId, setTargetRoleId] = useState('');
+  const [targetRoleTitle, setTargetRoleTitle] = useState('');
+  const [targetActivityId, setTargetActivityId] = useState<string | undefined>(undefined);
+  const [targetActivityName, setTargetActivityName] = useState<string | undefined>(undefined);
+  const [dispatchTimeoutHours, setDispatchTimeoutHours] = useState(24);
+  const [ladderCandidates, setLadderCandidates] = useState<Array<{ candidateId: string; candidateName: string; candidatePhone?: string }>>([]);
+  const [candidateRecommendations, setCandidateRecommendations] = useState<Array<{
+    memberId: string;
+    memberName: string;
+    memberPhone?: string;
+    matchScore: number;
+    matchReasons: string[];
+    isAvailable: boolean;
+    availabilityReason?: string;
+  }>>([]);
+  const [loadingRecommendations, setLoadingRecommendations] = useState(false);
+  const [savingDispatchQueue, setSavingDispatchQueue] = useState(false);
+
+  // Manual Override state
+  const [overrideMemberId, setOverrideMemberId] = useState('');
+  const [overrideMemberSearch, setOverrideMemberSearch] = useState('');
+  const [overrideNotes, setOverrideNotes] = useState('');
+  const [savingOverride, setSavingOverride] = useState(false);
+
+  // Simulate Response state
+  const [activeQueueForSimulate, setActiveQueueForSimulate] = useState<ServiceAssignmentQueue | null>(null);
+  const [simulateAction, setSimulateAction] = useState<'accept' | 'decline'>('accept');
+  const [simulateDeclineReason, setSimulateDeclineReason] = useState('Out of town for family engagement');
+  const [submittingSimulate, setSubmittingSimulate] = useState(false);
+
+  // Rehearsal Management state (Phase 6)
+  const [rehearsals, setRehearsals] = useState<ServiceRehearsal[]>([]);
+  const [loadingRehearsals, setLoadingRehearsals] = useState(false);
+  const [showRehearsalModal, setShowRehearsalModal] = useState(false);
+  const [editingRehearsalId, setEditingRehearsalId] = useState<string | null>(null);
+  const [rehearsalNameInput, setRehearsalNameInput] = useState('Saturday Full Band Rehearsal');
+  const [rehearsalDateInput, setRehearsalDateInput] = useState('');
+  const [rehearsalStartTimeInput, setRehearsalStartTimeInput] = useState('18:00');
+  const [rehearsalEndTimeInput, setRehearsalEndTimeInput] = useState('19:30');
+  const [rehearsalLocationInput, setRehearsalLocationInput] = useState('Church Sanctuary');
+  const [rehearsalTeamIds, setRehearsalTeamIds] = useState<string[]>(['team_worship', 'team_music']);
+  const [rehearsalParticipantIds, setRehearsalParticipantIds] = useState<string[]>([]);
+  const [rehearsalSongPracticeIds, setRehearsalSongPracticeIds] = useState<string[]>([]);
+  const [rehearsalNotesInput, setRehearsalNotesInput] = useState('');
+  const [savingRehearsal, setSavingRehearsal] = useState(false);
+
+  // Rehearsal Attendance Modal state
+  const [showRehearsalAttendanceModal, setShowRehearsalAttendanceModal] = useState(false);
+  const [activeRehearsalForAttendance, setActiveRehearsalForAttendance] = useState<ServiceRehearsal | null>(null);
+
+  // Volunteer Attendance state (Phase 9)
+  const [attendanceRecords, setAttendanceRecords] = useState<VolunteerAttendanceRecord[]>([]);
+  const [loadingAttendance, setLoadingAttendance] = useState(false);
+  const [savingAttendance, setSavingAttendance] = useState(false);
+
+  // Roster Analytics state (Phase 9)
+  const [analyticsData, setAnalyticsData] = useState<RosterAnalyticsData | null>(null);
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
+
+  // Run-Sheet Export state (Phase 9)
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [exportingCsv, setExportingCsv] = useState(false);
+  const [printingSheet, setPrintingSheet] = useState(false);
+
+  // Filters
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Service Creation Wizard Modal
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createTitle, setCreateTitle] = useState('Sunday Worship Celebration');
+  const [createType, setCreateType] = useState<ServiceType>('sunday_worship');
+  const [createDate, setCreateDate] = useState(() => {
+    const nextSunday = new Date();
+    nextSunday.setDate(nextSunday.getDate() + ((7 - nextSunday.getDay()) % 7 || 7));
+    return nextSunday.toISOString().split('T')[0];
   });
-  const [savingPlan, setSavingPlan] = useState(false);
+  const [createStartTime, setCreateStartTime] = useState('10:00');
+  const [createEndTime, setCreateEndTime] = useState('12:00');
+  const [createLocation, setCreateLocation] = useState('Church of God Sanctuary');
+  const [createPreacher, setCreatePreacher] = useState('Bro. Y. Rajesh');
+  const [createTheme, setCreateTheme] = useState("God's Grace");
+  const [createScripture, setCreateScripture] = useState('Romans 8:1');
+  const [createDescription, setCreateDescription] = useState('');
+  const [createRecurrence, setCreateRecurrence] = useState<'one_time' | 'weekly' | 'monthly'>('one_time');
+  const [createOccurrencesCount, setCreateOccurrencesCount] = useState(4);
+  const [selectedTemplateForNew, setSelectedTemplateForNew] = useState<string>('tpl_sunday_worship');
+  const [savingService, setSavingService] = useState(false);
 
-  // State: Setlist Song Modal
-  const [showSongModal, setShowSongModal] = useState(false);
-  const [editingSongIndex, setEditingSongIndex] = useState<number | null>(null);
-  const [songForm, setSongForm] = useState<SetlistItem>({
-    id: '',
-    title: '',
-    ledBy: '',
-    key: 'F',
-    timeSignature: '4/4',
-    tempo: '100',
-    verses: '',
-    prelude: '',
-    interlude: '',
-    notes: '',
-    isOffertory: false,
-  });
+  // Activity Item Modal (Add / Edit)
+  const [showActivityModal, setShowActivityModal] = useState(false);
+  const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
+  const [actProgram, setActProgram] = useState('');
+  const [actCategory, setActCategory] = useState<ActivityCategory>('worship_songs');
+  const [actDuration, setActDuration] = useState('15');
+  const [actResponsible, setActResponsible] = useState('');
+  const [actResponsibleId, setActResponsibleId] = useState('');
+  const [actTeam, setActTeam] = useState('');
+  const [actInstructions, setActInstructions] = useState('');
+  const [savingActivity, setSavingActivity] = useState(false);
 
-  // Load church data
-  useEffect(() => {
-    loadData();
-  }, [activeChurch]);
+  // Service Details Edit Modal
+  const [showEditDetailsModal, setShowEditDetailsModal] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editType, setEditType] = useState<ServiceType>('sunday_worship');
+  const [editDate, setEditDate] = useState('');
+  const [editStartTime, setEditStartTime] = useState('');
+  const [editLocation, setEditLocation] = useState('');
+  const [editPreacher, setEditPreacher] = useState('');
+  const [editTheme, setEditTheme] = useState('');
+  const [editScripture, setEditScripture] = useState('');
+  const [editDescription, setEditDescription] = useState('');
 
-  const loadData = async () => {
-    if (!activeChurch?.id) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
+  // Templates state
+  const [templates, setTemplates] = useState<ServiceTemplate[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [showApplyTemplateModal, setShowApplyTemplateModal] = useState(false);
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Data Loading
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  const fetchPlans = async () => {
     try {
-      const [fetchedPlans, members, eventsSnap] = await Promise.all([
-        ServiceRosterService.getServicePlans(activeChurch.id),
-        FirestoreService.getAllMembers(),
-        firestore()
-          .collection('Rhema Church')
-          .doc(activeChurch.id)
-          .collection('events')
-          .orderBy('date', 'desc')
-          .limit(30)
-          .get()
-          .catch(() => null)
-      ]);
-      setPlans(fetchedPlans);
-      setChurchMembers(members);
-      if (eventsSnap && !eventsSnap.empty) {
-        const evList = eventsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-        setChurchEvents(evList);
-      }
-      if (fetchedPlans.length > 0) {
-        setSelectedPlan(fetchedPlans[0]);
+      setLoading(true);
+      const data = await ServiceRosterService.getServicePlans(churchId);
+      setPlans(data);
+      if (data.length > 0) {
+        if (!selectedPlan || !data.some(p => p.id === selectedPlan.id)) {
+          setSelectedPlan(data[0]);
+        } else {
+          const fresh = data.find(p => p.id === selectedPlan.id);
+          if (fresh) setSelectedPlan(fresh);
+        }
       } else {
         setSelectedPlan(null);
       }
-    } catch (e) {
-      console.error('Error loading service planner data:', e);
+    } catch (err) {
+      console.error('Error loading service plans:', err);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  // Open Service Timetable Modal (New or Edit)
-  const openServiceTimetableModal = (planToEdit?: ServicePlan | null) => {
-    if (planToEdit) {
-      setSelectedPlan(planToEdit);
-      setPlanFormTitle(planToEdit.serviceTitle || '');
-      setPlanFormDate(planToEdit.date || new Date().toISOString().split('T')[0]);
-      setPlanFormType(planToEdit.serviceType || 'sunday_service');
-      setPlanFormStartTime(planToEdit.startTime || '09:00');
-      setPlanFormEndTime(planToEdit.endTime || '11:00');
-      setPlanFormLocation(planToEdit.location || activeChurch?.name || '');
-      setPlanFormTimetable(
-        planToEdit.runSheet && planToEdit.runSheet.length > 0
-          ? [...planToEdit.runSheet]
-          : []
-      );
-    } else {
-      setSelectedPlan(null);
-      setPlanFormTitle('');
-      setPlanFormDate(new Date().toISOString().split('T')[0]);
-      setPlanFormType('sunday_service');
-      setPlanFormStartTime('09:00');
-      setPlanFormEndTime('11:00');
-      setPlanFormLocation(activeChurch?.name || 'Sanctuary');
-      setPlanFormTimetable([]);
-    }
-    setShowCreatePlanModal(true);
-  };
-
-  // Add a new activity into the timetable builder
-  const handleAddActivity = (category: TimetableCategory = 'additional') => {
-    let nextStart = planFormStartTime || '09:00';
-    if (planFormTimetable.length > 0) {
-      const last = planFormTimetable[planFormTimetable.length - 1];
-      if (last.endTime) {
-        nextStart = last.endTime;
-      }
-    }
-    const defaultDurations: Record<TimetableCategory, number> = {
-      starting_prayer: 10,
-      opening_song: 10,
-      worship_songs: 20,
-      bible_reading: 10,
-      sermon: 40,
-      closing_prayer: 5,
-      break: 15,
-      additional: 15,
-    };
-    const dur = defaultDurations[category] || 15;
-    const startMin = ServiceRosterService.parseTimeToMinutes(nextStart);
-    const endMin = Math.min(1439, startMin + dur);
-    const nextEnd = ServiceRosterService.minutesToTimeString(endMin);
-
-    const defaultPrograms: Record<TimetableCategory, string> = {
-      starting_prayer: 'Starting Prayer / Invocation',
-      opening_song: 'Opening Praise Song',
-      worship_songs: 'Praise & Worship',
-      bible_reading: 'Scripture / Bible Reading',
-      sermon: 'Sermon / Message',
-      closing_prayer: 'Closing Prayer & Benediction',
-      break: 'Tea / Fellowship Break',
-      additional: 'Special Activity',
-    };
-
-    setActivityEditorForm({
-      id: Math.random().toString(36).substring(7),
-      time: ServiceRosterService.formatTimeRange(nextStart, nextEnd),
-      startTime: nextStart,
-      endTime: nextEnd,
-      durationMinutes: dur,
-      program: defaultPrograms[category] || 'Church Activity',
-      category,
-      assignedTo: '',
-      songTitle: '',
-      musicians: category === 'worship_songs' || category === 'opening_song' ? 'Keys, Guitars & Drums' : '',
-      passage: '',
-      place: planFormLocation || 'Sanctuary',
-      notes: '',
-    });
-    setEditingTimetableItemIndex(null);
-    setShowActivityEditorModal(true);
-  };
-
-  // Edit an existing activity in the timetable builder
-  const handleEditActivity = (index: number) => {
-    const item = planFormTimetable[index];
-    if (!item) return;
-    setActivityEditorForm({
-      ...item,
-      startTime: item.startTime || (item.time ? item.time.split(/to|-/i)[0]?.trim() : '09:00'),
-      endTime: item.endTime || (item.time ? item.time.split(/to|-/i)[1]?.trim() : '09:20'),
-      durationMinutes: item.durationMinutes || 20,
-      category: item.category || 'additional',
-    });
-    setEditingTimetableItemIndex(index);
-    setShowActivityEditorModal(true);
-  };
-
-  // Save activity from editor modal into planFormTimetable
-  const handleSaveActivityFromEditor = () => {
-    if (!activityEditorForm.program.trim()) {
-      Alert.alert('Required', 'Please specify the activity or program title.');
-      return;
-    }
-    const dur = ServiceRosterService.calculateDuration(
-      activityEditorForm.startTime || '09:00',
-      activityEditorForm.endTime || '09:20'
-    );
-    const updatedItem: RunSheetItem = {
-      ...activityEditorForm,
-      durationMinutes: Math.max(1, dur),
-      time: ServiceRosterService.formatTimeRange(
-        activityEditorForm.startTime || '09:00',
-        activityEditorForm.endTime || '09:20'
-      ),
-    };
-
-    let updatedList = [...planFormTimetable];
-    if (editingTimetableItemIndex !== null) {
-      updatedList[editingTimetableItemIndex] = updatedItem;
-    } else {
-      updatedList.push(updatedItem);
-    }
-    setPlanFormTimetable(updatedList);
-    setShowActivityEditorModal(false);
-  };
-
-  // Delete activity from timetable builder
-  const handleDeleteTimetableActivity = (index: number) => {
-    setPlanFormTimetable(prev => prev.filter((_, i) => i !== index));
-  };
-
-  // Move activity up or down
-  const handleMoveTimetableActivity = (index: number, direction: 'up' | 'down') => {
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= planFormTimetable.length) return;
-    const updated = [...planFormTimetable];
-    const temp = updated[index];
-    updated[index] = updated[targetIndex];
-    updated[targetIndex] = temp;
-    setPlanFormTimetable(updated);
-  };
-
-  // Load clean Sunday service template
-  const handleLoadSundayTemplateInEditor = () => {
-    setPlanFormTimetable(ServiceRosterService.getStandardSundayServiceSample());
-  };
-
-  // Save Complete Service Schedule and Timetable
-  const handleSavePlanDetails = async () => {
-    if (!activeChurch?.id) return;
-    if (!planFormTitle.trim() || !planFormDate.trim()) {
-      Alert.alert('Required', 'Please specify a service title and date.');
-      return;
-    }
-
-    const validation = ServiceRosterService.validateSchedule(
-      planFormStartTime,
-      planFormEndTime,
-      planFormTimetable
-    );
-
-    if (validation.hasOverlaps) {
-      Alert.alert(
-        'Time Overlap Warning',
-        `Warning: There are overlapping activities in your timetable:\n\n• ${validation.overlapMessages.slice(0, 3).join('\n• ')}\n\nDo you want to save anyway?`,
-        [
-          { text: 'Adjust Timetable', style: 'cancel' },
-          { text: 'Save Anyway', onPress: () => executeSavePlan(validation) }
-        ]
-      );
-      return;
-    }
-
-    await executeSavePlan(validation);
-  };
-
-  const executeSavePlan = async (validation: any) => {
-    if (!activeChurch?.id) return;
-    setSavingPlan(true);
+  const fetchTemplates = async () => {
     try {
-      const isNew = !selectedPlan?.id;
-
-      // Extract specific anchors if present in timetable
-      const spItem = planFormTimetable.find(r => r.category === 'starting_prayer');
-      const osItem = planFormTimetable.find(r => r.category === 'opening_song');
-      const brItem = planFormTimetable.find(r => r.category === 'bible_reading');
-      const sItem = planFormTimetable.find(r => r.category === 'sermon');
-      const cpItem = planFormTimetable.find(r => r.category === 'closing_prayer');
-
-      const updatedAssignments = {
-        ...(selectedPlan?.assignments || {}),
-        ...(spItem?.assignedTo ? { op_prayer: spItem.assignedTo } : {}),
-        ...(osItem?.assignedTo ? { singer_1: osItem.assignedTo } : {}),
-        ...(cpItem?.assignedTo ? { cl_prayer: cpItem.assignedTo } : {}),
-        ...(sItem?.assignedTo ? { devotion: sItem.assignedTo } : {}),
-      };
-
-      const planPayload: Partial<ServicePlan> = {
-        ...(selectedPlan?.id ? { id: selectedPlan.id } : {}),
-        churchId: activeChurch.id,
-        churchName: activeChurch.name || 'We Christian',
-        date: planFormDate.trim(),
-        serviceTitle: planFormTitle.trim(),
-        serviceType: planFormType,
-        status: selectedPlan?.status || 'published',
-        startTime: planFormStartTime.trim(),
-        endTime: planFormEndTime.trim(),
-        location: planFormLocation.trim() || 'Sanctuary',
-        totalDurationMinutes: validation?.totalServiceMinutes || 120,
-        runSheet: planFormTimetable,
-        assignments: updatedAssignments,
-        startingPrayer: spItem ? {
-          person: spItem.assignedTo || '',
-          startTime: spItem.startTime || '',
-          endTime: spItem.endTime || ''
-        } : undefined,
-        openingSong: osItem ? {
-          songTitle: osItem.songTitle || '',
-          leader: osItem.assignedTo || '',
-          musicians: osItem.musicians || '',
-          startTime: osItem.startTime || '',
-          endTime: osItem.endTime || ''
-        } : undefined,
-        bibleReading: brItem ? {
-          person: brItem.assignedTo || '',
-          passage: brItem.passage || '',
-          startTime: brItem.startTime || '',
-          endTime: brItem.endTime || ''
-        } : undefined,
-        closingPrayer: cpItem ? {
-          person: cpItem.assignedTo || '',
-          startTime: cpItem.startTime || '',
-          endTime: cpItem.endTime || ''
-        } : undefined,
-        sermon: {
-          title: sItem?.program || selectedPlan?.sermon?.title || '',
-          code: selectedPlan?.sermon?.code || '',
-          keyVerses: sItem?.passage || selectedPlan?.sermon?.keyVerses || '',
-          speaker: sItem?.assignedTo || selectedPlan?.sermon?.speaker || '',
-          translation: selectedPlan?.sermon?.translation || '',
-          startTime: sItem?.startTime || '10:00',
-          endTime: sItem?.endTime || '10:45'
-        },
-        setlist: selectedPlan?.setlist || []
-      };
-
-      const savedId = await ServiceRosterService.saveServicePlan(activeChurch.id, planPayload);
-      setShowCreatePlanModal(false);
-
-      const refreshed = await ServiceRosterService.getServicePlans(activeChurch.id);
-      setPlans(refreshed);
-      const updated = await ServiceRosterService.getServicePlanById(activeChurch.id, savedId);
-      if (updated) setSelectedPlan(updated);
-      Alert.alert('Success', isNew ? 'Service schedule & timetable created successfully!' : 'Service timetable updated successfully!');
-    } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to save service.');
+      setLoadingTemplates(true);
+      const list = await ServiceRosterService.getServiceTemplates(churchId);
+      setTemplates(list);
+    } catch (err) {
+      console.error('Error loading templates:', err);
     } finally {
-      setSavingPlan(false);
+      setLoadingTemplates(false);
     }
   };
 
-  // Delete Service Plan
-  const handleDeletePlan = (planToDelete?: ServicePlan | null) => {
-    const plan = planToDelete || selectedPlan;
-    if (!plan?.id || !activeChurch?.id) {
-      Alert.alert('Notice', 'No service plan selected to delete.');
+  const fetchChurchMembers = async () => {
+    try {
+      const members = await FirestoreService.getAllMembers();
+      setChurchMembers(members || []);
+    } catch (err) {
+      console.error('Error loading church members:', err);
+    }
+  };
+
+  const fetchChurchSongs = async () => {
+    try {
+      setLoadingSongs(true);
+      const songs = await FirestoreService.getWorshipSongs();
+      setChurchSongs(songs || []);
+    } catch (err) {
+      console.error('Error loading church songs:', err);
+    } finally {
+      setLoadingSongs(false);
+    }
+  };
+
+  const fetchMinistryTeams = async () => {
+    try {
+      setLoadingTeams(true);
+      const teams = await ServiceRosterService.getMinistryTeams(churchId);
+      setMinistryTeams(teams);
+    } catch (err) {
+      console.error('Error loading ministry teams:', err);
+    } finally {
+      setLoadingTeams(false);
+    }
+  };
+
+  const fetchMemberSkills = async () => {
+    try {
+      setLoadingSkills(true);
+      const skills = await ServiceRosterService.getMemberSkills(churchId);
+      setMemberSkills(skills);
+    } catch (err) {
+      console.error('Error loading member skills:', err);
+    } finally {
+      setLoadingSkills(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPlans();
+    fetchTemplates();
+    fetchChurchMembers();
+    fetchChurchSongs();
+    fetchMinistryTeams();
+    fetchMemberSkills();
+  }, [churchId]);
+
+  // Realtime subscription for Assignment Queues on selected service (Phase 4)
+  useEffect(() => {
+    if (!selectedPlan?.id) {
+      setAssignmentQueues([]);
       return;
     }
+    setLoadingQueues(true);
+    const unsubscribe = ServiceRosterService.listenAssignmentQueues(
+      churchId,
+      selectedPlan.id,
+      (queues) => {
+        setAssignmentQueues(queues);
+        setLoadingQueues(false);
+      }
+    );
+    return () => unsubscribe();
+  }, [selectedPlan?.id, churchId]);
+
+  // Realtime subscription for Rehearsals on selected service (Phase 6)
+  useEffect(() => {
+    if (!selectedPlan?.id) {
+      setRehearsals([]);
+      return;
+    }
+    setLoadingRehearsals(true);
+    const unsubscribe = ServiceRosterService.listenServiceRehearsals(
+      churchId,
+      selectedPlan.id,
+      (list) => {
+        setRehearsals(list);
+        setLoadingRehearsals(false);
+      }
+    );
+    return () => unsubscribe();
+  }, [selectedPlan?.id, churchId]);
+
+  // Realtime subscription for Volunteer Attendance on selected service (Phase 9)
+  useEffect(() => {
+    if (!selectedPlan?.id) {
+      setAttendanceRecords([]);
+      return;
+    }
+    setLoadingAttendance(true);
+    const unsubscribe = ServiceRosterService.listenVolunteerAttendance(
+      churchId,
+      selectedPlan.id,
+      (records) => {
+        setAttendanceRecords(records);
+        setLoadingAttendance(false);
+      }
+    );
+    return () => unsubscribe();
+  }, [selectedPlan?.id, churchId]);
+
+  const fetchAnalytics = async () => {
+    try {
+      setLoadingAnalytics(true);
+      const data = await ServiceRosterService.getRosterAnalytics(churchId);
+      setAnalyticsData(data);
+    } catch (err) {
+      console.error('Error loading roster analytics:', err);
+    } finally {
+      setLoadingAnalytics(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activePlannerTab === 'analytics') {
+      fetchAnalytics();
+    }
+  }, [activePlannerTab, churchId]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchPlans();
+    fetchTemplates();
+    fetchChurchMembers();
+    fetchChurchSongs();
+    fetchMinistryTeams();
+    fetchMemberSkills();
+    if (activePlannerTab === 'analytics') {
+      fetchAnalytics();
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Filtered Services, Skills & Songs
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  const filteredPlans = useMemo(() => {
+    return plans.filter(p => {
+      if (statusFilter !== 'all' && p.status !== statusFilter) return false;
+      if (typeFilter !== 'all' && p.serviceType !== typeFilter) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchesTitle = p.serviceTitle.toLowerCase().includes(q);
+        const matchesPreacher = p.preacher?.toLowerCase().includes(q);
+        const matchesDate = p.date.includes(q);
+        if (!matchesTitle && !matchesPreacher && !matchesDate) return false;
+      }
+      return true;
+    });
+  }, [plans, statusFilter, typeFilter, searchQuery]);
+
+  const filteredSkills = useMemo(() => {
+    return memberSkills.filter(s => {
+      if (skillCategoryFilter === 'pending') return s.verificationStatus === 'pending';
+      if (skillCategoryFilter !== 'all' && s.category !== skillCategoryFilter) return false;
+      return true;
+    });
+  }, [memberSkills, skillCategoryFilter]);
+
+  const filteredLibrarySongs = useMemo(() => {
+    if (!songLibrarySearch.trim()) return churchSongs;
+    const q = songLibrarySearch.toLowerCase();
+    return churchSongs.filter(s =>
+      s.title?.toLowerCase().includes(q) ||
+      s.titleTe?.toLowerCase().includes(q) ||
+      s.artist?.toLowerCase().includes(q)
+    );
+  }, [churchSongs, songLibrarySearch]);
+
+  const pendingSkillsCount = useMemo(() => {
+    return memberSkills.filter(s => s.verificationStatus === 'pending').length;
+  }, [memberSkills]);
+
+  const timelineValidation = useMemo(() => {
+    if (!selectedPlan?.runSheet) return { isValid: true, overlaps: [], warnings: [] };
+    return ServiceRosterService.validateTimeline(
+      selectedPlan.runSheet,
+      selectedPlan.startTime,
+      selectedPlan.endTime
+    );
+  }, [selectedPlan]);
+
+  // Total setlist worship duration
+  const totalSetlistMinutes = useMemo(() => {
+    if (!selectedPlan?.setlist) return 0;
+    return selectedPlan.setlist.reduce((acc, curr) => acc + (curr.durationMinutes || 5), 0);
+  }, [selectedPlan]);
+
+  // Consolidated Volunteer Roster for Attendance (Phase 9)
+  const serviceVolunteers = useMemo(() => {
+    if (!selectedPlan) return [];
+    const list: Array<{
+      key: string;
+      memberId: string;
+      memberName: string;
+      roleId: string;
+      roleTitle: string;
+      teamName: string;
+      category?: string;
+    }> = [];
+
+    const seen = new Set<string>();
+
+    // 1. RunSheet ministers & leaders
+    (selectedPlan.runSheet || []).forEach(item => {
+      if (item.responsiblePerson && item.responsiblePerson.trim()) {
+        const memberId = item.responsibleMemberId || item.responsiblePerson;
+        const key = `${item.id}_${memberId}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          list.push({
+            key,
+            memberId,
+            memberName: item.responsiblePerson,
+            roleId: item.id,
+            roleTitle: item.program,
+            teamName: item.supportingTeam || 'Runsheet Ministry',
+            category: item.category
+          });
+        }
+      }
+    });
+
+    // 2. Setlist Worship Leaders & Band musicians
+    (selectedPlan.setlist || []).forEach((song, idx) => {
+      if (song.ledBy && song.ledBy.trim()) {
+        const memberId = song.ledByMemberId || song.ledBy;
+        const key = `worship_lead_${memberId}_${song.id || idx}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          list.push({
+            key,
+            memberId,
+            memberName: song.ledBy,
+            roleId: `worship_lead_${song.id || idx}`,
+            roleTitle: `Worship Lead (${song.title})`,
+            teamName: 'Worship Team',
+            category: 'worship_songs'
+          });
+        }
+      }
+      if (song.musicianAssignments) {
+        Object.entries(song.musicianAssignments).forEach(([roleKey, assignment]) => {
+          if (assignment?.memberName && assignment.memberName.trim()) {
+            const memberId = assignment.memberId || assignment.memberName;
+            const key = `band_${memberId}_${roleKey}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              list.push({
+                key,
+                memberId,
+                memberName: assignment.memberName,
+                roleId: `band_${roleKey}`,
+                roleTitle: roleKey.charAt(0).toUpperCase() + roleKey.slice(1),
+                teamName: 'Praise Band',
+                category: 'music'
+              });
+            }
+          }
+        });
+      }
+    });
+
+    // 3. Confirmed queue assignments
+    assignmentQueues.forEach(q => {
+      if (q.status === 'confirmed' && q.confirmedCandidateName) {
+        const key = `queue_${q.roleId}_${q.confirmedCandidateId || q.confirmedCandidateName}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          list.push({
+            key,
+            memberId: q.confirmedCandidateId || q.confirmedCandidateName,
+            memberName: q.confirmedCandidateName,
+            roleId: q.roleId,
+            roleTitle: q.roleTitle,
+            teamName: 'Assigned Role'
+          });
+        }
+      }
+    });
+
+    return list;
+  }, [selectedPlan, assignmentQueues]);
+
+  // Attendance summary statistics for selected service
+  const attendanceStats = useMemo(() => {
+    let present = 0;
+    let late = 0;
+    let absent = 0;
+    let excused = 0;
+    let unmarked = 0;
+
+    serviceVolunteers.forEach(v => {
+      const rec = attendanceRecords.find(r =>
+        (r.roleId === v.roleId && r.memberId === v.memberId) ||
+        (r.memberName === v.memberName && r.roleTitle === v.roleTitle)
+      );
+      if (!rec) {
+        unmarked++;
+      } else if (rec.attendanceStatus === 'present') {
+        present++;
+      } else if (rec.attendanceStatus === 'late') {
+        late++;
+      } else if (rec.attendanceStatus === 'absent') {
+        absent++;
+      } else if (rec.attendanceStatus === 'excused') {
+        excused++;
+      } else {
+        unmarked++;
+      }
+    });
+
+    const total = serviceVolunteers.length;
+    const turnoutRate = total > 0 ? Math.round(((present + late) / total) * 100) : 100;
+
+    return { total, present, late, absent, excused, unmarked, turnoutRate };
+  }, [serviceVolunteers, attendanceRecords]);
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Service Plan Actions
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  const handleCreateService = async () => {
+    if (!createTitle.trim()) {
+      Alert.alert('Required', 'Please enter a service name.');
+      return;
+    }
+    if (!createDate.trim()) {
+      Alert.alert('Required', 'Please enter service date (YYYY-MM-DD).');
+      return;
+    }
+
+    try {
+      setSavingService(true);
+      let initialRunSheet: RunSheetItem[] = [];
+
+      if (selectedTemplateForNew !== 'blank') {
+        const foundTpl = templates.find(t => t.id === selectedTemplateForNew);
+        if (foundTpl) {
+          initialRunSheet = foundTpl.runSheetTemplate.map((item, idx) => ({
+            ...item,
+            id: `act_${Date.now()}_${idx}`,
+            order: idx + 1,
+            startTime: item.startTime || createStartTime,
+            durationMinutes: item.durationMinutes || 10,
+            endTime: item.endTime || ServiceRosterService.addMinutesToTime(createStartTime, item.durationMinutes || 10),
+            assignmentStatus: 'unassigned',
+            completionStatus: 'pending'
+          }));
+        }
+      }
+
+      const created = await ServiceRosterService.createServicePlan(
+        churchId,
+        {
+          serviceTitle: createTitle.trim(),
+          serviceType: createType,
+          date: createDate,
+          startTime: createStartTime,
+          endTime: createEndTime,
+          location: createLocation.trim(),
+          preacher: createPreacher.trim(),
+          theme: createTheme.trim(),
+          bibleReference: createScripture.trim(),
+          description: createDescription.trim(),
+          status: 'draft',
+          runSheet: initialRunSheet,
+          setlist: []
+        },
+        createRecurrence !== 'one_time' ? {
+          frequency: createRecurrence,
+          count: createOccurrencesCount
+        } : undefined
+      );
+
+      setShowCreateModal(false);
+      Alert.alert('Success', `Created ${created.length} service occurrence(s) successfully.`);
+      await fetchPlans();
+      if (created.length > 0) {
+        setSelectedPlan(created[0]);
+        setActivePlannerTab('builder');
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to create service.');
+    } finally {
+      setSavingService(false);
+    }
+  };
+
+  const handleUpdateStatus = async (newStatus: ServiceStatus) => {
+    if (!selectedPlan) return;
+    try {
+      await ServiceRosterService.updateServiceStatus(churchId, selectedPlan.id, newStatus);
+      setSelectedPlan({ ...selectedPlan, status: newStatus });
+      setPlans(plans.map(p => p.id === selectedPlan.id ? { ...p, status: newStatus } : p));
+      Alert.alert('Status Updated', `Service is now ${newStatus.toUpperCase()}`);
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to update status.');
+    }
+  };
+
+  const handleDeleteService = () => {
+    if (!selectedPlan) return;
     Alert.alert(
-      'Delete Service Plan',
-      `Are you sure you want to delete "${plan.serviceTitle}"? This will permanently delete the timetable and team assignments for this service.`,
+      'Delete Service',
+      `Are you sure you want to delete "${selectedPlan.serviceTitle}" (${selectedPlan.date})? This cannot be undone.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -486,18 +788,13 @@ export default function AdminServicePlanner({ navigation }: any) {
           style: 'destructive',
           onPress: async () => {
             try {
-              setLoading(true);
-              await ServiceRosterService.deleteServicePlan(activeChurch.id, plan.id);
-              const remaining = plans.filter(p => p.id !== plan.id);
+              await ServiceRosterService.deleteServicePlan(churchId, selectedPlan.id);
+              const remaining = plans.filter(p => p.id !== selectedPlan.id);
               setPlans(remaining);
-              setSelectedPlan(remaining.length > 0 ? remaining[0] : null);
-              setShowCreatePlanModal(false);
-              Alert.alert('Deleted', 'Service plan deleted successfully.');
-            } catch (e) {
-              console.error('Error deleting service plan:', e);
-              Alert.alert('Error', 'Failed to delete service plan. Please try again.');
-            } finally {
-              setLoading(false);
+              setSelectedPlan(remaining[0] || null);
+              Alert.alert('Deleted', 'Service was removed.');
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Failed to delete service.');
             }
           }
         }
@@ -505,2738 +802,6753 @@ export default function AdminServicePlanner({ navigation }: any) {
     );
   };
 
-  // Save Assignment update
-  const handleAssignRole = async (personName: string) => {
-    if (!selectedPlan || !assigningRoleId || !activeChurch?.id) return;
-    const updatedAssignments = {
-      ...selectedPlan.assignments,
-      [assigningRoleId]: personName
-    };
-    const updatedPlan: ServicePlan = {
-      ...selectedPlan,
-      assignments: updatedAssignments
-    };
-    setSelectedPlan(updatedPlan);
-    setShowMemberPickerModal(false);
-    setCustomAssigneeName('');
-    await ServiceRosterService.saveServicePlan(activeChurch.id, {
-      id: selectedPlan.id,
-      assignments: updatedAssignments
-    });
+  const openEditDetailsModal = () => {
+    if (!selectedPlan) return;
+    setEditTitle(selectedPlan.serviceTitle);
+    setEditType(selectedPlan.serviceType);
+    setEditDate(selectedPlan.date);
+    setEditStartTime(selectedPlan.startTime);
+    setEditLocation(selectedPlan.location);
+    setEditPreacher(selectedPlan.preacher);
+    setEditTheme(selectedPlan.theme || '');
+    setEditScripture(selectedPlan.bibleReference || '');
+    setEditDescription(selectedPlan.description || '');
+    setShowEditDetailsModal(true);
   };
 
-  // Save Setlist Song
-  const handleSaveSong = async () => {
-    if (!selectedPlan || !activeChurch?.id) return;
-    if (!songForm.title.trim()) {
-      Alert.alert('Required', 'Please enter a song title');
+  const handleSaveDetails = async () => {
+    if (!selectedPlan) return;
+    try {
+      const updates: Partial<ServicePlan> = {
+        serviceTitle: editTitle.trim(),
+        serviceType: editType,
+        date: editDate.trim(),
+        startTime: editStartTime.trim(),
+        location: editLocation.trim(),
+        preacher: editPreacher.trim(),
+        theme: editTheme.trim(),
+        bibleReference: editScripture.trim(),
+        description: editDescription.trim()
+      };
+      await ServiceRosterService.updateServicePlan(churchId, selectedPlan.id, updates);
+      const updated = { ...selectedPlan, ...updates };
+      setSelectedPlan(updated);
+      setPlans(plans.map(p => p.id === selectedPlan.id ? updated : p));
+      setShowEditDetailsModal(false);
+      Alert.alert('Saved', 'Service details updated.');
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to save details.');
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Dynamic Order Builder (RunSheet Actions)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  const openAddActivityModal = () => {
+    setEditingActivityId(null);
+    setActProgram('');
+    setActCategory('worship_songs');
+    setActDuration('15');
+    setActResponsible('');
+    setActResponsibleId('');
+    setActTeam('');
+    setActInstructions('');
+    setShowActivityModal(true);
+  };
+
+  const openEditActivityModal = (item: RunSheetItem) => {
+    setEditingActivityId(item.id);
+    setActProgram(item.program);
+    setActCategory(item.category);
+    setActDuration(String(item.durationMinutes || 10));
+    setActResponsible(item.responsiblePerson || '');
+    setActResponsibleId(item.responsibleMemberId || '');
+    setActTeam(item.supportingTeam || '');
+    setActInstructions(item.instructions || '');
+    setShowActivityModal(true);
+  };
+
+  const handleSaveActivity = async () => {
+    if (!selectedPlan) return;
+    if (!actProgram.trim()) {
+      Alert.alert('Required', 'Please enter activity/program title.');
       return;
     }
-    let updatedSetlist = [...(selectedPlan.setlist || [])];
-    if (editingSongIndex !== null) {
-      updatedSetlist[editingSongIndex] = { ...songForm };
-    } else {
-      updatedSetlist.push({ ...songForm, id: Math.random().toString(36).substring(7) });
-    }
-    const updatedPlan = { ...selectedPlan, setlist: updatedSetlist };
-    setSelectedPlan(updatedPlan);
-    setShowSongModal(false);
-    await ServiceRosterService.saveServicePlan(activeChurch.id, {
-      id: selectedPlan.id,
-      setlist: updatedSetlist
-    });
-  };
+    const durationNum = parseInt(actDuration, 10) || 10;
 
-  // Remove Song
-  const handleDeleteSong = async (index: number) => {
-    if (!selectedPlan || !activeChurch?.id) return;
-    const updated = selectedPlan.setlist.filter((_, i) => i !== index);
-    setSelectedPlan({ ...selectedPlan, setlist: updated });
-    await ServiceRosterService.saveServicePlan(activeChurch.id, {
-      id: selectedPlan.id,
-      setlist: updated
-    });
-  };
-
-  // WhatsApp Share
-  const handleShareToWhatsApp = async () => {
-    if (!selectedPlan) return;
-    const text = ServiceRosterService.generateWhatsAppShareText(selectedPlan);
     try {
-      await Share.share({
-        message: text,
-        title: `${selectedPlan.churchName || 'Church'} - ${selectedPlan.serviceTitle}`
+      setSavingActivity(true);
+      if (editingActivityId) {
+        await ServiceRosterService.updateActivityItem(churchId, selectedPlan.id, editingActivityId, {
+          program: actProgram.trim(),
+          category: actCategory,
+          durationMinutes: durationNum,
+          responsiblePerson: actResponsible.trim(),
+          responsibleMemberId: actResponsibleId || undefined,
+          supportingTeam: actTeam.trim(),
+          instructions: actInstructions.trim()
+        });
+      } else {
+        await ServiceRosterService.addActivityItem(churchId, selectedPlan.id, {
+          program: actProgram.trim(),
+          category: actCategory,
+          durationMinutes: durationNum,
+          startTime: selectedPlan.startTime,
+          endTime: selectedPlan.startTime,
+          responsiblePerson: actResponsible.trim(),
+          responsibleMemberId: actResponsibleId || undefined,
+          supportingTeam: actTeam.trim(),
+          instructions: actInstructions.trim()
+        });
+      }
+
+      const freshPlan = await ServiceRosterService.getServicePlanById(churchId, selectedPlan.id);
+      if (freshPlan) {
+        setSelectedPlan(freshPlan);
+        setPlans(plans.map(p => p.id === freshPlan.id ? freshPlan : p));
+      }
+      setShowActivityModal(false);
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to save activity.');
+    } finally {
+      setSavingActivity(false);
+    }
+  };
+
+  const handleDeleteActivity = async (itemId: string) => {
+    if (!selectedPlan) return;
+    try {
+      await ServiceRosterService.deleteActivityItem(churchId, selectedPlan.id, itemId);
+      const freshPlan = await ServiceRosterService.getServicePlanById(churchId, selectedPlan.id);
+      if (freshPlan) {
+        setSelectedPlan(freshPlan);
+        setPlans(plans.map(p => p.id === freshPlan.id ? freshPlan : p));
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to delete activity.');
+    }
+  };
+
+  const handleMoveActivity = async (index: number, direction: 'up' | 'down') => {
+    if (!selectedPlan?.runSheet) return;
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= selectedPlan.runSheet.length) return;
+
+    const list = [...selectedPlan.runSheet];
+    const temp = list[index];
+    list[index] = list[targetIndex];
+    list[targetIndex] = temp;
+
+    try {
+      await ServiceRosterService.reorderActivityItems(churchId, selectedPlan.id, list);
+      const freshPlan = await ServiceRosterService.getServicePlanById(churchId, selectedPlan.id);
+      if (freshPlan) {
+        setSelectedPlan(freshPlan);
+        setPlans(plans.map(p => p.id === freshPlan.id ? freshPlan : p));
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to reorder activity.');
+    }
+  };
+
+  const handleApplyTemplate = async (templateId: string) => {
+    if (!selectedPlan) return;
+    Alert.alert(
+      'Apply Template',
+      'This will replace the current Order of Service with the selected template timetable. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Apply',
+          onPress: async () => {
+            try {
+              await ServiceRosterService.applyTemplateToService(churchId, templateId, selectedPlan.id);
+              const freshPlan = await ServiceRosterService.getServicePlanById(churchId, selectedPlan.id);
+              if (freshPlan) {
+                setSelectedPlan(freshPlan);
+                setPlans(plans.map(p => p.id === freshPlan.id ? freshPlan : p));
+              }
+              setShowApplyTemplateModal(false);
+              Alert.alert('Applied', 'Template applied to Order of Service successfully.');
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Failed to apply template.');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // PHASE 3: WORSHIP SETLIST MANAGEMENT ACTIONS
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  const openSongPicker = () => {
+    setSongLibrarySearch('');
+    setShowSongPickerModal(true);
+  };
+
+  const handleSelectSongFromLibrary = (song: WorshipSong) => {
+    setSelectedSongForSetlist(song);
+    setEditingSetlistIndex(null);
+    setSongKeyInput(song.key || 'G');
+    setSongBpmInput(song.tempo || '120');
+    setSongTimeSigInput(song.timeSignature || '4/4');
+    setSongDurationInput('6');
+    setSongLeaderInput(selectedPlan?.preacher ? 'Worship Leader' : '');
+    setSongKeyboardInput('');
+    setSongAcousticInput('');
+    setSongElectricInput('');
+    setSongBassInput('');
+    setSongDrumsInput('');
+    setSongNotesInput('');
+    setShowSongPickerModal(false);
+    setShowConfigureSongModal(true);
+  };
+
+  const openEditSetlistItem = (item: SetlistItem, index: number) => {
+    setEditingSetlistIndex(index);
+    setSelectedSongForSetlist(null);
+    setSongKeyInput(item.key || 'G');
+    setSongBpmInput(item.tempo || '120');
+    setSongTimeSigInput(item.timeSignature || '4/4');
+    setSongDurationInput(String(item.durationMinutes || 6));
+    setSongLeaderInput(item.ledBy || '');
+    setSongKeyboardInput(item.musicianAssignments?.keyboard?.memberName || '');
+    setSongAcousticInput(item.musicianAssignments?.acoustic?.memberName || '');
+    setSongElectricInput(item.musicianAssignments?.electric?.memberName || '');
+    setSongBassInput(item.musicianAssignments?.bass?.memberName || '');
+    setSongDrumsInput(item.musicianAssignments?.drums?.memberName || '');
+    setSongNotesInput(item.rehearsalNotes || '');
+    setShowConfigureSongModal(true);
+  };
+
+  const handleSaveSetlistSong = async () => {
+    if (!selectedPlan) return;
+    const durNum = parseInt(songDurationInput, 10) || 6;
+
+    const musicianMap: Record<string, { memberName: string }> = {};
+    if (songKeyboardInput.trim()) musicianMap.keyboard = { memberName: songKeyboardInput.trim() };
+    if (songAcousticInput.trim()) musicianMap.acoustic = { memberName: songAcousticInput.trim() };
+    if (songElectricInput.trim()) musicianMap.electric = { memberName: songElectricInput.trim() };
+    if (songBassInput.trim()) musicianMap.bass = { memberName: songBassInput.trim() };
+    if (songDrumsInput.trim()) musicianMap.drums = { memberName: songDrumsInput.trim() };
+
+    try {
+      setSavingSetlistSong(true);
+      if (editingSetlistIndex !== null) {
+        // Editing existing setlist item
+        const list = [...(selectedPlan.setlist || [])];
+        const existing = list[editingSetlistIndex];
+        if (existing) {
+          list[editingSetlistIndex] = {
+            ...existing,
+            key: songKeyInput,
+            tempo: songBpmInput,
+            timeSignature: songTimeSigInput,
+            durationMinutes: durNum,
+            ledBy: songLeaderInput.trim() || 'Worship Leader',
+            musicianAssignments: musicianMap,
+            rehearsalNotes: songNotesInput.trim()
+          };
+          await ServiceRosterService.reorderSetlist(churchId, selectedPlan.id, list);
+        }
+      } else if (selectedSongForSetlist) {
+        // Adding new song from library
+        const newSetlistItem: SetlistItem = {
+          id: `set_${Date.now()}`,
+          songId: selectedSongForSetlist.id,
+          title: selectedSongForSetlist.title || 'Worship Song',
+          titleTe: selectedSongForSetlist.titleTe,
+          titleEn: selectedSongForSetlist.titleEn,
+          artist: selectedSongForSetlist.artist,
+          key: songKeyInput,
+          tempo: songBpmInput,
+          timeSignature: songTimeSigInput,
+          durationMinutes: durNum,
+          ledBy: songLeaderInput.trim() || 'Worship Leader',
+          musicianAssignments: musicianMap,
+          rehearsalNotes: songNotesInput.trim()
+        };
+        await ServiceRosterService.addSongToSetlist(churchId, selectedPlan.id, newSetlistItem);
+      }
+
+      const freshPlan = await ServiceRosterService.getServicePlanById(churchId, selectedPlan.id);
+      if (freshPlan) {
+        setSelectedPlan(freshPlan);
+        setPlans(plans.map(p => p.id === freshPlan.id ? freshPlan : p));
+      }
+      setShowConfigureSongModal(false);
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to save setlist song.');
+    } finally {
+      setSavingSetlistSong(false);
+    }
+  };
+
+  const handleRemoveSetlistSong = async (songItemId: string) => {
+    if (!selectedPlan) return;
+    try {
+      await ServiceRosterService.removeSongFromSetlist(churchId, selectedPlan.id, songItemId);
+      const freshPlan = await ServiceRosterService.getServicePlanById(churchId, selectedPlan.id);
+      if (freshPlan) {
+        setSelectedPlan(freshPlan);
+        setPlans(plans.map(p => p.id === freshPlan.id ? freshPlan : p));
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to remove song from setlist.');
+    }
+  };
+
+  const handleMoveSetlistSong = async (index: number, direction: 'up' | 'down') => {
+    if (!selectedPlan?.setlist) return;
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= selectedPlan.setlist.length) return;
+
+    const list = [...selectedPlan.setlist];
+    const temp = list[index];
+    list[index] = list[targetIndex];
+    list[targetIndex] = temp;
+
+    try {
+      await ServiceRosterService.reorderSetlist(churchId, selectedPlan.id, list);
+      const freshPlan = await ServiceRosterService.getServicePlanById(churchId, selectedPlan.id);
+      if (freshPlan) {
+        setSelectedPlan(freshPlan);
+        setPlans(plans.map(p => p.id === freshPlan.id ? freshPlan : p));
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to reorder setlist.');
+    }
+  };
+
+  const openLyricsModal = (item: SetlistItem) => {
+    const matchedSong = churchSongs.find(s => s.id === item.songId || s.title?.toLowerCase() === item.title.toLowerCase());
+    setViewingLyricsSong({
+      title: item.title,
+      titleTe: item.titleTe || matchedSong?.titleTe,
+      artist: item.artist || matchedSong?.artist,
+      key: item.key,
+      tempo: item.tempo,
+      lyricsTe: matchedSong?.lyricsTe || '',
+      lyricsEn: matchedSong?.lyrics || matchedSong?.lyricsEn || ''
+    });
+    setShowLyricsModal(true);
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // PHASE 2: MINISTRY TEAMS MANAGEMENT ACTIONS
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  const openCreateTeamModal = () => {
+    setSelectedTeam(null);
+    setTeamNameInput('');
+    setTeamDescInput('');
+    setTeamColorInput('#1E3A8A');
+    setTeamLeaderId(undefined);
+    setTeamMemberIds([]);
+    setShowTeamModal(true);
+  };
+
+  const openEditTeamModal = (team: MinistryTeam) => {
+    setSelectedTeam(team);
+    setTeamNameInput(team.name);
+    setTeamDescInput(team.description || '');
+    setTeamColorInput(team.color || '#1E3A8A');
+    setTeamLeaderId(team.leaderId);
+    setTeamMemberIds(team.memberIds || []);
+    setShowTeamModal(true);
+  };
+
+  const handleSaveTeam = async () => {
+    if (!teamNameInput.trim()) {
+      Alert.alert('Required', 'Please enter ministry team name.');
+      return;
+    }
+    const leaderMember = churchMembers.find(m => m.id === teamLeaderId);
+
+    try {
+      setSavingTeam(true);
+      if (selectedTeam) {
+        await ServiceRosterService.updateMinistryTeam(churchId, selectedTeam.id, {
+          name: teamNameInput.trim(),
+          description: teamDescInput.trim(),
+          color: teamColorInput,
+          leaderId: teamLeaderId,
+          leaderName: leaderMember?.name || leaderMember?.firstName,
+          leaderPhone: leaderMember?.phone,
+          memberIds: teamMemberIds
+        });
+      } else {
+        await ServiceRosterService.createMinistryTeam(churchId, {
+          name: teamNameInput.trim(),
+          description: teamDescInput.trim(),
+          color: teamColorInput,
+          leaderId: teamLeaderId,
+          leaderName: leaderMember?.name || leaderMember?.firstName,
+          leaderPhone: leaderMember?.phone,
+          memberIds: teamMemberIds,
+          active: true
+        });
+      }
+
+      await fetchMinistryTeams();
+      setShowTeamModal(false);
+      Alert.alert('Saved', 'Ministry team saved successfully.');
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to save ministry team.');
+    } finally {
+      setSavingTeam(false);
+    }
+  };
+
+  const handleSeedDefaultTeams = async () => {
+    Alert.alert(
+      'Seed Ministry Teams',
+      'This will populate the 14 standard Rhema Church ministry teams (Worship, Music, Sound, Media, Livestream, etc.). Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Seed Teams',
+          onPress: async () => {
+            try {
+              setLoadingTeams(true);
+              const seeded = await ServiceRosterService.seedDefaultMinistryTeams(churchId);
+              setMinistryTeams(seeded);
+              Alert.alert('Success', `Seeded ${seeded.length} standard ministry teams.`);
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Failed to seed teams.');
+            } finally {
+              setLoadingTeams(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const toggleMemberInTeam = (memberId: string) => {
+    if (teamMemberIds.includes(memberId)) {
+      setTeamMemberIds(teamMemberIds.filter(id => id !== memberId));
+    } else {
+      setTeamMemberIds([...teamMemberIds, memberId]);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // PHASE 2: MEMBER SKILLS ACTIONS
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  const handleVerifySkill = async (skillId: string, status: 'verified' | 'rejected') => {
+    try {
+      const verifierName = member?.name || 'Admin';
+      await ServiceRosterService.verifyMemberSkill(churchId, skillId, status, verifierName);
+      setMemberSkills(memberSkills.map(s => s.id === skillId ? { ...s, verificationStatus: status, verifiedBy: verifierName } : s));
+      Alert.alert('Skill Updated', `Skill marked as ${status.toUpperCase()}.`);
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to verify skill.');
+    }
+  };
+
+  const handleAddMemberSkill = async () => {
+    if (!skillMemberId) {
+      Alert.alert('Required', 'Please select a church member.');
+      return;
+    }
+    if (!skillNameInput.trim()) {
+      Alert.alert('Required', 'Please enter skill name.');
+      return;
+    }
+    const targetMember = churchMembers.find(m => m.id === skillMemberId);
+
+    try {
+      setSavingSkill(true);
+      await ServiceRosterService.addOrUpdateMemberSkill(churchId, {
+        memberId: skillMemberId,
+        memberName: targetMember?.name || targetMember?.firstName || 'Member',
+        memberPhone: targetMember?.phone,
+        category: skillCategory,
+        skillName: skillNameInput.trim(),
+        proficiencyLevel: skillProficiency,
+        verificationStatus: 'verified',
+        verifiedBy: member?.name || 'Admin'
       });
-    } catch (e) {
-      console.error(e);
+
+      await fetchMemberSkills();
+      setShowAddSkillModal(false);
+      Alert.alert('Success', 'Member skill added & verified.');
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to add member skill.');
+    } finally {
+      setSavingSkill(false);
     }
   };
 
-  // Filtered members for assignment
-  const filteredMembers = churchMembers.filter(m => {
-    const name = (m.name || m.firstName || '').toLowerCase();
-    const phone = (m.phone || '').toLowerCase();
-    const q = memberSearchQuery.toLowerCase();
-    return name.includes(q) || phone.includes(q);
-  });
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Assignment Queue & Cascade Workflow Handlers (Phase 4)
+  // ─────────────────────────────────────────────────────────────────────────────
 
-  // Category Colors
-  const getCategoryTheme = (cat?: TimetableCategory) => {
-    switch (cat) {
-      case 'starting_prayer':
-      case 'closing_prayer':
-        return { bg: '#FEF3C7', border: '#FDE68A', text: '#B45309', label: 'Prayer' };
-      case 'opening_song':
-      case 'worship_songs':
-        return { bg: '#EEF2FF', border: '#C7D2FE', text: '#4338CA', label: 'Worship' };
-      case 'bible_reading':
-        return { bg: '#ECFDF5', border: '#A7F3D0', text: '#047857', label: 'Scripture' };
-      case 'sermon':
-        return { bg: '#EFF6FF', border: '#BFDBFE', text: '#1D4ED8', label: 'Message' };
-      case 'break':
-        return { bg: '#F1F5F9', border: '#E2E8F0', text: '#475569', label: 'Break' };
-      default:
-        return { bg: '#F0FDFA', border: '#99F6E4', text: '#0F766E', label: 'Activity' };
+  const serviceRolesList = useMemo(() => {
+    if (!selectedPlan) return [];
+    const roles: Array<{
+      roleId: string;
+      roleTitle: string;
+      category: string;
+      activityId?: string;
+      activityName?: string;
+      suggestedSkill?: string;
+      suggestedTeamId?: string;
+    }> = [];
+
+    // 1. Roles from RunSheet activities
+    (selectedPlan.runSheet || []).forEach(act => {
+      const rId = `act_${act.id}`;
+      roles.push({
+        roleId: rId,
+        roleTitle: act.responsiblePerson || act.program,
+        category: act.category,
+        activityId: act.id,
+        activityName: act.program,
+        suggestedSkill: act.program,
+        suggestedTeamId: act.supportingTeam
+      });
+    });
+
+    // 2. Standard Service Ministry Positions
+    const standardRoles = [
+      { id: 'role_preacher', title: 'Preacher / Speaker', category: 'sermon', skill: 'Sermon' },
+      { id: 'role_worship_leader', title: 'Worship Leader', category: 'worship', skill: 'Worship Leader', teamId: 'team_worship' },
+      { id: 'role_keyboard', title: 'Keyboardist / Synth', category: 'music', skill: 'Keyboard', teamId: 'team_music' },
+      { id: 'role_acoustic', title: 'Acoustic Guitar', category: 'music', skill: 'Guitar', teamId: 'team_music' },
+      { id: 'role_bass', title: 'Bass Guitar', category: 'music', skill: 'Bass Guitar', teamId: 'team_music' },
+      { id: 'role_drums', title: 'Drummer', category: 'music', skill: 'Drums', teamId: 'team_music' },
+      { id: 'role_sound', title: 'Sound Engineer', category: 'technical', skill: 'Sound Engineering', teamId: 'team_sound' },
+      { id: 'role_media', title: 'Media & Projector', category: 'technical', skill: 'Lyrics and Projector', teamId: 'team_media' },
+      { id: 'role_livestream', title: 'Livestream Operator', category: 'technical', skill: 'Livestream', teamId: 'team_livestream' },
+      { id: 'role_greeter', title: 'Main Door Greeter', category: 'hospitality', skill: 'Welcome', teamId: 'team_hospitality' },
+      { id: 'role_usher', title: 'Sanctuary Usher', category: 'hospitality', skill: 'Welcome', teamId: 'team_hospitality' },
+      { id: 'role_offering', title: 'Offering Coordinator', category: 'offering', skill: 'Offering', teamId: 'team_offering' },
+    ];
+
+    standardRoles.forEach(sr => {
+      if (!roles.some(r => r.roleId === sr.id)) {
+        roles.push({
+          roleId: sr.id,
+          roleTitle: sr.title,
+          category: sr.category,
+          suggestedSkill: sr.skill,
+          suggestedTeamId: sr.teamId
+        });
+      }
+    });
+
+    return roles;
+  }, [selectedPlan]);
+
+  const openDispatchQueueModal = async (
+    roleId: string,
+    roleTitle: string,
+    activityId?: string,
+    activityName?: string,
+    suggestedTeamId?: string,
+    suggestedSkill?: string
+  ) => {
+    if (!selectedPlan) return;
+    setTargetRoleId(roleId);
+    setTargetRoleTitle(roleTitle);
+    setTargetActivityId(activityId);
+    setTargetActivityName(activityName);
+    setDispatchTimeoutHours(24);
+
+    // Check if queue already exists to prefill ladder
+    const existing = assignmentQueues.find(q => q.roleId === roleId);
+    if (existing && existing.candidates?.length > 0) {
+      setLadderCandidates(existing.candidates.map(c => ({
+        candidateId: c.candidateId,
+        candidateName: c.candidateName,
+        candidatePhone: c.candidatePhone
+      })));
+    } else {
+      setLadderCandidates([]);
+    }
+
+    setShowDispatchQueueModal(true);
+    setLoadingRecommendations(true);
+
+    try {
+      const recs = await ServiceRosterService.getEligibleCandidatesForRole(churchId, selectedPlan.date, {
+        teamId: suggestedTeamId,
+        requiredSkill: suggestedSkill || roleTitle,
+        roleTitle
+      });
+      setCandidateRecommendations(recs);
+    } catch (err) {
+      console.error('Error fetching recommendations:', err);
+    } finally {
+      setLoadingRecommendations(false);
     }
   };
+
+  const addCandidateToLadder = (member: { id?: string; memberId?: string; name?: string; memberName?: string; phone?: string; memberPhone?: string }) => {
+    const id = member.id || member.memberId || '';
+    const name = member.name || member.memberName || 'Member';
+    const phone = member.phone || member.memberPhone;
+
+    if (ladderCandidates.some(c => c.candidateId === id)) {
+      Alert.alert('Already Added', `${name} is already in the candidate ladder.`);
+      return;
+    }
+    if (ladderCandidates.length >= 3) {
+      Alert.alert('Maximum Reached', 'You can specify up to 3 candidates in the sequential ladder (Rank 1, Rank 2, Rank 3).');
+      return;
+    }
+
+    setLadderCandidates([...ladderCandidates, { candidateId: id, candidateName: name, candidatePhone: phone }]);
+  };
+
+  const removeCandidateFromLadder = (index: number) => {
+    setLadderCandidates(ladderCandidates.filter((_, idx) => idx !== index));
+  };
+
+  const handleDispatchQueueSubmit = async () => {
+    if (!selectedPlan) return;
+    if (ladderCandidates.length === 0) {
+      Alert.alert('Required', 'Please add at least 1 candidate to dispatch the queue.');
+      return;
+    }
+
+    try {
+      setSavingDispatchQueue(true);
+      await ServiceRosterService.dispatchAssignmentQueue(churchId, selectedPlan.id, {
+        roleId: targetRoleId,
+        roleTitle: targetRoleTitle,
+        activityId: targetActivityId,
+        activityName: targetActivityName,
+        candidates: ladderCandidates,
+        timeoutMinutes: dispatchTimeoutHours * 60
+      });
+
+      setShowDispatchQueueModal(false);
+      Alert.alert('Queue Dispatched', `Assignment queue for "${targetRoleTitle}" activated! Push notification dispatched to Rank 1 (${ladderCandidates[0]?.candidateName}) with a ${dispatchTimeoutHours}h response deadline.`);
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to dispatch assignment queue.');
+    } finally {
+      setSavingDispatchQueue(false);
+    }
+  };
+
+  const openManualOverrideModal = (roleId: string, roleTitle: string) => {
+    setTargetRoleId(roleId);
+    setTargetRoleTitle(roleTitle);
+    setOverrideMemberId('');
+    setOverrideMemberSearch('');
+    setOverrideNotes('');
+    setShowOverrideModal(true);
+  };
+
+  const handleManualOverrideSubmit = async () => {
+    if (!selectedPlan) return;
+    if (!overrideMemberId) {
+      Alert.alert('Required', 'Please select a church member to assign.');
+      return;
+    }
+
+    const chosenMember = churchMembers.find(m => m.id === overrideMemberId);
+    const memberName = chosenMember?.name || `${chosenMember?.firstName || ''} ${chosenMember?.lastName || ''}`.trim() || 'Volunteer';
+
+    try {
+      setSavingOverride(true);
+      await ServiceRosterService.manualOverrideAssignment(
+        churchId,
+        selectedPlan.id,
+        targetRoleId,
+        overrideMemberId,
+        memberName,
+        overrideNotes.trim() || undefined
+      );
+
+      setShowOverrideModal(false);
+      Alert.alert('Assigned', `${memberName} manually assigned and confirmed as ${targetRoleTitle}.`);
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to manually assign member.');
+    } finally {
+      setSavingOverride(false);
+    }
+  };
+
+  const openSimulateModal = (queue: ServiceAssignmentQueue) => {
+    setActiveQueueForSimulate(queue);
+    setSimulateAction('accept');
+    setSimulateDeclineReason('Out of town for personal engagement');
+    setShowSimulateModal(true);
+  };
+
+  const handleSimulateResponseSubmit = async () => {
+    if (!selectedPlan || !activeQueueForSimulate) return;
+    const curIdx = activeQueueForSimulate.currentCandidateIndex || 0;
+    const candidate = activeQueueForSimulate.candidates?.[curIdx];
+    if (!candidate) {
+      Alert.alert('Error', 'No active candidate found in this queue.');
+      return;
+    }
+
+    try {
+      setSubmittingSimulate(true);
+      await ServiceRosterService.respondToAssignment(
+        churchId,
+        selectedPlan.id,
+        activeQueueForSimulate.roleId,
+        candidate.candidateId,
+        simulateAction,
+        simulateAction === 'decline' ? simulateDeclineReason : undefined
+      );
+
+      setShowSimulateModal(false);
+      if (simulateAction === 'accept') {
+        Alert.alert('Confirmed!', `${candidate.candidateName} accepted the duty. Assignment status updated to CONFIRMED.`);
+      } else {
+        const nextCand = activeQueueForSimulate.candidates?.[curIdx + 1];
+        if (nextCand) {
+          Alert.alert('Declined & Cascaded!', `${candidate.candidateName} declined ("${simulateDeclineReason}"). Auto-cascade advanced immediately to Rank #${curIdx + 2}: ${nextCand.candidateName}!`);
+        } else {
+          Alert.alert('Queue Exhausted!', `${candidate.candidateName} declined and no more candidates remain in the ladder. Queue marked as EXHAUSTED.`);
+        }
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to process simulated response.');
+    } finally {
+      setSubmittingSimulate(false);
+    }
+  };
+
+  const handleDeleteQueue = (roleId: string, roleTitle: string) => {
+    if (!selectedPlan) return;
+    Alert.alert(
+      'Reset Assignment Queue',
+      `Clear the queue for "${roleTitle}" and reset assignment?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await ServiceRosterService.deleteAssignmentQueue(churchId, selectedPlan.id, roleId);
+              Alert.alert('Reset', 'Queue was cleared.');
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Failed to reset queue.');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Rehearsal Management Handlers (Phase 6)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  const openCreateRehearsalModal = () => {
+    if (!selectedPlan) return;
+    setEditingRehearsalId(null);
+    setRehearsalNameInput('Saturday Full Band Rehearsal');
+    const svcDate = new Date(selectedPlan.date);
+    svcDate.setDate(svcDate.getDate() - 1);
+    const prevDate = svcDate.toISOString().split('T')[0];
+    setRehearsalDateInput(prevDate || selectedPlan.date);
+    setRehearsalStartTimeInput('18:00');
+    setRehearsalEndTimeInput('19:30');
+    setRehearsalLocationInput('Church Sanctuary');
+    setRehearsalTeamIds(['team_worship', 'team_music']);
+    setRehearsalParticipantIds([]);
+    setRehearsalSongPracticeIds((selectedPlan.setlist || []).map(s => s.id));
+    setRehearsalNotesInput('Full run-through of worship setlist, transition cues, and soundcheck.');
+    setShowRehearsalModal(true);
+  };
+
+  const openEditRehearsalModal = (rehearsal: ServiceRehearsal) => {
+    setEditingRehearsalId(rehearsal.id);
+    setRehearsalNameInput(rehearsal.rehearsalName);
+    setRehearsalDateInput(rehearsal.date);
+    setRehearsalStartTimeInput(rehearsal.startTime);
+    setRehearsalEndTimeInput(rehearsal.endTime);
+    setRehearsalLocationInput(rehearsal.location);
+    setRehearsalTeamIds(rehearsal.assignedTeamIds || []);
+    setRehearsalParticipantIds(rehearsal.participantMemberIds || []);
+    setRehearsalSongPracticeIds(rehearsal.songPracticeIds || []);
+    setRehearsalNotesInput(rehearsal.notes || '');
+    setShowRehearsalModal(true);
+  };
+
+  const handleSaveRehearsal = async () => {
+    if (!selectedPlan) return;
+    if (!rehearsalNameInput.trim()) {
+      Alert.alert('Required', 'Please enter rehearsal name.');
+      return;
+    }
+    if (!rehearsalDateInput.trim()) {
+      Alert.alert('Required', 'Please enter rehearsal date.');
+      return;
+    }
+
+    try {
+      setSavingRehearsal(true);
+      await ServiceRosterService.createOrUpdateRehearsal(churchId, selectedPlan.id, {
+        ...(editingRehearsalId ? { id: editingRehearsalId } : {}),
+        rehearsalName: rehearsalNameInput.trim(),
+        date: rehearsalDateInput.trim(),
+        startTime: rehearsalStartTimeInput.trim(),
+        endTime: rehearsalEndTimeInput.trim(),
+        location: rehearsalLocationInput.trim(),
+        assignedTeamIds: rehearsalTeamIds,
+        participantMemberIds: rehearsalParticipantIds,
+        songPracticeIds: rehearsalSongPracticeIds,
+        notes: rehearsalNotesInput.trim()
+      });
+
+      setShowRehearsalModal(false);
+      Alert.alert(
+        editingRehearsalId ? 'Updated' : 'Rehearsal Scheduled',
+        `Rehearsal "${rehearsalNameInput.trim()}" saved. Automated FCM notifications dispatched to all musicians and invited teams.`
+      );
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to save rehearsal.');
+    } finally {
+      setSavingRehearsal(false);
+    }
+  };
+
+  const handleDeleteRehearsal = (rehearsalId: string, name: string) => {
+    if (!selectedPlan) return;
+    Alert.alert(
+      'Delete Rehearsal',
+      `Are you sure you want to remove rehearsal "${name}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await ServiceRosterService.deleteRehearsal(churchId, selectedPlan.id, rehearsalId);
+              Alert.alert('Deleted', 'Rehearsal removed.');
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Failed to delete rehearsal.');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const openTakeRehearsalAttendance = (rehearsal: ServiceRehearsal) => {
+    setActiveRehearsalForAttendance(rehearsal);
+    setShowRehearsalAttendanceModal(true);
+  };
+
+  const handleSetParticipantAttendance = async (
+    rehearsalId: string,
+    memberId: string,
+    status: 'present' | 'absent' | 'late' | 'excused'
+  ) => {
+    if (!selectedPlan) return;
+    try {
+      await ServiceRosterService.updateRehearsalAttendance(churchId, selectedPlan.id, rehearsalId, memberId, status);
+      if (activeRehearsalForAttendance && activeRehearsalForAttendance.id === rehearsalId) {
+        setActiveRehearsalForAttendance({
+          ...activeRehearsalForAttendance,
+          attendance: {
+            ...(activeRehearsalForAttendance.attendance || {}),
+            [memberId]: status
+          }
+        });
+      }
+    } catch (err) {
+      console.error('Failed to update rehearsal attendance:', err);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Phase 9: Volunteer Attendance & Native PDF/CSV Run-Sheet Export Actions
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  const handleMarkVolunteerAttendance = async (
+    volunteer: { memberId: string; memberName: string; roleId: string; roleTitle: string },
+    status: 'present' | 'late' | 'absent' | 'excused'
+  ) => {
+    if (!selectedPlan?.id) return;
+    try {
+      await ServiceRosterService.markVolunteerAttendance(churchId, selectedPlan.id, {
+        memberId: volunteer.memberId,
+        memberName: volunteer.memberName,
+        roleId: volunteer.roleId,
+        roleTitle: volunteer.roleTitle,
+        attendanceStatus: status,
+        markedBy: member?.id || 'admin',
+        markedByName: member?.name || (member as any)?.fullName || 'Administrator'
+      });
+    } catch (err) {
+      console.error('Failed to mark volunteer attendance:', err);
+      Alert.alert('Error', 'Failed to update attendance status.');
+    }
+  };
+
+  const handleCheckInAllVolunteers = async () => {
+    if (!selectedPlan?.id || serviceVolunteers.length === 0) return;
+    Alert.alert(
+      'Check-In All Volunteers',
+      `Mark all ${serviceVolunteers.length} volunteer(s) as Present for ${selectedPlan.serviceTitle}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Check-In All',
+          onPress: async () => {
+            try {
+              setSavingAttendance(true);
+              const records = serviceVolunteers.map(v => ({
+                memberId: v.memberId,
+                memberName: v.memberName,
+                roleId: v.roleId,
+                roleTitle: v.roleTitle,
+                attendanceStatus: 'present' as const,
+                markedBy: member?.id || 'admin',
+                markedByName: member?.name || (member as any)?.fullName || 'Administrator'
+              }));
+              await ServiceRosterService.bulkMarkVolunteerAttendance(churchId, selectedPlan.id, records);
+              Alert.alert('Success', `Checked in all ${serviceVolunteers.length} volunteer(s) as Present.`);
+            } catch (err) {
+              console.error('Failed bulk check in:', err);
+              Alert.alert('Error', 'Failed to mark all volunteers.');
+            } finally {
+              setSavingAttendance(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleExportPdf = async () => {
+    if (!selectedPlan) return;
+    try {
+      setExportingPdf(true);
+      await ServiceRosterService.exportServicePlanPdf(selectedPlan, activeChurch?.name || 'Rhema Global Ministries');
+    } catch (err: any) {
+      console.error('Export PDF error:', err);
+      Alert.alert('Export Error', err?.message || 'Could not export PDF run-sheet');
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
+  const handlePrintDirectly = async () => {
+    if (!selectedPlan) return;
+    try {
+      setPrintingSheet(true);
+      await ServiceRosterService.printServicePlanDirectly(selectedPlan, activeChurch?.name || 'Rhema Global Ministries');
+    } catch (err: any) {
+      console.error('Print error:', err);
+      Alert.alert('Print Error', err?.message || 'Could not print run-sheet');
+    } finally {
+      setPrintingSheet(false);
+    }
+  };
+
+  const handleExportCsv = async () => {
+    if (!selectedPlan) return;
+    try {
+      setExportingCsv(true);
+      await ServiceRosterService.exportServicePlanCsv(selectedPlan);
+    } catch (err: any) {
+      console.error('Export CSV error:', err);
+      Alert.alert('Export Error', err?.message || 'Could not export CSV');
+    } finally {
+      setExportingCsv(false);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // RENDER SECTIONS
+  // ─────────────────────────────────────────────────────────────────────────────
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#1A2D5A" />
-
-      {/* ── Top Hero Header (Consistent Navy & Gold Theme) ─────── */}
-      <View style={[styles.hero, { paddingTop: Math.max(insets.top, 12) }]}>
-        <View style={styles.heroRow}>
-          <View style={styles.heroLeft}>
-            <TouchableOpacity
-              onPress={() => setActiveTab(0)}
-              style={styles.circularBackBtn}
-              activeOpacity={0.7}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
-            </TouchableOpacity>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.heroTitle} numberOfLines={1}>Service Operations & Roster</Text>
-              <Text style={styles.heroSub} numberOfLines={1}>
-                {activeChurch?.name || 'Rhema'} · {plans.length} Services Scheduled
-              </Text>
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
+      {/* ─── Top Header ─── */}
+      <View style={[styles.header, { paddingTop: insets.top + 8, backgroundColor: cardSurface, borderBottomColor: borderColor }]}>
+        <View style={styles.headerRow}>
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <View style={styles.headerBadge}>
+                <Sparkles size={11} color="#D97706" />
+                <Text style={styles.headerBadgeTxt}>WORSHIP OPERATIONS</Text>
+              </View>
+              {selectedPlan && (activePlannerTab === 'builder' || activePlannerTab === 'setlist') && (
+                <View style={[
+                  styles.statusPill,
+                  selectedPlan.status === 'published' ? styles.statusPillPublished :
+                    selectedPlan.status === 'live' ? styles.statusPillLive :
+                      selectedPlan.status === 'completed' ? styles.statusPillCompleted :
+                        styles.statusPillDraft
+                ]}>
+                  <Text style={styles.statusPillTxt}>{selectedPlan.status.toUpperCase()}</Text>
+                </View>
+              )}
             </View>
+            <Text style={[styles.headerTitle, { color: primaryText }]} numberOfLines={1}>
+              {activePlannerTab === 'setlist' ? 'Worship Setlist & Songs' :
+                activePlannerTab === 'queue' ? 'Assignment Queue & Cascade' :
+                  activePlannerTab === 'rehearsals' ? 'Service Rehearsals' :
+                    activePlannerTab === 'attendance' ? 'Volunteer Attendance' :
+                      activePlannerTab === 'analytics' ? 'Roster Analytics & Health' :
+                        activePlannerTab === 'teams' ? 'Ministry Teams' :
+                          activePlannerTab === 'skills' ? 'Member Skills & Verification' :
+                            activePlannerTab === 'templates' ? 'Service Templates' :
+                              selectedPlan ? selectedPlan.serviceTitle : 'Service Roster'}
+            </Text>
+            <Text style={[styles.headerSubtitle, { color: secondaryText }]} numberOfLines={1}>
+              {activePlannerTab === 'setlist' ? `${selectedPlan?.setlist?.length || 0} songs · ~${totalSetlistMinutes} mins praise flow` :
+                activePlannerTab === 'queue' ? `${assignmentQueues.filter(q => q.status === 'confirmed').length} confirmed · ${assignmentQueues.filter(q => q.status === 'pending').length} pending queue(s)` :
+                  activePlannerTab === 'rehearsals' ? `${rehearsals.length} rehearsal(s) scheduled for this service` :
+                    activePlannerTab === 'attendance' ? `${serviceVolunteers.length} volunteer(s) assigned for this service` :
+                      activePlannerTab === 'analytics' ? 'Turnout rates, burnout risk & worship analytics' :
+                        activePlannerTab === 'teams' ? `${ministryTeams.length} active ministry teams · ${churchMembers.length} members` :
+                          activePlannerTab === 'skills' ? `${memberSkills.length} skills recorded · ${pendingSkillsCount} pending review` :
+                            selectedPlan ? `📅 ${selectedPlan.date} · ${selectedPlan.startTime} - ${selectedPlan.endTime}` : 'Plan & coordinate church worship'}
+            </Text>
           </View>
-          <View style={styles.heroActions}>
+
+          {activePlannerTab === 'rehearsals' ? (
             <TouchableOpacity
-              style={styles.heroRefreshBtn}
-              onPress={loadData}
-              activeOpacity={0.8}
-            >
-              <RefreshCw size={16} color="#1a2d5a" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.newBtn}
-              onPress={() => openServiceTimetableModal(null)}
+              style={styles.newServiceBtn}
+              onPress={openCreateRehearsalModal}
               activeOpacity={0.85}
             >
-              <Plus size={15} color="#1A2D5A" strokeWidth={2.5} />
-              <Text style={styles.newBtnTxt}>New</Text>
+              <Plus size={16} color="#FFFFFF" />
+              <Text style={styles.newServiceBtnTxt}>Add Rehearsal</Text>
             </TouchableOpacity>
-          </View>
+          ) : activePlannerTab === 'attendance' ? (
+            <TouchableOpacity
+              style={[styles.newServiceBtn, { backgroundColor: '#059669' }]}
+              onPress={handleCheckInAllVolunteers}
+              activeOpacity={0.85}
+              disabled={savingAttendance || serviceVolunteers.length === 0}
+            >
+              <UserCheck size={16} color="#FFFFFF" />
+              <Text style={styles.newServiceBtnTxt}>Check-In All</Text>
+            </TouchableOpacity>
+          ) : activePlannerTab === 'analytics' ? (
+            <TouchableOpacity
+              style={styles.newServiceBtn}
+              onPress={fetchAnalytics}
+              activeOpacity={0.85}
+              disabled={loadingAnalytics}
+            >
+              <RefreshCw size={14} color="#FFFFFF" />
+              <Text style={styles.newServiceBtnTxt}>Refresh</Text>
+            </TouchableOpacity>
+          ) : activePlannerTab === 'setlist' ? (
+            <TouchableOpacity
+              style={styles.newServiceBtn}
+              onPress={openSongPicker}
+              activeOpacity={0.85}
+            >
+              <Plus size={16} color="#FFFFFF" />
+              <Text style={styles.newServiceBtnTxt}>Add Song</Text>
+            </TouchableOpacity>
+          ) : activePlannerTab === 'teams' ? (
+            <TouchableOpacity
+              style={styles.newServiceBtn}
+              onPress={openCreateTeamModal}
+              activeOpacity={0.85}
+            >
+              <Plus size={16} color="#FFFFFF" />
+              <Text style={styles.newServiceBtnTxt}>Add Team</Text>
+            </TouchableOpacity>
+          ) : activePlannerTab === 'skills' ? (
+            <TouchableOpacity
+              style={styles.newServiceBtn}
+              onPress={() => setShowAddSkillModal(true)}
+              activeOpacity={0.85}
+            >
+              <Plus size={16} color="#FFFFFF" />
+              <Text style={styles.newServiceBtnTxt}>Add Skill</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.newServiceBtn}
+              onPress={() => setShowCreateModal(true)}
+              activeOpacity={0.85}
+            >
+              <Plus size={16} color="#FFFFFF" />
+              <Text style={styles.newServiceBtnTxt}>New Service</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
-        {/* ── Horizontal Service Carousel Cards ────────────────── */}
-        {plans.length > 0 && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.carouselScrollView}
-            contentContainerStyle={styles.carouselContainer}
+        {/* ─── Navigation Tabs (Phase 1 + 2 + 3) ─── */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsScroll}>
+          <TouchableOpacity
+            style={[styles.tabBtn, activePlannerTab === 'calendar' && styles.tabBtnActive]}
+            onPress={() => setActivePlannerTab('calendar')}
           >
-            {plans.map((p, pIdx) => {
-              const isSelected = selectedPlan?.id === p.id;
-              return (
-                <TouchableOpacity
-                  key={`plan_chip_${p.id || ''}_${pIdx}`}
-                  style={[styles.serviceCardChip, isSelected && styles.serviceCardChipActive]}
-                  onPress={() => setSelectedPlan(p)}
-                  activeOpacity={0.85}
-                >
-                  <View style={styles.chipTopRow}>
-                    <View style={[styles.chipDatePill, isSelected && styles.chipDatePillActive]}>
-                      <CalendarDays size={10} color={isSelected ? '#1A2D5A' : '#FFFFFF'} />
-                      <Text style={[styles.chipDateTxt, isSelected && styles.chipDateTxtActive]}>
-                        {p.date}
-                      </Text>
-                    </View>
-                    {p.startTime ? (
-                      <Text style={[styles.chipTimeTxt, isSelected && styles.chipTimeTxtActive]}>
-                        {p.startTime}
+            <CalendarDays size={14} color={activePlannerTab === 'calendar' ? '#1E3A8A' : secondaryText} />
+            <Text style={[styles.tabBtnTxt, activePlannerTab === 'calendar' && styles.tabBtnTxtActive]}>
+              Calendar ({plans.length})
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabBtn, activePlannerTab === 'builder' && styles.tabBtnActive]}
+            onPress={() => setActivePlannerTab('builder')}
+            disabled={!selectedPlan}
+          >
+            <Layers size={14} color={activePlannerTab === 'builder' ? '#1E3A8A' : secondaryText} />
+            <Text style={[styles.tabBtnTxt, activePlannerTab === 'builder' && styles.tabBtnTxtActive]}>
+              Order Builder {selectedPlan ? `(${selectedPlan.runSheet?.length || 0})` : ''}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabBtn, activePlannerTab === 'setlist' && styles.tabBtnActive]}
+            onPress={() => setActivePlannerTab('setlist')}
+            disabled={!selectedPlan}
+          >
+            <Music size={14} color={activePlannerTab === 'setlist' ? '#1E3A8A' : secondaryText} />
+            <Text style={[styles.tabBtnTxt, activePlannerTab === 'setlist' && styles.tabBtnTxtActive]}>
+              Worship Setlist {selectedPlan ? `(${selectedPlan.setlist?.length || 0})` : ''}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabBtn, activePlannerTab === 'queue' && styles.tabBtnActive]}
+            onPress={() => setActivePlannerTab('queue')}
+            disabled={!selectedPlan}
+          >
+            <ListOrdered size={14} color={activePlannerTab === 'queue' ? '#1E3A8A' : secondaryText} />
+            <Text style={[styles.tabBtnTxt, activePlannerTab === 'queue' && styles.tabBtnTxtActive]}>
+              Assignment Queue {selectedPlan ? `(${assignmentQueues.length})` : ''}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabBtn, activePlannerTab === 'rehearsals' && styles.tabBtnActive]}
+            onPress={() => setActivePlannerTab('rehearsals')}
+            disabled={!selectedPlan}
+          >
+            <Clock size={14} color={activePlannerTab === 'rehearsals' ? '#1E3A8A' : secondaryText} />
+            <Text style={[styles.tabBtnTxt, activePlannerTab === 'rehearsals' && styles.tabBtnTxtActive]}>
+              Rehearsals {selectedPlan ? `(${rehearsals.length})` : ''}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabBtn, activePlannerTab === 'attendance' && styles.tabBtnActive]}
+            onPress={() => setActivePlannerTab('attendance')}
+            disabled={!selectedPlan}
+          >
+            <UserCheck size={14} color={activePlannerTab === 'attendance' ? '#1E3A8A' : secondaryText} />
+            <Text style={[styles.tabBtnTxt, activePlannerTab === 'attendance' && styles.tabBtnTxtActive]}>
+              Attendance {selectedPlan ? `(${serviceVolunteers.length})` : ''}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabBtn, activePlannerTab === 'analytics' && styles.tabBtnActive]}
+            onPress={() => {
+              setActivePlannerTab('analytics');
+              fetchAnalytics();
+            }}
+          >
+            <BarChart2 size={14} color={activePlannerTab === 'analytics' ? '#1E3A8A' : secondaryText} />
+            <Text style={[styles.tabBtnTxt, activePlannerTab === 'analytics' && styles.tabBtnTxtActive]}>
+              Analytics & Health
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabBtn, { backgroundColor: '#7C3AED' }]}
+            onPress={() => {
+              if (selectedPlan) {
+                navigation.navigate('LiveStageHUD', {
+                  serviceId: selectedPlan.id,
+                  churchId,
+                  plan: selectedPlan
+                });
+              } else {
+                Alert.alert('Select Service', 'Please select a service from the calendar first.');
+              }
+            }}
+          >
+            <Radio size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
+            <Text style={[styles.tabBtnTxt, { color: '#FFFFFF', fontWeight: '800' }]}>
+              Stage HUD
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabBtn, activePlannerTab === 'teams' && styles.tabBtnActive]}
+            onPress={() => setActivePlannerTab('teams')}
+          >
+            <Users size={14} color={activePlannerTab === 'teams' ? '#1E3A8A' : secondaryText} />
+            <Text style={[styles.tabBtnTxt, activePlannerTab === 'teams' && styles.tabBtnTxtActive]}>
+              Ministry Teams ({ministryTeams.length})
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabBtn, activePlannerTab === 'skills' && styles.tabBtnActive]}
+            onPress={() => setActivePlannerTab('skills')}
+          >
+            <Award size={14} color={activePlannerTab === 'skills' ? '#1E3A8A' : secondaryText} />
+            <Text style={[styles.tabBtnTxt, activePlannerTab === 'skills' && styles.tabBtnTxtActive]}>
+              Skills {pendingSkillsCount > 0 ? `(${pendingSkillsCount} ⚠️)` : `(${memberSkills.length})`}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabBtn, activePlannerTab === 'templates' && styles.tabBtnActive]}
+            onPress={() => setActivePlannerTab('templates')}
+          >
+            <BookOpen size={14} color={activePlannerTab === 'templates' ? '#1E3A8A' : secondaryText} />
+            <Text style={[styles.tabBtnTxt, activePlannerTab === 'templates' && styles.tabBtnTxtActive]}>
+              Templates ({templates.length})
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+
+      {/* ─── Body Content ─── */}
+      {loading ? (
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color="#1E3A8A" />
+          <Text style={[styles.centerText, { color: secondaryText }]}>Loading service operations...</Text>
+        </View>
+      ) : (
+        <ScrollView
+          style={styles.bodyScroll}
+          contentContainerStyle={{ paddingBottom: 100 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#1E3A8A']} />}
+        >
+          {/* TAB 1: CALENDAR & SERVICE SCHEDULE */}
+          {activePlannerTab === 'calendar' && (
+            <View style={styles.tabContent}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
+                {['all', 'draft', 'published', 'completed', 'cancelled'].map(st => (
+                  <TouchableOpacity
+                    key={st}
+                    style={[styles.filterChip, statusFilter === st && styles.filterChipActive]}
+                    onPress={() => setStatusFilter(st)}
+                  >
+                    <Text style={[styles.filterChipTxt, statusFilter === st && styles.filterChipTxtActive]}>
+                      {st.toUpperCase()}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              {filteredPlans.length === 0 ? (
+                <View style={[styles.emptyCard, { backgroundColor: cardSurface, borderColor }]}>
+                  <Calendar size={36} color="#94A3B8" />
+                  <Text style={[styles.emptyTitle, { color: primaryText }]}>No Services Scheduled</Text>
+                  <Text style={[styles.emptySubtitle, { color: secondaryText }]}>
+                    Create your first worship service, conference, or prayer meeting to start planning.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.createEmptyBtn}
+                    onPress={() => setShowCreateModal(true)}
+                  >
+                    <Plus size={15} color="#FFFFFF" />
+                    <Text style={styles.createEmptyBtnTxt}>Create Service</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                filteredPlans.map(plan => {
+                  const isSelected = selectedPlan?.id === plan.id;
+                  const typeLabel = SERVICE_TYPE_LABELS[plan.serviceType] || plan.serviceType;
+                  return (
+                    <TouchableOpacity
+                      key={plan.id}
+                      style={[
+                        styles.planCard,
+                        { backgroundColor: cardSurface, borderColor },
+                        isSelected && styles.planCardSelected
+                      ]}
+                      activeOpacity={0.85}
+                      onPress={() => {
+                        setSelectedPlan(plan);
+                        setActivePlannerTab('builder');
+                      }}
+                    >
+                      <View style={styles.planCardTop}>
+                        <View style={styles.dateBadge}>
+                          <Text style={styles.dateBadgeDay}>{plan.date.split('-')[2] || '01'}</Text>
+                          <Text style={styles.dateBadgeMonth}>
+                            {new Date(plan.date).toLocaleString('default', { month: 'short' }).toUpperCase()}
+                          </Text>
+                        </View>
+                        <View style={{ flex: 1, paddingHorizontal: 10 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <Text style={styles.planTypeTag}>{typeLabel.toUpperCase()}</Text>
+                            <View style={[
+                              styles.miniStatusPill,
+                              plan.status === 'published' ? styles.statusPillPublished :
+                                plan.status === 'completed' ? styles.statusPillCompleted :
+                                  styles.statusPillDraft
+                            ]}>
+                              <Text style={styles.miniStatusPillTxt}>{plan.status.toUpperCase()}</Text>
+                            </View>
+                          </View>
+                          <Text style={[styles.planTitle, { color: primaryText }]} numberOfLines={1}>
+                            {plan.serviceTitle}
+                          </Text>
+                          <Text style={[styles.planMeta, { color: secondaryText }]} numberOfLines={1}>
+                            ⏰ {plan.startTime} - {plan.endTime} ({plan.totalDurationMinutes || 120}m) · 📍 {plan.location}
+                          </Text>
+                        </View>
+                        <ChevronRight size={18} color="#94A3B8" />
+                      </View>
+
+                      <View style={styles.planCardBottom}>
+                        <View style={styles.planStatRow}>
+                          <Text style={[styles.planStatTxt, { color: secondaryText }]}>
+                            📋 {plan.runSheet?.length || 0} Activities
+                          </Text>
+                          <Text style={[styles.planStatTxt, { color: secondaryText }]}>
+                            🎵 {plan.setlist?.length || 0} Songs
+                          </Text>
+                          <Text style={[styles.planStatTxt, { color: secondaryText }]}>
+                            🎤 {plan.preacher || 'Pastor'}
+                          </Text>
+                        </View>
+
+                        <TouchableOpacity
+                          style={styles.openHudBtn}
+                          onPress={() => {
+                            setSelectedPlan(plan);
+                            navigation.navigate('LiveStageHUD', {
+                              serviceId: plan.id,
+                              churchId,
+                              plan
+                            });
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          <Radio size={12} color="#FFFFFF" style={{ marginRight: 4 }} />
+                          <Text style={styles.openHudBtnTxt}>Stage HUD</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </View>
+          )}
+
+          {/* TAB 2: DYNAMIC ORDER BUILDER & RUNSHEET */}
+          {activePlannerTab === 'builder' && selectedPlan && (
+            <View style={styles.tabContent}>
+              <View style={[styles.selectedBanner, { backgroundColor: cardSurface, borderColor }]}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <View style={{ flex: 1, paddingRight: 8 }}>
+                    <Text style={styles.selectedBannerTag}>SELECTED SERVICE</Text>
+                    <Text style={[styles.selectedBannerTitle, { color: primaryText }]}>
+                      {selectedPlan.serviceTitle}
+                    </Text>
+                    <Text style={[styles.selectedBannerMeta, { color: secondaryText }]}>
+                      📅 {selectedPlan.date} · ⏰ {selectedPlan.startTime} - {selectedPlan.endTime} · 📍 {selectedPlan.location}
+                    </Text>
+                    {selectedPlan.theme ? (
+                      <Text style={[styles.selectedBannerTheme, { color: '#D97706' }]}>
+                        Theme: "{selectedPlan.theme}" {selectedPlan.bibleReference ? `(${selectedPlan.bibleReference})` : ''}
                       </Text>
                     ) : null}
                   </View>
-                  <Text
-                    style={[styles.chipTitleTxt, isSelected && styles.chipTitleTxtActive]}
-                    numberOfLines={1}
-                  >
-                    {p.serviceTitle}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        )}
-      </View>
 
-      {/* ── Main Content Area ──────────────────────────────────── */}
-      {loading ? (
-        <View style={styles.centerWrap}>
-          <ActivityIndicator size="large" color="#1A2D5A" />
-          <Text style={styles.loadingTxt}>Loading church service schedules...</Text>
-        </View>
-      ) : !selectedPlan ? (
-        <View style={styles.emptyWrap}>
-          <View style={styles.emptyIconCircle}>
-            <CalendarDays size={38} color="#1A2D5A" />
-          </View>
-          <Text style={styles.emptyTitle}>No Service Plan Found</Text>
-          <Text style={styles.emptySub}>
-            Create your service timetable, run-sheets, and assign church team rosters.
-          </Text>
-          <TouchableOpacity
-            style={styles.emptyCreateBtn}
-            onPress={() => openServiceTimetableModal(null)}
-            activeOpacity={0.85}
-          >
-            <Plus size={16} color="#FFFFFF" strokeWidth={2.5} />
-            <Text style={styles.emptyCreateBtnTxt}>Create First Service Schedule</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          {/* ── Active Service Banner Card ─────────────────────── */}
-          <View style={styles.activeServiceCard}>
-            <View style={styles.activeServiceTop}>
-              <View style={{ flex: 1, marginRight: 8 }}>
-                <View style={styles.badgeRow}>
-                  <View style={styles.dateBadge}>
-                    <CalendarDays size={12} color="#1A2D5A" />
-                    <Text style={styles.dateBadgeTxt}>{selectedPlan.date}</Text>
-                  </View>
-                  {selectedPlan.startTime && (
-                    <View style={styles.timeBadge}>
-                      <Clock size={12} color="#059669" />
-                      <Text style={styles.timeBadgeTxt}>
-                        {selectedPlan.startTime} {selectedPlan.endTime ? `- ${selectedPlan.endTime}` : ''}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-                <Text style={styles.activeServiceTitle} numberOfLines={2}>
-                  {selectedPlan.serviceTitle}
-                </Text>
-                {selectedPlan.location && (
-                  <View style={styles.locationRow}>
-                    <MapPin size={12} color="#64748B" />
-                    <Text style={styles.locationTxt} numberOfLines={1}>
-                      {selectedPlan.location}
-                    </Text>
-                  </View>
-                )}
-              </View>
-            </View>
-
-            {/* Quick Actions Row */}
-            <View style={styles.activeServiceActionsRow}>
-              <TouchableOpacity
-                style={styles.actionBtnEdit}
-                onPress={() => openServiceTimetableModal(selectedPlan)}
-                activeOpacity={0.8}
-              >
-                <Edit2 size={13} color="#FFFFFF" />
-                <Text style={styles.actionBtnEditTxt}>Edit Timetable</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.actionBtnShare}
-                onPress={handleShareToWhatsApp}
-                activeOpacity={0.8}
-              >
-                <MessageCircle size={14} color="#059669" />
-                <Text style={styles.actionBtnShareTxt}>Share</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.actionBtnDelete}
-                onPress={() => handleDeletePlan(selectedPlan)}
-                activeOpacity={0.8}
-              >
-                <Trash2 size={14} color="#DC2626" />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* ── Modern Segmented Navigation Tabs ───────────────── */}
-          <View style={styles.tabBar}>
-            <TouchableOpacity
-              style={[styles.tabItem, activePlanTab === 'roster' && styles.tabItemActive]}
-              onPress={() => setActivePlanTab('roster')}
-              activeOpacity={0.85}
-            >
-              <Users size={15} color={activePlanTab === 'roster' ? '#FFFFFF' : '#64748B'} />
-              <Text style={[styles.tabItemTxt, activePlanTab === 'roster' && styles.tabItemTxtActive]}>
-                Team Roster
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.tabItem, activePlanTab === 'setlist' && styles.tabItemActive]}
-              onPress={() => setActivePlanTab('setlist')}
-              activeOpacity={0.85}
-            >
-              <Music size={15} color={activePlanTab === 'setlist' ? '#FFFFFF' : '#64748B'} />
-              <Text style={[styles.tabItemTxt, activePlanTab === 'setlist' && styles.tabItemTxtActive]}>
-                Setlist Flow
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.tabItem, activePlanTab === 'runSheet' && styles.tabItemActive]}
-              onPress={() => setActivePlanTab('runSheet')}
-              activeOpacity={0.85}
-            >
-              <Clock size={15} color={activePlanTab === 'runSheet' ? '#FFFFFF' : '#64748B'} />
-              <Text style={[styles.tabItemTxt, activePlanTab === 'runSheet' && styles.tabItemTxtActive]}>
-                Run Sheet
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.tabItem, activePlanTab === 'export' && styles.tabItemActive]}
-              onPress={() => setActivePlanTab('export')}
-              activeOpacity={0.85}
-            >
-              <Share2 size={15} color={activePlanTab === 'export' ? '#FFFFFF' : '#64748B'} />
-              <Text style={[styles.tabItemTxt, activePlanTab === 'export' && styles.tabItemTxtActive]}>
-                Bulletin
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* ═════════════════════════════════════════════════════
-              TAB 1: TEAM ROSTER (VISUAL MINISTRY CARDS)
-             ═════════════════════════════════════════════════════ */}
-          {activePlanTab === 'roster' && (
-            <View style={{ gap: 14 }}>
-              {/* 1. Worship & Music Department */}
-              <View style={styles.sectionCard}>
-                <View style={[styles.sectionCardHeader, { backgroundColor: '#EEF2FF', borderColor: '#C7D2FE' }]}>
-                  <View style={styles.sectionCardHeaderLeft}>
-                    <View style={[styles.sectionIconWrap, { backgroundColor: '#E0E7FF' }]}>
-                      <Music size={16} color="#4338CA" />
-                    </View>
-                    <View>
-                      <Text style={[styles.sectionCardTitle, { color: '#312E81' }]}>Worship Team & Band</Text>
-                      <Text style={styles.sectionCardSub}>Vocalists, Keyboardists & Instrumentalists</Text>
-                    </View>
+                  <View style={{ flexDirection: 'row', gap: 6 }}>
+                    <TouchableOpacity
+                      style={[styles.bannerActionBtn, { backgroundColor: '#7C3AED', borderColor: '#7C3AED' }]}
+                      onPress={() => {
+                        navigation.navigate('LiveStageHUD', {
+                          serviceId: selectedPlan.id,
+                          churchId,
+                          plan: selectedPlan
+                        });
+                      }}
+                    >
+                      <Radio size={14} color="#FFFFFF" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.bannerActionBtn}
+                      onPress={openEditDetailsModal}
+                    >
+                      <Edit3 size={14} color="#1E3A8A" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.bannerActionBtn}
+                      onPress={() => setShowApplyTemplateModal(true)}
+                    >
+                      <Copy size={14} color="#1E3A8A" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.bannerActionBtn, { borderColor: '#FCA5A5' }]}
+                      onPress={handleDeleteService}
+                    >
+                      <Trash2 size={14} color="#DC2626" />
+                    </TouchableOpacity>
                   </View>
                 </View>
 
-                <View style={styles.rolesGrid}>
-                  {[
-                    { id: 'singer_1', label: 'Singer #1 (Center)', icon: '🎤' },
-                    { id: 'keyboard', label: 'Keyboard', icon: '🎹' },
-                    { id: 'singer_2', label: 'Singer #2 (Left)', icon: '🎤' },
-                    { id: 'electric', label: 'Electric Guitar', icon: '🎸' },
-                    { id: 'singer_3', label: 'Singer #3 (Right)', icon: '🎤' },
-                    { id: 'bass', label: 'Bass Guitar', icon: '🎸' },
-                    { id: 'acoustic', label: 'Acoustic Guitar', icon: '🎸' },
-                    { id: 'drums', label: 'Drums', icon: '🥁' },
-                  ].map(role => {
-                    const assigned = selectedPlan.assignments[role.id];
-                    return (
+                {/* Status Switcher Bar */}
+                <View style={styles.statusSwitcherRow}>
+                  <Text style={[styles.statusSwitcherLabel, { color: secondaryText }]}>Service Status:</Text>
+                  <View style={styles.statusButtonsGroup}>
+                    {(['draft', 'published', 'completed', 'cancelled'] as ServiceStatus[]).map(st => (
                       <TouchableOpacity
-                        key={role.id}
-                        style={[styles.roleTile, assigned ? styles.roleTileAssigned : styles.roleTileUnassigned]}
-                        onPress={() => {
-                          setAssigningRoleId(role.id);
-                          setAssigningRoleName(role.label);
-                          setShowMemberPickerModal(true);
-                        }}
-                        activeOpacity={0.8}
+                        key={st}
+                        style={[
+                          styles.statusToggleBtn,
+                          selectedPlan.status === st && styles.statusToggleBtnActive
+                        ]}
+                        onPress={() => handleUpdateStatus(st)}
                       >
-                        <View style={styles.roleTileTop}>
-                          <Text style={styles.roleIconEmoji}>{role.icon}</Text>
-                          <Text style={styles.roleLabelTxt} numberOfLines={1}>{role.label}</Text>
-                        </View>
-                        {assigned ? (
-                          <View style={styles.assignedPersonRow}>
-                            <View style={styles.avatarBubble}>
-                              <Text style={styles.avatarBubbleTxt}>
-                                {assigned.charAt(0).toUpperCase()}
-                              </Text>
-                            </View>
-                            <Text style={styles.assignedPersonName} numberOfLines={1}>
-                              {assigned}
-                            </Text>
-                          </View>
-                        ) : (
-                          <View style={styles.unassignedPromptRow}>
-                            <Plus size={12} color="#64748B" />
-                            <Text style={styles.unassignedPromptTxt}>Assign Member</Text>
-                          </View>
-                        )}
+                        <Text style={[
+                          styles.statusToggleBtnTxt,
+                          selectedPlan.status === st && styles.statusToggleBtnTxtActive
+                        ]}>
+                          {st.toUpperCase()}
+                        </Text>
                       </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                {/* Mini Song Preview */}
-                {selectedPlan.setlist && selectedPlan.setlist.length > 0 && (
-                  <View style={styles.rosterSongPreviewWrap}>
-                    <View style={styles.rosterSongPreviewHeader}>
-                      <Text style={styles.rosterSongPreviewTitle}>
-                        Scheduled Songs ({selectedPlan.setlist.length})
-                      </Text>
-                      <TouchableOpacity onPress={() => setActivePlanTab('setlist')}>
-                        <Text style={styles.viewDetailsLink}>View Setlist →</Text>
-                      </TouchableOpacity>
-                    </View>
-                    {selectedPlan.setlist.map((song, sIdx) => (
-                      <View key={`mini_${song.id || sIdx}`} style={styles.miniSongRow}>
-                        <Text style={styles.miniSongIdx}>{sIdx + 1}.</Text>
-                        <Text style={styles.miniSongName} numberOfLines={1}>{song.title}</Text>
-                        {song.key ? (
-                          <View style={styles.miniKeyPill}>
-                            <Text style={styles.miniKeyPillTxt}>{song.key}</Text>
-                          </View>
-                        ) : null}
-                        {song.ledBy ? (
-                          <Text style={styles.miniSongLeader} numberOfLines={1}>
-                            Led by {song.ledBy}
-                          </Text>
-                        ) : null}
-                      </View>
                     ))}
                   </View>
-                )}
-              </View>
-
-              {/* 2. Media & AV Team (BMW) */}
-              <View style={styles.sectionCard}>
-                <View style={[styles.sectionCardHeader, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
-                  <View style={styles.sectionCardHeaderLeft}>
-                    <View style={[styles.sectionIconWrap, { backgroundColor: '#D1FAE5' }]}>
-                      <Tv size={16} color="#059669" />
-                    </View>
-                    <View>
-                      <Text style={[styles.sectionCardTitle, { color: '#065F46' }]}>Team BMW (Audio, Media & Visuals)</Text>
-                      <Text style={styles.sectionCardSub}>Sound Engineers, Live Stream & Cameras</Text>
-                    </View>
-                  </View>
                 </View>
 
-                <View style={styles.rolesGrid}>
-                  {[
-                    { id: 'sound_foh', label: 'Sounds (FOH)', icon: '🎛️' },
-                    { id: 'cam_main', label: 'V. Camera (Main)', icon: '📹' },
-                    { id: 'sound_stage', label: 'Sounds (Stage)', icon: '🔊' },
-                    { id: 'cam_right', label: 'V. Camera (Right)', icon: '📹' },
-                    { id: 'media_pc1', label: 'Media - Live PC', icon: '💻' },
-                    { id: 'cam_left', label: 'V. Camera (Left)', icon: '📹' },
-                    { id: 'media_pc3', label: 'Media - Lyrics PC', icon: '📽️' },
-                    { id: 'video_dir', label: 'Video Director', icon: '🎬' },
-                    { id: 'media_pc4', label: 'Stage Displays', icon: '🖥️' },
-                    { id: 'photo_cam', label: 'Photographer', icon: '📸' },
-                  ].map(role => {
-                    const assigned = selectedPlan.assignments[role.id];
-                    return (
-                      <TouchableOpacity
-                        key={role.id}
-                        style={[styles.roleTile, assigned ? styles.roleTileAssigned : styles.roleTileUnassigned]}
-                        onPress={() => {
-                          setAssigningRoleId(role.id);
-                          setAssigningRoleName(role.label);
-                          setShowMemberPickerModal(true);
-                        }}
-                        activeOpacity={0.8}
-                      >
-                        <View style={styles.roleTileTop}>
-                          <Text style={styles.roleIconEmoji}>{role.icon}</Text>
-                          <Text style={styles.roleLabelTxt} numberOfLines={1}>{role.label}</Text>
-                        </View>
-                        {assigned ? (
-                          <View style={styles.assignedPersonRow}>
-                            <View style={styles.avatarBubble}>
-                              <Text style={styles.avatarBubbleTxt}>
-                                {assigned.charAt(0).toUpperCase()}
-                              </Text>
-                            </View>
-                            <Text style={styles.assignedPersonName} numberOfLines={1}>
-                              {assigned}
-                            </Text>
-                          </View>
-                        ) : (
-                          <View style={styles.unassignedPromptRow}>
-                            <Plus size={12} color="#64748B" />
-                            <Text style={styles.unassignedPromptTxt}>Assign Member</Text>
-                          </View>
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {/* 3. Platform Ministers & Liturgy */}
-              <View style={styles.sectionCard}>
-                <View style={[styles.sectionCardHeader, { backgroundColor: '#F0FDFA', borderColor: '#99F6E4' }]}>
-                  <View style={styles.sectionCardHeaderLeft}>
-                    <View style={[styles.sectionIconWrap, { backgroundColor: '#CCFBF1' }]}>
-                      <Heart size={16} color="#0D9488" />
-                    </View>
-                    <View>
-                      <Text style={[styles.sectionCardTitle, { color: '#115E59' }]}>Platform Ministers & Hospitality</Text>
-                      <Text style={styles.sectionCardSub}>Prayer Leaders, Ushers & Hospitality</Text>
-                    </View>
-                  </View>
-                </View>
-
-                <View style={styles.rolesGrid}>
-                  {[
-                    { id: 'op_prayer', label: 'Starting Prayer', icon: '🙏' },
-                    { id: 'cl_prayer', label: 'Closing Prayer', icon: '🙏' },
-                    { id: 'devotion', label: 'Devotion / Exhortation', icon: '📖' },
-                    { id: 'announcements', label: 'Announcements', icon: '📢' },
-                    { id: 'ushering', label: 'Ushering Team', icon: '🤝' },
-                    { id: 'fmh', label: 'Hospitality (FMH)', icon: '☕' },
-                  ].map(role => {
-                    const assigned = selectedPlan.assignments[role.id];
-                    return (
-                      <TouchableOpacity
-                        key={role.id}
-                        style={[styles.roleTile, assigned ? styles.roleTileAssigned : styles.roleTileUnassigned]}
-                        onPress={() => {
-                          setAssigningRoleId(role.id);
-                          setAssigningRoleName(role.label);
-                          setShowMemberPickerModal(true);
-                        }}
-                        activeOpacity={0.8}
-                      >
-                        <View style={styles.roleTileTop}>
-                          <Text style={styles.roleIconEmoji}>{role.icon}</Text>
-                          <Text style={styles.roleLabelTxt} numberOfLines={1}>{role.label}</Text>
-                        </View>
-                        {assigned ? (
-                          <View style={styles.assignedPersonRow}>
-                            <View style={styles.avatarBubble}>
-                              <Text style={styles.avatarBubbleTxt}>
-                                {assigned.charAt(0).toUpperCase()}
-                              </Text>
-                            </View>
-                            <Text style={styles.assignedPersonName} numberOfLines={1}>
-                              {assigned}
-                            </Text>
-                          </View>
-                        ) : (
-                          <View style={styles.unassignedPromptRow}>
-                            <Plus size={12} color="#64748B" />
-                            <Text style={styles.unassignedPromptTxt}>Assign Member</Text>
-                          </View>
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {/* 4. Sunday School / Kids Ministry */}
-              <View style={styles.sectionCard}>
-                <View style={[styles.sectionCardHeader, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
-                  <View style={styles.sectionCardHeaderLeft}>
-                    <View style={[styles.sectionIconWrap, { backgroundColor: '#FDE68A' }]}>
-                      <Baby size={16} color="#B45309" />
-                    </View>
-                    <View>
-                      <Text style={[styles.sectionCardTitle, { color: '#78350F' }]}>Sunday School & Kids Ministry</Text>
-                      <Text style={styles.sectionCardSub}>Teachers, Lessons & Classes</Text>
-                    </View>
-                  </View>
-                </View>
-
-                <View style={styles.rolesGrid}>
-                  {[
-                    { id: 'ss_beginners', label: 'Beginners Class', icon: '👶' },
-                    { id: 'ss_primary', label: 'Primary Class', icon: '🧒' },
-                    { id: 'ss_juniors', label: 'Juniors Class', icon: '👦' },
-                    { id: 'ss_seniors', label: 'Seniors Class', icon: '🧑' },
-                  ].map(role => {
-                    const assigned = selectedPlan.assignments[role.id];
-                    return (
-                      <TouchableOpacity
-                        key={role.id}
-                        style={[styles.roleTile, assigned ? styles.roleTileAssigned : styles.roleTileUnassigned]}
-                        onPress={() => {
-                          setAssigningRoleId(role.id);
-                          setAssigningRoleName(role.label);
-                          setShowMemberPickerModal(true);
-                        }}
-                        activeOpacity={0.8}
-                      >
-                        <View style={styles.roleTileTop}>
-                          <Text style={styles.roleIconEmoji}>{role.icon}</Text>
-                          <Text style={styles.roleLabelTxt} numberOfLines={1}>{role.label}</Text>
-                        </View>
-                        {assigned ? (
-                          <View style={styles.assignedPersonRow}>
-                            <View style={styles.avatarBubble}>
-                              <Text style={styles.avatarBubbleTxt}>
-                                {assigned.charAt(0).toUpperCase()}
-                              </Text>
-                            </View>
-                            <Text style={styles.assignedPersonName} numberOfLines={1}>
-                              {assigned}
-                            </Text>
-                          </View>
-                        ) : (
-                          <View style={styles.unassignedPromptRow}>
-                            <Plus size={12} color="#64748B" />
-                            <Text style={styles.unassignedPromptTxt}>Assign Teacher</Text>
-                          </View>
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {/* 5. Sermon Details Card */}
-              <View style={styles.sectionCard}>
-                <View style={[styles.sectionCardHeader, { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }]}>
-                  <View style={styles.sectionCardHeaderLeft}>
-                    <View style={[styles.sectionIconWrap, { backgroundColor: '#DBEAFE' }]}>
-                      <BookOpen size={16} color="#1D4ED8" />
-                    </View>
-                    <View>
-                      <Text style={[styles.sectionCardTitle, { color: '#1E3A8A' }]}>Sermon & Word Ministry</Text>
-                      <Text style={styles.sectionCardSub}>Speaker, Scripture Reading & Message</Text>
-                    </View>
-                  </View>
-                </View>
-
-                <View style={styles.sermonCardBody}>
-                  <View style={styles.sermonFieldRow}>
-                    <View style={{ flex: 2 }}>
-                      <Text style={styles.sermonFieldLabel}>Sermon Title</Text>
-                      <TextInput
-                        style={styles.sermonFieldInput}
-                        value={selectedPlan.sermon?.title || ''}
-                        placeholder="e.g. Walking in the Spirit"
-                        placeholderTextColor="#94A3B8"
-                        onChangeText={t => {
-                          setSelectedPlan(prev => {
-                            if (!prev) return null;
-                            const current = prev.sermon || { title: '', code: '', speaker: '', keyVerses: '' };
-                            return { ...prev, sermon: { ...current, title: t } };
-                          });
-                        }}
-                      />
-                    </View>
-                    <View style={{ flex: 1, marginLeft: 10 }}>
-                      <Text style={styles.sermonFieldLabel}>Code</Text>
-                      <TextInput
-                        style={styles.sermonFieldInput}
-                        value={selectedPlan.sermon?.code || ''}
-                        placeholder="e.g. A101"
-                        placeholderTextColor="#94A3B8"
-                        onChangeText={t => {
-                          setSelectedPlan(prev => {
-                            if (!prev) return null;
-                            const current = prev.sermon || { title: '', code: '', speaker: '', keyVerses: '' };
-                            return { ...prev, sermon: { ...current, code: t } };
-                          });
-                        }}
-                      />
-                    </View>
-                  </View>
-
-                  <View style={[styles.sermonFieldRow, { marginTop: 10 }]}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.sermonFieldLabel}>Preacher / Speaker</Text>
-                      <TextInput
-                        style={styles.sermonFieldInput}
-                        value={selectedPlan.sermon?.speaker || ''}
-                        placeholder="e.g. Pastor / Guest Speaker"
-                        placeholderTextColor="#94A3B8"
-                        onChangeText={t => {
-                          setSelectedPlan(prev => {
-                            if (!prev) return null;
-                            const current = prev.sermon || { title: '', code: '', speaker: '', keyVerses: '' };
-                            return { ...prev, sermon: { ...current, speaker: t } };
-                          });
-                        }}
-                      />
-                    </View>
-                    <View style={{ flex: 1, marginLeft: 10 }}>
-                      <Text style={styles.sermonFieldLabel}>Key Scripture Verses</Text>
-                      <TextInput
-                        style={styles.sermonFieldInput}
-                        value={selectedPlan.sermon?.keyVerses || ''}
-                        placeholder="e.g. Rom 8:1-14"
-                        placeholderTextColor="#94A3B8"
-                        onChangeText={t => {
-                          setSelectedPlan(prev => {
-                            if (!prev) return null;
-                            const current = prev.sermon || { title: '', code: '', speaker: '', keyVerses: '' };
-                            return { ...prev, sermon: { ...current, keyVerses: t } };
-                          });
-                        }}
-                      />
-                    </View>
-                  </View>
+                {/* Run-sheet PDF & CSV Export Toolbar (Phase 9) */}
+                <View style={styles.exportToolbar}>
+                  <TouchableOpacity
+                    style={[styles.exportBtn, { backgroundColor: '#1E3A8A' }]}
+                    onPress={handleExportPdf}
+                    disabled={exportingPdf}
+                  >
+                    {exportingPdf ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <FileText size={13} color="#FFFFFF" />
+                        <Text style={styles.exportBtnTxt}>Export PDF</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={styles.saveSermonBtn}
-                    onPress={async () => {
-                      if (!activeChurch?.id || !selectedPlan?.id) return;
-                      await ServiceRosterService.saveServicePlan(activeChurch.id, {
-                        id: selectedPlan.id,
-                        sermon: selectedPlan.sermon
-                      });
-                      Alert.alert('Saved', 'Sermon details updated.');
-                    }}
-                    activeOpacity={0.85}
+                    style={[styles.exportBtn, { backgroundColor: '#059669' }]}
+                    onPress={handleExportCsv}
+                    disabled={exportingCsv}
                   >
-                    <CheckCircle2 size={16} color="#FFFFFF" />
-                    <Text style={styles.saveSermonBtnTxt}>Save Sermon Information</Text>
+                    {exportingCsv ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <Download size={13} color="#FFFFFF" />
+                        <Text style={styles.exportBtnTxt}>Export CSV</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.exportBtn, { backgroundColor: '#475569' }]}
+                    onPress={handlePrintDirectly}
+                    disabled={printingSheet}
+                  >
+                    {printingSheet ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <Printer size={13} color="#FFFFFF" />
+                        <Text style={styles.exportBtnTxt}>Print Sheet</Text>
+                      </>
+                    )}
                   </TouchableOpacity>
                 </View>
               </View>
-            </View>
-          )}
 
-          {/* ═════════════════════════════════════════════════════
-              TAB 2: SETLIST FLOW (WORSHIP SONGS)
-             ═════════════════════════════════════════════════════ */}
-          {activePlanTab === 'setlist' && (
-            <View style={{ gap: 12 }}>
-              <View style={styles.tabSectionHeaderRow}>
+              {/* Timeline Overlap & Bound Warnings */}
+              {!timelineValidation.isValid && (
+                <View style={styles.warningBox}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <AlertCircle size={16} color="#DC2626" />
+                    <Text style={styles.warningTitle}>Timeline Conflict Detected</Text>
+                  </View>
+                  {timelineValidation.overlaps.map((ov, i) => (
+                    <Text key={i} style={styles.warningMsg}>• {ov}</Text>
+                  ))}
+                  {timelineValidation.warnings.map((wn, i) => (
+                    <Text key={i} style={styles.warningMsg}>• {wn}</Text>
+                  ))}
+                </View>
+              )}
+
+              {/* Order of Service Header with Add Button */}
+              <View style={styles.sectionHeaderRow}>
                 <View>
-                  <Text style={styles.tabSectionTitle}>Worship Songs & Chords</Text>
-                  <Text style={styles.tabSectionSubtitle}>
-                    {selectedPlan.setlist?.length || 0} Songs Scheduled
+                  <Text style={[styles.sectionHeading, { color: primaryText }]}>Order of Service</Text>
+                  <Text style={[styles.sectionSubheading, { color: secondaryText }]}>
+                    {selectedPlan.runSheet?.length || 0} items · Total {selectedPlan.totalDurationMinutes || 0} minutes
                   </Text>
                 </View>
                 <TouchableOpacity
-                  style={styles.primaryAddBtn}
-                  onPress={() => {
-                    setEditingSongIndex(null);
-                    setSongForm({
-                      id: '',
-                      title: '',
-                      ledBy: '',
-                      key: 'F',
-                      timeSignature: '4/4',
-                      tempo: '100',
-                      verses: '',
-                      prelude: '',
-                      interlude: '',
-                      notes: '',
-                      isOffertory: false,
-                    });
-                    setShowSongModal(true);
-                  }}
-                  activeOpacity={0.85}
+                  style={styles.addActivityBtn}
+                  onPress={openAddActivityModal}
                 >
-                  <Plus size={15} color="#FFFFFF" />
-                  <Text style={styles.primaryAddBtnTxt}>Add Song</Text>
+                  <Plus size={14} color="#FFFFFF" />
+                  <Text style={styles.addActivityBtnTxt}>Add Activity</Text>
                 </TouchableOpacity>
               </View>
 
-              {(!selectedPlan.setlist || selectedPlan.setlist.length === 0) ? (
-                <View style={styles.emptyCard}>
-                  <Music size={36} color="#CBD5E1" />
-                  <Text style={styles.emptyCardTitle}>No Songs in this Setlist</Text>
-                  <Text style={styles.emptyCardSub}>Add your songs with musical keys, tempo BPM, and band arrangements.</Text>
-                  <TouchableOpacity
-                    style={styles.emptyAddBtn}
-                    onPress={() => {
-                      setEditingSongIndex(null);
-                      setSongForm({
-                        id: '',
-                        title: '',
-                        ledBy: '',
-                        key: 'F',
-                        timeSignature: '4/4',
-                        tempo: '100',
-                        verses: '',
-                        prelude: '',
-                        interlude: '',
-                        notes: '',
-                        isOffertory: false,
-                      });
-                      setShowSongModal(true);
-                    }}
-                  >
-                    <Plus size={15} color="#1A2D5A" />
-                    <Text style={styles.emptyAddBtnTxt}>Add First Song</Text>
-                  </TouchableOpacity>
+              {/* Dynamic RunSheet List */}
+              {(!selectedPlan.runSheet || selectedPlan.runSheet.length === 0) ? (
+                <View style={[styles.emptyRunSheetCard, { backgroundColor: cardSurface, borderColor }]}>
+                  <Layers size={32} color="#94A3B8" />
+                  <Text style={[styles.emptyTitle, { color: primaryText }]}>No Activities Added Yet</Text>
+                  <Text style={[styles.emptySubtitle, { color: secondaryText }]}>
+                    Build the timeline by adding worship, prayer, sermon, and communion segments or apply a ready template.
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+                    <TouchableOpacity
+                      style={styles.addActivityBtn}
+                      onPress={openAddActivityModal}
+                    >
+                      <Plus size={14} color="#FFFFFF" />
+                      <Text style={styles.addActivityBtnTxt}>Add Activity</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.applyTemplateBtn}
+                      onPress={() => setShowApplyTemplateModal(true)}
+                    >
+                      <Copy size={14} color="#1E3A8A" />
+                      <Text style={styles.applyTemplateBtnTxt}>Apply Template</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               ) : (
-                selectedPlan.setlist.map((song, index) => (
-                  <View key={`song_${song.id || index}`} style={styles.songCard}>
-                    <View style={styles.songCardTop}>
-                      <View style={styles.songIndexCircle}>
-                        <Text style={styles.songIndexTxt}>{index + 1}</Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.songCardTitle}>{song.title}</Text>
-                        <Text style={styles.songCardLeader}>
-                          {song.ledBy ? `👤 Led by ${song.ledBy}` : 'Unassigned Song Leader'}
-                        </Text>
-                      </View>
-                      <View style={styles.songActionsRow}>
+                selectedPlan.runSheet.map((item, index) => {
+                  const catStyle = CATEGORY_COLORS[item.category] || CATEGORY_COLORS.other;
+                  return (
+                    <View
+                      key={item.id}
+                      style={[styles.runSheetItemCard, { backgroundColor: cardSurface, borderColor }]}
+                    >
+                      <View style={styles.reorderColumn}>
                         <TouchableOpacity
-                          style={styles.songActionBtn}
-                          onPress={() => {
-                            setEditingSongIndex(index);
-                            setSongForm({ ...song });
-                            setShowSongModal(true);
-                          }}
+                          style={[styles.reorderArrow, index === 0 && { opacity: 0.2 }]}
+                          disabled={index === 0}
+                          onPress={() => handleMoveActivity(index, 'up')}
                         >
-                          <Edit2 size={14} color="#475569" />
+                          <ChevronUp size={16} color="#64748B" />
+                        </TouchableOpacity>
+                        <Text style={styles.orderNumberText}>{item.order || index + 1}</Text>
+                        <TouchableOpacity
+                          style={[styles.reorderArrow, index === selectedPlan.runSheet.length - 1 && { opacity: 0.2 }]}
+                          disabled={index === selectedPlan.runSheet.length - 1}
+                          onPress={() => handleMoveActivity(index, 'down')}
+                        >
+                          <ChevronDown size={16} color="#64748B" />
+                        </TouchableOpacity>
+                      </View>
+
+                      <View style={{ flex: 1, paddingHorizontal: 8 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <View style={[styles.categoryBadge, { backgroundColor: catStyle.bg }]}>
+                            <Text style={[styles.categoryBadgeTxt, { color: catStyle.text }]}>
+                              {item.category.replace('_', ' ').toUpperCase()}
+                            </Text>
+                          </View>
+                          <View style={styles.timeBadge}>
+                            <Clock size={11} color="#1E3A8A" />
+                            <Text style={styles.timeBadgeTxt}>
+                              {item.startTime} - {item.endTime} ({item.durationMinutes}m)
+                            </Text>
+                          </View>
+                        </View>
+
+                        <Text style={[styles.itemProgramTitle, { color: primaryText }]}>
+                          {item.program}
+                        </Text>
+
+                        {item.responsiblePerson ? (
+                          <Text style={[styles.itemResponsible, { color: secondaryText }]}>
+                            👤 Assigned: <Text style={{ fontWeight: '700', color: primaryText }}>{item.responsiblePerson}</Text>
+                            {item.supportingTeam ? ` (${item.supportingTeam})` : ''}
+                          </Text>
+                        ) : null}
+
+                        {item.instructions ? (
+                          <Text style={[styles.itemInstructions, { color: secondaryText }]} numberOfLines={2}>
+                            📝 {item.instructions}
+                          </Text>
+                        ) : null}
+                      </View>
+
+                      <View style={styles.itemActionCol}>
+                        <TouchableOpacity
+                          style={styles.itemEditBtn}
+                          onPress={() => openEditActivityModal(item)}
+                        >
+                          <Edit3 size={14} color="#1E3A8A" />
                         </TouchableOpacity>
                         <TouchableOpacity
-                          style={styles.songActionBtn}
-                          onPress={() => handleDeleteSong(index)}
+                          style={styles.itemDeleteBtn}
+                          onPress={() => handleDeleteActivity(item.id)}
                         >
                           <Trash2 size={14} color="#DC2626" />
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-
-                    {/* Chips Row */}
-                    <View style={styles.songChipsRow}>
-                      <View style={[styles.musicChip, { backgroundColor: '#F3E8FF', borderColor: '#D8B4FE' }]}>
-                        <Text style={[styles.musicChipTxt, { color: '#7E22CE' }]}>Key: {song.key || 'F'}</Text>
-                      </View>
-                      <View style={[styles.musicChip, { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }]}>
-                        <Text style={[styles.musicChipTxt, { color: '#1D4ED8' }]}>{song.timeSignature || '4/4'}</Text>
-                      </View>
-                      <View style={[styles.musicChip, { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }]}>
-                        <Text style={[styles.musicChipTxt, { color: '#15803D' }]}>{song.tempo || '100'} BPM</Text>
-                      </View>
-                      {song.isOffertory && (
-                        <View style={[styles.musicChip, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
-                          <Text style={[styles.musicChipTxt, { color: '#B45309' }]}>💰 Offertory</Text>
-                        </View>
-                      )}
-                    </View>
-
-                    {/* Arrangements Box */}
-                    {(song.prelude || song.interlude || song.notes) && (
-                      <View style={styles.arrangementWrap}>
-                        {song.prelude ? (
-                          <Text style={styles.arrTxt}>
-                            <Text style={styles.arrLabel}>Prelude: </Text>{song.prelude}
-                          </Text>
-                        ) : null}
-                        {song.interlude ? (
-                          <Text style={styles.arrTxt}>
-                            <Text style={styles.arrLabel}>Interlude: </Text>{song.interlude}
-                          </Text>
-                        ) : null}
-                        {song.notes ? (
-                          <Text style={styles.arrTxt}>
-                            <Text style={styles.arrLabel}>Notes: </Text>{song.notes}
-                          </Text>
-                        ) : null}
-                      </View>
-                    )}
-                  </View>
-                ))
-              )}
-            </View>
-          )}
-
-          {/* ═════════════════════════════════════════════════════
-              TAB 3: RUN SHEET (VERTICAL TIMELINE TIMETABLE)
-             ═════════════════════════════════════════════════════ */}
-          {activePlanTab === 'runSheet' && (
-            <View style={{ gap: 12 }}>
-              <View style={styles.tabSectionHeaderRow}>
-                <View>
-                  <Text style={styles.tabSectionTitle}>Service Timetable & Run-Sheet</Text>
-                  <Text style={styles.tabSectionSubtitle}>
-                    {selectedPlan.startTime || '09:00'} - {selectedPlan.endTime || '11:00'} · Chronological Order
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.primaryAddBtn}
-                  onPress={() => handleAddActivity('additional')}
-                  activeOpacity={0.85}
-                >
-                  <Plus size={15} color="#FFFFFF" />
-                  <Text style={styles.primaryAddBtnTxt}>Add Activity</Text>
-                </TouchableOpacity>
-              </View>
-
-              {(!selectedPlan.runSheet || selectedPlan.runSheet.length === 0) ? (
-                <View style={styles.emptyCard}>
-                  <Clock size={36} color="#CBD5E1" />
-                  <Text style={styles.emptyCardTitle}>No Timetable Defined Yet</Text>
-                  <Text style={styles.emptyCardSub}>Create the step-by-step timetable of this service from start to finish.</Text>
-                  <TouchableOpacity
-                    style={styles.emptyAddBtn}
-                    onPress={() => openServiceTimetableModal(selectedPlan)}
-                  >
-                    <Plus size={15} color="#1A2D5A" />
-                    <Text style={styles.emptyAddBtnTxt}>Build Service Timetable</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <View style={styles.timelineList}>
-                  {selectedPlan.runSheet.map((item, idx) => {
-                    const theme = getCategoryTheme(item.category);
-                    return (
-                      <View key={`timeline_${item.id || idx}`} style={styles.timelineRow}>
-                        {/* Time Column */}
-                        <View style={styles.timeColumn}>
-                          <Text style={styles.timeStartTxt}>{item.startTime || item.time?.split(/to|-/i)[0]?.trim() || '09:00'}</Text>
-                          <Text style={styles.timeEndTxt}>{item.endTime || item.time?.split(/to|-/i)[1]?.trim() || '09:15'}</Text>
-                          <View style={styles.durationPill}>
-                            <Text style={styles.durationPillTxt}>{item.durationMinutes || 15}m</Text>
-                          </View>
-                        </View>
-
-                        {/* Node Dot & Line */}
-                        <View style={styles.nodeColumn}>
-                          <View style={[styles.nodeDot, { backgroundColor: theme.text }]} />
-                          {idx < selectedPlan.runSheet.length - 1 && <View style={styles.nodeLine} />}
-                        </View>
-
-                        {/* Activity Card */}
-                        <View style={[styles.activityCard, { borderLeftColor: theme.text }]}>
-                          <View style={styles.activityCardTop}>
-                            <View style={[styles.categoryPill, { backgroundColor: theme.bg, borderColor: theme.border }]}>
-                              <Text style={[styles.categoryPillTxt, { color: theme.text }]}>{theme.label}</Text>
-                            </View>
-                            <View style={styles.activityActions}>
-                              <TouchableOpacity
-                                style={styles.activityActionBtn}
-                                onPress={() => openServiceTimetableModal(selectedPlan)}
-                              >
-                                <Edit2 size={13} color="#475569" />
-                              </TouchableOpacity>
-                            </View>
-                          </View>
-
-                          <Text style={styles.activityProgramTitle}>{item.program}</Text>
-                          {item.assignedTo ? (
-                            <Text style={styles.activityAssignedTxt}>👤 {item.assignedTo}</Text>
-                          ) : null}
-                          {item.songTitle ? (
-                            <Text style={styles.activitySongTxt}>🎵 {item.songTitle}</Text>
-                          ) : null}
-                          {item.passage ? (
-                            <Text style={styles.activityPassageTxt}>📖 {item.passage}</Text>
-                          ) : null}
-                          {item.place ? (
-                            <Text style={styles.activityPlaceTxt}>📍 {item.place}</Text>
-                          ) : null}
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
-              )}
-            </View>
-          )}
-
-          {/* ═════════════════════════════════════════════════════
-              TAB 4: BULLETIN / SHARE CARD
-             ═════════════════════════════════════════════════════ */}
-          {activePlanTab === 'export' && (
-            <View style={{ gap: 14 }}>
-              <View style={styles.bulletinPreviewCard}>
-                <View style={styles.bulletinHeader}>
-                  <Text style={styles.bulletinChurchName}>{(activeChurch?.name || 'WE CHRISTIAN').toUpperCase()}</Text>
-                  <Text style={styles.bulletinServiceTitle}>{selectedPlan.serviceTitle}</Text>
-                  <Text style={styles.bulletinDate}>📅 {selectedPlan.date} · ⏰ {selectedPlan.startTime || '09:00'} - {selectedPlan.endTime || '11:00'}</Text>
-                </View>
-
-                {/* Worship Summary */}
-                <View style={styles.bulletinSection}>
-                  <Text style={styles.bulletinSectionTitle}>🎵 WORSHIP TEAM & BAND</Text>
-                  {selectedPlan.assignments.singer_1 && <Text style={styles.bulletinItemTxt}>• Lead Vocal: {selectedPlan.assignments.singer_1}</Text>}
-                  {selectedPlan.assignments.keyboard && <Text style={styles.bulletinItemTxt}>• Keyboard: {selectedPlan.assignments.keyboard}</Text>}
-                  {selectedPlan.assignments.electric && <Text style={styles.bulletinItemTxt}>• Electric Guitar: {selectedPlan.assignments.electric}</Text>}
-                  {selectedPlan.assignments.bass && <Text style={styles.bulletinItemTxt}>• Bass: {selectedPlan.assignments.bass}</Text>}
-                  {selectedPlan.assignments.drums && <Text style={styles.bulletinItemTxt}>• Drums: {selectedPlan.assignments.drums}</Text>}
-                </View>
-
-                {/* Setlist Summary */}
-                {selectedPlan.setlist && selectedPlan.setlist.length > 0 && (
-                  <View style={styles.bulletinSection}>
-                    <Text style={styles.bulletinSectionTitle}>🎶 WORSHIP SETLIST</Text>
-                    {selectedPlan.setlist.map((s, idx) => (
-                      <Text key={`b_song_${idx}`} style={styles.bulletinItemTxt}>
-                        {idx + 1}. {s.title} [Key: {s.key || 'F'}] {s.ledBy ? `- Led by ${s.ledBy}` : ''}
-                      </Text>
-                    ))}
-                  </View>
-                )}
-
-                {/* Media Summary */}
-                <View style={styles.bulletinSection}>
-                  <Text style={styles.bulletinSectionTitle}>🎛️ MEDIA & BROADCAST (TEAM BMW)</Text>
-                  {selectedPlan.assignments.sound_foh && <Text style={styles.bulletinItemTxt}>• Sound (FOH): {selectedPlan.assignments.sound_foh}</Text>}
-                  {selectedPlan.assignments.media_pc1 && <Text style={styles.bulletinItemTxt}>• Live PC: {selectedPlan.assignments.media_pc1}</Text>}
-                  {selectedPlan.assignments.media_pc3 && <Text style={styles.bulletinItemTxt}>• Lyrics: {selectedPlan.assignments.media_pc3}</Text>}
-                  {selectedPlan.assignments.cam_main && <Text style={styles.bulletinItemTxt}>• Main Camera: {selectedPlan.assignments.cam_main}</Text>}
-                  {selectedPlan.assignments.video_dir && <Text style={styles.bulletinItemTxt}>• Director: {selectedPlan.assignments.video_dir}</Text>}
-                </View>
-
-                {/* Sermon Summary */}
-                {selectedPlan.sermon?.title && (
-                  <View style={styles.bulletinSection}>
-                    <Text style={styles.bulletinSectionTitle}>📖 SERMON MESSAGE</Text>
-                    <Text style={styles.bulletinItemTxt}>• Title: {selectedPlan.sermon.title}</Text>
-                    {selectedPlan.sermon.speaker && <Text style={styles.bulletinItemTxt}>• Speaker: {selectedPlan.sermon.speaker}</Text>}
-                    {selectedPlan.sermon.keyVerses && <Text style={styles.bulletinItemTxt}>• Scripture: {selectedPlan.sermon.keyVerses}</Text>}
-                  </View>
-                )}
-              </View>
-
-              {/* Share Action Buttons */}
-              <TouchableOpacity
-                style={styles.whatsAppShareBtn}
-                onPress={handleShareToWhatsApp}
-                activeOpacity={0.85}
-              >
-                <MessageCircle size={18} color="#FFFFFF" />
-                <Text style={styles.whatsAppShareBtnTxt}>Share Bulletin via WhatsApp</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          <View style={{ height: 40 }} />
-        </ScrollView>
-      )}
-
-      {/* ── MODAL 1: ASSIGN REGISTERED MEMBER ─────────────────── */}
-      <Modal
-        visible={showMemberPickerModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowMemberPickerModal(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalCardHeader}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.modalCardTitle}>Assign Team Member</Text>
-                <Text style={styles.modalCardSubtitle}>{assigningRoleName}</Text>
-              </View>
-              <TouchableOpacity onPress={() => setShowMemberPickerModal(false)}>
-                <X size={20} color="#64748B" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Custom Name Input */}
-            <View style={styles.customAssignRow}>
-              <TextInput
-                style={styles.customAssignInput}
-                placeholder="Or type custom name..."
-                placeholderTextColor="#94A3B8"
-                value={customAssigneeName}
-                onChangeText={setCustomAssigneeName}
-              />
-              <TouchableOpacity
-                style={styles.customAssignSubmitBtn}
-                onPress={() => {
-                  if (customAssigneeName.trim()) {
-                    handleAssignRole(customAssigneeName.trim());
-                  }
-                }}
-              >
-                <Text style={styles.customAssignSubmitTxt}>Set</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Member Search */}
-            <View style={styles.memberSearchBox}>
-              <Search size={15} color="#94A3B8" />
-              <TextInput
-                style={styles.memberSearchInput}
-                placeholder="Search registered members..."
-                placeholderTextColor="#94A3B8"
-                value={memberSearchQuery}
-                onChangeText={setMemberSearchQuery}
-              />
-            </View>
-
-            <ScrollView style={{ maxHeight: 260 }} showsVerticalScrollIndicator={false}>
-              {filteredMembers.map((m, mIdx) => {
-                const name = m.name || m.firstName || 'Member';
-                return (
-                  <TouchableOpacity
-                    key={`mem_${m.id || mIdx}`}
-                    style={styles.memberPickerRow}
-                    onPress={() => handleAssignRole(name)}
-                  >
-                    <View style={styles.memberAvatar}>
-                      <Text style={styles.memberAvatarTxt}>{name.charAt(0).toUpperCase()}</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.memberPickerName}>{name}</Text>
-                      {m.phone ? <Text style={styles.memberPickerPhone}>{m.phone}</Text> : null}
-                    </View>
-                    <Check size={16} color="#059669" />
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ── MODAL 2: ADD / EDIT SETLIST SONG ─────────────────── */}
-      <Modal
-        visible={showSongModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowSongModal(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, { maxHeight: '90%' }]}>
-            <View style={styles.modalCardHeader}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.modalCardTitle}>
-                  {editingSongIndex !== null ? 'Edit Worship Song' : 'Add Song to Setlist'}
-                </Text>
-                <Text style={styles.modalCardSubtitle}>Keys, BPM, Prelude & Arrangements</Text>
-              </View>
-              <TouchableOpacity onPress={() => setShowSongModal(false)}>
-                <X size={20} color="#64748B" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false} style={{ paddingVertical: 10 }}>
-              <Text style={styles.inputLabel}>Song Title</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g. Yee pata padenu yesayya"
-                placeholderTextColor="#94A3B8"
-                value={songForm.title}
-                onChangeText={t => setSongForm(prev => ({ ...prev, title: t }))}
-              />
-
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>Song Leader</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="e.g. Prabhakar Yeddula"
-                    placeholderTextColor="#94A3B8"
-                    value={songForm.ledBy}
-                    onChangeText={t => setSongForm(prev => ({ ...prev, ledBy: t }))}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>Key</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="e.g. F, D, G, F#m"
-                    placeholderTextColor="#94A3B8"
-                    value={songForm.key}
-                    onChangeText={t => setSongForm(prev => ({ ...prev, key: t }))}
-                  />
-                </View>
-              </View>
-
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>Time Signature</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="4/4, 3/4"
-                    placeholderTextColor="#94A3B8"
-                    value={songForm.timeSignature}
-                    onChangeText={t => setSongForm(prev => ({ ...prev, timeSignature: t }))}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>Tempo (BPM)</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="100"
-                    placeholderTextColor="#94A3B8"
-                    value={songForm.tempo}
-                    onChangeText={t => setSongForm(prev => ({ ...prev, tempo: t }))}
-                  />
-                </View>
-              </View>
-
-              <Text style={[styles.inputLabel, { marginTop: 10 }]}>Prelude Suggestion</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g. Acoustic + Drum"
-                placeholderTextColor="#94A3B8"
-                value={songForm.prelude}
-                onChangeText={t => setSongForm(prev => ({ ...prev, prelude: t }))}
-              />
-
-              <Text style={[styles.inputLabel, { marginTop: 10 }]}>Arrangement / Theme Notes</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g. Call to Worship & Praise"
-                placeholderTextColor="#94A3B8"
-                value={songForm.notes}
-                onChangeText={t => setSongForm(prev => ({ ...prev, notes: t }))}
-              />
-
-              <TouchableOpacity
-                style={styles.modalPrimaryBtn}
-                onPress={handleSaveSong}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.modalPrimaryBtnTxt}>
-                  {editingSongIndex !== null ? 'Save Changes' : 'Add to Setlist'}
-                </Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ── MODAL 3: MASTER SERVICE & TIMETABLE BUILDER ───────── */}
-      <Modal
-        visible={showCreatePlanModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowCreatePlanModal(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, { maxHeight: '92%', width: '96%', padding: 0 }]}>
-            <View style={styles.builderHeader}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.modalCardTitle}>
-                  {selectedPlan?.id ? 'Edit Service Timetable' : 'New Service Schedule & Timetable'}
-                </Text>
-                <Text style={styles.modalCardSubtitle}>Define complete service schedule from start to finish</Text>
-              </View>
-              <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-                <TouchableOpacity
-                  style={styles.saveHeaderBtn}
-                  disabled={savingPlan}
-                  onPress={handleSavePlanDetails}
-                >
-                  {savingPlan ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <Text style={styles.saveHeaderBtnTxt}>Save</Text>
-                  )}
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setShowCreatePlanModal(false)}>
-                  <X size={20} color="#64748B" />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <ScrollView style={{ paddingHorizontal: 16, paddingTop: 12 }} showsVerticalScrollIndicator={false}>
-              {/* Quick Select from Church Events */}
-              {churchEvents.length > 0 && !selectedPlan?.id && (
-                <View style={styles.quickEventWrap}>
-                  <Text style={styles.quickEventLabel}>📅 Pick from Scheduled Church Events:</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
-                    {churchEvents.map((ev, evIdx) => {
-                      const title = ev.title || ev.name || 'Event';
-                      const isMatch = planFormTitle === title;
-                      return (
-                        <TouchableOpacity
-                          key={`ev_${ev.id || evIdx}`}
-                          style={[styles.quickEventChip, isMatch && styles.quickEventChipActive]}
-                          onPress={() => {
-                            setPlanFormTitle(title);
-                            if (ev.date) {
-                              const d = ev.date.includes('T') ? ev.date.split('T')[0] : ev.date;
-                              setPlanFormDate(d);
-                            }
-                            if (ev.startTime) {
-                              const cleanStart = ev.startTime.includes('T') ? ev.startTime.split('T')[1].substring(0, 5) : ev.startTime;
-                              setPlanFormStartTime(cleanStart);
-                            }
-                            if (ev.endTime) {
-                              const cleanEnd = ev.endTime.includes('T') ? ev.endTime.split('T')[1].substring(0, 5) : ev.endTime;
-                              setPlanFormEndTime(cleanEnd);
-                            }
-                            if (ev.location) {
-                              setPlanFormLocation(ev.location);
-                            }
-                          }}
-                        >
-                          <Text style={[styles.quickEventChipTxt, isMatch && styles.quickEventChipTxtActive]}>
-                            {title}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
-                </View>
-              )}
-
-              {/* Service Details */}
-              <Text style={styles.inputLabel}>Service Name / Title</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g. Sunday Morning Worship Service"
-                placeholderTextColor="#94A3B8"
-                value={planFormTitle}
-                onChangeText={setPlanFormTitle}
-              />
-
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-                <View style={{ flex: 1.2 }}>
-                  <Text style={styles.inputLabel}>Date (YYYY-MM-DD)</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="2026-10-25"
-                    placeholderTextColor="#94A3B8"
-                    value={planFormDate}
-                    onChangeText={setPlanFormDate}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>Start Time</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="09:00"
-                    placeholderTextColor="#94A3B8"
-                    value={planFormStartTime}
-                    onChangeText={setPlanFormStartTime}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>End Time</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="11:00"
-                    placeholderTextColor="#94A3B8"
-                    value={planFormEndTime}
-                    onChangeText={setPlanFormEndTime}
-                  />
-                </View>
-              </View>
-
-              <Text style={[styles.inputLabel, { marginTop: 10 }]}>Location / Sanctuary</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g. Sanctuary / Church Hall"
-                placeholderTextColor="#94A3B8"
-                value={planFormLocation}
-                onChangeText={setPlanFormLocation}
-              />
-
-              {/* Timetable Items Builder */}
-              <View style={styles.builderSectionHeader}>
-                <Text style={styles.builderSectionTitle}>Service Timetable & Activities ({planFormTimetable.length})</Text>
-                <TouchableOpacity
-                  style={styles.sundayTemplateBtn}
-                  onPress={handleLoadSundayTemplateInEditor}
-                >
-                  <Sparkles size={12} color="#1A2D5A" />
-                  <Text style={styles.sundayTemplateBtnTxt}>Sunday Template</Text>
-                </TouchableOpacity>
-              </View>
-
-              {planFormTimetable.length === 0 ? (
-                <View style={styles.emptyTimetableBox}>
-                  <Text style={styles.emptyTimetableTxt}>
-                    No activities yet. Click below to add Starting Prayer, Worship, Bible Reading, or Sermon.
-                  </Text>
-                </View>
-              ) : (
-                planFormTimetable.map((act, aIdx) => {
-                  const theme = getCategoryTheme(act.category);
-                  return (
-                    <View key={`act_${act.id || aIdx}`} style={styles.actBuilderRow}>
-                      <View style={styles.actBuilderTime}>
-                        <Text style={styles.actBuilderTimeTxt}>{act.startTime || act.time?.split(/to|-/i)[0]?.trim() || '09:00'}</Text>
-                        <Text style={styles.actBuilderDurTxt}>{act.durationMinutes || 15}m</Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.actBuilderProgram} numberOfLines={1}>{act.program}</Text>
-                        <Text style={styles.actBuilderSub} numberOfLines={1}>
-                          {act.assignedTo ? `👤 ${act.assignedTo}` : 'Tap edit to assign'}
-                        </Text>
-                      </View>
-                      <View style={styles.actBuilderActions}>
-                        <TouchableOpacity onPress={() => handleEditActivity(aIdx)} style={styles.iconBtnSmall}>
-                          <Edit2 size={13} color="#475569" />
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={() => handleDeleteTimetableActivity(aIdx)} style={styles.iconBtnSmall}>
-                          <Trash2 size={13} color="#DC2626" />
                         </TouchableOpacity>
                       </View>
                     </View>
                   );
                 })
               )}
+            </View>
+          )}
 
-              {/* Quick Add Action Pills */}
-              <View style={styles.quickAddRow}>
-                <TouchableOpacity style={styles.quickAddPill} onPress={() => handleAddActivity('starting_prayer')}>
-                  <Text style={styles.quickAddPillTxt}>+ Starting Prayer</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.quickAddPill} onPress={() => handleAddActivity('worship_songs')}>
-                  <Text style={styles.quickAddPillTxt}>+ Praise & Worship</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.quickAddPill} onPress={() => handleAddActivity('bible_reading')}>
-                  <Text style={styles.quickAddPillTxt}>+ Bible Reading</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.quickAddPill} onPress={() => handleAddActivity('sermon')}>
-                  <Text style={styles.quickAddPillTxt}>+ Sermon</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.quickAddPill} onPress={() => handleAddActivity('closing_prayer')}>
-                  <Text style={styles.quickAddPillTxt}>+ Benediction</Text>
+          {/* TAB 3: WORSHIP SETLIST MANAGEMENT (PHASE 3) */}
+          {activePlannerTab === 'setlist' && selectedPlan && (
+            <View style={styles.tabContent}>
+              {/* Setlist Summary Banner */}
+              <View style={[styles.selectedBanner, { backgroundColor: cardSurface, borderColor }]}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.selectedBannerTag}>WORSHIP SETLIST</Text>
+                    <Text style={[styles.selectedBannerTitle, { color: primaryText }]}>
+                      {selectedPlan.serviceTitle} ({selectedPlan.date})
+                    </Text>
+                    <Text style={[styles.selectedBannerMeta, { color: secondaryText }]}>
+                      🎵 {selectedPlan.setlist?.length || 0} Songs Selected · Total Worship Time: ~{totalSetlistMinutes} mins
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.addActivityBtn}
+                    onPress={openSongPicker}
+                  >
+                    <Plus size={14} color="#FFFFFF" />
+                    <Text style={styles.addActivityBtnTxt}>Add Song</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Setlist Songs List */}
+              {(!selectedPlan.setlist || selectedPlan.setlist.length === 0) ? (
+                <View style={[styles.emptyCard, { backgroundColor: cardSurface, borderColor }]}>
+                  <Music size={36} color="#94A3B8" />
+                  <Text style={[styles.emptyTitle, { color: primaryText }]}>No Songs in Setlist</Text>
+                  <Text style={[styles.emptySubtitle, { color: secondaryText }]}>
+                    Select praise and worship songs from Rhema's library, assign song leaders, keys, and instrumentalists.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.createEmptyBtn}
+                    onPress={openSongPicker}
+                  >
+                    <Plus size={15} color="#FFFFFF" />
+                    <Text style={styles.createEmptyBtnTxt}>Add from Song Library</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                selectedPlan.setlist.map((item, index) => {
+                  const musicians = item.musicianAssignments || {};
+                  return (
+                    <View
+                      key={item.id}
+                      style={[styles.setlistCard, { backgroundColor: cardSurface, borderColor }]}
+                    >
+                      {/* Reorder Arrows */}
+                      <View style={styles.reorderColumn}>
+                        <TouchableOpacity
+                          style={[styles.reorderArrow, index === 0 && { opacity: 0.2 }]}
+                          disabled={index === 0}
+                          onPress={() => handleMoveSetlistSong(index, 'up')}
+                        >
+                          <ChevronUp size={16} color="#64748B" />
+                        </TouchableOpacity>
+                        <Text style={styles.orderNumberText}>{index + 1}</Text>
+                        <TouchableOpacity
+                          style={[styles.reorderArrow, index === selectedPlan.setlist.length - 1 && { opacity: 0.2 }]}
+                          disabled={index === selectedPlan.setlist.length - 1}
+                          onPress={() => handleMoveSetlistSong(index, 'down')}
+                        >
+                          <ChevronDown size={16} color="#64748B" />
+                        </TouchableOpacity>
+                      </View>
+
+                      {/* Song Details */}
+                      <View style={{ flex: 1, paddingHorizontal: 10 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <View style={styles.keyBadge}>
+                            <Text style={styles.keyBadgeTxt}>Key {item.key || 'G'}</Text>
+                          </View>
+                          <View style={styles.bpmBadge}>
+                            <Text style={styles.bpmBadgeTxt}>{item.tempo || '120'} BPM</Text>
+                          </View>
+                          <View style={styles.timeSigBadge}>
+                            <Text style={styles.timeSigBadgeTxt}>{item.timeSignature || '4/4'}</Text>
+                          </View>
+                          <Text style={[styles.durationTxt, { color: secondaryText }]}>
+                            ⏱️ ~{item.durationMinutes || 6}m
+                          </Text>
+                        </View>
+
+                        <Text style={[styles.setlistSongTitle, { color: primaryText }]}>
+                          {item.title}
+                        </Text>
+                        {item.titleTe ? (
+                          <Text style={[styles.setlistSongTe, { color: '#D97706' }]}>
+                            {item.titleTe}
+                          </Text>
+                        ) : null}
+
+                        <Text style={[styles.setlistLeaderTxt, { color: secondaryText }]}>
+                          🎤 Song Leader: <Text style={{ fontWeight: '700', color: primaryText }}>{item.ledBy || 'Worship Leader'}</Text>
+                        </Text>
+
+                        {/* Musicians Breakdown */}
+                        <View style={styles.musiciansChipRow}>
+                          {musicians.keyboard && (
+                            <View style={styles.musicianChip}>
+                              <Text style={styles.musicianChipTxt}>🎹 Keys: {musicians.keyboard.memberName}</Text>
+                            </View>
+                          )}
+                          {musicians.acoustic && (
+                            <View style={styles.musicianChip}>
+                              <Text style={styles.musicianChipTxt}>🎸 Acoustic: {musicians.acoustic.memberName}</Text>
+                            </View>
+                          )}
+                          {musicians.drums && (
+                            <View style={styles.musicianChip}>
+                              <Text style={styles.musicianChipTxt}>🥁 Drums: {musicians.drums.memberName}</Text>
+                            </View>
+                          )}
+                          {musicians.bass && (
+                            <View style={styles.musicianChip}>
+                              <Text style={styles.musicianChipTxt}>🎸 Bass: {musicians.bass.memberName}</Text>
+                            </View>
+                          )}
+                        </View>
+
+                        {item.rehearsalNotes ? (
+                          <Text style={[styles.rehearsalNotesTxt, { color: secondaryText }]} numberOfLines={2}>
+                            📝 Arrangement: {item.rehearsalNotes}
+                          </Text>
+                        ) : null}
+                      </View>
+
+                      {/* Action Col */}
+                      <View style={styles.setlistActionCol}>
+                        <TouchableOpacity
+                          style={styles.lyricsBtn}
+                          onPress={() => openLyricsModal(item)}
+                        >
+                          <FileText size={14} color="#1E3A8A" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.itemEditBtn}
+                          onPress={() => openEditSetlistItem(item, index)}
+                        >
+                          <Sliders size={14} color="#1E3A8A" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.itemDeleteBtn}
+                          onPress={() => handleRemoveSetlistSong(item.id)}
+                        >
+                          <Trash2 size={14} color="#DC2626" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+            </View>
+          )}
+
+          {/* TAB: ASSIGNMENT QUEUES & CASCADE WORKFLOW (PHASE 4) */}
+          {activePlannerTab === 'queue' && selectedPlan && (
+            <View style={styles.tabContent}>
+              {/* Summary banner */}
+              <View style={[styles.queueSummaryBanner, { backgroundColor: cardSurface, borderColor }]}>
+                <View style={styles.queueSummaryCol}>
+                  <Text style={[styles.queueSummaryNum, { color: primaryText }]}>{serviceRolesList.length}</Text>
+                  <Text style={[styles.queueSummaryLbl, { color: secondaryText }]}>Total Roles</Text>
+                </View>
+                <View style={styles.queueSummaryDivider} />
+                <View style={styles.queueSummaryCol}>
+                  <Text style={[styles.queueSummaryNum, { color: '#059669' }]}>
+                    {assignmentQueues.filter(q => q.status === 'confirmed').length}
+                  </Text>
+                  <Text style={[styles.queueSummaryLbl, { color: secondaryText }]}>Confirmed</Text>
+                </View>
+                <View style={styles.queueSummaryDivider} />
+                <View style={styles.queueSummaryCol}>
+                  <Text style={[styles.queueSummaryNum, { color: '#D97706' }]}>
+                    {assignmentQueues.filter(q => q.status === 'pending').length}
+                  </Text>
+                  <Text style={[styles.queueSummaryLbl, { color: secondaryText }]}>Pending</Text>
+                </View>
+                <View style={styles.queueSummaryDivider} />
+                <View style={styles.queueSummaryCol}>
+                  <Text style={[styles.queueSummaryNum, { color: '#DC2626' }]}>
+                    {assignmentQueues.filter(q => q.status === 'exhausted').length}
+                  </Text>
+                  <Text style={[styles.queueSummaryLbl, { color: secondaryText }]}>Exhausted</Text>
+                </View>
+              </View>
+
+              {/* Roles list */}
+              {serviceRolesList.map(role => {
+                const queue = assignmentQueues.find(q => q.roleId === role.roleId);
+                const curIdx = queue?.currentCandidateIndex || 0;
+                const activeCandidate = queue?.candidates?.[curIdx];
+                const isConfirmed = queue?.status === 'confirmed';
+                const isPending = queue?.status === 'pending';
+                const isExhausted = queue?.status === 'exhausted';
+                const notDispatched = !queue;
+
+                return (
+                  <View
+                    key={role.roleId}
+                    style={[
+                      styles.queueRoleCard,
+                      { backgroundColor: cardSurface, borderColor },
+                      isConfirmed && styles.queueRoleCardConfirmed,
+                      isPending && styles.queueRoleCardPending,
+                      isExhausted && styles.queueRoleCardExhausted
+                    ]}
+                  >
+                    {/* Header */}
+                    <View style={styles.queueRoleHeader}>
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                          <Text style={styles.queueCategoryPill}>{role.category.toUpperCase()}</Text>
+                          {role.activityName && (
+                            <Text style={[styles.queueActivityTag, { color: secondaryText }]} numberOfLines={1}>
+                              Activity: {role.activityName}
+                            </Text>
+                          )}
+                        </View>
+                        <Text style={[styles.queueRoleTitle, { color: primaryText }]}>
+                          {role.roleTitle}
+                        </Text>
+                      </View>
+
+                      {/* Status Pill */}
+                      {isConfirmed && (
+                        <View style={[styles.queueStatusBadge, styles.badgeConfirmed]}>
+                          <CheckCircle2 size={12} color="#059669" />
+                          <Text style={styles.badgeConfirmedTxt}>CONFIRMED</Text>
+                        </View>
+                      )}
+                      {isPending && (
+                        <View style={[styles.queueStatusBadge, styles.badgePending]}>
+                          <Timer size={12} color="#D97706" />
+                          <Text style={styles.badgePendingTxt}>PENDING (Rank {curIdx + 1})</Text>
+                        </View>
+                      )}
+                      {isExhausted && (
+                        <View style={[styles.queueStatusBadge, styles.badgeExhausted]}>
+                          <AlertCircle size={12} color="#DC2626" />
+                          <Text style={styles.badgeExhaustedTxt}>EXHAUSTED</Text>
+                        </View>
+                      )}
+                      {notDispatched && (
+                        <View style={[styles.queueStatusBadge, styles.badgeDraft]}>
+                          <Text style={styles.badgeDraftTxt}>UNASSIGNED</Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Confirmed Volunteer Banner */}
+                    {isConfirmed && (
+                      <View style={styles.confirmedVolunteerBanner}>
+                        <CheckCircle2 size={16} color="#059669" />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.confirmedVolunteerName}>
+                            {queue?.confirmedCandidateName || selectedPlan.assignments?.[role.roleId] || 'Assigned Volunteer'}
+                          </Text>
+                          <Text style={styles.confirmedVolunteerSub}>
+                            Ready for service duty · Contact: {activeCandidate?.candidatePhone || 'In church directory'}
+                          </Text>
+                        </View>
+                      </View>
+                    )}
+
+                    {/* Candidate Ladder when queue exists */}
+                    {queue && queue.candidates && queue.candidates.length > 0 && (
+                      <View style={styles.candidateLadderBox}>
+                        <Text style={[styles.candidateLadderHeading, { color: secondaryText }]}>
+                          CANDIDATE REPLACEMENT LADDER ({queue.candidates.length} candidates)
+                        </Text>
+                        {queue.candidates.map((cand, idx) => {
+                          const isCurrentActive = idx === curIdx && isPending;
+                          const isCandAccepted = cand.status === 'accepted';
+                          const isCandDeclined = cand.status === 'declined';
+                          const isCandTimedOut = cand.status === 'timed_out';
+
+                          return (
+                            <View
+                              key={cand.candidateId + idx}
+                              style={[
+                                styles.ladderCandidateRow,
+                                isCurrentActive && styles.ladderCandidateRowActive,
+                                isCandAccepted && styles.ladderCandidateRowAccepted
+                              ]}
+                            >
+                              <View style={[
+                                styles.rankCircle,
+                                isCurrentActive ? styles.rankCircleActive :
+                                  isCandAccepted ? styles.rankCircleAccepted :
+                                    isCandDeclined ? styles.rankCircleDeclined :
+                                      styles.rankCircleIdle
+                              ]}>
+                                <Text style={styles.rankCircleTxt}>{idx + 1}</Text>
+                              </View>
+
+                              <View style={{ flex: 1, paddingHorizontal: 8 }}>
+                                <Text style={[styles.ladderCandName, { color: primaryText }]}>
+                                  {cand.candidateName}
+                                </Text>
+                                <Text style={[styles.ladderCandMeta, { color: secondaryText }]}>
+                                  {isCandAccepted ? '✅ Accepted & confirmed' :
+                                    isCandDeclined ? `❌ Declined: ${cand.declineReason || 'Unavailable'}` :
+                                      isCandTimedOut ? '⏰ No response (Timed Out)' :
+                                        isCurrentActive ? `⏳ Awaiting response · Deadline in ~${Math.round(queue.timeoutMinutes / 60)}h` :
+                                          'In queue (Next candidate on decline)'}
+                                </Text>
+                              </View>
+
+                              <View style={[
+                                styles.candStatusMiniPill,
+                                isCandAccepted ? styles.candPillAccepted :
+                                  isCandDeclined ? styles.candPillDeclined :
+                                    isCandTimedOut ? styles.candPillTimedOut :
+                                      isCurrentActive ? styles.candPillActive :
+                                        styles.candPillWaiting
+                              ]}>
+                                <Text style={styles.candStatusMiniTxt}>
+                                  {cand.status.toUpperCase()}
+                                </Text>
+                              </View>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
+
+                    {/* Actions Row */}
+                    <View style={styles.queueActionsRow}>
+                      <TouchableOpacity
+                        style={styles.dispatchQueueBtn}
+                        onPress={() => openDispatchQueueModal(
+                          role.roleId,
+                          role.roleTitle,
+                          role.activityId,
+                          role.activityName,
+                          role.suggestedTeamId,
+                          role.suggestedSkill
+                        )}
+                      >
+                        <Send size={12} color="#FFFFFF" />
+                        <Text style={styles.dispatchQueueBtnTxt}>
+                          {notDispatched ? 'Dispatch Queue' : 'Reconfigure Ladder'}
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.overrideBtn}
+                        onPress={() => openManualOverrideModal(role.roleId, role.roleTitle)}
+                      >
+                        <UserCheck size={12} color="#1E3A8A" />
+                        <Text style={styles.overrideBtnTxt}>Manual Override</Text>
+                      </TouchableOpacity>
+
+                      {isPending && queue && (
+                        <TouchableOpacity
+                          style={styles.simulateBtn}
+                          onPress={() => openSimulateModal(queue)}
+                        >
+                          <RefreshCw size={12} color="#D97706" />
+                          <Text style={styles.simulateBtnTxt}>Simulate Member</Text>
+                        </TouchableOpacity>
+                      )}
+
+                      {queue && (
+                        <TouchableOpacity
+                          style={styles.deleteQueueBtn}
+                          onPress={() => handleDeleteQueue(role.roleId, role.roleTitle)}
+                        >
+                          <Trash2 size={13} color="#DC2626" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+
+          {/* TAB: REHEARSAL MANAGEMENT (PHASE 6) */}
+          {activePlannerTab === 'rehearsals' && selectedPlan && (
+            <View style={styles.tabContent}>
+              <View style={styles.sectionHeaderRow}>
+                <View>
+                  <Text style={[styles.sectionHeading, { color: primaryText }]}>Service Rehearsals</Text>
+                  <Text style={[styles.sectionSubheading, { color: secondaryText }]}>
+                    Coordinate band practice, vocal run-throughs, and technical soundchecks.
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.newServiceBtn}
+                  onPress={openCreateRehearsalModal}
+                  activeOpacity={0.85}
+                >
+                  <Plus size={14} color="#FFFFFF" />
+                  <Text style={styles.newServiceBtnTxt}>Add Practice</Text>
                 </TouchableOpacity>
               </View>
 
-              <View style={{ height: 30 }} />
+              {rehearsals.length === 0 ? (
+                <View style={[styles.emptyCard, { backgroundColor: cardSurface, borderColor }]}>
+                  <Clock size={36} color="#94A3B8" />
+                  <Text style={[styles.emptyTitle, { color: primaryText }]}>No Rehearsals Scheduled</Text>
+                  <Text style={[styles.emptySubtitle, { color: secondaryText }]}>
+                    Schedule vocal rehearsals, full band soundchecks, or worship team practices.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.createEmptyBtn}
+                    onPress={openCreateRehearsalModal}
+                  >
+                    <Plus size={15} color="#FFFFFF" />
+                    <Text style={styles.createEmptyBtnTxt}>Schedule First Rehearsal</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                rehearsals.map(reh => {
+                  const dayStr = reh.date.split('-')[2] || '01';
+                  const monthStr = new Date(reh.date).toLocaleString('default', { month: 'short' }).toUpperCase();
+                  const attendanceRecord = reh.attendance || {};
+                  const presentCount = Object.values(attendanceRecord).filter(v => v === 'present').length;
+                  const lateCount = Object.values(attendanceRecord).filter(v => v === 'late').length;
+                  const absentCount = Object.values(attendanceRecord).filter(v => v === 'absent').length;
+
+                  // Target songs from plan's setlist
+                  const practiceSongs = (selectedPlan.setlist || []).filter(s => 
+                    (reh.songPracticeIds || []).includes(s.id)
+                  );
+
+                  return (
+                    <View
+                      key={reh.id}
+                      style={[styles.rehearsalCard, { backgroundColor: cardSurface, borderColor }]}
+                    >
+                      <View style={styles.rehearsalCardTop}>
+                        <View style={styles.dateBadge}>
+                          <Text style={styles.dateBadgeDay}>{dayStr}</Text>
+                          <Text style={styles.dateBadgeMonth}>{monthStr}</Text>
+                        </View>
+
+                        <View style={{ flex: 1, paddingHorizontal: 10 }}>
+                          <Text style={[styles.rehearsalTitle, { color: primaryText }]}>
+                            {reh.rehearsalName}
+                          </Text>
+                          <Text style={[styles.rehearsalMeta, { color: secondaryText }]}>
+                            ⏰ {reh.startTime} - {reh.endTime} · 📍 {reh.location}
+                          </Text>
+                        </View>
+
+                        <View style={styles.rehearsalCardActions}>
+                          <TouchableOpacity
+                            style={styles.itemEditBtn}
+                            onPress={() => openEditRehearsalModal(reh)}
+                          >
+                            <Edit3 size={14} color="#1E3A8A" />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.itemDeleteBtn}
+                            onPress={() => handleDeleteRehearsal(reh.id, reh.rehearsalName)}
+                          >
+                            <Trash2 size={14} color="#DC2626" />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+
+                      {/* Assigned Teams Pills */}
+                      {reh.assignedTeamIds && reh.assignedTeamIds.length > 0 && (
+                        <View style={styles.rehearsalTeamsRow}>
+                          {reh.assignedTeamIds.map(tId => {
+                            const teamObj = ministryTeams.find(t => t.id === tId);
+                            return (
+                              <View key={tId} style={[styles.rehTeamPill, { backgroundColor: teamObj?.color ? `${teamObj.color}15` : '#E0E7FF' }]}>
+                                <Users size={11} color={teamObj?.color || '#1E3A8A'} />
+                                <Text style={[styles.rehTeamPillTxt, { color: teamObj?.color || '#1E3A8A' }]}>
+                                  {teamObj?.name || tId}
+                                </Text>
+                              </View>
+                            );
+                          })}
+                        </View>
+                      )}
+
+                      {/* Practice Songs Section */}
+                      {practiceSongs.length > 0 && (
+                        <View style={styles.rehSongsBox}>
+                          <Text style={[styles.rehSectionSubheading, { color: secondaryText }]}>
+                            SONGS FOR PRACTICE ({practiceSongs.length})
+                          </Text>
+                          {practiceSongs.map(s => (
+                            <View key={s.id} style={styles.rehSongItemRow}>
+                              <Music size={12} color="#1E3A8A" />
+                              <Text style={[styles.rehSongTitle, { color: primaryText }]} numberOfLines={1}>
+                                {s.title} {s.titleTe ? `(${s.titleTe})` : ''}
+                              </Text>
+                              <View style={styles.keyBadge}>
+                                <Text style={styles.keyBadgeTxt}>Key {s.key}</Text>
+                              </View>
+                              <Text style={[styles.ladderCandMeta, { color: secondaryText }]}>{s.tempo} BPM</Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+
+                      {/* Instructions / Notes */}
+                      {reh.notes ? (
+                        <View style={styles.rehNotesBox}>
+                          <Text style={[styles.rehNotesTxt, { color: secondaryText }]}>
+                            📝 {reh.notes}
+                          </Text>
+                        </View>
+                      ) : null}
+
+                      {/* Attendance Bar */}
+                      <View style={styles.rehAttendanceFooter}>
+                        <View style={styles.attendanceStats}>
+                          <Text style={styles.attStatItem}>✅ {presentCount} Present</Text>
+                          {lateCount > 0 && <Text style={styles.attStatItem}>⏳ {lateCount} Late</Text>}
+                          {absentCount > 0 && <Text style={styles.attStatItem}>❌ {absentCount} Absent</Text>}
+                        </View>
+
+                        <TouchableOpacity
+                          style={styles.takeAttendanceBtn}
+                          onPress={() => openTakeRehearsalAttendance(reh)}
+                        >
+                          <UserCheck size={13} color="#FFFFFF" />
+                          <Text style={styles.takeAttendanceBtnTxt}>Take Attendance</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+            </View>
+          )}
+
+          {/* TAB: VOLUNTEER ATTENDANCE (PHASE 9) */}
+          {activePlannerTab === 'attendance' && selectedPlan && (
+            <View style={styles.tabContent}>
+              {/* Service Summary Banner */}
+              <View style={[styles.selectedBanner, { backgroundColor: cardSurface, borderColor }]}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <View style={{ flex: 1, paddingRight: 8 }}>
+                    <Text style={styles.selectedBannerTag}>VOLUNTEER ATTENDANCE ROSTER</Text>
+                    <Text style={[styles.selectedBannerTitle, { color: primaryText }]}>
+                      {selectedPlan.serviceTitle}
+                    </Text>
+                    <Text style={[styles.selectedBannerMeta, { color: secondaryText }]}>
+                      📅 {selectedPlan.date} · ⏰ {selectedPlan.startTime} - {selectedPlan.endTime} · 📍 {selectedPlan.location}
+                    </Text>
+                  </View>
+                  <View style={styles.turnoutCircle}>
+                    <Text style={styles.turnoutCirclePercent}>{attendanceStats.turnoutRate}%</Text>
+                    <Text style={styles.turnoutCircleLabel}>Turnout</Text>
+                  </View>
+                </View>
+
+                {/* Counters Bar */}
+                <View style={styles.attCountersBar}>
+                  <View style={styles.attCounterItem}>
+                    <Text style={[styles.attCounterVal, { color: '#059669' }]}>{attendanceStats.present}</Text>
+                    <Text style={styles.attCounterLbl}>Present</Text>
+                  </View>
+                  <View style={styles.attCounterItem}>
+                    <Text style={[styles.attCounterVal, { color: '#D97706' }]}>{attendanceStats.late}</Text>
+                    <Text style={styles.attCounterLbl}>Late</Text>
+                  </View>
+                  <View style={styles.attCounterItem}>
+                    <Text style={[styles.attCounterVal, { color: '#DC2626' }]}>{attendanceStats.absent}</Text>
+                    <Text style={styles.attCounterLbl}>Absent</Text>
+                  </View>
+                  <View style={styles.attCounterItem}>
+                    <Text style={[styles.attCounterVal, { color: '#2563EB' }]}>{attendanceStats.excused}</Text>
+                    <Text style={styles.attCounterLbl}>Excused</Text>
+                  </View>
+                  <View style={styles.attCounterItem}>
+                    <Text style={[styles.attCounterVal, { color: '#64748B' }]}>{attendanceStats.unmarked}</Text>
+                    <Text style={styles.attCounterLbl}>Unchecked</Text>
+                  </View>
+                </View>
+
+                {/* Quick Check-In All Button */}
+                <TouchableOpacity
+                  style={styles.bulkCheckInBtn}
+                  onPress={handleCheckInAllVolunteers}
+                  disabled={savingAttendance || serviceVolunteers.length === 0}
+                >
+                  {savingAttendance ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <UserCheck size={14} color="#FFFFFF" />
+                      <Text style={styles.bulkCheckInBtnTxt}>
+                        Check-In All {serviceVolunteers.length} Volunteer(s) as Present
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+
+              {/* Volunteer List */}
+              <View style={styles.sectionHeaderRow}>
+                <View>
+                  <Text style={[styles.sectionHeading, { color: primaryText }]}>Scheduled Roster & Crew</Text>
+                  <Text style={[styles.sectionSubheading, { color: secondaryText }]}>
+                    {serviceVolunteers.length} volunteer(s) assigned across runsheet and worship band
+                  </Text>
+                </View>
+              </View>
+
+              {serviceVolunteers.length === 0 ? (
+                <View style={[styles.emptyCard, { backgroundColor: cardSurface, borderColor }]}>
+                  <Users size={36} color="#94A3B8" />
+                  <Text style={[styles.emptyTitle, { color: primaryText }]}>No Volunteers Assigned Yet</Text>
+                  <Text style={[styles.emptySubtitle, { color: secondaryText }]}>
+                    Assign ministers and leaders in Order Builder or praise members in Worship Setlist to track duty attendance.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.createEmptyBtn}
+                    onPress={() => setActivePlannerTab('builder')}
+                  >
+                    <Layers size={15} color="#FFFFFF" />
+                    <Text style={styles.createEmptyBtnTxt}>Go to Order Builder</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                serviceVolunteers.map(v => {
+                  const rec = attendanceRecords.find(r =>
+                    (r.roleId === v.roleId && r.memberId === v.memberId) ||
+                    (r.memberName === v.memberName && r.roleTitle === v.roleTitle)
+                  );
+                  const currentStatus = rec?.attendanceStatus || 'unmarked';
+
+                  return (
+                    <View
+                      key={v.key}
+                      style={[styles.volunteerAttCard, { backgroundColor: cardSurface, borderColor }]}
+                    >
+                      <View style={{ flex: 1, paddingRight: 8 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                          <Text style={[styles.volCardName, { color: primaryText }]}>{v.memberName}</Text>
+                          <View style={styles.volTeamBadge}>
+                            <Text style={styles.volTeamBadgeTxt}>{v.teamName}</Text>
+                          </View>
+                        </View>
+                        <Text style={[styles.volRoleTitle, { color: secondaryText }]}>{v.roleTitle}</Text>
+                        {rec?.markedAt && (
+                          <Text style={[styles.volMarkedMeta, { color: secondaryText }]}>
+                            Updated by {rec.markedByName || 'Admin'}
+                          </Text>
+                        )}
+                      </View>
+
+                      {/* Status Pills */}
+                      <View style={styles.attStatusPillGroup}>
+                        <TouchableOpacity
+                          style={[
+                            styles.attStatusPill,
+                            currentStatus === 'present' && styles.attStatusPillPresent
+                          ]}
+                          onPress={() => handleMarkVolunteerAttendance(v, 'present')}
+                        >
+                          <Text style={[
+                            styles.attStatusPillTxt,
+                            currentStatus === 'present' && styles.attStatusPillTxtActive
+                          ]}>Present</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.attStatusPill,
+                            currentStatus === 'late' && styles.attStatusPillLate
+                          ]}
+                          onPress={() => handleMarkVolunteerAttendance(v, 'late')}
+                        >
+                          <Text style={[
+                            styles.attStatusPillTxt,
+                            currentStatus === 'late' && styles.attStatusPillTxtActive
+                          ]}>Late</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.attStatusPill,
+                            currentStatus === 'absent' && styles.attStatusPillAbsent
+                          ]}
+                          onPress={() => handleMarkVolunteerAttendance(v, 'absent')}
+                        >
+                          <Text style={[
+                            styles.attStatusPillTxt,
+                            currentStatus === 'absent' && styles.attStatusPillTxtActive
+                          ]}>Absent</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.attStatusPill,
+                            currentStatus === 'excused' && styles.attStatusPillExcused
+                          ]}
+                          onPress={() => handleMarkVolunteerAttendance(v, 'excused')}
+                        >
+                          <Text style={[
+                            styles.attStatusPillTxt,
+                            currentStatus === 'excused' && styles.attStatusPillTxtActive
+                          ]}>Excused</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+            </View>
+          )}
+
+          {/* TAB: ANALYTICS & VOLUNTEER HEALTH (PHASE 9) */}
+          {activePlannerTab === 'analytics' && (
+            <View style={styles.tabContent}>
+              <View style={styles.sectionHeaderRow}>
+                <View>
+                  <Text style={[styles.sectionHeading, { color: primaryText }]}>Worship Operations Analytics</Text>
+                  <Text style={[styles.sectionSubheading, { color: secondaryText }]}>
+                    Volunteer turnout, burnout fatigue detection, and worship song frequency
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.refreshAnalyticsBtn}
+                  onPress={fetchAnalytics}
+                  disabled={loadingAnalytics}
+                >
+                  <RefreshCw size={13} color="#1E3A8A" />
+                  <Text style={styles.refreshAnalyticsBtnTxt}>Reload</Text>
+                </TouchableOpacity>
+              </View>
+
+              {loadingAnalytics ? (
+                <View style={styles.analyticsLoadingBox}>
+                  <ActivityIndicator size="large" color="#1E3A8A" />
+                  <Text style={[styles.analyticsLoadingTxt, { color: secondaryText }]}>
+                    Analyzing church volunteer health and service metrics...
+                  </Text>
+                </View>
+              ) : !analyticsData ? (
+                <View style={[styles.emptyCard, { backgroundColor: cardSurface, borderColor }]}>
+                  <BarChart2 size={36} color="#94A3B8" />
+                  <Text style={[styles.emptyTitle, { color: primaryText }]}>No Analytics Available</Text>
+                  <Text style={[styles.emptySubtitle, { color: secondaryText }]}>
+                    Create and publish services to view volunteer turnout and worship metrics.
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  {/* KPI Grid */}
+                  <View style={styles.kpiGrid}>
+                    <View style={[styles.kpiCard, { backgroundColor: cardSurface, borderColor }]}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={[styles.kpiLabel, { color: secondaryText }]}>Avg. Turnout</Text>
+                        <UserCheck size={16} color="#059669" />
+                      </View>
+                      <Text style={[styles.kpiValue, { color: '#059669' }]}>
+                        {analyticsData.averageTurnoutPercent}%
+                      </Text>
+                      <Text style={[styles.kpiSub, { color: secondaryText }]}>Roster attendance rate</Text>
+                    </View>
+
+                    <View style={[styles.kpiCard, { backgroundColor: cardSurface, borderColor }]}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={[styles.kpiLabel, { color: secondaryText }]}>Acceptance</Text>
+                        <CheckCircle2 size={16} color="#1E3A8A" />
+                      </View>
+                      <Text style={[styles.kpiValue, { color: '#1E3A8A' }]}>
+                        {analyticsData.acceptanceRatePercent}%
+                      </Text>
+                      <Text style={[styles.kpiSub, { color: secondaryText }]}>
+                        {analyticsData.totalAccepted} of {analyticsData.totalQueueInvites} accepted
+                      </Text>
+                    </View>
+
+                    <View style={[styles.kpiCard, { backgroundColor: cardSurface, borderColor }]}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={[styles.kpiLabel, { color: secondaryText }]}>Active Volunteers</Text>
+                        <Users size={16} color="#7C3AED" />
+                      </View>
+                      <Text style={[styles.kpiValue, { color: '#7C3AED' }]}>
+                        {analyticsData.volunteerServingCounts.length}
+                      </Text>
+                      <Text style={[styles.kpiSub, { color: secondaryText }]}>
+                        {analyticsData.totalVolunteerAssignments} duties assigned
+                      </Text>
+                    </View>
+
+                    <View style={[styles.kpiCard, { backgroundColor: cardSurface, borderColor }]}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={[styles.kpiLabel, { color: secondaryText }]}>Services</Text>
+                        <Calendar size={16} color="#D97706" />
+                      </View>
+                      <Text style={[styles.kpiValue, { color: '#D97706' }]}>
+                        {analyticsData.completedServices} / {analyticsData.totalServices}
+                      </Text>
+                      <Text style={[styles.kpiSub, { color: secondaryText }]}>Completed / Total</Text>
+                    </View>
+                  </View>
+
+                  {/* Queue Response Breakdown Bar */}
+                  <View style={[styles.analyticsSectionCard, { backgroundColor: cardSurface, borderColor }]}>
+                    <Text style={[styles.analyticsCardTitle, { color: primaryText }]}>
+                      Assignment Cascade Acceptance Ladder
+                    </Text>
+                    <Text style={[styles.analyticsCardSub, { color: secondaryText }]}>
+                      Summary of volunteer invite responses across automated queues
+                    </Text>
+
+                    <View style={styles.cascadeBreakdownRow}>
+                      <View style={styles.cascadeBreakdownItem}>
+                        <View style={[styles.breakdownDot, { backgroundColor: '#059669' }]} />
+                        <Text style={[styles.breakdownTxt, { color: primaryText }]}>
+                          Accepted: <Text style={{ fontWeight: '800' }}>{analyticsData.totalAccepted}</Text>
+                        </Text>
+                      </View>
+                      <View style={styles.cascadeBreakdownItem}>
+                        <View style={[styles.breakdownDot, { backgroundColor: '#D97706' }]} />
+                        <Text style={[styles.breakdownTxt, { color: primaryText }]}>
+                          Timed Out: <Text style={{ fontWeight: '800' }}>{analyticsData.totalTimedOut}</Text>
+                        </Text>
+                      </View>
+                      <View style={styles.cascadeBreakdownItem}>
+                        <View style={[styles.breakdownDot, { backgroundColor: '#DC2626' }]} />
+                        <Text style={[styles.breakdownTxt, { color: primaryText }]}>
+                          Declined: <Text style={{ fontWeight: '800' }}>{analyticsData.totalDeclined}</Text>
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* Volunteer Burnout & Fatigue Risk Tracker */}
+                  <View style={[styles.analyticsSectionCard, { backgroundColor: cardSurface, borderColor }]}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <View>
+                        <Text style={[styles.analyticsCardTitle, { color: primaryText }]}>
+                          Volunteer Burnout & Fatigue Tracker
+                        </Text>
+                        <Text style={[styles.analyticsCardSub, { color: secondaryText }]}>
+                          Identifies leaders serving frequently (≥ 3 services in past 30 days)
+                        </Text>
+                      </View>
+                    </View>
+
+                    {analyticsData.volunteerServingCounts.some(v => v.fatigueRisk) && (
+                      <View style={styles.fatigueAlertBanner}>
+                        <AlertTriangle size={15} color="#DC2626" />
+                        <Text style={styles.fatigueAlertTxt}>
+                          {analyticsData.volunteerServingCounts.filter(v => v.fatigueRisk).length} volunteer(s) flagged for potential serving fatigue. Consider rotating roles.
+                        </Text>
+                      </View>
+                    )}
+
+                    {analyticsData.volunteerServingCounts.length === 0 ? (
+                      <Text style={[styles.analyticsCardSub, { color: secondaryText, marginTop: 8 }]}>
+                        No volunteer duty assignments recorded yet.
+                      </Text>
+                    ) : (
+                      analyticsData.volunteerServingCounts.slice(0, 8).map(v => (
+                        <View
+                          key={v.memberId}
+                          style={[styles.volunteerStatRow, { borderColor }]}
+                        >
+                          <View style={{ flex: 1, paddingRight: 8 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <Text style={[styles.statVolunteerName, { color: primaryText }]}>
+                                {v.memberName}
+                              </Text>
+                              {v.fatigueRisk ? (
+                                <View style={styles.fatigueBadge}>
+                                  <Text style={styles.fatigueBadgeTxt}>⚠️ Fatigue Risk</Text>
+                                </View>
+                              ) : (
+                                <View style={styles.balancedBadge}>
+                                  <Text style={styles.balancedBadgeTxt}>✅ Balanced</Text>
+                                </View>
+                              )}
+                            </View>
+                            <Text style={[styles.statVolunteerMeta, { color: secondaryText }]}>
+                              Served {v.servingCount} time(s) · Last served: {v.lastServedDate || 'N/A'}
+                            </Text>
+                            {v.rolesServed && v.rolesServed.length > 0 && (
+                              <View style={styles.rolesServedWrap}>
+                                {v.rolesServed.map((r, ri) => (
+                                  <View key={ri} style={styles.roleServedChip}>
+                                    <Text style={styles.roleServedChipTxt}>{r}</Text>
+                                  </View>
+                                ))}
+                              </View>
+                            )}
+                          </View>
+                          <View style={styles.servesCountPill}>
+                            <Text style={styles.servesCountVal}>{v.servingCount}</Text>
+                            <Text style={styles.servesCountLbl}>serves</Text>
+                          </View>
+                        </View>
+                      ))
+                    )}
+                  </View>
+
+                  {/* Top Sung Worship Songs */}
+                  <View style={[styles.analyticsSectionCard, { backgroundColor: cardSurface, borderColor }]}>
+                    <Text style={[styles.analyticsCardTitle, { color: primaryText }]}>
+                      Most Frequently Sung Worship Songs
+                    </Text>
+                    <Text style={[styles.analyticsCardSub, { color: secondaryText }]}>
+                      Top 10 songs curated from service setlists
+                    </Text>
+
+                    {analyticsData.topWorshipSongs.length === 0 ? (
+                      <Text style={[styles.analyticsCardSub, { color: secondaryText, marginTop: 8 }]}>
+                        No setlist songs recorded yet.
+                      </Text>
+                    ) : (
+                      analyticsData.topWorshipSongs.map((song, sIdx) => (
+                        <View key={song.songId} style={[styles.topSongRow, { borderColor }]}>
+                          <View style={styles.songRankBadge}>
+                            <Text style={styles.songRankTxt}>#{sIdx + 1}</Text>
+                          </View>
+                          <View style={{ flex: 1, paddingHorizontal: 10 }}>
+                            <Text style={[styles.topSongTitle, { color: primaryText }]}>
+                              {song.title}
+                            </Text>
+                            {song.titleTe ? (
+                              <Text style={styles.topSongTeTitle}>{song.titleTe}</Text>
+                            ) : null}
+                            <Text style={[styles.topSongMeta, { color: secondaryText }]}>
+                              Key: {song.key || 'Standard'} · Last sung: {song.lastSungDate || 'N/A'}
+                            </Text>
+                          </View>
+                          <View style={styles.songCountBadge}>
+                            <Music size={12} color="#1E3A8A" />
+                            <Text style={styles.songCountTxt}>{song.count}x</Text>
+                          </View>
+                        </View>
+                      ))
+                    )}
+                  </View>
+                </>
+              )}
+            </View>
+          )}
+
+          {/* TAB 4: MINISTRY TEAMS MANAGEMENT (PHASE 2) */}
+          {activePlannerTab === 'teams' && (
+            <View style={styles.tabContent}>
+              <View style={styles.sectionHeaderRow}>
+                <View>
+                  <Text style={[styles.sectionHeading, { color: primaryText }]}>Church Ministry Teams</Text>
+                  <Text style={[styles.sectionSubheading, { color: secondaryText }]}>
+                    Organize volunteers across 14 church departments and operational teams.
+                  </Text>
+                </View>
+                {ministryTeams.length === 0 && (
+                  <TouchableOpacity
+                    style={styles.seedTeamsBtn}
+                    onPress={handleSeedDefaultTeams}
+                  >
+                    <Sparkles size={13} color="#D97706" />
+                    <Text style={styles.seedTeamsBtnTxt}>Seed 14 Teams</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {ministryTeams.length === 0 ? (
+                <View style={[styles.emptyCard, { backgroundColor: cardSurface, borderColor }]}>
+                  <Users size={36} color="#94A3B8" />
+                  <Text style={[styles.emptyTitle, { color: primaryText }]}>No Ministry Teams Yet</Text>
+                  <Text style={[styles.emptySubtitle, { color: secondaryText }]}>
+                    Set up your standard ministry departments (Worship, Audio, Livestream, Ushers, Communion).
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.createEmptyBtn}
+                    onPress={handleSeedDefaultTeams}
+                  >
+                    <Sparkles size={15} color="#FFFFFF" />
+                    <Text style={styles.createEmptyBtnTxt}>Seed 14 Standard Teams</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                ministryTeams.map(team => {
+                  const memberCount = team.memberIds?.length || 0;
+                  return (
+                    <TouchableOpacity
+                      key={team.id}
+                      style={[styles.teamCard, { backgroundColor: cardSurface, borderColor }]}
+                      activeOpacity={0.88}
+                      onPress={() => openEditTeamModal(team)}
+                    >
+                      <View style={[styles.teamColorBar, { backgroundColor: team.color || '#1E3A8A' }]} />
+                      <View style={{ flex: 1, paddingVertical: 12, paddingHorizontal: 12 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={[styles.teamTitle, { color: primaryText }]}>{team.name}</Text>
+                            <View style={[styles.teamActiveBadge, team.active ? styles.teamActiveBadgeOn : styles.teamActiveBadgeOff]}>
+                              <Text style={[styles.teamActiveBadgeTxt, team.active ? styles.teamActiveBadgeTxtOn : styles.teamActiveBadgeTxtOff]}>
+                                {team.active ? 'ACTIVE' : 'INACTIVE'}
+                              </Text>
+                            </View>
+                          </View>
+                          <ChevronRight size={16} color="#94A3B8" />
+                        </View>
+
+                        <Text style={[styles.teamDescription, { color: secondaryText }]} numberOfLines={2}>
+                          {team.description || 'Ministry team serving Rhema Church'}
+                        </Text>
+
+                        <View style={styles.teamMetaRow}>
+                          <Text style={[styles.teamMetaTxt, { color: secondaryText }]}>
+                            👑 Leader: <Text style={{ fontWeight: '700', color: primaryText }}>{team.leaderName || 'Unassigned'}</Text>
+                          </Text>
+                          <View style={styles.teamMembersCountBadge}>
+                            <Users size={12} color="#1E3A8A" />
+                            <Text style={styles.teamMembersCountTxt}>{memberCount} Members</Text>
+                          </View>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </View>
+          )}
+
+          {/* TAB 5: MEMBER SKILLS & VERIFICATION (PHASE 2) */}
+          {activePlannerTab === 'skills' && (
+            <View style={styles.tabContent}>
+              <View style={styles.skillStatsRow}>
+                <View style={[styles.skillStatCard, { backgroundColor: cardSurface, borderColor }]}>
+                  <Text style={[styles.skillStatNum, { color: '#1E3A8A' }]}>{memberSkills.length}</Text>
+                  <Text style={[styles.skillStatLbl, { color: secondaryText }]}>Total Skills</Text>
+                </View>
+                <View style={[styles.skillStatCard, { backgroundColor: cardSurface, borderColor }]}>
+                  <Text style={[styles.skillStatNum, { color: '#059669' }]}>
+                    {memberSkills.filter(s => s.verificationStatus === 'verified').length}
+                  </Text>
+                  <Text style={[styles.skillStatLbl, { color: secondaryText }]}>Verified</Text>
+                </View>
+                <View style={[styles.skillStatCard, { backgroundColor: cardSurface, borderColor }]}>
+                  <Text style={[styles.skillStatNum, { color: pendingSkillsCount > 0 ? '#DC2626' : '#1E3A8A' }]}>
+                    {pendingSkillsCount}
+                  </Text>
+                  <Text style={[styles.skillStatLbl, { color: secondaryText }]}>Pending Review</Text>
+                </View>
+              </View>
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
+                {SKILL_CATEGORIES.map(cat => (
+                  <TouchableOpacity
+                    key={cat.id}
+                    style={[styles.filterChip, skillCategoryFilter === cat.id && styles.filterChipActive]}
+                    onPress={() => setSkillCategoryFilter(cat.id)}
+                  >
+                    <Text style={[styles.filterChipTxt, skillCategoryFilter === cat.id && styles.filterChipTxtActive]}>
+                      {cat.label.toUpperCase()} {cat.id === 'pending' && pendingSkillsCount > 0 ? `(${pendingSkillsCount})` : ''}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              {filteredSkills.length === 0 ? (
+                <View style={[styles.emptyCard, { backgroundColor: cardSurface, borderColor }]}>
+                  <Award size={36} color="#94A3B8" />
+                  <Text style={[styles.emptyTitle, { color: primaryText }]}>No Member Skills Found</Text>
+                  <Text style={[styles.emptySubtitle, { color: secondaryText }]}>
+                    Record member talents in music, praise, technical audio/video, and prayer ministries.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.createEmptyBtn}
+                    onPress={() => setShowAddSkillModal(true)}
+                  >
+                    <Plus size={15} color="#FFFFFF" />
+                    <Text style={styles.createEmptyBtnTxt}>Add Member Skill</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                filteredSkills.map(skill => {
+                  const isPending = skill.verificationStatus === 'pending';
+                  const isVerified = skill.verificationStatus === 'verified';
+                  return (
+                    <View
+                      key={skill.id}
+                      style={[
+                        styles.skillCard,
+                        { backgroundColor: cardSurface, borderColor },
+                        isPending && styles.skillCardPending
+                      ]}
+                    >
+                      <View style={styles.skillCardLeft}>
+                        <View style={styles.skillAvatarBox}>
+                          <Text style={styles.skillAvatarTxt}>
+                            {(skill.memberName || 'M').charAt(0).toUpperCase()}
+                          </Text>
+                        </View>
+                        <View style={{ flex: 1, paddingHorizontal: 10 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={[styles.skillMemberName, { color: primaryText }]}>
+                              {skill.memberName}
+                            </Text>
+                            <View style={[
+                              styles.miniSkillStatusBadge,
+                              isVerified ? styles.skillStatusVerified :
+                                isPending ? styles.skillStatusPending :
+                                  styles.skillStatusRejected
+                            ]}>
+                              <Text style={styles.miniSkillStatusBadgeTxt}>
+                                {skill.verificationStatus.toUpperCase()}
+                              </Text>
+                            </View>
+                          </View>
+                          <Text style={[styles.skillNameText, { color: '#1E3A8A' }]}>
+                            🎯 {skill.skillName} ({skill.proficiencyLevel?.toUpperCase() || 'INTERMEDIATE'})
+                          </Text>
+                          <Text style={[styles.skillCategoryMeta, { color: secondaryText }]}>
+                            Category: {skill.category.replace('_', ' ').toUpperCase()} {skill.verifiedBy ? `· Verified by: ${skill.verifiedBy}` : ''}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {isPending ? (
+                        <View style={styles.skillActionBtnsRow}>
+                          <TouchableOpacity
+                            style={styles.verifyBtn}
+                            onPress={() => handleVerifySkill(skill.id, 'verified')}
+                          >
+                            <Check size={14} color="#FFFFFF" />
+                            <Text style={styles.verifyBtnTxt}>Verify</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.rejectBtn}
+                            onPress={() => handleVerifySkill(skill.id, 'rejected')}
+                          >
+                            <X size={14} color="#DC2626" />
+                          </TouchableOpacity>
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                })
+              )}
+            </View>
+          )}
+
+          {/* TAB 6: SERVICE TEMPLATES */}
+          {activePlannerTab === 'templates' && (
+            <View style={styles.tabContent}>
+              <View style={styles.sectionHeaderRow}>
+                <View>
+                  <Text style={[styles.sectionHeading, { color: primaryText }]}>Service Templates</Text>
+                  <Text style={[styles.sectionSubheading, { color: secondaryText }]}>
+                    Standard service structures you can apply to any service in 1 click.
+                  </Text>
+                </View>
+              </View>
+
+              {templates.map(tpl => (
+                <View
+                  key={tpl.id}
+                  style={[styles.templateCard, { backgroundColor: cardSurface, borderColor }]}
+                >
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <View style={{ flex: 1, paddingRight: 8 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={styles.templateTypeTag}>{SERVICE_TYPE_LABELS[tpl.serviceType] || tpl.serviceType}</Text>
+                        {tpl.isBuiltIn && <Text style={styles.builtInTag}>BUILT-IN</Text>}
+                      </View>
+                      <Text style={[styles.templateTitle, { color: primaryText }]}>{tpl.name}</Text>
+                      <Text style={[styles.templateDescription, { color: secondaryText }]}>{tpl.description}</Text>
+                      <Text style={[styles.templateDuration, { color: '#D97706' }]}>
+                        ⏱️ Duration: ~{tpl.defaultDurationMinutes} mins · {tpl.runSheetTemplate?.length || 0} Segments
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.templatePreviewList}>
+                    {tpl.runSheetTemplate.slice(0, 4).map((item, idx) => (
+                      <Text key={idx} style={[styles.templatePreviewItem, { color: secondaryText }]} numberOfLines={1}>
+                        {idx + 1}. {item.program} ({item.durationMinutes}m)
+                      </Text>
+                    ))}
+                    {tpl.runSheetTemplate.length > 4 && (
+                      <Text style={[styles.templatePreviewMore, { color: '#1E3A8A' }]}>
+                        + {tpl.runSheetTemplate.length - 4} more activities...
+                      </Text>
+                    )}
+                  </View>
+
+                  {selectedPlan && (
+                    <TouchableOpacity
+                      style={styles.applyTemplateCardBtn}
+                      onPress={() => handleApplyTemplate(tpl.id)}
+                    >
+                      <Copy size={13} color="#FFFFFF" />
+                      <Text style={styles.applyTemplateCardBtnTxt}>Apply to Selected Service</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ))}
+            </View>
+          )}
+        </ScrollView>
+      )}
+
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      {/* MODAL: SONG PICKER MODAL (PHASE 3) */}
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      <Modal visible={showSongPickerModal} animationType="slide" transparent>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={[styles.modalBox, { backgroundColor: cardSurface }]}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={[styles.modalTitle, { color: primaryText }]}>Select Songs from Library</Text>
+                <Text style={[styles.modalSubtitle, { color: secondaryText }]}>
+                  Choose from {churchSongs.length} Telugu & English praise songs.
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowSongPickerModal(false)}>
+                <X size={20} color={secondaryText} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Song Search Bar */}
+            <View style={[styles.searchBox, { backgroundColor: screenBg, borderColor }]}>
+              <Search size={16} color="#94A3B8" />
+              <TextInput
+                style={[styles.searchInput, { color: primaryText }]}
+                placeholder="Search song title (Telugu/English) or artist..."
+                placeholderTextColor="#94A3B8"
+                value={songLibrarySearch}
+                onChangeText={setSongLibrarySearch}
+              />
+              {songLibrarySearch.length > 0 && (
+                <TouchableOpacity onPress={() => setSongLibrarySearch('')}>
+                  <X size={14} color="#94A3B8" />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Song List */}
+            {loadingSongs ? (
+              <ActivityIndicator size="small" color="#1E3A8A" style={{ marginVertical: 30 }} />
+            ) : (
+              <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
+                {filteredLibrarySongs.map(song => (
+                  <TouchableOpacity
+                    key={song.id}
+                    style={[styles.songPickItem, { borderColor }]}
+                    onPress={() => handleSelectSongFromLibrary(song)}
+                  >
+                    <View style={styles.songPickIconBox}>
+                      <Music size={16} color="#1E3A8A" />
+                    </View>
+                    <View style={{ flex: 1, paddingHorizontal: 10 }}>
+                      <Text style={[styles.songPickTitle, { color: primaryText }]}>{song.title}</Text>
+                      {song.titleTe ? (
+                        <Text style={[styles.songPickTe, { color: '#D97706' }]}>{song.titleTe}</Text>
+                      ) : null}
+                      <Text style={[styles.songPickMeta, { color: secondaryText }]}>
+                        Key: {song.key || 'G'} · {song.artist || 'Traditional Worship'}
+                      </Text>
+                    </View>
+                    <Plus size={16} color="#1E3A8A" />
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setShowSongPickerModal(false)}
+              >
+                <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      {/* MODAL: CONFIGURE SETLIST SONG (PHASE 3) */}
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      <Modal visible={showConfigureSongModal} animationType="slide" transparent>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={[styles.modalBox, { backgroundColor: cardSurface }]}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={[styles.modalTitle, { color: primaryText }]}>
+                  {editingSetlistIndex !== null ? 'Edit Setlist Song' : 'Configure Song for Worship'}
+                </Text>
+                <Text style={[styles.modalSubtitle, { color: secondaryText }]}>
+                  {selectedSongForSetlist?.title || 'Assign Key, BPM, Song Leader & Musicians'}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowConfigureSongModal(false)}>
+                <X size={20} color={secondaryText} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 440 }} showsVerticalScrollIndicator={false}>
+              {/* Musical Key Picker */}
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Musical Key *</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+                {STANDARD_KEYS.map(k => (
+                  <TouchableOpacity
+                    key={k}
+                    style={[styles.keyPickerChip, songKeyInput === k && styles.keyPickerChipActive]}
+                    onPress={() => setSongKeyInput(k)}
+                  >
+                    <Text style={[styles.keyPickerChipTxt, songKeyInput === k && styles.keyPickerChipTxtActive]}>
+                      {k}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              {/* BPM, Time Sig & Duration */}
+              <View style={styles.formRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Tempo (BPM)</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    placeholder="120"
+                    keyboardType="numeric"
+                    value={songBpmInput}
+                    onChangeText={setSongBpmInput}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Time Signature</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    placeholder="4/4"
+                    value={songTimeSigInput}
+                    onChangeText={setSongTimeSigInput}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Duration (Mins)</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    placeholder="6"
+                    keyboardType="numeric"
+                    value={songDurationInput}
+                    onChangeText={setSongDurationInput}
+                  />
+                </View>
+              </View>
+
+              {/* Song Leader */}
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Song Leader *</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                placeholder="Name of song leader"
+                value={songLeaderInput}
+                onChangeText={setSongLeaderInput}
+              />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+                {churchMembers.slice(0, 6).map(m => (
+                  <TouchableOpacity
+                    key={m.id}
+                    style={[styles.quickMemberChip, songLeaderInput === m.name && styles.quickMemberChipActive]}
+                    onPress={() => setSongLeaderInput(m.name || m.firstName)}
+                  >
+                    <Text style={[styles.quickMemberChipTxt, songLeaderInput === m.name && styles.quickMemberChipTxtActive]}>
+                      {m.name || m.firstName}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              {/* Musician Assignments */}
+              <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 4 }]}>Band Musician Assignments</Text>
+
+              <View style={styles.formRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.subFieldLabel, { color: secondaryText }]}>Keyboard</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    placeholder="Keyboard player"
+                    value={songKeyboardInput}
+                    onChangeText={setSongKeyboardInput}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.subFieldLabel, { color: secondaryText }]}>Acoustic Guitar</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    placeholder="Acoustic guitarist"
+                    value={songAcousticInput}
+                    onChangeText={setSongAcousticInput}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.formRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.subFieldLabel, { color: secondaryText }]}>Drums</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    placeholder="Drummer"
+                    value={songDrumsInput}
+                    onChangeText={setSongDrumsInput}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.subFieldLabel, { color: secondaryText }]}>Bass Guitar</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    placeholder="Bassist"
+                    value={songBassInput}
+                    onChangeText={setSongBassInput}
+                  />
+                </View>
+              </View>
+
+              {/* Rehearsal Arrangement Notes */}
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Rehearsal & Arrangement Notes</Text>
+              <TextInput
+                style={[styles.textArea, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                placeholder="e.g. Intro with Keys -> Acoustic joins on Verse 1 -> Full Band Chorus -> Modulate to Key A on Bridge"
+                multiline
+                numberOfLines={3}
+                value={songNotesInput}
+                onChangeText={setSongNotesInput}
+              />
             </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setShowConfigureSongModal(false)}
+              >
+                <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalConfirmBtn}
+                disabled={savingSetlistSong}
+                onPress={handleSaveSetlistSong}
+              >
+                {savingSetlistSong ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalConfirmBtnTxt}>Save to Setlist</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      {/* MODAL: BILINGUAL LYRICS VIEWER MODAL (PHASE 3) */}
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      <Modal visible={showLyricsModal} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { backgroundColor: cardSurface, maxHeight: '85%' }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1, paddingRight: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <View style={styles.keyBadge}>
+                    <Text style={styles.keyBadgeTxt}>Key {viewingLyricsSong?.key || 'G'}</Text>
+                  </View>
+                  <View style={styles.bpmBadge}>
+                    <Text style={styles.bpmBadgeTxt}>{viewingLyricsSong?.tempo || '120'} BPM</Text>
+                  </View>
+                </View>
+                <Text style={[styles.modalTitle, { color: primaryText, marginTop: 4 }]}>
+                  {viewingLyricsSong?.title}
+                </Text>
+                {viewingLyricsSong?.titleTe ? (
+                  <Text style={[styles.modalSubtitle, { color: '#D97706' }]}>
+                    {viewingLyricsSong.titleTe}
+                  </Text>
+                ) : null}
+              </View>
+              <TouchableOpacity onPress={() => setShowLyricsModal(false)}>
+                <X size={20} color={secondaryText} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+              {/* Telugu Lyrics */}
+              {viewingLyricsSong?.lyricsTe ? (
+                <View style={styles.lyricsBlock}>
+                  <Text style={[styles.lyricsLangHeader, { color: '#D97706' }]}>తెలుగు సాహిత్యం (TELUGU LYRICS)</Text>
+                  <Text style={[styles.lyricsText, { color: primaryText }]}>
+                    {viewingLyricsSong.lyricsTe}
+                  </Text>
+                </View>
+              ) : null}
+
+              {/* English Lyrics */}
+              {viewingLyricsSong?.lyricsEn ? (
+                <View style={styles.lyricsBlock}>
+                  <Text style={[styles.lyricsLangHeader, { color: '#1E3A8A' }]}>ENGLISH LYRICS / TRANSLITERATION</Text>
+                  <Text style={[styles.lyricsText, { color: primaryText }]}>
+                    {viewingLyricsSong.lyricsEn}
+                  </Text>
+                </View>
+              ) : null}
+
+              {!viewingLyricsSong?.lyricsTe && !viewingLyricsSong?.lyricsEn && (
+                <View style={{ padding: 30, alignItems: 'center' }}>
+                  <Text style={{ color: secondaryText }}>No lyrics text stored for this song.</Text>
+                </View>
+              )}
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setShowLyricsModal(false)}
+              >
+                <Text style={styles.modalCancelBtnTxt}>Close Lyrics</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
 
-      {/* ── MODAL 4: ACTIVITY EDITOR MODAL ───────────────────── */}
-      <Modal
-        visible={showActivityEditorModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowActivityEditorModal(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalCardHeader}>
-              <Text style={styles.modalCardTitle}>
-                {editingTimetableItemIndex !== null ? 'Edit Timetable Activity' : 'Add Activity'}
-              </Text>
-              <TouchableOpacity onPress={() => setShowActivityEditorModal(false)}>
-                <X size={20} color="#64748B" />
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      {/* MODAL 1: SERVICE CREATION WIZARD */}
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      <Modal visible={showCreateModal} animationType="slide" transparent>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={[styles.modalBox, { backgroundColor: cardSurface }]}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={[styles.modalTitle, { color: primaryText }]}>Create New Worship Service</Text>
+                <Text style={[styles.modalSubtitle, { color: secondaryText }]}>
+                  Schedule a service, configure preaching details, or set recurring weekly worship.
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowCreateModal(false)}>
+                <X size={20} color={secondaryText} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.inputLabel}>Program / Activity Name</Text>
+            <ScrollView style={{ maxHeight: 480 }} showsVerticalScrollIndicator={false}>
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Service Name *</Text>
               <TextInput
-                style={styles.textInput}
-                value={activityEditorForm.program}
-                placeholder="e.g. Starting Prayer / Scripture Reading"
+                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                placeholder="e.g. Sunday Morning Worship"
                 placeholderTextColor="#94A3B8"
-                onChangeText={t => setActivityEditorForm(prev => ({ ...prev, program: t }))}
+                value={createTitle}
+                onChangeText={setCreateTitle}
               />
 
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Service Type</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                {(Object.keys(SERVICE_TYPE_LABELS) as ServiceType[]).map(st => (
+                  <TouchableOpacity
+                    key={st}
+                    style={[styles.typeSelectChip, createType === st && styles.typeSelectChipActive]}
+                    onPress={() => setCreateType(st)}
+                  >
+                    <Text style={[styles.typeSelectChipTxt, createType === st && styles.typeSelectChipTxtActive]}>
+                      {SERVICE_TYPE_LABELS[st]}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <View style={styles.formRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>Start Time</Text>
+                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Date (YYYY-MM-DD) *</Text>
                   <TextInput
-                    style={styles.textInput}
-                    value={activityEditorForm.startTime}
-                    placeholder="09:00"
+                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    placeholder="2026-11-08"
                     placeholderTextColor="#94A3B8"
-                    onChangeText={t => setActivityEditorForm(prev => ({ ...prev, startTime: t }))}
+                    value={createDate}
+                    onChangeText={setCreateDate}
                   />
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>End Time</Text>
+                <View style={{ width: 100 }}>
+                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Start Time</Text>
                   <TextInput
-                    style={styles.textInput}
-                    value={activityEditorForm.endTime}
-                    placeholder="09:20"
+                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    placeholder="10:00"
                     placeholderTextColor="#94A3B8"
-                    onChangeText={t => setActivityEditorForm(prev => ({ ...prev, endTime: t }))}
+                    value={createStartTime}
+                    onChangeText={setCreateStartTime}
+                  />
+                </View>
+                <View style={{ width: 100 }}>
+                  <Text style={[styles.fieldLabel, { color: primaryText }]}>End Time</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    placeholder="12:00"
+                    placeholderTextColor="#94A3B8"
+                    value={createEndTime}
+                    onChangeText={setCreateEndTime}
                   />
                 </View>
               </View>
 
-              <Text style={[styles.inputLabel, { marginTop: 10 }]}>Person Assigned / Speaker</Text>
-              <TextInput
-                style={styles.textInput}
-                value={activityEditorForm.assignedTo}
-                placeholder="e.g. Pastor / Brother / Sister"
-                placeholderTextColor="#94A3B8"
-                onChangeText={t => setActivityEditorForm(prev => ({ ...prev, assignedTo: t }))}
-              />
+              <View style={styles.formRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Location</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    placeholder="Church Sanctuary"
+                    placeholderTextColor="#94A3B8"
+                    value={createLocation}
+                    onChangeText={setCreateLocation}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Preacher / Speaker</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    placeholder="Bro. Y. Rajesh"
+                    placeholderTextColor="#94A3B8"
+                    value={createPreacher}
+                    onChangeText={setCreatePreacher}
+                  />
+                </View>
+              </View>
 
-              <Text style={[styles.inputLabel, { marginTop: 10 }]}>Songs / Passage / Notes</Text>
-              <TextInput
-                style={styles.textInput}
-                value={activityEditorForm.songTitle || activityEditorForm.passage || ''}
-                placeholder="e.g. Song title or Scripture verse"
-                placeholderTextColor="#94A3B8"
-                onChangeText={t => setActivityEditorForm(prev => ({ ...prev, songTitle: t, passage: t }))}
-              />
+              <View style={styles.formRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Theme</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    placeholder="God's Grace"
+                    placeholderTextColor="#94A3B8"
+                    value={createTheme}
+                    onChangeText={setCreateTheme}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Bible Scripture</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    placeholder="Romans 8:1"
+                    placeholderTextColor="#94A3B8"
+                    value={createScripture}
+                    onChangeText={setCreateScripture}
+                  />
+                </View>
+              </View>
 
-              <TouchableOpacity
-                style={styles.modalPrimaryBtn}
-                onPress={handleSaveActivityFromEditor}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.modalPrimaryBtnTxt}>Save Activity</Text>
-              </TouchableOpacity>
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Service Recurrence</Text>
+              <View style={styles.recurrenceOptionRow}>
+                {[
+                  { id: 'one_time', label: 'One-Time' },
+                  { id: 'weekly', label: 'Weekly (Sundays)' },
+                  { id: 'monthly', label: 'Monthly' }
+                ].map(r => (
+                  <TouchableOpacity
+                    key={r.id}
+                    style={[styles.recurrenceBtn, createRecurrence === r.id && styles.recurrenceBtnActive]}
+                    onPress={() => setCreateRecurrence(r.id as any)}
+                  >
+                    <Text style={[styles.recurrenceBtnTxt, createRecurrence === r.id && styles.recurrenceBtnTxtActive]}>
+                      {r.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {createRecurrence !== 'one_time' && (
+                <View style={{ marginTop: 8, marginBottom: 12 }}>
+                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Occurrences Count</Text>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {[2, 4, 8, 12].map(n => (
+                      <TouchableOpacity
+                        key={n}
+                        style={[styles.countChip, createOccurrencesCount === n && styles.countChipActive]}
+                        onPress={() => setCreateOccurrencesCount(n)}
+                      >
+                        <Text style={[styles.countChipTxt, createOccurrencesCount === n && styles.countChipTxtActive]}>
+                          {n} Weeks
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Starting Order Template</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                <TouchableOpacity
+                  style={[styles.tplSelectChip, selectedTemplateForNew === 'blank' && styles.tplSelectChipActive]}
+                  onPress={() => setSelectedTemplateForNew('blank')}
+                >
+                  <Text style={[styles.tplSelectChipTxt, selectedTemplateForNew === 'blank' && styles.tplSelectChipTxtActive]}>
+                    Start Blank
+                  </Text>
+                </TouchableOpacity>
+                {templates.map(tpl => (
+                  <TouchableOpacity
+                    key={tpl.id}
+                    style={[styles.tplSelectChip, selectedTemplateForNew === tpl.id && styles.tplSelectChipActive]}
+                    onPress={() => setSelectedTemplateForNew(tpl.id)}
+                  >
+                    <Text style={[styles.tplSelectChipTxt, selectedTemplateForNew === tpl.id && styles.tplSelectChipTxtActive]}>
+                      {tpl.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
             </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setShowCreateModal(false)}
+              >
+                <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalConfirmBtn}
+                disabled={savingService}
+                onPress={handleCreateService}
+              >
+                {savingService ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalConfirmBtnTxt}>Create Service</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      {/* MODAL 2: ACTIVITY ITEM EDITOR */}
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      <Modal visible={showActivityModal} animationType="slide" transparent>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={[styles.modalBox, { backgroundColor: cardSurface }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: primaryText }]}>
+                {editingActivityId ? 'Edit Activity Item' : 'Add Activity to Service'}
+              </Text>
+              <TouchableOpacity onPress={() => setShowActivityModal(false)}>
+                <X size={20} color={secondaryText} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Activity / Program Name *</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                placeholder="e.g. Praise & Worship (Setlist)"
+                placeholderTextColor="#94A3B8"
+                value={actProgram}
+                onChangeText={setActProgram}
+              />
+
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Category</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                {(Object.keys(CATEGORY_COLORS) as ActivityCategory[]).map(cat => (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[styles.categorySelectChip, actCategory === cat && styles.categorySelectChipActive]}
+                    onPress={() => setActCategory(cat)}
+                  >
+                    <Text style={[styles.categorySelectChipTxt, actCategory === cat && styles.categorySelectChipTxtActive]}>
+                      {cat.replace('_', ' ').toUpperCase()}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Duration (Minutes)</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                placeholder="15"
+                keyboardType="numeric"
+                placeholderTextColor="#94A3B8"
+                value={actDuration}
+                onChangeText={setActDuration}
+              />
+
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Responsible Person</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                placeholder="Type name or select member below"
+                placeholderTextColor="#94A3B8"
+                value={actResponsible}
+                onChangeText={text => {
+                  setActResponsible(text);
+                  setActResponsibleId('');
+                }}
+              />
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+                {churchMembers.slice(0, 8).map(m => (
+                  <TouchableOpacity
+                    key={m.id}
+                    style={[
+                      styles.quickMemberChip,
+                      actResponsibleId === m.id && styles.quickMemberChipActive
+                    ]}
+                    onPress={() => {
+                      setActResponsible(m.name || m.firstName || 'Member');
+                      setActResponsibleId(m.id);
+                    }}
+                  >
+                    <Text style={[
+                      styles.quickMemberChipTxt,
+                      actResponsibleId === m.id && styles.quickMemberChipTxtActive
+                    ]}>
+                      {m.name || m.firstName}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Supporting Team</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                placeholder="e.g. Worship Team"
+                placeholderTextColor="#94A3B8"
+                value={actTeam}
+                onChangeText={setActTeam}
+              />
+
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Special Instructions / Notes</Text>
+              <TextInput
+                style={[styles.textArea, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                placeholder="Add instructions for stage, sound engineer, or scripture readers..."
+                placeholderTextColor="#94A3B8"
+                multiline
+                numberOfLines={3}
+                value={actInstructions}
+                onChangeText={setActInstructions}
+              />
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setShowActivityModal(false)}
+              >
+                <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalConfirmBtn}
+                disabled={savingActivity}
+                onPress={handleSaveActivity}
+              >
+                {savingActivity ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalConfirmBtnTxt}>Save Activity</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      {/* MODAL 3: EDIT SERVICE DETAILS */}
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      <Modal visible={showEditDetailsModal} animationType="slide" transparent>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={[styles.modalBox, { backgroundColor: cardSurface }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: primaryText }]}>Edit Service Information</Text>
+              <TouchableOpacity onPress={() => setShowEditDetailsModal(false)}>
+                <X size={20} color={secondaryText} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Service Title *</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                value={editTitle}
+                onChangeText={setEditTitle}
+              />
+
+              <View style={styles.formRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Date</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    value={editDate}
+                    onChangeText={setEditDate}
+                  />
+                </View>
+                <View style={{ width: 100 }}>
+                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Start Time</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    value={editStartTime}
+                    onChangeText={setEditStartTime}
+                  />
+                </View>
+              </View>
+
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Location</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                value={editLocation}
+                onChangeText={setEditLocation}
+              />
+
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Preacher / Speaker</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                value={editPreacher}
+                onChangeText={setEditPreacher}
+              />
+
+              <View style={styles.formRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Theme</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    value={editTheme}
+                    onChangeText={setEditTheme}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Bible Scripture</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    value={editScripture}
+                    onChangeText={setEditScripture}
+                  />
+                </View>
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setShowEditDetailsModal(false)}
+              >
+                <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalConfirmBtn}
+                onPress={handleSaveDetails}
+              >
+                <Text style={styles.modalConfirmBtnTxt}>Save Changes</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      {/* MODAL 4: APPLY TEMPLATE MODAL */}
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      <Modal visible={showApplyTemplateModal} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { backgroundColor: cardSurface }]}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={[styles.modalTitle, { color: primaryText }]}>Apply Service Template</Text>
+                <Text style={[styles.modalSubtitle, { color: secondaryText }]}>
+                  Choose a template to replace the Order of Service timetable.
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowApplyTemplateModal(false)}>
+                <X size={20} color={secondaryText} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
+              {templates.map(tpl => (
+                <TouchableOpacity
+                  key={tpl.id}
+                  style={[styles.applyTplItem, { borderColor }]}
+                  onPress={() => handleApplyTemplate(tpl.id)}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.applyTplTitle, { color: primaryText }]}>{tpl.name}</Text>
+                    <Text style={[styles.applyTplMeta, { color: secondaryText }]}>
+                      {tpl.runSheetTemplate.length} activities · ~{tpl.defaultDurationMinutes} mins
+                    </Text>
+                  </View>
+                  <ArrowRight size={16} color="#1E3A8A" />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setShowApplyTemplateModal(false)}
+              >
+                <Text style={styles.modalCancelBtnTxt}>Close</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
+      </Modal>
+
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      {/* MODAL 5: MINISTRY TEAM ROSTER & DETAILS MODAL (PHASE 2) */}
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      <Modal visible={showTeamModal} animationType="slide" transparent>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={[styles.modalBox, { backgroundColor: cardSurface }]}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={[styles.modalTitle, { color: primaryText }]}>
+                  {selectedTeam ? `Manage ${selectedTeam.name}` : 'Create Ministry Team'}
+                </Text>
+                <Text style={[styles.modalSubtitle, { color: secondaryText }]}>
+                  Assign existing church members and designate a team leader.
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowTeamModal(false)}>
+                <X size={20} color={secondaryText} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 440 }} showsVerticalScrollIndicator={false}>
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Team Name *</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                placeholder="e.g. Worship Team"
+                placeholderTextColor="#94A3B8"
+                value={teamNameInput}
+                onChangeText={setTeamNameInput}
+              />
+
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Description</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                placeholder="Department purpose and scope..."
+                placeholderTextColor="#94A3B8"
+                value={teamDescInput}
+                onChangeText={setTeamDescInput}
+              />
+
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Designate Team Leader</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                <TouchableOpacity
+                  style={[styles.quickMemberChip, !teamLeaderId && styles.quickMemberChipActive]}
+                  onPress={() => setTeamLeaderId(undefined)}
+                >
+                  <Text style={[styles.quickMemberChipTxt, !teamLeaderId && styles.quickMemberChipTxtActive]}>
+                    No Leader
+                  </Text>
+                </TouchableOpacity>
+                {churchMembers.map(m => (
+                  <TouchableOpacity
+                    key={m.id}
+                    style={[styles.quickMemberChip, teamLeaderId === m.id && styles.quickMemberChipActive]}
+                    onPress={() => setTeamLeaderId(m.id)}
+                  >
+                    <Text style={[styles.quickMemberChipTxt, teamLeaderId === m.id && styles.quickMemberChipTxtActive]}>
+                      👑 {m.name || m.firstName}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>
+                Team Members ({teamMemberIds.length} Selected)
+              </Text>
+              <View style={styles.memberPickerContainer}>
+                {churchMembers.map(m => {
+                  const isSelected = teamMemberIds.includes(m.id);
+                  return (
+                    <TouchableOpacity
+                      key={m.id}
+                      style={[
+                        styles.memberRosterItem,
+                        { borderColor },
+                        isSelected && styles.memberRosterItemSelected
+                      ]}
+                      onPress={() => toggleMemberInTeam(m.id)}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.memberRosterName, { color: primaryText }]}>
+                          {m.name || m.firstName}
+                        </Text>
+                        <Text style={[styles.memberRosterPhone, { color: secondaryText }]}>
+                          {m.phone || 'No phone'} · {m.primarySkill || 'Member'}
+                        </Text>
+                      </View>
+                      <View style={[styles.checkboxCircle, isSelected && styles.checkboxCircleActive]}>
+                        {isSelected && <Check size={12} color="#FFFFFF" />}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setShowTeamModal(false)}
+              >
+                <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalConfirmBtn}
+                disabled={savingTeam}
+                onPress={handleSaveTeam}
+              >
+                {savingTeam ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalConfirmBtnTxt}>Save Team</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      {/* MODAL 6: ADD MEMBER SKILL MODAL (PHASE 2) */}
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      <Modal visible={showAddSkillModal} animationType="slide" transparent>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={[styles.modalBox, { backgroundColor: cardSurface }]}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={[styles.modalTitle, { color: primaryText }]}>Add & Verify Member Skill</Text>
+                <Text style={[styles.modalSubtitle, { color: secondaryText }]}>
+                  Grant a verified ministry skill to qualify for automatic service assignments.
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowAddSkillModal(false)}>
+                <X size={20} color={secondaryText} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Select Member *</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                {churchMembers.map(m => (
+                  <TouchableOpacity
+                    key={m.id}
+                    style={[styles.quickMemberChip, skillMemberId === m.id && styles.quickMemberChipActive]}
+                    onPress={() => setSkillMemberId(m.id)}
+                  >
+                    <Text style={[styles.quickMemberChipTxt, skillMemberId === m.id && styles.quickMemberChipTxtActive]}>
+                      {m.name || m.firstName}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Skill Category</Text>
+              <View style={styles.skillCategoryRow}>
+                {[
+                  { id: 'music', label: 'Music & Band' },
+                  { id: 'worship', label: 'Worship / Vocals' },
+                  { id: 'technical', label: 'Audio / Video' },
+                  { id: 'church_ministry', label: 'Church Ministry' }
+                ].map(c => (
+                  <TouchableOpacity
+                    key={c.id}
+                    style={[styles.skillCategoryBtn, skillCategory === c.id && styles.skillCategoryBtnActive]}
+                    onPress={() => setSkillCategory(c.id as any)}
+                  >
+                    <Text style={[styles.skillCategoryBtnTxt, skillCategory === c.id && styles.skillCategoryBtnTxtActive]}>
+                      {c.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Suggested Skills</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+                {(skillCategory === 'music' ? ['Keyboard', 'Acoustic Guitar', 'Electric Guitar', 'Bass Guitar', 'Drums'] :
+                  skillCategory === 'worship' ? ['Worship Leader', 'Choir Singer', 'Song Leader', 'Harmony Vocals'] :
+                    skillCategory === 'technical' ? ['Sound Engineering', 'Camera Operator', 'Livestream', 'Lyrics and Projector'] :
+                      ['Opening Prayer', 'Closing Prayer', 'Bible Reading', 'Welcome & Ushering', 'Offering Steward']
+                ).map(sk => (
+                  <TouchableOpacity
+                    key={sk}
+                    style={[styles.presetSkillChip, skillNameInput === sk && styles.presetSkillChipActive]}
+                    onPress={() => setSkillNameInput(sk)}
+                  >
+                    <Text style={[styles.presetSkillChipTxt, skillNameInput === sk && styles.presetSkillChipTxtActive]}>
+                      {sk}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Skill Name *</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                placeholder="e.g. Keyboard"
+                placeholderTextColor="#94A3B8"
+                value={skillNameInput}
+                onChangeText={setSkillNameInput}
+              />
+
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Proficiency Level</Text>
+              <View style={styles.proficiencyRow}>
+                {['beginner', 'intermediate', 'advanced', 'lead'].map(lvl => (
+                  <TouchableOpacity
+                    key={lvl}
+                    style={[styles.proficiencyChip, skillProficiency === lvl && styles.proficiencyChipActive]}
+                    onPress={() => setSkillProficiency(lvl as any)}
+                  >
+                    <Text style={[styles.proficiencyChipTxt, skillProficiency === lvl && styles.proficiencyChipTxtActive]}>
+                      {lvl.toUpperCase()}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setShowAddSkillModal(false)}
+              >
+                <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalConfirmBtn}
+                disabled={savingSkill}
+                onPress={handleAddMemberSkill}
+              >
+                {savingSkill ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalConfirmBtnTxt}>Save & Verify</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ─── MODAL: DISPATCH ASSIGNMENT QUEUE (PHASE 4) ─── */}
+      <Modal visible={showDispatchQueueModal} animationType="slide" transparent>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalOverlay}>
+          <View style={[styles.modalSheet, { backgroundColor: cardSurface, maxHeight: '90%' }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={styles.queueCategoryPill}>ASSIGNMENT QUEUE</Text>
+                  <Text style={[styles.headerBadgeTxt, { color: '#D97706' }]}>AUTO-CASCADE</Text>
+                </View>
+                <Text style={[styles.modalTitle, { color: primaryText }]}>
+                  {targetRoleTitle}
+                </Text>
+                {targetActivityName && (
+                  <Text style={[styles.modalSubtitle, { color: secondaryText }]}>
+                    For Service Activity: {targetActivityName}
+                  </Text>
+                )}
+              </View>
+              <TouchableOpacity onPress={() => setShowDispatchQueueModal(false)}>
+                <X size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 460 }} showsVerticalScrollIndicator={false}>
+              {/* Timeout selector */}
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Response Timeout (Before Cascade)</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                {[2, 6, 12, 24, 48].map(hrs => (
+                  <TouchableOpacity
+                    key={hrs}
+                    style={[styles.timeoutChip, dispatchTimeoutHours === hrs && styles.timeoutChipActive]}
+                    onPress={() => setDispatchTimeoutHours(hrs)}
+                  >
+                    <Text style={[styles.timeoutChipTxt, dispatchTimeoutHours === hrs && styles.timeoutChipTxtActive]}>
+                      {hrs} Hours
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              {/* Selected Ladder */}
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>
+                Sequential Candidate Ladder ({ladderCandidates.length}/3)
+              </Text>
+              <Text style={[styles.fieldHint, { color: secondaryText }]}>
+                Rank 1 is contacted first. If declined or timed out, Rank 2 is automatically promoted.
+              </Text>
+
+              {ladderCandidates.length === 0 ? (
+                <View style={[styles.emptyCard, { padding: 14, backgroundColor: screenBg, borderColor }]}>
+                  <Text style={[styles.emptySubtitle, { color: secondaryText }]}>
+                    No candidates added yet. Pick from intelligent suggestions below.
+                  </Text>
+                </View>
+              ) : (
+                ladderCandidates.map((cand, idx) => (
+                  <View key={cand.candidateId + idx} style={styles.ladderSelectedCard}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                      <View style={styles.ladderRankBadge}>
+                        <Text style={styles.ladderRankBadgeTxt}>{idx + 1}</Text>
+                      </View>
+                      <View>
+                        <Text style={styles.ladderSelectedName}>{cand.candidateName}</Text>
+                        <Text style={[styles.ladderCandMeta, { color: secondaryText }]}>
+                          Rank #{idx + 1} Candidate · {cand.candidatePhone || 'In directory'}
+                        </Text>
+                      </View>
+                    </View>
+                    <TouchableOpacity onPress={() => removeCandidateFromLadder(idx)}>
+                      <X size={16} color="#DC2626" />
+                    </TouchableOpacity>
+                  </View>
+                ))
+              )}
+
+              {/* Intelligent Suggestions */}
+              <View style={{ marginTop: 14, marginBottom: 6, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Text style={[styles.fieldLabel, { color: primaryText, marginBottom: 0 }]}>
+                  Recommended Candidates
+                </Text>
+                {loadingRecommendations && <ActivityIndicator size="small" color="#1E3A8A" />}
+              </View>
+              <Text style={[styles.fieldHint, { color: secondaryText }]}>
+                Ranked by verified skills, ministry team membership, and blockout availability.
+              </Text>
+
+              {candidateRecommendations.slice(0, 10).map(rec => {
+                const isAdded = ladderCandidates.some(c => c.candidateId === rec.memberId);
+                return (
+                  <View
+                    key={rec.memberId}
+                    style={[
+                      styles.recMemberCard,
+                      { backgroundColor: cardSurface, borderColor },
+                      !rec.isAvailable && { opacity: 0.6 }
+                    ]}
+                  >
+                    <View style={{ flex: 1, paddingRight: 8 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={[styles.recMemberName, { color: primaryText }]}>
+                          {rec.memberName}
+                        </Text>
+                        <View style={styles.matchScoreBadge}>
+                          <Text style={styles.matchScoreTxt}>
+                            {rec.matchScore > 0 ? `+${rec.matchScore} Match` : 'Available'}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={{ flexDirection: 'row', gap: 4, flexWrap: 'wrap', marginTop: 3 }}>
+                        {rec.matchReasons.map((r, i) => (
+                          <Text key={i} style={styles.recReasonTag}>{r}</Text>
+                        ))}
+                        {!rec.isAvailable && (
+                          <Text style={[styles.recReasonTag, { backgroundColor: '#FEE2E2', color: '#DC2626' }]}>
+                            🚫 {rec.availabilityReason || 'Blocked Out'}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.addCandidateBtn,
+                        isAdded && { backgroundColor: '#E2E8F0' },
+                        !rec.isAvailable && { backgroundColor: '#F1F5F9' }
+                      ]}
+                      disabled={isAdded || ladderCandidates.length >= 3}
+                      onPress={() => addCandidateToLadder({
+                        id: rec.memberId,
+                        name: rec.memberName,
+                        phone: rec.memberPhone
+                      })}
+                    >
+                      {isAdded ? (
+                        <Check size={12} color="#059669" />
+                      ) : (
+                        <Plus size={12} color="#FFFFFF" />
+                      )}
+                      <Text style={[
+                        styles.addCandidateBtnTxt,
+                        isAdded && { color: '#059669' }
+                      ]}>
+                        {isAdded ? 'Added' : 'Add'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setShowDispatchQueueModal(false)}
+              >
+                <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalConfirmBtn}
+                disabled={savingDispatchQueue || ladderCandidates.length === 0}
+                onPress={handleDispatchQueueSubmit}
+              >
+                {savingDispatchQueue ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalConfirmBtnTxt}>Start Queue ({ladderCandidates.length})</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ─── MODAL: MANUAL OVERRIDE (PHASE 4) ─── */}
+      <Modal visible={showOverrideModal} animationType="slide" transparent>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalOverlay}>
+          <View style={[styles.modalSheet, { backgroundColor: cardSurface, maxHeight: '85%' }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.queueCategoryPill}>ADMIN OVERRIDE</Text>
+                <Text style={[styles.modalTitle, { color: primaryText }]}>
+                  Manual Assign: {targetRoleTitle}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowOverrideModal(false)}>
+                <X size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Search Church Member</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                placeholder="Type member name..."
+                placeholderTextColor="#94A3B8"
+                value={overrideMemberSearch}
+                onChangeText={setOverrideMemberSearch}
+              />
+
+              <ScrollView style={{ maxHeight: 200, marginBottom: 12 }}>
+                {churchMembers
+                  .filter(m => !overrideMemberSearch.trim() || (m.name || '').toLowerCase().includes(overrideMemberSearch.toLowerCase()))
+                  .slice(0, 20)
+                  .map(m => {
+                    const isSelected = overrideMemberId === m.id;
+                    return (
+                      <TouchableOpacity
+                        key={m.id}
+                        style={[
+                          styles.memberSelectItem,
+                          { borderColor },
+                          isSelected && styles.memberSelectItemActive
+                        ]}
+                        onPress={() => setOverrideMemberId(m.id)}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.memberSelectName, { color: primaryText }]}>
+                            {m.name || `${m.firstName || ''} ${m.lastName || ''}`}
+                          </Text>
+                          <Text style={[styles.memberSelectSub, { color: secondaryText }]}>
+                            {m.phone || 'No phone'} · {m.userType || 'Member'}
+                          </Text>
+                        </View>
+                        {isSelected && <Check size={16} color="#1E3A8A" />}
+                      </TouchableOpacity>
+                    );
+                  })}
+              </ScrollView>
+
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Admin Override Notes</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                placeholder="e.g. Spoke verbally, agreed to serve"
+                placeholderTextColor="#94A3B8"
+                value={overrideNotes}
+                onChangeText={setOverrideNotes}
+              />
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setShowOverrideModal(false)}
+              >
+                <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalConfirmBtn}
+                disabled={savingOverride || !overrideMemberId}
+                onPress={handleManualOverrideSubmit}
+              >
+                {savingOverride ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalConfirmBtnTxt}>Confirm Assignment</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ─── MODAL: SIMULATE MEMBER RESPONSE (PHASE 4 CASCADE TEST) ─── */}
+      <Modal visible={showSimulateModal} animationType="slide" transparent>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalOverlay}>
+          <View style={[styles.modalSheet, { backgroundColor: cardSurface }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={styles.queueCategoryPill}>CASCADE SIMULATOR</Text>
+                  <Text style={[styles.headerBadgeTxt, { color: '#D97706' }]}>TEST WORKFLOW</Text>
+                </View>
+                <Text style={[styles.modalTitle, { color: primaryText }]}>
+                  Simulate Response for {activeQueueForSimulate?.candidates?.[activeQueueForSimulate?.currentCandidateIndex || 0]?.candidateName}
+                </Text>
+                <Text style={[styles.modalSubtitle, { color: secondaryText }]}>
+                  Role: {activeQueueForSimulate?.roleTitle}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowSimulateModal(false)}>
+                <X size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ paddingVertical: 10 }}>
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Select Volunteer Action</Text>
+              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+                <TouchableOpacity
+                  style={[
+                    styles.timeoutChip,
+                    { flex: 1, paddingVertical: 10 },
+                    simulateAction === 'accept' && { backgroundColor: '#059669', borderColor: '#059669' }
+                  ]}
+                  onPress={() => setSimulateAction('accept')}
+                >
+                  <Text style={[
+                    styles.timeoutChipTxt,
+                    { textAlign: 'center' },
+                    simulateAction === 'accept' && { color: '#FFFFFF', fontWeight: '800' }
+                  ]}>
+                    ✅ Accept Duty
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.timeoutChip,
+                    { flex: 1, paddingVertical: 10 },
+                    simulateAction === 'decline' && { backgroundColor: '#DC2626', borderColor: '#DC2626' }
+                  ]}
+                  onPress={() => setSimulateAction('decline')}
+                >
+                  <Text style={[
+                    styles.timeoutChipTxt,
+                    { textAlign: 'center' },
+                    simulateAction === 'decline' && { color: '#FFFFFF', fontWeight: '800' }
+                  ]}>
+                    ❌ Decline Duty
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {simulateAction === 'decline' && (
+                <View>
+                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Decline Reason (For Auto-Cascade)</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    value={simulateDeclineReason}
+                    onChangeText={setSimulateDeclineReason}
+                  />
+                  <Text style={[styles.fieldHint, { color: secondaryText }]}>
+                    Submitting this will immediately advance the queue to Candidate #{(activeQueueForSimulate?.currentCandidateIndex || 0) + 2} in the ladder!
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setShowSimulateModal(false)}
+              >
+                <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modalConfirmBtn,
+                  simulateAction === 'decline' && { backgroundColor: '#DC2626' }
+                ]}
+                disabled={submittingSimulate}
+                onPress={handleSimulateResponseSubmit}
+              >
+                {submittingSimulate ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalConfirmBtnTxt}>
+                    {simulateAction === 'accept' ? 'Submit Acceptance' : 'Submit Decline & Cascade'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ─── MODAL: SCHEDULE / EDIT REHEARSAL (PHASE 6) ─── */}
+      <Modal visible={showRehearsalModal} animationType="slide" transparent>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalOverlay}>
+          <View style={[styles.modalSheet, { backgroundColor: cardSurface, maxHeight: '90%' }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.queueCategoryPill}>REHEARSAL PLANNER</Text>
+                <Text style={[styles.modalTitle, { color: primaryText }]}>
+                  {editingRehearsalId ? 'Edit Service Rehearsal' : 'Schedule Service Rehearsal'}
+                </Text>
+                {selectedPlan && (
+                  <Text style={[styles.modalSubtitle, { color: secondaryText }]}>
+                    Service: {selectedPlan.serviceTitle} ({selectedPlan.date})
+                  </Text>
+                )}
+              </View>
+              <TouchableOpacity onPress={() => setShowRehearsalModal(false)}>
+                <X size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 460 }} showsVerticalScrollIndicator={false}>
+              {/* Presets */}
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Rehearsal Type Preset</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                {[
+                  'Saturday Full Band Rehearsal',
+                  'Vocal Harmonies Practice',
+                  'Midweek Acoustic Practice',
+                  'Sunday Morning Sound Check'
+                ].map(pre => (
+                  <TouchableOpacity
+                    key={pre}
+                    style={[styles.rehPresetChip, rehearsalNameInput === pre && styles.rehPresetChipActive]}
+                    onPress={() => setRehearsalNameInput(pre)}
+                  >
+                    <Text style={[styles.rehPresetChipTxt, rehearsalNameInput === pre && styles.rehPresetChipTxtActive]}>
+                      {pre}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Rehearsal Title *</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                placeholder="e.g. Saturday Full Band Rehearsal"
+                placeholderTextColor="#94A3B8"
+                value={rehearsalNameInput}
+                onChangeText={setRehearsalNameInput}
+              />
+
+              <View style={styles.formRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Date (YYYY-MM-DD) *</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    value={rehearsalDateInput}
+                    onChangeText={setRehearsalDateInput}
+                  />
+                </View>
+                <View style={{ width: 95 }}>
+                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Start Time</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    value={rehearsalStartTimeInput}
+                    onChangeText={setRehearsalStartTimeInput}
+                  />
+                </View>
+                <View style={{ width: 95 }}>
+                  <Text style={[styles.fieldLabel, { color: primaryText }]}>End Time</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    value={rehearsalEndTimeInput}
+                    onChangeText={setRehearsalEndTimeInput}
+                  />
+                </View>
+              </View>
+
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Location</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                value={rehearsalLocationInput}
+                onChangeText={setRehearsalLocationInput}
+              />
+
+              {/* Teams Selector */}
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Ministry Teams Participating</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+                {ministryTeams.map(t => {
+                  const isChecked = rehearsalTeamIds.includes(t.id);
+                  return (
+                    <TouchableOpacity
+                      key={t.id}
+                      style={[
+                        styles.teamPickerChip,
+                        isChecked && { backgroundColor: t.color || '#1E3A8A', borderColor: t.color || '#1E3A8A' }
+                      ]}
+                      onPress={() => {
+                        if (isChecked) {
+                          setRehearsalTeamIds(rehearsalTeamIds.filter(id => id !== t.id));
+                        } else {
+                          setRehearsalTeamIds([...rehearsalTeamIds, t.id]);
+                        }
+                      }}
+                    >
+                      <Text style={[styles.teamPickerChipTxt, isChecked && { color: '#FFFFFF' }]}>
+                        {t.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {/* Songs for Practice Selector */}
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Songs to Practice (from Setlist)</Text>
+              {(selectedPlan?.setlist || []).length === 0 ? (
+                <Text style={[styles.fieldHint, { color: secondaryText }]}>
+                  No songs in worship setlist yet. Add songs from Worship Setlist tab.
+                </Text>
+              ) : (
+                (selectedPlan?.setlist || []).map(song => {
+                  const isSelected = rehearsalSongPracticeIds.includes(song.id);
+                  return (
+                    <TouchableOpacity
+                      key={song.id}
+                      style={[
+                        styles.rehSongPickRow,
+                        { borderColor },
+                        isSelected && styles.rehSongPickRowActive
+                      ]}
+                      onPress={() => {
+                        if (isSelected) {
+                          setRehearsalSongPracticeIds(rehearsalSongPracticeIds.filter(id => id !== song.id));
+                        } else {
+                          setRehearsalSongPracticeIds([...rehearsalSongPracticeIds, song.id]);
+                        }
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                        <View style={[styles.rankCircle, isSelected ? styles.rankCircleAccepted : styles.rankCircleIdle]}>
+                          {isSelected ? <Check size={12} color="#FFFFFF" /> : <Plus size={12} color="#64748B" />}
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.rehSongPickTxt, { color: primaryText }]}>
+                            {song.title} {song.titleTe ? `(${song.titleTe})` : ''}
+                          </Text>
+                          <Text style={[styles.ladderCandMeta, { color: secondaryText }]}>
+                            Key {song.key} · {song.tempo} BPM · Leader: {song.ledBy || 'Worship Team'}
+                          </Text>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+
+              <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 12 }]}>
+                Rehearsal Notes & Arrangements
+              </Text>
+              <TextInput
+                style={[styles.textArea, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                placeholder="Arrangement notes, keys, vocal harmonies, audio check cues..."
+                placeholderTextColor="#94A3B8"
+                multiline
+                numberOfLines={3}
+                value={rehearsalNotesInput}
+                onChangeText={setRehearsalNotesInput}
+              />
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setShowRehearsalModal(false)}
+              >
+                <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalConfirmBtn}
+                disabled={savingRehearsal}
+                onPress={handleSaveRehearsal}
+              >
+                {savingRehearsal ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalConfirmBtnTxt}>
+                    {editingRehearsalId ? 'Update Rehearsal' : 'Schedule & Notify'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ─── MODAL: REHEARSAL ATTENDANCE TRACKER (PHASE 6) ─── */}
+      <Modal visible={showRehearsalAttendanceModal} animationType="slide" transparent>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalOverlay}>
+          <View style={[styles.modalSheet, { backgroundColor: cardSurface, maxHeight: '90%' }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={styles.queueCategoryPill}>ATTENDANCE</Text>
+                  <Text style={[styles.headerBadgeTxt, { color: '#059669' }]}>REHEARSAL CHECK-IN</Text>
+                </View>
+                <Text style={[styles.modalTitle, { color: primaryText }]}>
+                  {activeRehearsalForAttendance?.rehearsalName}
+                </Text>
+                <Text style={[styles.modalSubtitle, { color: secondaryText }]}>
+                  📅 {activeRehearsalForAttendance?.date} · ⏰ {activeRehearsalForAttendance?.startTime}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowRehearsalAttendanceModal(false)}>
+                <X size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 460 }} showsVerticalScrollIndicator={false}>
+              {(() => {
+                // Collect participants from assigned teams + direct participant IDs
+                const teamMemberIds = new Set<string>();
+                (activeRehearsalForAttendance?.assignedTeamIds || []).forEach(tId => {
+                  const teamObj = ministryTeams.find(t => t.id === tId);
+                  (teamObj?.memberIds || []).forEach(mId => teamMemberIds.add(mId));
+                });
+                (activeRehearsalForAttendance?.participantMemberIds || []).forEach(mId => teamMemberIds.add(mId));
+
+                const participantMembers = churchMembers.filter(m => teamMemberIds.has(m.id));
+
+                if (participantMembers.length === 0) {
+                  return (
+                    <View style={[styles.emptyCard, { backgroundColor: screenBg, borderColor }]}>
+                      <Text style={[styles.emptySubtitle, { color: secondaryText }]}>
+                        No participants assigned to this rehearsal yet.
+                      </Text>
+                    </View>
+                  );
+                }
+
+                return participantMembers.map(m => {
+                  const curStatus = activeRehearsalForAttendance?.attendance?.[m.id];
+                  return (
+                    <View
+                      key={m.id}
+                      style={[styles.attMemberCard, { backgroundColor: screenBg, borderColor }]}
+                    >
+                      <View style={{ flex: 1, paddingRight: 8 }}>
+                        <Text style={[styles.recMemberName, { color: primaryText }]}>
+                          {m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim()}
+                        </Text>
+                        <Text style={[styles.ladderCandMeta, { color: secondaryText }]}>
+                          {m.phone || 'In directory'} · {m.primarySkill || 'Volunteer'}
+                        </Text>
+                      </View>
+
+                      {/* 4-way attendance status pills */}
+                      <View style={styles.attPillGroup}>
+                        {[
+                          { key: 'present', label: 'P', color: '#059669', bg: '#ECFDF5' },
+                          { key: 'late', label: 'L', color: '#D97706', bg: '#FEF3C7' },
+                          { key: 'absent', label: 'A', color: '#DC2626', bg: '#FEF2F2' },
+                          { key: 'excused', label: 'E', color: '#2563EB', bg: '#EFF6FF' },
+                        ].map(st => {
+                          const isSelected = curStatus === st.key;
+                          return (
+                            <TouchableOpacity
+                              key={st.key}
+                              style={[
+                                styles.attPill,
+                                isSelected ? { backgroundColor: st.color, borderColor: st.color } : { borderColor }
+                              ]}
+                              onPress={() => activeRehearsalForAttendance && handleSetParticipantAttendance(
+                                activeRehearsalForAttendance.id,
+                                m.id,
+                                st.key as any
+                              )}
+                            >
+                              <Text style={[
+                                styles.attPillTxt,
+                                isSelected ? { color: '#FFFFFF', fontWeight: '800' } : { color: secondaryText }
+                              ]}>
+                                {st.label}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  );
+                });
+              })()}
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={[styles.modalConfirmBtn, { width: '100%' }]}
+                onPress={() => setShowRehearsalAttendanceModal(false)}
+              >
+                <Text style={styles.modalConfirmBtnTxt}>Done Check-In</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
 }
 
-const styles = createAdminThemedStyles(StyleSheet.create({
-  circularBackBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    justifyContent: 'center',
-    alignItems: 'center',
+// ─────────────────────────────────────────────────────────────────────────────
+// STYLES
+// ─────────────────────────────────────────────────────────────────────────────
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  header: {
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    shadowRadius: 3,
   },
-  container: {
-    flex: 1,
-    backgroundColor: '#FAF7F2',
-  },
-  centerWrap: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  loadingTxt: {
-    fontSize: 14,
-    color: '#64748B',
-    marginTop: 12,
-    fontWeight: '600',
-  },
-
-  // ── Hero Header (Navy & Gold) ──────────────────────────────────
-  hero: {
-    backgroundColor: 'transparent',
-    
-    
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 5,
-  },
-  heroRow: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 8,
+    marginBottom: 12,
   },
-  heroLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    marginRight: 8,
-  },
-  backBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 4,
-    paddingRight: 6,
-  },
-  backBtnTxt: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  heroDivider: {
-    color: 'rgba(255, 255, 255, 0.3)',
-    marginHorizontal: 10,
-    fontSize: 18,
-  },
-  heroTitle: {
-    color: '#1a2d5a',
-    fontSize: 17,
-    fontWeight: '700',
-    letterSpacing: -0.3,
-  },
-  heroSub: {
-    color: '#CBD5E1',
-    fontSize: 11.5,
-    marginTop: 1,
-  },
-  heroActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  heroRefreshBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  newBtn: {
-    backgroundColor: '#C9A84C',
+  headerBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 12,
-    shadowColor: '#C9A84C',
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  newBtnTxt: {
-    color: '#1A2D5A',
-    fontSize: 12.5,
-    fontWeight: '800',
-  },
-
-  // ── Service Carousel Chips ─────────────────────────────────────
-  carouselScrollView: {
-    marginTop: 10,
-  },
-  carouselContainer: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingRight: 16,
-  },
-  serviceCardChip: {
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-    minWidth: 160,
-  },
-  serviceCardChipActive: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#C9A84C',
-    borderWidth: 1.5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  chipTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  chipDatePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: '#FEF3C7',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
   },
-  chipDatePillActive: {
-    backgroundColor: '#F1F5F9',
+  headerBadgeTxt: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#D97706',
+    letterSpacing: 0.5,
   },
-  chipDateTxt: {
+  statusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  statusPillDraft: {
+    backgroundColor: '#F3F4F6',
+  },
+  statusPillPublished: {
+    backgroundColor: '#D1FAE5',
+  },
+  statusPillLive: {
+    backgroundColor: '#FEE2E2',
+  },
+  statusPillCompleted: {
+    backgroundColor: '#E0E7FF',
+  },
+  statusPillTxt: {
     fontSize: 10,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    fontWeight: '800',
+    color: '#1E293B',
   },
-  chipDateTxtActive: {
-    color: '#1A2D5A',
+  headerTitle: {
+    fontSize: 19,
+    fontWeight: '800',
+    marginTop: 4,
   },
-  chipTimeTxt: {
-    fontSize: 10,
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontWeight: '600',
+  headerSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
   },
-  chipTimeTxtActive: {
-    color: '#059669',
-  },
-  chipTitleTxt: {
-    fontSize: 12.5,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  chipTitleTxtActive: {
-    color: '#0F172A',
-  },
-
-  // ── Scroll Body ────────────────────────────────────────────────
-  scrollArea: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-
-  // ── Active Service Banner Card ─────────────────────────────────
-  activeServiceCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#1A2D5A',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-    marginBottom: 14,
-  },
-  activeServiceTop: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-  },
-  badgeRow: {
+  newServiceBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 6,
+    gap: 6,
+    backgroundColor: '#1E3A8A',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 10,
+    elevation: 2,
+  },
+  newServiceBtnTxt: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  tabsScroll: {
+    marginTop: 4,
+  },
+  tabBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginRight: 6,
+  },
+  tabBtnActive: {
+    backgroundColor: '#EEF2FF',
+  },
+  tabBtnTxt: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  tabBtnTxtActive: {
+    color: '#1E3A8A',
+    fontWeight: '800',
+  },
+  bodyScroll: {
+    flex: 1,
+  },
+  tabContent: {
+    padding: 16,
+  },
+  centerContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 80,
+  },
+  centerText: {
+    marginTop: 12,
+    fontSize: 13,
+  },
+  filterScroll: {
+    marginBottom: 14,
+  },
+  filterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9',
+    marginRight: 8,
+  },
+  filterChipActive: {
+    backgroundColor: '#1E3A8A',
+  },
+  filterChipTxt: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  filterChipTxtActive: {
+    color: '#FFFFFF',
+  },
+  emptyCard: {
+    padding: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 20,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    marginTop: 12,
+  },
+  emptySubtitle: {
+    fontSize: 12.5,
+    textAlign: 'center',
+    marginTop: 6,
+    maxWidth: 280,
+  },
+  createEmptyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#1E3A8A',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginTop: 18,
+  },
+  createEmptyBtnTxt: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  planCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 12,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+  },
+  planCardSelected: {
+    borderColor: '#1E3A8A',
+    borderWidth: 2,
+  },
+  planCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   dateBadge: {
+    width: 44,
+    height: 48,
+    borderRadius: 10,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateBadgeDay: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#1E3A8A',
+  },
+  dateBadgeMonth: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#3B82F6',
+  },
+  planTypeTag: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#D97706',
+  },
+  miniStatusPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  miniStatusPillTxt: {
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  planTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  planMeta: {
+    fontSize: 11.5,
+    marginTop: 2,
+  },
+  planCardBottom: {
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  planStatRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  planStatTxt: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  openHudBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#7C3AED',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    marginTop: 8,
+    alignSelf: 'flex-start',
+  },
+  openHudBtnTxt: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  selectedBanner: {
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  selectedBannerTag: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#3B82F6',
+    letterSpacing: 0.5,
+  },
+  selectedBannerTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  selectedBannerMeta: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  selectedBannerTheme: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  bannerActionBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8FAFC',
+  },
+  statusSwitcherRow: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  statusSwitcherLabel: {
+    fontSize: 11.5,
+    fontWeight: '600',
+  },
+  statusButtonsGroup: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  statusToggleBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: '#F1F5F9',
+  },
+  statusToggleBtnActive: {
+    backgroundColor: '#1E3A8A',
+  },
+  statusToggleBtnTxt: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  statusToggleBtnTxtActive: {
+    color: '#FFFFFF',
+  },
+  warningBox: {
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    marginBottom: 14,
+  },
+  warningTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#991B1B',
+  },
+  warningMsg: {
+    fontSize: 11,
+    color: '#B91C1C',
+    marginTop: 2,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  sectionHeading: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  sectionSubheading: {
+    fontSize: 11.5,
+    marginTop: 1,
+  },
+  addActivityBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    backgroundColor: '#1E3A8A',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#DBEAFE',
   },
-  dateBadgeTxt: {
-    fontSize: 11,
+  addActivityBtnTxt: {
+    color: '#FFFFFF',
+    fontSize: 12,
     fontWeight: '700',
-    color: '#1A2D5A',
+  },
+  applyTemplateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  applyTemplateBtnTxt: {
+    color: '#1E3A8A',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  emptyRunSheetCard: {
+    padding: 24,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  runSheetItemCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 10,
+    marginBottom: 8,
+  },
+  reorderColumn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 24,
+  },
+  reorderArrow: {
+    padding: 2,
+  },
+  orderNumberText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#94A3B8',
+  },
+  categoryBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  categoryBadgeTxt: {
+    fontSize: 9,
+    fontWeight: '800',
   },
   timeBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#ECFDF5',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
+    gap: 3,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
   },
   timeBadgeTxt: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
-    color: '#059669',
+    color: '#1E3A8A',
   },
-  activeServiceTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#0F172A',
-    letterSpacing: -0.3,
+  itemProgramTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: 2,
   },
-  locationRow: {
+  itemResponsible: {
+    fontSize: 11,
+    marginTop: 1,
+  },
+  itemInstructions: {
+    fontSize: 10.5,
+    fontStyle: 'italic',
+    marginTop: 2,
+  },
+  itemActionCol: {
+    flexDirection: 'row',
+    gap: 6,
+    alignItems: 'center',
+  },
+  itemEditBtn: {
+    padding: 6,
+    borderRadius: 6,
+    backgroundColor: '#F1F5F9',
+  },
+  itemDeleteBtn: {
+    padding: 6,
+    borderRadius: 6,
+    backgroundColor: '#FEF2F2',
+  },
+  // Phase 3: Setlist Styles
+  setlistCard: {
     flexDirection: 'row',
     alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: 10,
+  },
+  keyBadge: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  keyBadgeTxt: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#1E3A8A',
+  },
+  bpmBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  bpmBadgeTxt: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#B45309',
+  },
+  timeSigBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  timeSigBadgeTxt: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  durationTxt: {
+    fontSize: 10.5,
+  },
+  setlistSongTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    marginTop: 3,
+  },
+  setlistSongTe: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 1,
+  },
+  setlistLeaderTxt: {
+    fontSize: 11.5,
+    marginTop: 2,
+  },
+  musiciansChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 4,
+    marginTop: 6,
+  },
+  musicianChip: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  musicianChipTxt: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  rehearsalNotesTxt: {
+    fontSize: 10.5,
+    fontStyle: 'italic',
     marginTop: 4,
   },
-  locationTxt: {
-    fontSize: 12,
-    color: '#64748B',
+  setlistActionCol: {
+    flexDirection: 'row',
+    gap: 6,
+    alignItems: 'center',
   },
-  activeServiceActionsRow: {
+  lyricsBtn: {
+    padding: 6,
+    borderRadius: 6,
+    backgroundColor: '#EFF6FF',
+  },
+  // Search Box in Song Picker
+  searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 12,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    padding: 0,
+  },
+  songPickItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  songPickIconBox: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  songPickTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  songPickTe: {
+    fontSize: 11.5,
+    marginTop: 1,
+  },
+  songPickMeta: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  keyPickerChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+    marginRight: 6,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  keyPickerChipActive: {
+    backgroundColor: '#1E3A8A',
+    borderColor: '#1E3A8A',
+  },
+  keyPickerChipTxt: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#475569',
+  },
+  keyPickerChipTxtActive: {
+    color: '#FFFFFF',
+  },
+  subFieldLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  lyricsBlock: {
+    marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  lyricsLangHeader: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  lyricsText: {
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  templateCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 12,
+  },
+  templateTypeTag: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#D97706',
+  },
+  builtInTag: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#059669',
+    backgroundColor: '#D1FAE5',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  templateTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  templateDescription: {
+    fontSize: 11.5,
+    marginTop: 2,
+  },
+  templateDuration: {
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  templatePreviewList: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  templatePreviewItem: {
+    fontSize: 11,
+    marginTop: 1,
+  },
+  templatePreviewMore: {
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 3,
+  },
+  applyTemplateCardBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#1E3A8A',
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  applyTemplateCardBtnTxt: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  seedTeamsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  seedTeamsBtnTxt: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#D97706',
+  },
+  teamCard: {
+    flexDirection: 'row',
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 12,
+    overflow: 'hidden',
+  },
+  teamColorBar: {
+    width: 6,
+  },
+  teamTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  teamActiveBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  teamActiveBadgeOn: {
+    backgroundColor: '#D1FAE5',
+  },
+  teamActiveBadgeOff: {
+    backgroundColor: '#F3F4F6',
+  },
+  teamActiveBadgeTxt: {
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  teamActiveBadgeTxtOn: {
+    color: '#059669',
+  },
+  teamActiveBadgeTxtOff: {
+    color: '#64748B',
+  },
+  teamDescription: {
+    fontSize: 11.5,
+    marginTop: 2,
+  },
+  teamMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  teamMetaTxt: {
+    fontSize: 11.5,
+  },
+  teamMembersCountBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  teamMembersCountTxt: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1E3A8A',
+  },
+  skillStatsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  skillStatCard: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  skillStatNum: {
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  skillStatLbl: {
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  skillCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: 8,
+  },
+  skillCardPending: {
+    borderColor: '#F59E0B',
+    borderWidth: 1.5,
+    backgroundColor: '#FFFDF5',
+  },
+  skillCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  skillAvatarBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  skillAvatarTxt: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#1E3A8A',
+  },
+  skillMemberName: {
+    fontSize: 13.5,
+    fontWeight: '800',
+  },
+  miniSkillStatusBadge: {
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  skillStatusVerified: {
+    backgroundColor: '#D1FAE5',
+  },
+  skillStatusPending: {
+    backgroundColor: '#FEF3C7',
+  },
+  skillStatusRejected: {
+    backgroundColor: '#FEE2E2',
+  },
+  miniSkillStatusBadgeTxt: {
+    fontSize: 8.5,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  skillNameText: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  skillCategoryMeta: {
+    fontSize: 10.5,
+    marginTop: 1,
+  },
+  skillActionBtnsRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  verifyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#059669',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  verifyBtnTxt: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  rejectBtn: {
+    padding: 6,
+    borderRadius: 6,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalBox: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: '90%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 14,
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  modalSubtitle: {
+    fontSize: 11.5,
+    marginTop: 2,
+    maxWidth: 290,
+  },
+  fieldLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  input: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 13,
+    marginBottom: 10,
+  },
+  textArea: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 13,
+    height: 70,
+    textAlignVertical: 'top',
+    marginBottom: 10,
+  },
+  formRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  typeSelectChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    marginRight: 6,
+  },
+  typeSelectChipActive: {
+    backgroundColor: '#1E3A8A',
+  },
+  typeSelectChipTxt: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  typeSelectChipTxtActive: {
+    color: '#FFFFFF',
+  },
+  recurrenceOptionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 6,
+  },
+  recurrenceBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+  },
+  recurrenceBtnActive: {
+    borderColor: '#1E3A8A',
+    backgroundColor: '#EFF6FF',
+  },
+  recurrenceBtnTxt: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  recurrenceBtnTxtActive: {
+    color: '#1E3A8A',
+  },
+  countChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+  },
+  countChipActive: {
+    backgroundColor: '#1E3A8A',
+  },
+  countChipTxt: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  countChipTxtActive: {
+    color: '#FFFFFF',
+  },
+  tplSelectChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginRight: 8,
+    backgroundColor: '#F8FAFC',
+  },
+  tplSelectChipActive: {
+    borderColor: '#1E3A8A',
+    backgroundColor: '#EFF6FF',
+  },
+  tplSelectChipTxt: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  tplSelectChipTxtActive: {
+    color: '#1E3A8A',
+  },
+  categorySelectChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    marginRight: 6,
+  },
+  categorySelectChipActive: {
+    backgroundColor: '#1E3A8A',
+  },
+  categorySelectChipTxt: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  categorySelectChipTxtActive: {
+    color: '#FFFFFF',
+  },
+  quickMemberChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    marginRight: 6,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  quickMemberChipActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#1E3A8A',
+  },
+  quickMemberChipTxt: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  quickMemberChipTxtActive: {
+    color: '#1E3A8A',
+  },
+  memberPickerContainer: {
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    maxHeight: 200,
+  },
+  memberRosterItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderBottomWidth: 1,
+  },
+  memberRosterItemSelected: {
+    backgroundColor: '#EFF6FF',
+  },
+  memberRosterName: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  memberRosterPhone: {
+    fontSize: 11,
+    marginTop: 1,
+  },
+  checkboxCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxCircleActive: {
+    backgroundColor: '#1E3A8A',
+    borderColor: '#1E3A8A',
+  },
+  skillCategoryRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 10,
+  },
+  skillCategoryBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+  },
+  skillCategoryBtnActive: {
+    borderColor: '#1E3A8A',
+    backgroundColor: '#EFF6FF',
+  },
+  skillCategoryBtnTxt: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  skillCategoryBtnTxtActive: {
+    color: '#1E3A8A',
+  },
+  presetSkillChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+    backgroundColor: '#F1F5F9',
+    marginRight: 6,
+  },
+  presetSkillChipActive: {
+    backgroundColor: '#1E3A8A',
+  },
+  presetSkillChipTxt: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  presetSkillChipTxtActive: {
+    color: '#FFFFFF',
+  },
+  proficiencyRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 10,
+  },
+  proficiencyChip: {
+    flex: 1,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+  },
+  proficiencyChipActive: {
+    borderColor: '#1E3A8A',
+    backgroundColor: '#EFF6FF',
+  },
+  proficiencyChipTxt: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  proficiencyChipTxtActive: {
+    color: '#1E3A8A',
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
     marginTop: 14,
     paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
   },
-  actionBtnEdit: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#1A2D5A',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 10,
+  modalCancelBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
   },
-  actionBtnEditTxt: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  actionBtnShare: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    backgroundColor: '#ECFDF5',
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-  },
-  actionBtnShareTxt: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#059669',
-  },
-  actionBtnDelete: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  // ── Segmented Tab Bar ──────────────────────────────────────────
-  tabBar: {
-    flexDirection: 'row',
-    gap: 6,
-    backgroundColor: '#FFFFFF',
-    padding: 5,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 16,
-  },
-  tabItem: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    paddingVertical: 8,
-    borderRadius: 10,
-  },
-  tabItemActive: {
-    backgroundColor: '#1A2D5A',
-  },
-  tabItemTxt: {
-    fontSize: 11.5,
+  modalCancelBtnTxt: {
+    fontSize: 13,
     fontWeight: '700',
     color: '#64748B',
   },
-  tabItemTxtActive: {
-    color: '#FFFFFF',
-  },
-
-  // ── Section Department Cards (Clean & Modern) ──────────────────
-  sectionCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  sectionCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 14,
+  modalConfirmBtn: {
+    backgroundColor: '#1E3A8A',
+    paddingHorizontal: 18,
     paddingVertical: 10,
-    borderBottomWidth: 1,
-  },
-  sectionCardHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  sectionIconWrap: {
-    width: 32,
-    height: 32,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sectionCardTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  sectionCardSub: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 1,
-  },
-
-  // ── Roles Grid ─────────────────────────────────────────────────
-  rolesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    padding: 10,
-    gap: 8,
-  },
-  roleTile: {
-    width: (width - 32 - 20 - 8) / 2,
-    padding: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  roleTileAssigned: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#CBD5E1',
-  },
-  roleTileUnassigned: {
-    backgroundColor: '#F8FAFC',
-    borderColor: '#E2E8F0',
-    borderStyle: 'dashed',
-  },
-  roleTileTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 6,
-  },
-  roleIconEmoji: {
+  modalConfirmBtnTxt: {
     fontSize: 13,
-  },
-  roleLabelTxt: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#475569',
-    flex: 1,
-  },
-  assignedPersonRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  avatarBubble: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#1A2D5A',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarBubbleTxt: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  assignedPersonName: {
-    fontSize: 12.5,
     fontWeight: '700',
-    color: '#0F172A',
-    flex: 1,
+    color: '#FFFFFF',
   },
-  unassignedPromptRow: {
+  applyTplItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-  },
-  unassignedPromptTxt: {
-    fontSize: 11,
-    color: '#94A3B8',
-    fontWeight: '600',
-  },
-
-  // ── Roster Song Preview Mini ───────────────────────────────────
-  rosterSongPreviewWrap: {
-    backgroundColor: '#F8FAFC',
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
     padding: 12,
-  },
-  rosterSongPreviewHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    borderRadius: 10,
+    borderWidth: 1,
     marginBottom: 8,
   },
-  rosterSongPreviewTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#334155',
-  },
-  viewDetailsLink: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#1A2D5A',
-  },
-  miniSongRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 3,
-  },
-  miniSongIdx: {
-    fontSize: 11.5,
-    color: '#64748B',
-    fontWeight: '700',
-    width: 16,
-  },
-  miniSongName: {
-    fontSize: 12.5,
-    fontWeight: '600',
-    color: '#0F172A',
-    flex: 1,
-  },
-  miniKeyPill: {
-    backgroundColor: '#F3E8FF',
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 4,
-  },
-  miniKeyPillTxt: {
-    fontSize: 9.5,
-    fontWeight: '800',
-    color: '#7E22CE',
-  },
-  miniSongLeader: {
-    fontSize: 11,
-    color: '#64748B',
-  },
-
-  // ── Sermon Card Body ───────────────────────────────────────────
-  sermonCardBody: {
-    padding: 14,
-  },
-  sermonFieldRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  sermonFieldLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#475569',
-    marginBottom: 4,
-  },
-  sermonFieldInput: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    fontSize: 13,
-    color: '#0F172A',
-  },
-  saveSermonBtn: {
-    backgroundColor: '#1A2D5A',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: 10,
-    marginTop: 14,
-  },
-  saveSermonBtnTxt: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-
-  // ── Tab 2: Setlist Styles ──────────────────────────────────────
-  tabSectionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  tabSectionTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  tabSectionSubtitle: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 1,
-  },
-  primaryAddBtn: {
-    backgroundColor: '#1A2D5A',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 10,
-  },
-  primaryAddBtnTxt: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  songCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  songCardTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  songIndexCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#F1F5F9',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  songIndexTxt: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#1A2D5A',
-  },
-  songCardTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  songCardLeader: {
-    fontSize: 11.5,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  songActionsRow: {
-    flexDirection: 'row',
-    gap: 4,
-  },
-  songActionBtn: {
-    padding: 6,
-    borderRadius: 8,
-    backgroundColor: '#F8FAFC',
-  },
-  songChipsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 10,
-    flexWrap: 'wrap',
-  },
-  musicChip: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-  },
-  musicChipTxt: {
-    fontSize: 10.5,
-    fontWeight: '700',
-  },
-  arrangementWrap: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-    padding: 8,
-    marginTop: 10,
-    gap: 3,
-  },
-  arrTxt: {
-    fontSize: 11.5,
-    color: '#334155',
-  },
-  arrLabel: {
-    fontWeight: '700',
-    color: '#64748B',
-  },
-
-  // ── Tab 3: Timeline Run Sheet ──────────────────────────────────
-  timelineList: {
-    paddingTop: 6,
-  },
-  timelineRow: {
-    flexDirection: 'row',
-    marginBottom: 10,
-  },
-  timeColumn: {
-    width: 58,
-    alignItems: 'flex-end',
-    paddingRight: 8,
-    paddingTop: 2,
-  },
-  timeStartTxt: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  timeEndTxt: {
-    fontSize: 10,
-    color: '#64748B',
-  },
-  durationPill: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderRadius: 4,
-    marginTop: 4,
-  },
-  durationPillTxt: {
-    fontSize: 9.5,
-    fontWeight: '700',
-    color: '#64748B',
-  },
-  nodeColumn: {
-    width: 18,
-    alignItems: 'center',
-  },
-  nodeDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginTop: 4,
-  },
-  nodeLine: {
-    width: 2,
-    flex: 1,
-    backgroundColor: '#E2E8F0',
-    marginTop: 4,
-  },
-  activityCard: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderLeftWidth: 3.5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  activityCardTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  categoryPill: {
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: 1,
-  },
-  categoryPillTxt: {
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  activityActions: {
-    flexDirection: 'row',
-  },
-  activityActionBtn: {
-    padding: 4,
-  },
-  activityProgramTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  activityAssignedTxt: {
-    fontSize: 12,
-    color: '#059669',
-    fontWeight: '600',
-    marginTop: 3,
-  },
-  activitySongTxt: {
-    fontSize: 11.5,
-    color: '#4F46E5',
-    marginTop: 2,
-  },
-  activityPassageTxt: {
-    fontSize: 11.5,
-    color: '#D97706',
-    marginTop: 2,
-  },
-  activityPlaceTxt: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 2,
-  },
-
-  // ── Tab 4: Bulletin / Share ────────────────────────────────────
-  bulletinPreviewCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  bulletinHeader: {
-    alignItems: 'center',
-    paddingBottom: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-    marginBottom: 14,
-  },
-  bulletinChurchName: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#1A2D5A',
-    letterSpacing: 1,
-  },
-  bulletinServiceTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#0F172A',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  bulletinDate: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 3,
-  },
-  bulletinSection: {
-    marginBottom: 12,
-  },
-  bulletinSectionTitle: {
-    fontSize: 11.5,
-    fontWeight: '800',
-    color: '#1A2D5A',
-    marginBottom: 5,
-    letterSpacing: 0.5,
-  },
-  bulletinItemTxt: {
-    fontSize: 12.5,
-    color: '#334155',
-    lineHeight: 18,
-  },
-  whatsAppShareBtn: {
-    backgroundColor: '#25D366',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 14,
-    shadowColor: '#25D366',
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  whatsAppShareBtnTxt: {
-    fontSize: 14.5,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-
-  // ── Empty States ───────────────────────────────────────────────
-  emptyWrap: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  emptyIconCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: '#EFF6FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  emptyTitle: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  emptySub: {
-    fontSize: 13,
-    color: '#64748B',
-    textAlign: 'center',
-    marginTop: 6,
-    lineHeight: 19,
-    maxWidth: 280,
-  },
-  emptyCreateBtn: {
-    backgroundColor: '#1A2D5A',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 12,
-    marginTop: 20,
-  },
-  emptyCreateBtnTxt: {
-    color: '#FFFFFF',
+  applyTplTitle: {
     fontSize: 13.5,
     fontWeight: '700',
   },
-  emptyCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 24,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+  applyTplMeta: {
+    fontSize: 11,
+    marginTop: 2,
   },
-  emptyCardTitle: {
-    fontSize: 14.5,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginTop: 10,
-  },
-  emptyCardSub: {
-    fontSize: 12,
-    color: '#64748B',
-    textAlign: 'center',
-    marginTop: 4,
-    lineHeight: 17,
-  },
-  emptyAddBtn: {
+  // Phase 4 Assignment Queue Styles
+  queueSummaryBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#EFF6FF',
+    justifyContent: 'space-around',
+    paddingVertical: 14,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#BFDBFE',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
-    marginTop: 14,
+    marginBottom: 16,
   },
-  emptyAddBtnTxt: {
-    fontSize: 12.5,
-    fontWeight: '700',
-    color: '#1A2D5A',
-  },
-
-  // ── Modals Backdrop & Cards ────────────────────────────────────
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
-    justifyContent: 'center',
+  queueSummaryCol: {
     alignItems: 'center',
-    padding: 16,
+    flex: 1,
   },
-  modalCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 18,
-    width: '100%',
-    maxWidth: 420,
-    maxHeight: '85%',
+  queueSummaryNum: {
+    fontSize: 20,
+    fontWeight: '800',
   },
-  modalCardHeader: {
+  queueSummaryLbl: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  queueSummaryDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: '#E2E8F0',
+  },
+  queueRoleCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 14,
+  },
+  queueRoleCardConfirmed: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#059669',
+  },
+  queueRoleCardPending: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#D97706',
+  },
+  queueRoleCardExhausted: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#DC2626',
+  },
+  queueRoleHeader: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    marginBottom: 10,
   },
-  modalCardTitle: {
-    fontSize: 16,
+  queueCategoryPill: {
+    fontSize: 9.5,
     fontWeight: '800',
-    color: '#0F172A',
+    color: '#1E3A8A',
+    backgroundColor: '#E0E7FF',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
-  modalCardSubtitle: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 2,
+  queueActivityTag: {
+    fontSize: 11,
+    fontStyle: 'italic',
   },
-
-  // Member Picker Modal
-  customAssignRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 12,
-  },
-  customAssignInput: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    fontSize: 13,
-    color: '#0F172A',
-  },
-  customAssignSubmitBtn: {
-    backgroundColor: '#1A2D5A',
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  customAssignSubmitTxt: {
-    color: '#FFFFFF',
-    fontSize: 13,
+  queueRoleTitle: {
+    fontSize: 16,
     fontWeight: '700',
   },
-  memberSearchBox: {
+  queueStatusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    marginTop: 10,
-    marginBottom: 6,
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
-  memberSearchInput: {
-    flex: 1,
-    fontSize: 12.5,
-    color: '#0F172A',
-    paddingVertical: 0,
+  badgeConfirmed: {
+    backgroundColor: '#ECFDF5',
   },
-  memberPickerRow: {
+  badgeConfirmedTxt: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#059669',
+  },
+  badgePending: {
+    backgroundColor: '#FEF3C7',
+  },
+  badgePendingTxt: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#D97706',
+  },
+  badgeExhausted: {
+    backgroundColor: '#FEF2F2',
+  },
+  badgeExhaustedTxt: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#DC2626',
+  },
+  badgeDraft: {
+    backgroundColor: '#F1F5F9',
+  },
+  badgeDraftTxt: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  confirmedVolunteerBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F8FAFC',
+    backgroundColor: '#F0FDF4',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 12,
   },
-  memberAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#EFF6FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  memberAvatarTxt: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#1A2D5A',
-  },
-  memberPickerName: {
-    fontSize: 13,
+  confirmedVolunteerName: {
+    fontSize: 14,
     fontWeight: '700',
-    color: '#0F172A',
+    color: '#065F46',
   },
-  memberPickerPhone: {
+  confirmedVolunteerSub: {
     fontSize: 11,
-    color: '#64748B',
+    color: '#047857',
     marginTop: 1,
   },
-
-  // Modal Inputs & Buttons
-  inputLabel: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#475569',
-    marginBottom: 4,
-  },
-  textInput: {
+  candidateLadderBox: {
     backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 13,
-    color: '#0F172A',
-  },
-  modalPrimaryBtn: {
-    backgroundColor: '#1A2D5A',
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 18,
-  },
-  modalPrimaryBtnTxt: {
-    color: '#FFFFFF',
-    fontSize: 13.5,
-    fontWeight: '800',
-  },
-
-  // Builder Modal Styles
-  builderHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  saveHeaderBtn: {
-    backgroundColor: '#1A2D5A',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 10,
-  },
-  saveHeaderBtnTxt: {
-    color: '#FFFFFF',
-    fontSize: 12.5,
-    fontWeight: '800',
-  },
-  quickEventWrap: {
-    backgroundColor: '#F1F5F9',
-    borderRadius: 12,
+    borderRadius: 8,
     padding: 10,
     marginBottom: 12,
   },
-  quickEventLabel: {
+  candidateLadderHeading: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  ladderCandidateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  ladderCandidateRowActive: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: 6,
+    paddingHorizontal: 4,
+  },
+  ladderCandidateRowAccepted: {
+    backgroundColor: '#ECFDF5',
+    borderRadius: 6,
+    paddingHorizontal: 4,
+  },
+  rankCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rankCircleActive: {
+    backgroundColor: '#D97706',
+  },
+  rankCircleAccepted: {
+    backgroundColor: '#059669',
+  },
+  rankCircleDeclined: {
+    backgroundColor: '#DC2626',
+  },
+  rankCircleIdle: {
+    backgroundColor: '#CBD5E1',
+  },
+  rankCircleTxt: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  ladderCandName: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  ladderCandMeta: {
+    fontSize: 10.5,
+    marginTop: 1,
+  },
+  candStatusMiniPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  candPillActive: {
+    backgroundColor: '#D97706',
+  },
+  candPillAccepted: {
+    backgroundColor: '#059669',
+  },
+  candPillDeclined: {
+    backgroundColor: '#DC2626',
+  },
+  candPillTimedOut: {
+    backgroundColor: '#991B1B',
+  },
+  candPillWaiting: {
+    backgroundColor: '#E2E8F0',
+  },
+  candStatusMiniTxt: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  queueActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  dispatchQueueBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#1E3A8A',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  dispatchQueueBtnTxt: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  overrideBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  overrideBtnTxt: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1E3A8A',
+  },
+  simulateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#FFFBEB',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  simulateBtnTxt: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#B45309',
+  },
+  deleteQueueBtn: {
+    padding: 7,
+    borderRadius: 8,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  timeoutChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    marginRight: 6,
+  },
+  timeoutChipActive: {
+    backgroundColor: '#1E3A8A',
+    borderColor: '#1E3A8A',
+  },
+  timeoutChipTxt: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  timeoutChipTxtActive: {
+    color: '#FFFFFF',
+  },
+  ladderSelectedCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 6,
+    backgroundColor: '#F8FAFC',
+  },
+  ladderRankBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#1E3A8A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ladderRankBadgeTxt: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  ladderSelectedName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  recMemberCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 6,
+  },
+  recMemberName: {
+    fontSize: 13.5,
+    fontWeight: '700',
+  },
+  matchScoreBadge: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  matchScoreTxt: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#059669',
+  },
+  recReasonTag: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#475569',
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 3,
+  },
+  addCandidateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#1E3A8A',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  addCandidateBtnTxt: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  memberSelectItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 6,
+  },
+  memberSelectItemActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#1E3A8A',
+  },
+  memberSelectName: {
+    fontSize: 13.5,
+    fontWeight: '700',
+  },
+  memberSelectSub: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  modalSheet: {
+    width: '94%',
+    borderRadius: 16,
+    padding: 18,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+  },
+  fieldHint: {
+    fontSize: 11.5,
+    marginBottom: 8,
+  },
+  // Phase 6 Rehearsal Styles
+  rehearsalCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 14,
+  },
+  rehearsalCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  rehearsalTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  rehearsalMeta: {
+    fontSize: 11.5,
+    marginTop: 2,
+  },
+  rehearsalCardActions: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  rehearsalTeamsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 10,
+  },
+  rehTeamPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  rehTeamPillTxt: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  rehSongsBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 10,
+  },
+  rehSectionSubheading: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  rehSongItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 4,
+  },
+  rehSongTitle: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    flex: 1,
+  },
+  rehNotesBox: {
+    backgroundColor: '#FFFBEB',
+    borderRadius: 6,
+    padding: 8,
+    marginBottom: 10,
+  },
+  rehNotesTxt: {
+    fontSize: 11.5,
+    lineHeight: 16,
+  },
+  rehAttendanceFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  attendanceStats: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  attStatItem: {
     fontSize: 11,
     fontWeight: '700',
     color: '#334155',
   },
-  quickEventChip: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 14,
+  takeAttendanceBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#059669',
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    marginRight: 6,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
-  quickEventChipActive: {
-    backgroundColor: '#1A2D5A',
-    borderColor: '#1A2D5A',
-  },
-  quickEventChipTxt: {
-    fontSize: 11,
+  takeAttendanceBtnTxt: {
+    fontSize: 11.5,
     fontWeight: '700',
-    color: '#475569',
-  },
-  quickEventChipTxtActive: {
     color: '#FFFFFF',
   },
-  builderSectionHeader: {
+  rehPresetChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    marginRight: 6,
+  },
+  rehPresetChipActive: {
+    backgroundColor: '#1E3A8A',
+    borderColor: '#1E3A8A',
+  },
+  rehPresetChipTxt: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  rehPresetChipTxtActive: {
+    color: '#FFFFFF',
+  },
+  rehSongPickRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 6,
+    backgroundColor: '#F8FAFC',
+  },
+  rehSongPickRowActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#1E3A8A',
+  },
+  rehSongPickTxt: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  attMemberCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  builderSectionTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  sundayTemplateBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  sundayTemplateBtnTxt: {
-    fontSize: 10.5,
-    fontWeight: '800',
-    color: '#1A2D5A',
-  },
-  emptyTimetableBox: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 16,
-    alignItems: 'center',
-  },
-  emptyTimetableTxt: {
-    fontSize: 12,
-    color: '#64748B',
-    textAlign: 'center',
-    lineHeight: 18,
-  },
-  actBuilderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 10,
     padding: 10,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
     marginBottom: 6,
   },
-  actBuilderTime: {
-    alignItems: 'center',
-    width: 44,
-  },
-  actBuilderTimeTxt: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  actBuilderDurTxt: {
-    fontSize: 9.5,
-    color: '#64748B',
-  },
-  actBuilderProgram: {
-    fontSize: 12.5,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  actBuilderSub: {
-    fontSize: 11,
-    color: '#059669',
-  },
-  actBuilderActions: {
+  attPillGroup: {
     flexDirection: 'row',
     gap: 4,
   },
-  iconBtnSmall: {
-    padding: 5,
-  },
-  quickAddRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 10,
-  },
-  quickAddPill: {
-    backgroundColor: '#EFF6FF',
+  attPill: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#BFDBFE',
-    borderRadius: 12,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
   },
-  quickAddPillTxt: {
+  attPillTxt: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#1D4ED8',
   },
-}));
+  teamPickerChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#F8FAFC',
+  },
+  teamPickerChipTxt: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#334155',
+  },
+
+  // Phase 9 Export Toolbar
+  exportToolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  exportBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 8,
+    borderRadius: 7,
+    gap: 5,
+  },
+  exportBtnTxt: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+
+  // Phase 9 Volunteer Attendance Roster
+  turnoutCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 2,
+    borderColor: '#059669',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  turnoutCirclePercent: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#059669',
+  },
+  turnoutCircleLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#065F46',
+    textTransform: 'uppercase',
+  },
+  attCountersBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingVertical: 10,
+    marginTop: 10,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+  },
+  attCounterItem: {
+    alignItems: 'center',
+  },
+  attCounterVal: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  attCounterLbl: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  bulkCheckInBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#059669',
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  bulkCheckInBtnTxt: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  volunteerAttCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  volCardName: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  volTeamBadge: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  volTeamBadgeTxt: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#1E3A8A',
+  },
+  volRoleTitle: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  volMarkedMeta: {
+    fontSize: 10,
+    marginTop: 3,
+    fontStyle: 'italic',
+  },
+  attStatusPillGroup: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  attStatusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#FFFFFF',
+  },
+  attStatusPillTxt: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  attStatusPillPresent: {
+    backgroundColor: '#059669',
+    borderColor: '#059669',
+  },
+  attStatusPillLate: {
+    backgroundColor: '#D97706',
+    borderColor: '#D97706',
+  },
+  attStatusPillAbsent: {
+    backgroundColor: '#DC2626',
+    borderColor: '#DC2626',
+  },
+  attStatusPillExcused: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
+  },
+  attStatusPillTxtActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+
+  // Phase 9 Analytics Styles
+  refreshAnalyticsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: '#EFF6FF',
+  },
+  refreshAnalyticsBtnTxt: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1E3A8A',
+  },
+  analyticsLoadingBox: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  analyticsLoadingTxt: {
+    fontSize: 13,
+    marginTop: 10,
+  },
+  kpiGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 16,
+  },
+  kpiCard: {
+    width: (width - 42) / 2,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  kpiLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  kpiValue: {
+    fontSize: 22,
+    fontWeight: '900',
+    marginVertical: 4,
+  },
+  kpiSub: {
+    fontSize: 11,
+  },
+  analyticsSectionCard: {
+    padding: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 14,
+  },
+  analyticsCardTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  analyticsCardSub: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  cascadeBreakdownRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  cascadeBreakdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  breakdownDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  breakdownTxt: {
+    fontSize: 12,
+  },
+  fatigueAlertBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    padding: 10,
+    borderRadius: 8,
+    marginVertical: 10,
+  },
+  fatigueAlertTxt: {
+    fontSize: 12,
+    color: '#991B1B',
+    flex: 1,
+    fontWeight: '600',
+  },
+  volunteerStatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+  },
+  statVolunteerName: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  statVolunteerMeta: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  fatigueBadge: {
+    backgroundColor: '#FEF2F2',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+  },
+  fatigueBadgeTxt: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+  balancedBadge: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  balancedBadgeTxt: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  rolesServedWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 4,
+  },
+  roleServedChip: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  roleServedChipTxt: {
+    fontSize: 10,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  servesCountPill: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: '#F1F5F9',
+  },
+  servesCountVal: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#1E3A8A',
+  },
+  servesCountLbl: {
+    fontSize: 9,
+    color: '#64748B',
+    textTransform: 'uppercase',
+  },
+  topSongRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+  },
+  songRankBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  songRankTxt: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#1E3A8A',
+  },
+  topSongTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  topSongTeTitle: {
+    fontSize: 12,
+    color: '#D97706',
+    fontWeight: '600',
+  },
+  topSongMeta: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  songCountBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  songCountTxt: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#1E3A8A',
+  },
+});

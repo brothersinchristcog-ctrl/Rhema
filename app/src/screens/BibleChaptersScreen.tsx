@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -15,6 +15,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
+import { SupportedLanguage } from '../locales';
 import { BibleService } from '../services/BibleService';
 
 const { width } = Dimensions.get('window');
@@ -34,11 +35,20 @@ export default function BibleChaptersScreen({ route, navigation }: any) {
   const { bookName, lang: paramLang, bookIndex: paramBookIndex } = route.params || {};
   const { isDark, colors } = useTheme();
   const { language, t } = useLanguage();
+  const [savedBibleLang, setSavedBibleLang] = useState<SupportedLanguage | null>(null);
   const [readChapters, setReadChapters] = useState<Set<number>>(new Set());
   const [selectedChapter, setSelectedChapter] = useState<number | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
 
-  const currentLang = paramLang || language;
+  useEffect(() => {
+    if (!paramLang) {
+      AsyncStorage.getItem('@BibleSelectedLanguage').then(saved => {
+        if (saved) setSavedBibleLang(saved as SupportedLanguage);
+      });
+    }
+  }, [paramLang]);
+
+  const currentLang = (paramLang || savedBibleLang || language) as SupportedLanguage;
   const resolvedBookIndex = paramBookIndex !== undefined 
     ? paramBookIndex 
     : BibleService.getBookIndex(bookName);

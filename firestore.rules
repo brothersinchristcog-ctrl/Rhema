@@ -51,6 +51,9 @@ service cloud.firestore {
     match /{path=**}/attendees/{attendeeId} {
       allow read, write: if isAuthenticated();
     }
+    match /{path=**}/rsvps/{rsvpId} {
+      allow read, write: if isAuthenticated();
+    }
     match /{path=**}/bibleQuizzes/{quizId} {
       allow read, write: if isAuthenticated();
     }
@@ -89,6 +92,9 @@ service cloud.firestore {
       allow write: if isAdmin();
 
       match /attendees/{attendeeId} {
+        allow read, write: if isAuthenticated();
+      }
+      match /rsvps/{rsvpId} {
         allow read, write: if isAuthenticated();
       }
     }
@@ -245,6 +251,9 @@ service cloud.firestore {
         match /attendees/{attendeeId} {
           allow read, write: if isAuthenticated();
         }
+        match /rsvps/{rsvpId} {
+          allow read, write: if isAuthenticated();
+        }
       }
 
       // Sermons
@@ -290,10 +299,10 @@ service cloud.firestore {
 
       // Members subcollection
       match /members/{memberId} {
-        allow read: if isAuthenticated() && (isOwner(memberId) || isChurchAdmin());
+        allow read: if isAuthenticated();
         allow create: if isAuthenticated(); // Allow new member creation during signup
         allow update: if isAuthenticated() && (isOwner(memberId) || isChurchAdmin() || (request.auth.token.phone_number != null && resource.data.phone == request.auth.token.phone_number));
-        allow delete: if isChurchAdmin() || (isAuthenticated() && request.auth.token.phone_number != null && resource.data.phone == request.auth.token.phone_number);
+        allow delete: if isChurchAdmin() || (isAuthenticated() && (isOwner(memberId) || (request.auth.token.phone_number != null && resource.data.phone == request.auth.token.phone_number)));
       }
 
       // Member Subscriptions
@@ -358,6 +367,10 @@ service cloud.firestore {
         match /attendees/{attendeeId} {
           allow read: if isAuthenticated();
           allow write: if isAuthenticated() && request.auth.uid == attendeeId;
+        }
+
+        match /rsvps/{rsvpId} {
+          allow read, write: if isAuthenticated();
         }
       }
 
@@ -474,6 +487,49 @@ service cloud.firestore {
 
       match /careCellMeetingReports/{reportId} {
         allow read, write: if isAuthenticated();
+      }
+
+      // Service Roster & Worship Operations Management Module
+      match /servicePlans/{planId} {
+        allow read: if isAuthenticated();
+        allow write: if isChurchAdmin();
+
+        match /assignmentQueues/{queueId} {
+          allow read: if isAuthenticated();
+          allow create, delete: if isChurchAdmin();
+          allow update: if isAuthenticated();
+        }
+
+        match /rehearsals/{rehearsalId} {
+          allow read: if isAuthenticated();
+          allow write: if isChurchAdmin();
+        }
+
+        match /attendance/{attendanceId} {
+          allow read: if isAuthenticated();
+          allow write: if isChurchAdmin();
+        }
+      }
+
+      match /serviceTemplates/{templateId} {
+        allow read: if isAuthenticated();
+        allow write: if isChurchAdmin();
+      }
+
+      match /ministryTeams/{teamId} {
+        allow read: if isAuthenticated();
+        allow write: if isChurchAdmin();
+      }
+
+      match /memberSkills/{skillId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && request.resource.data.memberId == request.auth.uid;
+        allow update, delete: if isChurchAdmin();
+      }
+
+      match /memberAvailability/{availabilityId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated() && (request.resource.data.memberId == request.auth.uid || isChurchAdmin());
       }
 
       // Any other church subcollection: authenticated members can read, admins can write

@@ -1138,15 +1138,26 @@ class FirestoreService {
     try {
       if (contactId === uid) return;
       
-      const membersRef = firestore().collection('Rhema Church').doc(churchId).collection('members');
+      const targetChurch = churchId || await this.getChurchId() || RHEMA_CHURCH_ID;
+      const membersRef = firestore().collection('Rhema Church').doc(targetChurch).collection('members');
       const oldDoc = await membersRef.doc(contactId).get();
       
       const docExists = typeof oldDoc.exists === 'function' ? oldDoc.exists() : oldDoc.exists;
       if (docExists) {
+        const oldData = oldDoc.data() || {};
         // Move data to new document with the correct UID
-        await membersRef.doc(uid).set({ ...oldDoc.data(), uid, id: uid }, { merge: true });
-        // Delete the old document with the random ID
-        await membersRef.doc(contactId).delete();
+        await membersRef.doc(uid).set({
+          ...oldData,
+          uid,
+          id: uid,
+          churchId: targetChurch,
+          primaryChurchId: targetChurch,
+          onboardingComplete: true,
+        }, { merge: true });
+        // Delete the old document with the random ID (ignore error if non-critical)
+        await membersRef.doc(contactId).delete().catch((delErr) => {
+          console.warn('Could not delete old contact doc (non-critical):', delErr);
+        });
       } else {
         // Just in case it was already moved or we only have the uid to update
         await membersRef.doc(contactId).update({ uid }).catch(() => {});
@@ -2462,8 +2473,11 @@ class FirestoreService {
       const snapshot = await col.where('date', '==', todayStr).get();
       let events = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ScheduleEvent));
       
-      // Filter out events that have already ended based on time
+      // Filter out events that have already ended based on time or status
       events = events.filter(ev => {
+        if (String((ev as any).status || '').toLowerCase() === 'completed') {
+          return false;
+        }
         const timeToCompare = ev.endTime || ev.time;
         if (timeToCompare) {
            try {
@@ -2508,8 +2522,11 @@ class FirestoreService {
       
       let events = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ScheduleEvent));
       
-      // Filter out events from TODAY that have already ended based on time
+      // Filter out events that have completed or from TODAY that have already ended based on time
       events = events.filter(ev => {
+        if (String((ev as any).status || '').toLowerCase() === 'completed') {
+          return false;
+        }
         if (ev.date === todayStr) {
           // Compare end time or start time against current time
           const timeToCompare = ev.endTime || ev.time;

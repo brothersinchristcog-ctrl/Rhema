@@ -11,6 +11,10 @@ import {
   CareCellAnnouncement,
   CareCellMeetingReport,
   CareCellOverviewStats,
+  CareCellVisit,
+  CareCellVisitMemberResponse,
+  MemberVisitResponseStatus,
+  VisitStatus,
   AttendanceStatus,
 } from '../types/CareCellTypes';
 
@@ -218,6 +222,11 @@ class CareCellService {
     return firestore().collection(RHEMA_ROOT_COLLECTION).doc(id).collection('careCellMeetingReports');
   }
 
+  async getVisitsRef(churchId?: string) {
+    const id = churchId || (await this.getChurchId());
+    return firestore().collection(RHEMA_ROOT_COLLECTION).doc(id).collection('careCellVisits');
+  }
+
   // ── Unique Code Generator (Rhema_CareCell-001) ──────────────────────────────
 
   /**
@@ -321,6 +330,29 @@ class CareCellService {
 
   async archiveCareCell(churchId: string | undefined, cellId: string): Promise<void> {
     await this.updateCareCell(churchId, cellId, { status: 'Archived' });
+  }
+
+  async deleteCareCell(churchId: string | undefined, cellId: string): Promise<void> {
+    const activeChurchId = churchId || (await this.getChurchId());
+    const cellCol = await this.getCareCellsRef(activeChurchId);
+
+    // 1. Delete Care Cell document
+    await cellCol.doc(cellId).delete();
+
+    // 2. Remove associated memberships
+    try {
+      const memCol = await this.getMembershipsRef(activeChurchId);
+      const memSnap = await memCol.where('cellId', '==', cellId).get();
+      if (!memSnap.empty) {
+        const batch = firestore().batch();
+        memSnap.docs.forEach((d) => {
+          batch.delete(d.ref);
+        });
+        await batch.commit();
+      }
+    } catch (e) {
+      console.warn('Non-fatal error cleaning up memberships after care cell deletion:', e);
+    }
   }
 
   async getCareCells(churchId?: string, statusFilter?: 'All' | 'Active' | 'Inactive' | 'Archived'): Promise<CareCell[]> {
@@ -667,7 +699,8 @@ class CareCellService {
     churchId: string | undefined,
     data: Omit<CareCellMeeting, 'id' | 'createdAt' | 'updatedAt'>
   ): Promise<string> {
-    const col = await this.getMeetingsRef(churchId);
+    const activeChurchId = churchId || (await this.getChurchId());
+    const col = await this.getMeetingsRef(activeChurchId);
     const docRef = col.doc();
     await docRef.set(
       sanitizeForFirestore({
@@ -676,6 +709,51 @@ class CareCellService {
         updatedAt: firestore.FieldValue.serverTimestamp(),
       })
     );
+
+    // Dispatch in-app notifications strictly to members of this specific Care Cell
+    try {
+      const cellMembers = await this.getActiveCellMemberships(activeChurchId, data.cellId);
+      const notifBatch = firestore().batch();
+      let notifCount = 0;
+
+      for (const mem of cellMembers) {
+        if (!mem.memberId) continue;
+        const memberNotifRef = firestore()
+          .collection(RHEMA_ROOT_COLLECTION)
+          .doc(activeChurchId)
+          .collection('members')
+          .doc(mem.memberId)
+          .collection('notifications')
+          .doc();
+
+        notifBatch.set(
+          memberNotifRef,
+          sanitizeForFirestore({
+            id: memberNotifRef.id,
+            type: 'care_cell_meeting',
+            title: `🤝 ${data.cellName || 'Care Cell'} Gathering`,
+            body: `${data.title} on ${data.date} at ${data.startTime}${data.endTime ? ` – ${data.endTime}` : ''}${data.location ? ` at ${data.location}` : ''}. Tap to view Scripture & location!`,
+            meetingId: docRef.id,
+            cellId: data.cellId,
+            cellName: data.cellName || '',
+            date: data.date,
+            startTime: data.startTime,
+            endTime: data.endTime || '',
+            location: data.location || '',
+            read: false,
+            createdAt: firestore.FieldValue.serverTimestamp(),
+          })
+        );
+        notifCount++;
+      }
+
+      if (notifCount > 0) {
+        await notifBatch.commit();
+      }
+    } catch (notifErr) {
+      console.warn('⚠️ Non-fatal error delivering in-app meeting notifications:', notifErr);
+    }
+
     return docRef.id;
   }
 
@@ -1177,6 +1255,291 @@ class CareCellService {
     await col.doc(announcementId).update({
       status: 'Archived',
     });
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ── CARE CELL VISITS & NOTIFICATIONS MANAGEMENT ───────────────────────────
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Creates a new Care Cell visit notification for a specific Care Cell.
+   * Automatically initializes response tracking for all assigned members of the cell,
+   * saves the visit, and dispatches in-app notifications to each member.
+   */
+  async createVisitNotification(
+    churchId: string | undefined,
+    data: {
+      cellId: string;
+      cellCode?: string;
+      cellName?: string;
+      title: string;
+      purpose?: string;
+      visitDate: string;
+      visitTime: string;
+      visitors: string;
+      createdBy: string;
+      createdByName?: string;
+      targetMemberIds?: string[];
+    }
+  ): Promise<string> {
+    const activeChurchId = churchId || (await this.getChurchId());
+    const col = await this.getVisitsRef(activeChurchId);
+    const docRef = col.doc();
+
+    // 1. Fetch all active members assigned to this specific Care Cell
+    const allCellMembers = await this.getActiveCellMemberships(activeChurchId, data.cellId);
+
+    // Filter to selected members if specific members were selected
+    const targetMembers = data.targetMemberIds && data.targetMemberIds.length > 0
+      ? allCellMembers.filter((mem) => data.targetMemberIds!.includes(mem.memberId))
+      : allCellMembers;
+
+    // 2. Initialize each target member's availability response as 'Pending'
+    const responses: Record<string, CareCellVisitMemberResponse> = {};
+    for (const mem of targetMembers) {
+      responses[mem.memberId] = {
+        memberId: mem.memberId,
+        memberName: mem.memberName,
+        memberPhone: mem.memberPhone || '',
+        memberPhoto: mem.memberPhoto || '',
+        response: 'Pending',
+        preferredTime: mem.preferredVisitTime || '',
+      };
+    }
+
+    const payload: CareCellVisit = {
+      id: docRef.id,
+      churchId: activeChurchId,
+      cellId: data.cellId,
+      cellCode: data.cellCode || '',
+      cellName: data.cellName || 'Care Cell',
+      title: data.title || 'Pastoral Home Visit',
+      purpose: data.purpose || '',
+      visitDate: data.visitDate,
+      visitTime: data.visitTime,
+      visitors: data.visitors,
+      status: 'Scheduled',
+      notificationSent: false,
+      createdBy: data.createdBy,
+      createdByName: data.createdByName || '',
+      totalMembersCount: targetMembers.length,
+      acceptedCount: 0,
+      declinedCount: 0,
+      pendingCount: targetMembers.length,
+      responses,
+      targetMemberIds: data.targetMemberIds && data.targetMemberIds.length > 0 ? data.targetMemberIds : undefined,
+      createdAt: firestore.FieldValue.serverTimestamp(),
+      updatedAt: firestore.FieldValue.serverTimestamp(),
+    };
+
+    await docRef.set(sanitizeForFirestore(payload));
+
+    // 3. Dispatch in-app notifications strictly to target members
+    try {
+      const notifBatch = firestore().batch();
+      let notifCount = 0;
+
+      for (const mem of targetMembers) {
+        if (!mem.memberId) continue;
+        const memberNotifRef = firestore()
+          .collection(RHEMA_ROOT_COLLECTION)
+          .doc(activeChurchId)
+          .collection('members')
+          .doc(mem.memberId)
+          .collection('notifications')
+          .doc();
+
+        notifBatch.set(
+          memberNotifRef,
+          sanitizeForFirestore({
+            id: memberNotifRef.id,
+            type: 'care_cell_visit',
+            title: `🏡 Care Cell Visit: ${data.title}`,
+            body: `${data.cellName || 'Care Cell'} visit scheduled on ${data.visitDate} at ${data.visitTime} by ${data.visitors}. Please confirm your availability and preferred visit time!`,
+            visitId: docRef.id,
+            cellId: data.cellId,
+            cellName: data.cellName || '',
+            visitDate: data.visitDate,
+            visitTime: data.visitTime,
+            visitors: data.visitors,
+            read: false,
+            createdAt: firestore.FieldValue.serverTimestamp(),
+          })
+        );
+        notifCount++;
+      }
+
+      if (notifCount > 0) {
+        await notifBatch.commit();
+      }
+
+      // Mark notification as sent on the visit record
+      await docRef.update({
+        notificationSent: true,
+        notificationSentAt: firestore.FieldValue.serverTimestamp(),
+      });
+    } catch (notifError) {
+      console.warn('⚠️ Non-fatal error delivering in-app notifications for visit:', notifError);
+    }
+
+    return docRef.id;
+  }
+
+  /**
+   * Fetches visits for a specific cell or church-wide, with optional status filter.
+   */
+  async getVisits(
+    churchId: string | undefined,
+    cellId?: string,
+    statusFilter?: string
+  ): Promise<CareCellVisit[]> {
+    try {
+      const col = await this.getVisitsRef(churchId);
+      let query: any = col;
+
+      if (cellId && cellId !== 'ALL') {
+        query = query.where('cellId', '==', cellId);
+      }
+
+      if (statusFilter && statusFilter !== 'ALL') {
+        query = query.where('status', '==', statusFilter);
+      }
+
+      const snap = await query.get();
+      const list = snap.docs.map((d: any) => ({ id: d.id, ...d.data() })) as CareCellVisit[];
+
+      // Sort in-memory: scheduled/newest first
+      list.sort((a, b) => {
+        const dateA = a.visitDate ? new Date(`${a.visitDate}T${a.visitTime || '00:00'}`).getTime() : 0;
+        const dateB = b.visitDate ? new Date(`${b.visitDate}T${b.visitTime || '00:00'}`).getTime() : 0;
+        return dateB - dateA;
+      });
+
+      return list;
+    } catch (error) {
+      console.error('Error fetching Care Cell visits:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Member records their response (Accept / Decline) for an assigned Care Cell visit.
+   */
+  async respondToVisit(
+    churchId: string | undefined,
+    visitId: string,
+    memberId: string,
+    response: MemberVisitResponseStatus,
+    notes?: string,
+    preferredTime?: string
+  ): Promise<void> {
+    const col = await this.getVisitsRef(churchId);
+    const visitDoc = await col.doc(visitId).get();
+
+    if (!visitDoc.exists) {
+      throw new Error('Visit notification not found.');
+    }
+
+    const currentData = visitDoc.data() as CareCellVisit;
+    const responses = { ...(currentData.responses || {}) };
+
+    if (!responses[memberId]) {
+      responses[memberId] = {
+        memberId,
+        memberName: 'Cell Member',
+        response: 'Pending',
+      };
+    }
+
+    responses[memberId] = {
+      ...responses[memberId],
+      response,
+      respondedAt: new Date().toISOString(),
+      notes: notes !== undefined ? notes : responses[memberId].notes || '',
+      preferredTime: preferredTime !== undefined ? preferredTime : responses[memberId].preferredTime || '',
+    };
+
+    // Recalculate response counters
+    let accepted = 0;
+    let declined = 0;
+    let pending = 0;
+
+    Object.values(responses).forEach((r) => {
+      if (r.response === 'Accepted') accepted++;
+      else if (r.response === 'Declined') declined++;
+      else pending++;
+    });
+
+    await col.doc(visitId).update(
+      sanitizeForFirestore({
+        [`responses.${memberId}`]: responses[memberId],
+        acceptedCount: accepted,
+        declinedCount: declined,
+        pendingCount: pending,
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+      })
+    );
+  }
+
+  /**
+   * Updates the overall status of a Care Cell visit (Scheduled, Completed, Cancelled).
+   */
+  async updateVisitStatus(
+    churchId: string | undefined,
+    visitId: string,
+    status: VisitStatus
+  ): Promise<void> {
+    const col = await this.getVisitsRef(churchId);
+    await col.doc(visitId).update({
+      status,
+      updatedAt: firestore.FieldValue.serverTimestamp(),
+    });
+  }
+
+  /**
+   * Deletes a visit notification record.
+   */
+  async deleteVisit(churchId: string | undefined, visitId: string): Promise<void> {
+    const col = await this.getVisitsRef(churchId);
+    await col.doc(visitId).delete();
+  }
+
+  /**
+   * Fetches upcoming visits for a specific member in their assigned Care Cell.
+   */
+  async getMemberUpcomingVisits(
+    churchId: string | undefined,
+    cellId: string,
+    memberId: string
+  ): Promise<(CareCellVisit & { myResponse?: CareCellVisitMemberResponse })[]> {
+    try {
+      const col = await this.getVisitsRef(churchId);
+      const snap = await col.where('cellId', '==', cellId).where('status', '==', 'Scheduled').get();
+      const list = snap.docs.map((d: any) => {
+        const data = d.data() as CareCellVisit;
+        const myResponse = data.responses?.[memberId] || {
+          memberId,
+          memberName: '',
+          response: 'Pending' as MemberVisitResponseStatus,
+        };
+        return {
+          id: d.id,
+          ...data,
+          myResponse,
+        };
+      });
+
+      list.sort((a, b) => {
+        const dateA = a.visitDate ? new Date(`${a.visitDate}T${a.visitTime || '00:00'}`).getTime() : 0;
+        const dateB = b.visitDate ? new Date(`${b.visitDate}T${b.visitTime || '00:00'}`).getTime() : 0;
+        return dateA - dateB; // Upcoming earliest first
+      });
+
+      return list;
+    } catch (e) {
+      console.error('Error fetching member Care Cell visits:', e);
+      return [];
+    }
   }
 
   // ══════════════════════════════════════════════════════════════════════════

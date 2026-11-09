@@ -1979,25 +1979,25 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
     const PERIOD_SLOTS = {
         Morning: {
             index: 0,
-            title: "Good Morning\nToday's Verse (నేటి వాక్యం)",
+            title: "Good Morning · Today's Verse (నేటి వాక్యం)",
             titleEn: "Good Morning",
             titleTe: "Today's Verse (నేటి వాక్యం)",
         },
         Afternoon: {
             index: 1,
-            title: "Blessed Afternoon\nDaily Peace (అనుదిన శాంతి)",
+            title: "Blessed Afternoon · Daily Peace (అనుదిన శాంతి)",
             titleEn: "Blessed Afternoon",
             titleTe: "Daily Peace (అనుదిన శాంతి)",
         },
         Evening: {
             index: 2,
-            title: "Evening Prayer\nFaith & Grace (విశ్వాసం - కృప)",
+            title: "Evening Prayer · Faith & Grace (విశ్వాసం - కృప)",
             titleEn: "Evening Prayer",
             titleTe: "Faith & Grace (విశ్వాసం - కృప)",
         },
         Night: {
             index: 3,
-            title: "Good Night\nGod's Protection (దేవుని కాపుదల)",
+            title: "Good Night · God's Protection (దేవుని కాపుదల)",
             titleEn: "Good Night",
             titleTe: "God's Protection (దేవుని కాపుదల)",
         },
@@ -2058,94 +2058,73 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
         }
         console.log(`🔑 [DailyVerse] Lock acquired for slot ${slotLockKey}. Dispatching notification...`);
     }
-    // 2. Compute today's verse index
-    let totalVerses = 5863;
-    try {
-        const metaDoc = await db.collection('daily_verses_meta').doc('metadata').get();
-        if (metaDoc.exists) {
-            totalVerses = metaDoc.data()?.totalVerses || 5863;
-        }
-    }
-    catch (_) { }
-    const EPOCH = new Date('2026-10-30T00:00:00Z');
-    const todayLocal = new Date(nowIst.getFullYear(), nowIst.getMonth(), nowIst.getDate());
-    const epochDate = new Date(EPOCH.getFullYear(), EPOCH.getMonth(), EPOCH.getDate());
-    const daysSinceEpoch = Math.floor((todayLocal.getTime() - epochDate.getTime()) / (1000 * 60 * 60 * 24));
-    // RHEMA has its own independent Scripture offset so it never displays the same verses as WeChristian
-    const RHEMA_DAILY_VERSE_OFFSET = 2931;
-    const offset = targetChurchId === 'rhema' ? RHEMA_DAILY_VERSE_OFFSET : 0;
-    const targetIndex = (daysSinceEpoch * 4 + slotInfo.index + offset) % totalVerses;
-    console.log(`[sendDailyVersePushInternal] Target verse index: ${targetIndex} (total: ${totalVerses}, offset: ${offset})`);
-    // 3. Priority: Curated Thematic Daily Verses strictly matched to time of day & <= 130 chars:
-    // - Morning: New beginnings, hope, strength, God's guidance
-    // - Afternoon: Encouragement, wisdom, patience, staying strong
-    // - Evening: Peace, gratitude, protection, trusting God
-    // - Night: Rest, comfort, safety, God's care
+    // 2. Resolve today's verse index
+    // 100% synchronized with SuperAdminVersesManager, HomeScreen, and VerseOfTheDayScreen:
+    // Today's 4 slots are strictly indexed: 0 (Morning), 1 (Afternoon), 2 (Evening), 3 (Night)
+    const targetIndex = slotInfo.index;
+    console.log(`[sendDailyVersePushInternal] Target verse index: ${targetIndex} for slot ${slot}`);
     let verseDocData = null;
-    let verseId = `thematic_${slot.toLowerCase()}_${daysSinceEpoch}`;
+    let verseId = `verse_${targetIndex}`;
+    // 1. Primary Source of Truth: Firestore 'daily_verses' collection (as configured in SuperAdminVersesManager & shown on HomeScreen)
     try {
-        const fsMod = await import('fs');
-        const pathMod = await import('path');
-        const candidates = [
-            pathMod.join(process.cwd(), 'thematic_daily_verses.json'),
-            pathMod.join(process.cwd(), 'src/thematic_daily_verses.json'),
-            pathMod.join(process.cwd(), 'functions/thematic_daily_verses.json'),
-            pathMod.join(process.cwd(), 'functions/src/thematic_daily_verses.json'),
-            pathMod.join(process.cwd(), 'app/assets/thematic_daily_verses.json'),
-            pathMod.join(process.cwd(), '../app/assets/thematic_daily_verses.json'),
-        ];
-        for (const p of candidates) {
-            if (fsMod.existsSync(p)) {
-                const raw = fsMod.readFileSync(p, 'utf-8');
-                const data = JSON.parse(raw);
-                const slotList = data[slot] || data.Morning;
-                if (slotList && slotList.length > 0) {
-                    const slotIdx = ((daysSinceEpoch % slotList.length) + slotList.length) % slotList.length;
-                    verseDocData = slotList[slotIdx];
-                    console.log(`✨ [sendDailyVersePushInternal] Selected curated thematic verse for slot '${slot}': ${verseDocData.referenceEn} - ${verseDocData.theme || ''}`);
-                    break;
+        const snap = await db.collection('daily_verses')
+            .where('index', '==', targetIndex)
+            .get();
+        if (!snap.empty && snap.docs.length > 0) {
+            let bestDoc = snap.docs[0];
+            let bestTime = 0;
+            snap.docs.forEach((doc) => {
+                const d = doc.data();
+                const t = d.updatedAt?.toMillis ? d.updatedAt.toMillis() : (d.updatedAt || d.createdAt?.toMillis?.() || d.createdAt || 0);
+                if (t >= bestTime) {
+                    bestTime = t;
+                    bestDoc = doc;
                 }
+            });
+            if (bestDoc) {
+                verseDocData = bestDoc.data();
+                verseId = bestDoc.id;
+                console.log(`✨ [sendDailyVersePushInternal] Loaded verse from daily_verses for slot '${slot}' (index ${targetIndex}): ${verseDocData.referenceEn || verseDocData.referenceTe}`);
             }
         }
     }
-    catch (tErr) {
-        console.warn('[sendDailyVersePushInternal] Could not load thematic verses:', tErr);
+    catch (err) {
+        console.warn('[sendDailyVersePushInternal] Could not query daily_verses by index:', err);
     }
-    // Fallback: Query Firestore if thematic list not loaded
-    try {
-        const rhemaSnap = await db.collection('Rhema Church').doc('rhema').collection('daily_verses').where('index', '==', targetIndex).limit(1).get();
-        if (!rhemaSnap.empty) {
-            verseDocData = rhemaSnap.docs[0]?.data();
-            verseId = rhemaSnap.docs[0]?.id || verseId;
-        }
-    }
-    catch (_) { }
+    // 2. Secondary fallback: Rhema Church/rhema/daily_verses
     if (!verseDocData) {
         try {
-            const snap = await db.collection('daily_verses').where('index', '==', targetIndex).limit(1).get();
-            if (!snap.empty) {
-                verseDocData = snap.docs[0]?.data();
-                verseId = snap.docs[0]?.id || verseId;
+            const rhemaSnap = await db.collection('Rhema Church')
+                .doc(targetChurchId)
+                .collection('daily_verses')
+                .where('index', '==', targetIndex)
+                .limit(1)
+                .get();
+            if (!rhemaSnap.empty) {
+                verseDocData = rhemaSnap.docs[0]?.data();
+                verseId = rhemaSnap.docs[0]?.id || verseId;
             }
         }
         catch (_) { }
     }
-    // Fallback to bulk_verses.json if not found in Firestore
+    // 3. Third fallback: bulk_verses.json bundled asset
     if (!verseDocData) {
         try {
-            const fs = await import('fs');
-            const path = await import('path');
+            const fsMod = await import('fs');
+            const pathMod = await import('path');
             const candidates = [
-                path.join(process.cwd(), 'bulk_verses.json'),
-                path.join(process.cwd(), '../bulk_verses.json'),
-                path.join(process.cwd(), 'app/assets/bulk_verses.json'),
+                pathMod.join(process.cwd(), 'bulk_verses.json'),
+                pathMod.join(process.cwd(), '../bulk_verses.json'),
+                pathMod.join(process.cwd(), 'app/assets/bulk_verses.json'),
+                pathMod.join(process.cwd(), '../app/assets/bulk_verses.json'),
             ];
             for (const p of candidates) {
-                if (fs.existsSync(p)) {
-                    const raw = fs.readFileSync(p, 'utf-8');
+                if (fsMod.existsSync(p)) {
+                    const raw = fsMod.readFileSync(p, 'utf-8');
                     const list = JSON.parse(raw);
                     if (list && list[targetIndex]) {
                         verseDocData = list[targetIndex];
+                        verseId = `bulk_${targetIndex}`;
                         break;
                     }
                 }
@@ -2157,44 +2136,10 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
         console.warn(`[sendDailyVersePushInternal] No verse found for index ${targetIndex}`);
         return { success: false, error: `Verse not found for index ${targetIndex}` };
     }
-    // Feature requirement: Daily Bible Verses must be short (<= 130 chars) and fit within 2 lines
-    // If the verse is a lengthy passage, select the nearest concise, inspiring verse
-    if (verseDocData && ((verseDocData.verseEn && verseDocData.verseEn.length > 130) || (verseDocData.verseTe && verseDocData.verseTe.length > 130))) {
-        try {
-            const fsMod = await import('fs');
-            const pathMod = await import('path');
-            const candidates = [
-                pathMod.join(process.cwd(), 'bulk_verses.json'),
-                pathMod.join(process.cwd(), '../bulk_verses.json'),
-                pathMod.join(process.cwd(), 'app/assets/bulk_verses.json'),
-            ];
-            for (const p of candidates) {
-                if (fsMod.existsSync(p)) {
-                    const raw = fsMod.readFileSync(p, 'utf-8');
-                    const list = JSON.parse(raw);
-                    if (list && list.length > 0) {
-                        let hops = 0;
-                        let curr = targetIndex;
-                        while (hops < 15) {
-                            curr = (curr + 1) % list.length;
-                            if (list[curr] && list[curr].verseEn && list[curr].verseEn.length <= 130 && list[curr].verseTe && list[curr].verseTe.length <= 130) {
-                                verseDocData = list[curr];
-                                verseId = `verse_${curr}`;
-                                break;
-                            }
-                            hops++;
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-        catch (_) { }
-    }
-    const verseEnText = verseDocData.verseEn || '';
-    const refEnText = verseDocData.referenceEn || '';
-    const verseTeText = verseDocData.verseTe || verseEnText;
-    const refTeText = verseDocData.referenceTe || refEnText;
+    const verseEnText = (verseDocData.verseEn || '').trim();
+    const refEnText = (verseDocData.referenceEn || '').trim();
+    const verseTeText = (verseDocData.verseTe || verseDocData.verse || '').trim();
+    const refTeText = (verseDocData.referenceTe || verseDocData.reference || '').trim();
     // 4. Collect member device FCM tokens
     const tokenSet = new Set();
     try {
@@ -2221,15 +2166,17 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
     console.log(`[sendDailyVersePushInternal] Collected ${tokens.length} FCM tokens for dispatch.`);
     let enSuccess = 0;
     let teSuccess = 0;
-    // 4. Send EXACTLY ONE Unified Notification to the Church Topic (church_rhema)
-    // Using Android 'tag' and 'collapseKey' guarantees that Android OS displays EXACTLY ONE banner.
+    // 4. Format EXACTLY ONE combined bilingual notification (Telugu + English)
+    // Perfectly matches the layout shown in the user's notification drawer screenshot
     const unifiedTitle = slotInfo.title;
     let unifiedBody = '';
-    const combinedRef = (refTeText && refEnText && refTeText !== refEnText)
-        ? `${refTeText} | ${refEnText}`
-        : (refTeText || refEnText);
-    const cleanVerseTe = (verseTeText || '').replace(/^["“”']+|["“”']+$/g, '').trim();
-    const cleanVerseEn = (verseEnText || '').replace(/^["“”']+|["“”']+$/g, '').trim();
+    const cleanVerseTe = (verseTeText || '').replace(/^["“”'‘]+|["“”'‘]+$/g, '').trim();
+    const cleanVerseEn = (verseEnText || '').replace(/^["“”'‘]+|["“”'‘]+$/g, '').trim();
+    const cleanRefTe = (refTeText || '').trim();
+    const cleanRefEn = (refEnText || '').trim();
+    const combinedRef = (cleanRefTe && cleanRefEn && cleanRefTe !== cleanRefEn)
+        ? `${cleanRefTe} | ${cleanRefEn}`
+        : (cleanRefTe || cleanRefEn);
     // Android notification shade collapses empty newlines unless there is a character.
     // Using '\n \n' guarantees a visible vertical gap below verses on Android and iOS.
     const GAP = '\n \n';
@@ -2248,26 +2195,43 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
             },
             data: {
                 type: 'daily_verse',
-                verseId: verseId,
+                verseId: String(verseId),
                 period: slot,
                 churchId: targetChurchId,
+                title: unifiedTitle,
+                body: unifiedBody,
+                verseTe: cleanVerseTe,
+                refTe: cleanRefTe,
+                verseEn: cleanVerseEn,
+                refEn: cleanRefEn,
             },
             android: {
                 priority: 'high',
-                collapseKey: `daily_verse_${slot}`,
+                collapseKey: 'daily_verse',
                 notification: {
                     sound: 'default',
                     priority: 'max',
                     channelId: 'daily_verse',
-                    tag: `daily_verse_${slot}`,
+                    tag: 'daily_verse',
+                    defaultSound: true,
+                    defaultVibrateTimings: true,
                 },
             },
             apns: {
                 headers: {
                     'apns-priority': '10',
-                    'apns-collapse-id': `daily_verse_${slot}`,
+                    'apns-collapse-id': 'daily_verse',
                 },
-                payload: { aps: { sound: 'default', badge: 1 } },
+                payload: {
+                    aps: {
+                        sound: 'default',
+                        badge: 1,
+                        alert: {
+                            title: unifiedTitle,
+                            body: unifiedBody,
+                        },
+                    },
+                },
             },
         };
         await messaging.send(topicMessage);
@@ -2286,18 +2250,26 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
                     },
                     data: {
                         type: 'daily_verse',
-                        verseId: verseId,
+                        verseId: String(verseId),
                         period: slot,
                         churchId: targetChurchId,
+                        title: unifiedTitle,
+                        body: unifiedBody,
+                        verseTe: cleanVerseTe,
+                        refTe: cleanRefTe,
+                        verseEn: cleanVerseEn,
+                        refEn: cleanRefEn,
                     },
                     android: {
                         priority: 'high',
-                        collapseKey: `daily_verse_${slot}`,
+                        collapseKey: 'daily_verse',
                         notification: {
                             sound: 'default',
                             priority: 'max',
                             channelId: 'daily_verse',
-                            tag: `daily_verse_${slot}`,
+                            tag: 'daily_verse',
+                            defaultSound: true,
+                            defaultVibrateTimings: true,
                         },
                     },
                     tokens: batchTokens,
@@ -2403,10 +2375,28 @@ export const pushCareCellAnnouncement = onDocumentCreated({ document: 'Rhema Chu
         },
         data: {
             type: 'care_cell_announcement',
-            announcementId,
-            churchId,
-            cellId: data.cellId || '',
-            scope,
+            title: notifTitle,
+            body: notifBody,
+            announcementId: String(announcementId),
+            churchId: String(churchId),
+            cellId: String(data.cellId || ''),
+            scope: String(scope),
+            click_action: 'FLUTTER_NOTIFICATION_CLICK',
+        },
+        android: {
+            priority: 'high',
+            notification: {
+                sound: 'default',
+                channelId: 'church_alerts',
+            },
+        },
+        apns: {
+            payload: {
+                aps: {
+                    sound: 'default',
+                    badge: 1,
+                },
+            },
         },
         topic: `church_${churchId}`,
     };
@@ -2458,23 +2448,88 @@ export const pushCareCellMeeting = onDocumentCreated({ document: 'Rhema Church/{
     const cellName = data.cellName || 'Care Cell';
     const dateStr = data.date || '';
     const timeStr = data.startTime || '7:00 PM';
+    const endTimeStr = data.endTime ? ` – ${data.endTime}` : '';
+    const locationStr = data.location ? ` at ${data.location}` : '';
     const messaging = getMessaging();
-    const payload = {
-        notification: {
-            title: `🤝 ${cellName} Gathering`,
-            body: `${title} on ${dateStr} at ${timeStr}. Tap to view Scripture & location!`,
-        },
-        data: {
-            type: 'care_cell_meeting',
-            meetingId,
-            churchId,
-            cellId: data.cellId || '',
-        },
-        topic: `church_${churchId}`,
-    };
     try {
-        await messaging.send(payload);
-        console.log(`Successfully sent care cell meeting push for ${meetingId}`);
+        // 1. Fetch active members assigned ONLY to this specific Care Cell
+        const membershipsSnap = await db
+            .collection('Rhema Church')
+            .doc(churchId)
+            .collection('careCellMemberships')
+            .where('cellId', '==', data.cellId)
+            .where('membershipStatus', '==', 'Active')
+            .get();
+        let memberIds = membershipsSnap.docs.map((d) => d.data().memberId).filter(Boolean);
+        if (Array.isArray(data.targetMemberIds) && data.targetMemberIds.length > 0) {
+            memberIds = memberIds.filter((id) => data.targetMemberIds.includes(id));
+        }
+        if (memberIds.length === 0) {
+            console.log(`No active members found in care cell ${data.cellId} for meeting push.`);
+            return;
+        }
+        // 2. Collect FCM tokens strictly for these specific members
+        const tokens = [];
+        for (const mId of memberIds) {
+            try {
+                const memDoc = await db
+                    .collection('Rhema Church')
+                    .doc(churchId)
+                    .collection('members')
+                    .doc(mId)
+                    .get();
+                if (memDoc.exists) {
+                    const token = memDoc.data()?.fcmToken;
+                    if (token && typeof token === 'string' && !tokens.includes(token)) {
+                        tokens.push(token);
+                    }
+                }
+            }
+            catch (_) { }
+        }
+        if (tokens.length > 0) {
+            const notifTitle = `🤝 ${cellName} Gathering: ${title}`;
+            const notifBody = `${title} on ${dateStr} at ${timeStr}${endTimeStr}${locationStr}. Tap to view Scripture & location!`;
+            const messagePayload = {
+                notification: {
+                    title: notifTitle,
+                    body: notifBody,
+                },
+                data: {
+                    type: 'care_cell_meeting',
+                    title: notifTitle,
+                    body: notifBody,
+                    meetingId: String(meetingId),
+                    churchId: String(churchId),
+                    cellId: String(data.cellId || ''),
+                    date: String(dateStr),
+                    startTime: String(timeStr),
+                    location: String(data.location || ''),
+                    click_action: 'FLUTTER_NOTIFICATION_CLICK',
+                },
+                android: {
+                    priority: 'high',
+                    notification: {
+                        sound: 'default',
+                        channelId: 'church_alerts',
+                    },
+                },
+                apns: {
+                    payload: {
+                        aps: {
+                            sound: 'default',
+                            badge: 1,
+                        },
+                    },
+                },
+                tokens,
+            };
+            const response = await messaging.sendEachForMulticast(messagePayload);
+            console.log(`Successfully sent Care Cell meeting push to ${response.successCount}/${tokens.length} members for meeting ${meetingId}`);
+        }
+        else {
+            console.log(`No valid FCM tokens found for members in care cell ${data.cellId}`);
+        }
     }
     catch (err) {
         console.error('Error sending care cell meeting notification:', err);
@@ -2520,16 +2575,36 @@ export const pushCareCellPrayerRequest = onDocumentCreated({ document: 'Rhema Ch
     const cellName = data.cellName || 'Care Cell';
     const prayerTitle = data.title || 'Prayer Request';
     const messaging = getMessaging();
+    const notifTitle = `🙏 Care Cell Prayer: ${memberName}`;
+    const notifBody = `[${cellName}] ${prayerTitle}`;
     const payload = {
         notification: {
-            title: `🙏 Care Cell Prayer: ${memberName}`,
-            body: `[${cellName}] ${prayerTitle}`,
+            title: notifTitle,
+            body: notifBody,
         },
         data: {
             type: 'care_cell_prayer',
-            requestId,
-            churchId,
-            cellId: data.cellId || '',
+            title: notifTitle,
+            body: notifBody,
+            requestId: String(requestId),
+            churchId: String(churchId),
+            cellId: String(data.cellId || ''),
+            click_action: 'FLUTTER_NOTIFICATION_CLICK',
+        },
+        android: {
+            priority: 'high',
+            notification: {
+                sound: 'default',
+                channelId: 'church_alerts',
+            },
+        },
+        apns: {
+            payload: {
+                aps: {
+                    sound: 'default',
+                    badge: 1,
+                },
+            },
         },
         topic: `church_${churchId}_admin`,
     };
@@ -2539,6 +2614,131 @@ export const pushCareCellPrayerRequest = onDocumentCreated({ document: 'Rhema Ch
     }
     catch (err) {
         console.error('Error sending care cell prayer notification:', err);
+    }
+});
+/**
+ * 🏡 CARE CELL VISIT NOTIFICATION PUSH
+ * Sends push notification strictly to members of the selected Care Cell when a visit is scheduled.
+ */
+export const pushCareCellVisit = onDocumentCreated({ document: 'Rhema Church/{churchId}/careCellVisits/{visitId}', region: 'asia-south1' }, async (event) => {
+    const snap = event.data;
+    if (!snap)
+        return;
+    const visitId = event.params.visitId;
+    const churchId = event.params.churchId;
+    const db = getFirestore();
+    const visitRef = snap.ref;
+    const data = snap.data();
+    let shouldSend = false;
+    try {
+        shouldSend = await db.runTransaction(async (transaction) => {
+            const freshDoc = await transaction.get(visitRef);
+            if (!freshDoc.exists)
+                return false;
+            if (freshDoc.data()?.pushNotificationSent === true)
+                return false;
+            transaction.update(visitRef, {
+                pushNotificationSent: true,
+                pushNotificationSentAt: FieldValue.serverTimestamp(),
+            });
+            return true;
+        });
+    }
+    catch (txErr) {
+        console.warn('Transaction error checking pushNotificationSent on careCellVisit:', txErr);
+        if (data?.pushNotificationSent === true)
+            return;
+        shouldSend = true;
+    }
+    if (!shouldSend)
+        return;
+    const cellId = data.cellId;
+    if (!cellId)
+        return;
+    const title = data.title || 'Pastoral Care Cell Visit';
+    const cellName = data.cellName || 'Care Cell';
+    const visitDate = data.visitDate || '';
+    const visitTime = data.visitTime || '';
+    const visitors = data.visitors || 'Cell Leaders';
+    const messaging = getMessaging();
+    try {
+        // Fetch active members of THIS specific Care Cell
+        const membershipsSnap = await db
+            .collection('Rhema Church')
+            .doc(churchId)
+            .collection('careCellMemberships')
+            .where('cellId', '==', cellId)
+            .where('membershipStatus', '==', 'Active')
+            .get();
+        const memberIds = membershipsSnap.docs.map((d) => d.data().memberId).filter(Boolean);
+        if (memberIds.length === 0) {
+            console.log(`No active members found in care cell ${cellId} for visit push.`);
+            return;
+        }
+        // Collect FCM tokens for these members
+        const tokens = [];
+        for (const mId of memberIds) {
+            try {
+                const memDoc = await db
+                    .collection('Rhema Church')
+                    .doc(churchId)
+                    .collection('members')
+                    .doc(mId)
+                    .get();
+                if (memDoc.exists) {
+                    const token = memDoc.data()?.fcmToken;
+                    if (token && typeof token === 'string' && !tokens.includes(token)) {
+                        tokens.push(token);
+                    }
+                }
+            }
+            catch (_) { }
+        }
+        if (tokens.length > 0) {
+            const notifTitle = `🏡 ${cellName}: ${title}`;
+            const notifBody = `Visit on ${visitDate} at ${visitTime} by ${visitors}. Tap to confirm your availability & preferred visit time!`;
+            const messagePayload = {
+                notification: {
+                    title: notifTitle,
+                    body: notifBody,
+                },
+                data: {
+                    type: 'care_cell_visit',
+                    title: notifTitle,
+                    body: notifBody,
+                    visitId: String(visitId),
+                    cellId: String(cellId),
+                    churchId: String(churchId),
+                    visitDate: String(visitDate),
+                    visitTime: String(visitTime),
+                    click_action: 'FLUTTER_NOTIFICATION_CLICK',
+                },
+                android: {
+                    priority: 'high',
+                    notification: {
+                        sound: 'default',
+                        channelId: 'church_alerts',
+                    },
+                },
+                apns: {
+                    payload: {
+                        aps: {
+                            sound: 'default',
+                            badge: 1,
+                        },
+                    },
+                },
+                tokens,
+            };
+            const response = await messaging.sendEachForMulticast(messagePayload);
+            console.log(`Successfully sent Care Cell visit push to ${response.successCount}/${tokens.length} members for ${visitId}`);
+        }
+        else {
+            console.log(`No valid FCM tokens found for members in care cell ${cellId}`);
+        }
+    }
+    catch (err) {
+        console.error('Error dispatching Care Cell visit push notification:', err);
     }
 });
 //# sourceMappingURL=notifications.js.map

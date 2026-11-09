@@ -19,6 +19,45 @@ export type FollowupType =
   | 'WhatsApp Message' 
   | 'Other';
 export type FollowupStatus = 'Pending' | 'Contacted' | 'Completed' | 'Needs Further Follow-up';
+export type VisitStatus = 'Scheduled' | 'Completed' | 'Cancelled';
+export type MemberVisitResponseStatus = 'Pending' | 'Accepted' | 'Declined';
+
+export interface CareCellVisitMemberResponse {
+  memberId: string;
+  memberName: string;
+  memberPhone?: string;
+  memberPhoto?: string;
+  response: MemberVisitResponseStatus;
+  respondedAt?: any;
+  notes?: string;
+  preferredTime?: string; // Preferred visit time specified by the member (e.g. "5:00 PM - 7:00 PM")
+}
+
+export interface CareCellVisit {
+  id: string;
+  churchId?: string;
+  cellId: string;
+  cellCode?: string;
+  cellName: string;
+  title: string;
+  purpose?: string;
+  visitDate: string; // "YYYY-MM-DD"
+  visitTime: string; // "HH:mm" e.g. "17:00"
+  visitors: string;
+  status: VisitStatus;
+  notificationSent?: boolean;
+  notificationSentAt?: any;
+  createdBy: string;
+  createdByName?: string;
+  createdAt?: any;
+  updatedAt?: any;
+  totalMembersCount?: number;
+  acceptedCount?: number;
+  declinedCount?: number;
+  pendingCount?: number;
+  responses?: Record<string, CareCellVisitMemberResponse>;
+  targetMemberIds?: string[];
+}
 
 export interface CareCell {
   id: string;
@@ -35,7 +74,8 @@ export interface CareCell {
   assistantLeaderPhone?: string;
   assistantLeaderPhoto?: string;
   meetingDay: string; // e.g. "Friday"
-  meetingTime: string; // e.g. "19:00"
+  meetingTime: string; // e.g. '19:00'
+  meetingEndTime?: string; // e.g. '20:30'
   meetingLocation: string;
   meetingLatitude?: number;
   meetingLongitude?: number;
@@ -63,6 +103,7 @@ export interface CareCellMembership {
   latitude?: number;
   longitude?: number;
   membershipStatus: MembershipStatus;
+  preferredVisitTime?: string;
   joinedAt?: any;
   leftAt?: any;
   transferredToCellId?: string;

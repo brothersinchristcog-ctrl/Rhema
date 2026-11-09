@@ -96,7 +96,7 @@ export default function ReceiptModal({ visible, onClose, donation }: ReceiptModa
               <View style={styles.receiptHeader}>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.churchName, fStyle]} numberOfLines={1} adjustsFontSizeToFit>Church of God</Text>
-                  <Text style={[styles.churchEmail, fStyle]} numberOfLines={1} adjustsFontSizeToFit>brothersinchrist@gmail.com</Text>
+                  <Text style={[styles.churchEmail, fStyle]} numberOfLines={1} adjustsFontSizeToFit>rhemachurch@gmail.com</Text>
                 </View>
                 <View style={styles.receiptBadgeWrapper}>
                    <View style={styles.receiptBadge}>

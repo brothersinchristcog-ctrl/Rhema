@@ -982,7 +982,10 @@ async function handleBroadcastPushDispatch(data, churchIdParam, messageIdParam) 
         const targetQuizId = data.quizId || data.relatedId || (data.type === 'quiz' ? data.id : undefined);
         const notificationData = {
             type,
-            id: String(data.prayerId || data.requestId || targetQuizId || data.sermonId || messageIdParam || ''),
+            id: String(data.eventId || data.prayerId || data.requestId || targetQuizId || data.sermonId || messageIdParam || ''),
+            title,
+            body: plainBody.length > 200 ? plainBody.substring(0, 197) + '...' : plainBody,
+            ...(data.eventId ? { eventId: String(data.eventId) } : {}),
             ...(data.prayerId ? { prayerId: String(data.prayerId) } : {}),
             ...(data.requestId ? { requestId: String(data.requestId) } : {}),
             ...(data.targetTab ? { targetTab: String(data.targetTab) } : {}),
@@ -1624,5 +1627,6 @@ const testBaptismsV1 = functionsCompat.https.onRequest(async (req, res) => {
         res.status(500).send(error.message);
     }
 });
-export { publishScheduledSermons, triggerPublishScheduledSermonsHttp, triggerDailyVersePushHttp, sendDailyVersePushScheduled, monitorMeetingLive, pushMeetingLive, onBaptismRequestCreatedAdmin, onBaptismRequestCreatedAdminLegacy, onPrayerRequestCreatedAdmin, onPrayerRequestCreatedAdminLegacy, onPrayerRequestProcessedMember, onPrayerRequestProcessedMemberLegacy, pushPrayerRequestApproved, pushCareCellAnnouncement, pushCareCellMeeting, pushCareCellPrayerRequest, } from './notifications.js';
+export { publishScheduledSermons, triggerPublishScheduledSermonsHttp, triggerDailyVersePushHttp, sendDailyVersePushScheduled, monitorMeetingLive, pushMeetingLive, onBaptismRequestCreatedAdmin, onBaptismRequestCreatedAdminLegacy, onPrayerRequestCreatedAdmin, onPrayerRequestCreatedAdminLegacy, onPrayerRequestProcessedMember, onPrayerRequestProcessedMemberLegacy, pushPrayerRequestApproved, pushCareCellAnnouncement, pushCareCellMeeting, pushCareCellPrayerRequest, pushCareCellVisit, } from './notifications.js';
+export { onServiceAssignmentQueueDispatched, onServiceAssignmentResponded, checkServiceAssignmentTimeoutsCron, sendServiceRosterRemindersCron, triggerCheckRosterTimeoutsHttp, onServiceRehearsalCreated, } from './rosterNotifications.js';
 //# sourceMappingURL=index.js.map

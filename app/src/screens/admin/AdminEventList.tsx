@@ -13,7 +13,8 @@ import {
   Modal,
   Alert
 } from 'react-native';
-import { MapPin, Clock, Calendar, Trash2, ChevronLeft, Plus, Users, QrCode, Download, Share2, X , ArrowLeft, Edit2, CheckCircle2 } from 'lucide-react-native';
+import { MapPin, Clock, Calendar, Trash2, ChevronLeft, ChevronRight, Plus, Users, QrCode, Download, Share2, X , ArrowLeft, Edit2, CheckCircle2, Vote } from 'lucide-react-native';
+import EventRsvpAnalyticsModal from './EventRsvpAnalyticsModal';
 import QRCode from 'react-native-qrcode-svg';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -60,6 +61,7 @@ export default function AdminEventList() {
   const [eventToDelete, setEventToDelete] = useState<any>(null);
   const [showDeleteSuccess, setShowDeleteSuccess] = useState(false);
   const [selectedQrEvent, setSelectedQrEvent] = useState<any>(null);
+  const [selectedRsvpEvent, setSelectedRsvpEvent] = useState<any>(null);
   const qrRef = useRef<any>(null);
   const [churchDetails, setChurchDetails] = useState({ id: '', name: 'Rhema Global Ministries', code: 'RHEMA' });
 
@@ -142,9 +144,111 @@ export default function AdminEventList() {
     }
   };
 
-  const today = new Date().toISOString().split('T')[0];
-  const upcomingCount = events.filter(e => e.date >= today).length;
-  const pastCount = events.filter(e => e.date < today).length;
+  const parseEventDateObj = (dateStr?: string): Date | null => {
+    if (!dateStr || typeof dateStr !== 'string') return null;
+    const clean = dateStr.trim();
+    const datePart = clean.split('T')[0];
+    if (datePart.includes('-')) {
+      const parts = datePart.split('-');
+      if (parts.length === 3) {
+        if (parts[0].length === 4) {
+          // YYYY-MM-DD
+          const y = parseInt(parts[0], 10);
+          const m = parseInt(parts[1], 10) - 1;
+          const d = parseInt(parts[2], 10);
+          return new Date(y, m, d);
+        } else {
+          // DD-MM-YYYY
+          const d = parseInt(parts[0], 10);
+          const m = parseInt(parts[1], 10) - 1;
+          const y = parseInt(parts[2], 10);
+          return new Date(y, m, d);
+        }
+      }
+    }
+    const parsed = new Date(dateStr);
+    return isNaN(parsed.getTime()) ? null : parsed;
+  };
+
+  const isEventCompleted = (ev: any): boolean => {
+    if (!ev) return false;
+    const statusStr = String(ev.status || ev.publishStatus || '').toLowerCase().trim();
+    if (
+      statusStr === 'completed' ||
+      statusStr === 'ended' ||
+      statusStr === 'past' ||
+      statusStr === 'closed' ||
+      statusStr === 'cancelled'
+    ) {
+      return true;
+    }
+
+    const rawDate = ev.endDate || ev.date || ev.startDate || ev.eventDate;
+    const eventDateObj = parseEventDateObj(rawDate);
+    if (!eventDateObj) return false;
+
+    const now = new Date();
+    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+    const eventMidnight = new Date(eventDateObj.getFullYear(), eventDateObj.getMonth(), eventDateObj.getDate(), 0, 0, 0);
+
+    // If event date was strictly before today, it is completed / past
+    if (eventMidnight.getTime() < todayMidnight.getTime()) {
+      return true;
+    }
+
+    // If event date is strictly in the future, it is upcoming
+    if (eventMidnight.getTime() > todayMidnight.getTime()) {
+      return false;
+    }
+
+    // Event is TODAY: check time
+    const timeToCompare = ev.endTime || ev.time || ev.startTime;
+    if (!timeToCompare) {
+      return false;
+    }
+
+    try {
+      let hour = 0;
+      let min = 0;
+      if (String(timeToCompare).includes('T')) {
+        const t = new Date(timeToCompare);
+        hour = t.getHours();
+        min = t.getMinutes();
+      } else if (String(timeToCompare).includes(':')) {
+        const cleanTime = String(timeToCompare).toUpperCase().replace(/\s+/g, '');
+        const isPM = cleanTime.includes('PM');
+        const isAM = cleanTime.includes('AM');
+        const timePart = cleanTime.replace('AM', '').replace('PM', '');
+        const parts = timePart.split(':');
+        hour = parseInt(parts[0], 10) || 0;
+        min = parseInt(parts[1], 10) || 0;
+        if (isPM && hour < 12) hour += 12;
+        if (isAM && hour === 12) hour = 0;
+      }
+
+      const eventTimeToday = new Date(
+        eventDateObj.getFullYear(),
+        eventDateObj.getMonth(),
+        eventDateObj.getDate(),
+        hour,
+        min,
+        0
+      );
+
+      if (ev.endTime) {
+        return now.getTime() > eventTimeToday.getTime();
+      }
+
+      // Default duration: 3 hours after start time
+      const assumedEnd = new Date(eventTimeToday.getTime() + 3 * 60 * 60 * 1000);
+      return now.getTime() > assumedEnd.getTime();
+    } catch {
+      return false;
+    }
+  };
+
+  const upcomingCount = events.filter(e => !isEventCompleted(e)).length;
+  const pastCount = events.filter(e => isEventCompleted(e)).length;
   const publishedCount = events.filter(e => 
     !e.status || 
     e.status.toLowerCase().includes('pub') || 
@@ -446,15 +550,23 @@ export default function AdminEventList() {
         {events
           .filter(e => {
             if (filterType === 'Published') {
-              return !e.status || e.status.toLowerCase().includes('pub') || e.status.toLowerCase().includes('act');
+              return (
+                !e.status ||
+                e.status.toLowerCase().includes('pub') ||
+                e.status.toLowerCase().includes('act') ||
+                e.status.toLowerCase().includes('comp')
+              );
             }
-            return filterType === 'Upcoming' ? e.date >= today : e.date < today;
+            return filterType === 'Upcoming' ? !isEventCompleted(e) : isEventCompleted(e);
           })
-          .sort((a, b) => filterType === 'Past' 
-             ? new Date(b.date).getTime() - new Date(a.date).getTime()
-             : new Date(a.date).getTime() - new Date(b.date).getTime()
-          )
-          .map((event, idx) => (
+          .sort((a, b) => {
+            const timeA = parseEventDateObj(a.date)?.getTime() || 0;
+            const timeB = parseEventDateObj(b.date)?.getTime() || 0;
+            return filterType === 'Past' ? timeB - timeA : timeA - timeB;
+          })
+          .map((event, idx) => {
+            const completed = isEventCompleted(event);
+            return (
           <View 
             key={event.id} 
             style={[
@@ -540,7 +652,14 @@ export default function AdminEventList() {
 
             {/* ── Status Row: Displayed under image card with dot separator ── */}
             <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, paddingHorizontal: 2 }}>
-              {event.status?.toLowerCase().includes('dra') ? (
+              {completed ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <CheckCircle2 size={13} color={isDark ? '#94A3B8' : '#64748B'} strokeWidth={2.5} />
+                  <Text style={{ color: isDark ? '#94A3B8' : '#64748B', fontSize: 12, fontWeight: '700' }}>
+                    Completed
+                  </Text>
+                </View>
+              ) : event.status?.toLowerCase().includes('dra') ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                   <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: isDark ? '#94A3B8' : '#64748B' }} />
                   <Text style={{ color: isDark ? '#94A3B8' : '#64748B', fontSize: 12, fontWeight: '700' }}>
@@ -568,6 +687,34 @@ export default function AdminEventList() {
                 </View>
               )}
             </View>
+
+            {/* ── Modern RSVP Analytics Banner Across Card ── */}
+            {event.rsvpEnabled === true && (
+              <TouchableOpacity
+                style={[
+                  styles.rsvpCardBanner,
+                  isDark && {
+                    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+                    borderColor: 'rgba(99, 102, 241, 0.35)',
+                  }
+                ]}
+                onPress={() => setSelectedRsvpEvent(event)}
+                activeOpacity={0.8}
+              >
+                <View style={styles.rsvpBannerLeft}>
+                  <View style={[styles.rsvpBannerIcon, isDark && { backgroundColor: 'rgba(99, 102, 241, 0.3)' }]}>
+                    <Vote size={13} color={isDark ? '#A5B4FC' : '#4338CA'} />
+                  </View>
+                  <Text style={[styles.rsvpBannerTitle, isDark && { color: '#E0E7FF' }]}>RSVP Poll Active</Text>
+                </View>
+                <View style={styles.rsvpBannerRight}>
+                  <Text style={[styles.rsvpBannerStats, isDark && { color: '#C7D2FE' }]}>
+                    {event.rsvpStats?.goingCount || 0} Going · View Roster
+                  </Text>
+                  <ChevronRight size={14} color={isDark ? '#A5B4FC' : '#4338CA'} />
+                </View>
+              </TouchableOpacity>
+            )}
 
             {/* ── Divider Line (Crisp and visible in white theme) ── */}
             <View style={[styles.cardDivider, { height: 1.5, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.18)' : '#CBD5E1', marginTop: 10, marginBottom: 10 }]} />
@@ -639,7 +786,8 @@ export default function AdminEventList() {
               </TouchableOpacity>
             </View>
           </View>
-        ))}
+            );
+          })}
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -747,6 +895,18 @@ export default function AdminEventList() {
             </View>
           </View>
         </Modal>
+      )}
+
+      {/* RSVP Participation Analytics Modal */}
+      {selectedRsvpEvent && (
+        <EventRsvpAnalyticsModal
+          visible={!!selectedRsvpEvent}
+          onClose={() => setSelectedRsvpEvent(null)}
+          eventId={selectedRsvpEvent.id}
+          eventTitle={selectedRsvpEvent.name || selectedRsvpEvent.title || 'Event'}
+          eventDate={formatDate(selectedRsvpEvent.date)}
+          churchId={churchDetails.id}
+        />
       )}
 
       {/* Delete Success Modal */}
@@ -903,6 +1063,8 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   badgeQrReq: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FEF3C7', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#FDE68A' },
   badgeQrReqDark: { backgroundColor: 'rgba(245, 158, 11, 0.18)', borderColor: 'rgba(245, 158, 11, 0.4)' },
   badgeQrReqTxt: { color: '#78350F', fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+  badgeCompleted: { backgroundColor: '#F1F5F9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#CBD5E1' },
+  badgeCompletedTxt: { color: '#475569', fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
 
   cardDivider: {
     height: 1.5,
@@ -955,6 +1117,79 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   successSecBtn: { height: 52, borderRadius: 14, width: '100%', justifyContent: 'center', alignItems: 'center', borderWidth: 1.5, borderColor: '#E2E8F0', backgroundColor: '#F8FAFC' },
   successSecTxt: { color: '#475569', fontSize: 14, fontWeight: '800' },
 
+  badgeRsvp: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginLeft: 6,
+  },
+  badgeRsvpTxt: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#4338CA',
+  },
+  rsvpAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+    gap: 4,
+  },
+  rsvpActionTxt: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#4338CA',
+  },
+  rsvpCardBanner: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    marginTop: 10,
+  },
+  rsvpBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  rsvpBannerIcon: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    backgroundColor: '#E0E7FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rsvpBannerTitle: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#3730A3',
+  },
+  rsvpBannerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  rsvpBannerStats: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#4F46E5',
+  },
   // QR Modal Styles
   qrModalOverlay: {
     flex: 1,

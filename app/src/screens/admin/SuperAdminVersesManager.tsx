@@ -708,15 +708,27 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
 
   const handleTestNotifications = async () => {
     try {
-      const firstVerse = upcomingVerses[0] || allVerses[0];
-      const success = await VerseNotificationService.triggerTestPair(firstVerse);
+      const h = new Date().getHours();
+      let currentPeriod = 'Night';
+      if (h >= 5 && h < 12) currentPeriod = 'Morning';
+      else if (h >= 12 && h < 17) currentPeriod = 'Afternoon';
+      else if (h >= 17 && h < 21) currentPeriod = 'Evening';
+
+      const periodIndices: Record<string, number> = { Morning: 0, Afternoon: 1, Evening: 2, Night: 3 };
+      const targetIdx = periodIndices[currentPeriod] ?? 3;
+      const targetVerse = upcomingVerses.find(v => v.index === targetIdx) || upcomingVerses[0] || allVerses[0];
+
+      const success = await VerseNotificationService.triggerTestPair(targetVerse, currentPeriod);
       if (success) {
-        Alert.alert('Notifications Sent', 'Sent 2 test notifications simultaneously:\n• 1 in English (✝️ Good Morning)\n• 1 in Telugu (✝️ శుభోదయం)\n\nCheck your notification drawer!');
+        Alert.alert(
+          'Notification Sent',
+          `Sent 1 combined bilingual notification for ${currentPeriod}:\n"${targetVerse?.referenceEn || 'Scripture'}"\n\nCheck your notification drawer!`
+        );
       } else {
-        Alert.alert('Error', 'Failed to trigger test notifications.');
+        Alert.alert('Error', 'Failed to trigger test notification.');
       }
     } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Failed to trigger test notifications');
+      Alert.alert('Error', e?.message || 'Failed to trigger test notification');
     }
   };
 
@@ -977,7 +989,7 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
                 activeOpacity={0.8}
               >
                 <Bell size={15} color="#FFF" />
-                <Text style={styles.toolBtnText}>Test Dual Push</Text>
+                <Text style={styles.toolBtnText}>Test Verse Push</Text>
               </TouchableOpacity>
             </View>
 

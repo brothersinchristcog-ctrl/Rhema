@@ -46,13 +46,15 @@ import {
   ArrowDown,
   Search,
   Check,
-  Sliders
+  Sliders,
+  Users
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AdminTabContext } from '../../context/AdminTabContext';
 import { AppAlert } from '../../components/CustomAlert';
 
 import FirestoreService, { WorshipSong, EventServiceItem } from '../../services/FirestoreService';
+import EventRsvpService from '../../services/EventRsvpService';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const { width, height } = Dimensions.get('window');
@@ -105,6 +107,7 @@ const DURATION_OPTIONS = [
 const PUBLISH_STATUS_OPTIONS = [
   { label: 'Draft — not visible to members', value: 'Draft' },
   { label: 'Publish now — visible to all members', value: 'Published' },
+  { label: 'Completed — event has ended', value: 'Completed' },
   { label: 'Schedule — auto-publish on a specific date/time', value: 'Scheduled' }
 ];
 
@@ -205,7 +208,9 @@ export default function AdminEventEditor() {
   const [address, setAddress] = useState('');
   const [mode, setMode] = useState('In person');
 
-  const [rsvpEnabled, setRsvpEnabled] = useState(true);
+  const [rsvpEnabled, setRsvpEnabled] = useState(false);
+  const [rsvpDeadline, setRsvpDeadline] = useState('');
+  const [isRsvpDeadlinePickerVisible, setRsvpDeadlinePickerVisible] = useState(false);
   const [rsvpPublic, setRsvpPublic] = useState(true);
   const [capAttendance, setCapAttendance] = useState(false);
   const [audience, setAudience] = useState('All members');
@@ -321,7 +326,8 @@ export default function AdminEventEditor() {
       setEndTime(formatFromSFTime(editingData.endTime || '12:00 PM'));
       setEventType(editingData.type || editingData.eventType || 'Sunday Service');
       setMode(editingData.mode || 'In person');
-      setRsvpEnabled(editingData.rsvpEnabled ?? true);
+      setRsvpEnabled(editingData.rsvpEnabled === true);
+      setRsvpDeadline(editingData.rsvpDeadline || '');
       setRsvpPublic(editingData.rsvpPublic ?? true);
       setAudience(editingData.audience || 'All members');
       setPublishStatus(editingData.status || 'Published');
@@ -349,7 +355,7 @@ export default function AdminEventEditor() {
     const newService: EventServiceItem = {
       id: 'srv_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 6),
       name: defaultName,
-      time: startTime ? `${startTime} - ${endTime}` : '',
+      time: '',
       songLeader: '',
       songs: []
     };
@@ -527,7 +533,7 @@ export default function AdminEventEditor() {
     });
   };
 
-  const handleSave = async (status: 'Published' | 'Draft') => {
+  const handleSave = async (status: 'Published' | 'Draft' | 'Completed') => {
     if (!titleEn || !titleEn.trim()) {
       reportError('Required Field', 'అవసరమైన వివరాలు', 'Please enter an event title in English.', 'దయచేసి కార్యక్రమం పేరును నమోదు చేయండి.');
       return;
@@ -547,6 +553,19 @@ export default function AdminEventEditor() {
     if (!endTime || !endTime.trim()) {
       reportError('Required Field', 'అవసరమైన వివరాలు', 'Please select an End Time.', 'దయచేసి ముగింపు సమయాన్ని ఎంచుకోండి.');
       return;
+    }
+
+    if (eventServices.length > 0) {
+      const unnamedIdx = eventServices.findIndex(s => !s.name || !s.name.trim());
+      if (unnamedIdx !== -1) {
+        reportError(
+          'Service Name Required',
+          'సర్వీస్ పేరు అవసరం',
+          `Please enter a Service Name for Service #${unnamedIdx + 1}.`,
+          `దయచేసి సర్వీస్ #${unnamedIdx + 1} కొరకు పేరును నమోదు చేయండి.`
+        );
+        return;
+      }
     }
 
     const cleanDate = (date || '').trim();
@@ -684,7 +703,9 @@ export default function AdminEventEditor() {
       eventType: resolveValue('types', eventType),
       type: resolveValue('types', eventType),
       mode: resolveValue('modes', mode),
-      rsvpEnabled, rsvpPublic,
+      rsvpEnabled: rsvpEnabled === true,
+      rsvpDeadline: rsvpDeadline || null,
+      rsvpPublic,
       audience: resolveValue('audiences', audience),
       publishStatus: resolveStatus(status),
       status: resolveStatus(status),
@@ -702,33 +723,47 @@ export default function AdminEventEditor() {
     };
 
     try {
-      await FirestoreService.createEvent(payload);
+      const savedResult = await FirestoreService.createEvent(payload);
+      const finalEventId = (typeof savedResult === 'string' && savedResult) ? savedResult : (editingData?.id || payload.id);
 
-      if (notifyOnPublish && status === 'Published') {
+      // Mandatory event push notification for every published event (sent regardless of RSVP setting)
+      if (status === 'Published') {
         try {
-          const { getFirestore } = require('@react-native-firebase/firestore');
           const churchId = await FirestoreService.getChurchId();
-           const formatDisplayDate = (d: string) => {
-              try {
-                const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-                const parts = d.split('-');
-                if (parts.length === 3 && parts[0].length === 4) {
-                  return `${parseInt(parts[2])} ${months[parseInt(parts[1]) - 1]} ${parts[0]}`;
-                }
-                return d;
-              } catch { return d; }
-            };
-            const displayDate = formatDisplayDate(sfDate);
-            const displayEndDate = formatDisplayDate(sfEndDate);
-           await FirestoreService.createNotificationBroadcast({
+          const formatDisplayDate = (d: string) => {
+            try {
+              const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+              const parts = d.split('-');
+              if (parts.length === 3 && parts[0].length === 4) {
+                return `${parseInt(parts[2], 10)} ${months[parseInt(parts[1], 10) - 1]} ${parts[0]}`;
+              }
+              return d;
+            } catch { return d; }
+          };
+          const displayDate = formatDisplayDate(sfDate);
+          const displayEndDate = formatDisplayDate(sfEndDate);
+          await FirestoreService.createNotificationBroadcast({
             title: `📅 New Event: ${titleEn}`,
             content: `Join us for "${titleEn}" from ${displayDate} to ${displayEndDate} at ${startTime}${venueEn ? ` · ${venueEn}` : ''}. ${descEn ? descEn.substring(0, 100) : ''}`,
-            type: eventType,
+            type: 'event',
+            eventType: eventType,
+            eventId: finalEventId,
+            screen: 'EventDetails',
             date: sfDate,
             endDate: sfEndDate,
             startTime: startTime || undefined,
             targetChurchId: churchId,
           });
+
+          // If RSVP was enabled after event publication, notify members that RSVP is now open
+          if (editingData && !editingData.rsvpEnabled && rsvpEnabled && churchId && finalEventId) {
+            await EventRsvpService.notifyRsvpOpened({
+              churchId,
+              eventId: finalEventId,
+              eventTitle: titleEn,
+              eventDate: displayDate,
+            });
+          }
         } catch (notifErr) {
           console.warn('⚠️ Event push notification failed (non-critical):', notifErr);
         }
@@ -773,6 +808,8 @@ export default function AdminEventEditor() {
     setRecurrenceDuration(1);
     setNotifyOnPublish(true); setReminder1Day(true); setReminder1Hour(false);
     setRequireEventQR(false);
+    setRsvpEnabled(false);
+    setRsvpDeadline('');
     setEditingData(null);
   };
 
@@ -1548,76 +1585,74 @@ export default function AdminEventEditor() {
               padding: 14,
               marginBottom: 14
             }}>
-              {/* Service Card Header */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-                  <View style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: isDark ? '#27272A' : '#E2E8F0', alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ color: isDark ? '#FFFFFF' : '#0F172A', fontSize: 12, fontWeight: '900' }}>{sIndex + 1}</Text>
+              {/* Service Card Header: Service Name (Required) */}
+              <View style={{ marginBottom: 12 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#E4E4E7' : '#1a2d5a', letterSpacing: 0.4 }}>SERVICE NAME</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '800', color: '#DC2626' }}>*</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => handleRemoveService(service.id)}
+                    style={{
+                      paddingVertical: 4,
+                      paddingHorizontal: 8,
+                      borderRadius: 6,
+                      backgroundColor: isDark ? 'rgba(239, 68, 68, 0.2)' : '#FEE2E2',
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4
+                    }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Trash2 size={13} color={isDark ? '#F87171' : '#DC2626'} />
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#F87171' : '#DC2626' }}>Remove</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <View style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: '#fff', fontSize: 12, fontWeight: '900' }}>{sIndex + 1}</Text>
                   </View>
                   <TextInput
-                    style={{ 
-                      flex: 1, 
-                      fontSize: 15, 
-                      fontWeight: '800', 
-                      color: isDark ? '#FFFFFF' : '#0F172A', 
-                      backgroundColor: isDark ? '#18181B' : '#FFFFFF', 
-                      borderWidth: 1.5, 
-                      borderColor: isDark ? 'rgba(255,255,255,0.2)' : '#CBD5E1', 
-                      borderRadius: 8, 
-                      paddingHorizontal: 10, 
-                      paddingVertical: 7 
+                    style={{
+                      flex: 1,
+                      fontSize: 14,
+                      fontWeight: '700',
+                      color: isDark ? '#FFFFFF' : '#0F172A',
+                      backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                      borderWidth: 1.5,
+                      borderColor: !service.name?.trim() ? '#EF4444' : (isDark ? 'rgba(255,255,255,0.2)' : '#CBD5E1'),
+                      borderRadius: 8,
+                      paddingHorizontal: 10,
+                      paddingVertical: 7
                     }}
                     value={service.name}
                     onChangeText={(val) => handleUpdateServiceName(service.id, val)}
-                    placeholder="e.g. English Service, Sthuthi Aradhana..."
+                    placeholder="e.g. English Service, Morning Worship (Required)"
                     placeholderTextColor={isDark ? '#94A3B8' : '#94A3B8'}
                   />
                 </View>
-                <TouchableOpacity
-                  onPress={() => handleRemoveService(service.id)}
-                  style={{ marginLeft: 8, padding: 7, borderRadius: 8, backgroundColor: isDark ? 'rgba(239, 68, 68, 0.2)' : '#FEE2E2' }}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Trash2 size={16} color={isDark ? '#F87171' : '#DC2626'} />
-                </TouchableOpacity>
+                {!service.name?.trim() && (
+                  <Text style={{ fontSize: 11, color: '#DC2626', fontWeight: '600', marginTop: 4, marginLeft: 36 }}>
+                    Service Name is required
+                  </Text>
+                )}
               </View>
 
-              {/* Service Time Field */}
-              <View style={{ marginBottom: 10 }}>
-                <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? '#E4E4E7' : '#64748B', marginBottom: 4, letterSpacing: 0.5 }}>SERVICE TIME</Text>
+              {/* Song Leader (Optional) */}
+              <View style={{ marginBottom: 12 }}>
+                <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? '#E4E4E7' : '#64748B', marginBottom: 4, letterSpacing: 0.5 }}>SONG LEADER (OPTIONAL)</Text>
                 <TextInput
-                  style={{ 
-                    fontSize: 13, 
-                    fontWeight: '600', 
-                    color: isDark ? '#FFFFFF' : '#0F172A', 
-                    backgroundColor: isDark ? '#18181B' : '#FFFFFF', 
-                    borderWidth: 1.5, 
-                    borderColor: isDark ? 'rgba(255,255,255,0.2)' : '#CBD5E1', 
-                    borderRadius: 8, 
-                    paddingHorizontal: 12, 
-                    paddingVertical: 9 
-                  }}
-                  value={service.time || ''}
-                  onChangeText={(val) => handleUpdateServiceTime(service.id, val)}
-                  placeholder="e.g. 08:30 AM - 10:30 AM"
-                  placeholderTextColor={isDark ? '#94A3B8' : '#94A3B8'}
-                />
-              </View>
-
-              {/* Song Leader Field */}
-              <View style={{ marginBottom: 14 }}>
-                <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? '#E4E4E7' : '#64748B', marginBottom: 4, letterSpacing: 0.5 }}>SONG LEADER</Text>
-                <TextInput
-                  style={{ 
-                    fontSize: 13, 
-                    fontWeight: '600', 
-                    color: isDark ? '#FFFFFF' : '#0F172A', 
-                    backgroundColor: isDark ? '#18181B' : '#FFFFFF', 
-                    borderWidth: 1.5, 
-                    borderColor: isDark ? 'rgba(255,255,255,0.2)' : '#CBD5E1', 
-                    borderRadius: 8, 
-                    paddingHorizontal: 12, 
-                    paddingVertical: 9 
+                  style={{
+                    fontSize: 12,
+                    fontWeight: '600',
+                    color: isDark ? '#FFFFFF' : '#0F172A',
+                    backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                    borderWidth: 1.5,
+                    borderColor: isDark ? 'rgba(255,255,255,0.2)' : '#E2E8F0',
+                    borderRadius: 8,
+                    paddingHorizontal: 10,
+                    paddingVertical: 7
                   }}
                   value={service.songLeader || ''}
                   onChangeText={(val) => handleUpdateServiceLeader(service.id, val)}
@@ -1789,6 +1824,73 @@ export default function AdminEventEditor() {
           )}
         </View>
 
+        {/* ── RSVP Poll Settings ── */}
+        <View style={[styles.section, styles.secNavy, rsvpEnabled && { borderColor: '#4F46E5', borderWidth: 1.5, backgroundColor: '#EEF2FF' }]}>
+          <View style={styles.secHd}>
+            <View style={[styles.secHdPill, { backgroundColor: rsvpEnabled ? '#4F46E5' : '#1a2d5a' }]}>
+              <Users size={13} color="#fff" />
+            </View>
+            <Text style={styles.secHdTXT}>Member RSVP Poll</Text>
+            {rsvpEnabled && (
+              <View style={{ backgroundColor: '#E0E7FF', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, marginLeft: 'auto' }}>
+                <Text style={{ fontSize: 10, fontWeight: '800', color: '#4338CA' }}>POLL ACTIVE</Text>
+              </View>
+            )}
+          </View>
+
+          <View style={[styles.switchRow, { alignItems: 'flex-start' }]}>
+            <View style={{ flex: 1, paddingRight: 14 }}>
+              <Text style={styles.switchLabel}>Enable Member RSVP Poll</Text>
+              <Text style={[styles.fHint, { marginTop: 4, lineHeight: 16 }]}>
+                {rsvpEnabled
+                  ? 'Members can submit RSVP responses (Going, Interested, Not Going) on the Event Details screen with live analytics for leaders.'
+                  : 'RSVP is disabled by default. Members will see event details without RSVP options.'}
+              </Text>
+            </View>
+            <Switch
+              value={rsvpEnabled}
+              onValueChange={setRsvpEnabled}
+              trackColor={{ false: '#CBD5E1', true: '#4F46E5' }}
+              thumbColor={rsvpEnabled ? '#6366F1' : '#FFFFFF'}
+            />
+          </View>
+
+          {rsvpEnabled && (
+            <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#E2E8F0' }}>
+              <Text style={styles.fLabel}>RSVP DEADLINE (OPTIONAL)</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 4, alignItems: 'center' }}>
+                <TouchableOpacity
+                  style={[styles.inputWrap, { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12 }]}
+                  onPress={() => setRsvpDeadlinePickerVisible(true)}
+                >
+                  <Text style={{ fontSize: 13, color: rsvpDeadline ? '#0F172A' : '#94A3B8', fontWeight: rsvpDeadline ? '600' : '400' }}>
+                    {rsvpDeadline || 'Select deadline date (defaults to event start)'}
+                  </Text>
+                  <Calendar size={16} color="#64748B" />
+                </TouchableOpacity>
+                {!!rsvpDeadline && (
+                  <TouchableOpacity
+                    onPress={() => setRsvpDeadline('')}
+                    style={{ padding: 10, borderRadius: 10, backgroundColor: '#F1F5F9' }}
+                  >
+                    <X size={16} color="#64748B" />
+                  </TouchableOpacity>
+                )}
+              </View>
+              <Text style={[styles.fHint, { marginTop: 6 }]}>
+                After this deadline, the RSVP poll will become read-only and no new or modified responses will be accepted.
+              </Text>
+
+              <View style={{ marginTop: 12, padding: 10, borderRadius: 10, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#C7D2FE', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Info size={16} color="#4F46E5" />
+                <Text style={{ flex: 1, fontSize: 11, color: '#3730A3', lineHeight: 15 }}>
+                  RSVP options: 🟢 Going · 🟡 Interested · 🔴 Not Going. Church leaders will have access to participation breakdown, member roster, and exportable reports.
+                </Text>
+              </View>
+            </View>
+          )}
+        </View>
+
         <View style={styles.footerBtnRow}>
           <TouchableOpacity 
             style={[
@@ -1815,6 +1917,28 @@ export default function AdminEventEditor() {
               </Text>
             )}
           </TouchableOpacity>
+          {editingData ? (
+            <TouchableOpacity
+              style={[
+                styles.btnDraft,
+                {
+                  borderColor: isDark ? 'rgba(255,255,255,0.2)' : '#94A3B8',
+                  backgroundColor: publishStatus === 'Completed' ? (isDark ? '#3F3F46' : '#E2E8F0') : (isDark ? '#27272A' : '#F8FAFC'),
+                },
+              ]}
+              onPress={() => handleSave(publishStatus === 'Completed' ? 'Published' : 'Completed')}
+              disabled={loading}
+              activeOpacity={0.8}
+            >
+              {loading && publishStatus === 'Completed' ? (
+                <ActivityIndicator color={isDark ? '#FFFFFF' : '#1a2d5a'} size="small" />
+              ) : (
+                <Text style={[styles.btnDraftTxt, { color: isDark ? '#FFFFFF' : '#334155', fontWeight: '800' }]}>
+                  {publishStatus === 'Completed' ? 'Reopen Event' : 'Mark Completed ✓'}
+                </Text>
+              )}
+            </TouchableOpacity>
+          ) : null}
           <TouchableOpacity 
             style={[
               styles.btnSave,
@@ -1897,6 +2021,17 @@ export default function AdminEventEditor() {
           setValidationError(null);
         }}
         onCancel={() => setEndTimeVisibility(false)}
+      />
+
+      <DateTimePickerModal
+        isVisible={isRsvpDeadlinePickerVisible}
+        mode="date"
+        onConfirm={(d) => {
+          const newDateStr = `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
+          setRsvpDeadline(newDateStr);
+          setRsvpDeadlinePickerVisible(false);
+        }}
+        onCancel={() => setRsvpDeadlinePickerVisible(false)}
       />
 
       {/* Modal for Creating New Event Type */}

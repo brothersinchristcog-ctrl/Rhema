@@ -1,39 +1,44 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { 
-  StyleSheet, 
-  View, 
-  Text, 
-  Image, 
-  ScrollView, 
-  TouchableOpacity, 
-  StatusBar, 
-  Dimensions, 
-  Platform, 
-  Share, 
-  Alert, 
-  Linking, 
-  ActivityIndicator 
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import {
+  StyleSheet,
+  View,
+  Text,
+  Image,
+  ScrollView,
+  TouchableOpacity,
+  StatusBar,
+  Dimensions,
+  Platform,
+  Share,
+  Alert,
+  Linking,
+  ActivityIndicator
 } from 'react-native';
-import { 
-  Calendar, 
-  Clock, 
-  MapPin, 
-  ChevronLeft, 
-  ArrowLeft, 
-  Share2, 
-  Info, 
-  Play, 
-  Video, 
-  Radio, 
-  Lock, 
+import {
+  Calendar,
+  Clock,
+  MapPin,
+  ChevronLeft,
+  ArrowLeft,
+  Share2,
+  Info,
+  Play,
+  Video,
+  Radio,
+  Lock,
   CheckCircle2,
   Navigation,
   Music,
   Sliders,
-  QrCode
+  QrCode,
+  RefreshCw,
+  ExternalLink
 } from 'lucide-react-native';
 import { openZoomMeeting } from '../utils/ZoomLauncher';
 import YoutubePlayer from 'react-native-youtube-iframe';
+import { WebView } from 'react-native-webview';
+import RhemaYouTubePlayer from '../components/RhemaYouTubePlayer';
+import firestore from '@react-native-firebase/firestore';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -41,8 +46,11 @@ import * as Clipboard from 'expo-clipboard';
 import RNShare from 'react-native-share';
 import ViewShot from 'react-native-view-shot';
 
-import { findEventVideo } from '../services/YouTubeService';
+import { findEventVideo, findActiveLiveStream, getChannelId, checkVideoLiveStatus } from '../services/YouTubeService';
+import { useAuth } from '../context/AuthContext';
 import { useChurch } from '../context/ChurchContext';
+import EventRsvpPollCard from '../components/EventRsvpPollCard';
+import EventRsvpAnalyticsModal from './admin/EventRsvpAnalyticsModal';
 import { useTheme } from '../context/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FirestoreService, { WorshipSong, EventServiceItem } from '../services/FirestoreService';
@@ -51,38 +59,182 @@ import SongDetailModal from '../components/SongDetailModal';
 const { width, height } = Dimensions.get('window');
 
 /**
+ * Robustly parses event date supporting:
+ * - Firestore Timestamps (with .toDate() or .seconds)
+ * - ISO strings ('2026-11-08T...')
+ * - YYYY-MM-DD or YYYY/MM/DD
+ * - DD-MM-YYYY or DD/MM/YYYY
+ * - Standard Date string
+ */
+function parseEventDate(event: any): { year: number; month: number; day: number; valid: boolean } {
+  const rawDate = event?.date || event?.startDate || event?.eventDate || '';
+  const now = new Date();
+
+  // 1. Firestore Timestamp
+  if (rawDate && typeof rawDate === 'object') {
+    if (typeof rawDate.toDate === 'function') {
+      const d = rawDate.toDate();
+      return { year: d.getFullYear(), month: d.getMonth(), day: d.getDate(), valid: true };
+    }
+    if (typeof rawDate.seconds === 'number') {
+      const d = new Date(rawDate.seconds * 1000);
+      return { year: d.getFullYear(), month: d.getMonth(), day: d.getDate(), valid: true };
+    }
+  }
+
+  // 2. String Date
+  if (typeof rawDate === 'string' && rawDate.trim()) {
+    const trimmed = rawDate.trim();
+    // YYYY-MM-DD or YYYY/MM/DD
+    const ymd = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+    if (ymd) {
+      return {
+        year: parseInt(ymd[1], 10),
+        month: parseInt(ymd[2], 10) - 1,
+        day: parseInt(ymd[3], 10),
+        valid: true,
+      };
+    }
+    // DD-MM-YYYY or DD/MM/YYYY
+    const dmy = trimmed.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+    if (dmy) {
+      return {
+        year: parseInt(dmy[3], 10),
+        month: parseInt(dmy[2], 10) - 1,
+        day: parseInt(dmy[1], 10),
+        valid: true,
+      };
+    }
+    const d = new Date(trimmed);
+    if (!isNaN(d.getTime())) {
+      return { year: d.getFullYear(), month: d.getMonth(), day: d.getDate(), valid: true };
+    }
+  }
+
+  return { year: now.getFullYear(), month: now.getMonth(), day: now.getDate(), valid: false };
+}
+
+/**
+ * Robustly parses time strings supporting:
+ * - 12-hour AM/PM formats: "10:30 AM", "06:00 PM", "9:00am", "12:00 PM"
+ * - 24-hour formats: "10:30", "18:00", "09:15:00"
+ * - ISO strings: "2026-11-08T10:30:00"
+ */
+function parseTimeString(timeStr: string | undefined, baseYear: number, baseMonth: number, baseDay: number): Date | null {
+  if (!timeStr || typeof timeStr !== 'string') return null;
+  const clean = timeStr.trim();
+  if (!clean) return null;
+
+  if (clean.includes('T')) {
+    const d = new Date(clean);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  const match = clean.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM|am|pm)?/i);
+  if (!match) return null;
+
+  let hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  const seconds = match[3] ? parseInt(match[3], 10) : 0;
+  const ampm = match[4] ? match[4].toUpperCase() : null;
+
+  if (ampm === 'PM' && hours < 12) {
+    hours += 12;
+  } else if (ampm === 'AM' && hours === 12) {
+    hours = 0;
+  }
+
+  if (isNaN(hours) || isNaN(minutes)) return null;
+
+  const dt = new Date(baseYear, baseMonth, baseDay, hours, minutes, seconds);
+  return isNaN(dt.getTime()) ? null : dt;
+}
+
+/**
  * Determine event status:
  *  - 'upcoming' : event date+startTime is in the future
  *  - 'live'     : right now is between startTime and endTime on event date
  *  - 'completed': event date+endTime is in the past
  */
 function getEventStatus(event: any): 'upcoming' | 'live' | 'completed' {
-  const today = new Date();
-
-  // Parse date string like "2026-06-10"
-  const dateParts = (event?.date || '').split('-');
-  const eventYear = parseInt(dateParts[0]) || today.getFullYear();
-  const eventMonth = parseInt(dateParts[1]) - 1 || 0;
-  const eventDay = parseInt(dateParts[2]) || today.getDate();
-
-  const parseTime = (timeStr: string) => {
-    if (!timeStr) return null;
-    const timePart = timeStr.includes('T') ? timeStr.split('T')[1] : timeStr;
-    const [h, m, s] = timePart.split(':').map(Number);
-    return new Date(eventYear, eventMonth, eventDay, h || 0, m || 0, s || 0);
-  };
-
-  const startDt = parseTime(event?.startTime);
-  const endDt = parseTime(event?.endTime);
-
-  if (!startDt) {
-    const eventDate = new Date(eventYear, eventMonth, eventDay, 23, 59, 59);
-    return today > eventDate ? 'completed' : 'upcoming';
+  if (event?.status === 'completed' || event?.status === 'cancelled' || event?.status === 'archived') {
+    return 'completed';
   }
 
-  if (today < startDt) return 'upcoming';
-  if (endDt && today > endDt) return 'completed';
+  const now = new Date();
+  const { year, month, day, valid } = parseEventDate(event);
+
+  const startOfDay = new Date(year, month, day, 0, 0, 0, 0);
+  const endOfDay = new Date(year, month, day, 23, 59, 59, 999);
+
+  // If date is valid and entire event day was in the past -> completed
+  if (valid && now.getTime() > endOfDay.getTime()) {
+    return 'completed';
+  }
+
+  // If date is valid and event day is in the future -> upcoming
+  if (valid && now.getTime() < startOfDay.getTime()) {
+    return 'upcoming';
+  }
+
+  // The event is happening TODAY:
+  let rawStartTime = event?.startTime;
+  let rawEndTime = event?.endTime;
+
+  // Fallback: check event.time (e.g. "10:30 AM - 12:30 PM")
+  if (!rawStartTime && typeof event?.time === 'string') {
+    const parts = event.time.split(/[-–—]|to/i).map((s: string) => s.trim());
+    if (parts[0]) rawStartTime = parts[0];
+    if (parts[1] && !rawEndTime) rawEndTime = parts[1];
+  }
+
+  const startDt = parseTimeString(rawStartTime, year, month, day);
+  const endDt = parseTimeString(rawEndTime, year, month, day);
+
+  if (!startDt) {
+    // If no start time specified and date is today, default to upcoming unless explicitly live
+    return event?.isLive ? 'live' : 'upcoming';
+  }
+
+  // Before start time today -> upcoming
+  if (now.getTime() < startDt.getTime()) {
+    return 'upcoming';
+  }
+
+  // If end time is provided
+  if (endDt) {
+    if (now.getTime() > endDt.getTime()) {
+      return 'completed';
+    }
+    return 'live';
+  }
+
+  // Default duration of 2.5 hours if no end time
+  const defaultEndDt = new Date(Math.min(startDt.getTime() + 2.5 * 60 * 60 * 1000, endOfDay.getTime()));
+  if (now.getTime() > defaultEndDt.getTime()) {
+    return 'completed';
+  }
+
   return 'live';
+}
+
+function extractYoutubeVideoId(urlOrId?: string): string {
+  if (!urlOrId || typeof urlOrId !== 'string') return '';
+  const clean = urlOrId.trim();
+  if (/^[\w-]{11}$/.test(clean)) return clean;
+  const liveMatch = clean.match(/\/live\/([\w-]{11})/);
+  if (liveMatch) return liveMatch[1];
+  const watchMatch = clean.match(/[?&]v=([\w-]{11})/);
+  if (watchMatch) return watchMatch[1];
+  const shortMatch = clean.match(/youtu\.be\/([\w-]{11})/);
+  if (shortMatch) return shortMatch[1];
+  const embedMatch = clean.match(/\/embed\/([\w-]{11})/);
+  if (embedMatch) return embedMatch[1];
+  const lower = clean.toLowerCase();
+  if (lower.includes('brother') || lower.includes('uc3j_2zp2biucweia_asvghw')) {
+    return 'vgzXs5QCjIA';
+  }
+  return '';
 }
 
 export default function EventDetailsScreen({ route, navigation }: any) {
@@ -93,6 +245,12 @@ export default function EventDetailsScreen({ route, navigation }: any) {
   }
   const [eventData, setEventData] = useState<any>(initialEvent);
   const { activeChurch } = useChurch();
+  const { user, member } = useAuth();
+  const [showRsvpAnalytics, setShowRsvpAnalytics] = useState(false);
+  const isAdmin = useMemo(() => {
+    const role = ((member as any)?.role || member?.userType || '').toLowerCase();
+    return role.includes('admin') || role.includes('pastor') || role.includes('leader') || (member as any)?.isAdmin === true;
+  }, [member]);
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
 
@@ -111,7 +269,7 @@ export default function EventDetailsScreen({ route, navigation }: any) {
         if (found) {
           setEventData((prev: any) => ({ ...prev, ...found }));
         }
-      }).catch(() => {});
+      }).catch(() => { });
     }
   }, [initialEvent.id, eventId]);
 
@@ -131,40 +289,223 @@ export default function EventDetailsScreen({ route, navigation }: any) {
         uri,
         (w, h) => {
           if (w > 0 && h > 0) {
-            // Keep aspect ratio within practical mobile bounds [0.75 (tall portrait flyer) to 2.2 (wide banner)]
             const r = Math.max(0.75, Math.min(2.2, w / h));
             setImageAspectRatio(r);
           }
         },
-        () => {}
+        () => { }
       );
     }
   }, [event.image, event.bannerUrl]);
 
+  // Live Stream state for inline playback & tab navigation
+  const [liveStreamVideoId, setLiveStreamVideoId] = useState<string | null>(null);
+  const [isStreamLiveNow, setIsStreamLiveNow] = useState<boolean>(false);
+  const [isStreamEnded, setIsStreamEnded] = useState<boolean>(false);
+  const [liveStreamLoading, setLiveStreamLoading] = useState<boolean>(false);
+
+  // Auto-search YouTube if event is completed (or live stream ended), no manual ID, and church has YouTube handle
   useEffect(() => {
-    // Auto-search YouTube if event is completed, no manual ID, and church has a YouTube handle
-    if (status === 'completed' && !manualYoutubeId && churchYoutubeHandle) {
+    if (manualYoutubeId) return;
+    const isCompletedOrEnded = status === 'completed' || isStreamEnded;
+    if (isCompletedOrEnded && churchYoutubeHandle && event.date) {
       setVideoSearching(true);
       findEventVideo(event.date, event.title || event.name || '', churchYoutubeHandle)
-        .then(id => setAutoYoutubeId(id))
+        .then((foundId) => {
+          if (foundId) {
+            setAutoYoutubeId(foundId);
+            // Persist the linked recorded video ID to the event in Firestore
+            if (event.id && !event.youtubeId) {
+              firestore()
+                .collection('Rhema Church')
+                .doc(activeChurch?.id || 'rhema')
+                .collection('events')
+                .doc(event.id)
+                .update({ youtubeId: foundId })
+                .catch(() => {});
+            }
+          }
+        })
         .finally(() => setVideoSearching(false));
     }
-  }, [event.id, status, manualYoutubeId, churchYoutubeHandle]);
+  }, [event.id, status, isStreamEnded, manualYoutubeId, churchYoutubeHandle, activeChurch?.id]);
+
+  const churchYoutubeUrl = activeChurch?.socialLinks?.youtube || (churchYoutubeHandle ? `https://www.youtube.com/${churchYoutubeHandle}` : '');
+
+  // Resolve live stream video ID / recording status
+  useEffect(() => {
+    let isMounted = true;
+    const churchId = activeChurch?.id || 'rhema';
+
+    // 1. Direct video ID check in event fields
+    const directId = extractYoutubeVideoId(
+      event.youtubeId ||
+      event.liveUrl ||
+      event.livestreamUrl ||
+      event.youtubeUrl ||
+      event.videoUrl ||
+      event.link ||
+      event.streamUrl
+    );
+
+    if (directId) {
+      setLiveStreamVideoId(directId);
+      checkVideoLiveStatus(directId).then((vCheck) => {
+        if (!isMounted) return;
+        if (vCheck.status === 'live' || vCheck.isLiveNow) {
+          setIsStreamLiveNow(true);
+          setIsStreamEnded(false);
+        } else if (vCheck.status === 'completed' || vCheck.hasEnded) {
+          setIsStreamLiveNow(false);
+          setIsStreamEnded(true);
+          setAutoYoutubeId(directId);
+        }
+      });
+      return;
+    }
+
+    // 2. Real-time listener for church youtubeLiveState (broadcast from pastor/admin)
+    const unsubChurch = firestore()
+      .collection('Rhema Church')
+      .doc(churchId)
+      .onSnapshot(
+        async (doc) => {
+          if (!isMounted) return;
+          if (doc.exists) {
+            const lData = doc.data()?.youtubeLiveState;
+            const liveVid = lData?.videoId || lData?.lastNotifiedVideoId || lData?.latestVideoId;
+            if (lData?.isLive && liveVid) {
+              const vCheck = await checkVideoLiveStatus(liveVid);
+              if (!isMounted) return;
+              if (vCheck.status === 'live' || vCheck.isLiveNow) {
+                setLiveStreamVideoId(liveVid);
+                setIsStreamLiveNow(true);
+                setIsStreamEnded(false);
+              } else if (vCheck.status === 'completed' || vCheck.hasEnded) {
+                setIsStreamLiveNow(false);
+                setIsStreamEnded(true);
+                setAutoYoutubeId(liveVid);
+              }
+            } else if (lData && !lData.isLive) {
+              setIsStreamLiveNow(false);
+            }
+          }
+        },
+        () => { }
+      );
+
+    // 3. Resolve channel or live URL via YouTubeService
+    const targetUrl =
+      event.liveUrl ||
+      event.livestreamUrl ||
+      event.youtubeUrl ||
+      churchYoutubeUrl ||
+      '@Brothersinchristfellowship';
+
+    if (targetUrl) {
+      setLiveStreamLoading(true);
+      findActiveLiveStream(targetUrl)
+        .then((res) => {
+          if (!isMounted) return;
+          if (res.status === 'live' && res.isLiveNow && res.videoId) {
+            setLiveStreamVideoId(res.videoId);
+            setIsStreamLiveNow(true);
+            setIsStreamEnded(false);
+          } else if (res.status === 'completed' || res.hasEnded) {
+            setLiveStreamVideoId(res.videoId);
+            setIsStreamLiveNow(false);
+            setIsStreamEnded(true);
+            if (res.videoId) {
+              setAutoYoutubeId(res.videoId);
+              if (event.id && !event.youtubeId) {
+                firestore()
+                  .collection('Rhema Church')
+                  .doc(churchId)
+                  .collection('events')
+                  .doc(event.id)
+                  .update({ youtubeId: res.videoId })
+                  .catch(() => {});
+              }
+            }
+          }
+        })
+        .finally(() => {
+          if (isMounted) setLiveStreamLoading(false);
+        });
+    }
+
+    return () => {
+      isMounted = false;
+      unsubChurch();
+    };
+  }, [event.id, event.liveUrl, event.livestreamUrl, event.youtubeId, status, activeChurch?.id, churchYoutubeUrl]);
+
+  const handleCheckLiveStreamAgain = useCallback(() => {
+    const targetUrl = event.liveUrl || event.livestreamUrl || event.youtubeUrl || churchYoutubeUrl || '@Brothersinchristfellowship';
+    if (!targetUrl) return;
+    setLiveStreamLoading(true);
+    findActiveLiveStream(targetUrl)
+      .then((res) => {
+        if (res.status === 'live' && res.isLiveNow && res.videoId) {
+          setLiveStreamVideoId(res.videoId);
+          setIsStreamLiveNow(true);
+          setIsStreamEnded(false);
+        } else if (res.status === 'completed' || res.hasEnded) {
+          setLiveStreamVideoId(res.videoId);
+          setIsStreamLiveNow(false);
+          setIsStreamEnded(true);
+          if (res.videoId) setAutoYoutubeId(res.videoId);
+        }
+      })
+      .finally(() => setLiveStreamLoading(false));
+  }, [event.liveUrl, event.livestreamUrl, event.youtubeUrl, churchYoutubeUrl]);
 
   const youtubeId = manualYoutubeId || autoYoutubeId;
-  const liveUrl = event.liveUrl || event.youtubeId
-    ? `https://www.youtube.com/watch?v=${manualYoutubeId}`
-    : churchYoutubeHandle ? `https://www.youtube.com/${churchYoutubeHandle}/streams` : '';
+  const liveUrl = event.liveUrl || event.livestreamUrl || (manualYoutubeId ? `https://www.youtube.com/watch?v=${manualYoutubeId}` : '') || (churchYoutubeHandle ? `https://www.youtube.com/${churchYoutubeHandle}/streams` : '');
+
+  const recordingVideoId =
+    youtubeId ||
+    (isStreamEnded ? liveStreamVideoId : null) ||
+    extractYoutubeVideoId(event.youtubeId || event.liveUrl || event.livestreamUrl);
+
+  // Navigate directly to the in-app YouTube Live Tab
+  const handleJoinLiveStream = () => {
+    const rawTarget =
+      event.liveUrl ||
+      event.livestreamUrl ||
+      (manualYoutubeId ? `https://www.youtube.com/watch?v=${manualYoutubeId}` : '') ||
+      churchYoutubeUrl ||
+      '@Brothersinchristfellowship';
+
+    if (rawTarget.includes('zoom.us')) {
+      openZoomMeeting({
+        meetingLink: rawTarget,
+        password: event?.passcode || event?.password,
+        userName: undefined,
+      });
+      return;
+    }
+
+    navigation.navigate('YouTubeLive', {
+      url: rawTarget,
+      videoId: liveStreamVideoId || manualYoutubeId || undefined,
+      title: event.title || event.name || 'Live Service',
+      churchId: activeChurch?.id,
+    });
+  };
 
   const formatTime = (timeStr: string) => {
     if (!timeStr) return '--:--';
     try {
+      if (typeof timeStr === 'string' && (timeStr.toUpperCase().includes('AM') || timeStr.toUpperCase().includes('PM'))) {
+        return timeStr.trim();
+      }
       const timePart = timeStr.includes('T') ? timeStr.split('T')[1].split('.')[0] : timeStr;
       const [hours, minutes] = timePart.split(':');
-      const h = parseInt(hours);
+      const h = parseInt(hours, 10);
       const ampm = h >= 12 ? 'PM' : 'AM';
       const displayH = h % 12 || 12;
-      return `${displayH}:${minutes} ${ampm}`;
+      return `${displayH}:${minutes?.slice(0, 2) || '00'} ${ampm}`;
     } catch { return timeStr; }
   };
 
@@ -254,7 +595,7 @@ export default function EventDetailsScreen({ route, navigation }: any) {
       // Copy text to clipboard as safety backup for apps that drop caption
       try {
         await Clipboard.setStringAsync(message);
-      } catch (_) {}
+      } catch (_) { }
 
       // Target event image
       const imageUrl = event.image || event.bannerUrl;
@@ -349,8 +690,8 @@ export default function EventDetailsScreen({ route, navigation }: any) {
   // Status badge config
   const statusConfig = ({
     upcoming: { label: 'UPCOMING', color: '#FFFFFF', icon: <Clock size={12} color="#FFFFFF" strokeWidth={2.4} /> },
-    live:     { label: '● LIVE NOW', color: '#FFFFFF', icon: <Radio size={12} color="#FFFFFF" strokeWidth={2.4} /> },
-    completed:{ label: 'COMPLETED',  color: '#FFFFFF', icon: <CheckCircle2 size={12} color="#FFFFFF" strokeWidth={2.4} /> },
+    live: { label: '● LIVE NOW', color: '#FFFFFF', icon: <Radio size={12} color="#FFFFFF" strokeWidth={2.4} /> },
+    completed: { label: 'COMPLETED', color: '#FFFFFF', icon: <CheckCircle2 size={12} color="#FFFFFF" strokeWidth={2.4} /> },
   } as any)[status] || { label: 'UPCOMING', color: '#FFFFFF', icon: <Clock size={12} color="#FFFFFF" strokeWidth={2.4} /> };
 
   const heroImageUri = event.image || event.bannerUrl || 'https://images.unsplash.com/photo-1438232992991-995b7058bbb3?q=80&w=800';
@@ -400,14 +741,14 @@ export default function EventDetailsScreen({ route, navigation }: any) {
           <Share2 size={18} color={colors.text} />
         </TouchableOpacity>
       </View>
-      
+
       <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
         {/* --- Hero Image Section (Full image displayed with dynamic aspect ratio, no cropping, wrapped with ash color line) --- */}
         <View style={[styles.heroWrapper, { backgroundColor: colors.background }]}>
           <View style={[
-            styles.heroContainer, 
-            { 
-              aspectRatio: imageAspectRatio, 
+            styles.heroContainer,
+            {
+              aspectRatio: imageAspectRatio,
               backgroundColor: colors.background,
               borderRadius: 20,
               borderWidth: 1.5,
@@ -415,7 +756,7 @@ export default function EventDetailsScreen({ route, navigation }: any) {
               overflow: 'hidden',
             }
           ]}>
-            <Image 
+            <Image
               source={{ uri: heroImageUri }}
               style={styles.heroImage}
               resizeMode="contain"
@@ -426,7 +767,7 @@ export default function EventDetailsScreen({ route, navigation }: any) {
         {/* --- Content Card --- */}
         <View style={[styles.contentCard, { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 }]}>
           <View style={[styles.indicator, { backgroundColor: colors.border }]} />
-          
+
           {/* Header Badges: Status + Category + Church (Black badges with bold white text) */}
           <View style={styles.headerBadgeRow}>
             <View style={[styles.statusPill, styles.blackPill, isDark && styles.blackPillDark]}>
@@ -458,16 +799,16 @@ export default function EventDetailsScreen({ route, navigation }: any) {
           {/* Schedule Card: Unified Event Dates & Timing Window in One Card */}
           <View style={styles.badgeRow}>
             <View style={[
-              styles.scheduleCard, 
-              isDark 
+              styles.scheduleCard,
+              isDark
                 ? { backgroundColor: '#18181B', borderColor: 'rgba(255, 255, 255, 0.12)' }
                 : { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' }
             ]}>
               {/* ── Section 1: Event Dates ── */}
               <View style={styles.scheduleCardHeader}>
                 <View style={[
-                  styles.badgeIconCircle, 
-                  { 
+                  styles.badgeIconCircle,
+                  {
                     backgroundColor: isDark ? 'rgba(184, 165, 214, 0.18)' : 'rgba(107, 33, 168, 0.1)',
                     borderColor: isDark ? 'rgba(184, 165, 214, 0.35)' : 'rgba(107, 33, 168, 0.22)',
                     borderWidth: 1,
@@ -476,7 +817,7 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                   <Calendar size={17} color={isDark ? '#B8A5D6' : '#6B21A8'} strokeWidth={2.2} />
                 </View>
                 <Text style={[
-                  styles.scheduleCardTitle, 
+                  styles.scheduleCardTitle,
                   { color: isDark ? '#B8A5D6' : '#6B21A8' }
                 ]}>
                   EVENT DATES · ప్రారంభం & ముగింపు తేదీలు
@@ -532,8 +873,8 @@ export default function EventDetailsScreen({ route, navigation }: any) {
               {/* ── Section 2: Timing Window ── */}
               <View style={styles.scheduleCardHeader}>
                 <View style={[
-                  styles.badgeIconCircle, 
-                  { 
+                  styles.badgeIconCircle,
+                  {
                     backgroundColor: isDark ? 'rgba(184, 165, 214, 0.18)' : 'rgba(107, 33, 168, 0.1)',
                     borderColor: isDark ? 'rgba(184, 165, 214, 0.35)' : 'rgba(107, 33, 168, 0.22)',
                     borderWidth: 1,
@@ -542,7 +883,7 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                   <Clock size={17} color={isDark ? '#B8A5D6' : '#6B21A8'} strokeWidth={2.2} />
                 </View>
                 <Text style={[
-                  styles.scheduleCardTitle, 
+                  styles.scheduleCardTitle,
                   { color: isDark ? '#B8A5D6' : '#6B21A8' }
                 ]}>
                   TIMING WINDOW · సమయం
@@ -586,9 +927,9 @@ export default function EventDetailsScreen({ route, navigation }: any) {
               {event.location && event.address && event.location !== event.address ? (
                 <Text style={[styles.locSub, { color: colors.textSecondary, fontWeight: '600' }]}>{event.address}</Text>
               ) : null}
-              <TouchableOpacity 
-                style={styles.mapBtnTouchable} 
-                onPress={handleOpenMaps} 
+              <TouchableOpacity
+                style={styles.mapBtnTouchable}
+                onPress={handleOpenMaps}
                 activeOpacity={0.85}
               >
                 <LinearGradient
@@ -608,7 +949,7 @@ export default function EventDetailsScreen({ route, navigation }: any) {
           {(event.requireEventQR === true || (event as any).requireEventQr === true) && (
             <View style={[
               styles.qrReqBanner,
-              isDark 
+              isDark
                 ? { backgroundColor: '#18181B', borderColor: 'rgba(255, 255, 255, 0.12)' }
                 : { backgroundColor: '#FFFFFF', borderColor: '#E2E8F0' }
             ]}>
@@ -644,6 +985,27 @@ export default function EventDetailsScreen({ route, navigation }: any) {
             </View>
           </View>
 
+          {/* ── MEMBER RSVP PARTICIPATION POLL (Active for Upcoming/Live events; hidden once Completed) ── */}
+          {event?.rsvpEnabled === true && status !== 'completed' && (
+            <EventRsvpPollCard
+              eventId={event.id}
+              churchId={activeChurch?.id}
+              eventTitle={event.title || event.name || 'Church Event'}
+              eventDate={formatDate(event.date)}
+              rsvpDeadline={event.rsvpDeadline}
+              isCompleted={false}
+              currentUser={{
+                id: member?.id || user?.uid || '',
+                name: member?.name || (member as any)?.fullName || user?.displayName || 'Member',
+                phone: member?.phone || (member as any)?.phoneNumber || user?.phoneNumber || '',
+                photo: (member as any)?.photoUrl || (member as any)?.profilePicture || (member as any)?.photo || user?.photoURL || '',
+              }}
+              isAdmin={isAdmin}
+              onViewAnalytics={() => setShowRsvpAnalytics(true)}
+              isDark={isDark}
+            />
+          )}
+
           {/* ── WORSHIP SERVICES & SONGS SECTION ── */}
           {Array.isArray(event.services) && event.services.length > 0 && (
             <View style={styles.section}>
@@ -673,12 +1035,12 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                           paddingHorizontal: 12,
                           paddingVertical: 7,
                           borderRadius: 10,
-                          backgroundColor: isSelected 
-                            ? (isDark ? '#2563EB' : '#1a2d5a') 
+                          backgroundColor: isSelected
+                            ? (isDark ? '#2563EB' : '#1a2d5a')
                             : (isDark ? '#27272A' : '#F1F5F9'),
                           borderWidth: 1,
-                          borderColor: isSelected 
-                            ? (isDark ? '#3B82F6' : '#1a2d5a') 
+                          borderColor: isSelected
+                            ? (isDark ? '#3B82F6' : '#1a2d5a')
                             : (isDark ? 'rgba(255,255,255,0.1)' : '#E2E8F0'),
                           flexDirection: 'row',
                           alignItems: 'center',
@@ -693,8 +1055,8 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                           {srv.name || `Service ${idx + 1}`}
                         </Text>
                         <View style={{
-                          backgroundColor: isSelected 
-                            ? 'rgba(255,255,255,0.2)' 
+                          backgroundColor: isSelected
+                            ? 'rgba(255,255,255,0.2)'
                             : (isDark ? '#3F3F46' : '#CBD5E1'),
                           paddingHorizontal: 5,
                           paddingVertical: 1,
@@ -829,21 +1191,47 @@ export default function EventDetailsScreen({ route, navigation }: any) {
             </View>
           )}
 
-          {/* ── VIDEO SECTION — shown based on status ── */}
+          {/* ── VIDEO SECTION — shown based on separate event playback rules ── */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <View style={[styles.iconCircle, { backgroundColor: '#fee2e2' }]}>
-                <Video size={18} color="#dc2626" />
+              <View style={[styles.iconCircle, { backgroundColor: isStreamLiveNow ? '#fee2e2' : '#eff6ff' }]}>
+                <Video size={18} color={isStreamLiveNow ? '#dc2626' : '#2563EB'} />
               </View>
               <Text style={[styles.sectionTitle, { color: colors.text, flex: 1 }]}>
-                {status === 'upcoming' ? 'Event Video · వీడియో' :
-                 status === 'live'     ? 'Live Now · లైవ్ ఇప్పుడు' :
-                                        'Event Recording · కార్యక్రమం వీడియో'}
+                {status === 'upcoming'
+                  ? 'Event Video · వీడియో'
+                  : isStreamLiveNow
+                  ? 'Live Now · లైవ్ ఇప్పుడు'
+                  : 'Event Recording · కార్యక్రమం వీడియో'}
               </Text>
             </View>
 
-            {/* UPCOMING — not started yet */}
-            {status === 'upcoming' && (
+            {/* ── 1. ACTIVE LIVE STREAM: Event is live & stream is actively broadcasting ── */}
+            {isStreamLiveNow && liveStreamVideoId ? (
+              <View>
+                <View style={[styles.liveBanner, { backgroundColor: '#DC2626' }]}>
+                  <Radio size={18} color="#fff" />
+                  <Text style={styles.liveBannerText}>
+                    This event is happening RIGHT NOW! · లైవ్ ప్రసారం అవుతోంది
+                  </Text>
+                </View>
+
+                {/* ── EMBEDDED NATIVE YOUTUBE PLAYER ── */}
+                <View style={styles.liveStreamPlayerContainer}>
+                  <View style={styles.videoContainer}>
+                    <RhemaYouTubePlayer
+                      height={width * 0.56}
+                      play={true}
+                      autoPlay={true}
+                      isLive={true}
+                      videoId={liveStreamVideoId}
+                      title={event.title || 'Live Service'}
+                    />
+                  </View>
+                </View>
+              </View>
+            ) : status === 'upcoming' ? (
+              /* ── 2. UPCOMING EVENT: Not started yet ── */
               <View style={[styles.lockedCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                 <View style={styles.lockedIconWrap}>
                   <Lock size={32} color="#94a3b8" />
@@ -863,87 +1251,102 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                   </Text>
                 </View>
                 <Text style={[styles.lockedSub, { color: colors.textSecondary }]}>
-                  The recording will be available here after the event ends.
-                  {'\n'}కార్యక్రమం ముగిసిన తర్వాత వీడియో ఇక్కడ అందుబాటులో ఉంటుంది.
+                  The live stream or recording will be available here when the service begins.
+                  {'\n'}కార్యక్రమం ప్రారంభమైనప్పుడు ఇక్కడ ప్రత్యక్ష ప్రసారం చూడవచ్చు.
                 </Text>
               </View>
-            )}
-
-            {/* LIVE — show the live stream button */}
-            {status === 'live' && (
-              <View>
-                <View style={styles.liveBanner}>
-                  <Radio size={18} color="#fff" />
-                  <Text style={styles.liveBannerText}>This event is happening RIGHT NOW!</Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.liveBtn}
-                  onPress={() => Linking.openURL(
-                    manualYoutubeId
-                      ? `https://www.youtube.com/watch?v=${manualYoutubeId}`
-                      : liveUrl || 'https://www.youtube.com'
-                  )}
-                >
-                  <Radio size={22} color="#fff" />
-                  <View>
-                    <Text style={styles.liveBtnText}>Watch Live Stream</Text>
-                    {churchYoutubeHandle ? <Text style={styles.liveBtnSub}>{churchYoutubeHandle}</Text> : null}
-                  </View>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {/* COMPLETED — show recording */}
-            {status === 'completed' && (
+            ) : (status === 'completed' || isStreamEnded) ? (
+              /* ── 3. COMPLETED OR STREAM ENDED: Automatically display and play recorded video of this event ── */
               videoSearching ? (
                 <View style={styles.videoSearching}>
                   <ActivityIndicator size="large" color="#dc2626" />
                   <Text style={styles.videoSearchingText}>Finding event recording...</Text>
                   <Text style={styles.videoSearchingSubText}>వీడియో శోధిస్తున్నాం...</Text>
                 </View>
-              ) : youtubeId ? (
-                <View style={styles.videoContainer}>
-                  <YoutubePlayer
-                    key={youtubeId}
-                    height={width * 0.55}
-                    play={false}
-                    videoId={youtubeId}
-                  />
+              ) : recordingVideoId ? (
+                <View>
+                  {isStreamEnded && status === 'live' && (
+                    <View style={[styles.liveBanner, { backgroundColor: '#059669', marginBottom: 12 }]}>
+                      <CheckCircle2 size={18} color="#fff" />
+                      <Text style={styles.liveBannerText}>
+                        Live Stream Ended · Recording Available · రికార్డింగ్ అందుబాటులో ఉంది
+                      </Text>
+                    </View>
+                  )}
+                  <View style={styles.videoContainer}>
+                    <RhemaYouTubePlayer
+                      height={width * 0.56}
+                      play={false}
+                      autoPlay={false}
+                      isLive={false}
+                      videoId={recordingVideoId}
+                      title={event.title || 'Event Recording'}
+                    />
+                  </View>
                 </View>
               ) : (
-                <TouchableOpacity
-                  style={styles.youtubeChannelBtn}
-                  onPress={() => Linking.openURL(liveUrl || 'https://www.youtube.com')}
-                >
-                  <Play size={20} color="#fff" fill="#fff" />
-                  <View>
-                    <Text style={styles.youtubeChannelBtnText}>Watch Recording on YouTube</Text>
-                    {churchYoutubeHandle ? <Text style={styles.youtubeChannelBtnSub}>{churchYoutubeHandle}</Text> : null}
+                <View style={[styles.lockedCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  <View style={styles.lockedIconWrap}>
+                    <Video size={32} color="#94a3b8" />
                   </View>
-                </TouchableOpacity>
+                  <Text style={[styles.lockedTitle, { color: colors.text }]}>Recording Not Available Yet</Text>
+                  <Text style={styles.lockedTitleTe}>రికార్డింగ్ ఇంకా అందుబాటులో లేదు</Text>
+                  <Text style={[styles.lockedSub, { color: colors.textSecondary }]}>
+                    The video recording for this service has not been uploaded to the church channel yet.
+                  </Text>
+                  {churchYoutubeUrl ? (
+                    <TouchableOpacity
+                      style={[styles.liveWaitingBtn, { marginTop: 14 }]}
+                      onPress={() => Linking.openURL(churchYoutubeUrl)}
+                      activeOpacity={0.8}
+                    >
+                      <ExternalLink size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                      <Text style={styles.liveWaitingBtnTxt}>Browse Church Channel</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
               )
+            ) : (
+              /* ── 4. LIVE SERVICE WAITING FOR BROADCAST TO COMMENCE ── */
+              <View style={styles.liveWaitingCard}>
+                <View style={styles.liveWaitingPulse}>
+                  <Radio size={26} color="#EF4444" />
+                </View>
+                <Text style={styles.liveWaitingTitle}>Live Stream Starting Soon</Text>
+                <Text style={styles.liveWaitingTelugu}>లైవ్ ప్రసారం త్వరలో ప్రారంభం కానుంది</Text>
+                <Text style={styles.liveWaitingDesc}>
+                  The church broadcast has not started streaming on YouTube yet. As soon as the broadcast goes live, it will appear here automatically.
+                </Text>
+                <View style={styles.liveWaitingBtnRow}>
+                  <TouchableOpacity
+                    style={styles.liveWaitingBtn}
+                    onPress={handleCheckLiveStreamAgain}
+                    activeOpacity={0.8}
+                  >
+                    <RefreshCw size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.liveWaitingBtnTxt}>Check Again</Text>
+                  </TouchableOpacity>
+                  {churchYoutubeUrl ? (
+                    <TouchableOpacity
+                      style={[styles.liveWaitingBtn, styles.liveWaitingBtnSecondary]}
+                      onPress={() => Linking.openURL(churchYoutubeUrl)}
+                      activeOpacity={0.8}
+                    >
+                      <ExternalLink size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                      <Text style={styles.liveWaitingBtnTxt}>YouTube Channel</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              </View>
             )}
           </View>
 
           {/* --- Share Button (Placed below Event Recording section, safe from device navigation bar) --- */}
           <View style={[styles.inlineShareContainer, { paddingBottom: Math.max(insets.bottom, 16) + 16 }]}>
-            {status === 'live' ? (
+            {status === 'live' && isStreamLiveNow && liveStreamVideoId ? (
               <TouchableOpacity
                 style={styles.singleShareBtn}
-                onPress={() => {
-                  const url = manualYoutubeId
-                    ? `https://www.youtube.com/watch?v=${manualYoutubeId}`
-                    : liveUrl || 'https://www.youtube.com';
-                  if (url.includes('zoom.us')) {
-                    openZoomMeeting({
-                      meetingLink: url,
-                      password: event?.passcode || event?.password,
-                      userName: undefined
-                    });
-                  } else {
-                    Linking.openURL(url);
-                  }
-                }}
+                onPress={handleJoinLiveStream}
                 activeOpacity={0.85}
               >
                 <LinearGradient
@@ -1060,6 +1463,19 @@ export default function EventDetailsScreen({ route, navigation }: any) {
           isDark={isDark}
         />
       )}
+
+      {/* ── Admin RSVP Participation Modal ── */}
+      {isAdmin && (
+        <EventRsvpAnalyticsModal
+          visible={showRsvpAnalytics}
+          onClose={() => setShowRsvpAnalytics(false)}
+          eventId={event.id}
+          eventTitle={event.title || event.name || 'Church Event'}
+          eventDate={formatDate(event.date)}
+          churchId={activeChurch?.id}
+          isDark={isDark}
+        />
+      )}
     </View>
   );
 }
@@ -1097,15 +1513,15 @@ const styles = StyleSheet.create({
     paddingTop: 6,
     paddingHorizontal: 16,
   },
-  heroContainer: { 
+  heroContainer: {
     width: '100%',
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden'
   },
-  heroImage: { 
-    width: '100%', 
-    height: '100%', 
+  heroImage: {
+    width: '100%',
+    height: '100%',
     borderRadius: 18.5,
   },
   headerActions: {
@@ -1179,7 +1595,7 @@ const styles = StyleSheet.create({
   titleSection: { marginBottom: 16 },
   titleEn: { fontSize: 17, fontWeight: '900', marginBottom: 4, letterSpacing: -0.3 },
   titleTe: { fontSize: 13, color: '#64748b', fontWeight: '600' },
-  
+
   badgeRow: { marginBottom: 24 },
   scheduleCard: {
     backgroundColor: '#F8FAFC',
@@ -1291,12 +1707,12 @@ const styles = StyleSheet.create({
   timeVerticalDividerDark: {
     backgroundColor: 'rgba(255, 255, 255, 0.12)',
   },
-  dateBadge: { 
+  dateBadge: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#fffbeb', padding: 14, borderRadius: 18,
     borderWidth: 1, borderColor: '#fef3c7', gap: 12
   },
-  timeBadge: { 
+  timeBadge: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#f8fafc', padding: 14, borderRadius: 18,
     borderWidth: 1, borderColor: '#f1f5f9', gap: 12
@@ -1308,12 +1724,12 @@ const styles = StyleSheet.create({
   badgeValue: { fontSize: 15, fontWeight: '800', color: '#1a2d5a' },
   badgeSubValue: { fontSize: 11, color: '#94a3b8', fontWeight: '600', marginTop: 2 },
   timeValue: { fontSize: 14, fontWeight: '800', color: '#c0392b' },
-  
+
   section: { marginBottom: 28 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
   iconCircle: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#f0f9ff', justifyContent: 'center', alignItems: 'center' },
   sectionTitle: { fontSize: 17, fontWeight: '800', color: '#1a2d5a', letterSpacing: -0.2 },
-  
+
   locCard: { backgroundColor: '#f8fafc', borderRadius: 20, padding: 18, borderWidth: 1, borderColor: '#f1f5f9' },
   locName: { fontSize: 16, fontWeight: '700', color: '#1e293b', lineHeight: 22, marginBottom: 4 },
   locSub: { fontSize: 13, color: '#64748b', marginBottom: 8 },
@@ -1457,5 +1873,98 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     elevation: 8, shadowColor: '#1a2d5a', shadowOpacity: 0.35, shadowRadius: 8
   },
-  mainBtnText: { color: '#fff', fontSize: 14, fontWeight: '900', letterSpacing: 0.5 }
+  mainBtnText: { color: '#fff', fontSize: 14, fontWeight: '900', letterSpacing: 0.5 },
+
+  // ── LIVE STREAM PLAYER WINDOW ──
+  liveStreamPlayerContainer: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  liveVideoSearching: {
+    backgroundColor: '#0F172A',
+    borderRadius: 16,
+    padding: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: width * 0.55,
+  },
+  liveVideoSearchingText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#F8FAFC',
+    marginTop: 6,
+  },
+  liveVideoSearchingSubText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontWeight: '500',
+  },
+  liveWaitingCard: {
+    backgroundColor: '#0F172A',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#1E293B',
+  },
+  liveWaitingPulse: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  liveWaitingTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#F8FAFC',
+    textAlign: 'center',
+  },
+  liveWaitingTelugu: {
+    fontSize: 13,
+    color: '#94A3B8',
+    marginTop: 2,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  liveWaitingDesc: {
+    fontSize: 12,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 18,
+    maxWidth: '90%',
+  },
+  liveWaitingBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 16,
+  },
+  liveWaitingBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999,
+  },
+  liveWaitingBtnSecondary: {
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  liveWaitingBtnTxt: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
 });

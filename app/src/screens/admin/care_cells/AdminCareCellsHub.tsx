@@ -19,6 +19,7 @@ import {
   Plus,
   Heart,
   Megaphone,
+  Home,
 } from 'lucide-react-native';
 import { AdminTabContext } from '../../../context/AdminTabContext';
 import { useAuth } from '../../../context/AuthContext';
@@ -28,6 +29,7 @@ import CareCellsManageTab from './tabs/CareCellsManageTab';
 import CareCellMembersTab from './tabs/CareCellMembersTab';
 import CareCellMeetingsTab from './tabs/CareCellMeetingsTab';
 import CareCellAttendanceTab from './tabs/CareCellAttendanceTab';
+import CareCellVisitsTab from './tabs/CareCellVisitsTab';
 import CareCellFollowupsTab from './tabs/CareCellFollowupsTab';
 import CareCellAnnouncePrayerTab from './tabs/CareCellAnnouncePrayerTab';
 import CareCellFormModal from './components/CareCellFormModal';
@@ -36,7 +38,7 @@ import { CareCell, CareCellMeeting } from '../../../types/CareCellTypes';
 
 const { width } = Dimensions.get('window');
 
-type SubTabKey = 'overview' | 'manage' | 'members' | 'meetings' | 'attendance' | 'followups' | 'announcements';
+type SubTabKey = 'overview' | 'manage' | 'members' | 'meetings' | 'attendance' | 'visits' | 'followups' | 'announcements';
 
 const SUB_TABS = [
   { key: 'overview' as SubTabKey, label: 'Overview', icon: LayoutDashboard },
@@ -44,6 +46,7 @@ const SUB_TABS = [
   { key: 'members' as SubTabKey, label: 'Members', icon: Users },
   { key: 'meetings' as SubTabKey, label: 'Meetings', icon: Calendar },
   { key: 'attendance' as SubTabKey, label: 'Attendance', icon: ClipboardCheck },
+  { key: 'visits' as SubTabKey, label: 'Visits', icon: Home },
   { key: 'followups' as SubTabKey, label: 'Follow-ups', icon: Heart },
   { key: 'announcements' as SubTabKey, label: 'Notices & Prayer', icon: Megaphone },
 ];
@@ -244,6 +247,14 @@ export default function AdminCareCellsHub() {
             cells={cells}
             selectedMeeting={selectedMeetingForAttendance}
             onClearSelectedMeeting={() => setSelectedMeetingForAttendance(null)}
+          />
+        )}
+
+        {activeSubTab === 'visits' && (
+          <CareCellVisitsTab
+            cells={cells}
+            selectedCellId={selectedCellId}
+            onSelectCellId={setSelectedCellId}
           />
         )}
 

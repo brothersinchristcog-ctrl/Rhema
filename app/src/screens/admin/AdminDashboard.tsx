@@ -57,13 +57,13 @@ const CARD_BACKGROUNDS: Record<string, any> = {
   'Donations': require('../../../assets/admin_cards/donations.png'),
   'Subscription': require('../../../assets/admin_cards/subscription.png'),
   'Schedule': require('../../../assets/admin_cards/schedule.png'),
-  'Service Roster': require('../../../assets/admin_cards/schedule.png'),
   'About Us': require('../../../assets/admin_cards/about_us.png'),
   'Contact Us': require('../../../assets/admin_cards/contact_us.png'),
   'Support Team': require('../../../assets/support_bg.png'),
   'Church Settings': require('../../../assets/admin_cards/church_settings.png'),
   'Church Branches': require('../../../assets/admin_cards/church_branches.jpg'),
   'Attendance': require('../../../assets/admin_cards/attendance.png'),
+  'Service Roster': require('../../../assets/admin_cards/schedule.png'),
   'Care Cells': require('../../../assets/admin_cards/members.png'),
   'Online Meetings': require('../../../assets/admin_cards/online_meetings.jpg'),
   'New Online Meeting': require('../../../assets/admin_cards/new_online_meeting.png'),
@@ -97,7 +97,7 @@ const CATEGORIES = [
     icon: Calendar,
     color: '#831843', // Deep Ruby/Berry for a festive, elegant look with high contrast
     darkColor: '#F472B6',
-    keywords: ['Event', 'Celebration']
+    keywords: ['Event', 'Celebration', 'Service Roster']
   },
   {
     title: 'Communication',
@@ -125,7 +125,7 @@ const CATEGORIES = [
     icon: Settings,
     color: '#1E3A8A', // Deep Navy for maximum contrast
     darkColor: '#60A5FA',
-    keywords: ['Daily Verses', 'Verse', 'Service Roster', 'Church Setting', 'Church Branch', 'App Admin', 'About', 'Contact', 'Schedule', 'Quiz', 'Bible Quiz']
+    keywords: ['Daily Verses', 'Verse', 'Church Setting', 'Church Branch', 'App Admin', 'About', 'Contact', 'Schedule', 'Quiz', 'Bible Quiz']
   },
   {
     title: 'Support',
@@ -525,8 +525,6 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
                               >
                                 {tab.name === 'About Us' 
                                   ? 'About\u00A0Us' 
-                                  : tab.name === 'Service Roster'
-                                  ? 'Service Roster\n& Teams' 
                                   : tab.name}
                               </Text>
                             </View>

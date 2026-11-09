@@ -25,6 +25,7 @@ import * as Notifications from 'expo-notifications';
 import VerseOfTheDayScreen from '../screens/VerseOfTheDayScreen';
 import VerseNotificationService from '../services/VerseNotificationService';
 import DailyQuizNotificationService from '../services/DailyQuizNotificationService';
+import FirestoreService from '../services/FirestoreService';
 
 // Auth & Onboarding
 import AuthNavigator from './AuthNavigator';
@@ -70,6 +71,8 @@ import AIAssistantModal from '../screens/admin/pastor_events/AIAssistantModal';
 import OnlineMeetingsScreen from '../screens/OnlineMeetingsScreen';
 import OnlineMeetingDetailScreen from '../screens/OnlineMeetingDetailScreen';
 import YouTubeLiveScreen from '../screens/YouTubeLiveScreen';
+import LiveStageHUD from '../screens/LiveStageHUD';
+import MyServiceScreen from '../screens/MyServiceScreen';
 import MemberGalleryNavigator from '../screens/gallery/MemberGalleryNavigator';
 
 // Bible Quiz Screens
@@ -767,7 +770,7 @@ function Navigation() {
           } else if (type === 'prayer_request_public') {
             navigationRef.navigate('PrayerWall', { tab: 'public_requests' });
           } else if (type === 'youtube_live') {
-            const liveUrl = data.url || 'https://www.youtube.com/@Brothersinchristfellowship/live';
+            const liveUrl = data.url || '';
             const videoId = data.videoId || '';
             const title = data.title || '';
             const targetChurchId = data.churchId || 'rhema';
@@ -911,7 +914,8 @@ function Navigation() {
         // Initialize Daily Bible Quiz 5:00 AM Automated Notifications
         DailyQuizNotificationService.initialize();
 
-
+        const targetChurchId = (await FirestoreService.getChurchId()) || 'rhema';
+        await NotificationService.subscribeToChurchTopic(targetChurchId);
       };
       initNotifications();
     }
@@ -977,10 +981,18 @@ function Navigation() {
     return isChurchExpired ? LockedFeatureScreen : Component;
   };
 
+  const initialRouteName = !user 
+    ? "Auth" 
+    : !onboardingComplete 
+    ? "Onboarding" 
+    : (showAdminView && isAdmin) 
+    ? "AdminRoot" 
+    : "Tabs";
+
   return (
     <Stack.Navigator
       id="root-navigator"
-      initialRouteName={showAdminView ? "AdminRoot" : "Tabs"}
+      initialRouteName={initialRouteName}
       screenOptions={{ headerShown: false, animation: 'none' }}
     >
       {user ? (
@@ -1021,6 +1033,9 @@ function Navigation() {
             <Stack.Screen name="OnlineMeetings" component={renderPremium(OnlineMeetingsScreen)} />
             <Stack.Screen name="OnlineMeetingDetail" component={renderPremium(OnlineMeetingDetailScreen)} />
             <Stack.Screen name="YouTubeLive" component={renderPremium(YouTubeLiveScreen)} />
+            <Stack.Screen name="LiveStageHUD" component={renderPremium(LiveStageHUD)} />
+            <Stack.Screen name="MyService" component={renderPremium(MyServiceScreen)} />
+            <Stack.Screen name="MyServiceDuties" component={renderPremium(MyServiceScreen)} />
             <Stack.Screen name="LiveCelebrationsChat" component={renderPremium(LiveCelebrationsChat)} />
             <Stack.Screen name="Gallery" component={renderPremium(MemberGalleryNavigator)} />
             <Stack.Screen name="VerseOfTheDay" component={renderPremium(VerseOfTheDayScreen)} />

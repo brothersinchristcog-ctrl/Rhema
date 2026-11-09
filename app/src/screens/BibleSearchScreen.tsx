@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, Search, BookOpen, CheckSquare, Square, BookMarked, ChevronDown, X } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
+import { SupportedLanguage } from '../locales';
 import { BibleService } from '../services/BibleService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -44,8 +45,17 @@ export default function BibleSearchScreen({ route, navigation }: any) {
   const { initialQuery, initialLang } = route.params || {};
   const { isDark, colors } = useTheme();
   const { language, t } = useLanguage();
+  const [savedBibleLang, setSavedBibleLang] = useState<SupportedLanguage | null>(null);
+
+  useEffect(() => {
+    if (!initialLang) {
+      AsyncStorage.getItem('@BibleSelectedLanguage').then(saved => {
+        if (saved) setSavedBibleLang(saved as SupportedLanguage);
+      });
+    }
+  }, [initialLang]);
   
-  const activeLang = initialLang || language;
+  const activeLang = (initialLang || savedBibleLang || language) as SupportedLanguage;
   const [query, setQuery] = useState(initialQuery || '');
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
