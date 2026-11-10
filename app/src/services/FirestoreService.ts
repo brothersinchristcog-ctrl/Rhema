@@ -1134,7 +1134,14 @@ class FirestoreService {
           throw new Error('DUPLICATE_MEMBER');
         }
       }
-      await firestore().collection('Rhema Church').doc(targetChurchId).collection('members').doc(memberId).set(details, { merge: true });
+      const safeDetails = { ...details };
+      if (typeof safeDetails.name === 'string' && !safeDetails.name.trim()) {
+        delete safeDetails.name;
+      }
+      if (typeof safeDetails.displayName === 'string' && !safeDetails.displayName.trim()) {
+        delete safeDetails.displayName;
+      }
+      await firestore().collection('Rhema Church').doc(targetChurchId).collection('members').doc(memberId).set(safeDetails, { merge: true });
       return { success: true };
     } catch (error: any) {
       console.error("Error updating member:", error);
@@ -1172,7 +1179,14 @@ class FirestoreService {
           throw new Error('DUPLICATE_MEMBER');
         }
       }
-      await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(memberId).set(details, { merge: true });
+      const safeDetails = { ...details };
+      if (typeof safeDetails.name === 'string' && !safeDetails.name.trim()) {
+        delete safeDetails.name;
+      }
+      if (typeof safeDetails.displayName === 'string' && !safeDetails.displayName.trim()) {
+        delete safeDetails.displayName;
+      }
+      await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(memberId).set(safeDetails, { merge: true });
       return true;
     } catch (error) {
       console.error('Error updating member profile', error);
@@ -1410,7 +1424,11 @@ class FirestoreService {
         .filter((doc: any) => doc.data().status !== 'Left')
         .map((doc: any) => {
           const data = doc.data();
-          const fullName = data.name || (`${data.firstName || ''} ${data.lastName || ''}`.trim()) || 'Unknown';
+          const fullName = (data.name && data.name.trim()) ||
+            (data.displayName && data.displayName.trim()) ||
+            (data.fullName && data.fullName.trim()) ||
+            (`${data.firstName || ''} ${data.lastName || ''}`.trim()) ||
+            (data.phone ? `Member (${data.phone})` : 'Unknown');
           return {
             ...data,
             name: fullName,
@@ -1428,13 +1446,22 @@ class FirestoreService {
   async getAdminMembers(): Promise<any[]> {
     try {
       const col = await this.getCollection('members');
-      const snapshot = await col.where('userType', '==', 'Admin').get();
-      return snapshot.docs.map((doc: any) => ({ 
-        id: doc.id, 
-        name: doc.data().name || doc.data().firstName || 'Unknown',
-        email: doc.data().email || '',
-        ...doc.data() 
-      }));
+      const snapshot = await col.where('userType', 'in', ['Admin', 'admin', 'Super Admin', 'super_admin']).get();
+      return snapshot.docs.map((doc: any) => {
+        const data = doc.data();
+        const fullName = (data.name && data.name.trim()) ||
+          (data.displayName && data.displayName.trim()) ||
+          (data.fullName && data.fullName.trim()) ||
+          (`${data.firstName || ''} ${data.lastName || ''}`.trim()) ||
+          (data.phone ? `Member (${data.phone})` : 'Unknown');
+        return {
+          id: doc.id,
+          name: fullName,
+          displayName: fullName,
+          email: data.email || '',
+          ...data
+        };
+      });
     } catch (error) {
       console.error('Error fetching admin members:', error);
       return [];
