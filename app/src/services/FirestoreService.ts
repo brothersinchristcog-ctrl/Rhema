@@ -940,8 +940,34 @@ class FirestoreService {
         console.log(`Checking specific church: ${targetChurchId}`);
         const phoneFields = ['phone', 'phoneNumber', 'mobile', 'contactNumber'];
         
+        const matchProcessor = (doc: any) => {
+          const data = doc.data();
+          const hasName = Boolean((data.name || data.firstName || data.displayName || '').trim());
+          const bestHasName = Boolean((bestMember?.name || bestMember?.firstName || bestMember?.displayName || '').trim());
+          const isElevated = String(data.userType || '').toUpperCase().includes('ADMIN') || 
+                             String(data.userType || '').toUpperCase().includes('SUPER') || 
+                             String(data.userType || '').toUpperCase().includes('PASTOR');
+
+          if (!bestMember) {
+            bestMember = { id: doc.id, churchId: targetChurchId, ...data };
+          } else {
+            // If the existing bestMember has no name, but this doc has a name, swap to this doc!
+            if (!bestHasName && hasName) {
+              bestMember = { id: doc.id, churchId: targetChurchId, ...data, ...bestMember, name: data.name || data.displayName, firstName: data.firstName || '', lastName: data.lastName || '' };
+            } else {
+              // Merge missing name fields
+              if (!bestMember.name && data.name) bestMember.name = data.name;
+              if (!bestMember.firstName && data.firstName) bestMember.firstName = data.firstName;
+              if (!bestMember.lastName && data.lastName) bestMember.lastName = data.lastName;
+              if (!bestMember.userType && data.userType) bestMember.userType = data.userType;
+            }
+            if (isElevated) {
+              bestMember.userType = data.userType;
+            }
+          }
+        };
+
         for (const field of phoneFields) {
-          if (bestMember) break;
           const queries = possibleFormats.map(format => 
             firestore()
               .collection(RHEMA_ROOT_COLLECTION)
@@ -954,24 +980,13 @@ class FirestoreService {
           for (const res of settledResults) {
             if (res.status === 'fulfilled') {
               for (const doc of res.value.docs) {
-                const data = doc.data();
-                const isElevated = String(data.userType || '').toUpperCase().includes('ADMIN') || 
-                                   String(data.userType || '').toUpperCase().includes('SUPER') || 
-                                   String(data.userType || '').toUpperCase().includes('PASTOR');
-                if (!bestMember || isElevated) {
-                  bestMember = { id: doc.id, churchId: targetChurchId, ...data };
-                }
-                if (isElevated) break;
+                matchProcessor(doc);
               }
             }
           }
         }
       } catch (err: any) {
         console.log("Specific church query notice:", err?.message);
-      }
-
-      if (bestMember) {
-        return { exists: true, member: bestMember as AppMember };
       }
 
       // ── Strategy 2: Direct in-memory scan of church members ──
@@ -1002,22 +1017,30 @@ class FirestoreService {
             if (!cand) continue;
             const cleanCand = String(cand).replace(/\D/g, '').slice(-10);
             if (cleanCand === last10) {
+              const hasName = Boolean((data.name || data.firstName || data.displayName || '').trim());
+              const bestHasName = Boolean((bestMember?.name || bestMember?.firstName || bestMember?.displayName || '').trim());
               const isElevated = String(data.userType || '').toUpperCase().includes('ADMIN') || 
                                  String(data.userType || '').toUpperCase().includes('SUPER') || 
                                  String(data.userType || '').toUpperCase().includes('PASTOR');
-              if (!bestMember || isElevated) {
+
+              if (!bestMember) {
                 bestMember = { id: doc.id, churchId: targetChurchId, ...data };
+              } else {
+                if (!bestHasName && hasName) {
+                  bestMember = { id: doc.id, churchId: targetChurchId, ...data, ...bestMember, name: data.name || data.displayName, firstName: data.firstName || '', lastName: data.lastName || '' };
+                } else {
+                  if (!bestMember.name && data.name) bestMember.name = data.name;
+                  if (!bestMember.firstName && data.firstName) bestMember.firstName = data.firstName;
+                  if (!bestMember.lastName && data.lastName) bestMember.lastName = data.lastName;
+                  if (!bestMember.userType && data.userType) bestMember.userType = data.userType;
+                }
+                if (isElevated) {
+                  bestMember.userType = data.userType;
+                }
               }
-              if (isElevated) break;
+              break;
             }
           }
-          if (bestMember && (String(bestMember.userType || '').toUpperCase().includes('ADMIN') || String(bestMember.userType || '').toUpperCase().includes('SUPER'))) {
-            break;
-          }
-        }
-
-        if (bestMember) {
-          return { exists: true, member: bestMember as AppMember };
         }
       } catch (scanErr: any) {
         console.log("Direct scan notice:", scanErr?.message);
@@ -1028,7 +1051,6 @@ class FirestoreService {
         console.log("Trying collectionGroup('members') search...");
         const cgFields = ['phone', 'phoneNumber'];
         for (const field of cgFields) {
-          if (bestMember) break;
           const globalQueries = possibleFormats.map(format => 
             firestore().collectionGroup('members').where(field, '==', format).get()
           );
@@ -1041,21 +1063,32 @@ class FirestoreService {
                   continue;
                 }
                 const data = doc.data();
+                const hasName = Boolean((data.name || data.firstName || data.displayName || '').trim());
+                const bestHasName = Boolean((bestMember?.name || bestMember?.firstName || bestMember?.displayName || '').trim());
                 const isElevated = String(data.userType || '').toUpperCase().includes('ADMIN') || String(data.userType || '').toUpperCase().includes('SUPER');
-                if (!bestMember || isElevated) {
+                if (!bestMember || (!bestHasName && hasName) || isElevated) {
                   bestMember = { id: doc.id, churchId: parentChurch || targetChurchId, ...data };
                 }
-                if (isElevated) break;
               }
             }
           }
         }
-
-        if (bestMember) {
-          return { exists: true, member: bestMember as AppMember };
-        }
       } catch (cgError: any) {
         console.log("Global collection group query notice:", cgError?.message);
+      }
+
+      if (bestMember) {
+        // Normalize name, firstName, lastName
+        const effectiveName = (bestMember.name || bestMember.displayName || '').trim();
+        if (effectiveName && !bestMember.firstName) {
+          const parts = effectiveName.split(/\s+/);
+          bestMember.firstName = parts[0] || '';
+          bestMember.lastName = parts.slice(1).join(' ') || '';
+        }
+        if (bestMember.firstName && !bestMember.name) {
+          bestMember.name = `${bestMember.firstName} ${bestMember.lastName || ''}`.trim();
+        }
+        return { exists: true, member: bestMember as AppMember };
       }
 
       return { exists: false };
@@ -1216,34 +1249,109 @@ class FirestoreService {
 
   async syncMember(churchId: string, contactId: string, uid: string) {
     try {
-      if (contactId === uid) return;
+      if (!contactId || contactId === uid) return;
       
       const targetChurch = churchId || await this.getChurchId() || RHEMA_CHURCH_ID;
-      const membersRef = firestore().collection('Rhema Church').doc(targetChurch).collection('members');
+      const membersRef = firestore().collection(RHEMA_ROOT_COLLECTION).doc(targetChurch).collection('members');
       const oldDoc = await membersRef.doc(contactId).get();
       
       const docExists = typeof oldDoc.exists === 'function' ? oldDoc.exists() : oldDoc.exists;
       if (docExists) {
         const oldData = oldDoc.data() || {};
+        const effectiveName = oldData.name || oldData.displayName || '';
+        const nameParts = effectiveName.trim().split(/\s+/);
+        const firstName = oldData.firstName || nameParts[0] || '';
+        const lastName = oldData.lastName || nameParts.slice(1).join(' ') || '';
+
         // Move data to new document with the correct UID
         await membersRef.doc(uid).set({
           ...oldData,
+          name: effectiveName || `${firstName} ${lastName}`.trim(),
+          firstName,
+          lastName,
           uid,
           id: uid,
           churchId: targetChurch,
           primaryChurchId: targetChurch,
           onboardingComplete: true,
+          status: oldData.status || 'Active',
         }, { merge: true });
-        // Delete the old document with the random ID (ignore error if non-critical)
+
+        // Delete the old document with the random ID
         await membersRef.doc(contactId).delete().catch((delErr) => {
           console.warn('Could not delete old contact doc (non-critical):', delErr);
         });
       } else {
-        // Just in case it was already moved or we only have the uid to update
         await membersRef.doc(contactId).update({ uid }).catch(() => {});
       }
     } catch (e) {
       console.warn('Error syncing member', e);
+    }
+  }
+
+  async syncMemberByPhone(churchId: string, phone: string, uid: string): Promise<AppMember | null> {
+    try {
+      const rawDigits = (phone || '').replace(/\D/g, '');
+      const last10 = rawDigits.slice(-10);
+      if (!last10 || last10.length < 10) return null;
+
+      const targetChurch = churchId || await this.getChurchId() || RHEMA_CHURCH_ID;
+      const membersRef = firestore().collection(RHEMA_ROOT_COLLECTION).doc(targetChurch).collection('members');
+
+      const currentDoc = await membersRef.doc(uid).get();
+      const currentData = currentDoc.exists ? (currentDoc.data() || {}) : {};
+
+      const snap = await membersRef.get();
+      let adminContactDoc: any = null;
+
+      for (const d of snap.docs) {
+        if (d.id === uid) continue;
+        const data = d.data();
+        const candPhone = String(data.phone || data.phoneNumber || data.mobile || data.contactNumber || '').replace(/\D/g, '').slice(-10);
+        if (candPhone === last10) {
+          if (data.name || data.firstName || !adminContactDoc) {
+            adminContactDoc = { id: d.id, ...data };
+          }
+        }
+      }
+
+      if (adminContactDoc) {
+        console.log(`🔗 [syncMemberByPhone] Merging admin contact ${adminContactDoc.id} (${adminContactDoc.name}) into UID ${uid}`);
+        const effectiveName = adminContactDoc.name || adminContactDoc.displayName || currentData.name || '';
+        const nameParts = effectiveName.trim().split(/\s+/);
+        const firstName = adminContactDoc.firstName || currentData.firstName || nameParts[0] || '';
+        const lastName = adminContactDoc.lastName || currentData.lastName || nameParts.slice(1).join(' ') || '';
+
+        const mergedPayload: any = {
+          ...adminContactDoc,
+          ...currentData,
+          name: effectiveName || `${firstName} ${lastName}`.trim(),
+          firstName,
+          lastName,
+          phone: currentData.phone || adminContactDoc.phone || `+91${last10}`,
+          uid,
+          id: uid,
+          churchId: targetChurch,
+          primaryChurchId: targetChurch,
+          status: currentData.status || adminContactDoc.status || 'Active',
+          onboardingComplete: true,
+        };
+        delete mergedPayload.unlinkedContactId;
+
+        await membersRef.doc(uid).set(mergedPayload, { merge: true });
+
+        // Remove old auto-ID doc to eliminate duplicates
+        await membersRef.doc(adminContactDoc.id).delete().catch((delErr) => {
+          console.warn('Could not delete old contact doc:', delErr);
+        });
+
+        return mergedPayload as AppMember;
+      }
+
+      return null;
+    } catch (err) {
+      console.warn('Error in syncMemberByPhone:', err);
+      return null;
     }
   }
 

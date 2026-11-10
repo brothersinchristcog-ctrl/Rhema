@@ -293,6 +293,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const searchPhone = userState.phoneNumber || globalUser?.phone || memberProfile?.phone || cachedMemberObj?.phone;
             if (searchPhone) {
               try {
+                // First sync any unmerged admin contact by phone
+                const synced = await FirestoreService.syncMemberByPhone(targetChurchId, searchPhone, userState.uid);
+                if (synced) {
+                  memberProfile = { ...(memberProfile || {}), ...synced };
+                  globalUser = { ...(globalUser || {}), ...synced } as any;
+                }
+
                 const contactCheck = await FirestoreService.checkContactExists(searchPhone);
                 if (contactCheck?.exists && contactCheck.member) {
                   if (contactCheck.member.id !== userState.uid) {
@@ -306,11 +313,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
 
             if (memberProfile || globalUser) {
+              const effectiveName = (
+                memberProfile?.name ||
+                globalUser?.name ||
+                (memberProfile?.firstName ? `${memberProfile.firstName} ${memberProfile.lastName || ''}`.trim() : '') ||
+                (globalUser?.firstName ? `${globalUser.firstName} ${globalUser.lastName || ''}`.trim() : '') ||
+                userState.displayName ||
+                cachedMemberObj?.name ||
+                ''
+              ).trim();
+
+              const nameParts = effectiveName.split(/\s+/);
+              const effectiveFirstName = memberProfile?.firstName || globalUser?.firstName || nameParts[0] || '';
+              const effectiveLastName = memberProfile?.lastName || globalUser?.lastName || nameParts.slice(1).join(' ') || '';
+
               const combinedMember: AppMember = {
                 ...(cachedMemberObj || {}),
                 ...(globalUser || {}),
                 ...(memberProfile || {}),
                 id: userState.uid,
+                name: effectiveName,
+                firstName: effectiveFirstName,
+                lastName: effectiveLastName,
                 churchId: targetChurchId,
                 primaryChurchId: targetChurchId,
               } as AppMember;
@@ -356,10 +380,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         updated.userType = prev?.userType;
                       }
 
+                      const liveName = (
+                        updated.name ||
+                        prev?.name ||
+                        (updated.firstName ? `${updated.firstName} ${updated.lastName || ''}`.trim() : '') ||
+                        (prev?.firstName ? `${prev.firstName} ${prev.lastName || ''}`.trim() : '') ||
+                        userState.displayName ||
+                        ''
+                      ).trim();
+                      const liveParts = liveName.split(/\s+/);
+                      const liveFirstName = updated.firstName || prev?.firstName || liveParts[0] || '';
+                      const liveLastName = updated.lastName || prev?.lastName || liveParts.slice(1).join(' ') || '';
+
                       const next = {
                         ...prev,
                         ...updated,
                         id: userState.uid,
+                        name: liveName,
+                        firstName: liveFirstName,
+                        lastName: liveLastName,
                         churchId: targetChurchId,
                         primaryChurchId: targetChurchId,
                       } as AppMember;
