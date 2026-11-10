@@ -31,6 +31,7 @@ import {
 } from 'lucide-react-native';
 import CareCellService from '../../../../services/CareCellService';
 import { useAuth } from '../../../../context/AuthContext';
+import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
 import { CareCell, CareCellOverviewStats } from '../../../../types/CareCellTypes';
 
 const { width } = Dimensions.get('window');
@@ -76,6 +77,13 @@ export default function CareCellsOverviewTab({
   onOpenCreateCell,
   onOpenCreateMeeting,
 }: CareCellsOverviewTabProps) {
+  const { isDark, primaryText, secondaryText, cardSurface, secondarySurface, borderColor } = useAdminTheme();
+  const primaryBtnBg = isDark ? '#FFFFFF' : '#0F172A';
+  const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
+  const secondaryBtnBg = isDark ? '#27272A' : '#F8FAFC';
+  const secondaryBtnBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1';
+  const secondaryBtnText = isDark ? '#E4E4E7' : '#0F172A';
+
   const { isPlatformSuperAdmin } = useAuth();
   const now = new Date();
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
@@ -202,7 +210,7 @@ export default function CareCellsOverviewTab({
       style={styles.container}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#1A2D5A']} />}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[primaryBtnBg]} />}
     >
       {/* ── Period Selector Bar ── */}
       <View style={styles.periodBar}>
@@ -214,8 +222,8 @@ export default function CareCellsOverviewTab({
           }}
           activeOpacity={0.8}
         >
-          <View style={styles.calendarIconBadge}>
-            <CalendarDays size={16} color="#1A2D5A" strokeWidth={2.4} />
+          <View style={[styles.calendarIconBadge, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}>
+            <CalendarDays size={16} color={primaryText} strokeWidth={2.4} />
           </View>
           <View style={styles.periodTextGroup}>
             <Text style={styles.periodMiniLabel}>ANALYTICS PERIOD</Text>
@@ -223,7 +231,7 @@ export default function CareCellsOverviewTab({
               <Text style={styles.periodValue}>
                 {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
               </Text>
-              <ChevronDown size={14} color="#64748B" style={{ marginTop: 1 }} />
+              <ChevronDown size={14} color={secondaryText} style={{ marginTop: 1 }} />
             </View>
           </View>
         </TouchableOpacity>
@@ -231,7 +239,7 @@ export default function CareCellsOverviewTab({
         {/* Quick Month Navigation Steppers */}
         <View style={styles.periodStepperRow}>
           <TouchableOpacity
-            style={styles.stepperBtn}
+            style={[styles.stepperBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
             onPress={() => {
               if (selectedMonth === 1) {
                 setSelectedMonth(12);
@@ -243,10 +251,10 @@ export default function CareCellsOverviewTab({
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             activeOpacity={0.7}
           >
-            <ChevronLeft size={16} color="#1A2D5A" strokeWidth={2.4} />
+            <ChevronLeft size={16} color={primaryText} strokeWidth={2.4} />
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.stepperBtn}
+            style={[styles.stepperBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
             onPress={() => {
               if (selectedMonth === 12) {
                 setSelectedMonth(1);
@@ -258,7 +266,7 @@ export default function CareCellsOverviewTab({
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             activeOpacity={0.7}
           >
-            <ChevronRight size={16} color="#1A2D5A" strokeWidth={2.4} />
+            <ChevronRight size={16} color={primaryText} strokeWidth={2.4} />
           </TouchableOpacity>
         </View>
       </View>
@@ -273,11 +281,19 @@ export default function CareCellsOverviewTab({
         >
           {/* All Cells Chip */}
           <TouchableOpacity
-            style={[styles.filterChip, selectedCellId === 'ALL' && styles.filterChipActive]}
+            style={[
+              styles.filterChip,
+              selectedCellId === 'ALL' && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+            ]}
             onPress={() => setSelectedCellId('ALL')}
             activeOpacity={0.75}
           >
-            <Text style={[styles.filterChipTxt, selectedCellId === 'ALL' && styles.filterChipTxtActive]}>
+            <Text
+              style={[
+                styles.filterChipTxt,
+                selectedCellId === 'ALL' && { color: primaryBtnText, fontWeight: '800' },
+              ]}
+            >
               All Cells ({cells.length})
             </Text>
           </TouchableOpacity>
@@ -285,11 +301,19 @@ export default function CareCellsOverviewTab({
           {cells.map((c) => (
             <TouchableOpacity
               key={c.id}
-              style={[styles.filterChip, selectedCellId === c.id && styles.filterChipActive]}
+              style={[
+                styles.filterChip,
+                selectedCellId === c.id && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+              ]}
               onPress={() => setSelectedCellId(c.id)}
               activeOpacity={0.75}
             >
-              <Text style={[styles.filterChipTxt, selectedCellId === c.id && styles.filterChipTxtActive]}>
+              <Text
+                style={[
+                  styles.filterChipTxt,
+                  selectedCellId === c.id && { color: primaryBtnText, fontWeight: '800' },
+                ]}
+              >
                 {c.cellCode || c.name}
               </Text>
             </TouchableOpacity>
@@ -299,7 +323,7 @@ export default function CareCellsOverviewTab({
 
       {loading ? (
         <View style={styles.loadingWrap}>
-          <ActivityIndicator size="large" color="#1A2D5A" />
+          <ActivityIndicator size="large" color={primaryText} />
           <Text style={styles.loadingTxt}>Calculating Care Cell analytics...</Text>
         </View>
       ) : (
@@ -316,7 +340,15 @@ export default function CareCellsOverviewTab({
                   onPress={() => onNavigateTab(card.tabIndex)}
                 >
                   <View style={styles.cardTopRow}>
-                    <View style={[styles.cardIconWrap, { backgroundColor: card.bgColor, borderColor: card.borderColor }]}>
+                    <View
+                      style={[
+                        styles.cardIconWrap,
+                        {
+                          backgroundColor: isDark ? `${card.color}20` : card.bgColor,
+                          borderColor: isDark ? `${card.color}40` : card.borderColor,
+                        },
+                      ]}
+                    >
                       <Icon size={18} color={card.color} strokeWidth={2.2} />
                     </View>
                     <View style={styles.cardArrowWrap}>
@@ -324,7 +356,12 @@ export default function CareCellsOverviewTab({
                     </View>
                   </View>
 
-                  <Text style={[styles.cardValue, card.valueColor ? { color: card.valueColor } : null]}>
+                  <Text
+                    style={[
+                      styles.cardValue,
+                      card.valueColor && card.valueColor !== '#0F172A' ? { color: card.valueColor } : null,
+                    ]}
+                  >
                     {card.value}
                   </Text>
                   <Text style={styles.cardTitle} numberOfLines={1}>
@@ -343,12 +380,12 @@ export default function CareCellsOverviewTab({
           <View style={styles.actionsContainer}>
             {isPlatformSuperAdmin && (
               <TouchableOpacity
-                style={styles.actionBtnPrimaryFull}
+                style={[styles.actionBtnPrimaryFull, { backgroundColor: primaryBtnBg }]}
                 onPress={onOpenCreateCell}
                 activeOpacity={0.85}
               >
-                <PlusCircle size={18} color="#FFFFFF" strokeWidth={2.4} style={{ marginRight: 8 }} />
-                <Text style={styles.actionBtnPrimaryTxt} numberOfLines={1}>
+                <PlusCircle size={18} color={primaryBtnText} strokeWidth={2.4} style={{ marginRight: 8 }} />
+                <Text style={[styles.actionBtnPrimaryTxt, { color: primaryBtnText }]} numberOfLines={1}>
                   New Care Cell
                 </Text>
               </TouchableOpacity>
@@ -356,23 +393,35 @@ export default function CareCellsOverviewTab({
 
             <View style={styles.actionsSubRow}>
               <TouchableOpacity
-                style={styles.actionBtnSecondaryHalf}
+                style={[
+                  styles.actionBtnSecondaryHalf,
+                  { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder },
+                ]}
                 onPress={onOpenCreateMeeting}
                 activeOpacity={0.85}
               >
-                <CalendarPlus size={17} color="#1A2D5A" strokeWidth={2.2} style={{ marginRight: 7 }} />
-                <Text style={styles.actionBtnSecondaryTxt} numberOfLines={1}>
+                <CalendarPlus size={17} color={secondaryBtnText} strokeWidth={2.2} style={{ marginRight: 7 }} />
+                <Text style={[styles.actionBtnSecondaryTxt, { color: secondaryBtnText }]} numberOfLines={1}>
                   Schedule Meeting
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.actionBtnTertiaryHalf}
+                style={[
+                  styles.actionBtnTertiaryHalf,
+                  isDark && {
+                    backgroundColor: 'rgba(5, 150, 105, 0.16)',
+                    borderColor: 'rgba(16, 185, 129, 0.35)',
+                  },
+                ]}
                 onPress={() => onNavigateTab(4)}
                 activeOpacity={0.85}
               >
-                <ClipboardCheck size={17} color="#059669" strokeWidth={2.2} style={{ marginRight: 7 }} />
-                <Text style={styles.actionBtnTertiaryTxt} numberOfLines={1}>
+                <ClipboardCheck size={17} color={isDark ? '#34D399' : '#059669'} strokeWidth={2.2} style={{ marginRight: 7 }} />
+                <Text
+                  style={[styles.actionBtnTertiaryTxt, isDark && { color: '#34D399' }]}
+                  numberOfLines={1}
+                >
                   Mark Attendance
                 </Text>
               </TouchableOpacity>
@@ -412,7 +461,7 @@ export default function CareCellsOverviewTab({
             {/* Modal Header */}
             <View style={styles.modalHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <CalendarDays size={20} color="#1A2D5A" />
+                <CalendarDays size={20} color={primaryText} />
                 <Text style={styles.modalTitle}>Select Period</Text>
               </View>
               <TouchableOpacity
@@ -420,28 +469,28 @@ export default function CareCellsOverviewTab({
                 style={styles.modalCloseBtn}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <X size={18} color="#64748B" />
+                <X size={18} color={secondaryText} />
               </TouchableOpacity>
             </View>
 
             {/* Year Selector (Centered, Cohesive Stepper) */}
             <View style={styles.yearRow}>
               <TouchableOpacity
-                style={styles.yearNavBtn}
+                style={[styles.yearNavBtn, { backgroundColor: cardSurface, borderColor: secondaryBtnBorder }]}
                 onPress={() => setPickerYear((y) => y - 1)}
                 activeOpacity={0.7}
               >
-                <ChevronLeft size={18} color="#1A2D5A" strokeWidth={2.4} />
+                <ChevronLeft size={18} color={primaryText} strokeWidth={2.4} />
               </TouchableOpacity>
               <View style={styles.yearDisplay}>
-                <Text style={styles.yearText}>{pickerYear}</Text>
+                <Text style={[styles.yearText, { color: primaryText }]}>{pickerYear}</Text>
               </View>
               <TouchableOpacity
-                style={styles.yearNavBtn}
+                style={[styles.yearNavBtn, { backgroundColor: cardSurface, borderColor: secondaryBtnBorder }]}
                 onPress={() => setPickerYear((y) => y + 1)}
                 activeOpacity={0.7}
               >
-                <ChevronRight size={18} color="#1A2D5A" strokeWidth={2.4} />
+                <ChevronRight size={18} color={primaryText} strokeWidth={2.4} />
               </TouchableOpacity>
             </View>
 
@@ -459,7 +508,7 @@ export default function CareCellsOverviewTab({
                         key={m.num}
                         style={[
                           styles.monthItemBtn,
-                          isSelected && styles.monthItemBtnSelected,
+                          isSelected && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
                           !isSelected && isCurrentCalendarMonth && styles.monthItemBtnCurrent,
                         ]}
                         onPress={() => {
@@ -472,14 +521,14 @@ export default function CareCellsOverviewTab({
                         <Text
                           style={[
                             styles.monthItemTxt,
-                            isSelected && styles.monthItemTxtSelected,
+                            isSelected && { color: primaryBtnText, fontWeight: '800' },
                             !isSelected && isCurrentCalendarMonth && styles.monthItemTxtCurrent,
                           ]}
                         >
                           {m.name}
                         </Text>
                         {isSelected && (
-                          <Check size={13} color="#FFFFFF" strokeWidth={3} style={{ marginLeft: 4 }} />
+                          <Check size={13} color={primaryBtnText} strokeWidth={3} style={{ marginLeft: 4 }} />
                         )}
                       </TouchableOpacity>
                     );
@@ -491,7 +540,7 @@ export default function CareCellsOverviewTab({
             {/* Quick Actions Footer (Balanced Equal Width Buttons) */}
             <View style={styles.modalFooter}>
               <TouchableOpacity
-                style={styles.thisMonthBtn}
+                style={[styles.thisMonthBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
                 onPress={() => {
                   setSelectedMonth(now.getMonth() + 1);
                   setSelectedYear(now.getFullYear());
@@ -500,19 +549,19 @@ export default function CareCellsOverviewTab({
                 }}
                 activeOpacity={0.75}
               >
-                <Sparkles size={14} color="#1A2D5A" style={{ marginRight: 6 }} />
-                <Text style={styles.thisMonthBtnTxt}>This Month</Text>
+                <Sparkles size={14} color={secondaryBtnText} style={{ marginRight: 6 }} />
+                <Text style={[styles.thisMonthBtnTxt, { color: secondaryBtnText }]}>This Month</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.applyBtn}
+                style={[styles.applyBtn, { backgroundColor: primaryBtnBg }]}
                 onPress={() => {
                   setSelectedYear(pickerYear);
                   setShowDatePickerModal(false);
                 }}
-                activeOpacity={0.8}
+                activeOpacity={0.85}
               >
-                <Text style={styles.applyBtnTxt}>Done</Text>
+                <Text style={[styles.applyBtnTxt, { color: primaryBtnText }]}>Done</Text>
               </TouchableOpacity>
             </View>
           </TouchableOpacity>
@@ -522,10 +571,10 @@ export default function CareCellsOverviewTab({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FAF7F2',
   },
   content: {
     paddingHorizontal: 16,
@@ -559,9 +608,9 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 10,
-    backgroundColor: '#EEF2FF',
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: '#E0E7FF',
+    borderColor: '#CBD5E1',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -587,14 +636,14 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   stepperBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: '#F1F5F9',
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: '#F8FAFC',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#CBD5E1',
   },
   filterRow: {
     marginBottom: 14,
@@ -603,17 +652,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   filterChip: {
-    paddingHorizontal: 13,
-    paddingVertical: 7,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 10,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#CBD5E1',
     marginRight: 8,
   },
   filterChipActive: {
-    backgroundColor: '#1A2D5A',
-    borderColor: '#1A2D5A',
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
   },
   filterChipTxt: {
     fontSize: 12,
@@ -711,16 +760,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1A2D5A',
+    backgroundColor: '#0F172A',
     borderRadius: 12,
     paddingVertical: 13,
     paddingHorizontal: 16,
     overflow: 'hidden',
-    shadowColor: '#1A2D5A',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.18,
+    shadowOpacity: 0.14,
     shadowRadius: 4,
-    elevation: 2.5,
+    elevation: 2,
   },
   actionBtnPrimaryTxt: {
     color: '#FFFFFF',
@@ -738,21 +787,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F8FAFC',
     borderRadius: 12,
-    paddingVertical: 12.5,
+    paddingVertical: 12,
     paddingHorizontal: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderWidth: 1.2,
+    borderColor: '#CBD5E1',
     overflow: 'hidden',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 3,
-    elevation: 1,
   },
   actionBtnSecondaryTxt: {
-    color: '#1A2D5A',
+    color: '#0F172A',
     fontSize: 12.5,
     fontWeight: '800',
     flexShrink: 1,
@@ -764,19 +808,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#ECFDF5',
     borderRadius: 12,
-    paddingVertical: 12.5,
+    paddingVertical: 12,
     paddingHorizontal: 10,
-    borderWidth: 1,
+    borderWidth: 1.2,
     borderColor: '#A7F3D0',
     overflow: 'hidden',
-    shadowColor: '#059669',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 1,
   },
   actionBtnTertiaryTxt: {
-    color: '#065F46',
+    color: '#059669',
     fontSize: 12.5,
     fontWeight: '800',
     flexShrink: 1,
@@ -939,15 +978,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 12,
     borderRadius: 12,
-    backgroundColor: '#EEF2FF',
-    borderWidth: 1,
-    borderColor: '#E0E7FF',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.2,
+    borderColor: '#CBD5E1',
     gap: 6,
   },
   thisMonthBtnTxt: {
     fontSize: 13,
     fontWeight: '800',
-    color: '#1A2D5A',
+    color: '#0F172A',
   },
   applyBtn: {
     flex: 1,
@@ -955,12 +994,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 12,
     borderRadius: 12,
-    backgroundColor: '#1A2D5A',
-    shadowColor: '#1A2D5A',
+    backgroundColor: '#0F172A',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.15,
     shadowRadius: 4,
-    elevation: 2.5,
+    elevation: 2,
   },
   applyBtnTxt: {
     fontSize: 13,

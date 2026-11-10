@@ -33,6 +33,7 @@ import CareCellService from '../../../../services/CareCellService';
 import MemberLookupModal from '../components/MemberLookupModal';
 import CareCellMapModal from '../components/CareCellMapModal';
 import { formatDateDisplay } from '../../../../utils/DateUtils';
+import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
 import { CareCell, CareCellMembership } from '../../../../types/CareCellTypes';
 
 interface CareCellMembersTabProps {
@@ -46,6 +47,16 @@ export default function CareCellMembersTab({
   selectedCellId,
   onSelectCellId,
 }: CareCellMembersTabProps) {
+  const { isDark, primaryText, secondaryText, cardSurface, secondarySurface, borderColor } = useAdminTheme();
+  const primaryBtnBg = isDark ? '#FFFFFF' : '#0F172A';
+  const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
+  const secondaryBtnBg = isDark ? '#27272A' : '#F8FAFC';
+  const secondaryBtnBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1';
+  const secondaryBtnText = isDark ? '#E4E4E7' : '#334155';
+  const dangerBtnBg = isDark ? 'rgba(220, 38, 38, 0.14)' : '#FEF2F2';
+  const dangerBtnBorder = isDark ? 'rgba(248, 113, 113, 0.35)' : '#FECACA';
+  const dangerBtnText = isDark ? '#F87171' : '#DC2626';
+
   const activeCellId = selectedCellId || (cells[0]?.id || '');
   const activeCell = cells.find((c) => c.id === activeCellId) || cells[0];
 
@@ -212,23 +223,25 @@ export default function CareCellMembersTab({
         <View style={styles.actionsWrap}>
           {/* Transfer button */}
           <TouchableOpacity
-            style={styles.actionBtnTransfer}
+            style={[styles.actionBtnTransfer, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
             onPress={() => {
               setMembershipToTransfer(item);
               setTransferModalVisible(true);
             }}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            activeOpacity={0.8}
           >
-            <ArrowRightLeft size={15} color="#1A2D5A" />
+            <ArrowRightLeft size={15} color={secondaryBtnText} />
           </TouchableOpacity>
 
           {/* Remove button */}
           <TouchableOpacity
-            style={styles.actionBtnRemove}
+            style={[styles.actionBtnRemove, { backgroundColor: dangerBtnBg, borderColor: dangerBtnBorder }]}
             onPress={() => handleRemoveMember(item)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            activeOpacity={0.8}
           >
-            <Trash2 size={15} color="#DC2626" />
+            <Trash2 size={15} color={dangerBtnText} />
           </TouchableOpacity>
         </View>
       </View>
@@ -257,56 +270,68 @@ export default function CareCellMembersTab({
       {/* Cell Selector Scroll */}
       <View style={styles.cellSelectorRow}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.cellSelectorScroll}>
-          {cells.map((c) => (
-            <TouchableOpacity
-              key={c.id}
-              style={[styles.cellChip, activeCellId === c.id && styles.cellChipActive]}
-              onPress={() => onSelectCellId(c.id)}
-            >
-              <Text style={[styles.cellChipTxt, activeCellId === c.id && styles.cellChipTxtActive]}>
-                {c.cellCode} ({c.name})
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {cells.map((c) => {
+            const isSelected = activeCellId === c.id;
+            return (
+              <TouchableOpacity
+                key={c.id}
+                style={[
+                  styles.cellChip,
+                  isSelected && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+                ]}
+                onPress={() => onSelectCellId(c.id)}
+                activeOpacity={0.75}
+              >
+                <Text
+                  style={[
+                    styles.cellChipTxt,
+                    isSelected && { color: primaryBtnText, fontWeight: '800' },
+                  ]}
+                >
+                  {c.cellCode} ({c.name})
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
       </View>
 
       {/* Cell Roster Header Banner */}
       {activeCell && (
-        <View style={styles.rosterBanner}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.rosterBannerTitle}>
+        <View style={[styles.rosterBanner, { backgroundColor: cardSurface, borderColor }]}>
+          <View style={{ flex: 1, marginRight: 8 }}>
+            <Text style={[styles.rosterBannerTitle, { color: primaryText }]}>
               {activeCell.cellCode} · {activeCell.name}
             </Text>
-            <Text style={styles.rosterBannerSub}>
-              Leader: <Text style={{ fontWeight: '700', color: '#1A2D5A' }}>{activeCell.leaderName}</Text> · {memberships.length} of {activeCell.maximumMembers} members
+            <Text style={[styles.rosterBannerSub, { color: secondaryText }]}>
+              Leader: <Text style={{ fontWeight: '700', color: primaryText }}>{activeCell.leaderName}</Text> · {memberships.length} of {activeCell.maximumMembers} members
             </Text>
           </View>
-          <View style={{ flexDirection: 'row', gap: 6 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <TouchableOpacity
-              style={styles.mapBtn}
+              style={[styles.mapBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
               onPress={() => setMapModalVisible(true)}
               activeOpacity={0.85}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <MapPin size={15} color="#1A2D5A" style={{ marginRight: 3 }} />
-              <Text style={styles.mapBtnTxt}>Map</Text>
+              <MapPin size={14} color={secondaryBtnText} style={{ marginRight: 4 }} />
+              <Text style={[styles.mapBtnTxt, { color: secondaryBtnText }]}>Map</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.exportBtn}
+              style={[styles.exportBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
               onPress={handleExportCSV}
               activeOpacity={0.85}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Download size={15} color="#1A2D5A" />
+              <Download size={15} color={secondaryBtnText} />
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.addMembersBtn}
+              style={[styles.addMembersBtn, { backgroundColor: primaryBtnBg }]}
               onPress={() => setAddMembersModalVisible(true)}
               activeOpacity={0.85}
             >
-              <UserPlus size={15} color="#FFFFFF" style={{ marginRight: 5 }} />
-              <Text style={styles.addMembersBtnTxt}>Add</Text>
+              <UserPlus size={15} color={primaryBtnText} style={{ marginRight: 5 }} />
+              <Text style={[styles.addMembersBtnTxt, { color: primaryBtnText }]}>Add</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -369,9 +394,9 @@ export default function CareCellMembersTab({
       <Modal visible={transferModalVisible} transparent animationType="fade" onRequestClose={() => setTransferModalVisible(false)}>
         <TouchableOpacity style={styles.transferOverlay} activeOpacity={1} onPress={() => setTransferModalVisible(false)}>
           <View style={styles.transferContainer}>
-            <Text style={styles.transferTitle}>Transfer Member</Text>
+            <Text style={[styles.transferTitle, { color: primaryText }]}>Transfer Member</Text>
             <Text style={styles.transferSub}>
-              Move <Text style={{ fontWeight: '700', color: '#1A2D5A' }}>{membershipToTransfer?.memberName}</Text> to another Care Cell.
+              Move <Text style={{ fontWeight: '700', color: primaryText }}>{membershipToTransfer?.memberName}</Text> to another Care Cell.
             </Text>
             <ScrollView style={{ maxHeight: 280 }}>
               {cells
@@ -386,7 +411,7 @@ export default function CareCellMembersTab({
                       <Text style={styles.transferCellTitle}>{c.cellCode} — {c.name}</Text>
                       <Text style={styles.transferCellSub}>Leader: {c.leaderName} · {c.location || 'Local'}</Text>
                     </View>
-                    <Check size={16} color="#1A2D5A" />
+                    <Check size={16} color={primaryText} />
                   </TouchableOpacity>
                 ))}
             </ScrollView>
@@ -407,10 +432,10 @@ export default function CareCellMembersTab({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FAF7F2',
   },
   cellSelectorRow: {
     paddingHorizontal: 16,
@@ -421,17 +446,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   cellChip: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 13,
     paddingVertical: 7,
     borderRadius: 10,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#CBD5E1',
     marginRight: 8,
   },
   cellChipActive: {
-    backgroundColor: '#1A2D5A',
-    borderColor: '#1A2D5A',
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
   },
   cellChipTxt: {
     fontSize: 12,
@@ -445,56 +470,61 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#FFFFFF',
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#BFDBFE',
+    borderColor: '#E2E8F0',
     marginHorizontal: 16,
     marginBottom: 8,
     paddingHorizontal: 14,
     paddingVertical: 12,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
   },
   rosterBannerTitle: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#1A2D5A',
+    color: '#0F172A',
   },
   rosterBannerSub: {
     fontSize: 12,
-    color: '#475569',
+    color: '#64748B',
     marginTop: 2,
   },
   exportBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#C7D2FE',
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.2,
+    borderColor: '#CBD5E1',
     justifyContent: 'center',
     alignItems: 'center',
   },
   mapBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 8,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.2,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    borderRadius: 10,
   },
   mapBtnTxt: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#1A2D5A',
+    color: '#334155',
   },
   addMembersBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1A2D5A',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    backgroundColor: '#0F172A',
+    paddingHorizontal: 13,
+    paddingVertical: 8.5,
     borderRadius: 10,
   },
   addMembersBtnTxt: {
@@ -550,15 +580,15 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#E0E7FF',
+    backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
   },
   avatarInitials: {
     fontSize: 15,
-    fontWeight: '700',
-    color: '#3730A3',
+    fontWeight: '800',
+    color: '#0F172A',
   },
   memberInfo: {
     flex: 1,
@@ -590,21 +620,25 @@ const styles = StyleSheet.create({
   actionsWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
   },
   actionBtnTransfer: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: '#EFF6FF',
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    borderWidth: 1.2,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#F8FAFC',
     justifyContent: 'center',
     alignItems: 'center',
   },
   actionBtnRemove: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: '#FEE2E2',
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    borderWidth: 1.2,
+    borderColor: '#FECACA',
+    backgroundColor: '#FEF2F2',
     justifyContent: 'center',
     alignItems: 'center',
   },

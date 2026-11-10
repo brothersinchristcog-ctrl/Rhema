@@ -12,6 +12,7 @@ import {
 import { X, Shield, Check, User, Users } from 'lucide-react-native';
 import CareCellService from '../../../../services/CareCellService';
 import { CareCell } from '../../../../types/CareCellTypes';
+import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
 
 interface GrantAdminAccessModalProps {
   visible: boolean;
@@ -26,6 +27,13 @@ export default function GrantAdminAccessModal({
   onClose,
   onSaved,
 }: GrantAdminAccessModalProps) {
+  const { isDark, primaryText, secondaryText } = useAdminTheme();
+  const primaryBtnBg = isDark ? '#FFFFFF' : '#0F172A';
+  const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
+  const secondaryBtnBg = isDark ? '#27272A' : '#F8FAFC';
+  const secondaryBtnBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1';
+  const secondaryBtnText = isDark ? '#E4E4E7' : '#334155';
+
   const [admins, setAdmins] = useState<{ id: string; name: string; phone?: string; userType: string }[]>([]);
   const [selectedUids, setSelectedUids] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
@@ -91,7 +99,7 @@ export default function GrantAdminAccessModal({
           <View style={styles.header}>
             <View style={styles.headerLeft}>
               <View style={styles.iconCircle}>
-                <Shield size={20} color="#1E3A8A" />
+                <Shield size={20} color={primaryText} />
               </View>
               <View>
                 <Text style={styles.title}>Grant Admin Access</Text>
@@ -101,13 +109,13 @@ export default function GrantAdminAccessModal({
               </View>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <X size={20} color="#64748B" />
+              <X size={20} color={secondaryText} />
             </TouchableOpacity>
           </View>
 
           {/* Description */}
           <View style={styles.instructionBanner}>
-            <Users size={16} color="#1E3A8A" style={{ marginRight: 8, marginTop: 2 }} />
+            <Users size={16} color={primaryText} style={{ marginRight: 8, marginTop: 2 }} />
             <Text style={styles.instructionText}>
               Select church administrators who should have access to manage this Care Cell in their Admin Dashboard.
             </Text>
@@ -116,7 +124,7 @@ export default function GrantAdminAccessModal({
           {/* Admins List */}
           {loading ? (
             <View style={styles.loadingWrap}>
-              <ActivityIndicator size="large" color="#1E3A8A" />
+              <ActivityIndicator size="large" color={primaryText} />
               <Text style={styles.loadingTxt}>Loading church administrators...</Text>
             </View>
           ) : admins.length === 0 ? (
@@ -137,18 +145,23 @@ export default function GrantAdminAccessModal({
                     activeOpacity={0.8}
                   >
                     <View style={styles.adminAvatar}>
-                      <User size={18} color={isSelected ? '#1E3A8A' : '#64748B'} />
+                      <User size={18} color={isSelected ? primaryText : secondaryText} />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.adminName, isSelected && styles.adminNameSelected]}>
+                      <Text style={[styles.adminName, isSelected && { color: primaryText, fontWeight: '700' }]}>
                         {item.name}
                       </Text>
                       <Text style={styles.adminMeta}>
                         {item.userType || 'Admin'} {item.phone ? `• ${item.phone}` : ''}
                       </Text>
                     </View>
-                    <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
-                      {isSelected && <Check size={14} color="#FFFFFF" strokeWidth={3} />}
+                    <View
+                      style={[
+                        styles.checkbox,
+                        isSelected && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+                      ]}
+                    >
+                      {isSelected && <Check size={14} color={primaryBtnText} strokeWidth={3} />}
                     </View>
                   </TouchableOpacity>
                 );
@@ -158,18 +171,21 @@ export default function GrantAdminAccessModal({
 
           {/* Footer Actions */}
           <View style={styles.footer}>
-            <TouchableOpacity onPress={onClose} style={styles.cancelBtn}>
-              <Text style={styles.cancelBtnTxt}>Cancel</Text>
+            <TouchableOpacity
+              onPress={onClose}
+              style={[styles.cancelBtn, { backgroundColor: secondaryBtnBg, borderWidth: 1, borderColor: secondaryBtnBorder }]}
+            >
+              <Text style={[styles.cancelBtnTxt, { color: secondaryBtnText }]}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={handleSave}
-              style={[styles.saveBtn, saving && { opacity: 0.7 }]}
+              style={[styles.saveBtn, { backgroundColor: primaryBtnBg }, saving && { opacity: 0.7 }]}
               disabled={saving}
             >
               {saving ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
+                <ActivityIndicator size="small" color={primaryBtnText} />
               ) : (
-                <Text style={styles.saveBtnTxt}>
+                <Text style={[styles.saveBtnTxt, { color: primaryBtnText }]}>
                   Save Permissions ({selectedUids.size})
                 </Text>
               )}
@@ -181,7 +197,7 @@ export default function GrantAdminAccessModal({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',

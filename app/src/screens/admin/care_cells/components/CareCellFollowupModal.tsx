@@ -16,6 +16,7 @@ import {
 import { X, Heart, Phone, MessageCircle, Home, UserCheck, Calendar } from 'lucide-react-native';
 import CareCellService from '../../../../services/CareCellService';
 import { CareCellFollowup, FollowupStatus, FollowupType } from '../../../../types/CareCellTypes';
+import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
 
 interface CareCellFollowupModalProps {
   visible: boolean;
@@ -63,6 +64,13 @@ export default function CareCellFollowupModal({
   initialReason,
   onSuccess,
 }: CareCellFollowupModalProps) {
+  const { isDark, primaryText, secondaryText } = useAdminTheme();
+  const primaryBtnBg = isDark ? '#FFFFFF' : '#0F172A';
+  const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
+  const secondaryBtnBg = isDark ? '#27272A' : '#F8FAFC';
+  const secondaryBtnBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1';
+  const secondaryBtnText = isDark ? '#E4E4E7' : '#334155';
+
   const [followupType, setFollowupType] = useState<FollowupType>('Phone Call');
   const [status, setStatus] = useState<FollowupStatus>('Contacted');
   const [reason, setReason] = useState(initialReason || 'Missed recent care cell fellowship');
@@ -172,11 +180,16 @@ export default function CareCellFollowupModal({
                 return (
                   <TouchableOpacity
                     key={t.type}
-                    style={[styles.typeChip, isSelected && styles.typeChipSelected]}
+                    style={[
+                      styles.typeChip,
+                      isSelected && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+                    ]}
                     onPress={() => setFollowupType(t.type)}
                   >
-                    <IconComponent size={14} color={isSelected ? '#1A2D5A' : '#64748B'} style={{ marginRight: 6 }} />
-                    <Text style={[styles.typeChipTxt, isSelected && styles.typeChipTxtSelected]}>{t.label}</Text>
+                    <IconComponent size={14} color={isSelected ? primaryBtnText : secondaryText} style={{ marginRight: 6 }} />
+                    <Text style={[styles.typeChipTxt, isSelected && { color: primaryBtnText, fontWeight: '700' }]}>
+                      {t.label}
+                    </Text>
                   </TouchableOpacity>
                 );
               })}
@@ -213,10 +226,15 @@ export default function CareCellFollowupModal({
                 return (
                   <TouchableOpacity
                     key={s}
-                    style={[styles.statusChip, isSelected && styles.statusChipSelected]}
+                    style={[
+                      styles.statusChip,
+                      isSelected && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+                    ]}
                     onPress={() => setStatus(s)}
                   >
-                    <Text style={[styles.statusChipTxt, isSelected && styles.statusChipTxtSelected]}>{s}</Text>
+                    <Text style={[styles.statusChipTxt, isSelected && { color: primaryBtnText, fontWeight: '700' }]}>
+                      {s}
+                    </Text>
                   </TouchableOpacity>
                 );
               })}
@@ -234,14 +252,22 @@ export default function CareCellFollowupModal({
 
             {/* Actions */}
             <View style={styles.actionRow}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={onClose} disabled={saving}>
-                <Text style={styles.cancelBtnTxt}>Cancel</Text>
+              <TouchableOpacity
+                style={[styles.cancelBtn, { backgroundColor: secondaryBtnBg, borderWidth: 1, borderColor: secondaryBtnBorder }]}
+                onPress={onClose}
+                disabled={saving}
+              >
+                <Text style={[styles.cancelBtnTxt, { color: secondaryBtnText }]}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.submitBtn} onPress={handleSave} disabled={saving}>
+              <TouchableOpacity
+                style={[styles.submitBtn, { backgroundColor: primaryBtnBg }]}
+                onPress={handleSave}
+                disabled={saving}
+              >
                 {saving ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <ActivityIndicator size="small" color={primaryBtnText} />
                 ) : (
-                  <Text style={styles.submitBtnTxt}>Save Record</Text>
+                  <Text style={[styles.submitBtnTxt, { color: primaryBtnText }]}>Save Record</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -252,7 +278,7 @@ export default function CareCellFollowupModal({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.65)',

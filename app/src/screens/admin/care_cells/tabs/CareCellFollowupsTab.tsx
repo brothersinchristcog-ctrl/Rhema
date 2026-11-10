@@ -26,6 +26,7 @@ import {
   ChevronDown,
 } from 'lucide-react-native';
 import CareCellService from '../../../../services/CareCellService';
+import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
 import { CareCell, CareCellFollowup, FollowupStatus } from '../../../../types/CareCellTypes';
 import CareCellFollowupModal from '../components/CareCellFollowupModal';
 
@@ -40,6 +41,13 @@ export default function CareCellFollowupsTab({
   selectedCellId,
   onSelectCell,
 }: CareCellFollowupsTabProps) {
+  const { isDark, primaryText, secondaryText, cardSurface, secondarySurface, borderColor } = useAdminTheme();
+  const primaryBtnBg = isDark ? '#FFFFFF' : '#0F172A';
+  const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
+  const secondaryBtnBg = isDark ? '#27272A' : '#F8FAFC';
+  const secondaryBtnBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1';
+  const secondaryBtnText = isDark ? '#E4E4E7' : '#334155';
+
   const [cells, setCells] = useState<CareCell[]>([]);
   const [selectedCell, setSelectedCell] = useState<string>(selectedCellId || 'ALL');
   const [followups, setFollowups] = useState<CareCellFollowup[]>([]);
@@ -165,13 +173,22 @@ export default function CareCellFollowupsTab({
             const isSelected = selectedCell === item.id;
             return (
               <TouchableOpacity
-                style={[styles.cellChip, isSelected && styles.cellChipSelected]}
+                style={[
+                  styles.cellChip,
+                  isSelected && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+                ]}
                 onPress={() => {
                   setSelectedCell(item.id);
                   if (item.id !== 'ALL') onSelectCell?.(item.id);
                 }}
+                activeOpacity={0.75}
               >
-                <Text style={[styles.cellChipTxt, isSelected && styles.cellChipTxtSelected]}>
+                <Text
+                  style={[
+                    styles.cellChipTxt,
+                    isSelected && { color: primaryBtnText, fontWeight: '800' },
+                  ]}
+                >
                   {item.cellCode || item.name}
                 </Text>
               </TouchableOpacity>
@@ -216,13 +233,13 @@ export default function CareCellFollowupsTab({
                   {item.memberPhone ? (
                     <>
                       <TouchableOpacity
-                        style={styles.inactiveIconBtn}
+                        style={[styles.inactiveIconBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder, borderWidth: 1 }]}
                         onPress={() => handleCall(item.memberPhone)}
                       >
-                        <Phone size={13} color="#1E293B" />
+                        <Phone size={13} color={secondaryBtnText} />
                       </TouchableOpacity>
                       <TouchableOpacity
-                        style={[styles.inactiveIconBtn, { backgroundColor: '#25D366' }]}
+                        style={[styles.inactiveIconBtn, { backgroundColor: '#16A34A' }]}
                         onPress={() => handleOpenWhatsApp(item.memberPhone, item.memberName)}
                       >
                         <MessageCircle size={13} color="#FFFFFF" />
@@ -230,7 +247,7 @@ export default function CareCellFollowupsTab({
                     </>
                   ) : null}
                   <TouchableOpacity
-                    style={styles.logFollowupBtn}
+                    style={[styles.logFollowupBtn, { backgroundColor: primaryBtnBg }]}
                     onPress={() => {
                       setTargetMember({
                         memberId: item.memberId,
@@ -241,7 +258,7 @@ export default function CareCellFollowupsTab({
                       setModalVisible(true);
                     }}
                   >
-                    <Text style={styles.logFollowupBtnTxt}>Log</Text>
+                    <Text style={[styles.logFollowupBtnTxt, { color: primaryBtnText }]}>Log</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -263,14 +280,15 @@ export default function CareCellFollowupsTab({
           />
         </View>
         <TouchableOpacity
-          style={styles.newFollowupBtn}
+          style={[styles.newFollowupBtn, { backgroundColor: primaryBtnBg }]}
           onPress={() => {
             setTargetMember(null);
             setModalVisible(true);
           }}
+          activeOpacity={0.85}
         >
-          <Plus size={16} color="#FFFFFF" style={{ marginRight: 4 }} />
-          <Text style={styles.newFollowupBtnTxt}>Log</Text>
+          <Plus size={16} color={primaryBtnText} style={{ marginRight: 5 }} />
+          <Text style={[styles.newFollowupBtnTxt, { color: primaryBtnText }]}>Log</Text>
         </TouchableOpacity>
       </View>
 
@@ -281,10 +299,19 @@ export default function CareCellFollowupsTab({
           return (
             <TouchableOpacity
               key={st}
-              style={[styles.statusFilterChip, isSelected && styles.statusFilterChipSelected]}
+              style={[
+                styles.statusFilterChip,
+                isSelected && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+              ]}
               onPress={() => setStatusFilter(st)}
+              activeOpacity={0.75}
             >
-              <Text style={[styles.statusFilterChipTxt, isSelected && styles.statusFilterChipTxtSelected]}>
+              <Text
+                style={[
+                  styles.statusFilterChipTxt,
+                  isSelected && { color: primaryBtnText, fontWeight: '800' },
+                ]}
+              >
                 {st}
               </Text>
             </TouchableOpacity>
@@ -295,7 +322,7 @@ export default function CareCellFollowupsTab({
       {/* Main Follow-ups List */}
       {loading ? (
         <View style={styles.centerLoading}>
-          <ActivityIndicator size="large" color="#1A2D5A" />
+          <ActivityIndicator size="large" color={primaryText} />
           <Text style={styles.loadingTxt}>Loading pastoral follow-ups...</Text>
         </View>
       ) : (
@@ -303,7 +330,7 @@ export default function CareCellFollowupsTab({
           data={filteredFollowups}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#1A2D5A']} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[primaryBtnBg]} />}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Heart size={44} color="#CBD5E1" />
@@ -365,16 +392,16 @@ export default function CareCellFollowupsTab({
                     {item.memberPhone ? (
                       <>
                         <TouchableOpacity
-                          style={styles.cardContactBtn}
+                          style={[styles.cardContactBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
                           onPress={() => handleCall(item.memberPhone)}
                         >
-                          <Phone size={13} color="#1A2D5A" />
+                          <Phone size={13} color={secondaryBtnText} />
                         </TouchableOpacity>
                         <TouchableOpacity
-                          style={[styles.cardContactBtn, { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }]}
+                          style={[styles.cardContactBtn, { backgroundColor: isDark ? 'rgba(22, 163, 74, 0.16)' : '#F0FDF4', borderColor: isDark ? 'rgba(34, 197, 94, 0.35)' : '#BBF7D0' }]}
                           onPress={() => handleOpenWhatsApp(item.memberPhone, item.memberName)}
                         >
-                          <MessageCircle size={13} color="#16A34A" />
+                          <MessageCircle size={13} color={isDark ? '#4ADE80' : '#16A34A'} />
                         </TouchableOpacity>
                       </>
                     ) : null}
@@ -407,10 +434,10 @@ export default function CareCellFollowupsTab({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FAF7F2',
   },
   cellSelectorRow: {
     paddingHorizontal: 16,
@@ -418,17 +445,17 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   cellChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+    paddingHorizontal: 13,
+    paddingVertical: 7,
+    borderRadius: 10,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#CBD5E1',
     marginRight: 8,
   },
   cellChipSelected: {
-    backgroundColor: '#1A2D5A',
-    borderColor: '#1A2D5A',
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
   },
   cellChipTxt: {
     fontSize: 12,
@@ -546,15 +573,15 @@ const styles = StyleSheet.create({
   newFollowupBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1A2D5A',
+    backgroundColor: '#0F172A',
     paddingHorizontal: 14,
     height: 42,
-    borderRadius: 12,
+    borderRadius: 10,
   },
   newFollowupBtnTxt: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   statusFilterRow: {
     flexDirection: 'row',
@@ -564,22 +591,25 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   statusFilterChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
   },
   statusFilterChipSelected: {
-    backgroundColor: '#1A2D5A',
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
   },
   statusFilterChipTxt: {
-    fontSize: 11,
-    fontWeight: '600',
+    fontSize: 11.5,
+    fontWeight: '700',
     color: '#64748B',
   },
   statusFilterChipTxtSelected: {
     color: '#FFFFFF',
-    fontWeight: '700',
+    fontWeight: '800',
   },
   centerLoading: {
     flex: 1,
@@ -705,13 +735,13 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   cardContactBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#EEF2FF',
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#F8FAFC',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#C7D2FE',
+    borderWidth: 1.2,
+    borderColor: '#CBD5E1',
   },
 });

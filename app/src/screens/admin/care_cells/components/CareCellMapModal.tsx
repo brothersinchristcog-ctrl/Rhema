@@ -34,6 +34,7 @@ import {
   Route,
 } from 'lucide-react-native';
 import { CareCell, CareCellMembership } from '../../../../types/CareCellTypes';
+import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
 
 const { width, height } = Dimensions.get('window');
 
@@ -58,6 +59,13 @@ export default function CareCellMapModal({
   inactiveMembers = [],
   onLogFollowup,
 }: CareCellMapModalProps) {
+  const { isDark, primaryText, secondaryText } = useAdminTheme();
+  const primaryBtnBg = isDark ? '#FFFFFF' : '#0F172A';
+  const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
+  const secondaryBtnBg = isDark ? '#27272A' : '#F8FAFC';
+  const secondaryBtnBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1';
+  const secondaryBtnText = isDark ? '#E4E4E7' : '#334155';
+
   const mapRef = useRef<MapView | null>(null);
 
   // View mode: 'map' or 'list'
@@ -221,7 +229,7 @@ export default function CareCellMapModal({
         {/* Top Header Bar */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.circularBackBtn} onPress={onClose} activeOpacity={0.8}>
-            <ArrowLeft size={20} color="#1A2D5A" strokeWidth={2.2} />
+            <ArrowLeft size={20} color={primaryText} strokeWidth={2.2} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle}>{cell.name}</Text>
@@ -231,16 +239,16 @@ export default function CareCellMapModal({
           </View>
           <View style={styles.viewModeToggleRow}>
             <TouchableOpacity
-              style={[styles.modeToggleBtn, viewMode === 'map' && styles.modeToggleBtnActive]}
+              style={[styles.modeToggleBtn, viewMode === 'map' && { backgroundColor: primaryBtnBg }]}
               onPress={() => setViewMode('map')}
             >
-              <MapIcon size={14} color={viewMode === 'map' ? '#FFFFFF' : '#64748B'} />
+              <MapIcon size={14} color={viewMode === 'map' ? primaryBtnText : secondaryText} />
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.modeToggleBtn, viewMode === 'list' && styles.modeToggleBtnActive]}
+              style={[styles.modeToggleBtn, viewMode === 'list' && { backgroundColor: primaryBtnBg }]}
               onPress={() => setViewMode('list')}
             >
-              <List size={14} color={viewMode === 'list' ? '#FFFFFF' : '#64748B'} />
+              <List size={14} color={viewMode === 'list' ? primaryBtnText : secondaryText} />
             </TouchableOpacity>
           </View>
         </View>
@@ -251,7 +259,7 @@ export default function CareCellMapModal({
             <TouchableOpacity
               style={[
                 styles.filterPill,
-                selectedLocality === 'ALL' && !filterNeedsVisitOnly && styles.filterPillActive,
+                selectedLocality === 'ALL' && !filterNeedsVisitOnly && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
               ]}
               onPress={() => {
                 setSelectedLocality('ALL');
@@ -261,7 +269,7 @@ export default function CareCellMapModal({
               <Text
                 style={[
                   styles.filterPillTxt,
-                  selectedLocality === 'ALL' && !filterNeedsVisitOnly && styles.filterPillTxtActive,
+                  selectedLocality === 'ALL' && !filterNeedsVisitOnly && { color: primaryBtnText, fontWeight: '700' },
                 ]}
               >
                 All Members ({members.length})
@@ -293,14 +301,14 @@ export default function CareCellMapModal({
               return (
                 <TouchableOpacity
                   key={loc}
-                  style={[styles.filterPill, isSelected && styles.filterPillActive]}
+                  style={[styles.filterPill, isSelected && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg }]}
                   onPress={() => {
                     setFilterNeedsVisitOnly(false);
                     setSelectedLocality(loc);
                   }}
                 >
-                  <MapPin size={11} color={isSelected ? '#FFFFFF' : '#64748B'} style={{ marginRight: 4 }} />
-                  <Text style={[styles.filterPillTxt, isSelected && styles.filterPillTxtActive]}>{loc}</Text>
+                  <MapPin size={11} color={isSelected ? primaryBtnText : secondaryText} style={{ marginRight: 4 }} />
+                  <Text style={[styles.filterPillTxt, isSelected && { color: primaryBtnText, fontWeight: '700' }]}>{loc}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -442,21 +450,21 @@ export default function CareCellMapModal({
                 {/* Quick Action Buttons */}
                 <View style={styles.selectedActionsRow}>
                   <TouchableOpacity
-                    style={styles.actionNavigateBtn}
+                    style={[styles.actionNavigateBtn, { backgroundColor: primaryBtnBg }]}
                     onPress={() => handleNavigateToMember(selectedMember)}
                     activeOpacity={0.85}
                   >
-                    <Navigation size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
-                    <Text style={styles.actionNavigateBtnTxt}>Directions</Text>
+                    <Navigation size={14} color={primaryBtnText} style={{ marginRight: 6 }} />
+                    <Text style={[styles.actionNavigateBtnTxt, { color: primaryBtnText }]}>Directions</Text>
                   </TouchableOpacity>
 
                   {selectedMember.memberPhone ? (
                     <>
                       <TouchableOpacity
-                        style={styles.actionCircleBtn}
+                        style={[styles.actionCircleBtn, { backgroundColor: secondaryBtnBg, borderWidth: 1, borderColor: secondaryBtnBorder }]}
                         onPress={() => handleCall(selectedMember.memberPhone)}
                       >
-                        <Phone size={15} color="#1A2D5A" />
+                        <Phone size={15} color={secondaryBtnText} />
                       </TouchableOpacity>
 
                       <TouchableOpacity
@@ -470,31 +478,33 @@ export default function CareCellMapModal({
 
                   {onLogFollowup && (
                     <TouchableOpacity
-                      style={styles.actionLogVisitBtn}
+                      style={[styles.actionLogVisitBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
                       onPress={() => {
                         onLogFollowup(selectedMember);
                       }}
                     >
-                      <Heart size={13} color="#1A2D5A" style={{ marginRight: 4 }} />
-                      <Text style={styles.actionLogVisitBtnTxt}>Log Visit</Text>
+                      <Heart size={13} color={secondaryBtnText} style={{ marginRight: 4 }} />
+                      <Text style={[styles.actionLogVisitBtnTxt, { color: secondaryBtnText }]}>Log Visit</Text>
                     </TouchableOpacity>
                   )}
 
                   <TouchableOpacity
                     style={[
                       styles.actionRouteBtn,
+                      { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder },
                       plannedRouteMemberIds.includes(selectedMember.memberId) && styles.actionRouteBtnActive,
                     ]}
                     onPress={() => handleToggleRouteMember(selectedMember.memberId)}
                   >
                     <Route
                       size={13}
-                      color={plannedRouteMemberIds.includes(selectedMember.memberId) ? '#FFFFFF' : '#1A2D5A'}
+                      color={plannedRouteMemberIds.includes(selectedMember.memberId) ? '#FFFFFF' : secondaryBtnText}
                       style={{ marginRight: 4 }}
                     />
                     <Text
                       style={[
                         styles.actionRouteBtnTxt,
+                        { color: secondaryBtnText },
                         plannedRouteMemberIds.includes(selectedMember.memberId) && styles.actionRouteBtnTxtActive,
                       ]}
                     >
@@ -547,20 +557,20 @@ export default function CareCellMapModal({
 
                   <View style={styles.listItemActionsRow}>
                     <TouchableOpacity
-                      style={styles.itemDirectionsBtn}
+                      style={[styles.itemDirectionsBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
                       onPress={() => handleNavigateToMember(item)}
                     >
-                      <Navigation size={13} color="#1A2D5A" style={{ marginRight: 4 }} />
-                      <Text style={styles.itemDirectionsBtnTxt}>Directions</Text>
+                      <Navigation size={13} color={secondaryBtnText} style={{ marginRight: 4 }} />
+                      <Text style={[styles.itemDirectionsBtnTxt, { color: secondaryBtnText }]}>Directions</Text>
                     </TouchableOpacity>
 
                     {item.memberPhone ? (
                       <>
                         <TouchableOpacity
-                          style={styles.itemCallBtn}
+                          style={[styles.itemCallBtn, { backgroundColor: secondaryBtnBg, borderWidth: 1, borderColor: secondaryBtnBorder }]}
                           onPress={() => handleCall(item.memberPhone)}
                         >
-                          <Phone size={13} color="#1A2D5A" />
+                          <Phone size={13} color={secondaryBtnText} />
                         </TouchableOpacity>
                         <TouchableOpacity
                           style={[styles.itemCallBtn, { backgroundColor: '#25D366' }]}
@@ -573,18 +583,22 @@ export default function CareCellMapModal({
 
                     {onLogFollowup && (
                       <TouchableOpacity
-                        style={styles.itemLogBtn}
+                        style={[styles.itemLogBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
                         onPress={() => onLogFollowup(item)}
                       >
-                        <Text style={styles.itemLogBtnTxt}>Log Visit</Text>
+                        <Text style={[styles.itemLogBtnTxt, { color: secondaryBtnText }]}>Log Visit</Text>
                       </TouchableOpacity>
                     )}
 
                     <TouchableOpacity
-                      style={[styles.itemRouteBtn, inRoute && styles.itemRouteBtnActive]}
+                      style={[
+                        styles.itemRouteBtn,
+                        { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder },
+                        inRoute && styles.itemRouteBtnActive,
+                      ]}
                       onPress={() => handleToggleRouteMember(item.memberId)}
                     >
-                      <Text style={[styles.itemRouteBtnTxt, inRoute && styles.itemRouteBtnTxtActive]}>
+                      <Text style={[styles.itemRouteBtnTxt, { color: secondaryBtnText }, inRoute && styles.itemRouteBtnTxtActive]}>
                         {inRoute ? 'In Route' : '+ Route'}
                       </Text>
                     </TouchableOpacity>
@@ -599,7 +613,7 @@ export default function CareCellMapModal({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles({
   container: {
     flex: 1,
     backgroundColor: '#F8FAFC',

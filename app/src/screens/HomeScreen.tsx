@@ -589,6 +589,10 @@ interface ScreenThemeConfig {
   bentoYoutubeBorder: string;
   bentoYoutubeText: string;
   bentoYoutubeSub: string;
+  bentoRosterGradient: readonly [string, string, ...string[]];
+  bentoRosterBorder: string;
+  bentoRosterText: string;
+  bentoRosterSub: string;
 }
 
 const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig => {
@@ -702,6 +706,10 @@ const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig =>
         bentoYoutubeBorder: '#991B1B',
         bentoYoutubeText: '#FFFFFF',
         bentoYoutubeSub: '#FECACA',
+        bentoRosterGradient: ['#0F5A54', '#083733'],
+        bentoRosterBorder: '#14847B',
+        bentoRosterText: '#FFFFFF',
+        bentoRosterSub: '#CCFBF1',
       };
     case 'sage_ecru':
       return {
@@ -802,6 +810,10 @@ const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig =>
         bentoYoutubeBorder: '#7E2222',
         bentoYoutubeText: '#FFFFFF',
         bentoYoutubeSub: '#F8D7D7',
+        bentoRosterGradient: ['#234B44', '#142E29'],
+        bentoRosterBorder: '#387066',
+        bentoRosterText: '#FFFFFF',
+        bentoRosterSub: '#D1E7E2',
       };
     case 'pure_dark':
       return {
@@ -902,6 +914,10 @@ const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig =>
         bentoYoutubeBorder: '#591D1D',
         bentoYoutubeText: '#F8FAFC',
         bentoYoutubeSub: '#FCA5A5',
+        bentoRosterGradient: ['#112E2B', '#091B19'],
+        bentoRosterBorder: '#1F524C',
+        bentoRosterText: '#F8FAFC',
+        bentoRosterSub: '#99F6E4',
       };
     case 'pure_white':
       return {
@@ -1012,6 +1028,10 @@ const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig =>
         bentoYoutubeBorder: '#991B1B',
         bentoYoutubeText: '#FFFFFF',
         bentoYoutubeSub: '#FECACA',
+        bentoRosterGradient: ['#0F5A54', '#083733'],
+        bentoRosterBorder: '#14847B',
+        bentoRosterText: '#FFFFFF',
+        bentoRosterSub: '#CCFBF1',
       };
     case 'theme_green':
     default:
@@ -4753,6 +4773,54 @@ export default function HomeScreen() {
                 </LinearGradient>
               </TouchableOpacity>
             </View>
+
+            {/* ── ROW 7: Service Roster Banner Card (matches 4-in-a-Row Quick Access items) ── */}
+            <TouchableOpacity
+              style={styles.clayGalleryTouch}
+              activeOpacity={0.88}
+              onPress={() => navigation.navigate('MyService')}
+            >
+              <LinearGradient
+                colors={screenTheme.bentoRosterGradient || ['#0F5A54', '#083733']}
+                start={{ x: 0, y: 0.25 }}
+                end={{ x: 1, y: 0.75 }}
+                style={[styles.clayGalleryCard, { borderColor: screenTheme.bentoRosterBorder || '#14847B', borderWidth: 1.2, paddingRight: 14 }]}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                  {/* 3D Service Roster Stage Icon */}
+                  <View style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+                    <Image
+                      source={require('../../assets/gallery_3d_stage.png')}
+                      style={{ width: 40, height: 40 }}
+                      resizeMode="contain"
+                    />
+                  </View>
+
+                  <View style={{ flex: 1, justifyContent: 'center', marginLeft: 10, marginRight: 8 }}>
+                    <Text
+                      style={[styles.clayCardTitle, { color: screenTheme.bentoRosterText || '#FFFFFF', fontSize: 15.5, fontWeight: '800' }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.8}
+                    >
+                      {t('nav.serviceRoster') || 'Service Roster'}
+                    </Text>
+                    <Text
+                      style={[styles.clayCardSub, { color: screenTheme.bentoRosterSub || 'rgba(255,255,255,0.85)', fontSize: 11, marginTop: 1.5 }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.8}
+                    >
+                      My duties, worship setlist & schedule
+                    </Text>
+                  </View>
+
+                  <View style={[styles.clayArrowCircleSm, { backgroundColor: 'rgba(255,255,255,0.16)' }]}>
+                    <ChevronRight size={15} color="#FFFFFF" strokeWidth={2.5} />
+                  </View>
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
               </View>
             )}
         </View>

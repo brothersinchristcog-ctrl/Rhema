@@ -32,6 +32,7 @@ import {
   CareCellVisitMemberResponse,
   MemberVisitResponseStatus,
 } from '../../../../types/CareCellTypes';
+import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
 
 interface CareCellVisitResponsesModalProps {
   visible: boolean;
@@ -48,6 +49,13 @@ export default function CareCellVisitResponsesModal({
   churchId,
   onResponseUpdated,
 }: CareCellVisitResponsesModalProps) {
+  const { isDark, primaryText, secondaryText } = useAdminTheme();
+  const primaryBtnBg = isDark ? '#FFFFFF' : '#0F172A';
+  const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
+  const secondaryBtnBg = isDark ? '#27272A' : '#F8FAFC';
+  const secondaryBtnBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1';
+  const secondaryBtnText = isDark ? '#E4E4E7' : '#334155';
+
   const [filter, setFilter] = useState<'ALL' | 'Accepted' | 'Declined' | 'Pending'>('ALL');
   const [search, setSearch] = useState('');
   const [updatingMemberId, setUpdatingMemberId] = useState<string | null>(null);
@@ -149,11 +157,14 @@ export default function CareCellVisitResponsesModal({
           {/* 4 Summary Cards */}
           <View style={styles.kpiRow}>
             <TouchableOpacity
-              style={[styles.kpiCard, filter === 'ALL' && styles.kpiCardActive]}
+              style={[
+                styles.kpiCard,
+                filter === 'ALL' && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+              ]}
               onPress={() => setFilter('ALL')}
             >
-              <Text style={styles.kpiValue}>{total}</Text>
-              <Text style={styles.kpiLabel}>Total</Text>
+              <Text style={[styles.kpiValue, filter === 'ALL' && { color: primaryBtnText }]}>{total}</Text>
+              <Text style={[styles.kpiLabel, filter === 'ALL' && { color: primaryBtnText }]}>Total</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -283,7 +294,7 @@ export default function CareCellVisitResponsesModal({
                   {/* Actions Right (Call, WhatsApp, Toggle Status) */}
                   <View style={styles.memberActionsRight}>
                     {isUpdating ? (
-                      <ActivityIndicator size="small" color="#1A2D5A" />
+                      <ActivityIndicator size="small" color={primaryText} />
                     ) : (
                       <>
                         {item.memberPhone ? (
@@ -327,10 +338,10 @@ export default function CareCellVisitResponsesModal({
                               setEditingPreferredMember(item);
                               setLeaderCustomTime(item.preferredTime || '');
                             }}
-                            style={styles.smallTimeBtn}
+                            style={[styles.smallTimeBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
                             hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                           >
-                            <Clock size={11} color="#1A2D5A" />
+                            <Clock size={11} color={secondaryBtnText} />
                           </TouchableOpacity>
                         </View>
                       </>
@@ -359,7 +370,7 @@ export default function CareCellVisitResponsesModal({
                   <Text style={styles.leaderEditSub}>For {editingPreferredMember.memberName}</Text>
                 </View>
                 <TouchableOpacity onPress={() => setEditingPreferredMember(null)} style={styles.leaderEditCloseBtn}>
-                  <X size={16} color="#64748B" />
+                  <X size={16} color={secondaryText} />
                 </TouchableOpacity>
               </View>
 
@@ -371,17 +382,23 @@ export default function CareCellVisitResponsesModal({
                   'Afternoon (2:00 PM – 4:00 PM)',
                   'Evening (5:00 PM – 7:00 PM)',
                   'Night (7:00 PM – 9:00 PM)',
-                ].map((slot) => (
-                  <TouchableOpacity
-                    key={slot}
-                    style={[styles.leaderTimeSlotPill, leaderCustomTime === slot && styles.leaderTimeSlotPillActive]}
-                    onPress={() => setLeaderCustomTime(slot)}
-                  >
-                    <Text style={[styles.leaderTimeSlotPillTxt, leaderCustomTime === slot && styles.leaderTimeSlotPillTxtActive]}>
-                      {slot}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                ].map((slot) => {
+                  const isActive = leaderCustomTime === slot;
+                  return (
+                    <TouchableOpacity
+                      key={slot}
+                      style={[
+                        styles.leaderTimeSlotPill,
+                        isActive && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+                      ]}
+                      onPress={() => setLeaderCustomTime(slot)}
+                    >
+                      <Text style={[styles.leaderTimeSlotPillTxt, isActive && { color: primaryBtnText, fontWeight: '800' }]}>
+                        {slot}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
 
               <TextInput
@@ -394,14 +411,14 @@ export default function CareCellVisitResponsesModal({
 
               <View style={styles.leaderEditActionsRow}>
                 <TouchableOpacity
-                  style={styles.leaderEditCancelBtn}
+                  style={[styles.leaderEditCancelBtn, { backgroundColor: secondaryBtnBg, borderWidth: 1, borderColor: secondaryBtnBorder }]}
                   onPress={() => setEditingPreferredMember(null)}
                 >
-                  <Text style={styles.leaderEditCancelBtnTxt}>Cancel</Text>
+                  <Text style={[styles.leaderEditCancelBtnTxt, { color: secondaryBtnText }]}>Cancel</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={styles.leaderEditSaveBtn}
+                  style={[styles.leaderEditSaveBtn, { backgroundColor: primaryBtnBg }]}
                   onPress={async () => {
                     if (!editingPreferredMember) return;
                     try {
@@ -424,7 +441,7 @@ export default function CareCellVisitResponsesModal({
                     }
                   }}
                 >
-                  <Text style={styles.leaderEditSaveBtnTxt}>Save Preferred Time</Text>
+                  <Text style={[styles.leaderEditSaveBtnTxt, { color: primaryBtnText }]}>Save Preferred Time</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -435,7 +452,7 @@ export default function CareCellVisitResponsesModal({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.65)',

@@ -18,6 +18,7 @@ import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import FirestoreService from '../../../../services/FirestoreService';
 import CareCellService, { isMemberInLocation } from '../../../../services/CareCellService';
 import { useAuth } from '../../../../context/AuthContext';
+import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
 import MemberLookupModal from './MemberLookupModal';
 import { CareCell, CareCellStatus } from '../../../../types/CareCellTypes';
 
@@ -37,6 +38,13 @@ export default function CareCellFormModal({
   onSaved,
   cellToEdit,
 }: CareCellFormModalProps) {
+  const { isDark, primaryText, secondaryText, cardSurface, secondarySurface, borderColor } = useAdminTheme();
+  const primaryBtnBg = isDark ? '#FFFFFF' : '#0F172A';
+  const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
+  const secondaryBtnBg = isDark ? '#27272A' : '#F8FAFC';
+  const secondaryBtnBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1';
+  const secondaryBtnText = isDark ? '#E4E4E7' : '#334155';
+
   const isEditing = !!cellToEdit;
 
   // Form Fields
@@ -701,11 +709,19 @@ export default function CareCellFormModal({
                     return (
                       <TouchableOpacity
                         key={d}
-                        style={[styles.dayChip, isSelected && styles.dayChipActive]}
+                        style={[
+                          styles.dayChip,
+                          isSelected && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+                        ]}
                         onPress={() => setMeetingDay(d)}
                         activeOpacity={0.8}
                       >
-                        <Text style={[styles.dayChipTxt, isSelected && styles.dayChipTxtActive]}>
+                        <Text
+                          style={[
+                            styles.dayChipTxt,
+                            isSelected && { color: primaryBtnText, fontWeight: '800' },
+                          ]}
+                        >
                           {d.slice(0, 3)}
                         </Text>
                       </TouchableOpacity>
@@ -790,32 +806,47 @@ export default function CareCellFormModal({
                 <View style={[styles.fieldGroup, { flex: 1.3 }]}>
                   <Text style={styles.fieldLabel}>Status</Text>
                   <View style={styles.statusRow}>
-                    {STATUS_OPTIONS.map((st) => (
-                      <TouchableOpacity
-                        key={st}
-                        style={[styles.statusChip, status === st && styles.statusChipActive]}
-                        onPress={() => setStatus(st)}
-                      >
-                        <Text style={[styles.statusChipTxt, status === st && styles.statusChipTxtActive]}>
-                          {st}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
+                    {STATUS_OPTIONS.map((st) => {
+                      const isSelected = status === st;
+                      return (
+                        <TouchableOpacity
+                          key={st}
+                          style={[
+                            styles.statusChip,
+                            isSelected && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+                          ]}
+                          onPress={() => setStatus(st)}
+                        >
+                          <Text
+                            style={[
+                              styles.statusChipTxt,
+                              isSelected && { color: primaryBtnText, fontWeight: '800' },
+                            ]}
+                          >
+                            {st}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
                 </View>
               </View>
 
               {/* Submit Button */}
               <TouchableOpacity
-                style={[styles.submitBtn, saving && styles.submitBtnDisabled]}
+                style={[
+                  styles.submitBtn,
+                  { backgroundColor: primaryBtnBg },
+                  saving && styles.submitBtnDisabled,
+                ]}
                 onPress={handleSave}
                 disabled={saving}
                 activeOpacity={0.85}
               >
                 {saving ? (
-                  <ActivityIndicator color="#FFFFFF" />
+                  <ActivityIndicator color={primaryBtnText} />
                 ) : (
-                  <Text style={styles.submitBtnTxt}>
+                  <Text style={[styles.submitBtnTxt, { color: primaryBtnText }]}>
                     {isEditing ? 'SAVE CARE CELL CHANGES' : 'CREATE CARE CELL'}
                   </Text>
                 )}
@@ -1213,7 +1244,7 @@ export default function CareCellFormModal({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.65)',
@@ -1254,7 +1285,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18.5,
     fontWeight: '800',
-    color: '#1A2D5A',
+    color: '#0F172A',
     letterSpacing: -0.3,
   },
   headerSubtitle: {
@@ -1297,14 +1328,16 @@ const styles = StyleSheet.create({
   autoCodeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 3,
     borderRadius: 6,
   },
   autoCodeBtnTxt: {
     fontSize: 11,
-    color: '#1A2D5A',
+    color: '#0F172A',
     fontWeight: '700',
   },
   textInput: {
@@ -1321,7 +1354,7 @@ const styles = StyleSheet.create({
   codeField: {
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     fontWeight: '700',
-    color: '#1A2D5A',
+    color: '#0F172A',
   },
   textArea: {
     minHeight: 65,
@@ -1338,15 +1371,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 13,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F8FAFC',
     borderWidth: 1.2,
-    borderColor: '#BFDBFE',
+    borderColor: '#CBD5E1',
     borderRadius: 12,
   },
   lookupTriggerBtnTxt: {
     fontSize: 13.5,
     fontWeight: '700',
-    color: '#1A2D5A',
+    color: '#0F172A',
   },
   lookupTriggerBtnSecondary: {
     flexDirection: 'row',

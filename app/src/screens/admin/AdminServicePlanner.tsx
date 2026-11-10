@@ -2330,7 +2330,14 @@ export default function AdminServicePlanner({ navigation }: any) {
       Alert.alert('Required', 'Please enter ministry team name.');
       return;
     }
-    const leaderMember = churchMembers.find(m => m.id === teamLeaderId);
+    const leaderMember = teamLeaderId ? churchMembers.find(m => m.id === teamLeaderId) : undefined;
+    const leaderName = leaderMember
+      ? (leaderMember.name || `${leaderMember.firstName || ''} ${leaderMember.lastName || ''}`.trim() || '')
+      : '';
+    const leaderPhone = leaderMember
+      ? (leaderMember.phone || (leaderMember as any).phoneNumber || (leaderMember as any).mobile || '')
+      : '';
+    const cleanMemberIds = (teamMemberIds || []).filter((id): id is string => Boolean(id));
 
     try {
       setSavingTeam(true);
@@ -2338,21 +2345,21 @@ export default function AdminServicePlanner({ navigation }: any) {
         await ServiceRosterService.updateMinistryTeam(churchId, selectedTeam.id, {
           name: teamNameInput.trim(),
           description: teamDescInput.trim(),
-          color: teamColorInput,
-          leaderId: teamLeaderId,
-          leaderName: leaderMember?.name || leaderMember?.firstName,
-          leaderPhone: leaderMember?.phone,
-          memberIds: teamMemberIds
+          color: teamColorInput || '#2E6B4F',
+          leaderId: teamLeaderId || '',
+          leaderName,
+          leaderPhone,
+          memberIds: cleanMemberIds
         });
       } else {
         await ServiceRosterService.createMinistryTeam(churchId, {
           name: teamNameInput.trim(),
           description: teamDescInput.trim(),
-          color: teamColorInput,
-          leaderId: teamLeaderId,
-          leaderName: leaderMember?.name || leaderMember?.firstName,
-          leaderPhone: leaderMember?.phone,
-          memberIds: teamMemberIds,
+          color: teamColorInput || '#2E6B4F',
+          leaderId: teamLeaderId || '',
+          leaderName,
+          leaderPhone,
+          memberIds: cleanMemberIds,
           active: true
         });
       }

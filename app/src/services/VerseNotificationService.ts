@@ -578,16 +578,21 @@ class VerseNotificationService {
       }
 
       // Offline / missing fallback: Ensure all required indices are populated from bundled JSON
+      // and backfill any missing referenceEn / referenceTe fields
       let bundledVerses: any[] | null = null;
+      const getBundled = () => {
+        if (!bundledVerses) {
+          try {
+            bundledVerses = require('../../assets/bulk_verses.json');
+          } catch (_) {}
+        }
+        return bundledVerses;
+      };
       for (const idx of requiredIndices) {
         if (!cache[idx]) {
-          if (!bundledVerses) {
-            try {
-              bundledVerses = require('../../assets/bulk_verses.json');
-            } catch (_) {}
-          }
-          if (bundledVerses && bundledVerses[idx]) {
-            const bv = bundledVerses[idx];
+          const list = getBundled();
+          if (list && list[idx]) {
+            const bv = list[idx];
             cache[idx] = {
               id: `verse_${idx}`,
               index: idx,
@@ -596,6 +601,13 @@ class VerseNotificationService {
               referenceEn: bv.referenceEn,
               referenceTe: bv.referenceTe,
             };
+          }
+        } else if (!cache[idx].referenceEn || !cache[idx].referenceTe) {
+          const list = getBundled();
+          if (list && list[idx]) {
+            const bv = list[idx];
+            if (!cache[idx].referenceEn && bv.referenceEn) cache[idx].referenceEn = bv.referenceEn;
+            if (!cache[idx].referenceTe && bv.referenceTe) cache[idx].referenceTe = bv.referenceTe;
           }
         }
       }
@@ -704,20 +716,45 @@ class VerseNotificationService {
       }
 
       const teVerse = (targetVerse.verseTe || targetVerse.verseEn || '').replace(/^["“”'‘]+|["“”'‘]+$/g, '').trim();
-      const teRef = (targetVerse.referenceTe || targetVerse.referenceEn || '').trim();
+      let teRef = (targetVerse.referenceTe || targetVerse.referenceEn || '').trim();
       const enVerse = (targetVerse.verseEn || '').replace(/^["“”'‘]+|["“”'‘]+$/g, '').trim();
-      const enRef = (targetVerse.referenceEn || '').trim();
+      let enRef = (targetVerse.referenceEn || '').trim();
+
+      if ((!teRef || !enRef || teRef === enRef) && typeof targetVerse.index === 'number') {
+        try {
+          const bundled: any[] = require('../../assets/bulk_verses.json');
+          const bv = bundled?.[targetVerse.index];
+          if (bv) {
+            if (!enRef && bv.referenceEn) enRef = String(bv.referenceEn).trim();
+            if ((!teRef || teRef === enRef) && bv.referenceTe) teRef = String(bv.referenceTe).trim();
+          }
+        } catch (_) {}
+      }
 
       const combinedRef = (teRef && enRef && teRef !== enRef)
         ? `${teRef} | ${enRef}`
         : (teRef || enRef);
 
-      const GAP = '\n \n';
       let body = '';
       if (teVerse && enVerse && teVerse !== enVerse) {
-        body = `${teVerse}${GAP}${enVerse}${GAP}${combinedRef}`;
+        const teLines = Math.max(1, Math.ceil(teVerse.length / 44));
+        const enLines = Math.max(1, Math.ceil(enVerse.length / 42));
+        const totalVerseLines = teLines + enLines;
+
+        if (totalVerseLines <= 3) {
+          body = combinedRef ? `${teVerse}\n \n${enVerse}\n \n${combinedRef}` : `${teVerse}\n \n${enVerse}`;
+        } else if (totalVerseLines <= 5) {
+          body = combinedRef ? `${teVerse}\n \n${enVerse}\n${combinedRef}` : `${teVerse}\n \n${enVerse}`;
+        } else if (totalVerseLines === 6) {
+          body = combinedRef ? `${teVerse}\n${enVerse}\n${combinedRef}` : `${teVerse}\n${enVerse}`;
+        } else {
+          const teWithRef = teRef && !teVerse.includes(teRef) ? `${teVerse} (${teRef})` : teVerse;
+          const enWithRef = enRef && !enVerse.includes(enRef) ? `${enVerse} (${enRef})` : enVerse;
+          body = combinedRef ? `${teWithRef}\n${enWithRef}\n${combinedRef}` : `${teWithRef}\n${enWithRef}`;
+        }
       } else {
-        body = `${teVerse || enVerse}${GAP}${combinedRef}`;
+        const singleVerse = teVerse || enVerse;
+        body = combinedRef ? `${singleVerse}\n \n${combinedRef}` : singleVerse;
       }
 
       // Schedule exactly ONE combined notification

@@ -24,6 +24,7 @@ import {
 } from 'lucide-react-native';
 import CareCellService from '../../../../services/CareCellService';
 import { formatDateDisplay } from '../../../../utils/DateUtils';
+import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
 import { CareCell, CareCellMeeting } from '../../../../types/CareCellTypes';
 
 const MONTH_NAMES = [
@@ -48,6 +49,16 @@ export default function CareCellMeetingsTab({
   onEditMeeting,
   onMarkAttendance,
 }: CareCellMeetingsTabProps) {
+  const { isDark, primaryText, secondaryText, cardSurface, secondarySurface, borderColor } = useAdminTheme();
+  const primaryBtnBg = isDark ? '#FFFFFF' : '#0F172A';
+  const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
+  const secondaryBtnBg = isDark ? '#27272A' : '#F8FAFC';
+  const secondaryBtnBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1';
+  const secondaryBtnText = isDark ? '#E4E4E7' : '#334155';
+  const dangerBtnBg = isDark ? 'rgba(220, 38, 38, 0.14)' : '#FEF2F2';
+  const dangerBtnBorder = isDark ? 'rgba(248, 113, 113, 0.35)' : '#FECACA';
+  const dangerBtnText = isDark ? '#F87171' : '#DC2626';
+
   const activeCellId = selectedCellId || 'ALL';
   const now = new Date();
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
@@ -162,8 +173,8 @@ export default function CareCellMeetingsTab({
         {item.bibleBook ? (
           <View style={styles.scriptureBox}>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-              <BookOpen size={13} color="#1A2D5A" style={{ marginRight: 5 }} />
-              <Text style={styles.scriptureRef}>
+              <BookOpen size={13} color={primaryText} style={{ marginRight: 5 }} />
+              <Text style={[styles.scriptureRef, { color: primaryText }]}>
                 {item.bibleBook} {item.bibleChapter}:{item.bibleVerse}
               </Text>
             </View>
@@ -191,32 +202,34 @@ export default function CareCellMeetingsTab({
         <View style={styles.cardActions}>
           {!isCancelled && (
             <TouchableOpacity
-              style={styles.markAttendanceBtn}
+              style={[styles.markAttendanceBtn, { backgroundColor: primaryBtnBg }]}
               onPress={() => onMarkAttendance(item)}
-              activeOpacity={0.8}
+              activeOpacity={0.85}
             >
-              <ClipboardCheck size={14} color="#FFFFFF" style={{ marginRight: 5 }} />
-              <Text style={styles.markAttendanceBtnTxt}>
+              <ClipboardCheck size={14} color={primaryBtnText} style={{ marginRight: 6 }} />
+              <Text style={[styles.markAttendanceBtnTxt, { color: primaryBtnText }]}>
                 {isCompleted ? 'Review Attendance' : 'Mark Attendance'}
               </Text>
             </TouchableOpacity>
           )}
 
           <TouchableOpacity
-            style={styles.editBtn}
+            style={[styles.editBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
             onPress={() => onEditMeeting(item)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            activeOpacity={0.8}
           >
-            <Edit2 size={15} color="#1A2D5A" />
+            <Edit2 size={15} color={secondaryBtnText} />
           </TouchableOpacity>
 
           {!isCancelled && isUpcoming && (
             <TouchableOpacity
-              style={styles.cancelBtn}
+              style={[styles.cancelBtn, { backgroundColor: dangerBtnBg, borderColor: dangerBtnBorder }]}
               onPress={() => handleCancelMeeting(item)}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              activeOpacity={0.8}
             >
-              <XCircle size={15} color="#DC2626" />
+              <XCircle size={15} color={dangerBtnText} />
             </TouchableOpacity>
           )}
         </View>
@@ -230,31 +243,52 @@ export default function CareCellMeetingsTab({
       <View style={styles.cellSelectorRow}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.cellSelectorScroll}>
           <TouchableOpacity
-            style={[styles.cellChip, activeCellId === 'ALL' && styles.cellChipActive]}
+            style={[
+              styles.cellChip,
+              activeCellId === 'ALL' && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+            ]}
             onPress={() => onSelectCellId('ALL')}
+            activeOpacity={0.75}
           >
-            <Text style={[styles.cellChipTxt, activeCellId === 'ALL' && styles.cellChipTxtActive]}>
+            <Text
+              style={[
+                styles.cellChipTxt,
+                activeCellId === 'ALL' && { color: primaryBtnText, fontWeight: '800' },
+              ]}
+            >
               All Cells
             </Text>
           </TouchableOpacity>
 
-          {cells.map((c) => (
-            <TouchableOpacity
-              key={c.id}
-              style={[styles.cellChip, activeCellId === c.id && styles.cellChipActive]}
-              onPress={() => onSelectCellId(c.id)}
-            >
-              <Text style={[styles.cellChipTxt, activeCellId === c.id && styles.cellChipTxtActive]}>
-                {c.cellCode}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {cells.map((c) => {
+            const isSelected = activeCellId === c.id;
+            return (
+              <TouchableOpacity
+                key={c.id}
+                style={[
+                  styles.cellChip,
+                  isSelected && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+                ]}
+                onPress={() => onSelectCellId(c.id)}
+                activeOpacity={0.75}
+              >
+                <Text
+                  style={[
+                    styles.cellChipTxt,
+                    isSelected && { color: primaryBtnText, fontWeight: '800' },
+                  ]}
+                >
+                  {c.cellCode}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
       </View>
 
       {/* Period & Schedule Meeting Row */}
       <View style={styles.periodRow}>
-        <View style={styles.periodDisplay}>
+        <View style={[styles.periodDisplay, { backgroundColor: cardSurface, borderColor: secondaryBtnBorder }]}>
           <TouchableOpacity
             onPress={() => {
               if (selectedMonth === 1) {
@@ -266,9 +300,9 @@ export default function CareCellMeetingsTab({
             }}
             style={styles.periodArrow}
           >
-            <Text style={styles.periodArrowTxt}>‹</Text>
+            <Text style={[styles.periodArrowTxt, { color: primaryText }]}>‹</Text>
           </TouchableOpacity>
-          <Text style={styles.periodTxt}>
+          <Text style={[styles.periodTxt, { color: primaryText }]}>
             {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
           </Text>
           <TouchableOpacity
@@ -282,29 +316,45 @@ export default function CareCellMeetingsTab({
             }}
             style={styles.periodArrow}
           >
-            <Text style={styles.periodArrowTxt}>›</Text>
+            <Text style={[styles.periodArrowTxt, { color: primaryText }]}>›</Text>
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={styles.scheduleBtn} onPress={onOpenCreateMeeting} activeOpacity={0.85}>
-          <CalendarPlus size={16} color="#FFFFFF" style={{ marginRight: 5 }} />
-          <Text style={styles.scheduleBtnTxt}>Schedule Meeting</Text>
+        <TouchableOpacity
+          style={[styles.scheduleBtn, { backgroundColor: primaryBtnBg }]}
+          onPress={onOpenCreateMeeting}
+          activeOpacity={0.85}
+        >
+          <CalendarPlus size={16} color={primaryBtnText} style={{ marginRight: 6 }} />
+          <Text style={[styles.scheduleBtnTxt, { color: primaryBtnText }]}>Schedule Meeting</Text>
         </TouchableOpacity>
       </View>
 
       {/* Status Filter Chips */}
       <View style={styles.statusFilterRow}>
-        {(['All', 'Upcoming', 'Completed', 'Cancelled'] as const).map((st) => (
-          <TouchableOpacity
-            key={st}
-            style={[styles.statusFilterChip, statusFilter === st && styles.statusFilterChipActive]}
-            onPress={() => setStatusFilter(st)}
-          >
-            <Text style={[styles.statusFilterChipTxt, statusFilter === st && styles.statusFilterChipTxtActive]}>
-              {st}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        {(['All', 'Upcoming', 'Completed', 'Cancelled'] as const).map((st) => {
+          const isSelected = statusFilter === st;
+          return (
+            <TouchableOpacity
+              key={st}
+              style={[
+                styles.statusFilterChip,
+                isSelected && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+              ]}
+              onPress={() => setStatusFilter(st)}
+              activeOpacity={0.75}
+            >
+              <Text
+                style={[
+                  styles.statusFilterChipTxt,
+                  isSelected && { color: primaryBtnText, fontWeight: '800' },
+                ]}
+              >
+                {st}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       {/* Meetings List */}
@@ -335,10 +385,10 @@ export default function CareCellMeetingsTab({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FAF7F2',
   },
   cellSelectorRow: {
     paddingHorizontal: 16,
@@ -349,17 +399,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   cellChip: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 13,
     paddingVertical: 7,
     borderRadius: 10,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#CBD5E1',
     marginRight: 8,
   },
   cellChipActive: {
-    backgroundColor: '#1A2D5A',
-    borderColor: '#1A2D5A',
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
   },
   cellChipTxt: {
     fontSize: 12,
@@ -381,10 +431,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingHorizontal: 6,
-    paddingVertical: 4,
+    borderWidth: 1.2,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
   },
   periodArrow: {
     width: 24,
@@ -395,21 +445,21 @@ const styles = StyleSheet.create({
   periodArrowTxt: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#1A2D5A',
+    color: '#0F172A',
     marginTop: -2,
   },
   periodTxt: {
     fontSize: 12.5,
     fontWeight: '800',
-    color: '#1A2D5A',
+    color: '#0F172A',
     marginHorizontal: 8,
   },
   scheduleBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1A2D5A',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    backgroundColor: '#0F172A',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
     borderRadius: 10,
   },
   scheduleBtnTxt: {
@@ -424,16 +474,16 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   statusFilterChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 8,
+    paddingHorizontal: 13,
+    paddingVertical: 6.5,
+    borderRadius: 10,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#CBD5E1',
   },
   statusFilterChipActive: {
-    backgroundColor: '#1A2D5A',
-    borderColor: '#1A2D5A',
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
   },
   statusFilterChipTxt: {
     fontSize: 11.5,
@@ -463,7 +513,6 @@ const styles = StyleSheet.create({
   },
   cardCancelled: {
     opacity: 0.7,
-    backgroundColor: '#FAF9F6',
   },
   cardHeader: {
     flexDirection: 'row',
@@ -472,15 +521,17 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   typeBadge: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 3,
     borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
   },
   typeBadgeTxt: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#1A2D5A',
+    color: '#0F172A',
   },
   statusChip: {
     paddingHorizontal: 8,
@@ -588,8 +639,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1A2D5A',
-    paddingVertical: 9,
+    backgroundColor: '#0F172A',
+    paddingVertical: 9.5,
     borderRadius: 10,
   },
   markAttendanceBtnTxt: {
@@ -598,18 +649,22 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   editBtn: {
-    width: 36,
-    height: 36,
+    width: 38,
+    height: 38,
     borderRadius: 10,
-    backgroundColor: '#EFF6FF',
+    borderWidth: 1.2,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#F8FAFC',
     justifyContent: 'center',
     alignItems: 'center',
   },
   cancelBtn: {
-    width: 36,
-    height: 36,
+    width: 38,
+    height: 38,
     borderRadius: 10,
-    backgroundColor: '#FEE2E2',
+    borderWidth: 1.2,
+    borderColor: '#FECACA',
+    backgroundColor: '#FEF2F2',
     justifyContent: 'center',
     alignItems: 'center',
   },

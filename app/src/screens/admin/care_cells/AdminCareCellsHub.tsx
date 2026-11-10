@@ -7,6 +7,7 @@ import {
   ScrollView,
   StatusBar,
   Dimensions,
+  Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -24,6 +25,7 @@ import {
 import { AdminTabContext } from '../../../context/AdminTabContext';
 import { useAuth } from '../../../context/AuthContext';
 import CareCellService from '../../../services/CareCellService';
+import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
 import CareCellsOverviewTab from './tabs/CareCellsOverviewTab';
 import CareCellsManageTab from './tabs/CareCellsManageTab';
 import CareCellMembersTab from './tabs/CareCellMembersTab';
@@ -52,6 +54,12 @@ const SUB_TABS = [
 ];
 
 export default function AdminCareCellsHub() {
+  const { isDark, screenBg, cardSurface, primaryText, secondaryText, borderColor } = useAdminTheme();
+  const primaryBtnBg = isDark ? '#FFFFFF' : '#0F172A';
+  const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
+  const inactivePillBg = isDark ? '#18181B' : '#FFFFFF';
+  const inactivePillBorder = isDark ? '#27272A' : '#CBD5E1';
+
   const insets = useSafeAreaInsets();
   const { goBack, setTabByName } = useContext(AdminTabContext);
   const { user, member, isPlatformSuperAdmin } = useAuth();
@@ -112,18 +120,18 @@ export default function AdminCareCellsHub() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={screenBg} />
 
       {/* Hero Header (Transparent with Standard Circular Back Button) */}
       <View style={styles.heroHeader}>
         <View style={styles.headerLeft}>
           <TouchableOpacity
             onPress={handleBack}
-            style={styles.circularBackBtn}
+            style={[styles.circularBackBtn, { backgroundColor: cardSurface, borderColor }]}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             activeOpacity={0.7}
           >
-            <ArrowLeft size={20} color="#1A2D5A" strokeWidth={2.2} />
+            <ArrowLeft size={20} color={primaryText} strokeWidth={2.2} />
           </TouchableOpacity>
 
           <View style={styles.headerTitleWrap}>
@@ -137,15 +145,15 @@ export default function AdminCareCellsHub() {
         {/* Quick Add Button (Super Admin Only) */}
         {isPlatformSuperAdmin && (
           <TouchableOpacity
-            style={styles.quickAddHeaderBtn}
+            style={[styles.quickAddHeaderBtn, { backgroundColor: primaryBtnBg }]}
             onPress={() => {
               setEditingCell(null);
               setCreateCellModalVisible(true);
             }}
-            activeOpacity={0.8}
+            activeOpacity={0.85}
           >
-            <Plus size={16} color="#FFFFFF" style={{ marginRight: 4 }} />
-            <Text style={styles.quickAddHeaderBtnTxt}>New Cell</Text>
+            <Plus size={16} color={primaryBtnText} strokeWidth={2.5} style={{ marginRight: 5 }} />
+            <Text style={[styles.quickAddHeaderBtnTxt, { color: primaryBtnText }]}>New Cell</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -159,12 +167,30 @@ export default function AdminCareCellsHub() {
             return (
               <TouchableOpacity
                 key={tab.key}
-                style={[styles.tabPill, isActive && styles.tabPillActive]}
+                style={[
+                  styles.tabPill,
+                  {
+                    backgroundColor: isActive ? primaryBtnBg : inactivePillBg,
+                    borderColor: isActive ? primaryBtnBg : inactivePillBorder,
+                  },
+                ]}
                 onPress={() => setActiveSubTab(tab.key)}
                 activeOpacity={0.85}
               >
-                <Icon size={14} color={isActive ? '#FFFFFF' : '#64748B'} strokeWidth={isActive ? 2.5 : 2} />
-                <Text style={[styles.tabPillTxt, isActive && styles.tabPillTxtActive]}>{tab.label}</Text>
+                <Icon
+                  size={14}
+                  color={isActive ? primaryBtnText : secondaryText}
+                  strokeWidth={isActive ? 2.5 : 2}
+                />
+                <Text
+                  style={[
+                    styles.tabPillTxt,
+                    { color: isActive ? primaryBtnText : secondaryText },
+                    isActive && styles.tabPillTxtActive,
+                  ]}
+                >
+                  {tab.label}
+                </Text>
               </TouchableOpacity>
             );
           })}
@@ -297,10 +323,10 @@ export default function AdminCareCellsHub() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FAF7F2',
   },
   heroHeader: {
     flexDirection: 'row',
@@ -308,7 +334,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingTop: 8,
-    paddingBottom: 10,
+    paddingBottom: 12,
     backgroundColor: 'transparent',
   },
   headerLeft: {
@@ -316,9 +342,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   circularBackBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -328,17 +354,18 @@ const styles = StyleSheet.create({
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
-    shadowRadius: 2,
+    shadowRadius: 3,
     elevation: 2,
   },
   headerTitleWrap: {
     justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '800',
-    color: '#1A2D5A',
-    letterSpacing: -0.5,
+    color: '#0F172A',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    letterSpacing: -0.4,
   },
   headerSubtitle: {
     fontSize: 12,
@@ -349,14 +376,14 @@ const styles = StyleSheet.create({
   quickAddHeaderBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1A2D5A',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    shadowColor: '#1A2D5A',
+    backgroundColor: '#0F172A',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 20,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 3,
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
     elevation: 2,
   },
   quickAddHeaderBtnTxt: {
@@ -365,39 +392,36 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   tabBarContainer: {
-    paddingHorizontal: 16,
     marginBottom: 8,
   },
   tabBarScroll: {
     flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
-    padding: 4,
-    borderRadius: 12,
-    gap: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+    gap: 8,
   },
   tabPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 9,
-    gap: 5,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#FFFFFF',
+    gap: 6,
   },
   tabPillActive: {
-    backgroundColor: '#1A2D5A',
-    shadowColor: '#1A2D5A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 3,
-    elevation: 2,
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
   },
   tabPillTxt: {
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '700',
     color: '#64748B',
   },
   tabPillTxtActive: {
-    color: '#FFFFFF',
+    fontWeight: '800',
   },
   tabContentArea: {
     flex: 1,
