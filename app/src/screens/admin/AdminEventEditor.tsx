@@ -47,7 +47,8 @@ import {
   Search,
   Check,
   Sliders,
-  Users
+  Users,
+  HeartHandshake
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AdminTabContext } from '../../context/AdminTabContext';
@@ -215,6 +216,15 @@ export default function AdminEventEditor() {
   const [capAttendance, setCapAttendance] = useState(false);
   const [audience, setAudience] = useState('All members');
 
+  // Volunteer Registration State
+  const [volunteerEnabled, setVolunteerEnabled] = useState(false);
+  const [volunteerRoles, setVolunteerRoles] = useState<Array<{ id: string; name: string; slotsNeeded: number }>>([
+    { id: 'role_1', name: 'Ushering & Welcome', slotsNeeded: 4 },
+    { id: 'role_2', name: 'Sound & Audio Engineer', slotsNeeded: 2 },
+  ]);
+  const [newRoleName, setNewRoleName] = useState('');
+  const [newRoleSlots, setNewRoleSlots] = useState('2');
+
   const [bannerColor, setBannerColor] = useState('#c0392b');
   const [bannerUrl, setBannerUrl] = useState('');
   const [imageLoading, setImageLoading] = useState(false);
@@ -329,6 +339,10 @@ export default function AdminEventEditor() {
       setRsvpEnabled(editingData.rsvpEnabled === true);
       setRsvpDeadline(editingData.rsvpDeadline || '');
       setRsvpPublic(editingData.rsvpPublic ?? true);
+      setVolunteerEnabled(editingData.volunteerEnabled === true);
+      if (Array.isArray(editingData.volunteerRoles) && editingData.volunteerRoles.length > 0) {
+        setVolunteerRoles(editingData.volunteerRoles);
+      }
       setAudience(editingData.audience || 'All members');
       setPublishStatus(editingData.status || 'Published');
       const rec = editingData.recurring || 'One-time event';
@@ -706,6 +720,8 @@ export default function AdminEventEditor() {
       rsvpEnabled: rsvpEnabled === true,
       rsvpDeadline: rsvpDeadline || null,
       rsvpPublic,
+      volunteerEnabled: volunteerEnabled === true,
+      volunteerRoles: volunteerEnabled ? volunteerRoles : [],
       audience: resolveValue('audiences', audience),
       publishStatus: resolveStatus(status),
       status: resolveStatus(status),
@@ -1886,6 +1902,123 @@ export default function AdminEventEditor() {
                 <Text style={{ flex: 1, fontSize: 11, color: '#3730A3', lineHeight: 15 }}>
                   RSVP options: 🟢 Going · 🟡 Interested · 🔴 Not Going. Church leaders will have access to participation breakdown, member roster, and exportable reports.
                 </Text>
+              </View>
+            </View>
+          )}
+        </View>
+
+        {/* ── VOLUNTEER REGISTRATION CONFIGURATION ── */}
+        <View style={[styles.section, styles.secNavy, volunteerEnabled && { borderColor: '#059669', borderWidth: 1.5, backgroundColor: isDark ? '#064E3B20' : '#ECFDF5' }]}>
+          <View style={styles.secHd}>
+            <View style={[styles.secHdPill, { backgroundColor: volunteerEnabled ? '#059669' : '#1a2d5a' }]}>
+              <HeartHandshake size={13} color="#fff" />
+            </View>
+            <Text style={styles.secHdTXT}>Volunteer Registration</Text>
+            {volunteerEnabled && (
+              <View style={{ backgroundColor: '#D1FAE5', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, marginLeft: 'auto' }}>
+                <Text style={{ fontSize: 10, fontWeight: '800', color: '#047857' }}>VOLUNTEERING ON</Text>
+              </View>
+            )}
+          </View>
+
+          <View style={[styles.switchRow, { alignItems: 'flex-start' }]}>
+            <View style={{ flex: 1, paddingRight: 14 }}>
+              <Text style={styles.switchLabel}>Enable Volunteer Registration</Text>
+              <Text style={[styles.fHint, { marginTop: 4, lineHeight: 16 }]}>
+                {volunteerEnabled
+                  ? 'Members can apply for specific volunteer roles for this event. Authorized admins will be notified of every submission.'
+                  : 'Volunteering is OFF. Turn ON to open volunteer applications for this event.'}
+              </Text>
+            </View>
+            <Switch
+              value={volunteerEnabled}
+              onValueChange={setVolunteerEnabled}
+              trackColor={{ false: '#CBD5E1', true: '#059669' }}
+              thumbColor={volunteerEnabled ? '#10B981' : '#FFFFFF'}
+            />
+          </View>
+
+          {volunteerEnabled && (
+            <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: isDark ? '#27272A' : '#E2E8F0' }}>
+              <Text style={styles.fLabel}>VOLUNTEER ROLES NEEDED</Text>
+              <Text style={[styles.fHint, { marginBottom: 10 }]}>
+                Specify which service roles and headcounts are needed for this event:
+              </Text>
+
+              {volunteerRoles.map((role, idx) => (
+                <View
+                  key={role.id || idx}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    paddingVertical: 8,
+                    paddingHorizontal: 12,
+                    backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: isDark ? '#27272A' : '#E2E8F0',
+                    marginBottom: 6,
+                  }}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? '#FFFFFF' : '#0F172A' }}>
+                      {role.name}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: '#64748B' }}>
+                      {role.slotsNeeded} {role.slotsNeeded === 1 ? 'volunteer needed' : 'volunteers needed'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setVolunteerRoles(prev => prev.filter((_, i) => i !== idx));
+                    }}
+                    style={{ padding: 6 }}
+                  >
+                    <Trash2 size={16} color="#EF4444" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+
+              {/* Add New Role Row */}
+              <View style={{ marginTop: 8, flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                <TextInput
+                  style={[styles.inputWrap, { flex: 2, paddingHorizontal: 12, fontSize: 12, height: 40 }]}
+                  placeholder="e.g. Stage Setup & Welcome"
+                  placeholderTextColor="#94A3B8"
+                  value={newRoleName}
+                  onChangeText={setNewRoleName}
+                />
+                <TextInput
+                  style={[styles.inputWrap, { width: 55, paddingHorizontal: 8, fontSize: 12, height: 40, textAlign: 'center' }]}
+                  placeholder="Qty"
+                  placeholderTextColor="#94A3B8"
+                  keyboardType="numeric"
+                  value={newRoleSlots}
+                  onChangeText={setNewRoleSlots}
+                />
+                <TouchableOpacity
+                  style={{
+                    backgroundColor: '#059669',
+                    borderRadius: 8,
+                    height: 40,
+                    paddingHorizontal: 14,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                  onPress={() => {
+                    if (!newRoleName.trim()) return;
+                    const slots = parseInt(newRoleSlots, 10) || 1;
+                    setVolunteerRoles(prev => [
+                      ...prev,
+                      { id: `role_${Date.now()}`, name: newRoleName.trim(), slotsNeeded: slots },
+                    ]);
+                    setNewRoleName('');
+                    setNewRoleSlots('2');
+                  }}
+                >
+                  <Plus size={16} color="#FFFFFF" />
+                </TouchableOpacity>
               </View>
             </View>
           )}

@@ -350,6 +350,40 @@ class NotificationService {
           });
           break;
         }
+        case 'volunteer_application_admin': {
+          const appId = rawData.applicationId || rawData.requestId || id;
+          console.log('🤝 [NotificationService] Routing to Admin Volunteer Management tab:', { appId });
+          nav.navigate('AdminRoot', {
+            targetTab: 'Volunteer Management',
+            applicationId: appId,
+            subType: rawData.volunteerType || rawData.subType || 'general',
+            timestamp: Date.now(),
+          });
+          break;
+        }
+        case 'volunteer_application_member': {
+          const appId = rawData.applicationId || rawData.requestId || id;
+          const eventId = rawData.eventId;
+          console.log('🤝 [NotificationService] Routing to Member Volunteer screen:', { appId, eventId });
+          if (eventId) {
+            nav.navigate('EventDetails', { eventId, id: eventId });
+          } else {
+            nav.navigate('Volunteer');
+          }
+          break;
+        }
+        case 'volunteer_assignment':
+        case 'volunteer_reminder':
+        case 'volunteer_event_change': {
+          const eventId = rawData.eventId || id;
+          console.log('⭐ [NotificationService] Routing to Event Assignment/Reminder:', { eventId });
+          if (eventId) {
+            nav.navigate('EventDetails', { eventId, id: eventId });
+          } else {
+            nav.navigate('Volunteer');
+          }
+          break;
+        }
         default:
           if (id) {
             nav.navigate('Updates', { highlightId: id, highlightType: type });

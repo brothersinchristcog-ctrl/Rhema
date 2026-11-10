@@ -114,12 +114,31 @@ class EventRsvpService {
       );
     }
 
-    // 3. Best-effort parent event update (succeeds if user is Church Admin; quietly ignored for regular members)
-    eventRef
-      .update({
+    // 3. Parent event update with aggregated RSVP stats
+    try {
+      const snap = await this.getRsvpsCol(churchId, eventId).get();
+      let going = 0;
+      let notGoing = 0;
+      let interested = 0;
+      snap.forEach((d) => {
+        const data = d.data();
+        const st = data?.status || data?.rsvpStatus;
+        if (st === 'Going') going++;
+        else if (st === 'Not Going') notGoing++;
+        else if (st === 'Not Interested' || st === 'Interested') interested++;
+      });
+      await eventRef.update({
+        rsvpStats: {
+          goingCount: going,
+          notGoingCount: notGoing,
+          interestedCount: interested,
+          totalResponses: going + notGoing + interested,
+        },
         updatedAt: now,
-      })
-      .catch(() => {});
+      });
+    } catch {
+      // Quietly ignore if parent write fails
+    }
   }
 
   /**

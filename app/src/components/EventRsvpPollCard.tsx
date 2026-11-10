@@ -60,8 +60,8 @@ interface WhatsAppPollOptionConfig {
 const WHATSAPP_POLL_OPTIONS: WhatsAppPollOptionConfig[] = [
   {
     key: 'Going',
-    label: "Yes, I'm Going",
-    emoji: '✅',
+    label: 'Yes',
+    emoji: '',
     accentColor: '#059669', // Emerald / WhatsApp Green
     barFillLight: '#D1FAE5',
     barFillDark: 'rgba(16, 185, 129, 0.22)',
@@ -75,8 +75,8 @@ const WHATSAPP_POLL_OPTIONS: WhatsAppPollOptionConfig[] = [
   },
   {
     key: 'Not Going',
-    label: "No, I'm Not Going",
-    emoji: '❌',
+    label: 'No',
+    emoji: '',
     accentColor: '#DC2626', // Crimson
     barFillLight: '#FEE2E2',
     barFillDark: 'rgba(239, 68, 68, 0.20)',
@@ -91,7 +91,7 @@ const WHATSAPP_POLL_OPTIONS: WhatsAppPollOptionConfig[] = [
   {
     key: 'Not Interested',
     label: 'Not Interested',
-    emoji: '🤔',
+    emoji: '',
     accentColor: '#D97706', // Amber
     barFillLight: '#FEF3C7',
     barFillDark: 'rgba(245, 158, 11, 0.20)',
@@ -348,9 +348,9 @@ export const EventRsvpPollCard: React.FC<EventRsvpPollCardProps> = ({
                   {isSelected && <Check size={12} color="#FFFFFF" strokeWidth={3.5} />}
                 </View>
 
-                {/* Option Text (Emoji + Label) */}
+                {/* Option Text (Label only: Yes, No, Not Interested) */}
                 <View style={styles.optionLabelWrap}>
-                  <Text style={styles.optionEmoji}>{opt.emoji}</Text>
+                  {!!opt.emoji && <Text style={styles.optionEmoji}>{opt.emoji}</Text>}
                   <Text
                     style={[
                       styles.optionLabelText,

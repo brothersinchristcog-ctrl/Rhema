@@ -89,6 +89,7 @@ import AdminDailyVersesManager from '../screens/admin/AdminDailyVersesManager';
 import AdminCareCellsHub from '../screens/admin/care_cells/AdminCareCellsHub';
 import AdminServicePlanner from '../screens/admin/AdminServicePlanner';
 import AdminTestimonies from '../screens/admin/AdminTestimonies';
+import AdminVolunteerManagement from '../screens/admin/AdminVolunteerManagement';
 import CareCellService from '../services/CareCellService';
 import { RHEMA_CHURCH_ID } from '../constants/ChurchConfig';
 
@@ -185,7 +186,8 @@ export default function AdminNavigator({ navigation, route }: any) {
         t.name.toLowerCase() === target.toLowerCase() ||
         (target.toLowerCase().includes('prayer') && t.name === 'Prayers') ||
         (target.toLowerCase().includes('baptism') && t.name === 'Baptism') ||
-        (target.toLowerCase().includes('testimon') && t.name === 'Testimonies')
+        (target.toLowerCase().includes('testimon') && t.name === 'Testimonies') ||
+        (target.toLowerCase().includes('volunteer') && t.name === 'Volunteer Management')
       );
       if (idx !== -1 && idx !== activeTab) {
         setTimeout(() => {
@@ -295,6 +297,7 @@ export default function AdminNavigator({ navigation, route }: any) {
     { name: 'Attendance', icon: ClipboardCheck, component: AdminAttendance },
     ...(isSuperAdminUser || hasCareCellAccess ? [{ name: 'Care Cells', icon: HeartHandshake, component: AdminCareCellsHub }] : []),
     { name: 'Service Roster', icon: CalendarDays, component: AdminServicePlanner },
+    { name: 'Volunteer Management', icon: HeartHandshake, component: AdminVolunteerManagement },
     { name: 'Members', icon: Users, component: AdminMembers },
     { name: 'Celebrations', icon: Gift, component: AdminCelebrations },
     { name: 'Gallery', icon: ImageIcon, component: AdminGalleryNavigator },

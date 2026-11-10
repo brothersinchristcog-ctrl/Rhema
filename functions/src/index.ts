@@ -1775,6 +1775,14 @@ export {
   onTestimonyCreatedAdminLegacy,
   onTestimonyUpdatedWorkflow,
   onTestimonyUpdatedWorkflowLegacy,
+  onVolunteerApplicationCreated,
+  onVolunteerApplicationCreatedLegacy,
+  onVolunteerApplicationUpdated,
+  onVolunteerApplicationUpdatedLegacy,
+  onEventUpdatedForVolunteers,
+  onEventUpdatedForVolunteersLegacy,
+  scheduledVolunteerReminders,
+  triggerVolunteerPushTestHttp,
 } from './notifications.js';
 
 export {

@@ -43,6 +43,7 @@ import {
   Crown,
   Award,
   Shield,
+  HeartHandshake,
   Sun,
   Sparkles,
   Search,
@@ -608,6 +609,14 @@ export default function ProfileScreen({ navigation }: any) {
             title="Baptism" 
             sub="Submit request & track approval status" 
             onPress={() => navigation.navigate('BaptismRequest')}
+            textColor={colors.text}
+            subColor={colors.textSecondary}
+          />
+          <MenuItem 
+            icon={<HeartHandshake size={22} color={colors.text} strokeWidth={1.8} />} 
+            title="Church Volunteering" 
+            sub="Apply to serve & view volunteer assignments" 
+            onPress={() => navigation.navigate('Volunteer')}
             textColor={colors.text}
             subColor={colors.textSecondary}
           />
