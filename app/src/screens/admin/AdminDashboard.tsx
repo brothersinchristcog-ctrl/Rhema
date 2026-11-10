@@ -45,6 +45,7 @@ const CARD_BACKGROUNDS: Record<string, any> = {
   'New Sermon': require('../../../assets/admin_cards/new_sermon.png'),
   'Songs': require('../../../assets/admin_cards/songs.png'),
   'Prayers': require('../../../assets/admin_cards/prayer.png'),
+  'Testimonies': require('../../../assets/admin_cards/prayer.png'),
   'Members': require('../../../assets/admin_cards/members.png'),
   'Events': require('../../../assets/admin_cards/events.png'),
   'New Event': require('../../../assets/admin_cards/new_event.png'),
@@ -89,7 +90,7 @@ const CATEGORIES = [
     darkColor: '#C084FC',
 
 
-    keywords: ['Member', 'Attendance', 'Prayer', 'Care Cell', 'Care Cells']
+    keywords: ['Member', 'Attendance', 'Prayer', 'Testimon', 'Care Cell', 'Care Cells']
 
   },
   {

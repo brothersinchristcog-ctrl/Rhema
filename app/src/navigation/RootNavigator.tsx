@@ -74,6 +74,8 @@ import YouTubeLiveScreen from '../screens/YouTubeLiveScreen';
 import LiveStageHUD from '../screens/LiveStageHUD';
 import MyServiceScreen from '../screens/MyServiceScreen';
 import MemberGalleryNavigator from '../screens/gallery/MemberGalleryNavigator';
+import TestimoniesScreen from '../screens/TestimoniesScreen';
+import TestimonyDetailScreen from '../screens/TestimonyDetailScreen';
 
 // Bible Quiz Screens
 import BibleQuizHomeScreen from '../screens/quiz/BibleQuizHomeScreen';
@@ -769,6 +771,32 @@ function Navigation() {
             });
           } else if (type === 'prayer_request_public') {
             navigationRef.navigate('PrayerWall', { tab: 'public_requests' });
+          } else if (type === 'testimony_admin') {
+            const testimonyId = data.testimonyId || data.id;
+            if (isAdmin && viewMode !== 'admin') {
+              setViewMode('admin');
+            }
+            navigationRef.navigate('AdminRoot', {
+              targetTab: 'Testimonies',
+              testimonyId,
+              timestamp: Date.now(),
+            });
+          } else if (type === 'testimony_member_status') {
+            const testimonyId = data.testimonyId || data.id;
+            if (testimonyId) {
+              navigationRef.navigate('TestimonyDetail', {
+                testimonyId,
+                churchId: data.churchId || 'rhema',
+              });
+            } else {
+              navigationRef.navigate('Testimonies', { initialTab: 'mine' });
+            }
+          } else if (type === 'testimony_published') {
+            const testimonyId = data.testimonyId || data.id;
+            navigationRef.navigate('TestimonyDetail', {
+              testimonyId,
+              churchId: data.churchId || 'rhema',
+            });
           } else if (type === 'youtube_live') {
             const liveUrl = data.url || '';
             const videoId = data.videoId || '';
@@ -817,7 +845,8 @@ function Navigation() {
           type === 'baptism' || 
           type === 'prayer_request_admin' ||
           type === 'prayer_request' ||
-          type === 'prayer';
+          type === 'prayer' ||
+          type === 'testimony_admin';
 
         if (isAdminNotification && isAdmin && viewMode !== 'admin') {
           setViewMode('admin');
@@ -876,7 +905,8 @@ function Navigation() {
             type === 'baptism_request_admin' || 
             type === 'baptism_request' || 
             type === 'baptism' || 
-            type === 'prayer_request_admin';
+            type === 'prayer_request_admin' ||
+            type === 'testimony_admin';
 
           if (isAdminNotification && isAdmin && viewMode !== 'admin') {
             console.log(`Switching to admin view to handle ${type} notification`);
@@ -1038,6 +1068,8 @@ function Navigation() {
             <Stack.Screen name="MyServiceDuties" component={renderPremium(MyServiceScreen)} />
             <Stack.Screen name="LiveCelebrationsChat" component={renderPremium(LiveCelebrationsChat)} />
             <Stack.Screen name="Gallery" component={renderPremium(MemberGalleryNavigator)} />
+            <Stack.Screen name="Testimonies" component={renderPremium(TestimoniesScreen)} />
+            <Stack.Screen name="TestimonyDetail" component={renderPremium(TestimonyDetailScreen)} />
             <Stack.Screen name="VerseOfTheDay" component={renderPremium(VerseOfTheDayScreen)} />
             <Stack.Screen name="BibleQuizHome" component={BibleQuizHomeScreen} />
             <Stack.Screen name="ChurchQuizzes" component={ChurchQuizzesScreen} />

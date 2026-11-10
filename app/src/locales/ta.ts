@@ -54,6 +54,8 @@ export const ta: TranslationSchema = {
     bible: 'வேதாகமம்',
     giving: 'காணிக்கை',
     events: 'நிகழ்வுகள்',
+    serviceRoster: 'சர்வீஸ் ரோஸ்டர்',
+    testimonies: 'சாட்சிகள்',
     adminView: 'நிர்வாகி பார்வை',
     memberView: 'உறுப்பினர் பார்வை',
   },

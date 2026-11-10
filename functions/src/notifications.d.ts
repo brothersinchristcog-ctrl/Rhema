@@ -242,4 +242,26 @@ export declare const pushCareCellVisit: import("firebase-functions/core").CloudF
     churchId: string;
     visitId: string;
 }>>;
+/**
+ * ✨ TRIGGER 1: Member Submits Testimony (Notifies Authorized Admins)
+ */
+export declare const onTestimonyCreatedAdmin: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+    churchId: string;
+    testimonyId: string;
+}>>;
+export declare const onTestimonyCreatedAdminLegacy: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+    churchId: string;
+    testimonyId: string;
+}>>;
+/**
+ * 🔄 TRIGGER 2: Admin Workflow Update (Member Approval/Rejection Notice or Publication Broadcast)
+ */
+export declare const onTestimonyUpdatedWorkflow: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+    churchId: string;
+    testimonyId: string;
+}>>;
+export declare const onTestimonyUpdatedWorkflowLegacy: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+    churchId: string;
+    testimonyId: string;
+}>>;
 //# sourceMappingURL=notifications.d.ts.map

@@ -54,6 +54,8 @@ export const ml: TranslationSchema = {
     bible: 'ബൈബിൾ',
     giving: 'ദാനം',
     events: 'പരിപാടികൾ',
+    serviceRoster: 'സർവീസ് റോസ്റ്റർ',
+    testimonies: 'സാക്ഷ്യങ്ങൾ',
     adminView: 'അഡ്മിൻ വ്യൂ',
     memberView: 'മെമ്പർ വ്യൂ',
   },

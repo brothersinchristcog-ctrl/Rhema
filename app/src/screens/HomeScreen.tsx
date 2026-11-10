@@ -2605,7 +2605,7 @@ export default function HomeScreen() {
     },
     {
       id: 'myService',
-      title: 'Service Roster',
+      title: t('nav.serviceRoster') === 'nav.serviceRoster' ? 'Service Roster' : t('nav.serviceRoster'),
       icon: require('../../assets/gallery_3d_stage.png'),
       onPress: () => navigation.navigate('MyService'),
     },
@@ -2626,6 +2626,12 @@ export default function HomeScreen() {
           });
         }
       },
+    },
+    {
+      id: 'testimonies',
+      title: t('nav.testimonies') === 'nav.testimonies' ? 'Testimonies' : t('nav.testimonies'),
+      icon: require('../../assets/3d_party_popper.png'),
+      onPress: () => navigation.navigate('Testimonies'),
     },
   ];
 
@@ -4803,7 +4809,7 @@ export default function HomeScreen() {
                       adjustsFontSizeToFit
                       minimumFontScale={0.8}
                     >
-                      Service Roster
+                      {t('nav.serviceRoster') === 'nav.serviceRoster' ? 'Service Roster' : t('nav.serviceRoster')}
                     </Text>
                     <Text
                       style={[styles.clayCardSub, { color: screenTheme.bentoRosterSub || 'rgba(255,255,255,0.85)', fontSize: 11, marginTop: 1.5 }]}
@@ -4812,6 +4818,54 @@ export default function HomeScreen() {
                       minimumFontScale={0.8}
                     >
                       My duties, worship setlist & schedule
+                    </Text>
+                  </View>
+
+                  <View style={[styles.clayArrowCircleSm, { backgroundColor: 'rgba(255,255,255,0.16)' }]}>
+                    <ChevronRight size={15} color="#FFFFFF" strokeWidth={2.5} />
+                  </View>
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            {/* ── ROW 8: Testimonies Banner Card (matches 4-in-a-Row Quick Access items) ── */}
+            <TouchableOpacity
+              style={[styles.clayGalleryTouch, { marginTop: 10 }]}
+              activeOpacity={0.88}
+              onPress={() => navigation.navigate('Testimonies')}
+            >
+              <LinearGradient
+                colors={screenTheme.isDark ? ['#3B0764', '#1E0338'] : ['#581C87', '#3B0764']}
+                start={{ x: 0, y: 0.25 }}
+                end={{ x: 1, y: 0.75 }}
+                style={[styles.clayGalleryCard, { borderColor: screenTheme.isDark ? '#6B21A8' : '#7E22CE', borderWidth: 1.2, paddingRight: 14 }]}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                  {/* 3D Testimonies Celebration Icon */}
+                  <View style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+                    <Image
+                      source={require('../../assets/3d_party_popper.png')}
+                      style={{ width: 40, height: 40 }}
+                      resizeMode="contain"
+                    />
+                  </View>
+
+                  <View style={{ flex: 1, justifyContent: 'center', marginLeft: 10, marginRight: 8 }}>
+                    <Text
+                      style={[styles.clayCardTitle, { color: '#FFFFFF', fontSize: 15.5, fontWeight: '800' }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.8}
+                    >
+                      {t('nav.testimonies') === 'nav.testimonies' ? 'Testimonies' : t('nav.testimonies')}
+                    </Text>
+                    <Text
+                      style={[styles.clayCardSub, { color: 'rgba(255,255,255,0.85)', fontSize: 11, marginTop: 1.5 }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.8}
+                    >
+                      Watch videos & read what God has done
                     </Text>
                   </View>
 

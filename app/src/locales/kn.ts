@@ -54,6 +54,8 @@ export const kn: TranslationSchema = {
     bible: 'ಬೈಬಲ್',
     giving: 'ಕಾಣಿಕೆಗಳು',
     events: 'ಕಾರ್ಯಕ್ರಮಗಳು',
+    serviceRoster: 'ಸರ್ವೀಸ್ ರೋಸ್ಟರ್',
+    testimonies: 'ಸಾಕ್ಷಿಗಳು',
     adminView: 'ಅಡ್ಮಿನ್ ವ್ಯೂ',
     memberView: 'ಸದಸ್ಯ ವ್ಯೂ',
   },

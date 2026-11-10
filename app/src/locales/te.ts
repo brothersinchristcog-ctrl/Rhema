@@ -54,6 +54,8 @@ export const te: TranslationSchema = {
     bible: 'బైబిల్',
     giving: 'విరాళాలు',
     events: 'కార్యక్రమాలు',
+    serviceRoster: 'సర్వీస్ రోస్టర్',
+    testimonies: 'సాక్ష్యాలు',
     adminView: 'అడ్మిన్ వ్యూ',
     memberView: 'సభ్యుల వ్యూ',
   },

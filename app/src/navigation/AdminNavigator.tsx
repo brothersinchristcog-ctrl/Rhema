@@ -88,6 +88,7 @@ import ChurchService from '../services/ChurchService';
 import AdminDailyVersesManager from '../screens/admin/AdminDailyVersesManager';
 import AdminCareCellsHub from '../screens/admin/care_cells/AdminCareCellsHub';
 import AdminServicePlanner from '../screens/admin/AdminServicePlanner';
+import AdminTestimonies from '../screens/admin/AdminTestimonies';
 import CareCellService from '../services/CareCellService';
 import { RHEMA_CHURCH_ID } from '../constants/ChurchConfig';
 
@@ -183,7 +184,8 @@ export default function AdminNavigator({ navigation, route }: any) {
       const idx = tabs.findIndex(t => 
         t.name.toLowerCase() === target.toLowerCase() ||
         (target.toLowerCase().includes('prayer') && t.name === 'Prayers') ||
-        (target.toLowerCase().includes('baptism') && t.name === 'Baptism')
+        (target.toLowerCase().includes('baptism') && t.name === 'Baptism') ||
+        (target.toLowerCase().includes('testimon') && t.name === 'Testimonies')
       );
       if (idx !== -1 && idx !== activeTab) {
         setTimeout(() => {
@@ -192,7 +194,7 @@ export default function AdminNavigator({ navigation, route }: any) {
         }, 0);
       }
     }
-  }, [route?.params?.targetTab, route?.params?.timestamp, route?.params?.requestId, route?.params?.prayerId]);
+  }, [route?.params?.targetTab, route?.params?.timestamp, route?.params?.requestId, route?.params?.prayerId, route?.params?.testimonyId]);
 
   const handleSetTab = (index: number) => {
     if (index !== activeTab) {
@@ -289,6 +291,7 @@ export default function AdminNavigator({ navigation, route }: any) {
     { name: 'New Event', icon: CalendarPlus, component: AdminEventEditor },
     { name: 'Pastor Event', icon: Briefcase, component: PastorEventDashboard },
     { name: 'Prayers', icon: Heart, component: AdminPrayerModeration },
+    { name: 'Testimonies', icon: Sparkles, component: AdminTestimonies },
     { name: 'Attendance', icon: ClipboardCheck, component: AdminAttendance },
     ...(isSuperAdminUser || hasCareCellAccess ? [{ name: 'Care Cells', icon: HeartHandshake, component: AdminCareCellsHub }] : []),
     { name: 'Service Roster', icon: CalendarDays, component: AdminServicePlanner },
