@@ -16,6 +16,9 @@ import {
   Platform,
 } from 'react-native';
 import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import {
   Sparkles,
   Search,
@@ -53,6 +56,9 @@ import {
   TestimonyAttachment,
   TestimonyStatus,
 } from '../../types/testimony';
+import InAppDocumentViewerModal, {
+  InAppDocumentViewerDoc,
+} from '../../components/InAppDocumentViewerModal';
 
 const ADMIN_CATEGORIES: TestimonyStatus[] = [
   'Pending Review',
@@ -100,6 +106,13 @@ const formatDuration = (ms?: number | null): string => {
   return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
 };
 
+const getInitials = (name?: string): string => {
+  if (!name) return 'M';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  return name.slice(0, 2).toUpperCase();
+};
+
 export default function AdminTestimonies({ navigation, route, routeParams }: any) {
   const {
     isDark,
@@ -111,6 +124,8 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
     secondaryText,
     borderColor: adminBorderColor,
   } = useAdminTheme();
+
+  const accentColor = isDark ? '#38BDF8' : '#2563EB';
 
   const { user, member, isPlatformSuperAdmin } = useAuth();
   const { activeChurch } = useChurch();
@@ -151,9 +166,16 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
   const [positionMs, setPositionMs] = useState(0);
   const [durationMs, setDurationMs] = useState(0);
 
-  // Attachments state
+  // Attachments & In-App Document Viewer state
   const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({});
   const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
+  const [downloadingAttachmentPath, setDownloadingAttachmentPath] = useState<string | null>(null);
+  const [viewerDoc, setViewerDoc] = useState<InAppDocumentViewerDoc | null>(null);
+
+  // Cached member records to resolve live profile photos for all testimonies
+  const [memberProfilesMap, setMemberProfilesMap] = useState<
+    Record<string, { photoURL: string; name: string }>
+  >({});
 
   const isAuthorizedAdmin = Boolean(
     isPlatformSuperAdmin ||
@@ -181,6 +203,36 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
 
     return () => unsub();
   }, [activeChurchId]);
+
+  // Batch fetch member photos from the existing church member records
+  useEffect(() => {
+    if (!testimonies || testimonies.length === 0) return;
+    const mIds = Array.from(new Set(testimonies.map((t) => t.memberId).filter(Boolean)));
+    const phs = Array.from(
+      new Set(testimonies.map((t) => t.memberPhone).filter(Boolean))
+    ) as string[];
+
+    TestimonyService.getChurchMemberPhotos(activeChurchId, mIds, phs)
+      .then((map) => {
+        setMemberProfilesMap((prev) => ({ ...prev, ...map }));
+      })
+      .catch((err) =>
+        console.warn('⚠️ [AdminTestimonies] Error fetching member photos:', err)
+      );
+  }, [testimonies, activeChurchId]);
+
+  // Resolves the member profile info, prioritizing the existing Member record
+  const getMemberProfile = (item: Testimony) => {
+    const profile =
+      (item.memberId && memberProfilesMap[item.memberId]) ||
+      (item.memberPhone &&
+        memberProfilesMap[item.memberPhone.replace(/\D/g, '').slice(-10)]) ||
+      (item.memberPhone && memberProfilesMap[item.memberPhone]);
+
+    const photoURL = profile?.photoURL || item.memberPhotoUrl || null;
+    const name = profile?.name || item.memberName || 'Church Member';
+    return { photoURL, name };
+  };
 
   // Open deep-linked testimony from push notification immediately
   const lastOpenedTargetIdRef = useRef<string | null>(null);
@@ -284,7 +336,18 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
       item.memberPhotoUrl,
       item.memberPhone
     )
-      .then((summary) => setMemberSummary(summary))
+      .then((summary) => {
+        setMemberSummary(summary);
+        if (summary?.photoURL) {
+          setMemberProfilesMap((prev) => ({
+            ...prev,
+            [item.memberId]: { photoURL: summary.photoURL!, name: summary.name },
+            ...(item.memberPhone
+              ? { [item.memberPhone]: { photoURL: summary.photoURL!, name: summary.name } }
+              : {}),
+          }));
+        }
+      })
       .catch(() => {});
 
     // Resolve signed Video URL if present
@@ -352,24 +415,56 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
 
   const handleOpenAttachment = async (att: TestimonyAttachment) => {
     try {
+      setDownloadingAttachmentPath(att.path);
       const url =
         attachmentUrls[att.path] ||
         (await TestimonyService.getSignedMediaUrl(att.path));
+      setDownloadingAttachmentPath(null);
+
       if (!url) {
         Alert.alert('Attachment Unavailable', 'Unable to load attachment URL.');
         return;
       }
-      const isImg =
-        att.mimeType?.toLowerCase().includes('image') ||
-        /\.(jpg|jpeg|png)$/i.test(att.name || '');
 
-      if (isImg) {
-        setPreviewImageUri(url);
-      } else {
-        await Linking.openURL(url);
+      // Open directly inside the Rhema Church app (no external browser or app redirects)
+      setViewerDoc({
+        url,
+        name: att.name || 'Testimony Attachment',
+        mimeType: att.mimeType,
+      });
+    } catch (err: any) {
+      setDownloadingAttachmentPath(null);
+      console.warn('Could not open attachment:', err);
+      Alert.alert('Error', 'Could not open attachment: ' + (err?.message || 'Unknown error'));
+    }
+  };
+
+  const handleDownloadAttachment = async (att: TestimonyAttachment) => {
+    try {
+      setDownloadingAttachmentPath(att.path);
+      const url =
+        attachmentUrls[att.path] ||
+        (await TestimonyService.getSignedMediaUrl(att.path));
+      if (!url) {
+        setDownloadingAttachmentPath(null);
+        Alert.alert('Attachment Unavailable', 'Unable to load attachment URL.');
+        return;
       }
-    } catch {
-      Alert.alert('Error', 'Could not open attachment.');
+      const cleanName = (att.name || 'attachment').replace(/[^a-zA-Z0-9._-]/g, '_');
+      const localUri = `${FileSystem.cacheDirectory}${Date.now()}_${cleanName}`;
+      const downloadRes = await FileSystem.downloadAsync(url, localUri);
+      setDownloadingAttachmentPath(null);
+
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(downloadRes.uri, {
+          dialogTitle: `Save / Export ${att.name}`,
+        });
+      } else {
+        Alert.alert('Downloaded', `Attachment saved successfully to ${downloadRes.uri}`);
+      }
+    } catch (err: any) {
+      setDownloadingAttachmentPath(null);
+      Alert.alert('Download Error', err?.message || 'Could not download attachment.');
     }
   };
 
@@ -739,6 +834,7 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
             const isPriv = item.privacy === 'Private';
             const badge = getBadgeStyle(item.status, isPriv);
             const BadgeIcon = badge.icon;
+            const { photoURL, name } = getMemberProfile(item);
 
             return (
               <TouchableOpacity
@@ -751,20 +847,30 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
               >
                 <View style={styles.cardTopRow}>
                   <View style={styles.memberMiniRow}>
-                    <View
-                      style={[
-                        styles.memberAvatarCircle,
-                        { backgroundColor: adminColors.accentBlue + '18' },
-                      ]}
-                    >
-                      <User size={16} color={adminColors.accentBlue} />
-                    </View>
+                    {photoURL ? (
+                      <Image
+                        source={{ uri: photoURL }}
+                        style={styles.memberAvatarCircle}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View
+                        style={[
+                          styles.memberAvatarCircle,
+                          { backgroundColor: '#2563EB' },
+                        ]}
+                      >
+                        <Text style={styles.memberAvatarInitials}>
+                          {getInitials(name)}
+                        </Text>
+                      </View>
+                    )}
                     <View style={{ flex: 1 }}>
                       <Text
                         style={[styles.memberName, { color: primaryText }]}
                         numberOfLines={1}
                       >
-                        {item.memberName || 'Church Member'}
+                        {name}
                       </Text>
                       <Text
                         style={[styles.submissionDate, { color: secondaryText }]}
@@ -806,11 +912,11 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
                   <View style={styles.mediaIndicatorsRow}>
                     {item.writtenContent ? (
                       <View style={styles.mediaIndicator}>
-                        <BookOpen size={13} color={secondaryText} />
+                        <BookOpen size={13} color={isDark ? '#CBD5E1' : '#64748B'} />
                         <Text
                           style={[
                             styles.mediaIndicatorText,
-                            { color: secondaryText },
+                            { color: isDark ? '#E2E8F0' : '#475569' },
                           ]}
                         >
                           Written
@@ -820,11 +926,11 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
 
                     {item.videoStoragePath ? (
                       <View style={styles.mediaIndicator}>
-                        <VideoIcon size={13} color={adminColors.accentBlue} />
+                        <VideoIcon size={13} color={accentColor} />
                         <Text
                           style={[
                             styles.mediaIndicatorText,
-                            { color: adminColors.accentBlue },
+                            { color: accentColor },
                           ]}
                         >
                           Video
@@ -834,11 +940,11 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
 
                     {item.attachmentStoragePaths?.length > 0 ? (
                       <View style={styles.mediaIndicator}>
-                        <FileText size={13} color={secondaryText} />
+                        <FileText size={13} color={isDark ? '#CBD5E1' : '#64748B'} />
                         <Text
                           style={[
                             styles.mediaIndicatorText,
-                            { color: secondaryText },
+                            { color: isDark ? '#E2E8F0' : '#475569' },
                           ]}
                         >
                           {item.attachmentStoragePaths.length} Attachment
@@ -851,7 +957,7 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
                   <Text
                     style={[
                       styles.inspectActionText,
-                      { color: adminColors.accentBlue },
+                      { color: accentColor },
                     ]}
                   >
                     Review & Manage →
@@ -869,7 +975,7 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
         animationType="slide"
         onRequestClose={() => setSelectedTestimony(null)}
       >
-        <View style={[styles.modalContainer, { backgroundColor: screenBg }]}>
+        <SafeAreaView style={[styles.modalContainer, { backgroundColor: screenBg }]} edges={['top', 'bottom']}>
           {selectedTestimony && (
             <>
               {/* Modal Header */}
@@ -920,62 +1026,95 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
                   ]}
                 >
                   <Text
-                    style={[styles.sectionCardHeading, { color: secondaryText }]}
+                    style={[styles.sectionCardHeading, { color: isDark ? '#94A3B8' : secondaryText }]}
                   >
                     SUBMITTING MEMBER DETAILS
                   </Text>
                   <View style={styles.memberDetailRow}>
-                    {memberSummary?.photoURL || selectedTestimony.memberPhotoUrl ? (
-                      <Image
-                        source={{
-                          uri:
-                            (memberSummary?.photoURL ||
-                              selectedTestimony.memberPhotoUrl)!,
-                        }}
-                        style={styles.memberLargeAvatar}
-                      />
-                    ) : (
-                      <View
-                        style={[
-                          styles.memberLargeAvatarFallback,
-                          { backgroundColor: adminColors.accentBlue + '20' },
-                        ]}
-                      >
-                        <User size={22} color={adminColors.accentBlue} />
-                      </View>
-                    )}
+                    {(() => {
+                      const profile = getMemberProfile(selectedTestimony);
+                      const resolvedPhoto = memberSummary?.photoURL || profile.photoURL;
+                      const resolvedName = memberSummary?.name || profile.name;
 
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        style={[styles.memberDetailName, { color: primaryText }]}
-                      >
-                        {memberSummary?.name ||
-                          selectedTestimony.memberName ||
-                          'Church Member'}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.memberDetailSub,
-                          { color: secondaryText },
-                        ]}
-                      >
-                        ID: {selectedTestimony.memberId || 'N/A'} • Role:{' '}
-                        {memberSummary?.role || 'Member'}
-                      </Text>
-                      {(memberSummary?.phone || selectedTestimony.memberPhone) && (
-                        <View style={styles.phoneRow}>
-                          <Phone size={12} color={secondaryText} />
-                          <Text
-                            style={[
-                              styles.memberDetailSub,
-                              { color: secondaryText },
-                            ]}
-                          >
-                            {memberSummary?.phone || selectedTestimony.memberPhone}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
+                      return (
+                        <>
+                          {resolvedPhoto ? (
+                            <Image
+                              source={{ uri: resolvedPhoto }}
+                              style={styles.memberLargeAvatar}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <View
+                              style={[
+                                styles.memberLargeAvatarFallback,
+                                { backgroundColor: '#2563EB' },
+                              ]}
+                            >
+                              <Text style={styles.memberLargeAvatarInitials}>
+                                {getInitials(resolvedName)}
+                              </Text>
+                            </View>
+                          )}
+
+                          <View style={{ flex: 1 }}>
+                            <Text
+                              style={[
+                                styles.memberDetailName,
+                                { color: isDark ? '#FFFFFF' : primaryText },
+                              ]}
+                            >
+                              {resolvedName}
+                            </Text>
+                            <View style={styles.memberMetaBadgesRow}>
+                              <View
+                                style={[
+                                  styles.roleBadgeBox,
+                                  {
+                                    backgroundColor: isDark
+                                      ? 'rgba(56, 189, 248, 0.16)'
+                                      : 'rgba(37, 99, 235, 0.12)',
+                                  },
+                                ]}
+                              >
+                                <Text style={[styles.roleBadgeTxt, { color: accentColor }]}>
+                                  {memberSummary?.role || 'Member'}
+                                </Text>
+                              </View>
+                              {(memberSummary as any)?.cellGroup ? (
+                                <View
+                                  style={[
+                                    styles.roleBadgeBox,
+                                    {
+                                      backgroundColor: isDark
+                                        ? 'rgba(16, 185, 129, 0.16)'
+                                        : 'rgba(16, 185, 129, 0.12)',
+                                    },
+                                  ]}
+                                >
+                                  <Text style={[styles.roleBadgeTxt, { color: '#10B981' }]}>
+                                    {(memberSummary as any).cellGroup}
+                                  </Text>
+                                </View>
+                              ) : null}
+                            </View>
+                            {(memberSummary?.phone || selectedTestimony.memberPhone) && (
+                              <View style={styles.phoneRow}>
+                                <Phone size={13} color={accentColor} />
+                                <Text
+                                  style={[
+                                    styles.phoneText,
+                                    { color: isDark ? '#E2E8F0' : primaryText },
+                                  ]}
+                                >
+                                  {memberSummary?.phone || selectedTestimony.memberPhone}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                        </>
+                      );
+                    })()}
                   </View>
 
                   <View
@@ -985,7 +1124,7 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
                     ]}
                   >
                     <View style={styles.metaCol}>
-                      <Text style={[styles.metaLabel, { color: secondaryText }]}>
+                      <Text style={[styles.metaLabel, { color: isDark ? '#94A3B8' : secondaryText }]}>
                         Privacy
                       </Text>
                       <Text
@@ -994,8 +1133,9 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
                           {
                             color:
                               selectedTestimony.privacy === 'Private'
-                                ? '#8B5CF6'
-                                : '#10B981',
+                                ? '#A78BFA'
+                                : '#34D399',
+                            fontWeight: '800',
                           },
                         ]}
                       >
@@ -1003,18 +1143,18 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
                       </Text>
                     </View>
                     <View style={styles.metaCol}>
-                      <Text style={[styles.metaLabel, { color: secondaryText }]}>
+                      <Text style={[styles.metaLabel, { color: isDark ? '#94A3B8' : secondaryText }]}>
                         Current Status
                       </Text>
-                      <Text style={[styles.metaValue, { color: primaryText }]}>
+                      <Text style={[styles.metaValue, { color: isDark ? '#FFFFFF' : primaryText, fontWeight: '800' }]}>
                         {selectedTestimony.status}
                       </Text>
                     </View>
                     <View style={styles.metaCol}>
-                      <Text style={[styles.metaLabel, { color: secondaryText }]}>
+                      <Text style={[styles.metaLabel, { color: isDark ? '#94A3B8' : secondaryText }]}>
                         Submitted
                       </Text>
-                      <Text style={[styles.metaValue, { color: primaryText }]}>
+                      <Text style={[styles.metaValue, { color: isDark ? '#FFFFFF' : primaryText, fontWeight: '700' }]}>
                         {formatDate(selectedTestimony.createdAt)}
                       </Text>
                     </View>
@@ -1024,7 +1164,7 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
                     <Text
                       style={[
                         styles.reviewedFootNote,
-                        { color: secondaryText },
+                        { color: isDark ? '#94A3B8' : secondaryText },
                       ]}
                     >
                       Last reviewed by{' '}
@@ -1063,18 +1203,18 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
                     <Text
                       style={[
                         styles.categoryTagLabel,
-                        { color: adminColors.accentBlue },
+                        { color: '#38BDF8', fontWeight: '800', letterSpacing: 0.8 },
                       ]}
                     >
                       CATEGORY: {selectedTestimony.category.toUpperCase()}
                     </Text>
                   ) : null}
-                  <Text style={[styles.detailTitle, { color: primaryText }]}>
+                  <Text style={[styles.detailTitle, { color: isDark ? '#FFFFFF' : primaryText }]}>
                     {selectedTestimony.title}
                   </Text>
                   {selectedTestimony.description ? (
                     <Text
-                      style={[styles.detailSummary, { color: secondaryText }]}
+                      style={[styles.detailSummary, { color: isDark ? '#CBD5E1' : secondaryText }]}
                     >
                       {selectedTestimony.description}
                     </Text>
@@ -1093,9 +1233,9 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
                     ]}
                   >
                     <View style={styles.sectionHeaderRow}>
-                      <VideoIcon size={16} color={adminColors.accentBlue} />
+                      <VideoIcon size={16} color={accentColor} />
                       <Text
-                        style={[styles.sectionHeaderTitle, { color: primaryText }]}
+                        style={[styles.sectionHeaderTitle, { color: isDark ? '#FFFFFF' : primaryText }]}
                       >
                         Uploaded Video Testimony
                       </Text>
@@ -1103,7 +1243,7 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
                         <Text
                           style={[
                             styles.durationLabel,
-                            { color: secondaryText },
+                            { color: isDark ? '#94A3B8' : secondaryText },
                           ]}
                         >
                           {formatDuration(positionMs)} / {formatDuration(durationMs)}
@@ -1126,7 +1266,7 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
                           <TouchableOpacity
                             style={[
                               styles.retryBtn,
-                              { backgroundColor: adminColors.accentBlue },
+                              { backgroundColor: accentColor },
                             ]}
                             onPress={handleRetryVideo}
                           >
@@ -1154,7 +1294,7 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
                       <TouchableOpacity
                         style={[
                           styles.playPauseBtn,
-                          { backgroundColor: adminColors.accentBlue },
+                          { backgroundColor: accentColor },
                         ]}
                         onPress={handleTogglePlayPause}
                       >
@@ -1186,14 +1326,14 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
                     ]}
                   >
                     <View style={styles.sectionHeaderRow}>
-                      <BookOpen size={16} color={adminColors.accentBlue} />
+                      <BookOpen size={16} color={accentColor} />
                       <Text
-                        style={[styles.sectionHeaderTitle, { color: primaryText }]}
+                        style={[styles.sectionHeaderTitle, { color: isDark ? '#FFFFFF' : primaryText }]}
                       >
                         Complete Written Testimony
                       </Text>
                     </View>
-                    <Text style={[styles.writtenStoryText, { color: primaryText }]}>
+                    <Text style={[styles.writtenStoryText, { color: isDark ? '#F1F5F9' : primaryText, fontSize: 14.5, lineHeight: 24 }]}>
                       {selectedTestimony.writtenContent}
                     </Text>
                   </View>
@@ -1212,11 +1352,11 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
                       ]}
                     >
                       <View style={styles.sectionHeaderRow}>
-                        <FileText size={16} color={adminColors.accentBlue} />
+                        <FileText size={16} color={accentColor} />
                         <Text
                           style={[
                             styles.sectionHeaderTitle,
-                            { color: primaryText },
+                            { color: isDark ? '#FFFFFF' : primaryText },
                           ]}
                         >
                           Supporting Attachments (
@@ -1228,51 +1368,64 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
                         const isImg =
                           att.mimeType?.toLowerCase().includes('image') ||
                           /\.(jpg|jpeg|png)$/i.test(att.name || '');
+                        const isDownloading = downloadingAttachmentPath === att.path;
 
                         return (
-                          <TouchableOpacity
+                          <View
                             key={`${att.path}_${idx}`}
-                            onPress={() => handleOpenAttachment(att)}
                             style={[
                               styles.attachmentItem,
                               {
-                                backgroundColor: secondarySurface,
+                                backgroundColor: isDark ? '#27272A' : secondarySurface,
                                 borderColor: adminBorderColor,
                               },
                             ]}
                           >
-                            {isImg ? (
-                              <ImageIcon
-                                size={18}
-                                color={adminColors.accentBlue}
-                              />
-                            ) : (
-                              <FileText
-                                size={18}
-                                color={adminColors.accentBlue}
-                              />
-                            )}
-                            <View style={{ flex: 1 }}>
-                              <Text
-                                style={[
-                                  styles.attachmentItemName,
-                                  { color: primaryText },
-                                ]}
-                                numberOfLines={1}
-                              >
-                                {att.name}
-                              </Text>
-                              <Text
-                                style={[
-                                  styles.attachmentItemMeta,
-                                  { color: secondaryText },
-                                ]}
-                              >
-                                {formatFileSize(att.sizeBytes)} • Tap to view / download
-                              </Text>
-                            </View>
-                            <Download size={16} color={adminColors.accentBlue} />
-                          </TouchableOpacity>
+                            <TouchableOpacity
+                              style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 10 }}
+                              onPress={() => handleOpenAttachment(att)}
+                              activeOpacity={0.7}
+                            >
+                              <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: isDark ? '#18181B' : '#E2E8F0', alignItems: 'center', justifyContent: 'center' }}>
+                                {isImg ? (
+                                  <ImageIcon size={18} color={accentColor} />
+                                ) : (
+                                  <FileText size={18} color={accentColor} />
+                                )}
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <Text
+                                  style={[
+                                    styles.attachmentItemName,
+                                    { color: isDark ? '#FFFFFF' : primaryText },
+                                  ]}
+                                  numberOfLines={1}
+                                >
+                                  {att.name}
+                                </Text>
+                                <Text
+                                  style={[
+                                    styles.attachmentItemMeta,
+                                    { color: isDark ? '#94A3B8' : secondaryText },
+                                  ]}
+                                >
+                                  {formatFileSize(att.sizeBytes)} • Tap to {isImg ? 'view image' : 'open document'}
+                                </Text>
+                              </View>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              onPress={() => handleDownloadAttachment(att)}
+                              disabled={isDownloading}
+                              style={{ padding: 8, borderRadius: 8, backgroundColor: isDark ? '#3F3F46' : '#E2E8F0', marginLeft: 8 }}
+                            >
+                              {isDownloading ? (
+                                <ActivityIndicator size="small" color={accentColor} />
+                              ) : (
+                                <Download size={16} color={accentColor} />
+                              )}
+                            </TouchableOpacity>
+                          </View>
                         );
                       })}
                     </View>
@@ -1389,7 +1542,7 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
               </View>
             </>
           )}
-        </View>
+        </SafeAreaView>
       </Modal>
 
       {/* Reject Reason Input Modal */}
@@ -1468,13 +1621,37 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
         animationType="fade"
         onRequestClose={() => setPreviewImageUri(null)}
       >
-        <View style={styles.imagePreviewBackdrop}>
-          <TouchableOpacity
-            style={styles.imagePreviewClose}
-            onPress={() => setPreviewImageUri(null)}
-          >
-            <X size={24} color="#FFFFFF" />
-          </TouchableOpacity>
+        <SafeAreaView style={styles.imagePreviewBackdrop} edges={['top', 'bottom']}>
+          <View style={styles.imagePreviewTopBar}>
+            <TouchableOpacity
+              style={styles.imagePreviewActionBtn}
+              onPress={() => setPreviewImageUri(null)}
+            >
+              <X size={22} color="#FFFFFF" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.imagePreviewActionBtn, { flexDirection: 'row', gap: 6, paddingHorizontal: 14 }]}
+              onPress={async () => {
+                if (!previewImageUri) return;
+                try {
+                  const cleanName = `testimony_image_${Date.now()}.jpg`;
+                  const localUri = `${FileSystem.cacheDirectory}${cleanName}`;
+                  const dl = await FileSystem.downloadAsync(previewImageUri, localUri);
+                  if (await Sharing.isAvailableAsync()) {
+                    await Sharing.shareAsync(dl.uri, { dialogTitle: 'Save Image' });
+                  } else {
+                    Alert.alert('Saved', 'Image downloaded successfully.');
+                  }
+                } catch (e: any) {
+                  Alert.alert('Error', e?.message || 'Could not save image.');
+                }
+              }}
+            >
+              <Download size={18} color="#FFFFFF" />
+              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>Download</Text>
+            </TouchableOpacity>
+          </View>
           {previewImageUri ? (
             <Image
               source={{ uri: previewImageUri }}
@@ -1482,8 +1659,15 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
               resizeMode="contain"
             />
           ) : null}
-        </View>
+        </SafeAreaView>
       </Modal>
+
+      {/* ── IN-APP DOCUMENT VIEWER (PDFs & Documents with Zoom & Scroll) ── */}
+      <InAppDocumentViewerModal
+        visible={Boolean(viewerDoc)}
+        doc={viewerDoc}
+        onClose={() => setViewerDoc(null)}
+      />
     </View>
   );
 }
@@ -1588,6 +1772,12 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  memberAvatarInitials: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
   },
   memberName: {
     fontSize: 14,
@@ -1714,9 +1904,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  memberLargeAvatarInitials: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '800',
+  },
   memberDetailName: {
     fontSize: 16,
     fontWeight: '800',
+  },
+  memberMetaBadgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 4,
+  },
+  roleBadgeBox: {
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+  },
+  roleBadgeTxt: {
+    fontSize: 11.5,
+    fontWeight: '700',
   },
   memberDetailSub: {
     fontSize: 12,
@@ -1726,7 +1937,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    marginTop: 3,
+    marginTop: 4,
+  },
+  phoneText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   metadataGrid: {
     flexDirection: 'row',
@@ -1986,24 +2201,30 @@ const styles = StyleSheet.create({
   },
   imagePreviewBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.92)',
+    backgroundColor: 'rgba(0,0,0,0.95)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  imagePreviewClose: {
+  imagePreviewTopBar: {
     position: 'absolute',
-    top: 50,
+    top: 20,
+    left: 20,
     right: 20,
     zIndex: 10,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  imagePreviewActionBtn: {
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(255,255,255,0.22)',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 12,
   },
   fullImage: {
     width: '94%',
-    height: '80%',
+    height: '78%',
   },
 });

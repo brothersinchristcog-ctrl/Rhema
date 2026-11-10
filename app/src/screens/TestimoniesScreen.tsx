@@ -13,6 +13,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   StatusBar,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -160,7 +161,8 @@ export default function TestimoniesScreen({ route, navigation }: any) {
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const uploadConfig = useMemo(() => TestimonyService.getUploadConfig(), []);
+  const [uploadConfig] = useState(() => TestimonyService.getUploadConfig());
+  const [showSuccessModal, setShowSuccessModal] = useState<boolean>(false);
 
   useEffect(() => {
     setLoadingFeed(true);
@@ -196,8 +198,24 @@ export default function TestimoniesScreen({ route, navigation }: any) {
     return () => unsubMine();
   }, [activeChurchId, user?.uid]);
 
+  // Helper to check whether a testimony belongs to the currently logged-in member
+  const isMySubmission = (item: Testimony): boolean => {
+    if (!item) return false;
+    if (user?.uid && item.memberId === user.uid) return true;
+    if (member?.id && item.memberId === member.id) return true;
+    const cleanUserPhone = (user?.phoneNumber || member?.phone || '').replace(/\D/g, '').slice(-10);
+    const cleanItemPhone = (item.memberPhone || '').replace(/\D/g, '').slice(-10);
+    if (cleanUserPhone && cleanItemPhone && cleanUserPhone === cleanItemPhone) return true;
+    return false;
+  };
+
+  // Filter public feed so members only see testimonies from other members (their own submissions are in My Testimonies)
+  const otherMembersFeed = useMemo(() => {
+    return publicFeed.filter((item) => !isMySubmission(item));
+  }, [publicFeed, user?.uid, member?.id, user?.phoneNumber, member?.phone]);
+
   const filteredFeed = useMemo(() => {
-    return publicFeed.filter((item) => {
+    return otherMembersFeed.filter((item) => {
       if (item.privacy !== 'Public' || item.status !== 'Published') return false;
 
       if (
@@ -217,7 +235,7 @@ export default function TestimoniesScreen({ route, navigation }: any) {
       }
       return true;
     });
-  }, [publicFeed, selectedCategoryFilter, searchQuery]);
+  }, [otherMembersFeed, selectedCategoryFilter, searchQuery]);
 
   const resetForm = async (cleanSessionUploads = false) => {
     if (cleanSessionUploads && sessionUploadedPathsRef.current.length > 0) {
@@ -675,21 +693,33 @@ export default function TestimoniesScreen({ route, navigation }: any) {
         );
 
         sessionUploadedPathsRef.current = [];
-        Alert.alert(
-          privacy === 'Private'
-            ? 'Private Testimony Saved'
-            : 'Submitted for Admin Review',
-          privacy === 'Private'
-            ? 'Your testimony has been saved with Private status. Only you and authorized Church Admins can access it.'
-            : 'Your updated testimony has been submitted with Pending Review status. Authorized Admins have been notified.'
-        );
+        await resetForm(false);
+        if (privacy === 'Public') {
+          setShowSuccessModal(true);
+        } else {
+          Alert.alert(
+            'Private Testimony Saved',
+            'Your testimony has been saved with Private status. Only you and authorized Church Admins can access it.'
+          );
+          setActiveTab('mine');
+        }
       } else {
+        const resolvedPhoto =
+          (member as any)?.profilePhoto ||
+          (member as any)?.photoURL ||
+          (member as any)?.photoUrl ||
+          (member as any)?.profileImage ||
+          (member as any)?.profileImageUrl ||
+          (member as any)?.avatar ||
+          user.photoURL ||
+          null;
+
         await TestimonyService.submitTestimony({
           testimonyId: draftTestimonyIdRef.current,
           churchId: activeChurchId,
           memberId: user.uid,
           memberName: member?.name || user.displayName || 'Church Member',
-          memberPhotoUrl: (member as any)?.photoURL || user.photoURL || null,
+          memberPhotoUrl: resolvedPhoto,
           memberPhone: member?.phone || user.phoneNumber || null,
           title: title.trim(),
           description: effectiveDescription,
@@ -706,18 +736,17 @@ export default function TestimoniesScreen({ route, navigation }: any) {
         });
 
         sessionUploadedPathsRef.current = [];
-        Alert.alert(
-          privacy === 'Private'
-            ? 'Private Testimony Submitted'
-            : 'Testimony Submitted for Review',
-          privacy === 'Private'
-            ? 'Thank you for sharing! Your testimony is saved as Private and visible only to you and authorized Church Admins.'
-            : 'Thank you for sharing! Your testimony is now Pending Review and will appear in the public feed once approved and published by an Admin.'
-        );
+        await resetForm(false);
+        if (privacy === 'Public') {
+          setShowSuccessModal(true);
+        } else {
+          Alert.alert(
+            'Private Testimony Submitted',
+            'Thank you for sharing! Your testimony is saved as Private and visible only to you and authorized Church Admins.'
+          );
+          setActiveTab('mine');
+        }
       }
-
-      await resetForm(false);
-      setActiveTab('mine');
     } catch (err: any) {
       console.error('❌ [TestimoniesScreen] Submit error:', err);
       Alert.alert(
@@ -1086,7 +1115,7 @@ export default function TestimoniesScreen({ route, navigation }: any) {
         backgroundColor={themeBg}
       />
 
-      {/* Screen Header - Circular Back Button & Navigation */}
+      {/* ── Screen Header (Clean circular back button & title matching other Member tabs) ── */}
       <View style={[styles.headerRow, { borderBottomColor: borderColor }]}>
         <TouchableOpacity
           style={[styles.circularBackBtn, { backgroundColor: cardBg, borderColor }]}
@@ -1097,26 +1126,11 @@ export default function TestimoniesScreen({ route, navigation }: any) {
           <ArrowLeft size={20} color={primaryTextColor} strokeWidth={2.4} />
         </TouchableOpacity>
 
-        <View style={styles.headerTitleWrap}>
-          <Text style={[styles.headerTitleText, { color: primaryTextColor }]} numberOfLines={1}>
-            Testimonies
-          </Text>
-          <Text style={[styles.headerSubtitleText, { color: secondaryTextColor }]} numberOfLines={1}>
-            Declare what the Lord has done
-          </Text>
-        </View>
+        <Text style={[styles.headerTitleText, { color: primaryTextColor }]} numberOfLines={1}>
+          Testimonies
+        </Text>
 
-        <TouchableOpacity
-          style={[styles.circularBackBtn, { backgroundColor: cardBg, borderColor }]}
-          onPress={() => {
-            resetForm(false);
-            setActiveTab('share');
-          }}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          activeOpacity={0.8}
-        >
-          <PlusCircle size={20} color={primaryTextColor} strokeWidth={2.2} />
-        </TouchableOpacity>
+        <View style={styles.headerRightSpacer} />
       </View>
 
       {/* Reusable Segmented Tabs (Matches Prayer & Care Cell Tabs) */}
@@ -1144,7 +1158,7 @@ export default function TestimoniesScreen({ route, navigation }: any) {
               { color: activeTab === 'feed' ? '#FFFFFF' : secondaryTextColor },
             ]}
           >
-            Feed ({publicFeed.length})
+            Feed ({otherMembersFeed.length})
           </Text>
         </TouchableOpacity>
 
@@ -1874,6 +1888,62 @@ export default function TestimoniesScreen({ route, navigation }: any) {
           )}
         </View>
       )}
+
+      {/* ── Public Testimony Submission Success Modal ── */}
+      <Modal
+        visible={showSuccessModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShowSuccessModal(false);
+          setActiveTab('mine');
+        }}
+      >
+        <View style={styles.successModalBackdrop}>
+          <View
+            style={[
+              styles.successModalCard,
+              { backgroundColor: cardBg, borderColor },
+            ]}
+          >
+            {/* Glowing Success Celebration Icon */}
+            <View style={styles.successIconWrapper}>
+              <View
+                style={[
+                  styles.successIconOuterGlow,
+                  { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.16)' : 'rgba(16, 185, 129, 0.12)' },
+                ]}
+              >
+                <View style={styles.successIconInnerCircle}>
+                  <CheckCircle2 size={36} color="#FFFFFF" strokeWidth={2.6} />
+                </View>
+              </View>
+            </View>
+
+            {/* Clear Success Title */}
+            <Text style={[styles.successModalTitle, { color: primaryTextColor }]}>
+              Testimony Submitted Successfully!
+            </Text>
+
+            {/* Supporting message */}
+            <Text style={[styles.successModalSubtitle, { color: secondaryTextColor }]}>
+              Your testimony has been submitted to the Admin for review. You will be notified once it is published.
+            </Text>
+
+            {/* Done Button */}
+            <TouchableOpacity
+              style={[styles.successDoneBtn, { backgroundColor: accentColor }]}
+              onPress={() => {
+                setShowSuccessModal(false);
+                setActiveTab('mine');
+              }}
+              activeOpacity={0.88}
+            >
+              <Text style={styles.successDoneBtnTxt}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1882,35 +1952,32 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  // Header Row
+  // Header Row - Clean, consistent with Prayer & Song tabs (no hero bloat)
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   circularBackBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
   },
-  headerTitleWrap: {
-    flex: 1,
-    alignItems: 'center',
-    paddingHorizontal: 8,
-  },
   headerTitleText: {
+    flex: 1,
+    textAlign: 'center',
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: -0.2,
   },
-  headerSubtitleText: {
-    fontSize: 12,
-    marginTop: 2,
+  headerRightSpacer: {
+    width: 42,
+    height: 42,
   },
   // Segmented Tabs Container (Matches Prayer & Care Cell Tabs)
   tabsContainer: {
@@ -2457,5 +2524,85 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     textAlign: 'center',
     marginBottom: 20,
+  },
+  // Public Submission Success Popup
+  successModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  successModalCard: {
+    width: '100%',
+    maxWidth: 350,
+    borderRadius: 24,
+    paddingHorizontal: 24,
+    paddingTop: 28,
+    paddingBottom: 24,
+    alignItems: 'center',
+    borderWidth: 1.2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 18,
+    elevation: 12,
+  },
+  successIconWrapper: {
+    marginBottom: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successIconOuterGlow: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successIconInnerCircle: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    backgroundColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  successModalTitle: {
+    fontSize: 19,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 8,
+    letterSpacing: -0.2,
+  },
+  successModalSubtitle: {
+    fontSize: 13.5,
+    lineHeight: 20,
+    textAlign: 'center',
+    paddingHorizontal: 6,
+  },
+  successDoneBtn: {
+    width: '100%',
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 22,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  successDoneBtnTxt: {
+    color: '#FFFFFF',
+    fontSize: 15.5,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
 });

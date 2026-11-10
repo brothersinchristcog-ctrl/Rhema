@@ -14,6 +14,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import {
   ArrowLeft,
   Play,
@@ -36,6 +38,9 @@ import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { RHEMA_CHURCH_ID } from '../constants/ChurchConfig';
 import TestimonyService, { MemberSummary } from '../services/TestimonyService';
+import InAppDocumentViewerModal, {
+  InAppDocumentViewerDoc,
+} from '../components/InAppDocumentViewerModal';
 import { Testimony, TestimonyAttachment, TestimonyStatus } from '../types/testimony';
 
 const formatDuration = (ms?: number | null): string => {
@@ -109,6 +114,7 @@ export default function TestimonyDetailScreen({ route, navigation }: any) {
   const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({});
   const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
   const [openingAttachmentPath, setOpeningAttachmentPath] = useState<string | null>(null);
+  const [viewerDoc, setViewerDoc] = useState<InAppDocumentViewerDoc | null>(null);
 
   const isUserAdmin = Boolean(
     isPlatformSuperAdmin ||
@@ -274,22 +280,15 @@ export default function TestimonyDetailScreen({ route, navigation }: any) {
         return;
       }
 
-      const isImage =
-        att.mimeType?.toLowerCase().includes('image') ||
-        /\.(jpg|jpeg|png)$/i.test(att.name || '');
-
-      if (isImage) {
-        setPreviewImageUri(url);
-      } else {
-        const supported = await Linking.canOpenURL(url);
-        if (supported) {
-          await Linking.openURL(url);
-        } else {
-          Alert.alert('Attachment', 'Unable to open this document on your device.');
-        }
-      }
-    } catch {
-      Alert.alert('Error', 'Failed to open attachment.');
+      // Open directly inside the Rhema Church app via in-app document viewer modal!
+      setViewerDoc({
+        url,
+        name: att.name || 'Testimony Attachment',
+        mimeType: att.mimeType,
+      });
+    } catch (err: any) {
+      console.warn('Could not open attachment:', err);
+      Alert.alert('Error', 'Failed to open attachment: ' + (err?.message || 'Unknown error'));
     } finally {
       setOpeningAttachmentPath(null);
     }
@@ -749,6 +748,13 @@ export default function TestimonyDetailScreen({ route, navigation }: any) {
           ) : null}
         </View>
       </Modal>
+
+      {/* ── IN-APP DOCUMENT VIEWER (PDFs & Documents with Zoom & Scroll) ── */}
+      <InAppDocumentViewerModal
+        visible={Boolean(viewerDoc)}
+        doc={viewerDoc}
+        onClose={() => setViewerDoc(null)}
+      />
     </SafeAreaView>
   );
 }
