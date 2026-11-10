@@ -82,6 +82,169 @@ const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
   other: { bg: '#F1F5F9', text: '#334155' }
 };
 
+const getCategoryStyle = (category: string, isDark: boolean) => {
+  const base = CATEGORY_COLORS[category] || CATEGORY_COLORS['other'];
+  if (!isDark) return base;
+  const darkMap: Record<string, { bg: string; text: string }> = {
+    preparation: { bg: 'rgba(107, 114, 128, 0.25)', text: '#E5E7EB' },
+    starting_prayer: { bg: 'rgba(217, 119, 6, 0.25)', text: '#FDE68A' },
+    opening_song: { bg: 'rgba(124, 58, 237, 0.25)', text: '#DDD6FE' },
+    worship_songs: { bg: 'rgba(236, 72, 153, 0.25)', text: '#FBCFE8' },
+    music: { bg: 'rgba(99, 102, 241, 0.25)', text: '#C7D2FE' },
+    bible_reading: { bg: 'rgba(14, 165, 233, 0.25)', text: '#BAE6FD' },
+    offering: { bg: 'rgba(16, 185, 129, 0.25)', text: '#A7F3D0' },
+    announcements: { bg: 'rgba(245, 158, 11, 0.25)', text: '#FDE68A' },
+    sermon: { bg: 'rgba(234, 88, 12, 0.25)', text: '#FED7AA' },
+    communion: { bg: 'rgba(219, 39, 119, 0.25)', text: '#FBCFE8' },
+    closing_prayer: { bg: 'rgba(239, 68, 68, 0.25)', text: '#FECACA' },
+    benediction: { bg: 'rgba(16, 185, 129, 0.25)', text: '#A7F3D0' },
+  };
+  return darkMap[category] || { bg: 'rgba(255,255,255,0.08)', text: '#E2E8F0' };
+};
+
+const resolveActivityAssignment = (
+  item: RunSheetItem,
+  plan: ServicePlan,
+  memberId?: string,
+  memberName?: string
+) => {
+  const pLower = (item.program || '').toLowerCase();
+  const cat = item.category;
+
+  const isWorship = cat === 'worship_songs' ||
+    cat === 'music' ||
+    cat === 'opening_song' ||
+    cat === 'special_performance' ||
+    pLower.includes('worship') ||
+    pLower.includes('praise') ||
+    pLower.includes('setlist');
+
+  const isSermon = cat === 'sermon' || pLower.includes('sermon') || pLower.includes('message');
+  const isPrep = cat === 'preparation' || pLower.includes('sound check') || pLower.includes('preparation');
+
+  // Multi-musician roster for worship activities
+  if (isWorship) {
+    const bandRoster = [
+      { role: 'Worship Leader', name: plan.assignments?.['role_worship_leader'] || plan.assignments?.['worship_leader'] || '', emoji: '🎤', key: 'role_worship_leader' },
+      { role: 'Keyboard / Piano', name: plan.assignments?.['role_keyboard'] || plan.assignments?.['keyboard'] || '', emoji: '🎹', key: 'role_keyboard' },
+      { role: 'Drums', name: plan.assignments?.['role_drums'] || plan.assignments?.['drums'] || '', emoji: '🥁', key: 'role_drums' },
+      { role: 'Bass Guitar', name: plan.assignments?.['role_bass'] || plan.assignments?.['bass'] || '', emoji: '🎸', key: 'role_bass' },
+      { role: 'Acoustic Guitar', name: plan.assignments?.['role_acoustic'] || plan.assignments?.['acoustic'] || '', emoji: '🎸', key: 'role_acoustic' },
+      { role: 'Electric Guitar', name: plan.assignments?.['role_electric'] || plan.assignments?.['electric'] || '', emoji: '⚡', key: 'role_electric' },
+      { role: 'Sound / Audio', name: plan.assignments?.['role_sound'] || plan.assignments?.['sound'] || '', emoji: '🎧', key: 'role_sound' },
+    ];
+
+    const activeBand = bandRoster.filter(b => b.name && b.name.trim().length > 0).map(b => {
+      const isYou = (plan.assignmentMemberIds?.[b.key] === memberId) ||
+        (memberName && b.name && memberName.toLowerCase().trim() === b.name.toLowerCase().trim());
+      return { ...b, isYou: Boolean(isYou) };
+    });
+
+    const isMyServing = activeBand.some(b => b.isYou) ||
+      (item.responsibleMemberId && item.responsibleMemberId === memberId) ||
+      (memberName && item.responsiblePerson && memberName.toLowerCase().trim() === item.responsiblePerson.toLowerCase().trim());
+
+    return {
+      roleTitle: 'Worship Team & Musicians',
+      assignedName: activeBand.length > 0 ? `${activeBand.length} Musicians Assigned` : 'Not Assigned',
+      isAssigned: activeBand.length > 0,
+      isMyServing: Boolean(isMyServing),
+      myRoleName: activeBand.find(b => b.isYou)?.role || 'Worship Musician',
+      bandMusicians: activeBand,
+    };
+  }
+
+  // Sermon / Preaching
+  if (isSermon) {
+    const preacher = (plan.preacher && plan.preacher.trim() && plan.preacher.trim().toLowerCase() !== 'bro. y. rajesh')
+      ? plan.preacher.trim()
+      : (plan.assignments?.['duty_preacher'] || plan.assignments?.['role_preacher'] || null);
+
+    const assigned = preacher || (item.responsibleMemberId ? item.responsiblePerson : null);
+    const isAssigned = Boolean(assigned && assigned.trim().length > 0);
+    const assignedName = isAssigned ? assigned!.trim() : 'Not Assigned';
+    const isMyServing = Boolean(
+      (memberName && assigned && memberName.toLowerCase().trim() === assigned.toLowerCase().trim()) ||
+      (item.responsibleMemberId && item.responsibleMemberId === memberId)
+    );
+
+    return {
+      roleTitle: 'Preacher / Speaker',
+      assignedName,
+      isAssigned,
+      isMyServing,
+      myRoleName: 'Preacher / Speaker',
+      bandMusicians: [],
+    };
+  }
+
+  // Preparation & Sound Check
+  if (isPrep) {
+    const soundEng = plan.assignments?.['role_sound'] || plan.assignments?.['sound'];
+    const assigned = (item.responsibleMemberId ? item.responsiblePerson : null) || soundEng || null;
+    const isAssigned = Boolean(assigned && assigned.trim().length > 0);
+    const isMyServing = Boolean(
+      (memberName && assigned && memberName.toLowerCase().trim() === assigned.toLowerCase().trim()) ||
+      (item.responsibleMemberId && item.responsibleMemberId === memberId)
+    );
+
+    return {
+      roleTitle: 'Sound & Media Team',
+      assignedName: isAssigned ? assigned!.trim() : 'Not Assigned',
+      isAssigned,
+      isMyServing,
+      myRoleName: 'Sound & Preparation Team',
+      bandMusicians: [],
+    };
+  }
+
+  // General Activities (Prayer, Scripture Reading, Announcements, Offering, Communion, Benediction, etc.)
+  const roleTitle = item.program;
+  const placeholderPatterns = [
+    'elder / associate pastor',
+    'elder',
+    'service host',
+    'assigned reader',
+    'reader',
+    'offering team',
+    'church secretary',
+    'pastor / speaker',
+    'pastor',
+    'lead pastor',
+    'unassigned',
+  ];
+
+  // Check plan.assignments by item.id
+  const directAssignment = plan.assignments?.[item.id] ||
+    plan.assignments?.[item.id.replace('act_', '')] ||
+    plan.assignments?.[`act_${item.id}`];
+
+  let resolvedPerson: string | null = null;
+  if (directAssignment && directAssignment.trim()) {
+    resolvedPerson = directAssignment.trim();
+  } else if (item.responsibleMemberId && item.responsiblePerson && item.responsiblePerson.trim()) {
+    resolvedPerson = item.responsiblePerson.trim();
+  } else if (item.responsiblePerson && item.responsiblePerson.trim() && !placeholderPatterns.includes(item.responsiblePerson.toLowerCase().trim())) {
+    resolvedPerson = item.responsiblePerson.trim();
+  }
+
+  const isAssigned = Boolean(resolvedPerson && resolvedPerson.length > 0);
+  const assignedName = isAssigned ? resolvedPerson! : 'Not Assigned';
+  const isMyServing = Boolean(
+    (item.responsibleMemberId && item.responsibleMemberId === memberId) ||
+    (memberName && resolvedPerson && memberName.toLowerCase().trim() === resolvedPerson.toLowerCase().trim())
+  );
+
+  return {
+    roleTitle,
+    assignedName,
+    isAssigned,
+    isMyServing,
+    myRoleName: roleTitle,
+    bandMusicians: [],
+  };
+};
+
 export default function MyServiceScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
   const { member } = useAuth();
@@ -408,66 +571,91 @@ export default function MyServiceScreen({ navigation, route }: any) {
         )}
       </View>
 
-      {/* ── NAVIGATION TABS (Only visible to members assigned to duties like keyboard, band, or order of service) ── */}
+      {/* ── COMBINED SEGMENTED TABS: SERVICE ROSTER vs MY RESPONSIBILITIES (Single Rounded Container) ── */}
       {duties.length > 0 && (
-        <View style={[styles.tabsBarWrapper, { backgroundColor: cardSurface, borderBottomColor: borderColor }]}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsScroll}>
+        <View style={{ paddingHorizontal: 16, marginTop: 4, marginBottom: 8 }}>
+          <View
+            style={[
+              styles.segmentContainer,
+              {
+                backgroundColor: isDark ? '#1C1C1E' : '#F1F5F9',
+                borderColor: isDark ? '#2C2C2E' : '#E2E8F0',
+                borderWidth: 1,
+              },
+            ]}
+          >
+            {/* Service Roster Tab */}
             <TouchableOpacity
               style={[
-                styles.tabBtn,
-                activeTab === 'roster' ? {
-                  backgroundColor: primaryBtnBg,
-                  borderColor: primaryBtnBg,
-                } : {
-                  backgroundColor: isDark ? '#18181B' : '#F8FAFC',
-                  borderColor,
-                }
+                styles.segmentBtn,
+                activeTab === 'roster' && [
+                  styles.segmentBtnActive,
+                  { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' },
+                ],
               ]}
               onPress={() => setActiveTab('roster')}
               activeOpacity={0.8}
             >
-              <Layers
-                size={14}
-                color={activeTab === 'roster' ? primaryBtnText : secondaryText}
-              />
               <Text
                 style={[
-                  styles.tabBtnTxt,
-                  activeTab === 'roster' ? { color: primaryBtnText, fontWeight: '800' } : { color: secondaryText }
+                  styles.segmentBtnTxt,
+                  { color: isDark ? '#A1A1AA' : '#64748B' },
+                  activeTab === 'roster' && { color: isDark ? '#000000' : '#FFFFFF', fontWeight: '800' },
                 ]}
               >
                 Service Roster
               </Text>
             </TouchableOpacity>
 
+            {/* My Responsibilities Tab */}
             <TouchableOpacity
               style={[
-                styles.tabBtn,
-                activeTab === 'responsibilities' ? {
-                  backgroundColor: primaryBtnBg,
-                  borderColor: primaryBtnBg,
-                } : {
-                  backgroundColor: isDark ? '#18181B' : '#F8FAFC',
-                  borderColor,
-                }
+                styles.segmentBtn,
+                activeTab === 'responsibilities' && [
+                  styles.segmentBtnActive,
+                  { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' },
+                ],
               ]}
               onPress={() => setActiveTab('responsibilities')}
               activeOpacity={0.8}
             >
-              <Calendar
-                size={14}
-                color={activeTab === 'responsibilities' ? primaryBtnText : secondaryText}
-              />
               <Text
                 style={[
-                  styles.tabBtnTxt,
-                  activeTab === 'responsibilities' ? { color: primaryBtnText, fontWeight: '800' } : { color: secondaryText }
+                  styles.segmentBtnTxt,
+                  { color: isDark ? '#A1A1AA' : '#64748B' },
+                  activeTab === 'responsibilities' && { color: isDark ? '#000000' : '#FFFFFF', fontWeight: '800' },
                 ]}
               >
-                My Responsibilities ({duties.length})
+                My Responsibilities
               </Text>
+              <View
+                style={[
+                  styles.segmentBadge,
+                  {
+                    backgroundColor:
+                      activeTab === 'responsibilities'
+                        ? isDark ? 'rgba(0, 0, 0, 0.15)' : 'rgba(255, 255, 255, 0.25)'
+                        : isDark ? '#27272A' : '#E2E8F0',
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.segmentBadgeTxt,
+                    {
+                      color:
+                        activeTab === 'responsibilities'
+                          ? isDark ? '#000000' : '#FFFFFF'
+                          : isDark ? '#A1A1AA' : '#64748B',
+                      fontWeight: '800',
+                    },
+                  ]}
+                >
+                  {duties.length}
+                </Text>
+              </View>
             </TouchableOpacity>
-          </ScrollView>
+          </View>
         </View>
       )}
 
@@ -538,17 +726,43 @@ export default function MyServiceScreen({ navigation, route }: any) {
                     <View>
                       {/* SERVICE OVERVIEW BANNER */}
                       <View style={[styles.rosterServiceBanner, { backgroundColor: cardSurface, borderColor }]}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#10B981' }} />
-                            <Text style={styles.rosterBannerTag}>PUBLISHED CHURCH SERVICE</Text>
+                        {/* Status + Date Header Row */}
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                          <View style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 6,
+                            backgroundColor: isDark ? 'rgba(16, 185, 129, 0.12)' : '#ECFDF5',
+                            paddingHorizontal: 8,
+                            paddingVertical: 3.5,
+                            borderRadius: 12,
+                            borderWidth: 1,
+                            borderColor: isDark ? 'rgba(16, 185, 129, 0.25)' : '#A7F3D0'
+                          }}>
+                            <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#10B981' }} />
+                            <Text style={[styles.rosterBannerTag, { fontSize: 9.5 }]}>
+                              {selectedPlan.status === 'published' ? 'PUBLISHED CHURCH SERVICE' : 'DRAFT SERVICE'}
+                            </Text>
                           </View>
-                          <Text style={[styles.rosterBannerDate, { color: isDark ? '#34D399' : '#059669' }]}>
-                            {formatDateMonthYear(selectedPlan.date)}
-                          </Text>
+
+                          <View style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 5,
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9',
+                            paddingHorizontal: 8,
+                            paddingVertical: 3.5,
+                            borderRadius: 12
+                          }}>
+                            <Calendar size={11} color={isDark ? '#34D399' : '#059669'} />
+                            <Text style={[styles.rosterBannerDate, { color: isDark ? '#34D399' : '#059669', fontSize: 11 }]}>
+                              {formatDateMonthYear(selectedPlan.date)}
+                            </Text>
+                          </View>
                         </View>
 
-                        <Text style={[styles.rosterBannerTitle, { color: primaryText }]}>
+                        {/* Title */}
+                        <Text style={[styles.rosterBannerTitle, { color: primaryText, fontSize: 20, fontWeight: '800', letterSpacing: -0.3 }]}>
                           {selectedPlan.serviceTitle}
                         </Text>
 
@@ -556,75 +770,172 @@ export default function MyServiceScreen({ navigation, route }: any) {
                         <View style={{ marginTop: 8, gap: 5 }}>
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                             <Clock size={13} color={secondaryText} />
-                            <Text style={{ fontSize: 12, color: primaryText, fontWeight: '600' }}>
+                            <Text style={{ fontSize: 12.5, color: primaryText, fontWeight: '600' }}>
                               {formatTimeTo12Hour(selectedPlan.startTime)} - {formatTimeTo12Hour(selectedPlan.endTime)}
                             </Text>
                           </View>
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                             <MapPin size={13} color={secondaryText} />
-                            <Text style={{ fontSize: 12, color: secondaryText }}>
+                            <Text style={{ fontSize: 12.5, color: secondaryText }}>
                               {selectedPlan.location || 'Church Sanctuary'}
                             </Text>
                           </View>
-                          {selectedPlan.preacher ? (
+                          {selectedPlan.preacher && selectedPlan.preacher.trim() && selectedPlan.preacher.trim().toLowerCase() !== 'bro. y. rajesh' ? (
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                               <BookOpen size={13} color={secondaryText} />
-                              <Text style={{ fontSize: 12, color: secondaryText }}>
-                                Preacher / Speaker: <Text style={{ fontWeight: '700', color: primaryText }}>{selectedPlan.preacher}</Text>
+                              <Text style={{ fontSize: 12.5, color: secondaryText }}>
+                                Preacher / Speaker: <Text style={{ fontWeight: '700', color: primaryText }}>{selectedPlan.preacher.trim()}</Text>
                               </Text>
                             </View>
                           ) : null}
                           {selectedPlan.theme ? (
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                               <Sparkles size={13} color="#D97706" />
-                              <Text style={{ fontSize: 12, color: '#D97706', fontWeight: '600' }}>
+                              <Text style={{ fontSize: 12.5, color: '#D97706', fontWeight: '600' }}>
                                 Theme: {selectedPlan.theme}
                               </Text>
                             </View>
                           ) : null}
                         </View>
 
-                        {/* Personal Duty Callout inside this service */}
+                        {/* World-Class Personal Duty Pass if member is serving */}
                         {(() => {
                           const myDutyInThisService = duties.find(d => d.serviceId === selectedPlan.id);
                           if (!myDutyInThisService) return null;
                           const isPending = myDutyInThisService.status === 'pending';
+
+                          // Contextual icon based on assigned role
+                          const rLower = (myDutyInThisService.roleTitle || '').toLowerCase();
+                          let roleIconEmoji = '✝️';
+                          if (rLower.includes('keyboard') || rLower.includes('piano')) roleIconEmoji = '🎹';
+                          else if (rLower.includes('drum')) roleIconEmoji = '🥁';
+                          else if (rLower.includes('bass')) roleIconEmoji = '🎸';
+                          else if (rLower.includes('guitar')) roleIconEmoji = '🎸';
+                          else if (rLower.includes('sound') || rLower.includes('audio')) roleIconEmoji = '🎧';
+                          else if (rLower.includes('worship') || rLower.includes('lead') || rLower.includes('sing')) roleIconEmoji = '🎤';
+                          else if (rLower.includes('usher') || rLower.includes('greet')) roleIconEmoji = '🤝';
+                          else if (rLower.includes('media') || rLower.includes('camera') || rLower.includes('stream')) roleIconEmoji = '📹';
+                          else if (rLower.includes('prayer')) roleIconEmoji = '🙏';
+
                           return (
                             <View style={[
                               styles.personalCalloutBox,
                               {
-                                backgroundColor: isPending ? (isDark ? 'rgba(217, 119, 6, 0.15)' : '#FEF3C7') : (isDark ? 'rgba(16, 185, 129, 0.15)' : '#ECFDF5'),
-                                borderColor: isPending ? '#D97706' : '#10B981'
+                                backgroundColor: isPending
+                                  ? (isDark ? 'rgba(217, 119, 6, 0.12)' : '#FFFBEB')
+                                  : (isDark ? '#14251F' : '#F0FDF4'),
+                                borderColor: isPending ? '#D97706' : (isDark ? 'rgba(16, 185, 129, 0.35)' : '#A7F3D0'),
+                                borderWidth: 1.2,
+                                borderRadius: 14,
+                                padding: 13,
+                                marginTop: 14,
                               }
                             ]}>
-                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                                <AlertCircle size={15} color={isPending ? '#D97706' : '#10B981'} />
-                                <Text style={{ fontSize: 11.5, fontWeight: '800', color: isPending ? '#D97706' : '#059669' }}>
-                                  {isPending ? 'YOU ARE REQUESTED TO SERVE · ACTION REQUIRED' : 'CONFIRMED SERVICE RESPONSIBILITY'}
+                              {/* Top Status & Call Time Badge */}
+                              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                                <View style={{
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  gap: 5,
+                                  backgroundColor: isPending
+                                    ? (isDark ? 'rgba(217, 119, 6, 0.22)' : '#FEF3C7')
+                                    : (isDark ? 'rgba(16, 185, 129, 0.22)' : '#DCFCE7'),
+                                  paddingHorizontal: 8,
+                                  paddingVertical: 3.5,
+                                  borderRadius: 20
+                                }}>
+                                  {isPending ? (
+                                    <AlertCircle size={12} color="#D97706" />
+                                  ) : (
+                                    <CheckCircle2 size={12} color="#10B981" />
+                                  )}
+                                  <Text style={{
+                                    fontSize: 10,
+                                    fontWeight: '800',
+                                    color: isPending ? '#D97706' : '#059669',
+                                    letterSpacing: 0.5
+                                  }}>
+                                    {isPending ? 'INVITATION · ACTION REQUIRED' : 'CONFIRMED DUTY'}
+                                  </Text>
+                                </View>
+
+                                <View style={{
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)',
+                                  paddingHorizontal: 8,
+                                  paddingVertical: 3,
+                                  borderRadius: 20
+                                }}>
+                                  <Clock size={11} color={isDark ? '#FBBF24' : '#D97706'} />
+                                  <Text style={{ fontSize: 10.5, fontWeight: '700', color: isDark ? '#FDE68A' : '#92400E' }}>
+                                    Call: {formatTimeTo12Hour(myDutyInThisService.callTime)}
+                                  </Text>
+                                </View>
+                              </View>
+
+                              {/* Main Content: Avatar + Role Details */}
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                                <View style={{
+                                  width: 44,
+                                  height: 44,
+                                  borderRadius: 22,
+                                  backgroundColor: isPending
+                                    ? (isDark ? 'rgba(217, 119, 6, 0.2)' : '#FEF3C7')
+                                    : (isDark ? 'rgba(16, 185, 129, 0.2)' : '#DCFCE7'),
+                                  borderWidth: 1.5,
+                                  borderColor: isPending ? '#D97706' : '#10B981',
+                                  alignItems: 'center',
+                                  justifyContent: 'center'
+                                }}>
+                                  <Text style={{ fontSize: 20 }}>{roleIconEmoji}</Text>
+                                </View>
+
+                                <View style={{ flex: 1, minWidth: 0 }}>
+                                  <Text style={{ fontSize: 9.5, fontWeight: '700', color: secondaryText, letterSpacing: 0.8, textTransform: 'uppercase' }}>
+                                    Your Assigned Role
+                                  </Text>
+                                  <Text style={{ fontSize: 15, fontWeight: '800', color: primaryText, marginTop: 1 }} numberOfLines={1}>
+                                    {myDutyInThisService.roleTitle}
+                                  </Text>
+                                  <Text style={{ fontSize: 11, color: isPending ? '#D97706' : (isDark ? '#34D399' : '#059669'), marginTop: 2, fontWeight: '600' }} numberOfLines={1}>
+                                    {isPending ? 'Tap below to accept or decline' : '✓ Active on service roster · You are serving this service'}
+                                  </Text>
+                                </View>
+                              </View>
+
+                              {/* Dedicated Call Time Footer Row so Call Time is prominently visible & never clipped */}
+                              <View style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                gap: 6,
+                                marginTop: 10,
+                                paddingTop: 8,
+                                borderTopWidth: 1,
+                                borderTopColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)',
+                              }}>
+                                <Clock size={12} color={isDark ? '#34D399' : '#059669'} />
+                                <Text style={{ fontSize: 11.5, color: secondaryText }}>
+                                  Reporting Call Time: <Text style={{ fontWeight: '800', color: primaryText }}>{formatTimeTo12Hour(myDutyInThisService.callTime)}</Text>
                                 </Text>
                               </View>
-                              <Text style={{ fontSize: 13, fontWeight: '700', color: primaryText }}>
-                                Role: {myDutyInThisService.roleTitle}
-                              </Text>
-                              <Text style={{ fontSize: 11.5, color: secondaryText, marginTop: 2 }}>
-                                Reporting Call Time: <Text style={{ fontWeight: '700', color: primaryText }}>{myDutyInThisService.callTime}</Text>
-                              </Text>
 
                               {isPending && (
-                                <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                                <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
                                   <TouchableOpacity
-                                    style={[styles.dutyAcceptBtn, { flex: 1, paddingVertical: 8, backgroundColor: publishBtnBg }]}
+                                    style={[styles.dutyAcceptBtn, { flex: 1, paddingVertical: 9, backgroundColor: publishBtnBg, borderRadius: 10 }]}
                                     onPress={() => handleAcceptDuty(myDutyInThisService)}
                                   >
-                                    <CheckCircle2 size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
-                                    <Text style={[styles.dutyAcceptBtnTxt, { fontSize: 12 }]}>Accept Duty</Text>
+                                    <CheckCircle2 size={14} color="#FFFFFF" style={{ marginRight: 5 }} />
+                                    <Text style={[styles.dutyAcceptBtnTxt, { fontSize: 12.5, fontWeight: '700' }]}>Accept Duty</Text>
                                   </TouchableOpacity>
                                   <TouchableOpacity
-                                    style={[styles.dutyDeclineBtn, { flex: 1, paddingVertical: 8 }]}
+                                    style={[styles.dutyDeclineBtn, { flex: 1, paddingVertical: 9, borderRadius: 10, borderColor: '#EF4444' }]}
                                     onPress={() => setSelectedDutyForDecline(myDutyInThisService)}
                                   >
-                                    <XCircle size={14} color="#EF4444" style={{ marginRight: 4 }} />
-                                    <Text style={[styles.dutyDeclineBtnTxt, { fontSize: 12 }]}>Decline</Text>
+                                    <XCircle size={14} color="#EF4444" style={{ marginRight: 5 }} />
+                                    <Text style={[styles.dutyDeclineBtnTxt, { fontSize: 12.5, fontWeight: '700', color: '#EF4444' }]}>Decline</Text>
                                   </TouchableOpacity>
                                 </View>
                               )}
@@ -650,15 +961,20 @@ export default function MyServiceScreen({ navigation, route }: any) {
                         {/* 2-Column Symmetric Responsive Grid */}
                         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between' }}>
                           {[
-                            { emoji: '🎹', role: 'KEYBOARD', name: selectedPlan.assignments?.['role_keyboard'], key: 'role_keyboard' },
-                            { emoji: '🥁', role: 'DRUMS', name: selectedPlan.assignments?.['role_drums'], key: 'role_drums' },
-                            { emoji: '🎸', role: 'BASS GUITAR', name: selectedPlan.assignments?.['role_bass'], key: 'role_bass' },
-                            { emoji: '🎸', role: 'ACOUSTIC GUITAR', name: selectedPlan.assignments?.['role_acoustic'], key: 'role_acoustic' },
-                            { emoji: '⚡', role: 'ELECTRIC GUITAR', name: selectedPlan.assignments?.['role_electric'], key: 'role_electric' },
-                            { emoji: '🎧', role: 'SOUND / AUDIO', name: selectedPlan.assignments?.['role_sound'], key: 'role_sound' },
+                            { emoji: '🎹', role: 'KEYBOARD', key: 'role_keyboard' },
+                            { emoji: '🥁', role: 'DRUMS', key: 'role_drums' },
+                            { emoji: '🎸', role: 'BASS GUITAR', key: 'role_bass' },
+                            { emoji: '🎸', role: 'ACOUSTIC GUITAR', key: 'role_acoustic' },
+                            { emoji: '⚡', role: 'ELECTRIC GUITAR', key: 'role_electric' },
+                            { emoji: '🎧', role: 'SOUND / AUDIO', key: 'role_sound' },
                           ].map((inst) => {
-                            const isMyRole = (selectedPlan.assignmentMemberIds?.[inst.key] === memberId) ||
-                              (member?.name && inst.name && member.name.toLowerCase().trim() === inst.name.toLowerCase().trim());
+                            const assignedName = selectedPlan.assignments?.[inst.key] ||
+                              selectedPlan.assignments?.[inst.key.replace('role_', '')] ||
+                              '';
+                            const assignedId = selectedPlan.assignmentMemberIds?.[inst.key] ||
+                              selectedPlan.assignmentMemberIds?.[inst.key.replace('role_', '')];
+                            const isMyRole = (assignedId && assignedId === memberId) ||
+                              (member?.name && assignedName && member.name.toLowerCase().trim() === assignedName.toLowerCase().trim());
                             return (
                               <View
                                 key={inst.role}
@@ -671,7 +987,9 @@ export default function MyServiceScreen({ navigation, route }: any) {
                                   }
                                 ]}
                               >
-                                <Text style={{ fontSize: 14 }}>{inst.emoji}</Text>
+                                <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center' }}>
+                                  <Text style={{ fontSize: 14 }}>{inst.emoji}</Text>
+                                </View>
                                 <View style={{ flex: 1, minWidth: 0 }}>
                                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                                     <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }} numberOfLines={1}>
@@ -681,8 +999,17 @@ export default function MyServiceScreen({ navigation, route }: any) {
                                       <Text style={{ fontSize: 8.5, color: '#10B981', fontWeight: '800' }}>YOU</Text>
                                     )}
                                   </View>
-                                  <Text style={{ fontSize: 12, fontWeight: '700', color: inst.name ? primaryText : '#94A3B8' }} numberOfLines={1}>
-                                    {inst.name || 'Not Assigned'}
+                                  <Text
+                                    style={{
+                                      fontSize: 12,
+                                      fontWeight: '700',
+                                      color: assignedName ? primaryText : '#94A3B8',
+                                      lineHeight: 16,
+                                      marginTop: 2
+                                    }}
+                                    numberOfLines={2}
+                                  >
+                                    {assignedName || 'Not Assigned'}
                                   </Text>
                                 </View>
                               </View>
@@ -690,7 +1017,7 @@ export default function MyServiceScreen({ navigation, route }: any) {
                           })}
 
                           {/* Worship Leader */}
-                          {selectedPlan.assignments?.['role_worship_leader'] ? (
+                          {(selectedPlan.assignments?.['role_worship_leader'] || selectedPlan.assignments?.['worship_leader']) ? (
                             <View style={[
                               styles.bandMemberPill,
                               {
@@ -705,7 +1032,9 @@ export default function MyServiceScreen({ navigation, route }: any) {
                                 borderWidth: 1
                               }
                             ]}>
-                              <Text style={{ fontSize: 14 }}>🎤</Text>
+                              <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center' }}>
+                                <Text style={{ fontSize: 14 }}>🎤</Text>
+                              </View>
                               <View style={{ flex: 1, minWidth: 0 }}>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                                   <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }} numberOfLines={1}>WORSHIP LEADER</Text>
@@ -714,8 +1043,17 @@ export default function MyServiceScreen({ navigation, route }: any) {
                                     <Text style={{ fontSize: 8.5, color: '#10B981', fontWeight: '800' }}>YOU</Text>
                                   )}
                                 </View>
-                                <Text style={{ fontSize: 12, fontWeight: '700', color: primaryText }} numberOfLines={1}>
-                                  {selectedPlan.assignments['role_worship_leader']}
+                                <Text
+                                  style={{
+                                    fontSize: 12,
+                                    fontWeight: '700',
+                                    color: primaryText,
+                                    lineHeight: 16,
+                                    marginTop: 2
+                                  }}
+                                  numberOfLines={2}
+                                >
+                                  {selectedPlan.assignments['role_worship_leader'] || selectedPlan.assignments['worship_leader']}
                                 </Text>
                               </View>
                             </View>
@@ -725,15 +1063,34 @@ export default function MyServiceScreen({ navigation, route }: any) {
 
                       {/* 2. ORDER OF SERVICE TIMELINE & ROSTER */}
                       <View style={[styles.rosterSectionCard, { backgroundColor: cardSurface, borderColor }]}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 10 }}>
-                          <ListChecks size={16} color={isDark ? '#34D399' : '#2E6B4F'} />
-                          <View>
-                            <Text style={[styles.sectionTitle, { color: primaryText, marginBottom: 0 }]}>
+                        {/* Header with Title + Safe Subtitle (Zero Time Overflow) */}
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                          <View style={{
+                            width: 36,
+                            height: 36,
+                            borderRadius: 18,
+                            backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}>
+                            <ListChecks size={18} color={isDark ? '#34D399' : '#059669'} />
+                          </View>
+                          <View style={{ flex: 1, minWidth: 0 }}>
+                            <Text style={[styles.sectionTitle, { color: primaryText, marginBottom: 2, fontSize: 13.5, letterSpacing: 0.3 }]} numberOfLines={1}>
                               ORDER OF SERVICE & RESPONSIBILITIES
                             </Text>
-                            <Text style={{ fontSize: 10.5, color: secondaryText }}>
-                              {selectedPlan.runSheet?.length || 0} Scheduled program items
-                            </Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              <Text style={{ fontSize: 11, color: secondaryText }}>
+                                {selectedPlan.runSheet?.length || 0} Scheduled items
+                              </Text>
+                              <Text style={{ fontSize: 11, color: secondaryText }}>•</Text>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3.5 }}>
+                                <Clock size={11} color={isDark ? '#34D399' : '#059669'} />
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#34D399' : '#059669' }}>
+                                  {formatTimeTo12Hour(selectedPlan.startTime)} – {formatTimeTo12Hour(selectedPlan.endTime)}
+                                </Text>
+                              </View>
+                            </View>
                           </View>
                         </View>
 
@@ -743,61 +1100,197 @@ export default function MyServiceScreen({ navigation, route }: any) {
                           </Text>
                         ) : (
                           selectedPlan.runSheet.map((item, idx) => {
-                            const catColor = CATEGORY_COLORS[item.category] || CATEGORY_COLORS['other'];
-                            const isMyItem = item.responsibleMemberId === memberId ||
-                              (member?.name && item.responsiblePerson && member.name.toLowerCase().trim() === item.responsiblePerson.toLowerCase().trim());
+                            const isFirst = idx === 0;
+                            const isLast = idx === (selectedPlan.runSheet.length - 1);
+                            const catStyle = getCategoryStyle(item.category, isDark);
+
+                            const assignment = resolveActivityAssignment(
+                              item,
+                              selectedPlan,
+                              memberId,
+                              member?.name
+                            );
+
+                            const isHighlighted = assignment.isMyServing;
+                            const myDutyInThisService = duties.find(d => d.serviceId === selectedPlan.id);
 
                             return (
-                              <View
-                                key={item.id || `run_${idx}`}
-                                style={[
-                                  styles.runSheetItemRow,
-                                  {
-                                    backgroundColor: isMyItem ? (isDark ? 'rgba(16, 185, 129, 0.12)' : '#F0FDF4') : (isDark ? '#27272A' : '#FAFAF9'),
-                                    borderColor: isMyItem ? '#10B981' : borderColor,
-                                    borderWidth: isMyItem ? 1.5 : 1
-                                  }
-                                ]}
-                              >
-                                <View style={{ width: 22, alignItems: 'center', justifyContent: 'center' }}>
-                                  <Text style={{ fontSize: 11, fontWeight: '700', color: secondaryText }}>
-                                    {idx + 1}
-                                  </Text>
+                              <View key={item.id || `run_${idx}`} style={{ flexDirection: 'row', minHeight: 74 }}>
+                                {/* Timeline vertical connector & step node */}
+                                <View style={{ width: 28, alignItems: 'center' }}>
+                                  <View style={{
+                                    width: 2,
+                                    height: 12,
+                                    backgroundColor: isFirst ? 'transparent' : (isDark ? '#3F3F46' : '#E2E8F0')
+                                  }} />
+                                  <View style={{
+                                    width: 24,
+                                    height: 24,
+                                    borderRadius: 12,
+                                    backgroundColor: isHighlighted ? '#10B981' : (isDark ? '#27272A' : '#F1F5F9'),
+                                    borderWidth: 1.5,
+                                    borderColor: isHighlighted ? (isDark ? '#34D399' : '#059669') : (isDark ? '#3F3F46' : '#CBD5E1'),
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    zIndex: 2
+                                  }}>
+                                    {isHighlighted ? (
+                                      <Sparkles size={12} color="#FFFFFF" />
+                                    ) : (
+                                      <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? '#A1A1AA' : '#64748B' }}>
+                                        {idx + 1}
+                                      </Text>
+                                    )}
+                                  </View>
+                                  <View style={{
+                                    width: 2,
+                                    flex: 1,
+                                    backgroundColor: isLast ? 'transparent' : (isDark ? '#3F3F46' : '#E2E8F0')
+                                  }} />
                                 </View>
 
-                                <View style={{ flex: 1, paddingHorizontal: 6 }}>
-                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 2 }}>
-                                    <View style={[styles.categoryBadge, { backgroundColor: catColor.bg }]}>
-                                      <Text style={[styles.categoryBadgeTxt, { color: catColor.text }]}>
-                                        {item.category.replace('_', ' ').toUpperCase()}
-                                      </Text>
-                                    </View>
-                                    <Text style={{ fontSize: 10.5, color: secondaryText, fontWeight: '600' }}>
-                                      {formatTimeTo12Hour(item.startTime)} - {formatTimeTo12Hour(item.endTime)} ({item.durationMinutes}m)
-                                    </Text>
-                                  </View>
-
-                                  <Text style={[styles.runSheetProgramTitle, { color: primaryText }]}>
-                                    {item.program}
-                                  </Text>
-
-                                  {item.responsiblePerson ? (
-                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                                      <Text style={{ fontSize: 11.5, color: secondaryText }}>
-                                        👤 Assigned: <Text style={{ fontWeight: '700', color: isMyItem ? (isDark ? '#34D399' : '#059669') : primaryText }}>
-                                          {item.responsiblePerson}
+                                {/* Timeline Item Card */}
+                                <View style={{
+                                  flex: 1,
+                                  marginLeft: 8,
+                                  marginBottom: 10,
+                                  backgroundColor: isHighlighted
+                                    ? (isDark ? 'rgba(16, 185, 129, 0.08)' : '#F0FDF4')
+                                    : (isDark ? '#27272A' : '#FAFAF9'),
+                                  borderRadius: 12,
+                                  borderWidth: 1,
+                                  borderColor: isHighlighted ? '#10B981' : borderColor,
+                                  padding: 12
+                                }}>
+                                  {/* Item Header: Category Badge + Serving Pill + Time Range */}
+                                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, marginBottom: 4 }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                                      <View style={[styles.categoryBadge, { backgroundColor: catStyle.bg }]}>
+                                        <Text style={[styles.categoryBadgeTxt, { color: catStyle.text }]}>
+                                          {item.category.replace(/_/g, ' ').toUpperCase()}
                                         </Text>
-                                      </Text>
-                                      {isMyItem && (
-                                        <View style={{ backgroundColor: '#10B981', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
-                                          <Text style={{ fontSize: 8.5, color: '#FFFFFF', fontWeight: '800' }}>YOUR DUTY</Text>
+                                      </View>
+                                      {isHighlighted && (
+                                        <View style={{ backgroundColor: '#10B981', paddingHorizontal: 6, paddingVertical: 1.5, borderRadius: 4 }}>
+                                          <Text style={{ fontSize: 8.5, color: '#FFFFFF', fontWeight: '800' }}>YOU'RE SERVING</Text>
                                         </View>
                                       )}
                                     </View>
-                                  ) : (
-                                    <Text style={{ fontSize: 11, color: '#94A3B8', fontStyle: 'italic', marginTop: 2 }}>
-                                      Unassigned
-                                    </Text>
+
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                      <Clock size={11} color={secondaryText} />
+                                      <Text style={{ fontSize: 11, fontWeight: '700', color: primaryText }}>
+                                        {formatTimeTo12Hour(item.startTime)} - {formatTimeTo12Hour(item.endTime)}
+                                      </Text>
+                                      <View style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
+                                        <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }}>{item.durationMinutes}m</Text>
+                                      </View>
+                                    </View>
+                                  </View>
+
+                                  {/* Program Title */}
+                                  <Text style={[styles.runSheetProgramTitle, { color: primaryText, marginTop: 1, fontSize: 14.5 }]}>
+                                    {item.program}
+                                  </Text>
+
+                                  {/* Assignment Display Row */}
+                                  <View style={{ marginTop: 6, gap: 3 }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                                      <Users size={12} color={secondaryText} />
+                                      <Text style={{ fontSize: 12, color: secondaryText }}>
+                                        Assigned:{' '}
+                                        {assignment.isAssigned ? (
+                                          <Text style={{ fontWeight: '700', color: isHighlighted ? (isDark ? '#34D399' : '#059669') : primaryText }}>
+                                            {assignment.assignedName}
+                                          </Text>
+                                        ) : (
+                                          <Text style={{ fontStyle: 'italic', color: '#94A3B8' }}>
+                                            Not Assigned
+                                          </Text>
+                                        )}
+                                      </Text>
+                                    </View>
+                                  </View>
+
+                                  {/* Multi-Musician details for Worship Band */}
+                                  {assignment.bandMusicians && assignment.bandMusicians.length > 0 && (
+                                    <View style={{
+                                      marginTop: 8,
+                                      padding: 8,
+                                      borderRadius: 8,
+                                      backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : '#FFFFFF',
+                                      borderWidth: 1,
+                                      borderColor: isDark ? 'rgba(255,255,255,0.07)' : '#E2E8F0',
+                                    }}>
+                                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+                                        <Music size={11} color={isDark ? '#34D399' : '#059669'} />
+                                        <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? '#34D399' : '#059669', letterSpacing: 0.4 }}>
+                                          WORSHIP TEAM & MUSICIANS
+                                        </Text>
+                                      </View>
+                                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+                                        {assignment.bandMusicians.map(b => (
+                                          <View
+                                            key={b.key}
+                                            style={{
+                                              flexDirection: 'row',
+                                              alignItems: 'center',
+                                              gap: 4,
+                                              backgroundColor: b.isYou
+                                                ? (isDark ? 'rgba(16, 185, 129, 0.2)' : '#DCFCE7')
+                                                : (isDark ? '#27272A' : '#F1F5F9'),
+                                              borderColor: b.isYou ? '#10B981' : (isDark ? '#3F3F46' : '#E2E8F0'),
+                                              borderWidth: b.isYou ? 1.5 : 1,
+                                              paddingHorizontal: 7,
+                                              paddingVertical: 3.5,
+                                              borderRadius: 6,
+                                            }}
+                                          >
+                                            <Text style={{ fontSize: 11 }}>{b.emoji}</Text>
+                                            <Text style={{
+                                              fontSize: 11,
+                                              fontWeight: '700',
+                                              color: b.isYou ? (isDark ? '#34D399' : '#059669') : primaryText
+                                            }}>
+                                              {b.role.split(' ')[0]}: {b.name}
+                                            </Text>
+                                            {b.isYou && (
+                                              <View style={{ backgroundColor: '#10B981', paddingHorizontal: 4, paddingVertical: 1, borderRadius: 3 }}>
+                                                <Text style={{ fontSize: 8, color: '#FFFFFF', fontWeight: '800' }}>YOU</Text>
+                                              </View>
+                                            )}
+                                          </View>
+                                        ))}
+                                      </View>
+
+                                      {isHighlighted && (
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 }}>
+                                          <Sparkles size={11} color="#10B981" />
+                                          <Text style={{ fontSize: 10.5, fontWeight: '700', color: isDark ? '#34D399' : '#059669' }}>
+                                            You are actively serving on {assignment.myRoleName} for this worship segment
+                                          </Text>
+                                        </View>
+                                      )}
+                                    </View>
+                                  )}
+
+                                  {/* Preparation & Sound check call reminder */}
+                                  {item.category === 'preparation' && myDutyInThisService && (
+                                    <View style={{
+                                      flexDirection: 'row',
+                                      alignItems: 'center',
+                                      gap: 4,
+                                      backgroundColor: isDark ? 'rgba(217, 119, 6, 0.15)' : '#FEF3C7',
+                                      paddingHorizontal: 7,
+                                      paddingVertical: 3.5,
+                                      borderRadius: 6,
+                                      marginTop: 6
+                                    }}>
+                                      <Clock size={11} color="#D97706" />
+                                      <Text style={{ fontSize: 10.5, fontWeight: '700', color: isDark ? '#FBBF24' : '#92400E' }}>
+                                        Sound Check Call: Please arrive by {formatTimeTo12Hour(myDutyInThisService.callTime)}
+                                      </Text>
+                                    </View>
                                   )}
                                 </View>
                               </View>
@@ -947,7 +1440,7 @@ export default function MyServiceScreen({ navigation, route }: any) {
                           <MapPin size={13} color="#059669" style={{ marginTop: 2 }} />
                           <Text style={{ fontSize: 12, color: secondaryText, flex: 1, lineHeight: 18 }}>
                             Sanctuary: <Text style={{ fontWeight: '700', color: primaryText }}>{duty.location || 'Church Sanctuary'}</Text>
-                            {duty.preacher ? ` · Preacher: ${duty.preacher}` : ''}
+                            {duty.preacher && duty.preacher.trim().toLowerCase() !== 'bro. y. rajesh' ? ` · Preacher: ${duty.preacher.trim()}` : ''}
                           </Text>
                         </View>
 
@@ -1050,7 +1543,7 @@ export default function MyServiceScreen({ navigation, route }: any) {
                           <MapPin size={13} color="#64748B" style={{ marginTop: 2 }} />
                           <Text style={{ fontSize: 12, color: secondaryText, flex: 1, lineHeight: 18 }}>
                             Location: <Text style={{ fontWeight: '700', color: primaryText }}>{duty.location || 'Church Sanctuary'}</Text>
-                            {duty.preacher ? ` · Preacher: ${duty.preacher}` : ''}
+                            {duty.preacher && duty.preacher.trim().toLowerCase() !== 'bro. y. rajesh' ? ` · Preacher: ${duty.preacher.trim()}` : ''}
                           </Text>
                         </View>
                       </View>
@@ -1419,7 +1912,50 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
-  // ── Tabs Bar (Pill style matching AdminServicePlanner) ──
+  // ── Combined Segmented Control Tabs (Single Rounded Container) ──
+  segmentContainer: {
+    flexDirection: 'row',
+    borderRadius: 14,
+    padding: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  segmentBtn: {
+    flex: 1,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    flexDirection: 'row',
+    gap: 6,
+  },
+  segmentBtnActive: {
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 3,
+  },
+  segmentBtnTxt: {
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: -0.2,
+  },
+  segmentBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  segmentBadgeTxt: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
+  // ── Tabs Bar (Legacy fallback) ──
   tabsBarWrapper: {
     borderBottomWidth: 1,
   },
@@ -1996,11 +2532,13 @@ const styles = StyleSheet.create({
   },
   bandMemberPill: {
     width: '48.5%',
+    minHeight: 64,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    padding: 10,
-    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 12,
     marginBottom: 8,
   },
   runSheetItemRow: {

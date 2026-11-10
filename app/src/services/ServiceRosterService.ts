@@ -573,7 +573,7 @@ class ServiceRosterService {
         startTime: baseStartTime,
         endTime: planData.endTime || this.addMinutesToTime(baseStartTime, totalDuration || 120),
         location: planData.location || 'Church of God Sanctuary',
-        preacher: planData.preacher || 'Bro. Y. Rajesh',
+        preacher: planData.preacher ? planData.preacher.trim() : '',
         theme: planData.theme || '',
         bibleReference: planData.bibleReference || '',
         description: planData.description || '',
@@ -1151,6 +1151,15 @@ class ServiceRosterService {
       memberIds: firestore.FieldValue.arrayRemove(memberId),
       updatedAt: firestore.FieldValue.serverTimestamp()
     }, { merge: true });
+  }
+
+  /**
+   * Delete a ministry team
+   */
+  async deleteMinistryTeam(churchId: string, teamId: string): Promise<void> {
+    if (!churchId || !teamId) return;
+    const targetChurch = (churchId || '').trim();
+    await this.getMinistryTeamsCol(targetChurch).doc(teamId).delete();
   }
 
   /**
