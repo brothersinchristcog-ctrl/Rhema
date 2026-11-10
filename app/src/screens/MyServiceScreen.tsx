@@ -426,10 +426,6 @@ export default function MyServiceScreen({ navigation, route }: any) {
               onPress={() => setActiveTab('roster')}
               activeOpacity={0.8}
             >
-              <Layers
-                size={14}
-                color={activeTab === 'roster' ? primaryBtnText : secondaryText}
-              />
               <Text
                 style={[
                   styles.tabBtnTxt,
@@ -454,10 +450,6 @@ export default function MyServiceScreen({ navigation, route }: any) {
               onPress={() => setActiveTab('responsibilities')}
               activeOpacity={0.8}
             >
-              <Calendar
-                size={14}
-                color={activeTab === 'responsibilities' ? primaryBtnText : secondaryText}
-              />
               <Text
                 style={[
                   styles.tabBtnTxt,
@@ -566,11 +558,11 @@ export default function MyServiceScreen({ navigation, route }: any) {
                               {selectedPlan.location || 'Church Sanctuary'}
                             </Text>
                           </View>
-                          {selectedPlan.preacher ? (
+                          {selectedPlan.preacher && selectedPlan.preacher.trim() && selectedPlan.preacher.trim().toLowerCase() !== 'bro. y. rajesh' ? (
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                               <BookOpen size={13} color={secondaryText} />
                               <Text style={{ fontSize: 12, color: secondaryText }}>
-                                Preacher / Speaker: <Text style={{ fontWeight: '700', color: primaryText }}>{selectedPlan.preacher}</Text>
+                                Preacher / Speaker: <Text style={{ fontWeight: '700', color: primaryText }}>{selectedPlan.preacher.trim()}</Text>
                               </Text>
                             </View>
                           ) : null}
@@ -650,15 +642,20 @@ export default function MyServiceScreen({ navigation, route }: any) {
                         {/* 2-Column Symmetric Responsive Grid */}
                         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between' }}>
                           {[
-                            { emoji: '🎹', role: 'KEYBOARD', name: selectedPlan.assignments?.['role_keyboard'], key: 'role_keyboard' },
-                            { emoji: '🥁', role: 'DRUMS', name: selectedPlan.assignments?.['role_drums'], key: 'role_drums' },
-                            { emoji: '🎸', role: 'BASS GUITAR', name: selectedPlan.assignments?.['role_bass'], key: 'role_bass' },
-                            { emoji: '🎸', role: 'ACOUSTIC GUITAR', name: selectedPlan.assignments?.['role_acoustic'], key: 'role_acoustic' },
-                            { emoji: '⚡', role: 'ELECTRIC GUITAR', name: selectedPlan.assignments?.['role_electric'], key: 'role_electric' },
-                            { emoji: '🎧', role: 'SOUND / AUDIO', name: selectedPlan.assignments?.['role_sound'], key: 'role_sound' },
+                            { emoji: '🎹', role: 'KEYBOARD', key: 'role_keyboard' },
+                            { emoji: '🥁', role: 'DRUMS', key: 'role_drums' },
+                            { emoji: '🎸', role: 'BASS GUITAR', key: 'role_bass' },
+                            { emoji: '🎸', role: 'ACOUSTIC GUITAR', key: 'role_acoustic' },
+                            { emoji: '⚡', role: 'ELECTRIC GUITAR', key: 'role_electric' },
+                            { emoji: '🎧', role: 'SOUND / AUDIO', key: 'role_sound' },
                           ].map((inst) => {
-                            const isMyRole = (selectedPlan.assignmentMemberIds?.[inst.key] === memberId) ||
-                              (member?.name && inst.name && member.name.toLowerCase().trim() === inst.name.toLowerCase().trim());
+                            const assignedName = selectedPlan.assignments?.[inst.key] ||
+                              selectedPlan.assignments?.[inst.key.replace('role_', '')] ||
+                              '';
+                            const assignedId = selectedPlan.assignmentMemberIds?.[inst.key] ||
+                              selectedPlan.assignmentMemberIds?.[inst.key.replace('role_', '')];
+                            const isMyRole = (assignedId && assignedId === memberId) ||
+                              (member?.name && assignedName && member.name.toLowerCase().trim() === assignedName.toLowerCase().trim());
                             return (
                               <View
                                 key={inst.role}
@@ -671,7 +668,9 @@ export default function MyServiceScreen({ navigation, route }: any) {
                                   }
                                 ]}
                               >
-                                <Text style={{ fontSize: 14 }}>{inst.emoji}</Text>
+                                <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center' }}>
+                                  <Text style={{ fontSize: 14 }}>{inst.emoji}</Text>
+                                </View>
                                 <View style={{ flex: 1, minWidth: 0 }}>
                                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                                     <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }} numberOfLines={1}>
@@ -681,8 +680,17 @@ export default function MyServiceScreen({ navigation, route }: any) {
                                       <Text style={{ fontSize: 8.5, color: '#10B981', fontWeight: '800' }}>YOU</Text>
                                     )}
                                   </View>
-                                  <Text style={{ fontSize: 12, fontWeight: '700', color: inst.name ? primaryText : '#94A3B8' }} numberOfLines={1}>
-                                    {inst.name || 'Not Assigned'}
+                                  <Text
+                                    style={{
+                                      fontSize: 12,
+                                      fontWeight: '700',
+                                      color: assignedName ? primaryText : '#94A3B8',
+                                      lineHeight: 16,
+                                      marginTop: 2
+                                    }}
+                                    numberOfLines={2}
+                                  >
+                                    {assignedName || 'Not Assigned'}
                                   </Text>
                                 </View>
                               </View>
@@ -690,7 +698,7 @@ export default function MyServiceScreen({ navigation, route }: any) {
                           })}
 
                           {/* Worship Leader */}
-                          {selectedPlan.assignments?.['role_worship_leader'] ? (
+                          {(selectedPlan.assignments?.['role_worship_leader'] || selectedPlan.assignments?.['worship_leader']) ? (
                             <View style={[
                               styles.bandMemberPill,
                               {
@@ -705,7 +713,9 @@ export default function MyServiceScreen({ navigation, route }: any) {
                                 borderWidth: 1
                               }
                             ]}>
-                              <Text style={{ fontSize: 14 }}>🎤</Text>
+                              <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center' }}>
+                                <Text style={{ fontSize: 14 }}>🎤</Text>
+                              </View>
                               <View style={{ flex: 1, minWidth: 0 }}>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                                   <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }} numberOfLines={1}>WORSHIP LEADER</Text>
@@ -714,8 +724,17 @@ export default function MyServiceScreen({ navigation, route }: any) {
                                     <Text style={{ fontSize: 8.5, color: '#10B981', fontWeight: '800' }}>YOU</Text>
                                   )}
                                 </View>
-                                <Text style={{ fontSize: 12, fontWeight: '700', color: primaryText }} numberOfLines={1}>
-                                  {selectedPlan.assignments['role_worship_leader']}
+                                <Text
+                                  style={{
+                                    fontSize: 12,
+                                    fontWeight: '700',
+                                    color: primaryText,
+                                    lineHeight: 16,
+                                    marginTop: 2
+                                  }}
+                                  numberOfLines={2}
+                                >
+                                  {selectedPlan.assignments['role_worship_leader'] || selectedPlan.assignments['worship_leader']}
                                 </Text>
                               </View>
                             </View>
@@ -947,7 +966,7 @@ export default function MyServiceScreen({ navigation, route }: any) {
                           <MapPin size={13} color="#059669" style={{ marginTop: 2 }} />
                           <Text style={{ fontSize: 12, color: secondaryText, flex: 1, lineHeight: 18 }}>
                             Sanctuary: <Text style={{ fontWeight: '700', color: primaryText }}>{duty.location || 'Church Sanctuary'}</Text>
-                            {duty.preacher ? ` · Preacher: ${duty.preacher}` : ''}
+                            {duty.preacher && duty.preacher.trim().toLowerCase() !== 'bro. y. rajesh' ? ` · Preacher: ${duty.preacher.trim()}` : ''}
                           </Text>
                         </View>
 
@@ -1050,7 +1069,7 @@ export default function MyServiceScreen({ navigation, route }: any) {
                           <MapPin size={13} color="#64748B" style={{ marginTop: 2 }} />
                           <Text style={{ fontSize: 12, color: secondaryText, flex: 1, lineHeight: 18 }}>
                             Location: <Text style={{ fontWeight: '700', color: primaryText }}>{duty.location || 'Church Sanctuary'}</Text>
-                            {duty.preacher ? ` · Preacher: ${duty.preacher}` : ''}
+                            {duty.preacher && duty.preacher.trim().toLowerCase() !== 'bro. y. rajesh' ? ` · Preacher: ${duty.preacher.trim()}` : ''}
                           </Text>
                         </View>
                       </View>
@@ -1996,11 +2015,13 @@ const styles = StyleSheet.create({
   },
   bandMemberPill: {
     width: '48.5%',
+    minHeight: 64,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    padding: 10,
-    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 12,
     marginBottom: 8,
   },
   runSheetItemRow: {

@@ -3470,9 +3470,11 @@ export default function AdminServicePlanner({ navigation }: any) {
                           <Text style={[styles.planStatTxt, { color: secondaryText }]}>
                             🎵 {plan.setlist?.length || 0} Songs
                           </Text>
-                          <Text style={[styles.planStatTxt, { color: secondaryText }]}>
-                            🎤 {plan.preacher || 'Pastor'}
-                          </Text>
+                          {plan.preacher && plan.preacher.trim() && plan.preacher.trim().toLowerCase() !== 'bro. y. rajesh' ? (
+                            <Text style={[styles.planStatTxt, { color: secondaryText }]}>
+                              🎤 {plan.preacher.trim()}
+                            </Text>
+                          ) : null}
                         </View>
 
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -3851,66 +3853,66 @@ export default function AdminServicePlanner({ navigation }: any) {
                 {/* Band Members Quick Grid - 2-Column Responsive Layout */}
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between' }}>
                   {/* Keyboard */}
-                  <View style={{ width: '48.5%', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
+                  <View style={{ width: '48.5%', minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
                     <Text style={{ fontSize: 14 }}>🎹</Text>
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }} numberOfLines={1}>KEYBOARD</Text>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_keyboard'] ? primaryText : '#94A3B8' }} numberOfLines={1}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_keyboard'] ? primaryText : '#94A3B8', lineHeight: 16 }} numberOfLines={2}>
                         {selectedPlan.assignments?.['role_keyboard'] || 'Not Assigned'}
                       </Text>
                     </View>
                   </View>
 
                   {/* Drums */}
-                  <View style={{ width: '48.5%', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
+                  <View style={{ width: '48.5%', minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
                     <Text style={{ fontSize: 14 }}>🥁</Text>
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }} numberOfLines={1}>DRUMS</Text>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_drums'] ? primaryText : '#94A3B8' }} numberOfLines={1}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_drums'] ? primaryText : '#94A3B8', lineHeight: 16 }} numberOfLines={2}>
                         {selectedPlan.assignments?.['role_drums'] || 'Not Assigned'}
                       </Text>
                     </View>
                   </View>
 
                   {/* Bass Guitar */}
-                  <View style={{ width: '48.5%', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
+                  <View style={{ width: '48.5%', minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
                     <Text style={{ fontSize: 14 }}>🎸</Text>
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }} numberOfLines={1}>BASS GUITAR</Text>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_bass'] ? primaryText : '#94A3B8' }} numberOfLines={1}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_bass'] ? primaryText : '#94A3B8', lineHeight: 16 }} numberOfLines={2}>
                         {selectedPlan.assignments?.['role_bass'] || 'Not Assigned'}
                       </Text>
                     </View>
                   </View>
 
                   {/* Acoustic Guitar */}
-                  <View style={{ width: '48.5%', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
+                  <View style={{ width: '48.5%', minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
                     <Text style={{ fontSize: 14 }}>🎸</Text>
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }} numberOfLines={1}>ACOUSTIC GUITAR</Text>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_acoustic'] ? primaryText : '#94A3B8' }} numberOfLines={1}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_acoustic'] ? primaryText : '#94A3B8', lineHeight: 16 }} numberOfLines={2}>
                         {selectedPlan.assignments?.['role_acoustic'] || 'Not Assigned'}
                       </Text>
                     </View>
                   </View>
 
                   {/* Electric Guitar */}
-                  <View style={{ width: '48.5%', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
+                  <View style={{ width: '48.5%', minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
                     <Text style={{ fontSize: 14 }}>⚡</Text>
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }} numberOfLines={1}>ELECTRIC GUITAR</Text>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_electric'] ? primaryText : '#94A3B8' }} numberOfLines={1}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_electric'] ? primaryText : '#94A3B8', lineHeight: 16 }} numberOfLines={2}>
                         {selectedPlan.assignments?.['role_electric'] || 'Not Assigned'}
                       </Text>
                     </View>
                   </View>
 
                   {/* Sound & Audio */}
-                  <View style={{ width: '48.5%', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
+                  <View style={{ width: '48.5%', minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
                     <Text style={{ fontSize: 14 }}>🎧</Text>
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }} numberOfLines={1}>SOUND / AUDIO</Text>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_sound'] ? primaryText : '#94A3B8' }} numberOfLines={1}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_sound'] ? primaryText : '#94A3B8', lineHeight: 16 }} numberOfLines={2}>
                         {selectedPlan.assignments?.['role_sound'] || 'Not Assigned'}
                       </Text>
                     </View>
@@ -3918,11 +3920,11 @@ export default function AdminServicePlanner({ navigation }: any) {
 
                   {/* Worship Leader */}
                   {selectedPlan.assignments?.['role_worship_leader'] ? (
-                    <View style={{ width: '100%', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
+                    <View style={{ width: '100%', minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
                       <Text style={{ fontSize: 14 }}>🎤</Text>
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }} numberOfLines={1}>WORSHIP LEADER</Text>
-                        <Text style={{ fontSize: 12, fontWeight: '700', color: primaryText }} numberOfLines={1}>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: primaryText, lineHeight: 16 }} numberOfLines={2}>
                           {selectedPlan.assignments['role_worship_leader']}
                         </Text>
                       </View>

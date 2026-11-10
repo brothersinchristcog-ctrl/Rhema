@@ -573,7 +573,7 @@ class ServiceRosterService {
         startTime: baseStartTime,
         endTime: planData.endTime || this.addMinutesToTime(baseStartTime, totalDuration || 120),
         location: planData.location || 'Church of God Sanctuary',
-        preacher: planData.preacher || 'Bro. Y. Rajesh',
+        preacher: planData.preacher ? planData.preacher.trim() : '',
         theme: planData.theme || '',
         bibleReference: planData.bibleReference || '',
         description: planData.description || '',
