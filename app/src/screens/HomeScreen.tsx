@@ -4803,7 +4803,7 @@ export default function HomeScreen() {
                       adjustsFontSizeToFit
                       minimumFontScale={0.8}
                     >
-                      {t('nav.serviceRoster') || 'Service Roster'}
+                      Service Roster
                     </Text>
                     <Text
                       style={[styles.clayCardSub, { color: screenTheme.bentoRosterSub || 'rgba(255,255,255,0.85)', fontSize: 11, marginTop: 1.5 }]}
