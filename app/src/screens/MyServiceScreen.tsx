@@ -951,20 +951,6 @@ export default function MyServiceScreen({ navigation, route }: any) {
                         ) : null}
                       </View>
 
-                      {/* Linked Rehearsals */}
-                      {duty.rehearsals?.length > 0 && (
-                        <View style={styles.rehearsalMiniBox}>
-                          <Text style={styles.rehearsalMiniHeading}>
-                            MANDATORY REHEARSAL SCHEDULE:
-                          </Text>
-                          {duty.rehearsals.map((r) => (
-                            <Text key={r.id} style={styles.rehearsalMiniTxt}>
-                              • {r.rehearsalName}: {formatDateMonthYear(r.date)} at {formatTimeTo12Hour(r.startTime)} ({r.location})
-                            </Text>
-                          ))}
-                        </View>
-                      )}
-
                       {/* 1-Tap Action Row */}
                       <View style={styles.dutyActionRow}>
                         <TouchableOpacity
@@ -1058,18 +1044,6 @@ export default function MyServiceScreen({ navigation, route }: any) {
                           </Text>
                         </View>
                       </View>
-
-                      {/* Rehearsals */}
-                      {duty.rehearsals?.length > 0 && (
-                        <View style={styles.rehearsalMiniBox}>
-                          <Text style={styles.rehearsalMiniHeading}>SCHEDULED REHEARSAL:</Text>
-                          {duty.rehearsals.map((r) => (
-                            <Text key={r.id} style={styles.rehearsalMiniTxt}>
-                              📅 {formatDateMonthYear(r.date)} at {formatTimeTo12Hour(r.startTime)} - {formatTimeTo12Hour(r.endTime)} ({r.location})
-                            </Text>
-                          ))}
-                        </View>
-                      )}
 
                       {/* Actions Row: Setlist & Cancel/Delete Duty */}
                       <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>

@@ -3878,29 +3878,8 @@ class ServiceRosterService {
       { merge: true }
     );
 
-    // Write Rehearsal for Plan 1
-    const reh1Ref = this.getRehearsalsCol(targetChurch, plan1Id).doc('test_reh_saturday');
-    await reh1Ref.set(
-      this.sanitizeForFirestore({
-        id: 'test_reh_saturday',
-        churchId: targetChurch,
-        servicePlanId: plan1Id,
-        serviceTitle: '[TEST] Sunday Morning Celebration & Holy Communion',
-        name: 'Worship Team Saturday Sound & Setlist Practice',
-        date: nextSatStr,
-        startTime: '06:00 PM',
-        endTime: '07:30 PM',
-        location: 'Main Sanctuary Stage',
-        teamIds: ['team_worship', 'team_music', 'team_sound'],
-        participantIds: [vol1.id, vol2.id, vol3.id, vol4.id],
-        songPracticeIds: ['test_song_1', 'test_song_2', 'test_song_4'],
-        notes: 'Full run through of Goodness of God and Way Maker key transitions. Sound engineer check IEM mix.',
-        isTestData: true,
-        createdAt: firestore.FieldValue.serverTimestamp(),
-        updatedAt: firestore.FieldValue.serverTimestamp(),
-      }),
-      { merge: true }
-    );
+    // (Rehearsal creation omitted)
+
 
     // 6. Build SERVICE 2: [TEST] Wednesday Midweek Bible Study & Prayer Watch (Draft)
     const midweekRunSheet: RunSheetItem[] = [
@@ -4041,7 +4020,7 @@ class ServiceRosterService {
     return {
       plansCreated: 3,
       queuesCreated: 3,
-      rehearsalsCreated: 1,
+      rehearsalsCreated: 0,
       attendanceCreated: sampleAttendances.length,
       skillsCreated: skillsToSeed.length,
     };
