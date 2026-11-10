@@ -313,10 +313,27 @@ export default function AdminServicePlanner({ navigation }: any) {
   const [createTheme, setCreateTheme] = useState('');
   const [createScripture, setCreateScripture] = useState('');
   const [createDescription, setCreateDescription] = useState('');
-  const [createRecurrence, setCreateRecurrence] = useState<'one_time' | 'weekly' | 'monthly'>('one_time');
+  const [createRecurrence, setCreateRecurrence] = useState<'one_time' | 'weekly' | 'biweekly' | 'monthly'>('one_time');
   const [createOccurrencesCount, setCreateOccurrencesCount] = useState(4);
   const [selectedTemplateForNew, setSelectedTemplateForNew] = useState<string>('tpl_sunday_worship');
   const [savingService, setSavingService] = useState(false);
+
+  // Created Service Success Modal Card State
+  const [showCreatedSuccessModal, setShowCreatedSuccessModal] = useState(false);
+  const [createdSuccessInfo, setCreatedSuccessInfo] = useState<{
+    title: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+    location: string;
+    preacher?: string;
+    isRecurring: boolean;
+    occurrencesCount?: number;
+    recurrenceFrequency?: string;
+    templateName?: string;
+    planId: string;
+    isEdit?: boolean;
+  } | null>(null);
 
   // ─── Unified All-In-One Roster Form State ───
   const [createRunSheet, setCreateRunSheet] = useState<RunSheetItem[]>([]);
@@ -922,6 +939,81 @@ export default function AdminServicePlanner({ navigation }: any) {
     } catch {}
     return new Date();
   };
+
+  const getDayOfWeekName = (dateStr: string) => {
+    try {
+      const parts = dateStr.split('-');
+      if (parts.length === 3) {
+        const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0);
+        return d.toLocaleDateString('en-US', { weekday: 'long' });
+      }
+    } catch {}
+    return 'Sunday';
+  };
+
+  const calculateRecurrencePreviewDates = (
+    startDateStr: string,
+    frequency: 'weekly' | 'biweekly' | 'monthly',
+    count: number
+  ): string[] => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const toLocalDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+    const parts = (startDateStr || toLocalDate(new Date())).split('-').map(Number);
+    const y = parts[0] || new Date().getFullYear();
+    const m = parts[1] || (new Date().getMonth() + 1);
+    const d = parts[2] || new Date().getDate();
+
+    const dates: string[] = [];
+    const total = Math.min(Math.max(count || 1, 1), 12);
+
+    for (let i = 0; i < total; i++) {
+      const cur = new Date(y, m - 1, d, 12, 0, 0);
+      if (i > 0) {
+        if (frequency === 'weekly') {
+          cur.setDate(cur.getDate() + (i * 7));
+        } else if (frequency === 'biweekly') {
+          cur.setDate(cur.getDate() + (i * 14));
+        } else if (frequency === 'monthly') {
+          cur.setMonth(cur.getMonth() + i);
+        }
+      }
+      dates.push(toLocalDate(cur));
+    }
+    return dates;
+  };
+
+  const recurrenceDayName = useMemo(() => getDayOfWeekName(createDate), [createDate]);
+
+  const recurrenceCountOptions = useMemo(() => {
+    if (createRecurrence === 'weekly') {
+      return [
+        { count: 2, label: '2 Weeks' },
+        { count: 4, label: '4 Weeks (1 Mo)' },
+        { count: 8, label: '8 Weeks (2 Mos)' },
+        { count: 12, label: '12 Weeks (3 Mos)' },
+      ];
+    } else if (createRecurrence === 'biweekly') {
+      return [
+        { count: 2, label: '2 (1 Mo)' },
+        { count: 4, label: '4 (2 Mos)' },
+        { count: 6, label: '6 (3 Mos)' },
+        { count: 8, label: '8 (4 Mos)' },
+      ];
+    } else {
+      return [
+        { count: 2, label: '2 Months' },
+        { count: 3, label: '3 Months' },
+        { count: 6, label: '6 Months' },
+        { count: 12, label: '12 Months' },
+      ];
+    }
+  }, [createRecurrence]);
+
+  const previewRecurrenceDates = useMemo(() => {
+    if (createRecurrence === 'one_time') return [];
+    return calculateRecurrencePreviewDates(createDate, createRecurrence as any, createOccurrencesCount);
+  }, [createDate, createRecurrence, createOccurrencesCount]);
 
   const handleConfirmCreateDate = (selectedDate: Date) => {
     const y = selectedDate.getFullYear();
@@ -1667,13 +1759,6 @@ export default function AdminServicePlanner({ navigation }: any) {
           'Service Published! 🚀',
           `"${createTitle}" is now published!\n\n${dispatchedCount} push notification(s) dispatched to assigned volunteers with a ${responseTimeoutHours}-hour response deadline.\n\nRhema's automated cloud engine will monitor responses and automatically notify verified backups if any volunteer declines or times out.`
         );
-      } else {
-        Alert.alert(
-          isEditingExistingPlan ? 'Service Updated 💾' : 'Service Created! 📋',
-          isEditingExistingPlan
-            ? `"${createTitle}" details have been updated.`
-            : `"${createTitle}" created successfully. You are now in the dedicated Order Builder workspace to prepare your run sheet timeline, setlist, and responsibilities.`
-        );
       }
 
       setShowCreateModal(false);
@@ -1684,7 +1769,30 @@ export default function AdminServicePlanner({ navigation }: any) {
           setSelectedPlan(fresh);
         }
       }
-      setActivePlannerTab('builder');
+
+      if (!publishNow) {
+        const chosenTplName = selectedTemplateForNew === 'blank'
+          ? 'Blank Order'
+          : (templates.find(t => t.id === selectedTemplateForNew)?.name || 'Sunday Worship Preset');
+
+        setCreatedSuccessInfo({
+          title: createTitle.trim() || 'Worship Service',
+          date: createDate,
+          startTime: createStartTime,
+          endTime: createEndTime,
+          location: createLocation.trim() || 'Church Sanctuary',
+          preacher: createPreacher.trim(),
+          isRecurring: createRecurrence !== 'one_time',
+          occurrencesCount: createRecurrence !== 'one_time' ? createOccurrencesCount : 1,
+          recurrenceFrequency: createRecurrence,
+          templateName: chosenTplName,
+          planId: targetPlanId || '',
+          isEdit: isEditingExistingPlan,
+        });
+        setShowCreatedSuccessModal(true);
+      } else {
+        setActivePlannerTab('builder');
+      }
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to save service.');
     } finally {
@@ -6039,116 +6147,201 @@ export default function AdminServicePlanner({ navigation }: any) {
               </View>
 
               {/* CARD 4: RECURRENCE & STARTING TEMPLATE */}
-              <View style={[styles.formSectionCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
-                <View style={[styles.formCardHeaderRow, { borderBottomColor: borderColor }]}>
-                  <RotateCcw size={14} color={isDark ? '#10B981' : '#2E6B4F'} />
-                  <Text style={[styles.formCardHeaderText, { color: primaryText }]}>RECURRENCE & ORDER TEMPLATE</Text>
-                </View>
+              {!isEditingExistingPlan && (
+                <View style={[styles.formSectionCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
+                  <View style={[styles.formCardHeaderRow, { borderBottomColor: borderColor }]}>
+                    <RotateCcw size={14} color={isDark ? '#10B981' : '#2E6B4F'} />
+                    <Text style={[styles.formCardHeaderText, { color: primaryText }]}>RECURRENCE & ORDER TEMPLATE</Text>
+                  </View>
 
-                <Text style={[styles.fieldLabel, { color: primaryText }]}>Service Recurrence</Text>
-                <View style={styles.recurrenceOptionRow}>
-                  {[
-                    { id: 'one_time', label: 'One-Time' },
-                    { id: 'weekly', label: 'Weekly (Sundays)' },
-                    { id: 'monthly', label: 'Monthly' }
-                  ].map(r => {
-                    const isSelected = createRecurrence === r.id;
-                    return (
-                      <TouchableOpacity
-                        key={r.id}
-                        style={[
-                          styles.recurrenceBtn,
-                          isSelected && styles.recurrenceBtnActive,
-                          !isSelected && { backgroundColor: inputBg, borderColor: inputBorder }
-                        ]}
-                        onPress={() => setCreateRecurrence(r.id as any)}
-                        activeOpacity={0.8}
-                      >
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                          {isSelected && <Check size={13} color="#FFFFFF" strokeWidth={3} />}
-                          <Text style={[styles.recurrenceBtnTxt, isSelected && styles.recurrenceBtnTxtActive]}>
-                            {r.label}
+                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Service Recurrence</Text>
+                  <View style={styles.recurrenceOptionGrid}>
+                    {[
+                      { id: 'one_time', label: 'One-Time', sub: 'Single service' },
+                      { id: 'weekly', label: 'Weekly', sub: `Every ${recurrenceDayName}` },
+                      { id: 'biweekly', label: 'Bi-Weekly', sub: 'Every 2 weeks' },
+                      { id: 'monthly', label: 'Monthly', sub: `Monthly on ${recurrenceDayName}` }
+                    ].map(r => {
+                      const isSelected = createRecurrence === r.id;
+                      return (
+                        <TouchableOpacity
+                          key={r.id}
+                          style={[
+                            styles.recurrenceGridBtn,
+                            isSelected && {
+                              backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                              borderColor: isDark ? '#FFFFFF' : '#000000',
+                            },
+                            !isSelected && { backgroundColor: inputBg, borderColor: inputBorder }
+                          ]}
+                          onPress={() => setCreateRecurrence(r.id as any)}
+                          activeOpacity={0.8}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+                            <Text style={[styles.recurrenceGridBtnTitle, { color: isSelected ? (isDark ? '#000000' : '#FFFFFF') : primaryText }]}>
+                              {r.label}
+                            </Text>
+                            {isSelected && <Check size={13} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={3} />}
+                          </View>
+                          <Text style={[styles.recurrenceGridBtnSub, { color: isSelected ? (isDark ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.75)') : secondaryText }]} numberOfLines={1}>
+                            {r.sub}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  {createRecurrence !== 'one_time' && (
+                    <View style={{ marginTop: 12 }}>
+                      <Text style={[styles.fieldLabel, { color: primaryText }]}>Occurrences Count</Text>
+                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                        {recurrenceCountOptions.map(opt => {
+                          const isSelected = createOccurrencesCount === opt.count;
+                          return (
+                            <TouchableOpacity
+                              key={opt.count}
+                              style={[
+                                styles.countChip,
+                                isSelected && {
+                                  backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                                  borderColor: isDark ? '#FFFFFF' : '#000000',
+                                },
+                                !isSelected && { backgroundColor: inputBg, borderColor: inputBorder, borderWidth: 1 }
+                              ]}
+                              onPress={() => setCreateOccurrencesCount(opt.count)}
+                              activeOpacity={0.8}
+                            >
+                              <Text style={[styles.countChipTxt, { color: isSelected ? (isDark ? '#000000' : '#FFFFFF') : primaryText, fontWeight: isSelected ? '800' : '600' }]}>
+                                {opt.label}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+
+                      {/* Live Preview Card of Generated Recurring Dates */}
+                      <View style={[styles.recurrencePreviewCard, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.08)' : '#ECFDF5', borderColor: isDark ? '#059669' : '#A7F3D0' }]}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <CalendarDays size={13} color="#059669" />
+                            <Text style={[styles.recurrencePreviewTitle, { color: isDark ? '#34D399' : '#065F46' }]}>
+                              {previewRecurrenceDates.length} Service Dates Will Be Created:
+                            </Text>
+                          </View>
+                          <Text style={[styles.recurrencePreviewBadge, { color: isDark ? '#34D399' : '#047857' }]}>
+                            {createRecurrence === 'weekly' ? 'Weekly' : createRecurrence === 'biweekly' ? 'Bi-Weekly' : 'Monthly'}
                           </Text>
                         </View>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                {createRecurrence !== 'one_time' && (
-                  <View style={{ marginTop: 10, marginBottom: 4 }}>
-                    <Text style={[styles.fieldLabel, { color: primaryText }]}>Occurrences Count</Text>
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      {[2, 4, 8, 12].map(n => {
-                        const isSelected = createOccurrencesCount === n;
-                        return (
-                          <TouchableOpacity
-                            key={n}
-                            style={[
-                              styles.countChip,
-                              isSelected && styles.countChipActive,
-                              !isSelected && { backgroundColor: inputBg, borderColor: inputBorder, borderWidth: 1 }
-                            ]}
-                            onPress={() => setCreateOccurrencesCount(n)}
-                            activeOpacity={0.8}
-                          >
-                            <Text style={[styles.countChipTxt, isSelected && styles.countChipTxtActive]}>
-                              {n} Weeks
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                          {previewRecurrenceDates.map((dStr, idx) => (
+                            <View key={dStr} style={[styles.recurrenceDateChip, { backgroundColor: isDark ? '#1F2937' : '#FFFFFF', borderColor: isDark ? '#374151' : '#CBD5E1' }]}>
+                              <View style={[styles.recurrenceDateChipNum, { backgroundColor: idx === 0 ? (isDark ? '#10B981' : '#2E6B4F') : (isDark ? '#374151' : '#E2E8F0') }]}>
+                                <Text style={[styles.recurrenceDateChipNumTxt, { color: idx === 0 ? '#FFFFFF' : (isDark ? '#E2E8F0' : '#475569') }]}>
+                                  #{idx + 1}
+                                </Text>
+                              </View>
+                              <Text style={[styles.recurrenceDateChipTxt, { color: primaryText }]}>
+                                {formatDateMonthYear(dStr)}
+                              </Text>
+                            </View>
+                          ))}
+                        </ScrollView>
+                      </View>
                     </View>
-                  </View>
-                )}
+                  )}
 
-                <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 12 }]}>Order of Service Template</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
-                  <TouchableOpacity
-                    style={[
-                      styles.tplSelectChip,
-                      selectedTemplateForNew === 'blank' && styles.tplSelectChipActive,
-                      selectedTemplateForNew !== 'blank' && { backgroundColor: inputBg, borderColor: inputBorder }
-                    ]}
-                    onPress={() => handleSelectTemplateForForm('blank')}
-                    activeOpacity={0.8}
-                  >
-                    {selectedTemplateForNew === 'blank' && (
-                      <Check size={13} color="#FFFFFF" strokeWidth={3} />
-                    )}
-                    <Text
+                  {/* Order of Service Template Selection */}
+                  <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 14 }]}>Order of Service Template</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, marginTop: 6 }}>
+                    <TouchableOpacity
                       style={[
-                        styles.tplSelectChipTxt,
-                        selectedTemplateForNew === 'blank' && styles.tplSelectChipTxtActive
+                        styles.tplSelectChip,
+                        selectedTemplateForNew === 'blank' && {
+                          backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                          borderColor: isDark ? '#FFFFFF' : '#000000',
+                        },
+                        selectedTemplateForNew !== 'blank' && { backgroundColor: inputBg, borderColor: inputBorder }
                       ]}
+                      onPress={() => handleSelectTemplateForForm('blank')}
+                      activeOpacity={0.8}
                     >
-                      Start Blank
-                    </Text>
-                  </TouchableOpacity>
-                  {templates.map((tpl, tplIdx) => {
-                    const isSelected = selectedTemplateForNew === tpl.id;
-                    return (
-                      <TouchableOpacity
-                        key={tpl.id ? `tpl_${tpl.id}_${tplIdx}` : `tpl_${tplIdx}`}
+                      {selectedTemplateForNew === 'blank' && (
+                        <Check size={13} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={3} />
+                      )}
+                      <Text
                         style={[
-                          styles.tplSelectChip,
-                          isSelected && styles.tplSelectChipActive,
-                          !isSelected && { backgroundColor: inputBg, borderColor: inputBorder }
+                          styles.tplSelectChipTxt,
+                          { color: selectedTemplateForNew === 'blank' ? (isDark ? '#000000' : '#FFFFFF') : primaryText, fontWeight: selectedTemplateForNew === 'blank' ? '800' : '600' }
                         ]}
-                        onPress={() => handleSelectTemplateForForm(tpl.id)}
-                        activeOpacity={0.8}
                       >
-                        {isSelected && (
-                          <Check size={13} color="#FFFFFF" strokeWidth={3} />
-                        )}
-                        <Text style={[styles.tplSelectChipTxt, isSelected && styles.tplSelectChipTxtActive]}>
-                          {tpl.name}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              </View>
+                        Start Blank
+                      </Text>
+                    </TouchableOpacity>
+                    {templates.map((tpl, tplIdx) => {
+                      const isSelected = selectedTemplateForNew === tpl.id;
+                      return (
+                        <TouchableOpacity
+                          key={tpl.id ? `tpl_${tpl.id}_${tplIdx}` : `tpl_${tplIdx}`}
+                          style={[
+                            styles.tplSelectChip,
+                            isSelected && {
+                              backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                              borderColor: isDark ? '#FFFFFF' : '#000000',
+                            },
+                            !isSelected && { backgroundColor: inputBg, borderColor: inputBorder }
+                          ]}
+                          onPress={() => handleSelectTemplateForForm(tpl.id)}
+                          activeOpacity={0.8}
+                        >
+                          {isSelected && (
+                            <Check size={13} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={3} />
+                          )}
+                          <Text style={[styles.tplSelectChipTxt, { color: isSelected ? (isDark ? '#000000' : '#FFFFFF') : primaryText, fontWeight: isSelected ? '800' : '600' }]}>
+                            {tpl.name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+
+                  {/* Selected Template Live Details */}
+                  {selectedTemplateForNew === 'blank' ? (
+                    <View style={[styles.tplSelectedSummary, { backgroundColor: isDark ? '#1F2937' : '#F1F5F9', borderColor: inputBorder }]}>
+                      <Sparkles size={13} color={secondaryText} />
+                      <Text style={[styles.tplSelectedSummaryTxt, { color: secondaryText }]}>
+                        Blank Order: Start fresh without preset timeline activities. You will build them in the Order Builder workspace.
+                      </Text>
+                    </View>
+                  ) : (
+                    (() => {
+                      const selTpl = templates.find(t => t.id === selectedTemplateForNew);
+                      if (!selTpl) return null;
+                      const itemCount = selTpl.runSheetTemplate?.length || 0;
+                      const sampleItems = selTpl.runSheetTemplate?.slice(0, 3).map((i: any) => i.program || i.title || '').filter(Boolean).join(', ') || '';
+                      return (
+                        <View style={[styles.tplSelectedSummary, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.08)' : '#EFF6FF', borderColor: isDark ? '#1D4ED8' : '#BFDBFE' }]}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <Layers size={13} color="#2563EB" />
+                              <Text style={{ fontSize: 12, fontWeight: '800', color: isDark ? '#60A5FA' : '#1D4ED8' }}>
+                                {selTpl.name}
+                              </Text>
+                            </View>
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#93C5FD' : '#2563EB' }}>
+                              {itemCount} activities · {selTpl.defaultDurationMinutes || 120} mins
+                            </Text>
+                          </View>
+                          {sampleItems ? (
+                            <Text style={{ fontSize: 11, color: secondaryText }} numberOfLines={1}>
+                              Preset includes: {sampleItems}{itemCount > 3 ? ` +${itemCount - 3} more` : ''}
+                            </Text>
+                          ) : null}
+                        </View>
+                      );
+                    })()
+                  )}
+                </View>
+              )}
 
               {/* Guidance Info Card */}
               <View style={[styles.nextStepsCard, { backgroundColor: isDark ? '#18181B' : '#F8FAFC', borderColor: cardBorder }]}>
@@ -6166,7 +6359,7 @@ export default function AdminServicePlanner({ navigation }: any) {
               </View>
             </ScrollView>
 
-            <View style={[styles.modalFooterRow, { borderTopColor: borderColor }]}>
+            <View style={[styles.modalFooterRow, { borderTopColor: borderColor, backgroundColor: cardSurface }]}>
               {isEditingExistingPlan && editingPlanId && (
                 <TouchableOpacity
                   style={styles.modalFooterDeleteBtn}
@@ -6178,15 +6371,15 @@ export default function AdminServicePlanner({ navigation }: any) {
                 </TouchableOpacity>
               )}
               <TouchableOpacity
-                style={[styles.modalDraftBtn, { borderColor }]}
+                style={[styles.modalDraftBtn, { borderColor: isDark ? '#374151' : '#E2E8F0', backgroundColor: isDark ? '#18181B' : '#F8FAFC' }]}
                 disabled={savingService}
                 onPress={() => setShowCreateModal(false)}
                 activeOpacity={0.8}
               >
-                <Text style={[styles.modalDraftBtnTxt, { color: secondaryText }]}>Cancel</Text>
+                <Text style={[styles.modalDraftBtnTxt, { color: primaryText }]}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.modalPublishBtn}
+                style={[styles.modalPublishBtn, { backgroundColor: isDark ? '#10B981' : '#2E6B4F' }]}
                 disabled={savingService}
                 onPress={handleCreateService}
                 activeOpacity={0.85}
@@ -6194,10 +6387,16 @@ export default function AdminServicePlanner({ navigation }: any) {
                 {savingService ? (
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={styles.modalPublishBtnTxt}>
-                      {isEditingExistingPlan ? 'Save Changes' : 'Create Service & Prepare Order ➔'}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%' }}>
+                    <Text
+                      style={styles.modalPublishBtnTxt}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.85}
+                    >
+                      {isEditingExistingPlan ? 'Save Changes' : 'Create Service & Prepare Order'}
                     </Text>
+                    <ArrowRight size={15} color="#FFFFFF" strokeWidth={2.5} />
                   </View>
                 )}
               </TouchableOpacity>
@@ -6229,6 +6428,144 @@ export default function AdminServicePlanner({ navigation }: any) {
             />
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ── BEAUTIFUL SERVICE CREATED SUCCESS POPUP MODAL ── */}
+      <Modal
+        visible={showCreatedSuccessModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowCreatedSuccessModal(false)}
+      >
+        <View style={styles.successModalBackdrop}>
+          <View style={[styles.successModalCard, { backgroundColor: cardSurface, borderColor: isDark ? '#374151' : '#E2E8F0' }]}>
+            {/* Top Close Icon */}
+            <TouchableOpacity
+              style={[styles.successModalCloseBtn, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
+              onPress={() => {
+                setShowCreatedSuccessModal(false);
+                setActivePlannerTab('calendar');
+              }}
+              activeOpacity={0.7}
+            >
+              <X size={16} color={primaryText} />
+            </TouchableOpacity>
+
+            {/* Top Header without success icon mark */}
+            <View style={{ alignItems: 'center', marginTop: 6, marginBottom: 16 }}>
+              <Text style={[styles.successModalTitle, { color: primaryText }]}>
+                {createdSuccessInfo?.isEdit
+                  ? 'Service Updated! 💾'
+                  : createdSuccessInfo?.isRecurring
+                    ? `${createdSuccessInfo.occurrencesCount} Services Created! 🎉`
+                    : 'Service Created! 🎉'}
+              </Text>
+              <Text style={[styles.successModalSub, { color: secondaryText }]}>
+                {createdSuccessInfo?.isRecurring
+                  ? 'Your recurring service series is successfully generated and added to the roster.'
+                  : 'Your service is created and ready in the Order Builder workspace.'}
+              </Text>
+            </View>
+
+            {/* Summary Details Card */}
+            <View style={[styles.successDetailsBox, { backgroundColor: isDark ? '#18181B' : '#F8FAFC', borderColor: isDark ? '#27272A' : '#E2E8F0' }]}>
+              <Text style={[styles.successServiceTitle, { color: primaryText }]} numberOfLines={1}>
+                {createdSuccessInfo?.title || 'Worship Service'}
+              </Text>
+
+              <View style={styles.successDetailRow}>
+                <Calendar size={13} color="#2563EB" />
+                <Text style={[styles.successDetailTxt, { color: primaryText }]}>
+                  {formatDateMonthYear(createdSuccessInfo?.date || '')}
+                </Text>
+              </View>
+
+              <View style={styles.successDetailRow}>
+                <Clock size={13} color="#D97706" />
+                <Text style={[styles.successDetailTxt, { color: primaryText }]}>
+                  {createdSuccessInfo?.startTime} – {createdSuccessInfo?.endTime}
+                </Text>
+              </View>
+
+              {createdSuccessInfo?.isRecurring && (
+                <View style={styles.successDetailRow}>
+                  <RotateCcw size={13} color="#059669" />
+                  <Text style={[styles.successDetailTxt, { color: '#059669', fontWeight: '700' }]}>
+                    {createdSuccessInfo?.recurrenceFrequency === 'weekly' ? 'Weekly' : createdSuccessInfo?.recurrenceFrequency === 'biweekly' ? 'Bi-Weekly' : 'Monthly'} · {createdSuccessInfo?.occurrencesCount} occurrences scheduled
+                  </Text>
+                </View>
+              )}
+
+              <View style={styles.successDetailRow}>
+                <Layers size={13} color="#7C3AED" />
+                <Text style={[styles.successDetailTxt, { color: secondaryText }]}>
+                  Template: <Text style={{ color: primaryText, fontWeight: '600' }}>{createdSuccessInfo?.templateName}</Text>
+                </Text>
+              </View>
+
+              {createdSuccessInfo?.location ? (
+                <View style={styles.successDetailRow}>
+                  <MapPin size={13} color="#DC2626" />
+                  <Text style={[styles.successDetailTxt, { color: secondaryText }]} numberOfLines={1}>
+                    {createdSuccessInfo?.location}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
+            {/* What's Next Hint */}
+            <View style={[styles.successHintBox, { backgroundColor: isDark ? 'rgba(217, 119, 6, 0.1)' : '#FFFBEB', borderColor: isDark ? '#B45309' : '#FDE68A' }]}>
+              <Sparkles size={14} color="#D97706" style={{ marginTop: 1 }} />
+              <Text style={[styles.successHintTxt, { color: isDark ? '#FBBF24' : '#92400E' }]}>
+                Next: Open the Order Builder to arrange your run sheet timeline, add songs, and assign volunteer roles.
+              </Text>
+            </View>
+
+            {/* Action Buttons - Beautiful & High Quality */}
+            <View style={styles.successModalActions}>
+              <TouchableOpacity
+                style={[
+                  styles.successPrimaryBtn,
+                  {
+                    backgroundColor: isDark ? '#10B981' : '#2E6B4F',
+                    shadowColor: isDark ? '#10B981' : '#2E6B4F',
+                  }
+                ]}
+                onPress={() => {
+                  setShowCreatedSuccessModal(false);
+                  setActivePlannerTab('builder');
+                }}
+                activeOpacity={0.88}
+              >
+                <Layers size={17} color="#FFFFFF" strokeWidth={2.2} />
+                <Text style={styles.successPrimaryBtnTxt} numberOfLines={1}>
+                  Open Order Builder Workspace
+                </Text>
+                <ArrowRight size={16} color="#FFFFFF" strokeWidth={2.6} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.successSecondaryBtn,
+                  {
+                    borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+                    backgroundColor: isDark ? '#27272A' : '#F1F5F9',
+                  }
+                ]}
+                onPress={() => {
+                  setShowCreatedSuccessModal(false);
+                  setActivePlannerTab('calendar');
+                }}
+                activeOpacity={0.8}
+              >
+                <Calendar size={15} color={isDark ? '#E4E4E7' : '#334155'} />
+                <Text style={[styles.successSecondaryBtnTxt, { color: isDark ? '#E4E4E7' : '#1E293B' }]}>
+                  Done · View in Calendar
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
 
       {/* ───────────────────────────────────────────────────────────────────────── */}
@@ -8964,6 +9301,75 @@ const styles = StyleSheet.create({
   typeSelectChipTxtActive: {
     color: '#FFFFFF',
   },
+  recurrenceOptionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 6,
+  },
+  recurrenceGridBtn: {
+    width: '48.5%',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+  },
+  recurrenceGridBtnTitle: {
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
+  recurrenceGridBtnSub: {
+    fontSize: 10.5,
+    marginTop: 2,
+  },
+  recurrencePreviewCard: {
+    marginTop: 10,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  recurrencePreviewTitle: {
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
+  recurrencePreviewBadge: {
+    fontSize: 10.5,
+    fontWeight: '700',
+  },
+  recurrenceDateChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  recurrenceDateChipNum: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recurrenceDateChipNumTxt: {
+    fontSize: 9.5,
+    fontWeight: '800',
+  },
+  recurrenceDateChipTxt: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  tplSelectedSummary: {
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  tplSelectedSummaryTxt: {
+    fontSize: 11.5,
+    lineHeight: 16,
+  },
   recurrenceOptionRow: {
     flexDirection: 'row',
     gap: 8,
@@ -10469,39 +10875,175 @@ const styles = StyleSheet.create({
   },
   modalFooterRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 10,
-    padding: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     borderTopWidth: 1,
   },
   modalDraftBtn: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
-  modalDraftBtnTxt: {
-    fontSize: 12.5,
-    fontWeight: '700',
-  },
-  modalPublishBtn: {
-    flex: 1.6,
-    backgroundColor: '#2E6B4F',
-    paddingVertical: 12,
+    height: 48,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 2,
+    borderWidth: 1.2,
+  },
+  modalDraftBtnTxt: {
+    fontSize: 13.5,
+    fontWeight: '700',
+  },
+  modalPublishBtn: {
+    flex: 2.2,
+    height: 48,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 3,
     shadowColor: '#2E6B4F',
     shadowOpacity: 0.25,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
   },
   modalPublishBtnTxt: {
-    fontSize: 13,
+    fontSize: 13.5,
     fontWeight: '800',
     color: '#FFFFFF',
+    letterSpacing: -0.2,
+  },
+  // ── Success Popup Modal Styles ──
+  successModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  successModalCard: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    padding: 22,
+    alignItems: 'center',
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+  },
+  successModalCloseBtn: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  successIconBadge: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+    marginTop: 4,
+  },
+  successModalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  successModalSub: {
+    fontSize: 12.5,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 16,
+    paddingHorizontal: 8,
+  },
+  successDetailsBox: {
+    width: '100%',
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    gap: 8,
+    marginBottom: 12,
+  },
+  successServiceTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    marginBottom: 2,
+  },
+  successDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  successDetailTxt: {
+    fontSize: 12,
+    flex: 1,
+  },
+  successHintBox: {
+    width: '100%',
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginBottom: 18,
+  },
+  successHintTxt: {
+    fontSize: 11,
+    flex: 1,
+    lineHeight: 16,
+    fontWeight: '600',
+  },
+  successModalActions: {
+    width: '100%',
+    gap: 10,
+    marginTop: 4,
+  },
+  successPrimaryBtn: {
+    height: 52,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+    elevation: 4,
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  successPrimaryBtnTxt: {
+    fontSize: 14.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
+  },
+  successSecondaryBtn: {
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+  },
+  successSecondaryBtnTxt: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    letterSpacing: 0.1,
   },
   memberAssignCard: {
     flexDirection: 'row',

@@ -91,7 +91,7 @@ export interface SetlistItem {
 
 export interface ServiceRecurrenceRule {
   isRecurring: boolean;
-  recurrenceType: 'one_time' | 'weekly' | 'monthly' | 'custom';
+  recurrenceType: 'one_time' | 'weekly' | 'biweekly' | 'monthly' | 'custom';
   seriesId?: string;         // Shared ID across all generated occurrences in the series
   frequency?: number;        // e.g., every 1 week
   dayOfWeek?: number;        // 0 = Sunday, 1 = Monday, etc.

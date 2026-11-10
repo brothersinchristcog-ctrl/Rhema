@@ -511,15 +511,26 @@ class ServiceRosterService {
     churchId: string,
     planData: Partial<ServicePlan>,
     recurrenceOptions?: {
-      frequency: 'weekly' | 'monthly';
-      count: number; // e.g. 4 for next 4 weeks
+      frequency: 'weekly' | 'biweekly' | 'monthly';
+      count: number; // e.g. 4 for next 4 occurrences
     }
   ): Promise<ServicePlan[]> {
     const plansCol = this.getServicePlansCol(churchId);
     const createdPlans: ServicePlan[] = [];
 
-    const baseDateStr = planData.date || new Date().toISOString().split('T')[0];
-    const baseDate = new Date(baseDateStr + 'T00:00:00');
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const toLocalDateString = (d: Date) =>
+      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+    // Safely parse date components without UTC timezone offset corruption
+    const today = new Date();
+    const todayStr = toLocalDateString(today);
+    const baseDateStr = planData.date || todayStr;
+    const dateParts = baseDateStr.split('-').map(Number);
+    const bYear = dateParts[0] || today.getFullYear();
+    const bMonth = dateParts[1] || (today.getMonth() + 1);
+    const bDay = dateParts[2] || today.getDate();
+
     const seriesId = recurrenceOptions ? `series_${Date.now()}` : undefined;
     const totalOccurrences = recurrenceOptions ? Math.min(Math.max(recurrenceOptions.count, 1), 12) : 1;
 
@@ -529,16 +540,19 @@ class ServiceRosterService {
     const totalDuration = this.calculateTotalDurationMinutes(recalculatedRunSheet);
 
     for (let i = 0; i < totalOccurrences; i++) {
-      const occurrenceDate = new Date(baseDate);
+      // 12:00:00 (noon) avoids daylight saving / midnight date-boundary shifts
+      const occurrenceDate = new Date(bYear, bMonth - 1, bDay, 12, 0, 0);
       if (i > 0 && recurrenceOptions) {
         if (recurrenceOptions.frequency === 'weekly') {
-          occurrenceDate.setDate(baseDate.getDate() + (i * 7));
+          occurrenceDate.setDate(occurrenceDate.getDate() + (i * 7));
+        } else if (recurrenceOptions.frequency === 'biweekly') {
+          occurrenceDate.setDate(occurrenceDate.getDate() + (i * 14));
         } else if (recurrenceOptions.frequency === 'monthly') {
-          occurrenceDate.setMonth(baseDate.getMonth() + i);
+          occurrenceDate.setMonth(occurrenceDate.getMonth() + i);
         }
       }
 
-      const dateStr = occurrenceDate.toISOString().split('T')[0];
+      const dateStr = toLocalDateString(occurrenceDate);
       const newDocRef = plansCol.doc();
 
       // Deep clone activities for this specific occurrence so changes don't cross-contaminate
@@ -572,7 +586,7 @@ class ServiceRosterService {
           isRecurring: true,
           recurrenceType: recurrenceOptions.frequency,
           seriesId,
-          frequency: 1,
+          frequency: recurrenceOptions.frequency === 'biweekly' ? 2 : 1,
           occurrencesGenerated: totalOccurrences
         } : {
           isRecurring: false,
