@@ -52,6 +52,8 @@ export const en = {
     bible: 'Bible',
     giving: 'Giving',
     events: 'Events',
+    serviceRoster: 'Service Roster',
+    testimonies: 'Testimonies',
     adminView: 'Admin View',
     memberView: 'Member View',
   },

@@ -532,6 +532,43 @@ service cloud.firestore {
         allow write: if isAuthenticated() && (request.resource.data.memberId == request.auth.uid || isChurchAdmin());
       }
 
+      // Testimonies Management Module (Public feeds, Private pastoral care, and Admin review)
+      match /testimonies/{testimonyId} {
+        // Read: Admins, submitting member, or anyone when Public & Published
+        allow read: if isAuthenticated() && (
+          isChurchAdmin() ||
+          (resource.data.memberId != null && resource.data.memberId == request.auth.uid) ||
+          (resource.data.privacy == 'Public' && resource.data.status == 'Published')
+        );
+
+        // Create: Member submitting their own testimony (or admin)
+        allow create: if isAuthenticated() && (
+          isChurchAdmin() || (
+            request.resource.data.memberId == request.auth.uid && (
+              (request.resource.data.privacy == 'Private' && request.resource.data.status == 'Private') ||
+              (request.resource.data.privacy == 'Public' && request.resource.data.status == 'Pending Review')
+            )
+          )
+        );
+
+        // Update:
+        // - Admin: can approve/publish/reject, but cannot publish a Private testimony
+        // - Member: can edit their own testimony, but cannot set status to 'Approved' or 'Published'
+        allow update: if isAuthenticated() && (
+          (isChurchAdmin() && !(resource.data.privacy == 'Private' && request.resource.data.status == 'Published')) ||
+          (
+            resource.data.memberId == request.auth.uid &&
+            request.resource.data.memberId == request.auth.uid &&
+            !(request.resource.data.status in ['Approved', 'Published'])
+          )
+        );
+
+        // Delete: Admins or the submitting Member
+        allow delete: if isAuthenticated() && (
+          isChurchAdmin() || resource.data.memberId == request.auth.uid
+        );
+      }
+
       // Any other church subcollection: authenticated members can read, admins can write
       match /{subcollection}/{docId} {
         allow read: if isAuthenticated();

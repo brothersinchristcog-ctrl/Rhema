@@ -2447,54 +2447,46 @@ export async function sendDailyVersePushInternal(slotOverride?: string, targetCh
   let enSuccess = 0;
   let teSuccess = 0;
 
-  // 4. Format EXACTLY ONE combined bilingual notification (Telugu + English + Reference)
-  // Uses adaptive line spacing so the Bible reference is NEVER pushed past Android's
-  // 7-line BigTextStyle notification limit and is always 100% visible across all 4 slots.
+  // 4. Format EXACTLY ONE combined bilingual notification (Telugu + English + Bible Reference)
+  // Ensures the Bible reference is NEVER missing, truncated, or separated across all 4 time slots.
+  // Bible references are attached directly inline with each verse, guaranteeing 100% visibility
+  // even on devices where Android's notification drawer limits visible vertical lines.
   const unifiedTitle = slotInfo.title;
   let unifiedBody = '';
 
   const cleanVerseTe = (verseTeText || '').replace(/^["“”'‘]+|["“”'‘]+$/g, '').trim();
   const cleanVerseEn = (verseEnText || '').replace(/^["“”'‘]+|["“”'‘]+$/g, '').trim();
-  const cleanRefTe = (refTeText || '').trim();
-  const cleanRefEn = (refEnText || '').trim();
+  let cleanRefTe = (refTeText || '').trim();
+  let cleanRefEn = (refEnText || '').trim();
+
+  // Safeguard: If either reference is still missing, resolve from bundled backup
+  if ((!cleanRefEn || !cleanRefTe) && bundledVerseFallback) {
+    if (!cleanRefEn && bundledVerseFallback.referenceEn) {
+      cleanRefEn = String(bundledVerseFallback.referenceEn).trim();
+    }
+    if (!cleanRefTe && bundledVerseFallback.referenceTe) {
+      cleanRefTe = String(bundledVerseFallback.referenceTe).trim();
+    }
+  }
 
   const combinedRef = (cleanRefTe && cleanRefEn && cleanRefTe !== cleanRefEn)
     ? `${cleanRefTe} | ${cleanRefEn}`
     : (cleanRefTe || cleanRefEn);
 
-  if (cleanVerseTe && cleanVerseEn && cleanVerseTe !== cleanVerseEn) {
-    const teLines = Math.max(1, Math.ceil(cleanVerseTe.length / 44));
-    const enLines = Math.max(1, Math.ceil(cleanVerseEn.length / 42));
-    const totalVerseLines = teLines + enLines;
+  // Directly attach the respective Bible reference inline so it can NEVER be pushed off
+  // or truncated by Android/iOS notification drawer height constraints.
+  const teInline = (cleanRefTe && !cleanVerseTe.includes(cleanRefTe))
+    ? `${cleanVerseTe} — ${cleanRefTe}`
+    : cleanVerseTe;
 
-    if (totalVerseLines <= 3) {
-      // Short verses (1-2 lines each): two visual gaps fit well within 7 lines
-      unifiedBody = combinedRef
-        ? `${cleanVerseTe}\n \n${cleanVerseEn}\n \n${combinedRef}`
-        : `${cleanVerseTe}\n \n${cleanVerseEn}`;
-    } else if (totalVerseLines <= 5) {
-      // Medium verses (4-5 lines combined): one visual gap between verses + reference directly below
-      unifiedBody = combinedRef
-        ? `${cleanVerseTe}\n \n${cleanVerseEn}\n${combinedRef}`
-        : `${cleanVerseTe}\n \n${cleanVerseEn}`;
-    } else if (totalVerseLines === 6) {
-      // 6-line verses (e.g. 3 lines Te + 3 lines En, like Psalms 18:24):
-      // Single newline keeps total lines = 3 + 3 + 1 = 7 lines so combinedRef on line 7 is never clipped
-      unifiedBody = combinedRef
-        ? `${cleanVerseTe}\n${cleanVerseEn}\n${combinedRef}`
-        : `${cleanVerseTe}\n${cleanVerseEn}`;
-    } else {
-      // Very long verses (7+ lines combined): include inline references at the end of each verse
-      // as well as the bottom reference line so the reference is always visible even on 7-line shades
-      const teWithRef = cleanRefTe && !cleanVerseTe.includes(cleanRefTe) ? `${cleanVerseTe} (${cleanRefTe})` : cleanVerseTe;
-      const enWithRef = cleanRefEn && !cleanVerseEn.includes(cleanRefEn) ? `${cleanVerseEn} (${cleanRefEn})` : cleanVerseEn;
-      unifiedBody = combinedRef
-        ? `${teWithRef}\n${enWithRef}\n${combinedRef}`
-        : `${teWithRef}\n${enWithRef}`;
-    }
+  const enInline = (cleanRefEn && !cleanVerseEn.includes(cleanRefEn))
+    ? `${cleanVerseEn} — ${cleanRefEn}`
+    : cleanVerseEn;
+
+  if (teInline && enInline && cleanVerseTe !== cleanVerseEn) {
+    unifiedBody = `${teInline}\n${enInline}`;
   } else {
-    const singleVerse = cleanVerseTe || cleanVerseEn;
-    unifiedBody = combinedRef ? `${singleVerse}\n \n${combinedRef}` : singleVerse;
+    unifiedBody = teInline || enInline;
   }
 
   try {
@@ -3070,5 +3062,452 @@ export const pushCareCellVisit = onDocumentCreated(
     } catch (err) {
       console.error('Error dispatching Care Cell visit push notification:', err);
     }
+  }
+);
+
+/**
+ * ✨ HELPER: NOTIFY AUTHORIZED ADMINS OF NEW TESTIMONY SUBMISSION
+ * 1. Notification Trigger: Fires immediately after successful submission & upload completion in Firestore.
+ * 2. Submission Status: Must be saved with 'Pending Review' (or 'Private') status.
+ * 3. Admin Notification: Scoped strictly to authorized Admins of this church (never other churches).
+ * 4. Exact Content:
+ *    Title: "New Testimony Submitted!"
+ *    Body:  "A Member has submitted a new testimony. Please review it."
+ * 5. Navigation: Routes directly to AdminRoot -> Testimonies tab with exact testimonyId.
+ * 6. Duplicate Prevention: Atomic transaction check-and-set prevents duplicate notifications even on retries.
+ * 7. Background/Cold Start: High-priority FCM payload ensures delivery when app is closed or in background.
+ */
+async function handleTestimonyAdminCreatedPush(testimony: any, churchId: string, testimonyId: string, snapRef?: any) {
+  if (!testimony) return;
+
+  // Status requirement: must be 'Pending Review' (or 'Private' submission)
+  const status = testimony.status;
+  if (status !== 'Pending Review' && status !== 'Private') {
+    console.log(`ℹ️ [TestimonyAdminPush] Skipping notification for ${testimonyId}: Status is '${status}', not 'Pending Review' or 'Private'.`);
+    return;
+  }
+
+  const db = getFirestore();
+  const messaging = getMessaging();
+  const docRef = snapRef || db.collection('Rhema Church').doc(churchId).collection('testimonies').doc(testimonyId);
+
+  // Atomic deduplication lock: Only one notification per successful submission, even on retry
+  let lockAcquired = false;
+  try {
+    lockAcquired = await db.runTransaction(async (transaction) => {
+      const snap: any = await transaction.get(docRef as any);
+      if (!snap.exists) return false;
+      const data = snap.data() || {};
+      if (data.adminPushSent === true) {
+        return false;
+      }
+      transaction.update(docRef, {
+        adminPushSent: true,
+        adminPushSentAt: FieldValue.serverTimestamp(),
+      });
+      return true;
+    });
+  } catch (txErr) {
+    console.warn(`[TestimonyAdminPush] Deduplication transaction error for ${testimonyId}:`, txErr);
+    if (testimony.adminPushSent === true) {
+      return;
+    }
+  }
+
+  if (!lockAcquired) {
+    console.log(`🛑 [TestimonyAdminPush] Notification already sent for testimony ${testimonyId}. Skipping duplicate.`);
+    return;
+  }
+
+  // Exact Notification Content per requirements:
+  const title = 'New Testimony Submitted!';
+  const body = 'A Member has submitted a new testimony. Please review it.';
+  const memberName = (testimony.memberName || 'Church Member').trim();
+
+  const adminTokens: string[] = [];
+
+  try {
+    // Look up authorized church admins strictly from the corresponding church's members collection
+    let membersSnap = await db.collection('Rhema Church').doc(churchId).collection('members').get();
+    if (membersSnap.empty) {
+      membersSnap = await db.collection('churches').doc(churchId).collection('members').get();
+    }
+    membersSnap.forEach((doc) => {
+      const m = doc.data();
+      const role = String(m.userType || m.role || '').toLowerCase();
+      const isAdmin = role.includes('admin') || role.includes('pastor') || role.includes('super');
+      if (isAdmin) {
+        if (m.fcmToken && typeof m.fcmToken === 'string' && m.fcmToken.trim().length > 10) {
+          adminTokens.push(m.fcmToken.trim());
+        }
+        if (Array.isArray(m.fcmTokens)) {
+          m.fcmTokens.forEach((tk: any) => {
+            if (typeof tk === 'string' && tk.trim().length > 10) {
+              adminTokens.push(tk.trim());
+            }
+          });
+        }
+      }
+    });
+  } catch (lookupErr) {
+    console.error('Error fetching admin tokens for testimony notification:', lookupErr);
+  }
+
+  const notificationData: Record<string, string> = {
+    type: 'testimony_admin',
+    churchId,
+    testimonyId,
+    screen: 'AdminRoot',
+    targetTab: 'Testimonies',
+    click_action: 'FLUTTER_NOTIFICATION_CLICK',
+    channelId: 'church_alerts',
+  };
+
+  const uniqueAdminTokens = Array.from(new Set(adminTokens));
+  if (uniqueAdminTokens.length > 0) {
+    try {
+      const sendRes = await messaging.sendEachForMulticast({
+        notification: { title, body },
+        data: notificationData,
+        tokens: uniqueAdminTokens,
+        android: {
+          priority: 'high',
+          notification: {
+            sound: 'default',
+            priority: 'max',
+            channelId: 'church_alerts',
+            defaultSound: true,
+            defaultVibrateTimings: true,
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: 'default',
+              badge: 1,
+              contentAvailable: true,
+            },
+          },
+        },
+      });
+      console.log(`✅ Sent testimony admin notification to ${sendRes.successCount} admin devices (${sendRes.failureCount} failed).`);
+    } catch (pushErr) {
+      console.error('Error sending multicast testimony admin notification:', pushErr);
+    }
+  }
+
+  // Broadcast to corresponding church admin topic ONLY: church_{churchId}_admin
+  try {
+    await messaging.send({
+      notification: { title, body },
+      data: notificationData,
+      topic: `church_${churchId}_admin`,
+      android: {
+        priority: 'high',
+        notification: {
+          sound: 'default',
+          priority: 'max',
+          channelId: 'church_alerts',
+          defaultSound: true,
+          defaultVibrateTimings: true,
+        },
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: 'default',
+            badge: 1,
+            contentAvailable: true,
+          },
+        },
+      },
+    });
+    console.log(`✅ Broadcasted testimony notification to topic: church_${churchId}_admin`);
+  } catch (topicErr) {
+    console.error('Error sending testimony notification to church admin topic:', topicErr);
+  }
+
+  // Write in-app notification doc for church admins
+  try {
+    const notifPayload = {
+      type: 'testimony_admin',
+      title,
+      body,
+      memberName,
+      testimonyId,
+      privacy: testimony.privacy || 'Public',
+      read: false,
+      createdAt: FieldValue.serverTimestamp(),
+    };
+    await db.collection('Rhema Church').doc(churchId).collection('notifications').add(notifPayload);
+    try {
+      await db.collection('churches').doc(churchId).collection('notifications').add(notifPayload);
+    } catch (_) {}
+  } catch (dbErr) {
+    console.error('Error writing testimony in-app notification document:', dbErr);
+  }
+}
+
+/**
+ * 🔄 HELPER: HANDLE WORKFLOW STATE UPDATES (MEMBER APPROVAL/REJECTION OR CHURCH-WIDE PUBLICATION)
+ */
+async function handleTestimonyWorkflowUpdatedPush(before: any, after: any, churchId: string, testimonyId: string, snapRef?: any) {
+  if (!after) return;
+  const db = getFirestore();
+  const messaging = getMessaging();
+
+  const memberName = (after.memberName || 'Church Member').trim();
+  const testimonyTitle = (after.title || 'Testimony').trim();
+
+  // ── WORKFLOW CASE 0: Resubmitted for Admin Review ──
+  const isResubmittedPendingReview =
+    before?.status !== 'Pending Review' &&
+    after.status === 'Pending Review' &&
+    after.adminPushSent !== true;
+
+  if (isResubmittedPendingReview) {
+    await handleTestimonyAdminCreatedPush(after, churchId, testimonyId, snapRef);
+  }
+
+  // ── WORKFLOW CASE 1: Member Status Update (Approved or Rejected) ──
+  const statusChanged = before?.status !== after.status;
+  const memberNeedsStatusPush =
+    statusChanged &&
+    (after.status === 'Approved' || after.status === 'Rejected') &&
+    after.lastMemberNotifiedStatus !== after.status;
+
+  if (memberNeedsStatusPush && after.memberId) {
+    if (snapRef) {
+      try {
+        await snapRef.update({
+          lastMemberNotifiedStatus: after.status,
+          lastMemberNotifiedAt: FieldValue.serverTimestamp(),
+        });
+      } catch (_) {}
+    }
+
+    const memberTokens: string[] = [];
+    try {
+      // Look up submitting member directly in church members subcollection
+      let memberDoc = await db
+        .collection('Rhema Church')
+        .doc(churchId)
+        .collection('members')
+        .doc(after.memberId)
+        .get();
+
+      if (!memberDoc.exists) {
+        memberDoc = await db
+          .collection('churches')
+          .doc(churchId)
+          .collection('members')
+          .doc(after.memberId)
+          .get();
+      }
+
+      if (memberDoc.exists) {
+        const mData = memberDoc.data() || {};
+        if (mData.fcmToken && typeof mData.fcmToken === 'string' && mData.fcmToken.trim().length > 10) {
+          memberTokens.push(mData.fcmToken.trim());
+        }
+        if (Array.isArray(mData.fcmTokens)) {
+          mData.fcmTokens.forEach((tk: any) => {
+            if (typeof tk === 'string' && tk.trim().length > 10) {
+              memberTokens.push(tk.trim());
+            }
+          });
+        }
+      }
+    } catch (mErr) {
+      console.error('Error fetching submitting member tokens:', mErr);
+    }
+
+    const isApproved = after.status === 'Approved';
+    const title = isApproved ? '🎉 Testimony Approved!' : 'Testimony Review Update';
+    const body = isApproved
+      ? `Your testimony "${testimonyTitle}" has been approved by the church admin.`
+      : `Your testimony "${testimonyTitle}" was reviewed.${after.rejectionReason ? ` Note: ${after.rejectionReason}` : ''}`;
+
+    const uniqueMemberTokens = Array.from(new Set(memberTokens));
+    if (uniqueMemberTokens.length > 0) {
+      try {
+        await messaging.sendEachForMulticast({
+          notification: { title, body },
+          data: {
+            type: 'testimony_member_status',
+            churchId,
+            testimonyId,
+            status: after.status,
+            rejectionReason: after.rejectionReason || '',
+            click_action: 'FLUTTER_NOTIFICATION_CLICK',
+          },
+          tokens: uniqueMemberTokens,
+          android: {
+            priority: 'high',
+            notification: { sound: 'default', channelId: 'church_alerts' },
+          },
+          apns: { payload: { aps: { sound: 'default', badge: 1 } } },
+        });
+        console.log(`✅ Sent testimony review update push to member ${after.memberId}`);
+      } catch (pushErr) {
+        console.error('Error sending testimony member status push:', pushErr);
+      }
+    }
+  }
+
+  // ── WORKFLOW CASE 2: Publication of Public Testimony (Church-wide broadcast) ──
+  const isNewlyPublished =
+    before?.status !== 'Published' &&
+    after.status === 'Published' &&
+    after.privacy === 'Public' &&
+    after.publicationPushSent !== true;
+
+  if (isNewlyPublished) {
+    if (snapRef) {
+      try {
+        await snapRef.update({
+          publicationPushSent: true,
+          publicationPushSentAt: FieldValue.serverTimestamp(),
+        });
+      } catch (_) {}
+    }
+
+    const title = '✨ New Testimony Shared!';
+    const body = `${memberName} shared a testimony: "${testimonyTitle}". Tap to watch or read!`;
+
+    const notificationData: Record<string, string> = {
+      type: 'testimony_published',
+      churchId,
+      testimonyId,
+      screen: 'TestimonyDetail',
+      click_action: 'FLUTTER_NOTIFICATION_CLICK',
+    };
+
+    // 1. Broadcast to general church topic
+    try {
+      await messaging.send({
+        notification: { title, body },
+        data: notificationData,
+        topic: `church_${churchId}`,
+        android: {
+          priority: 'high',
+          notification: { sound: 'default', channelId: 'church_alerts' },
+        },
+        apns: { payload: { aps: { sound: 'default', badge: 1 } } },
+      });
+      console.log(`✅ Broadcasted published testimony to topic: church_${churchId}`);
+    } catch (topicErr) {
+      console.error('Error broadcasting testimony to church topic:', topicErr);
+    }
+
+    // 2. Direct multicast to church members with tokens
+    try {
+      let membersSnap = await db.collection('Rhema Church').doc(churchId).collection('members').get();
+      if (membersSnap.empty) {
+        membersSnap = await db.collection('churches').doc(churchId).collection('members').get();
+      }
+
+      const allTokens: string[] = [];
+      membersSnap.forEach((doc) => {
+        const d = doc.data();
+        if (d.fcmToken && typeof d.fcmToken === 'string' && d.fcmToken.trim().length > 10) {
+          allTokens.push(d.fcmToken.trim());
+        }
+        if (Array.isArray(d.fcmTokens)) {
+          d.fcmTokens.forEach((tk: any) => {
+            if (typeof tk === 'string' && tk.trim().length > 10) {
+              allTokens.push(tk.trim());
+            }
+          });
+        }
+      });
+
+      const uniqueTokens = Array.from(new Set(allTokens));
+      // Send in batches of 500 (FCM multicast limit)
+      for (let i = 0; i < uniqueTokens.length; i += 500) {
+        const batch = uniqueTokens.slice(i, i + 500);
+        await messaging.sendEachForMulticast({
+          notification: { title, body },
+          data: notificationData,
+          tokens: batch,
+          android: {
+            priority: 'high',
+            notification: { sound: 'default', channelId: 'church_alerts' },
+          },
+          apns: { payload: { aps: { sound: 'default', badge: 1 } } },
+        });
+      }
+      console.log(`✅ Sent published testimony notification to ${uniqueTokens.length} church member devices.`);
+    } catch (multicastErr) {
+      console.error('Error sending multicast published testimony notifications:', multicastErr);
+    }
+
+    // 3. In-app notification for church members
+    try {
+      await db.collection('Rhema Church').doc(churchId).collection('notifications').add({
+        type: 'testimony_published',
+        title,
+        body,
+        testimonyId,
+        memberName,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    } catch (_) {}
+  }
+}
+
+/**
+ * ✨ TRIGGER 1: Member Submits Testimony (Notifies Authorized Admins)
+ */
+export const onTestimonyCreatedAdmin = onDocumentCreated(
+  { document: 'Rhema Church/{churchId}/testimonies/{testimonyId}', region: 'asia-south1' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const testimony = snap.data();
+    const churchId = event.params.churchId;
+    const testimonyId = event.params.testimonyId;
+    await handleTestimonyAdminCreatedPush(testimony, churchId, testimonyId, snap.ref);
+  }
+);
+
+export const onTestimonyCreatedAdminLegacy = onDocumentCreated(
+  { document: 'churches/{churchId}/testimonies/{testimonyId}', region: 'asia-south1' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const testimony = snap.data();
+    const churchId = event.params.churchId;
+    const testimonyId = event.params.testimonyId;
+    await handleTestimonyAdminCreatedPush(testimony, churchId, testimonyId, snap.ref);
+  }
+);
+
+/**
+ * 🔄 TRIGGER 2: Admin Workflow Update (Member Approval/Rejection Notice or Publication Broadcast)
+ */
+export const onTestimonyUpdatedWorkflow = onDocumentUpdated(
+  { document: 'Rhema Church/{churchId}/testimonies/{testimonyId}', region: 'asia-south1' },
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    const snapRef = event.data?.after.ref;
+    if (!after) return;
+    const churchId = event.params.churchId;
+    const testimonyId = event.params.testimonyId;
+    await handleTestimonyWorkflowUpdatedPush(before, after, churchId, testimonyId, snapRef);
+  }
+);
+
+export const onTestimonyUpdatedWorkflowLegacy = onDocumentUpdated(
+  { document: 'churches/{churchId}/testimonies/{testimonyId}', region: 'asia-south1' },
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    const snapRef = event.data?.after.ref;
+    if (!after) return;
+    const churchId = event.params.churchId;
+    const testimonyId = event.params.testimonyId;
+    await handleTestimonyWorkflowUpdatedPush(before, after, churchId, testimonyId, snapRef);
   }
 );

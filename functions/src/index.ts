@@ -1771,6 +1771,10 @@ export {
   pushCareCellMeeting,
   pushCareCellPrayerRequest,
   pushCareCellVisit,
+  onTestimonyCreatedAdmin,
+  onTestimonyCreatedAdminLegacy,
+  onTestimonyUpdatedWorkflow,
+  onTestimonyUpdatedWorkflowLegacy,
 } from './notifications.js';
 
 export {

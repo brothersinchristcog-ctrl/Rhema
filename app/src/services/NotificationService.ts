@@ -317,6 +317,39 @@ class NotificationService {
           nav.navigate('MyService');
           break;
         }
+        case 'testimony_admin': {
+          const testimonyId = rawData.testimonyId || rawData.id || id;
+          console.log('✨ [NotificationService] Routing to Admin Testimonies tab:', { testimonyId });
+          nav.navigate('AdminRoot', {
+            targetTab: 'Testimonies',
+            testimonyId,
+            timestamp: Date.now(),
+          });
+          break;
+        }
+        case 'testimony_member_status': {
+          const testimonyId = rawData.testimonyId || rawData.id || id;
+          console.log('✨ [NotificationService] Routing to Member Testimony:', { testimonyId });
+          if (testimonyId) {
+            nav.navigate('TestimonyDetail', {
+              testimonyId,
+              churchId: rawData.churchId || 'rhema',
+            });
+          } else {
+            nav.navigate('Testimonies', { initialTab: 'mine' });
+          }
+          break;
+        }
+        case 'testimony_published':
+        case 'testimony': {
+          const testimonyId = rawData.testimonyId || rawData.id || id;
+          console.log('✨ [NotificationService] Routing to Published Testimony:', { testimonyId });
+          nav.navigate('TestimonyDetail', {
+            testimonyId,
+            churchId: rawData.churchId || 'rhema',
+          });
+          break;
+        }
         default:
           if (id) {
             nav.navigate('Updates', { highlightId: id, highlightType: type });
