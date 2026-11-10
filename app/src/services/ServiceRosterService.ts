@@ -1154,6 +1154,15 @@ class ServiceRosterService {
   }
 
   /**
+   * Delete a ministry team
+   */
+  async deleteMinistryTeam(churchId: string, teamId: string): Promise<void> {
+    if (!churchId || !teamId) return;
+    const targetChurch = (churchId || '').trim();
+    await this.getMinistryTeamsCol(targetChurch).doc(teamId).delete();
+  }
+
+  /**
    * Seed the 14 standard Rhema Church ministry teams if database is empty
    */
   async seedDefaultMinistryTeams(churchId: string): Promise<MinistryTeam[]> {

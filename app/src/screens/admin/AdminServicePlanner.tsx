@@ -227,6 +227,7 @@ export default function AdminServicePlanner({ navigation }: any) {
   const [teamColorInput, setTeamColorInput] = useState('#2E6B4F');
   const [teamLeaderId, setTeamLeaderId] = useState<string | undefined>(undefined);
   const [teamMemberIds, setTeamMemberIds] = useState<string[]>([]);
+  const [teamMemberSearch, setTeamMemberSearch] = useState('');
   const [savingTeam, setSavingTeam] = useState(false);
   const [isSavingTeamOrder, setIsSavingTeamOrder] = useState(false);
   const [teamOrderFeedback, setTeamOrderFeedback] = useState<string | null>(null);
@@ -711,6 +712,17 @@ export default function AdminServicePlanner({ navigation }: any) {
       s.artist?.toLowerCase().includes(q)
     );
   }, [churchSongs, songLibrarySearch]);
+
+  const filteredTeamMembers = useMemo(() => {
+    if (!teamMemberSearch.trim()) return churchMembers;
+    const q = teamMemberSearch.toLowerCase().trim();
+    return churchMembers.filter(m => {
+      const name = (m.name || `${m.firstName || ''} ${m.lastName || ''}`).toLowerCase();
+      const phone = (m.phone || (m as any).phoneNumber || (m as any).mobile || '').toLowerCase();
+      const skill = (m.primarySkill || m.userType || '').toLowerCase();
+      return name.includes(q) || phone.includes(q) || skill.includes(q);
+    });
+  }, [churchMembers, teamMemberSearch]);
 
   const pendingSkillsCount = useMemo(() => {
     return memberSkills.filter(s => s.verificationStatus === 'pending').length;
@@ -2107,18 +2119,31 @@ export default function AdminServicePlanner({ navigation }: any) {
     }
   };
 
-  const handleDeleteActivity = async (itemId: string) => {
+  const handleDeleteActivity = (itemId: string, itemTitle?: string) => {
     if (!selectedPlan) return;
-    try {
-      await ServiceRosterService.deleteActivityItem(churchId, selectedPlan.id, itemId);
-      const freshPlan = await ServiceRosterService.getServicePlanById(churchId, selectedPlan.id);
-      if (freshPlan) {
-        setSelectedPlan(freshPlan);
-        setPlans(plans.map(p => p.id === freshPlan.id ? freshPlan : p));
-      }
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to delete activity.');
-    }
+    Alert.alert(
+      'Delete Activity',
+      `Are you sure you want to remove "${itemTitle || 'this activity'}" from the Order of Service?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await ServiceRosterService.deleteActivityItem(churchId, selectedPlan.id, itemId);
+              const freshPlan = await ServiceRosterService.getServicePlanById(churchId, selectedPlan.id);
+              if (freshPlan) {
+                setSelectedPlan(freshPlan);
+                setPlans(plans.map(p => p.id === freshPlan.id ? freshPlan : p));
+              }
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Failed to delete activity.');
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleMoveActivity = async (index: number, direction: 'up' | 'down') => {
@@ -2386,6 +2411,7 @@ export default function AdminServicePlanner({ navigation }: any) {
     setTeamColorInput('#2E6B4F');
     setTeamLeaderId(undefined);
     setTeamMemberIds([]);
+    setTeamMemberSearch('');
     setShowTeamModal(true);
   };
 
@@ -2396,7 +2422,37 @@ export default function AdminServicePlanner({ navigation }: any) {
     setTeamColorInput(team.color || '#2E6B4F');
     setTeamLeaderId(team.leaderId);
     setTeamMemberIds(team.memberIds || []);
+    setTeamMemberSearch('');
     setShowTeamModal(true);
+  };
+
+  const handleDeleteTeam = (team: MinistryTeam) => {
+    Alert.alert(
+      'Delete Ministry Team',
+      `Are you sure you want to delete the "${team.name}" ministry team? This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setSavingTeam(true);
+              await ServiceRosterService.deleteMinistryTeam(churchId, team.id);
+              if (showTeamModal) {
+                setShowTeamModal(false);
+              }
+              await fetchMinistryTeams();
+              Alert.alert('Deleted', `Ministry team "${team.name}" has been deleted.`);
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Failed to delete ministry team.');
+            } finally {
+              setSavingTeam(false);
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleSaveTeam = async () => {
@@ -3747,9 +3803,9 @@ export default function AdminServicePlanner({ navigation }: any) {
                               {item.category.replace('_', ' ').toUpperCase()}
                             </Text>
                           </View>
-                          <View style={styles.timeBadge}>
-                            <Clock size={11} color={secondaryText} />
-                            <Text style={styles.timeBadgeTxt}>
+                          <View style={[styles.timeBadge, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: cardBorder, borderWidth: 1 }]}>
+                            <Clock size={11} color={isDark ? '#A1A1AA' : secondaryText} />
+                            <Text style={[styles.timeBadgeTxt, { color: isDark ? '#E2E8F0' : '#475569' }]}>
                               {formatDisplayTime(item.startTime)} - {formatDisplayTime(item.endTime)} ({item.durationMinutes}m)
                             </Text>
                           </View>
@@ -3775,16 +3831,34 @@ export default function AdminServicePlanner({ navigation }: any) {
 
                       <View style={styles.itemActionCol}>
                         <TouchableOpacity
-                          style={styles.itemEditBtn}
+                          style={[
+                            styles.itemEditBtn,
+                            {
+                              backgroundColor: isDark ? 'rgba(59, 130, 246, 0.16)' : '#EFF6FF',
+                              borderColor: isDark ? 'rgba(59, 130, 246, 0.4)' : '#BFDBFE',
+                            }
+                          ]}
                           onPress={() => openEditActivityModal(item)}
+                          activeOpacity={0.7}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          accessibilityLabel="Edit activity"
                         >
-                          <Edit3 size={14} color={secondaryBtnText} />
+                          <Edit3 size={15} color={isDark ? '#60A5FA' : '#2563EB'} />
                         </TouchableOpacity>
                         <TouchableOpacity
-                          style={styles.itemDeleteBtn}
-                          onPress={() => handleDeleteActivity(item.id)}
+                          style={[
+                            styles.itemDeleteBtn,
+                            {
+                              backgroundColor: isDark ? 'rgba(239, 68, 68, 0.16)' : '#FEF2F2',
+                              borderColor: isDark ? 'rgba(239, 68, 68, 0.4)' : '#FECACA',
+                            }
+                          ]}
+                          onPress={() => handleDeleteActivity(item.id, item.program)}
+                          activeOpacity={0.7}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          accessibilityLabel="Delete activity"
                         >
-                          <Trash2 size={14} color="#DC2626" />
+                          <Trash2 size={15} color={isDark ? '#F87171' : '#DC2626'} />
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -4193,101 +4267,118 @@ export default function AdminServicePlanner({ navigation }: any) {
               </View>
 
               {/* Roles list */}
-              {serviceRolesList.map((role, rIdx) => {
-                const queue = assignmentQueues.find(q => q.roleId === role.roleId);
-                const curIdx = queue?.currentCandidateIndex || 0;
-                const activeCandidate = queue?.candidates?.[curIdx];
-                const isConfirmed = queue?.status === 'confirmed';
-                const isPending = queue?.status === 'pending';
-                const isExhausted = queue?.status === 'exhausted';
-                const notDispatched = !queue;
-
-                return (
-                  <View
-                    key={role.roleId ? `role_${role.roleId}_${rIdx}` : `role_${rIdx}`}
-                    style={[
-                      styles.queueRoleCard,
-                      { backgroundColor: cardSurface, borderColor: cardBorder },
-                      isConfirmed && styles.queueRoleCardConfirmed,
-                      isPending && styles.queueRoleCardPending,
-                      isExhausted && styles.queueRoleCardExhausted
-                    ]}
+              {serviceRolesList.length === 0 ? (
+                <View style={[styles.emptyRunSheetCard, { backgroundColor: cardSurface, borderColor: cardBorder, marginTop: 12 }]}>
+                  <Users size={32} color="#94A3B8" />
+                  <Text style={[styles.emptyTitle, { color: primaryText }]}>No Roles Found</Text>
+                  <Text style={[styles.emptySubtitle, { color: secondaryText }]}>
+                    Service roles are generated from your Order of Service items and standard church positions. Add items in the Order Builder to assign responsibilities.
+                  </Text>
+                  <TouchableOpacity
+                    style={[styles.addActivityBtn, { marginTop: 12 }]}
+                    onPress={() => setActivePlannerTab('builder')}
                   >
-                    {/* Header */}
-                    <View style={styles.queueRoleHeader}>
-                      <View style={{ flex: 1, paddingRight: 8 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 5, flexWrap: 'wrap' }}>
-                          <View style={[styles.queueCategoryPill, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: cardBorder, borderWidth: 1 }]}>
-                            <Text style={[styles.queueCategoryPillTxt, { color: isDark ? '#E2E8F0' : '#0F172A' }]}>
-                              {role.category.replace('_', ' ').toUpperCase()}
+                    <Layers size={14} color="#FFFFFF" />
+                    <Text style={styles.addActivityBtnTxt}>Go to Order Builder</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                serviceRolesList.map((role, rIdx) => {
+                  const queue = assignmentQueues.find(q => q.roleId === role.roleId);
+                  const curIdx = queue?.currentCandidateIndex || 0;
+                  const activeCandidate = queue?.candidates?.[curIdx];
+                  const directAssignedName = selectedPlan.assignments?.[role.roleId];
+                  const isConfirmed = queue?.status === 'confirmed' || (Boolean(directAssignedName) && queue?.status !== 'exhausted' && queue?.status !== 'cancelled');
+                  const isPending = queue?.status === 'pending' && !isConfirmed;
+                  const isExhausted = queue?.status === 'exhausted' && !isConfirmed;
+                  const notDispatched = !queue && !isConfirmed;
+
+                  return (
+                    <View
+                      key={role.roleId ? `role_${role.roleId}_${rIdx}` : `role_${rIdx}`}
+                      style={[
+                        styles.queueRoleCard,
+                        { backgroundColor: cardSurface, borderColor: cardBorder },
+                        isConfirmed && styles.queueRoleCardConfirmed,
+                        isPending && styles.queueRoleCardPending,
+                        isExhausted && styles.queueRoleCardExhausted
+                      ]}
+                    >
+                      {/* Header */}
+                      <View style={styles.queueRoleHeader}>
+                        <View style={{ flex: 1, paddingRight: 8 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 5, flexWrap: 'wrap' }}>
+                            <View style={[styles.queueCategoryPill, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: cardBorder, borderWidth: 1 }]}>
+                              <Text style={[styles.queueCategoryPillTxt, { color: isDark ? '#E2E8F0' : '#0F172A' }]}>
+                                {role.category.replace('_', ' ').toUpperCase()}
+                              </Text>
+                            </View>
+                            {role.activityName ? (
+                              <Text style={[styles.queueActivityTag, { color: secondaryText }]} numberOfLines={1}>
+                                Activity: {role.activityName}
+                              </Text>
+                            ) : null}
+                          </View>
+                          <Text style={[styles.queueRoleTitle, { color: primaryText }]}>
+                            {role.roleTitle}
+                          </Text>
+                        </View>
+
+                        {/* Status Pill */}
+                        {isConfirmed && (
+                          <View style={[styles.queueStatusBadge, { backgroundColor: isDark ? 'rgba(5, 150, 105, 0.2)' : '#ECFDF5', borderColor: isDark ? 'rgba(5, 150, 105, 0.4)' : '#A7F3D0', borderWidth: 1 }]}>
+                            <CheckCircle2 size={12} color={isDark ? '#34D399' : '#059669'} />
+                            <Text style={[styles.badgeConfirmedTxt, { color: isDark ? '#34D399' : '#059669' }]}>
+                              {queue?.mode === 'first_come_first_served' ? 'BOOKED' : 'CONFIRMED'}
                             </Text>
                           </View>
-                          {role.activityName ? (
-                            <Text style={[styles.queueActivityTag, { color: secondaryText }]} numberOfLines={1}>
-                              Activity: {role.activityName}
+                        )}
+                        {isPending && (
+                          <View style={[styles.queueStatusBadge, { backgroundColor: isDark ? 'rgba(217, 119, 6, 0.2)' : '#FEF3C7', borderColor: isDark ? 'rgba(217, 119, 6, 0.4)' : '#FDE68A', borderWidth: 1 }]}>
+                            <Timer size={12} color={isDark ? '#FBBF24' : '#D97706'} />
+                            <Text style={[styles.badgePendingTxt, { color: isDark ? '#FBBF24' : '#D97706' }]}>
+                              {queue?.mode === 'first_come_first_served'
+                                ? `AVAILABLE (${queue.eligibleMemberIds?.length || queue.candidates?.length || 0} Eligible)`
+                                : `PENDING (${curIdx === 0 ? 'Primary' : curIdx === 1 ? '1st Backup' : '2nd Backup'})`}
                             </Text>
-                          ) : null}
-                        </View>
-                        <Text style={[styles.queueRoleTitle, { color: primaryText }]}>
-                          {role.roleTitle}
-                        </Text>
+                          </View>
+                        )}
+                        {isExhausted && (
+                          <View style={[styles.queueStatusBadge, { backgroundColor: isDark ? 'rgba(220, 38, 38, 0.2)' : '#FEF2F2', borderColor: isDark ? 'rgba(220, 38, 38, 0.4)' : '#FECACA', borderWidth: 1 }]}>
+                            <AlertCircle size={12} color={isDark ? '#F87171' : '#DC2626'} />
+                            <Text style={[styles.badgeExhaustedTxt, { color: isDark ? '#F87171' : '#DC2626' }]}>
+                              {queue?.mode === 'first_come_first_served' ? 'NO MEMBERS AVAILABLE' : 'EXHAUSTED'}
+                            </Text>
+                          </View>
+                        )}
+                        {notDispatched && (
+                          <View style={[styles.queueStatusBadge, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: cardBorder, borderWidth: 1 }]}>
+                            <Text style={[styles.badgeDraftTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>UNASSIGNED</Text>
+                          </View>
+                        )}
                       </View>
 
-                      {/* Status Pill */}
+                      {/* Confirmed Volunteer Banner */}
                       {isConfirmed && (
-                        <View style={[styles.queueStatusBadge, styles.badgeConfirmed]}>
-                          <CheckCircle2 size={12} color="#059669" />
-                          <Text style={styles.badgeConfirmedTxt}>
-                            {queue?.mode === 'first_come_first_served' ? 'BOOKED' : 'CONFIRMED'}
-                          </Text>
+                        <View style={[
+                          styles.confirmedVolunteerBanner,
+                          {
+                            backgroundColor: isDark ? 'rgba(5, 150, 105, 0.15)' : '#ECFDF5',
+                            borderColor: isDark ? 'rgba(5, 150, 105, 0.35)' : '#A7F3D0',
+                            borderWidth: 1,
+                          }
+                        ]}>
+                          <CheckCircle2 size={16} color={isDark ? '#34D399' : '#059669'} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.confirmedVolunteerName, { color: isDark ? '#34D399' : '#065F46' }]}>
+                              {queue?.confirmedCandidateName || directAssignedName || 'Assigned Volunteer'}
+                            </Text>
+                            <Text style={[styles.confirmedVolunteerSub, { color: isDark ? '#A7F3D0' : '#047857' }]}>
+                              Ready for service responsibility · Contact: {activeCandidate?.candidatePhone || 'In church directory'}
+                            </Text>
+                          </View>
                         </View>
                       )}
-                      {isPending && (
-                        <View style={[styles.queueStatusBadge, styles.badgePending]}>
-                          <Timer size={12} color="#D97706" />
-                          <Text style={styles.badgePendingTxt}>
-                            {queue?.mode === 'first_come_first_served'
-                              ? `AVAILABLE (${queue.eligibleMemberIds?.length || queue.candidates?.length || 0} Eligible)`
-                              : `PENDING (${curIdx === 0 ? 'Primary' : curIdx === 1 ? '1st Backup' : '2nd Backup'})`}
-                          </Text>
-                        </View>
-                      )}
-                      {isExhausted && (
-                        <View style={[styles.queueStatusBadge, styles.badgeExhausted]}>
-                          <AlertCircle size={12} color="#DC2626" />
-                          <Text style={styles.badgeExhaustedTxt}>
-                            {queue?.mode === 'first_come_first_served' ? 'NO MEMBERS AVAILABLE' : 'EXHAUSTED'}
-                          </Text>
-                        </View>
-                      )}
-                      {notDispatched && (
-                        <View style={[styles.queueStatusBadge, styles.badgeDraft]}>
-                          <Text style={styles.badgeDraftTxt}>UNASSIGNED</Text>
-                        </View>
-                      )}
-                    </View>
-
-                    {/* Confirmed Volunteer Banner */}
-                    {isConfirmed && (
-                      <View style={[
-                        styles.confirmedVolunteerBanner,
-                        {
-                          backgroundColor: isDark ? 'rgba(5, 150, 105, 0.15)' : '#ECFDF5',
-                          borderColor: isDark ? 'rgba(5, 150, 105, 0.35)' : '#A7F3D0',
-                          borderWidth: 1,
-                        }
-                      ]}>
-                        <CheckCircle2 size={16} color={isDark ? '#34D399' : '#059669'} />
-                        <View style={{ flex: 1 }}>
-                          <Text style={[styles.confirmedVolunteerName, { color: isDark ? '#34D399' : '#065F46' }]}>
-                            {queue?.confirmedCandidateName || selectedPlan.assignments?.[role.roleId] || 'Assigned Volunteer'}
-                          </Text>
-                          <Text style={[styles.confirmedVolunteerSub, { color: isDark ? '#A7F3D0' : '#047857' }]}>
-                            Ready for service responsibility · Contact: {activeCandidate?.candidatePhone || 'In church directory'}
-                          </Text>
-                        </View>
-                      </View>
-                    )}
 
                     {/* Candidate Ladder / Eligible Members when queue exists */}
                     {queue && queue.candidates && queue.candidates.length > 0 && (() => {
@@ -4450,7 +4541,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                     </View>
 
                     {/* Actions: Row 2 (Accept, Decline & Reset buttons cleanly aligned) */}
-                    {queue && (
+                    {(queue || isConfirmed) && (
                       <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
                         <TouchableOpacity
                           style={[
@@ -4465,7 +4556,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                             }
                           ]}
                           onPress={() => {
-                            if (queue.candidates && queue.candidates.length > 0) {
+                            if (queue?.candidates && queue.candidates.length > 0) {
                               openSimulateModal(queue, 'accept');
                             } else {
                               openManualOverrideModal(role.roleId, role.roleTitle);
@@ -4492,12 +4583,12 @@ export default function AdminServicePlanner({ navigation }: any) {
                             }
                           ]}
                           onPress={() => {
-                            if (queue.candidates && queue.candidates.length > 0) {
+                            if (queue?.candidates && queue.candidates.length > 0) {
                               openSimulateModal(queue, 'decline');
                             } else {
                               Alert.alert(
                                 'No Candidates in Queue',
-                                `No candidate is currently queued for "${role.roleTitle}". Tap "⚡ Broadcast" to add candidates first.`
+                                `No candidate is currently queued for "${role.roleTitle}". Tap "⚡ Auto-Assign" to broadcast to eligible members.`
                               );
                             }
                           }}
@@ -4527,8 +4618,8 @@ export default function AdminServicePlanner({ navigation }: any) {
                           onPress={() => handleDeleteQueue(role.roleId, role.roleTitle)}
                           activeOpacity={0.8}
                         >
-                          <Trash2 size={12} color="#DC2626" />
-                          <Text style={{ fontSize: 11.5, fontWeight: '700', color: '#DC2626' }} numberOfLines={1}>
+                          <Trash2 size={12} color={isDark ? '#F87171' : '#DC2626'} />
+                          <Text style={{ fontSize: 11.5, fontWeight: '700', color: isDark ? '#F87171' : '#DC2626' }} numberOfLines={1}>
                             Reset
                           </Text>
                         </TouchableOpacity>
@@ -4536,9 +4627,10 @@ export default function AdminServicePlanner({ navigation }: any) {
                     )}
                   </View>
                 );
-              })}
-            </View>
-          )}
+              })
+            )}
+          </View>
+        )}
 
           {/* TAB: VOLUNTEER ATTENDANCE (PHASE 9) */}
           {activePlannerTab === 'attendance' && selectedPlan && (
@@ -5001,27 +5093,53 @@ export default function AdminServicePlanner({ navigation }: any) {
                       >
                         {/* Header: Team Name & Status Badge */}
                         <View style={styles.teamHeaderRow}>
-                          <Text style={[styles.teamTitle, { color: primaryText }]} numberOfLines={1}>
+                          <Text style={[styles.teamTitle, { color: primaryText, flex: 1, marginRight: 8 }]} numberOfLines={1}>
                             {team.name}
                           </Text>
-                          <View
-                            style={[
-                              styles.teamActiveBadge,
-                              team.active
-                                ? (isDark ? styles.teamActiveBadgeOnDark : styles.teamActiveBadgeOn)
-                                : (isDark ? styles.teamActiveBadgeOffDark : styles.teamActiveBadgeOff)
-                            ]}
-                          >
-                            <Text
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <View
                               style={[
-                                styles.teamActiveBadgeTxt,
+                                styles.teamActiveBadge,
                                 team.active
-                                  ? (isDark ? styles.teamActiveBadgeTxtOnDark : styles.teamActiveBadgeTxtOn)
-                                  : styles.teamActiveBadgeTxtOff
+                                  ? (isDark ? styles.teamActiveBadgeOnDark : styles.teamActiveBadgeOn)
+                                  : (isDark ? styles.teamActiveBadgeOffDark : styles.teamActiveBadgeOff)
                               ]}
                             >
-                              {team.active ? 'ACTIVE' : 'INACTIVE'}
-                            </Text>
+                              <Text
+                                style={[
+                                  styles.teamActiveBadgeTxt,
+                                  team.active
+                                    ? (isDark ? styles.teamActiveBadgeTxtOnDark : styles.teamActiveBadgeTxtOn)
+                                    : styles.teamActiveBadgeTxtOff
+                                ]}
+                              >
+                                {team.active ? 'ACTIVE' : 'INACTIVE'}
+                              </Text>
+                            </View>
+
+                            <TouchableOpacity
+                              style={[
+                                styles.itemDeleteBtn,
+                                {
+                                  width: 28,
+                                  height: 28,
+                                  borderRadius: 7,
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  backgroundColor: isDark ? 'rgba(239, 68, 68, 0.16)' : '#FEF2F2',
+                                  borderWidth: 1,
+                                  borderColor: isDark ? 'rgba(239, 68, 68, 0.35)' : '#FECACA',
+                                }
+                              ]}
+                              onPress={(e) => {
+                                e.stopPropagation?.();
+                                handleDeleteTeam(team);
+                              }}
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              accessibilityLabel={`Delete ${team.name}`}
+                            >
+                              <Trash2 size={13} color={isDark ? '#F87171' : '#DC2626'} />
+                            </TouchableOpacity>
                           </View>
                         </View>
 
@@ -7357,7 +7475,7 @@ export default function AdminServicePlanner({ navigation }: any) {
         >
           <View style={[styles.modalBox, { backgroundColor: cardSurface }]}>
             <View style={styles.modalHeader}>
-              <View>
+              <View style={{ flex: 1, paddingRight: 8 }}>
                 <Text style={[styles.modalTitle, { color: primaryText }]}>
                   {selectedTeam ? `Manage ${selectedTeam.name}` : 'Create Ministry Team'}
                 </Text>
@@ -7365,12 +7483,17 @@ export default function AdminServicePlanner({ navigation }: any) {
                   Assign existing church members and designate a team leader.
                 </Text>
               </View>
-              <TouchableOpacity onPress={() => setShowTeamModal(false)}>
+              <TouchableOpacity onPress={() => setShowTeamModal(false)} style={styles.modalCloseCircle}>
                 <X size={20} color={secondaryText} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ maxHeight: 440 }} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={{ maxHeight: 520 }}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled={true}
+            >
               <Text style={[styles.fieldLabel, { color: primaryText }]}>Team Name *</Text>
               <TextInput
                 style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
@@ -7389,80 +7512,280 @@ export default function AdminServicePlanner({ navigation }: any) {
                 onChangeText={setTeamDescInput}
               />
 
-              <Text style={[styles.fieldLabel, { color: primaryText }]}>Designate Team Leader</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-                <TouchableOpacity
-                  style={[styles.quickMemberChip, !teamLeaderId && styles.quickMemberChipActive]}
-                  onPress={() => setTeamLeaderId(undefined)}
-                >
-                  <Text style={[styles.quickMemberChipTxt, !teamLeaderId && styles.quickMemberChipTxtActive]}>
-                    No Leader
-                  </Text>
-                </TouchableOpacity>
-                {churchMembers.map(m => (
-                  <TouchableOpacity
-                    key={m.id}
-                    style={[styles.quickMemberChip, teamLeaderId === m.id && styles.quickMemberChipActive]}
-                    onPress={() => setTeamLeaderId(m.id)}
-                  >
-                    <Text style={[styles.quickMemberChipTxt, teamLeaderId === m.id && styles.quickMemberChipTxtActive]}>
-                      👑 {m.name || m.firstName}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-
-              <Text style={[styles.fieldLabel, { color: primaryText }]}>
-                Team Members ({teamMemberIds.length} Selected)
-              </Text>
-              <View style={styles.memberPickerContainer}>
-                {churchMembers.map(m => {
-                  const isSelected = teamMemberIds.includes(m.id);
+              {/* Accent Color Selection */}
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Team Accent Color</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+                {[
+                  { color: '#2E6B4F', label: 'Forest' },
+                  { color: '#2563EB', label: 'Blue' },
+                  { color: '#7C3AED', label: 'Purple' },
+                  { color: '#D97706', label: 'Amber' },
+                  { color: '#DC2626', label: 'Crimson' },
+                  { color: '#0D9488', label: 'Teal' },
+                ].map(c => {
+                  const isCurColor = teamColorInput === c.color;
                   return (
                     <TouchableOpacity
-                      key={m.id}
-                      style={[
-                        styles.memberRosterItem,
-                        { borderColor },
-                        isSelected && styles.memberRosterItemSelected
-                      ]}
-                      onPress={() => toggleMemberInTeam(m.id)}
+                      key={c.color}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 6,
+                        paddingVertical: 5,
+                        paddingHorizontal: 9,
+                        borderRadius: 16,
+                        backgroundColor: isCurColor
+                          ? (isDark ? 'rgba(255,255,255,0.1)' : '#F1F5F9')
+                          : (isDark ? '#27272A' : '#F8FAFC'),
+                        borderWidth: 1.5,
+                        borderColor: isCurColor ? c.color : (isDark ? '#3F3F46' : '#E2E8F0'),
+                      }}
+                      onPress={() => setTeamColorInput(c.color)}
                     >
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.memberRosterName, { color: primaryText }]}>
-                          {m.name || m.firstName}
-                        </Text>
-                        <Text style={[styles.memberRosterPhone, { color: secondaryText }]}>
-                          {m.phone || 'No phone'} · {m.primarySkill || 'Member'}
-                        </Text>
-                      </View>
-                      <View style={[styles.checkboxCircle, isSelected && styles.checkboxCircleActive]}>
-                        {isSelected && <Check size={12} color="#FFFFFF" />}
-                      </View>
+                      <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: c.color }} />
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: primaryText }}>{c.label}</Text>
                     </TouchableOpacity>
                   );
                 })}
               </View>
+
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Designate Team Leader</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                <TouchableOpacity
+                  style={[
+                    styles.quickMemberChip,
+                    !teamLeaderId
+                      ? [styles.quickMemberChipActive, { backgroundColor: isDark ? '#10B981' : '#2E6B4F', borderColor: isDark ? '#10B981' : '#2E6B4F' }]
+                      : { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: cardBorder }
+                  ]}
+                  onPress={() => setTeamLeaderId(undefined)}
+                >
+                  <Text style={[
+                    styles.quickMemberChipTxt,
+                    !teamLeaderId
+                      ? styles.quickMemberChipTxtActive
+                      : { color: secondaryText }
+                  ]}>
+                    No Leader
+                  </Text>
+                </TouchableOpacity>
+                {churchMembers.map(m => {
+                  const isActive = teamLeaderId === m.id;
+                  return (
+                    <TouchableOpacity
+                      key={m.id}
+                      style={[
+                        styles.quickMemberChip,
+                        isActive
+                          ? [styles.quickMemberChipActive, { backgroundColor: isDark ? '#10B981' : '#2E6B4F', borderColor: isDark ? '#10B981' : '#2E6B4F' }]
+                          : { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: cardBorder }
+                      ]}
+                      onPress={() => setTeamLeaderId(m.id)}
+                    >
+                      <Text style={[
+                        styles.quickMemberChipTxt,
+                        isActive
+                          ? styles.quickMemberChipTxtActive
+                          : { color: secondaryText }
+                      ]}>
+                        👑 {m.name || m.firstName}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              {/* Team Members Header with Actions */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6, marginBottom: 8 }}>
+                <Text style={[styles.fieldLabel, { color: primaryText, marginBottom: 0 }]}>
+                  Team Members ({teamMemberIds.length} Selected)
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      const allIds = churchMembers.map(m => m.id).filter(Boolean);
+                      setTeamMemberIds(allIds);
+                    }}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  >
+                    <Text style={{ fontSize: 11.5, fontWeight: '700', color: isDark ? '#34D399' : '#059669' }}>
+                      Select All
+                    </Text>
+                  </TouchableOpacity>
+                  <Text style={{ color: secondaryText, fontSize: 11 }}>•</Text>
+                  <TouchableOpacity
+                    onPress={() => setTeamMemberIds([])}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  >
+                    <Text style={{ fontSize: 11.5, fontWeight: '700', color: isDark ? '#F87171' : '#DC2626' }}>
+                      Clear
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Search input for members */}
+              <View style={[styles.memberSearchBox, { backgroundColor: screenBg, borderColor }]}>
+                <Search size={14} color={secondaryText} />
+                <TextInput
+                  style={[styles.memberSearchInput, { color: primaryText }]}
+                  placeholder="Filter members by name, phone or skill..."
+                  placeholderTextColor="#94A3B8"
+                  value={teamMemberSearch}
+                  onChangeText={setTeamMemberSearch}
+                  autoCapitalize="none"
+                />
+                {teamMemberSearch.length > 0 && (
+                  <TouchableOpacity onPress={() => setTeamMemberSearch('')}>
+                    <X size={14} color={secondaryText} />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Dedicated Smooth Scrollable Member List */}
+              <View style={[styles.memberPickerContainer, { borderColor: isDark ? '#3F3F46' : '#E2E8F0', backgroundColor: isDark ? '#18181B' : '#F8FAFC' }]}>
+                <ScrollView
+                  nestedScrollEnabled={true}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={true}
+                  style={{ maxHeight: 240 }}
+                  contentContainerStyle={{ padding: 6 }}
+                >
+                  {filteredTeamMembers.length === 0 ? (
+                    <View style={{ padding: 20, alignItems: 'center' }}>
+                      <Text style={{ color: secondaryText, fontSize: 12 }}>
+                        {teamMemberSearch.trim() ? `No members found matching "${teamMemberSearch}"` : 'No church members available'}
+                      </Text>
+                    </View>
+                  ) : (
+                    filteredTeamMembers.map(m => {
+                      const isSelected = teamMemberIds.includes(m.id);
+                      const mName = m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim() || 'Church Member';
+                      const initials = mName.split(' ').map((p: string) => p[0]).filter(Boolean).slice(0, 2).join('').toUpperCase() || 'M';
+                      return (
+                        <TouchableOpacity
+                          key={m.id}
+                          style={[
+                            styles.memberRosterItem,
+                            {
+                              backgroundColor: isSelected
+                                ? (isDark ? 'rgba(16, 185, 129, 0.18)' : '#ECFDF5')
+                                : (isDark ? '#27272A' : '#FFFFFF'),
+                              borderColor: isSelected
+                                ? (isDark ? '#059669' : '#10B981')
+                                : (isDark ? '#3F3F46' : '#E2E8F0'),
+                              borderWidth: 1,
+                            }
+                          ]}
+                          onPress={() => toggleMemberInTeam(m.id)}
+                          activeOpacity={0.7}
+                        >
+                          <View style={[
+                            styles.memberAvatarCircle,
+                            {
+                              backgroundColor: isSelected
+                                ? (isDark ? '#065F46' : '#D1FAE5')
+                                : (isDark ? '#3F3F46' : '#F1F5F9')
+                            }
+                          ]}>
+                            <Text style={[
+                              styles.memberAvatarTxt,
+                              {
+                                color: isSelected
+                                  ? (isDark ? '#34D399' : '#047857')
+                                  : (isDark ? '#D4D4D8' : '#475569')
+                              }
+                            ]}>
+                              {initials}
+                            </Text>
+                          </View>
+
+                          <View style={{ flex: 1, paddingRight: 6 }}>
+                            <Text style={[
+                              styles.memberRosterName,
+                              {
+                                color: isSelected
+                                  ? (isDark ? '#FFFFFF' : '#065F46')
+                                  : primaryText
+                              }
+                            ]} numberOfLines={1}>
+                              {mName}
+                            </Text>
+                            <Text style={[
+                              styles.memberRosterPhone,
+                              {
+                                color: isSelected
+                                  ? (isDark ? '#A7F3D0' : '#047857')
+                                  : secondaryText
+                              }
+                            ]} numberOfLines={1}>
+                              {m.phone || (m as any).phoneNumber || (m as any).mobile || 'No phone'} · {m.primarySkill || m.userType || 'Member'}
+                            </Text>
+                          </View>
+
+                          <View style={[
+                            styles.checkboxCircle,
+                            isSelected ? styles.checkboxCircleActive : {
+                              borderColor: isDark ? '#52525B' : '#CBD5E1',
+                              backgroundColor: isDark ? '#27272A' : '#FFFFFF'
+                            }
+                          ]}>
+                            {isSelected && <Check size={12} color="#FFFFFF" strokeWidth={3} />}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })
+                  )}
+                </ScrollView>
+              </View>
             </ScrollView>
 
-            <View style={styles.modalFooter}>
-              <TouchableOpacity
-                style={styles.modalCancelBtn}
-                onPress={() => setShowTeamModal(false)}
-              >
-                <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalConfirmBtn}
-                disabled={savingTeam}
-                onPress={handleSaveTeam}
-              >
-                {savingTeam ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.modalConfirmBtnTxt}>Save Team</Text>
-                )}
-              </TouchableOpacity>
+            <View style={[styles.modalFooter, { justifyContent: 'space-between' }]}>
+              {selectedTeam ? (
+                <TouchableOpacity
+                  style={[
+                    styles.modalFooterDeleteBtn,
+                    {
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      paddingVertical: 10,
+                      paddingHorizontal: 12,
+                      borderRadius: 10,
+                      backgroundColor: isDark ? 'rgba(239, 68, 68, 0.16)' : '#FEF2F2',
+                      borderWidth: 1,
+                      borderColor: isDark ? 'rgba(239, 68, 68, 0.4)' : '#FECACA',
+                    }
+                  ]}
+                  disabled={savingTeam}
+                  onPress={() => handleDeleteTeam(selectedTeam)}
+                >
+                  <Trash2 size={14} color={isDark ? '#F87171' : '#DC2626'} />
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? '#F87171' : '#DC2626' }}>
+                    Delete
+                  </Text>
+                </TouchableOpacity>
+              ) : <View />}
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity
+                  style={styles.modalCancelBtn}
+                  onPress={() => setShowTeamModal(false)}
+                >
+                  <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.modalConfirmBtn}
+                  disabled={savingTeam}
+                  onPress={handleSaveTeam}
+                >
+                  {savingTeam ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.modalConfirmBtnTxt}>Save Team</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </KeyboardAvoidingView>
@@ -8543,22 +8866,26 @@ const styles = StyleSheet.create({
   },
   itemActionCol: {
     flexDirection: 'row',
-    gap: 6,
+    gap: 8,
     alignItems: 'center',
+    flexShrink: 0,
+    marginLeft: 6,
   },
   itemEditBtn: {
-    padding: 7,
+    width: 34,
+    height: 34,
     borderRadius: 8,
-    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   itemDeleteBtn: {
-    padding: 7,
+    width: 34,
+    height: 34,
     borderRadius: 8,
-    backgroundColor: '#FEF2F2',
     borderWidth: 1,
-    borderColor: '#FECACA',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   // Phase 3: Setlist Styles
   setlistCard: {
@@ -9473,8 +9800,8 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   quickMemberChipActive: {
-    backgroundColor: '#000000',
-    borderColor: '#000000',
+    backgroundColor: '#10B981',
+    borderColor: '#10B981',
   },
   quickMemberChipTxt: {
     fontSize: 11.5,
@@ -9484,21 +9811,40 @@ const styles = StyleSheet.create({
   quickMemberChipTxtActive: {
     color: '#FFFFFF',
   },
+  memberSearchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 8,
+  },
+  memberSearchInput: {
+    flex: 1,
+    fontSize: 12.5,
+    padding: 0,
+  },
   memberPickerContainer: {
     marginTop: 6,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    borderRadius: 10,
-    maxHeight: 200,
+    borderRadius: 12,
+    maxHeight: 260,
+    overflow: 'hidden',
   },
   memberRosterItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
     borderBottomWidth: 1,
+    borderRadius: 8,
+    marginBottom: 4,
   },
   memberRosterItemSelected: {
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#ECFDF5',
   },
   memberRosterName: {
     fontSize: 13,
@@ -9518,8 +9864,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   checkboxCircleActive: {
-    backgroundColor: '#000000',
-    borderColor: '#000000',
+    backgroundColor: '#10B981',
+    borderColor: '#10B981',
   },
   skillCategoryRow: {
     flexDirection: 'row',
