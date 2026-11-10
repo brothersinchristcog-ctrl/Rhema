@@ -228,6 +228,7 @@ export default function AdminServicePlanner({ navigation }: any) {
   const [teamLeaderId, setTeamLeaderId] = useState<string | undefined>(undefined);
   const [teamMemberIds, setTeamMemberIds] = useState<string[]>([]);
   const [teamMemberSearch, setTeamMemberSearch] = useState('');
+  const [teamSearchQuery, setTeamSearchQuery] = useState('');
   const [savingTeam, setSavingTeam] = useState(false);
   const [isSavingTeamOrder, setIsSavingTeamOrder] = useState(false);
   const [teamOrderFeedback, setTeamOrderFeedback] = useState<string | null>(null);
@@ -723,6 +724,33 @@ export default function AdminServicePlanner({ navigation }: any) {
       return name.includes(q) || phone.includes(q) || skill.includes(q);
     });
   }, [churchMembers, teamMemberSearch]);
+
+  const filteredMinistryTeams = useMemo(() => {
+    if (!teamSearchQuery.trim()) return ministryTeams;
+    const q = teamSearchQuery.toLowerCase().trim();
+    return ministryTeams.filter(team => {
+      const name = (team.name || '').toLowerCase();
+      const desc = (team.description || '').toLowerCase();
+      const leader = (team.leaderName || '').toLowerCase();
+      const memberMatch = (team.memberIds || []).some(mId => {
+        const found = churchMembers.find(m => m.id === mId);
+        const mName = (found?.name || `${found?.firstName || ''} ${found?.lastName || ''}`).toLowerCase();
+        return mName.includes(q);
+      });
+      return name.includes(q) || desc.includes(q) || leader.includes(q) || memberMatch;
+    });
+  }, [ministryTeams, teamSearchQuery, churchMembers]);
+
+  const getTeamMemberNames = (memberIds?: string[]): string[] => {
+    if (!memberIds || memberIds.length === 0) return [];
+    return memberIds
+      .map(id => {
+        const found = churchMembers.find(m => m.id === id);
+        if (!found) return null;
+        return found.name || `${found.firstName || ''} ${found.lastName || ''}`.trim() || 'Member';
+      })
+      .filter((n): n is string => Boolean(n));
+  };
 
   const pendingSkillsCount = useMemo(() => {
     return memberSkills.filter(s => s.verificationStatus === 'pending').length;
@@ -3424,6 +3452,60 @@ export default function AdminServicePlanner({ navigation }: any) {
             </Text>
           </TouchableOpacity>
         </ScrollView>
+
+        {/* ─── Search Bar below Hero / Tabs ─── */}
+        <View style={styles.headerSearchWrap}>
+          <View style={[
+            styles.headerSearchBar,
+            {
+              backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+              borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+            }
+          ]}>
+            <Search size={16} color={isDark ? '#94A3B8' : '#64748B'} style={{ marginRight: 8 }} />
+            <TextInput
+              placeholder={
+                activePlannerTab === 'teams' ? 'Search ministry teams, leaders, members...' :
+                activePlannerTab === 'calendar' ? 'Search services by title, preacher, date...' :
+                activePlannerTab === 'setlist' ? 'Search worship songs, song leader...' :
+                activePlannerTab === 'queue' ? 'Search roles, assignments...' :
+                activePlannerTab === 'skills' ? 'Search member skills, categories...' :
+                'Search service operations...'
+              }
+              placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+              style={[styles.headerSearchInput, { color: primaryText }]}
+              value={
+                activePlannerTab === 'teams' ? teamSearchQuery :
+                activePlannerTab === 'calendar' ? searchQuery :
+                activePlannerTab === 'setlist' ? songLibrarySearch :
+                searchQuery
+              }
+              onChangeText={(text) => {
+                if (activePlannerTab === 'teams') setTeamSearchQuery(text);
+                else if (activePlannerTab === 'calendar') setSearchQuery(text);
+                else if (activePlannerTab === 'setlist') setSongLibrarySearch(text);
+                else setSearchQuery(text);
+              }}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {((activePlannerTab === 'teams' && teamSearchQuery.length > 0) ||
+              (activePlannerTab === 'calendar' && searchQuery.length > 0) ||
+              (activePlannerTab === 'setlist' && songLibrarySearch.length > 0)) && (
+              <TouchableOpacity
+                onPress={() => {
+                  if (activePlannerTab === 'teams') setTeamSearchQuery('');
+                  else if (activePlannerTab === 'calendar') setSearchQuery('');
+                  else if (activePlannerTab === 'setlist') setSongLibrarySearch('');
+                  else setSearchQuery('');
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <X size={16} color={isDark ? '#94A3B8' : '#64748B'} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
       </View>
 
       {/* ─── Body Content ─── */}
@@ -5053,24 +5135,39 @@ export default function AdminServicePlanner({ navigation }: any) {
                 </View>
               )}
 
-              {ministryTeams.length === 0 ? (
+              {filteredMinistryTeams.length === 0 ? (
                 <View style={[styles.emptyCard, { backgroundColor: cardSurface, borderColor }]}>
                   <Users size={36} color="#94A3B8" />
-                  <Text style={[styles.emptyTitle, { color: primaryText }]}>No Ministry Teams Yet</Text>
-                  <Text style={[styles.emptySubtitle, { color: secondaryText }]}>
-                    Set up your standard ministry departments (Worship, Audio, Livestream, Ushers, Communion).
+                  <Text style={[styles.emptyTitle, { color: primaryText }]}>
+                    {teamSearchQuery.trim() ? 'No Matching Teams' : 'No Ministry Teams Yet'}
                   </Text>
-                  <TouchableOpacity
-                    style={styles.createEmptyBtn}
-                    onPress={handleSeedDefaultTeams}
-                  >
-                    <Sparkles size={15} color="#FFFFFF" />
-                    <Text style={styles.createEmptyBtnTxt}>Seed 14 Standard Teams</Text>
-                  </TouchableOpacity>
+                  <Text style={[styles.emptySubtitle, { color: secondaryText }]}>
+                    {teamSearchQuery.trim()
+                      ? `No ministry teams found matching "${teamSearchQuery}". Try another keyword.`
+                      : 'Set up your standard ministry departments (Worship, Audio, Livestream, Ushers, Communion).'}
+                  </Text>
+                  {teamSearchQuery.trim() ? (
+                    <TouchableOpacity
+                      style={[styles.createEmptyBtn, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }]}
+                      onPress={() => setTeamSearchQuery('')}
+                    >
+                      <X size={15} color={primaryText} />
+                      <Text style={[styles.createEmptyBtnTxt, { color: primaryText }]}>Clear Search</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.createEmptyBtn}
+                      onPress={handleSeedDefaultTeams}
+                    >
+                      <Sparkles size={15} color="#FFFFFF" />
+                      <Text style={styles.createEmptyBtnTxt}>Seed 14 Standard Teams</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               ) : (
-                ministryTeams.map((team, index) => {
+                filteredMinistryTeams.map((team, index) => {
                   const memberCount = team.memberIds?.length || 0;
+                  const memberNames = getTeamMemberNames(team.memberIds);
                   return (
                     <View
                       key={team.id}
@@ -5148,21 +5245,55 @@ export default function AdminServicePlanner({ navigation }: any) {
                           {team.description || 'Ministry team serving Rhema Church'}
                         </Text>
 
-                        {/* Footer Meta Row: Leader and Member Count */}
-                        <View style={[styles.teamMetaRow, { borderTopColor: isDark ? '#27272A' : '#F1F5F9' }]}>
-                          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5, paddingRight: 8 }}>
-                            <Text style={{ fontSize: 13 }}>👑</Text>
-                            <Text style={[styles.teamMetaTxt, { color: secondaryText }]} numberOfLines={1}>
-                              Leader: <Text style={{ fontWeight: '700', color: primaryText }}>{team.leaderName || 'Unassigned'}</Text>
-                            </Text>
+                        {/* Footer Meta: Leader & Assigned Members */}
+                        <View style={[styles.teamMetaBox, { borderTopColor: isDark ? '#27272A' : '#F1F5F9', borderTopWidth: 1, paddingTop: 10, marginTop: 4 }]}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, minWidth: 120 }}>
+                              <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: isDark ? 'rgba(217, 119, 6, 0.2)' : '#FEF3C7', alignItems: 'center', justifyContent: 'center' }}>
+                                <Text style={{ fontSize: 11 }}>👑</Text>
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <Text style={[styles.teamMetaTxt, { color: secondaryText }]} numberOfLines={1}>
+                                  Leader: <Text style={{ fontWeight: '700', color: primaryText }}>{team.leaderName || 'Unassigned'}</Text>
+                                </Text>
+                              </View>
+                            </View>
+
+                            <View style={[styles.teamMembersCountBadge, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: cardBorder, borderWidth: 1 }]}>
+                              <Users size={12} color={secondaryText} />
+                              <Text style={[styles.teamMembersCountTxt, { color: isDark ? '#E4E4E7' : '#0F172A' }]}>
+                                {memberCount} {memberCount === 1 ? 'Member' : 'Members'}
+                              </Text>
+                            </View>
                           </View>
 
-                          <View style={[styles.teamMembersCountBadge, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
-                            <Users size={12} color={secondaryText} />
-                            <Text style={[styles.teamMembersCountTxt, { color: isDark ? '#E4E4E7' : '#0F172A' }]}>
-                              {memberCount} Members
-                            </Text>
-                          </View>
+                          {/* Dedicated Member Names Roster: prevents names from getting mixed */}
+                          {memberNames.length > 0 && (
+                            <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: isDark ? '#27272A' : '#F1F5F9' }}>
+                              <Text style={{ fontSize: 10.5, fontWeight: '700', color: isDark ? '#A1A1AA' : '#64748B', marginBottom: 5 }}>
+                                Team Members ({memberCount}):
+                              </Text>
+                              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+                                {memberNames.map((mName, mIdx) => (
+                                  <View
+                                    key={mIdx}
+                                    style={{
+                                      paddingHorizontal: 7,
+                                      paddingVertical: 3,
+                                      borderRadius: 6,
+                                      backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                                      borderWidth: 1,
+                                      borderColor: cardBorder,
+                                    }}
+                                  >
+                                    <Text style={{ fontSize: 11, fontWeight: '600', color: primaryText }}>
+                                      {mName}
+                                    </Text>
+                                  </View>
+                                ))}
+                              </View>
+                            </View>
+                          )}
                         </View>
                       </TouchableOpacity>
 
@@ -8407,6 +8538,27 @@ const styles = StyleSheet.create({
   tabsScroll: {
     marginTop: 6,
     marginBottom: 2,
+  },
+  headerSearchWrap: {
+    marginTop: 8,
+    marginBottom: 2,
+  },
+  headerSearchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 40,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1.2,
+  },
+  headerSearchInput: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '500',
+    paddingVertical: 0,
+  },
+  teamMetaBox: {
+    paddingTop: 8,
   },
   tabBtn: {
     flexDirection: 'row',
