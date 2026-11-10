@@ -478,7 +478,7 @@ export default function ProfileScreen({ navigation }: any) {
           {/* Name + Greeting */}
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 22, fontWeight: '800', color: '#fff', lineHeight: 28 }}>
-              {(member?.name && member.name.trim()) || (member?.displayName && member.displayName.trim()) || (`${member?.firstName || ''} ${member?.lastName || ''}`.trim()) || user?.displayName || 'Beloved Member'}
+              {(member?.name && member.name.trim()) || ((member as any)?.displayName && (member as any).displayName.trim()) || (`${member?.firstName || ''} ${member?.lastName || ''}`.trim()) || user?.displayName || 'Beloved Member'}
             </Text>
             {/* Member Since Pill */}
             <View style={{ marginTop: 8, alignSelf: 'flex-start', backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 }}>

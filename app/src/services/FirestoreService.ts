@@ -39,6 +39,8 @@ export interface SubscriptionPlan {
 export interface AppMember {
   id: string; // The uid
   name: string;
+  displayName?: string;
+  fullName?: string;
   firstName?: string;
   lastName?: string;
   email?: string;
