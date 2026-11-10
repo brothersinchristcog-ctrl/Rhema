@@ -256,6 +256,118 @@ class TestimonyService {
   }
 
   /**
+   * Resolves a photo field if stored as a Firebase Storage path or gs:// URL.
+   */
+  async resolveStoragePhotoUrl(rawPhoto?: string | null): Promise<string | null> {
+    if (!rawPhoto || typeof rawPhoto !== 'string' || rawPhoto.trim() === '') return null;
+    const trimmed = rawPhoto.trim();
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return trimmed;
+    }
+    try {
+      if (trimmed.startsWith('gs://')) {
+        return await storage().refFromURL(trimmed).getDownloadURL();
+      }
+      return await storage().ref(trimmed).getDownloadURL();
+    } catch (err: any) {
+      console.warn('⚠️ [TestimonyService] Failed resolving photo URL from storage:', trimmed, err?.message);
+      return null;
+    }
+  }
+
+  /**
+   * Batch fetches member profile photos and names from the church's existing member records.
+   * Maps memberId, clean phone (last 10 digits), and full phone to { photoURL, name }.
+   */
+  async getChurchMemberPhotos(
+    churchId: string,
+    memberIds: string[] = [],
+    phones: string[] = []
+  ): Promise<Record<string, { photoURL: string; name: string }>> {
+    const targetChurchId = this.resolveChurchId(churchId);
+    const photosMap: Record<string, { photoURL: string; name: string }> = {};
+
+    try {
+      // 1. Fetch church members collection
+      const snap = await firestore()
+        .collection('Rhema Church')
+        .doc(targetChurchId)
+        .collection('members')
+        .limit(300)
+        .get();
+
+      const docsToProcess: any[] = [...snap.docs];
+
+      // 2. Fetch any missing member documents by doc ID
+      const foundDocIds = new Set(docsToProcess.map((d) => d.id));
+      const missingDocIds = memberIds.filter((id) => id && !foundDocIds.has(id));
+
+      if (missingDocIds.length > 0) {
+        const extraDocs = await Promise.all(
+          missingDocIds.map((mId) =>
+            firestore()
+              .collection('Rhema Church')
+              .doc(targetChurchId)
+              .collection('members')
+              .doc(mId)
+              .get()
+              .catch(() => null)
+          )
+        );
+        for (const ed of extraDocs) {
+          if (ed && ed.exists) {
+            docsToProcess.push(ed);
+          }
+        }
+      }
+
+      // 3. Extract and resolve photos
+      await Promise.all(
+        docsToProcess.map(async (doc) => {
+          const data = doc.data() || {};
+          const rawPhoto =
+            data.profilePhoto ||
+            data.photoURL ||
+            data.photoUrl ||
+            data.profileImage ||
+            data.profileImageUrl ||
+            data.avatar ||
+            data.avatarUrl ||
+            data.photo ||
+            data.image ||
+            data.picture ||
+            null;
+
+          const resolved = await this.resolveStoragePhotoUrl(rawPhoto);
+          if (resolved) {
+            const entry = {
+              photoURL: resolved,
+              name: data.name || data.displayName || '',
+            };
+
+            photosMap[doc.id] = entry;
+            if (data.uid) photosMap[data.uid] = entry;
+            if (data.userId) photosMap[data.userId] = entry;
+            if (data.memberId) photosMap[data.memberId] = entry;
+            if (data.id) photosMap[data.id] = entry;
+
+            const ph = data.phone || data.phoneNumber || data.mobile;
+            if (ph) {
+              const clean = String(ph).replace(/\D/g, '').slice(-10);
+              if (clean) photosMap[clean] = entry;
+              photosMap[String(ph)] = entry;
+            }
+          }
+        })
+      );
+    } catch (err: any) {
+      console.warn('⚠️ [TestimonyService] Error batch loading church member photos:', err?.message);
+    }
+
+    return photosMap;
+  }
+
+  /**
    * Look up member details strictly from `Rhema Church/{churchId}/members/{memberId}`.
    * Gracefully handles deleted member records by returning fallback values.
    */
@@ -268,10 +380,11 @@ class TestimonyService {
   ): Promise<MemberSummary> {
     const targetChurchId = this.resolveChurchId(churchId);
     if (!memberId) {
+      const resolvedFallback = await this.resolveStoragePhotoUrl(fallbackPhoto);
       return {
         id: '',
         name: fallbackName || 'Church Member',
-        photoURL: fallbackPhoto || null,
+        photoURL: resolvedFallback,
         phone: fallbackPhone || null,
         role: 'Member',
         exists: false,
@@ -301,10 +414,12 @@ class TestimonyService {
           fallbackPhoto ||
           null;
 
+        const resolvedPhoto = await this.resolveStoragePhotoUrl(photo);
+
         return {
           id: doc.id,
           name: data.name || fallbackName || 'Church Member',
-          photoURL: photo,
+          photoURL: resolvedPhoto,
           phone: data.phone || fallbackPhone || null,
           role: data.userType || data.role || (data.isAdmin ? 'Admin' : 'Member'),
           exists: true,
@@ -355,10 +470,12 @@ class TestimonyService {
             fallbackPhoto ||
             null;
 
+          const resolvedPhoto = await this.resolveStoragePhotoUrl(photo);
+
           return {
             id: matchedDoc.id,
             name: data.name || fallbackName || 'Church Member',
-            photoURL: photo,
+            photoURL: resolvedPhoto,
             phone: data.phone || fallbackPhone || null,
             role: data.userType || data.role || (data.isAdmin ? 'Admin' : 'Member'),
             exists: true,
@@ -369,10 +486,11 @@ class TestimonyService {
       console.warn('⚠️ [TestimonyService] Member lookup error:', e);
     }
 
+    const resolvedFallback = await this.resolveStoragePhotoUrl(fallbackPhoto);
     return {
       id: memberId,
       name: fallbackName || 'Church Member',
-      photoURL: fallbackPhoto || null,
+      photoURL: resolvedFallback,
       phone: fallbackPhone || null,
       role: 'Member',
       exists: false,

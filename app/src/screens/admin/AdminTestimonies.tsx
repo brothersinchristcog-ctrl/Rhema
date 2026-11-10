@@ -172,6 +172,11 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
   const [downloadingAttachmentPath, setDownloadingAttachmentPath] = useState<string | null>(null);
   const [viewerDoc, setViewerDoc] = useState<InAppDocumentViewerDoc | null>(null);
 
+  // Cached member records to resolve live profile photos for all testimonies
+  const [memberProfilesMap, setMemberProfilesMap] = useState<
+    Record<string, { photoURL: string; name: string }>
+  >({});
+
   const isAuthorizedAdmin = Boolean(
     isPlatformSuperAdmin ||
       String(member?.userType || '').toLowerCase().includes('admin') ||
@@ -198,6 +203,36 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
 
     return () => unsub();
   }, [activeChurchId]);
+
+  // Batch fetch member photos from the existing church member records
+  useEffect(() => {
+    if (!testimonies || testimonies.length === 0) return;
+    const mIds = Array.from(new Set(testimonies.map((t) => t.memberId).filter(Boolean)));
+    const phs = Array.from(
+      new Set(testimonies.map((t) => t.memberPhone).filter(Boolean))
+    ) as string[];
+
+    TestimonyService.getChurchMemberPhotos(activeChurchId, mIds, phs)
+      .then((map) => {
+        setMemberProfilesMap((prev) => ({ ...prev, ...map }));
+      })
+      .catch((err) =>
+        console.warn('⚠️ [AdminTestimonies] Error fetching member photos:', err)
+      );
+  }, [testimonies, activeChurchId]);
+
+  // Resolves the member profile info, prioritizing the existing Member record
+  const getMemberProfile = (item: Testimony) => {
+    const profile =
+      (item.memberId && memberProfilesMap[item.memberId]) ||
+      (item.memberPhone &&
+        memberProfilesMap[item.memberPhone.replace(/\D/g, '').slice(-10)]) ||
+      (item.memberPhone && memberProfilesMap[item.memberPhone]);
+
+    const photoURL = profile?.photoURL || item.memberPhotoUrl || null;
+    const name = profile?.name || item.memberName || 'Church Member';
+    return { photoURL, name };
+  };
 
   // Open deep-linked testimony from push notification immediately
   const lastOpenedTargetIdRef = useRef<string | null>(null);
@@ -301,7 +336,18 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
       item.memberPhotoUrl,
       item.memberPhone
     )
-      .then((summary) => setMemberSummary(summary))
+      .then((summary) => {
+        setMemberSummary(summary);
+        if (summary?.photoURL) {
+          setMemberProfilesMap((prev) => ({
+            ...prev,
+            [item.memberId]: { photoURL: summary.photoURL!, name: summary.name },
+            ...(item.memberPhone
+              ? { [item.memberPhone]: { photoURL: summary.photoURL!, name: summary.name } }
+              : {}),
+          }));
+        }
+      })
       .catch(() => {});
 
     // Resolve signed Video URL if present
@@ -788,6 +834,7 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
             const isPriv = item.privacy === 'Private';
             const badge = getBadgeStyle(item.status, isPriv);
             const BadgeIcon = badge.icon;
+            const { photoURL, name } = getMemberProfile(item);
 
             return (
               <TouchableOpacity
@@ -800,10 +847,11 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
               >
                 <View style={styles.cardTopRow}>
                   <View style={styles.memberMiniRow}>
-                    {item.memberPhotoUrl ? (
+                    {photoURL ? (
                       <Image
-                        source={{ uri: item.memberPhotoUrl }}
+                        source={{ uri: photoURL }}
                         style={styles.memberAvatarCircle}
+                        resizeMode="cover"
                       />
                     ) : (
                       <View
@@ -813,7 +861,7 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
                         ]}
                       >
                         <Text style={styles.memberAvatarInitials}>
-                          {getInitials(item.memberName)}
+                          {getInitials(name)}
                         </Text>
                       </View>
                     )}
@@ -822,7 +870,7 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
                         style={[styles.memberName, { color: primaryText }]}
                         numberOfLines={1}
                       >
-                        {item.memberName || 'Church Member'}
+                        {name}
                       </Text>
                       <Text
                         style={[styles.submissionDate, { color: secondaryText }]}
@@ -983,82 +1031,90 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
                     SUBMITTING MEMBER DETAILS
                   </Text>
                   <View style={styles.memberDetailRow}>
-                    {memberSummary?.photoURL || selectedTestimony.memberPhotoUrl ? (
-                      <Image
-                        source={{
-                          uri:
-                            (memberSummary?.photoURL ||
-                              selectedTestimony.memberPhotoUrl)!,
-                        }}
-                        style={styles.memberLargeAvatar}
-                      />
-                    ) : (
-                      <View
-                        style={[
-                          styles.memberLargeAvatarFallback,
-                          { backgroundColor: '#2563EB' },
-                        ]}
-                      >
-                        <Text style={styles.memberLargeAvatarInitials}>
-                          {getInitials(memberSummary?.name || selectedTestimony.memberName)}
-                        </Text>
-                      </View>
-                    )}
+                    {(() => {
+                      const profile = getMemberProfile(selectedTestimony);
+                      const resolvedPhoto = memberSummary?.photoURL || profile.photoURL;
+                      const resolvedName = memberSummary?.name || profile.name;
 
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        style={[styles.memberDetailName, { color: isDark ? '#FFFFFF' : primaryText }]}
-                      >
-                        {memberSummary?.name ||
-                          selectedTestimony.memberName ||
-                          'Church Member'}
-                      </Text>
-                      <View style={styles.memberMetaBadgesRow}>
-                        <View
-                          style={[
-                            styles.roleBadgeBox,
-                            {
-                              backgroundColor: isDark
-                                ? 'rgba(56, 189, 248, 0.16)'
-                                : 'rgba(37, 99, 235, 0.12)',
-                            },
-                          ]}
-                        >
-                          <Text style={[styles.roleBadgeTxt, { color: accentColor }]}>
-                            {memberSummary?.role || 'Member'}
-                          </Text>
-                        </View>
-                        {(memberSummary as any)?.cellGroup ? (
-                          <View
-                            style={[
-                              styles.roleBadgeBox,
-                              {
-                                backgroundColor: isDark
-                                  ? 'rgba(16, 185, 129, 0.16)'
-                                  : 'rgba(16, 185, 129, 0.12)',
-                              },
-                            ]}
-                          >
-                            <Text style={[styles.roleBadgeTxt, { color: '#10B981' }]}>
-                              {(memberSummary as any).cellGroup}
+                      return (
+                        <>
+                          {resolvedPhoto ? (
+                            <Image
+                              source={{ uri: resolvedPhoto }}
+                              style={styles.memberLargeAvatar}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <View
+                              style={[
+                                styles.memberLargeAvatarFallback,
+                                { backgroundColor: '#2563EB' },
+                              ]}
+                            >
+                              <Text style={styles.memberLargeAvatarInitials}>
+                                {getInitials(resolvedName)}
+                              </Text>
+                            </View>
+                          )}
+
+                          <View style={{ flex: 1 }}>
+                            <Text
+                              style={[
+                                styles.memberDetailName,
+                                { color: isDark ? '#FFFFFF' : primaryText },
+                              ]}
+                            >
+                              {resolvedName}
                             </Text>
+                            <View style={styles.memberMetaBadgesRow}>
+                              <View
+                                style={[
+                                  styles.roleBadgeBox,
+                                  {
+                                    backgroundColor: isDark
+                                      ? 'rgba(56, 189, 248, 0.16)'
+                                      : 'rgba(37, 99, 235, 0.12)',
+                                  },
+                                ]}
+                              >
+                                <Text style={[styles.roleBadgeTxt, { color: accentColor }]}>
+                                  {memberSummary?.role || 'Member'}
+                                </Text>
+                              </View>
+                              {(memberSummary as any)?.cellGroup ? (
+                                <View
+                                  style={[
+                                    styles.roleBadgeBox,
+                                    {
+                                      backgroundColor: isDark
+                                        ? 'rgba(16, 185, 129, 0.16)'
+                                        : 'rgba(16, 185, 129, 0.12)',
+                                    },
+                                  ]}
+                                >
+                                  <Text style={[styles.roleBadgeTxt, { color: '#10B981' }]}>
+                                    {(memberSummary as any).cellGroup}
+                                  </Text>
+                                </View>
+                              ) : null}
+                            </View>
+                            {(memberSummary?.phone || selectedTestimony.memberPhone) && (
+                              <View style={styles.phoneRow}>
+                                <Phone size={13} color={accentColor} />
+                                <Text
+                                  style={[
+                                    styles.phoneText,
+                                    { color: isDark ? '#E2E8F0' : primaryText },
+                                  ]}
+                                >
+                                  {memberSummary?.phone || selectedTestimony.memberPhone}
+                                </Text>
+                              </View>
+                            )}
                           </View>
-                        ) : null}
-                      </View>
-                      {(memberSummary?.phone || selectedTestimony.memberPhone) && (
-                        <View style={styles.phoneRow}>
-                          <Phone size={13} color={accentColor} />
-                          <Text
-                            style={[
-                              styles.phoneText,
-                              { color: isDark ? '#E2E8F0' : primaryText },
-                            ]}
-                          >
-                            {memberSummary?.phone || selectedTestimony.memberPhone}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
+                        </>
+                      );
+                    })()}
                   </View>
 
                   <View

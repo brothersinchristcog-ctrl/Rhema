@@ -198,8 +198,24 @@ export default function TestimoniesScreen({ route, navigation }: any) {
     return () => unsubMine();
   }, [activeChurchId, user?.uid]);
 
+  // Helper to check whether a testimony belongs to the currently logged-in member
+  const isMySubmission = (item: Testimony): boolean => {
+    if (!item) return false;
+    if (user?.uid && item.memberId === user.uid) return true;
+    if (member?.id && item.memberId === member.id) return true;
+    const cleanUserPhone = (user?.phoneNumber || member?.phone || '').replace(/\D/g, '').slice(-10);
+    const cleanItemPhone = (item.memberPhone || '').replace(/\D/g, '').slice(-10);
+    if (cleanUserPhone && cleanItemPhone && cleanUserPhone === cleanItemPhone) return true;
+    return false;
+  };
+
+  // Filter public feed so members only see testimonies from other members (their own submissions are in My Testimonies)
+  const otherMembersFeed = useMemo(() => {
+    return publicFeed.filter((item) => !isMySubmission(item));
+  }, [publicFeed, user?.uid, member?.id, user?.phoneNumber, member?.phone]);
+
   const filteredFeed = useMemo(() => {
-    return publicFeed.filter((item) => {
+    return otherMembersFeed.filter((item) => {
       if (item.privacy !== 'Public' || item.status !== 'Published') return false;
 
       if (
@@ -219,7 +235,7 @@ export default function TestimoniesScreen({ route, navigation }: any) {
       }
       return true;
     });
-  }, [publicFeed, selectedCategoryFilter, searchQuery]);
+  }, [otherMembersFeed, selectedCategoryFilter, searchQuery]);
 
   const resetForm = async (cleanSessionUploads = false) => {
     if (cleanSessionUploads && sessionUploadedPathsRef.current.length > 0) {
@@ -1142,7 +1158,7 @@ export default function TestimoniesScreen({ route, navigation }: any) {
               { color: activeTab === 'feed' ? '#FFFFFF' : secondaryTextColor },
             ]}
           >
-            Feed ({publicFeed.length})
+            Feed ({otherMembersFeed.length})
           </Text>
         </TouchableOpacity>
 
