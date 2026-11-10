@@ -380,12 +380,9 @@ export default function MyServiceScreen({ navigation, route }: any) {
           <ArrowLeft size={20} color={primaryText} />
         </TouchableOpacity>
 
-        <View style={{ flex: 1, paddingHorizontal: 10 }}>
-          <Text style={[styles.headerSub, { color: secondaryText }]}>
-            {activeChurch?.name || 'Rhema Global Ministries'}
-          </Text>
-          <Text style={[styles.headerTitle, { color: primaryText }]}>
-            Service Roster · సేవా బాధ్యతలు
+        <View style={{ flex: 1, paddingHorizontal: 12 }}>
+          <Text style={[styles.headerTitle, { color: primaryText }]} numberOfLines={1}>
+            Service Roster
           </Text>
         </View>
 
