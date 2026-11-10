@@ -228,7 +228,6 @@ export default function AdminServicePlanner({ navigation }: any) {
   const [teamLeaderId, setTeamLeaderId] = useState<string | undefined>(undefined);
   const [teamMemberIds, setTeamMemberIds] = useState<string[]>([]);
   const [savingTeam, setSavingTeam] = useState(false);
-  const [selectedTeamTab, setSelectedTeamTab] = useState('all');
   const [isSavingTeamOrder, setIsSavingTeamOrder] = useState(false);
   const [teamOrderFeedback, setTeamOrderFeedback] = useState<string | null>(null);
 
@@ -4841,124 +4840,12 @@ export default function AdminServicePlanner({ navigation }: any) {
           {/* TAB 4: MINISTRY TEAMS MANAGEMENT (PHASE 2) */}
           {activePlannerTab === 'teams' && (
             <View style={styles.tabContent}>
-              <View style={styles.sectionHeaderRow}>
-                <View style={{ flex: 1, paddingRight: 8 }}>
-                  <Text style={[styles.sectionHeading, { color: primaryText }]}>Church Ministry Teams</Text>
-                  <Text style={[styles.sectionSubheading, { color: secondaryText }]}>
-                    Organize volunteers across 14 church departments. Use ▲ ▼ arrows to customize display order.
-                  </Text>
-                </View>
-                <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
-                  {ministryTeams.length > 0 && (
-                    <TouchableOpacity
-                      style={[styles.resetOrderBtn, { borderColor: cardBorder }]}
-                      onPress={handleResetTeamOrder}
-                      disabled={isSavingTeamOrder}
-                      activeOpacity={0.8}
-                    >
-                      <RotateCcw size={12} color={secondaryText} />
-                      <Text style={[styles.resetOrderBtnTxt, { color: secondaryText }]}>Reset Order</Text>
-                    </TouchableOpacity>
-                  )}
-                  {ministryTeams.length === 0 && (
-                    <TouchableOpacity
-                      style={styles.seedTeamsBtn}
-                      onPress={handleSeedDefaultTeams}
-                    >
-                      <Sparkles size={13} color="#D97706" />
-                      <Text style={styles.seedTeamsBtnTxt}>Seed 14 Teams</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-
               {teamOrderFeedback && (
                 <View style={[styles.feedbackBanner, { backgroundColor: isDark ? '#064E3B' : '#ECFDF5', borderColor: '#10B981' }]}>
                   <CheckCircle2 size={13} color="#10B981" />
                   <Text style={[styles.feedbackBannerTxt, { color: isDark ? '#A7F3D0' : '#065F46' }]}>
                     {teamOrderFeedback}
                   </Text>
-                </View>
-              )}
-
-              {/* Horizontal Ministry Team Tabs */}
-              {ministryTeams.length > 0 && (
-                <View style={{ marginBottom: 12 }}>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.teamTabsScrollContent}
-                  >
-                    <TouchableOpacity
-                      style={[
-                        styles.teamTabChip,
-                        selectedTeamTab === 'all'
-                          ? { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg }
-                          : { backgroundColor: cardSurface, borderColor: cardBorder }
-                      ]}
-                      onPress={() => setSelectedTeamTab('all')}
-                      activeOpacity={0.8}
-                    >
-                      <Text
-                        style={[
-                          styles.teamTabChipTxt,
-                          selectedTeamTab === 'all'
-                            ? { color: primaryBtnText, fontWeight: '800' }
-                            : { color: secondaryText }
-                        ]}
-                      >
-                        All Teams ({ministryTeams.length})
-                      </Text>
-                    </TouchableOpacity>
-
-                    {ministryTeams.map((t, idx) => {
-                      const isSelected = selectedTeamTab === t.id;
-                      return (
-                        <TouchableOpacity
-                          key={t.id}
-                          style={[
-                            styles.teamTabChip,
-                            isSelected
-                              ? { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg }
-                              : { backgroundColor: cardSurface, borderColor: cardBorder }
-                          ]}
-                          onPress={() => setSelectedTeamTab(isSelected ? 'all' : t.id)}
-                          activeOpacity={0.8}
-                        >
-                          <View style={[styles.teamTabDot, { backgroundColor: t.color || '#2E6B4F' }]} />
-                          <Text
-                            style={[
-                              styles.teamTabChipTxt,
-                              isSelected
-                                ? { color: primaryBtnText, fontWeight: '800' }
-                                : { color: primaryText }
-                            ]}
-                          >
-                            {idx + 1}. {t.name}
-                          </Text>
-                          <View
-                            style={[
-                              styles.teamTabCountPill,
-                              isSelected
-                                ? { backgroundColor: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)' }
-                                : { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.teamTabCountTxt,
-                                isSelected
-                                  ? { color: primaryBtnText }
-                                  : { color: secondaryText }
-                              ]}
-                            >
-                              {t.memberIds?.length || 0}
-                            </Text>
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
                 </View>
               )}
 
@@ -4978,93 +4865,130 @@ export default function AdminServicePlanner({ navigation }: any) {
                   </TouchableOpacity>
                 </View>
               ) : (
-                ministryTeams
-                  .filter(team => selectedTeamTab === 'all' || selectedTeamTab === team.id)
-                  .map(team => {
-                    const index = ministryTeams.findIndex(t => t.id === team.id);
-                    const memberCount = team.memberIds?.length || 0;
-                    return (
-                      <View
-                        key={team.id}
-                        style={[styles.teamCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}
+                ministryTeams.map((team, index) => {
+                  const memberCount = team.memberIds?.length || 0;
+                  return (
+                    <View
+                      key={team.id}
+                      style={[
+                        styles.teamCard,
+                        {
+                          backgroundColor: cardSurface,
+                          borderColor: cardBorder,
+                        }
+                      ]}
+                    >
+                      {/* Left Department Accent Bar */}
+                      <View style={[styles.teamColorBar, { backgroundColor: team.color || '#2E6B4F' }]} />
+
+                      {/* Main Card Information Area */}
+                      <TouchableOpacity
+                        style={styles.teamCardContent}
+                        activeOpacity={0.85}
+                        onPress={() => openEditTeamModal(team)}
                       >
-                        <View style={[styles.teamColorBar, { backgroundColor: team.color || '#2E6B4F' }]} />
-
-                        <TouchableOpacity
-                          style={{ flex: 1, paddingVertical: 12, paddingLeft: 12, paddingRight: 8 }}
-                          activeOpacity={0.88}
-                          onPress={() => openEditTeamModal(team)}
-                        >
-                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, paddingRight: 6 }}>
-                              <Text style={[styles.teamTitle, { color: primaryText }]} numberOfLines={1}>{team.name}</Text>
-                              <View style={[styles.teamActiveBadge, team.active ? styles.teamActiveBadgeOn : styles.teamActiveBadgeOff]}>
-                                <Text style={[styles.teamActiveBadgeTxt, team.active ? styles.teamActiveBadgeTxtOn : styles.teamActiveBadgeTxtOff]}>
-                                  {team.active ? 'ACTIVE' : 'INACTIVE'}
-                                </Text>
-                              </View>
-                            </View>
-                            <ChevronRight size={15} color="#94A3B8" />
-                          </View>
-
-                          <Text style={[styles.teamDescription, { color: secondaryText }]} numberOfLines={2}>
-                            {team.description || 'Ministry team serving Rhema Church'}
+                        {/* Header: Team Name & Status Badge */}
+                        <View style={styles.teamHeaderRow}>
+                          <Text style={[styles.teamTitle, { color: primaryText }]} numberOfLines={1}>
+                            {team.name}
                           </Text>
-
-                          <View style={styles.teamMetaRow}>
-                            <Text style={[styles.teamMetaTxt, { color: secondaryText }]}>
-                              👑 Leader: <Text style={{ fontWeight: '700', color: primaryText }}>{team.leaderName || 'Unassigned'}</Text>
+                          <View
+                            style={[
+                              styles.teamActiveBadge,
+                              team.active
+                                ? (isDark ? styles.teamActiveBadgeOnDark : styles.teamActiveBadgeOn)
+                                : (isDark ? styles.teamActiveBadgeOffDark : styles.teamActiveBadgeOff)
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.teamActiveBadgeTxt,
+                                team.active
+                                  ? (isDark ? styles.teamActiveBadgeTxtOnDark : styles.teamActiveBadgeTxtOn)
+                                  : styles.teamActiveBadgeTxtOff
+                              ]}
+                            >
+                              {team.active ? 'ACTIVE' : 'INACTIVE'}
                             </Text>
-                            <View style={styles.teamMembersCountBadge}>
-                              <Users size={12} color={secondaryText} />
-                              <Text style={styles.teamMembersCountTxt}>{memberCount} Members</Text>
-                            </View>
                           </View>
+                        </View>
+
+                        {/* Description */}
+                        <Text style={[styles.teamDescription, { color: secondaryText }]} numberOfLines={2}>
+                          {team.description || 'Ministry team serving Rhema Church'}
+                        </Text>
+
+                        {/* Footer Meta Row: Leader and Member Count */}
+                        <View style={[styles.teamMetaRow, { borderTopColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+                          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5, paddingRight: 8 }}>
+                            <Text style={{ fontSize: 13 }}>👑</Text>
+                            <Text style={[styles.teamMetaTxt, { color: secondaryText }]} numberOfLines={1}>
+                              Leader: <Text style={{ fontWeight: '700', color: primaryText }}>{team.leaderName || 'Unassigned'}</Text>
+                            </Text>
+                          </View>
+
+                          <View style={[styles.teamMembersCountBadge, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+                            <Users size={12} color={secondaryText} />
+                            <Text style={[styles.teamMembersCountTxt, { color: isDark ? '#E4E4E7' : '#0F172A' }]}>
+                              {memberCount} Members
+                            </Text>
+                          </View>
+                        </View>
+                      </TouchableOpacity>
+
+                      {/* Clean Dedicated Reorder Column */}
+                      <View style={[styles.teamReorderCol, { borderLeftColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+                        <TouchableOpacity
+                          style={[
+                            styles.reorderArrowBtn,
+                            {
+                              backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                              borderColor: isDark ? '#3F3F46' : '#E2E8F0',
+                            },
+                            index === 0 && styles.reorderArrowBtnDisabled
+                          ]}
+                          disabled={index === 0 || isSavingTeamOrder}
+                          onPress={() => handleMoveTeam(index, 'up')}
+                          activeOpacity={0.7}
+                          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                        >
+                          <ChevronUp
+                            size={16}
+                            color={index === 0 ? (isDark ? '#52525B' : '#CBD5E1') : (isDark ? '#FAFAFA' : '#0F172A')}
+                            strokeWidth={2.6}
+                          />
                         </TouchableOpacity>
 
-                        {/* Reorder Up/Down Controls */}
-                        <View style={[styles.teamReorderCol, { borderLeftColor: cardBorder }]}>
-                          <TouchableOpacity
-                            style={[
-                              styles.reorderArrowBtn,
-                              index === 0 && styles.reorderArrowBtnDisabled
-                            ]}
-                            disabled={index === 0 || isSavingTeamOrder}
-                            onPress={() => handleMoveTeam(index, 'up')}
-                            activeOpacity={0.7}
-                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                          >
-                            <ChevronUp
-                              size={16}
-                              color={index === 0 ? (isDark ? '#3F3F46' : '#CBD5E1') : (isDark ? '#F4F4F5' : '#0F172A')}
-                              strokeWidth={2.5}
-                            />
-                          </TouchableOpacity>
-
-                          <View style={[styles.orderRankPill, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
-                            <Text style={[styles.orderRankTxt, { color: primaryText }]}>#{index + 1}</Text>
-                          </View>
-
-                          <TouchableOpacity
-                            style={[
-                              styles.reorderArrowBtn,
-                              index === ministryTeams.length - 1 && styles.reorderArrowBtnDisabled
-                            ]}
-                            disabled={index === ministryTeams.length - 1 || isSavingTeamOrder}
-                            onPress={() => handleMoveTeam(index, 'down')}
-                            activeOpacity={0.7}
-                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                          >
-                            <ChevronDown
-                              size={16}
-                              color={index === ministryTeams.length - 1 ? (isDark ? '#3F3F46' : '#CBD5E1') : (isDark ? '#F4F4F5' : '#0F172A')}
-                              strokeWidth={2.5}
-                            />
-                          </TouchableOpacity>
+                        <View style={styles.orderRankPill}>
+                          <Text style={[styles.orderRankTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+                            #{index + 1}
+                          </Text>
                         </View>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.reorderArrowBtn,
+                            {
+                              backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                              borderColor: isDark ? '#3F3F46' : '#E2E8F0',
+                            },
+                            index === ministryTeams.length - 1 && styles.reorderArrowBtnDisabled
+                          ]}
+                          disabled={index === ministryTeams.length - 1 || isSavingTeamOrder}
+                          onPress={() => handleMoveTeam(index, 'down')}
+                          activeOpacity={0.7}
+                          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                        >
+                          <ChevronDown
+                            size={16}
+                            color={index === ministryTeams.length - 1 ? (isDark ? '#52525B' : '#CBD5E1') : (isDark ? '#FAFAFA' : '#0F172A')}
+                            strokeWidth={2.6}
+                          />
+                        </TouchableOpacity>
                       </View>
-                    );
-                  })
+                    </View>
+                  );
+                })
               )}
             </View>
           )}
@@ -8614,7 +8538,7 @@ const styles = StyleSheet.create({
   teamCard: {
     flexDirection: 'row',
     borderRadius: 16,
-    borderWidth: 1.5,
+    borderWidth: 1.2,
     marginBottom: 12,
     overflow: 'hidden',
     elevation: 2,
@@ -8624,47 +8548,69 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
   },
   teamColorBar: {
-    width: 6,
+    width: 5,
+  },
+  teamCardContent: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    justifyContent: 'space-between',
+  },
+  teamHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
   },
   teamTitle: {
     fontFamily: SERIF_FONT,
-    fontSize: 16,
+    fontSize: 16.5,
     fontWeight: '800',
     letterSpacing: -0.2,
+    flexShrink: 1,
   },
   teamActiveBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 5,
   },
   teamActiveBadgeOn: {
-    backgroundColor: '#D1FAE5',
+    backgroundColor: '#DCFCE7',
+  },
+  teamActiveBadgeOnDark: {
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
   },
   teamActiveBadgeOff: {
     backgroundColor: '#F3F4F6',
   },
+  teamActiveBadgeOffDark: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  },
   teamActiveBadgeTxt: {
-    fontSize: 9,
+    fontSize: 9.5,
     fontWeight: '800',
+    letterSpacing: 0.4,
   },
   teamActiveBadgeTxtOn: {
-    color: '#059669',
+    color: '#15803D',
+  },
+  teamActiveBadgeTxtOnDark: {
+    color: '#34D399',
   },
   teamActiveBadgeTxtOff: {
-    color: '#64748B',
+    color: '#94A3B8',
   },
   teamDescription: {
-    fontSize: 11.5,
-    marginTop: 2,
+    fontSize: 12.5,
+    lineHeight: 18,
+    marginBottom: 10,
   },
   teamMetaRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 8,
-    paddingTop: 6,
+    paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
   },
   teamMetaTxt: {
     fontSize: 11.5,
@@ -8673,86 +8619,40 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
   },
   teamMembersCountTxt: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#0F172A',
-  },
-  teamTabsScrollContent: {
-    paddingHorizontal: 2,
-    gap: 8,
-    paddingVertical: 2,
-  },
-  teamTabChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  teamTabChipTxt: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  teamTabDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  teamTabCountPill: {
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 10,
-  },
-  teamTabCountTxt: {
-    fontSize: 10,
-    fontWeight: '700',
   },
   teamReorderCol: {
-    width: 44,
+    width: 48,
     borderLeftWidth: 1,
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 8,
+    paddingVertical: 12,
   },
   reorderArrowBtn: {
     width: 32,
     height: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 6,
+    borderRadius: 8,
+    borderWidth: 1,
   },
   reorderArrowBtnDisabled: {
     opacity: 0.35,
   },
   orderRankPill: {
-    paddingHorizontal: 5,
+    paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
   },
   orderRankTxt: {
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  resetOrderBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  resetOrderBtnTxt: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   feedbackBanner: {
     flexDirection: 'row',
