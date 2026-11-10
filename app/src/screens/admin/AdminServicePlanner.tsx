@@ -1352,6 +1352,7 @@ export default function AdminServicePlanner({ navigation }: any) {
             try {
               setSavingService(true);
               await ServiceRosterService.updateServiceStatus(churchId, plan.id, 'published');
+              await ServiceRosterService.publishServiceRosterBroadcast(churchId, plan.id);
 
               const timeoutMinutes = 120; // 2 hours default
               const dispatchedDuties: string[] = [];
@@ -1707,6 +1708,7 @@ export default function AdminServicePlanner({ navigation }: any) {
 
       // 2. If publishing, dispatch assignment queues for each assigned duty role
       if (publishNow && targetPlanId) {
+        await ServiceRosterService.publishServiceRosterBroadcast(churchId, targetPlanId);
         const timeoutMinutes = responseTimeoutHours * 60;
         let dispatchedCount = 0;
 

@@ -97,7 +97,9 @@ export default function MyServiceScreen({ navigation, route }: any) {
   const memberId = member?.id || '';
 
   // Tab: 'roster' (Full Service Roster) | 'responsibilities' (Upcoming & Pending Personal Responsibilities)
-  const [activeTab, setActiveTab] = useState<'roster' | 'responsibilities'>('roster');
+  const [activeTab, setActiveTab] = useState<'roster' | 'responsibilities'>(
+    (route?.params?.initialTab as any) || 'roster'
+  );
 
   const [duties, setDuties] = useState<MemberServiceDuty[]>([]);
   const [publishedPlans, setPublishedPlans] = useState<ServicePlan[]>([]);
@@ -132,7 +134,9 @@ export default function MyServiceScreen({ navigation, route }: any) {
     try {
       const list = await ServiceRosterService.getMemberUpcomingDuties(churchId, memberId, member?.name);
       setDuties(list);
-      if (list.length === 0) {
+      if (route?.params?.initialTab) {
+        setActiveTab(route.params.initialTab);
+      } else if (list.length === 0) {
         setActiveTab('roster');
       }
 
@@ -175,6 +179,15 @@ export default function MyServiceScreen({ navigation, route }: any) {
 
     return () => unsubscribe();
   }, [churchId, memberId, fetchDuties]);
+
+  useEffect(() => {
+    if (route?.params?.serviceId) {
+      setSelectedPlanId(route.params.serviceId);
+    }
+    if (route?.params?.initialTab) {
+      setActiveTab(route.params.initialTab);
+    }
+  }, [route?.params?.serviceId, route?.params?.initialTab]);
 
   const onRefresh = () => {
     setRefreshing(true);

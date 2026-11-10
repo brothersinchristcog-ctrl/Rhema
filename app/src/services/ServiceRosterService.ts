@@ -679,6 +679,64 @@ class ServiceRosterService {
   }
 
   /**
+   * Broadcasts published service roster announcement across church feeds (broadcasts and notifications)
+   * so it immediately appears in the Updates / Notifications screen for all members.
+   */
+  async publishServiceRosterBroadcast(churchId: string, planId: string): Promise<void> {
+    try {
+      const planDoc = await this.getServicePlansCol(churchId).doc(planId).get();
+      if (!planDoc.exists) return;
+      const plan = planDoc.data() as ServicePlan;
+      const serviceTitle = plan.serviceTitle || 'Worship Service';
+      const serviceDate = plan.date || '';
+      const serviceTime = plan.startTime || '10:00';
+      const location = plan.location || 'Church Sanctuary';
+      const targetChurch = churchId || 'rhema';
+
+      const dateDisplay = formatDateMonthYear(serviceDate) || serviceDate;
+      const timeDisplay = formatTimeTo12Hour(serviceTime) || serviceTime;
+
+      const broadcastPayload = {
+        id: `roster_published_${planId}`,
+        type: 'service_roster',
+        title: `Service Roster Published: ${serviceTitle}`,
+        content: `The upcoming service roster and worship order for ${dateDisplay} at ${timeDisplay} (${location}) has been published. Tap to view the schedule, setlist and responsibilities.`,
+        body: `The upcoming service roster and worship order for ${dateDisplay} at ${timeDisplay} (${location}) has been published. Tap to view the schedule, setlist and responsibilities.`,
+        churchId: targetChurch,
+        serviceId: planId,
+        serviceTitle,
+        serviceDate,
+        serviceTime,
+        location,
+        createdAt: firestore.FieldValue.serverTimestamp(),
+        updatedAt: firestore.FieldValue.serverTimestamp()
+      };
+
+      const sanitized = this.sanitizeForFirestore(broadcastPayload);
+
+      // Write to church-wide broadcasts (Updates screen query target)
+      await firestore()
+        .collection(RHEMA_ROOT_COLLECTION)
+        .doc(targetChurch)
+        .collection('broadcasts')
+        .doc(`roster_published_${planId}`)
+        .set(sanitized, { merge: true })
+        .catch(err => console.warn('[publishServiceRosterBroadcast] broadcasts write warning:', err));
+
+      // Write to church-wide notifications
+      await firestore()
+        .collection(RHEMA_ROOT_COLLECTION)
+        .doc(targetChurch)
+        .collection('notifications')
+        .doc(`roster_published_${planId}`)
+        .set(sanitized, { merge: true })
+        .catch(err => console.warn('[publishServiceRosterBroadcast] notifications write warning:', err));
+    } catch (err) {
+      console.warn('[publishServiceRosterBroadcast] Error writing broadcast doc:', err);
+    }
+  }
+
+  /**
    * Transition service status (e.g. draft -> published -> live -> completed)
    */
   async updateServiceStatus(churchId: string, planId: string, status: ServiceStatus): Promise<void> {
@@ -686,6 +744,10 @@ class ServiceRosterService {
       status,
       updatedAt: firestore.FieldValue.serverTimestamp()
     });
+
+    if (status === 'published') {
+      await this.publishServiceRosterBroadcast(churchId, planId);
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1559,10 +1621,14 @@ class ServiceRosterService {
       const activeCand = formattedCandidates[0];
       if (activeCand?.candidateId) {
         const notifDoc = this.sanitizeForFirestore({
+          id: `assign_${serviceId}_${safeRoleId}_${activeCand.candidateId}`,
           type: 'service_assignment',
           title: `New Service Assignment: ${params.roleTitle || 'Ministry Responsibility'}`,
-          body: `You are requested to serve as ${params.roleTitle || 'volunteer'}. Please respond within ${Math.max(1, Math.round(timeoutMinutes / 60))} hours.`,
+          content: `You are requested to serve as ${params.roleTitle || 'volunteer'}. Please respond within ${Math.max(1, Math.round(timeoutMinutes / 60))} hours. Tap to view and respond.`,
+          body: `You are requested to serve as ${params.roleTitle || 'volunteer'}. Please respond within ${Math.max(1, Math.round(timeoutMinutes / 60))} hours. Tap to view and respond.`,
           churchId: churchId || 'rhema',
+          targetMemberId: activeCand.candidateId,
+          targetPhone: activeCand.candidatePhone || null,
           serviceId,
           roleId: safeRoleId,
           roleTitle: params.roleTitle || 'Ministry Responsibility',
@@ -1571,7 +1637,8 @@ class ServiceRosterService {
           candidateId: activeCand.candidateId,
           status: 'pending',
           read: false,
-          createdAt: firestore.FieldValue.serverTimestamp()
+          createdAt: firestore.FieldValue.serverTimestamp(),
+          updatedAt: firestore.FieldValue.serverTimestamp()
         });
         await firestore()
           .collection(RHEMA_ROOT_COLLECTION)
@@ -1579,7 +1646,17 @@ class ServiceRosterService {
           .collection('members')
           .doc(activeCand.candidateId)
           .collection('notifications')
-          .add(notifDoc)
+          .doc(`assign_${serviceId}_${safeRoleId}`)
+          .set(notifDoc, { merge: true })
+          .catch(() => {});
+
+        // Also write targeted broadcast document so it appears in the Updates screen
+        await firestore()
+          .collection(RHEMA_ROOT_COLLECTION)
+          .doc(churchId || 'rhema')
+          .collection('broadcasts')
+          .doc(`assign_${serviceId}_${safeRoleId}_${activeCand.candidateId}`)
+          .set(notifDoc, { merge: true })
           .catch(() => {});
       }
     } catch (_) {}
@@ -1727,6 +1804,51 @@ class ServiceRosterService {
         createdAt: firestore.FieldValue.serverTimestamp(),
         updatedAt: firestore.FieldValue.serverTimestamp()
       }), { merge: true });
+
+      // Write targeted notifications and broadcasts for eligible members so they appear in UpdatesScreen
+      for (const m of qualified) {
+        try {
+          const fcfsDoc = this.sanitizeForFirestore({
+            id: `fcfs_${serviceId}_${resp.roleId}_${m.memberId}`,
+            type: 'service_responsibility_broadcast',
+            title: `Responsibility Available: ${resp.roleTitle}`,
+            content: `"${plan.serviceTitle || 'Worship Service'}" on ${formatDateMonthYear(plan.date)} at ${formatTimeTo12Hour(plan.startTime)} needs a ${resp.roleTitle}. First to accept gets booked! Tap to claim slot.`,
+            body: `"${plan.serviceTitle || 'Worship Service'}" on ${formatDateMonthYear(plan.date)} at ${formatTimeTo12Hour(plan.startTime)} needs a ${resp.roleTitle}. First to accept gets booked! Tap to claim slot.`,
+            churchId: churchId || 'rhema',
+            targetMemberId: m.memberId,
+            targetPhone: m.memberPhone || null,
+            serviceId,
+            roleId: resp.roleId,
+            roleTitle: resp.roleTitle,
+            activityId: resp.activityId || '',
+            activityName: resp.activityName || '',
+            serviceTitle: plan.serviceTitle,
+            serviceDate: plan.date,
+            serviceTime: plan.startTime,
+            status: 'available',
+            createdAt: firestore.FieldValue.serverTimestamp(),
+            updatedAt: firestore.FieldValue.serverTimestamp()
+          });
+
+          await firestore()
+            .collection(RHEMA_ROOT_COLLECTION)
+            .doc(churchId || 'rhema')
+            .collection('broadcasts')
+            .doc(`fcfs_${serviceId}_${resp.roleId}_${m.memberId}`)
+            .set(fcfsDoc, { merge: true })
+            .catch(() => {});
+
+          await firestore()
+            .collection(RHEMA_ROOT_COLLECTION)
+            .doc(churchId || 'rhema')
+            .collection('members')
+            .doc(m.memberId)
+            .collection('notifications')
+            .doc(`fcfs_${serviceId}_${resp.roleId}`)
+            .set(fcfsDoc, { merge: true })
+            .catch(() => {});
+        } catch (_) {}
+      }
 
       dispatchedCount++;
     }
