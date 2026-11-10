@@ -9,6 +9,8 @@ import { isSermonVisibleToMembers, formatDateDisplay } from '../utils/DateUtils'
 export interface GlobalUser {
   uid: string;
   name?: string;
+  firstName?: string;
+  lastName?: string;
   email?: string;
   phone?: string;
   primaryChurchId?: string;

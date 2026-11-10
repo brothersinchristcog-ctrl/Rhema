@@ -317,15 +317,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 memberProfile?.name ||
                 globalUser?.name ||
                 (memberProfile?.firstName ? `${memberProfile.firstName} ${memberProfile.lastName || ''}`.trim() : '') ||
-                (globalUser?.firstName ? `${globalUser.firstName} ${globalUser.lastName || ''}`.trim() : '') ||
+                ((globalUser as any)?.firstName ? `${(globalUser as any).firstName} ${(globalUser as any).lastName || ''}`.trim() : '') ||
                 userState.displayName ||
                 cachedMemberObj?.name ||
                 ''
               ).trim();
 
               const nameParts = effectiveName.split(/\s+/);
-              const effectiveFirstName = memberProfile?.firstName || globalUser?.firstName || nameParts[0] || '';
-              const effectiveLastName = memberProfile?.lastName || globalUser?.lastName || nameParts.slice(1).join(' ') || '';
+              const effectiveFirstName = memberProfile?.firstName || (globalUser as any)?.firstName || nameParts[0] || '';
+              const effectiveLastName = memberProfile?.lastName || (globalUser as any)?.lastName || nameParts.slice(1).join(' ') || '';
 
               const combinedMember: AppMember = {
                 ...(cachedMemberObj || {}),
