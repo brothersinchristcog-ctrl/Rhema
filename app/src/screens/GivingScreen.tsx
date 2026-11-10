@@ -280,10 +280,10 @@ export default function GivingScreen({ navigation }: any) {
   useEffect(() => {
     // Optional: fetch more detailed user info from Firestore if needed
     if (user?.uid) {
-      firestore().collection('users').doc(user.uid).get().then(doc => {
+      firestore().collection('Rhema Church').doc('rhema').collection('members').doc(user.uid).get().then(doc => {
         const data = doc.data();
-        if (data?.name) {
-          setUserName(data.name);
+        if (data?.name || data?.firstName) {
+          setUserName(data.name || `${data.firstName || ''} ${data.lastName || ''}`.trim());
         }
       }).catch(e => console.log('User fetch error:', e));
     }

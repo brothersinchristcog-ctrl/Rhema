@@ -125,18 +125,10 @@ async function handlePrayerRequestAdminPush(prayer, churchId, prayerId, snapRef)
         const memberId = prayer.uid || prayer.authorId || prayer.contactId;
         if (memberId) {
             try {
-                let mSnap = await db.collection('Rhema Church').doc(churchId).collection('members').doc(memberId).get();
-                if (!mSnap.exists) {
-                    mSnap = await db.collection('churches').doc(churchId).collection('members').doc(memberId).get();
-                }
-                if (mSnap.exists && mSnap.data()?.name) {
-                    memberName = mSnap.data().name;
-                }
-                else {
-                    const uSnap = await db.collection('users').doc(memberId).get();
-                    if (uSnap.exists && (uSnap.data()?.name || uSnap.data()?.displayName)) {
-                        memberName = uSnap.data().name || uSnap.data().displayName;
-                    }
+                const mSnap = await db.collection('Rhema Church').doc(churchId).collection('members').doc(memberId).get();
+                if (mSnap.exists) {
+                    const mData = mSnap.data();
+                    memberName = mData?.name || mData?.displayName || (mData?.firstName ? `${mData.firstName} ${mData.lastName || ''}`.trim() : '');
                 }
             }
             catch (err) {
@@ -160,10 +152,7 @@ async function handlePrayerRequestAdminPush(prayer, churchId, prayerId, snapRef)
     const adminUids = [];
     try {
         // A. Check Rhema Church members
-        let membersSnap = await db.collection('Rhema Church').doc(churchId).collection('members').get();
-        if (membersSnap.empty) {
-            membersSnap = await db.collection('churches').doc(churchId).collection('members').get();
-        }
+        const membersSnap = await db.collection('Rhema Church').doc(churchId).collection('members').get();
         membersSnap.forEach(doc => {
             const m = doc.data();
             const role = String(m.userType || m.role || '').toLowerCase();
@@ -173,13 +162,16 @@ async function handlePrayerRequestAdminPush(prayer, churchId, prayerId, snapRef)
                 if (m.fcmToken && typeof m.fcmToken === 'string' && m.fcmToken.trim().length > 10) {
                     adminTokens.push(m.fcmToken.trim());
                 }
+                if (Array.isArray(m.fcmTokens)) {
+                    m.fcmTokens.forEach((t) => {
+                        if (t && typeof t === 'string' && t.trim().length > 10)
+                            adminTokens.push(t.trim());
+                    });
+                }
             }
         });
         // B. Check church document for admin UIDs
-        let churchDoc = await db.collection('Rhema Church').doc(churchId).get();
-        if (!churchDoc.exists) {
-            churchDoc = await db.collection('churches').doc(churchId).get();
-        }
+        const churchDoc = await db.collection('Rhema Church').doc(churchId).get();
         if (churchDoc.exists) {
             const cData = churchDoc.data();
             const ownerUids = [cData?.adminUid, cData?.createdBy, cData?.pastorUid].filter(Boolean);
@@ -188,20 +180,6 @@ async function handlePrayerRequestAdminPush(prayer, churchId, prayerId, snapRef)
                     adminUids.push(uid);
                 }
             }
-        }
-        // C. Check users collection for admin tokens
-        for (const uid of adminUids) {
-            try {
-                const uSnap = await db.collection('users').doc(uid).get();
-                const uData = uSnap.data();
-                if (uData?.fcmToken && typeof uData.fcmToken === 'string' && uData.fcmToken.trim().length > 10) {
-                    const t = uData.fcmToken.trim();
-                    if (!adminTokens.includes(t)) {
-                        adminTokens.push(t);
-                    }
-                }
-            }
-            catch (_) { }
         }
     }
     catch (lookupErr) {
@@ -290,10 +268,6 @@ async function handlePrayerRequestAdminPush(prayer, churchId, prayerId, snapRef)
             createdAt: FieldValue.serverTimestamp(),
         };
         await db.collection('Rhema Church').doc(churchId).collection('notifications').add(notifPayload);
-        try {
-            await db.collection('churches').doc(churchId).collection('notifications').add(notifPayload);
-        }
-        catch (_) { }
     }
     catch (dbErr) {
         console.error('Error writing prayer in-app notification document:', dbErr);
@@ -355,18 +329,10 @@ async function handleBaptismRequestAdminPush(baptism, churchId, requestId, snapR
         const memberId = baptism.memberId || baptism.uid || baptism.userId;
         if (memberId) {
             try {
-                let mSnap = await db.collection('Rhema Church').doc(churchId).collection('members').doc(memberId).get();
-                if (!mSnap.exists) {
-                    mSnap = await db.collection('churches').doc(churchId).collection('members').doc(memberId).get();
-                }
-                if (mSnap.exists && mSnap.data()?.name) {
-                    memberName = mSnap.data().name;
-                }
-                else {
-                    const uSnap = await db.collection('users').doc(memberId).get();
-                    if (uSnap.exists && (uSnap.data()?.name || uSnap.data()?.displayName)) {
-                        memberName = uSnap.data().name || uSnap.data().displayName;
-                    }
+                const mSnap = await db.collection('Rhema Church').doc(churchId).collection('members').doc(memberId).get();
+                if (mSnap.exists) {
+                    const mData = mSnap.data();
+                    memberName = mData?.name || mData?.displayName || (mData?.firstName ? `${mData.firstName} ${mData.lastName || ''}`.trim() : '');
                 }
             }
             catch (err) {
@@ -387,10 +353,7 @@ async function handleBaptismRequestAdminPush(baptism, churchId, requestId, snapR
     const adminUids = [];
     try {
         // A. Check Rhema Church members
-        let membersSnap = await db.collection('Rhema Church').doc(churchId).collection('members').get();
-        if (membersSnap.empty) {
-            membersSnap = await db.collection('churches').doc(churchId).collection('members').get();
-        }
+        const membersSnap = await db.collection('Rhema Church').doc(churchId).collection('members').get();
         membersSnap.forEach(doc => {
             const m = doc.data();
             const role = String(m.userType || m.role || '').toLowerCase();
@@ -400,13 +363,16 @@ async function handleBaptismRequestAdminPush(baptism, churchId, requestId, snapR
                 if (m.fcmToken && typeof m.fcmToken === 'string' && m.fcmToken.trim().length > 10) {
                     adminTokens.push(m.fcmToken.trim());
                 }
+                if (Array.isArray(m.fcmTokens)) {
+                    m.fcmTokens.forEach((t) => {
+                        if (t && typeof t === 'string' && t.trim().length > 10)
+                            adminTokens.push(t.trim());
+                    });
+                }
             }
         });
         // B. Check church document for admin UIDs
-        let churchDoc = await db.collection('Rhema Church').doc(churchId).get();
-        if (!churchDoc.exists) {
-            churchDoc = await db.collection('churches').doc(churchId).get();
-        }
+        const churchDoc = await db.collection('Rhema Church').doc(churchId).get();
         if (churchDoc.exists) {
             const cData = churchDoc.data();
             const ownerUids = [cData?.adminUid, cData?.createdBy, cData?.pastorUid].filter(Boolean);
@@ -415,20 +381,6 @@ async function handleBaptismRequestAdminPush(baptism, churchId, requestId, snapR
                     adminUids.push(uid);
                 }
             }
-        }
-        // C. Check users collection for admin tokens
-        for (const uid of adminUids) {
-            try {
-                const uSnap = await db.collection('users').doc(uid).get();
-                const uData = uSnap.data();
-                if (uData?.fcmToken && typeof uData.fcmToken === 'string' && uData.fcmToken.trim().length > 10) {
-                    const t = uData.fcmToken.trim();
-                    if (!adminTokens.includes(t)) {
-                        adminTokens.push(t);
-                    }
-                }
-            }
-            catch (_) { }
         }
     }
     catch (lookupErr) {
@@ -514,10 +466,6 @@ async function handleBaptismRequestAdminPush(baptism, churchId, requestId, snapR
             createdAt: FieldValue.serverTimestamp(),
         };
         await db.collection('Rhema Church').doc(churchId).collection('notifications').add(notifPayload);
-        try {
-            await db.collection('churches').doc(churchId).collection('notifications').add(notifPayload);
-        }
-        catch (_) { }
     }
     catch (dbErr) {
         console.error('Error writing baptism in-app notification document:', dbErr);
@@ -586,18 +534,10 @@ async function handlePrayerRequestMemberPush(before, after, churchId, prayerId, 
     if (!memberName || memberName.toLowerCase() === 'faithful member' || memberName.toLowerCase() === 'church member' || memberName.toLowerCase() === 'a church member') {
         if (memberId) {
             try {
-                let mSnap = await db.collection('Rhema Church').doc(churchId).collection('members').doc(memberId).get();
-                if (!mSnap.exists) {
-                    mSnap = await db.collection('churches').doc(churchId).collection('members').doc(memberId).get();
-                }
-                if (mSnap.exists && mSnap.data()?.name) {
-                    memberName = mSnap.data().name;
-                }
-                else {
-                    const uSnap = await db.collection('users').doc(memberId).get();
-                    if (uSnap.exists && (uSnap.data()?.name || uSnap.data()?.displayName)) {
-                        memberName = uSnap.data().name || uSnap.data().displayName;
-                    }
+                const mSnap = await db.collection('Rhema Church').doc(churchId).collection('members').doc(memberId).get();
+                if (mSnap.exists) {
+                    const mData = mSnap.data();
+                    memberName = mData?.name || mData?.displayName || (mData?.firstName ? `${mData.firstName} ${mData.lastName || ''}`.trim() : '');
                 }
             }
             catch (_) { }
@@ -644,40 +584,6 @@ async function handlePrayerRequestMemberPush(before, after, churchId, prayerId, 
                 }
             }
             catch (_) { }
-            // Check legacy churches members
-            try {
-                const mSnap = await db.collection('churches').doc(churchId).collection('members').doc(memberId).get();
-                if (mSnap.exists) {
-                    const m = mSnap.data();
-                    if (m?.fcmToken && typeof m.fcmToken === 'string' && m.fcmToken.trim().length > 10) {
-                        memberTokens.push(m.fcmToken.trim());
-                    }
-                    if (Array.isArray(m?.fcmTokens)) {
-                        for (const t of m.fcmTokens) {
-                            if (typeof t === 'string' && t.trim().length > 10)
-                                memberTokens.push(t.trim());
-                        }
-                    }
-                }
-            }
-            catch (_) { }
-            // Check users collection by UID
-            try {
-                const uSnap = await db.collection('users').doc(memberId).get();
-                if (uSnap.exists) {
-                    const u = uSnap.data();
-                    if (u?.fcmToken && typeof u.fcmToken === 'string' && u.fcmToken.trim().length > 10) {
-                        memberTokens.push(u.fcmToken.trim());
-                    }
-                    if (Array.isArray(u?.fcmTokens)) {
-                        for (const t of u.fcmTokens) {
-                            if (typeof t === 'string' && t.trim().length > 10)
-                                memberTokens.push(t.trim());
-                        }
-                    }
-                }
-            }
-            catch (_) { }
         }
         // Check by Phone number across members and users
         if (memberPhone) {
@@ -687,32 +593,13 @@ async function handlePrayerRequestMemberPush(before, after, churchId, prayerId, 
                     const memQuery = await db.collection('Rhema Church').doc(churchId).collection('members').get();
                     memQuery.forEach(doc => {
                         const m = doc.data();
-                        const p = String(m.phone || m.mobile || '').replace(/\D/g, '').slice(-10);
+                        const p = String(m.phone || m.mobile || m.phoneNumber || '').replace(/\D/g, '').slice(-10);
                         if (p === cleanDigits) {
                             if (m?.fcmToken && typeof m.fcmToken === 'string' && m.fcmToken.trim().length > 10) {
                                 memberTokens.push(m.fcmToken.trim());
                             }
                             if (Array.isArray(m?.fcmTokens)) {
                                 for (const t of m.fcmTokens) {
-                                    if (typeof t === 'string' && t.trim().length > 10)
-                                        memberTokens.push(t.trim());
-                                }
-                            }
-                        }
-                    });
-                }
-                catch (_) { }
-                try {
-                    const uQuery = await db.collection('users').get();
-                    uQuery.forEach(doc => {
-                        const u = doc.data();
-                        const p = String(u.phone || u.mobile || u.phoneNumber || '').replace(/\D/g, '').slice(-10);
-                        if (p === cleanDigits) {
-                            if (u?.fcmToken && typeof u.fcmToken === 'string' && u.fcmToken.trim().length > 10) {
-                                memberTokens.push(u.fcmToken.trim());
-                            }
-                            if (Array.isArray(u?.fcmTokens)) {
-                                for (const t of u.fcmTokens) {
                                     if (typeof t === 'string' && t.trim().length > 10)
                                         memberTokens.push(t.trim());
                                 }
@@ -787,10 +674,6 @@ async function handlePrayerRequestMemberPush(before, after, churchId, prayerId, 
             createdAt: FieldValue.serverTimestamp(),
         };
         await db.collection('Rhema Church').doc(churchId).collection('notifications').add(notifPayload);
-        try {
-            await db.collection('churches').doc(churchId).collection('notifications').add(notifPayload);
-        }
-        catch (_) { }
     }
     catch (dbErr) {
         console.error('Error writing member prayer in-app notification doc:', dbErr);
@@ -998,10 +881,7 @@ export const publishScheduledSermons = onSchedule({ schedule: '* * * * *', timeZ
         const db = getFirestore();
         console.log('⏰ [publishScheduledSermons] Checking for due scheduled sermons...');
         // 1. Check active Rhema Church collection
-        const rhemaChurchRef = db.collection('Rhema Church').doc('rhema');
-        await checkAndPublishScheduledSermons(rhemaChurchRef.collection('sermons'), 'rhema', rhemaChurchRef);
-        // 2. Check legacy churches collection
-        const churchesSnapshot = await db.collection('churches').get();
+        const churchesSnapshot = await db.collection('Rhema Church').get();
         for (const churchDoc of churchesSnapshot.docs) {
             await checkAndPublishScheduledSermons(churchDoc.ref.collection('sermons'), churchDoc.id, churchDoc.ref);
         }
@@ -1015,7 +895,7 @@ export const monitorMeetingLive = onSchedule({ schedule: '* * * * *', timeZone: 
     const now = new Date();
     const fiveMinsAgo = new Date(now.getTime() - 5 * 60 * 1000);
     try {
-        const churchesSnapshot = await db.collection('churches').get();
+        const churchesSnapshot = await db.collection('Rhema Church').get();
         for (const churchDoc of churchesSnapshot.docs) {
             const churchId = churchDoc.id;
             // Query meetings that are scheduled or live
@@ -1484,12 +1364,19 @@ export const pushNewChurchRegistered = onDocumentCreated('churches/{churchId}', 
         }
         const adminIds = adminsSnapshot.docs.map(d => d.id);
         const tokens = [];
-        for (const adminId of adminIds) {
-            const userSnap = await db.collection('users').doc(adminId).get();
-            const data = userSnap.data();
-            if (data?.fcmToken && typeof data.fcmToken === 'string') {
-                tokens.push(data.fcmToken);
+        for (const adminDoc of adminsSnapshot.docs) {
+            const aData = adminDoc.data();
+            if (aData?.fcmToken && typeof aData.fcmToken === 'string') {
+                tokens.push(aData.fcmToken);
             }
+            try {
+                const mSnap = await db.collection('Rhema Church').doc('rhema').collection('members').doc(adminDoc.id).get();
+                const mData = mSnap.data();
+                if (mData?.fcmToken && typeof mData.fcmToken === 'string') {
+                    tokens.push(mData.fcmToken);
+                }
+            }
+            catch (_) { }
         }
         // 2. Multicast push to Super Admin devices
         if (tokens.length > 0) {
@@ -1596,28 +1483,15 @@ async function sendBibleQuizPublishNotification(churchId, quizId, quiz) {
     // 2. Also send multicast to registered tokens in users and members
     try {
         const tokenSet = new Set();
-        if (churchId && churchId !== 'global') {
-            const usersSnap = await db.collection('users').where('primaryChurchId', '==', churchId).get();
-            usersSnap.forEach((doc) => {
-                const u = doc.data();
-                if (u.fcmToken)
-                    tokenSet.add(u.fcmToken);
-            });
-            const membersSnap = await db.collection('churches').doc(churchId).collection('members').get();
-            membersSnap.forEach((doc) => {
-                const m = doc.data();
-                if (m.fcmToken)
-                    tokenSet.add(m.fcmToken);
-            });
-        }
-        else {
-            const usersSnap = await db.collection('users').limit(500).get();
-            usersSnap.forEach((doc) => {
-                const u = doc.data();
-                if (u.fcmToken)
-                    tokenSet.add(u.fcmToken);
-            });
-        }
+        const targetChurch = (churchId && churchId !== 'global') ? churchId : 'rhema';
+        const membersSnap = await db.collection('Rhema Church').doc(targetChurch).collection('members').get();
+        membersSnap.forEach((doc) => {
+            const m = doc.data();
+            if (m.fcmToken)
+                tokenSet.add(m.fcmToken);
+            if (Array.isArray(m.fcmTokens))
+                m.fcmTokens.forEach((t) => tokenSet.add(t));
+        });
         const tokens = Array.from(tokenSet);
         if (tokens.length > 0) {
             const response = await messaging.sendEachForMulticast({
@@ -1644,22 +1518,21 @@ async function sendBibleQuizPublishNotification(churchId, quizId, quiz) {
         console.error('Error sending multicast quiz notification:', multicastErr);
     }
     // 3. Write in-app notification document
-    if (churchId && churchId !== 'global') {
-        try {
-            await db.collection('churches').doc(churchId).collection('notifications').add({
-                type: 'quiz',
-                title,
-                body,
-                quizId,
-                quizTitle: quiz.title || '',
-                category: quiz.category || '',
-                read: false,
-                createdAt: FieldValue.serverTimestamp(),
-            });
-        }
-        catch (dbErr) {
-            console.warn('Error saving quiz in-app notification:', dbErr);
-        }
+    try {
+        const targetChurch = (churchId && churchId !== 'global') ? churchId : 'rhema';
+        await db.collection('Rhema Church').doc(targetChurch).collection('notifications').add({
+            type: 'quiz',
+            title,
+            body,
+            quizId,
+            quizTitle: quiz.title || '',
+            category: quiz.category || '',
+            read: false,
+            createdAt: FieldValue.serverTimestamp(),
+        });
+    }
+    catch (dbErr) {
+        console.warn('Error saving quiz in-app notification:', dbErr);
     }
 }
 export const pushBibleQuizCreated = onDocumentCreated('churches/{churchId}/bibleQuizzes/{quizId}', async (event) => {
@@ -1781,26 +1654,25 @@ export async function sendDailyQuizNotificationInternal(force = false) {
         churchId: 'global',
         click_action: 'FLUTTER_NOTIFICATION_CLICK',
     };
-    // 3. Collect registered FCM tokens from users and members
+    // 3. Collect registered FCM tokens from members
     const tokenSet = new Set();
     try {
-        const usersSnap = await db.collection('users').get();
-        usersSnap.forEach((doc) => {
-            const data = doc.data();
-            if (data?.fcmToken && typeof data.fcmToken === 'string' && data.fcmToken.trim().length > 10) {
-                tokenSet.add(data.fcmToken.trim());
-            }
-        });
         const membersSnap = await db.collectionGroup('members').get();
         membersSnap.forEach((doc) => {
             const data = doc.data();
             if (data?.fcmToken && typeof data.fcmToken === 'string' && data.fcmToken.trim().length > 10) {
                 tokenSet.add(data.fcmToken.trim());
             }
+            if (Array.isArray(data?.fcmTokens)) {
+                data.fcmTokens.forEach((tk) => {
+                    if (typeof tk === 'string' && tk.trim().length > 10)
+                        tokenSet.add(tk.trim());
+                });
+            }
         });
     }
     catch (tokenErr) {
-        console.warn('[DailyQuiz] Error collecting user tokens:', tokenErr);
+        console.warn('[DailyQuiz] Error collecting member tokens:', tokenErr);
     }
     const tokens = Array.from(tokenSet);
     let multicastSuccess = 0;
@@ -1839,12 +1711,9 @@ export async function sendDailyQuizNotificationInternal(force = false) {
         }
         console.log(`✅ [DailyQuiz] Multicast push sent: ${multicastSuccess} success, ${multicastFailed} failed.`);
     }
-    // 5. Log in broadcasts/notifications for each church (silent — push already sent via multicast above)
-    // NOTE: Topic broadcast has been intentionally REMOVED to prevent duplicate deliveries.
-    // Users subscribed to church_{churchId} topics would receive BOTH the direct multicast push
-    // AND the topic push, resulting in 2× (or more) notifications. Delivery is solely via multicast.
+    // 5. Log in broadcasts/notifications for Rhema Church
     try {
-        const churchesSnap = await db.collection('churches').get();
+        const churchesSnap = await db.collection('Rhema Church').get();
         for (const cDoc of churchesSnap.docs) {
             const churchId = cDoc.id;
             if (churchId === 'global')
@@ -2270,21 +2139,17 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
     // 4. Collect member device FCM tokens
     const tokenSet = new Set();
     try {
-        const usersSnap = await db.collection('users').get();
-        usersSnap.forEach((d) => {
-            const data = d.data();
-            if (data.fcmToken && typeof data.fcmToken === 'string' && data.fcmToken.length > 10) {
-                tokenSet.add(data.fcmToken);
-            }
-        });
-    }
-    catch (_) { }
-    try {
         const membersSnap = await db.collection('Rhema Church').doc('rhema').collection('members').get();
         membersSnap.forEach((d) => {
             const data = d.data();
             if (data.fcmToken && typeof data.fcmToken === 'string' && data.fcmToken.length > 10) {
                 tokenSet.add(data.fcmToken);
+            }
+            if (Array.isArray(data.fcmTokens)) {
+                data.fcmTokens.forEach((tk) => {
+                    if (typeof tk === 'string' && tk.length > 10)
+                        tokenSet.add(tk);
+                });
             }
         });
     }
@@ -2943,10 +2808,7 @@ async function handleTestimonyAdminCreatedPush(testimony, churchId, testimonyId,
     const adminTokens = [];
     try {
         // Look up authorized church admins strictly from the corresponding church's members collection
-        let membersSnap = await db.collection('Rhema Church').doc(churchId).collection('members').get();
-        if (membersSnap.empty) {
-            membersSnap = await db.collection('churches').doc(churchId).collection('members').get();
-        }
+        const membersSnap = await db.collection('Rhema Church').doc(churchId).collection('members').get();
         membersSnap.forEach((doc) => {
             const m = doc.data();
             const role = String(m.userType || m.role || '').toLowerCase();
@@ -3059,11 +2921,6 @@ async function handleTestimonyAdminCreatedPush(testimony, churchId, testimonyId,
         };
         await db.collection('Rhema Church').doc(churchId).collection('broadcasts').add(notifPayload);
         await db.collection('Rhema Church').doc(churchId).collection('notifications').add(notifPayload);
-        try {
-            await db.collection('churches').doc(churchId).collection('broadcasts').add(notifPayload);
-            await db.collection('churches').doc(churchId).collection('notifications').add(notifPayload);
-        }
-        catch (_) { }
     }
     catch (dbErr) {
         console.error('Error writing testimony in-app broadcast/notification document:', dbErr);
@@ -3110,14 +2967,6 @@ async function handleTestimonyWorkflowUpdatedPush(before, after, churchId, testi
                 .collection('members')
                 .doc(after.memberId)
                 .get();
-            if (!memberDoc.exists) {
-                memberDoc = await db
-                    .collection('churches')
-                    .doc(churchId)
-                    .collection('members')
-                    .doc(after.memberId)
-                    .get();
-            }
             if (memberDoc.exists) {
                 const mData = memberDoc.data() || {};
                 if (mData.fcmToken && typeof mData.fcmToken === 'string' && mData.fcmToken.trim().length > 10) {
@@ -3228,10 +3077,7 @@ async function handleTestimonyWorkflowUpdatedPush(before, after, churchId, testi
         }
         // 2. Direct multicast to church members with tokens
         try {
-            let membersSnap = await db.collection('Rhema Church').doc(churchId).collection('members').get();
-            if (membersSnap.empty) {
-                membersSnap = await db.collection('churches').doc(churchId).collection('members').get();
-            }
+            const membersSnap = await db.collection('Rhema Church').doc(churchId).collection('members').get();
             const allTokens = [];
             membersSnap.forEach((doc) => {
                 const d = doc.data();
@@ -3281,10 +3127,6 @@ async function handleTestimonyWorkflowUpdatedPush(before, after, churchId, testi
             };
             await db.collection('Rhema Church').doc(churchId).collection('broadcasts').add(pubPayload);
             await db.collection('Rhema Church').doc(churchId).collection('notifications').add(pubPayload);
-            try {
-                await db.collection('churches').doc(churchId).collection('broadcasts').add(pubPayload);
-            }
-            catch (_) { }
         }
         catch (_) { }
     }

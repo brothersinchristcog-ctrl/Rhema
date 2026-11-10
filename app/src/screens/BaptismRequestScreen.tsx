@@ -186,11 +186,7 @@ export default function BaptismRequestScreen({ navigation }: any) {
 
       // 1. Query by accountId in church members
       if (targetAccountId) {
-        const snap1 = await (async () => {
-          const s = await firestore().collection('Rhema Church').doc(churchId).collection('members').where('accountId', '==', targetAccountId).get().catch(() => null);
-          if (s && !s.empty) return s;
-          return await firestore().collection('churches').doc(churchId).collection('members').where('accountId', '==', targetAccountId).get().catch(() => null);
-        })();
+        const snap1 = await firestore().collection('Rhema Church').doc(churchId).collection('members').where('accountId', '==', targetAccountId).get().catch(() => null);
         if (snap1 && !snap1.empty) {
           snap1.forEach(d => relatedDocs.push({ id: d.id, ...d.data() }));
         }
@@ -198,11 +194,7 @@ export default function BaptismRequestScreen({ navigation }: any) {
 
       // 2. Query where accountId is authMember.id (if different)
       if (authMember?.id && authMember.id !== targetAccountId) {
-        const snap2 = await (async () => {
-          const s = await firestore().collection('Rhema Church').doc(churchId).collection('members').where('accountId', '==', authMember.id).get().catch(() => null);
-          if (s && !s.empty) return s;
-          return await firestore().collection('churches').doc(churchId).collection('members').where('accountId', '==', authMember.id).get().catch(() => null);
-        })();
+        const snap2 = await firestore().collection('Rhema Church').doc(churchId).collection('members').where('accountId', '==', authMember.id).get().catch(() => null);
         if (snap2 && !snap2.empty) {
           snap2.forEach(d => {
             if (!relatedDocs.some(r => r.id === d.id)) {

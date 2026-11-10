@@ -272,10 +272,10 @@ export default function AdminNotificationBroadcast() {
       const fullTimeStr = `${formattedMeetingDate} at ${formattedMeetingTime}`;
 
       const db = getFirestore();
+      const churchId = (await FirestoreService.getChurchId()) || 'rhema';
 
       // Save to Firestore dynamic updates
       try {
-        const churchId = await FirestoreService.getChurchId();
         await FirestoreService.createNotificationBroadcast({
           title: `🚨 EMERGENCY MEETING: ${emergencyAlert.title}`,
           content: `⏰ TIME: ${fullTimeStr}\n📍 LOCATION: ${emergencyAlert.location}\n\n${emergencyAlert.message}`,
@@ -289,10 +289,10 @@ export default function AdminNotificationBroadcast() {
 
       let count = 1250;
       try {
-        const usersSnap = await getDocs(collection(db, 'users'));
-        count = usersSnap.docs.filter(doc => doc.data()?.fcmToken).length;
+        const membersSnap = await getDocs(collection(db, 'Rhema Church', churchId, 'members'));
+        count = membersSnap.docs.filter(doc => doc.data()?.fcmToken).length;
       } catch (fErr) {
-        console.warn('⚠️ Firestore Sync (users) bypassed due to Security Rules:', fErr);
+        console.warn('⚠️ Firestore Sync (members) bypassed:', fErr);
       }
 
       const newBroadcast = {

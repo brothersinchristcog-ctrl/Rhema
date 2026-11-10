@@ -203,6 +203,7 @@ export interface MinistryTeam {
   memberIds: string[];
   positions: MinistryRole[];
   active: boolean;
+  order?: number;
   createdAt?: any;
   updatedAt?: any;
 }
