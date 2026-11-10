@@ -3227,24 +3227,30 @@ async function handleTestimonyAdminCreatedPush(testimony: any, churchId: string,
     console.error('Error sending testimony notification to church admin topic:', topicErr);
   }
 
-  // Write in-app notification doc for church admins
+  // Write in-app notification doc for church admins into both broadcasts and notifications
   try {
     const notifPayload = {
       type: 'testimony_admin',
+      targetRole: 'admin',
       title,
       body,
+      content: `${memberName} submitted a new testimony: "${testimony.title || 'Untitled'}". Please review it.`,
       memberName,
       testimonyId,
+      relatedId: testimonyId,
+      churchId,
       privacy: testimony.privacy || 'Public',
       read: false,
       createdAt: FieldValue.serverTimestamp(),
     };
+    await db.collection('Rhema Church').doc(churchId).collection('broadcasts').add(notifPayload);
     await db.collection('Rhema Church').doc(churchId).collection('notifications').add(notifPayload);
     try {
+      await db.collection('churches').doc(churchId).collection('broadcasts').add(notifPayload);
       await db.collection('churches').doc(churchId).collection('notifications').add(notifPayload);
     } catch (_) {}
   } catch (dbErr) {
-    console.error('Error writing testimony in-app notification document:', dbErr);
+    console.error('Error writing testimony in-app broadcast/notification document:', dbErr);
   }
 }
 
@@ -3353,6 +3359,24 @@ async function handleTestimonyWorkflowUpdatedPush(before: any, after: any, churc
         console.error('Error sending testimony member status push:', pushErr);
       }
     }
+
+    // In-app broadcast for the submitting member
+    try {
+      const memberBroadcast = {
+        type: 'testimony_member_status',
+        targetMemberId: after.memberId,
+        title,
+        body,
+        content: body,
+        testimonyId,
+        relatedId: testimonyId,
+        churchId,
+        status: after.status,
+        createdAt: FieldValue.serverTimestamp(),
+      };
+      await db.collection('Rhema Church').doc(churchId).collection('broadcasts').add(memberBroadcast);
+      await db.collection('Rhema Church').doc(churchId).collection('notifications').add(memberBroadcast);
+    } catch (_) {}
   }
 
   // ── WORKFLOW CASE 2: Publication of Public Testimony (Church-wide broadcast) ──
@@ -3442,16 +3466,24 @@ async function handleTestimonyWorkflowUpdatedPush(before: any, after: any, churc
       console.error('Error sending multicast published testimony notifications:', multicastErr);
     }
 
-    // 3. In-app notification for church members
+    // 3. In-app notification and broadcast for church members
     try {
-      await db.collection('Rhema Church').doc(churchId).collection('notifications').add({
+      const pubPayload = {
         type: 'testimony_published',
         title,
         body,
+        content: body,
         testimonyId,
+        relatedId: testimonyId,
         memberName,
+        churchId,
         createdAt: FieldValue.serverTimestamp(),
-      });
+      };
+      await db.collection('Rhema Church').doc(churchId).collection('broadcasts').add(pubPayload);
+      await db.collection('Rhema Church').doc(churchId).collection('notifications').add(pubPayload);
+      try {
+        await db.collection('churches').doc(churchId).collection('broadcasts').add(pubPayload);
+      } catch (_) {}
     } catch (_) {}
   }
 }

@@ -14,6 +14,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import {
   ArrowLeft,
   Play,
@@ -281,15 +283,24 @@ export default function TestimonyDetailScreen({ route, navigation }: any) {
       if (isImage) {
         setPreviewImageUri(url);
       } else {
-        const supported = await Linking.canOpenURL(url);
-        if (supported) {
-          await Linking.openURL(url);
+        // Download document locally to cache and open in app / document viewer
+        const cleanName = (att.name || 'document.pdf').replace(/[^a-zA-Z0-9._-]/g, '_');
+        const localUri = `${FileSystem.cacheDirectory}${Date.now()}_${cleanName}`;
+        const downloadRes = await FileSystem.downloadAsync(url, localUri);
+
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(downloadRes.uri, {
+            mimeType: att.mimeType || 'application/pdf',
+            UTI: att.mimeType?.includes('pdf') ? '.pdf' : undefined,
+            dialogTitle: `Open ${att.name}`,
+          });
         } else {
-          Alert.alert('Attachment', 'Unable to open this document on your device.');
+          await Linking.openURL(url);
         }
       }
-    } catch {
-      Alert.alert('Error', 'Failed to open attachment.');
+    } catch (err: any) {
+      console.warn('Could not open attachment:', err);
+      Alert.alert('Error', 'Failed to open attachment: ' + (err?.message || 'Unknown error'));
     } finally {
       setOpeningAttachmentPath(null);
     }

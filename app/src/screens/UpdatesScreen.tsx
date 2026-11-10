@@ -125,6 +125,9 @@ export default function UpdatesScreen({ navigation, route }: any) {
   const { t } = useLanguage();
 
   const getTypeName = (type: string) => {
+    if (type === 'testimony_admin') return 'TESTIMONY REVIEW';
+    if (type === 'testimony_published') return 'NEW TESTIMONY';
+    if (type === 'testimony_member_status') return 'TESTIMONY UPDATE';
     if (type === 'baptism_request_admin' || type === 'baptism_request') return 'BAPTISM REQUEST';
     if (type === 'prayer_request_admin' || type === 'prayer_request' || type === 'prayer') return 'PRAYER REQUEST';
     if (type === 'baptism' || type === 'baptism_request_member') return 'BAPTISM';
@@ -243,7 +246,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
             }
 
             // SECURITY: If broadcast is targeted to admin role, skip if current user is not admin
-            if ((data.targetRole === 'admin' || data.type === 'baptism_request_admin' || data.type === 'prayer_request_admin') && !isAdmin) {
+            if ((data.targetRole === 'admin' || data.type === 'baptism_request_admin' || data.type === 'prayer_request_admin' || data.type === 'testimony_admin') && !isAdmin) {
               return null;
             }
 
@@ -344,6 +347,18 @@ export default function UpdatesScreen({ navigation, route }: any) {
               icon = Sparkles;
               color = '#3b82f6';
               resolvedType = 'celebration';
+            } else if (data.type === 'testimony_admin' || data.title?.includes('New Testimony Submitted')) {
+              icon = Sparkles;
+              color = '#8B5CF6';
+              resolvedType = 'testimony_admin';
+            } else if (data.type === 'testimony_published' || data.title?.includes('New Testimony Shared')) {
+              icon = Sparkles;
+              color = '#10B981';
+              resolvedType = 'testimony_published';
+            } else if (data.type === 'testimony_member_status' || data.title?.includes('Testimony Approved') || data.title?.includes('Testimony Review')) {
+              icon = Sparkles;
+              color = '#3B82F6';
+              resolvedType = 'testimony_member_status';
             } else if (data.title?.includes('💐') || data.content?.includes('Anniversary') || data.title?.includes('Anniversary') || data.type === 'anniversary') {
               icon = Heart;
               color = '#be185d';
@@ -426,6 +441,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
               imageUrl: data.imageUrl || null,
               sermonId: data.sermonId || (resolvedType === 'sermon' && data.id && !String(data.id).startsWith('sermon_') ? data.id : null) || data.relatedId || (resolvedType === 'sermon' ? doc.id.replace(/^sermon_/, '') : null),
               relatedId: data.quizId || data.relatedId || null,
+              testimonyId: data.testimonyId || data.relatedId || null,
               churchId: data.churchId || null,
               rawDate: data.createdAt?.toMillis?.() || (typeof data.createdAt === 'number' ? data.createdAt : 0)
             };
@@ -619,6 +635,23 @@ export default function UpdatesScreen({ navigation, route }: any) {
                     }
                   } else if (update.type === 'attendance') {
                     navigation.navigate('AttendanceScreen');
+                  } else if (update.type === 'testimony_admin') {
+                    const tId = update.testimonyId || update.relatedId || update.id;
+                    navigation.navigate('AdminRoot', {
+                      targetTab: 'Testimonies',
+                      testimonyId: tId,
+                      timestamp: Date.now(),
+                    });
+                  } else if (update.type === 'testimony_published' || update.type === 'testimony_member_status' || update.type === 'testimony') {
+                    const tId = update.testimonyId || update.relatedId || update.id;
+                    if (tId) {
+                      navigation.navigate('TestimonyDetail', {
+                        testimonyId: tId,
+                        churchId: update.churchId || activeChurch?.id || member?.churchId || 'rhema',
+                      });
+                    } else {
+                      navigation.navigate('Testimonies', { initialTab: 'mine' });
+                    }
                   } else {
                     setSelectedUpdate(update);
                   }
@@ -891,6 +924,43 @@ export default function UpdatesScreen({ navigation, route }: any) {
                     }}
                   >
                     <Text style={styles.joinLiveBtnTxt}>🙏 {isAdmin ? 'Open & Review Prayer Request' : 'View Prayer Wall'}</Text>
+                  </TouchableOpacity>
+                )}
+
+                {selectedUpdate?.type === 'testimony_admin' && (
+                  <TouchableOpacity
+                    style={[styles.joinLiveBtn, { backgroundColor: '#8B5CF6' }]}
+                    onPress={() => {
+                      const tId = selectedUpdate?.testimonyId || selectedUpdate?.relatedId || selectedUpdate?.id;
+                      setSelectedUpdate(null);
+                      navigation.navigate('AdminRoot', {
+                        targetTab: 'Testimonies',
+                        testimonyId: tId,
+                        timestamp: Date.now(),
+                      });
+                    }}
+                  >
+                    <Text style={styles.joinLiveBtnTxt}>✨ Review Testimony</Text>
+                  </TouchableOpacity>
+                )}
+
+                {(selectedUpdate?.type === 'testimony_published' || selectedUpdate?.type === 'testimony_member_status') && (
+                  <TouchableOpacity
+                    style={[styles.joinLiveBtn, { backgroundColor: '#10B981' }]}
+                    onPress={() => {
+                      const tId = selectedUpdate?.testimonyId || selectedUpdate?.relatedId || selectedUpdate?.id;
+                      setSelectedUpdate(null);
+                      if (tId) {
+                        navigation.navigate('TestimonyDetail', {
+                          testimonyId: tId,
+                          churchId: selectedUpdate?.churchId || activeChurch?.id || member?.churchId || 'rhema',
+                        });
+                      } else {
+                        navigation.navigate('Testimonies', { initialTab: 'mine' });
+                      }
+                    }}
+                  >
+                    <Text style={styles.joinLiveBtnTxt}>✨ View Testimony</Text>
                   </TouchableOpacity>
                 )}
 
