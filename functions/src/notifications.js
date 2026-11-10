@@ -2153,39 +2153,120 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
         }
         catch (_) { }
     }
-    // 3. Third fallback: bulk_verses.json bundled asset
-    if (!verseDocData) {
-        try {
-            const fsMod = await import('fs');
-            const pathMod = await import('path');
-            const candidates = [
-                pathMod.join(process.cwd(), 'bulk_verses.json'),
-                pathMod.join(process.cwd(), '../bulk_verses.json'),
-                pathMod.join(process.cwd(), 'app/assets/bulk_verses.json'),
-                pathMod.join(process.cwd(), '../app/assets/bulk_verses.json'),
-            ];
-            for (const p of candidates) {
-                if (fsMod.existsSync(p)) {
-                    const raw = fsMod.readFileSync(p, 'utf-8');
-                    const list = JSON.parse(raw);
-                    if (Array.isArray(list) && list[targetIndex]) {
-                        verseDocData = list[targetIndex];
-                        verseId = `bulk_${targetIndex}`;
-                        break;
+    // 3. Third fallback & reference backfill: bulk_verses.json bundled asset
+    let bundledVerseFallback = null;
+    try {
+        const fsMod = await import('fs');
+        const pathMod = await import('path');
+        const candidates = [
+            pathMod.join(process.cwd(), 'bulk_verses.json'),
+            pathMod.join(process.cwd(), '../bulk_verses.json'),
+            pathMod.join(process.cwd(), 'app/assets/bulk_verses.json'),
+            pathMod.join(process.cwd(), '../app/assets/bulk_verses.json'),
+        ];
+        for (const p of candidates) {
+            if (fsMod.existsSync(p)) {
+                const raw = fsMod.readFileSync(p, 'utf-8');
+                const list = JSON.parse(raw);
+                if (Array.isArray(list)) {
+                    if (list[targetIndex]) {
+                        bundledVerseFallback = list[targetIndex];
                     }
+                    // If verseDocData came from Firestore but is missing a reference, also match by verse text if needed
+                    if (verseDocData && (!verseDocData.referenceEn || !verseDocData.referenceTe)) {
+                        const vEnNorm = String(verseDocData.verseEn || '').trim().toLowerCase();
+                        const vTeNorm = String(verseDocData.verseTe || verseDocData.verse || '').trim();
+                        if (bundledVerseFallback && ((vEnNorm && String(bundledVerseFallback.verseEn || '').trim().toLowerCase() === vEnNorm) ||
+                            (vTeNorm && String(bundledVerseFallback.verseTe || '').trim() === vTeNorm))) {
+                            // bundledVerseFallback at targetIndex already matches
+                        }
+                        else if (vEnNorm || vTeNorm) {
+                            const matched = list.find((item) => (vEnNorm && String(item?.verseEn || '').trim().toLowerCase() === vEnNorm) ||
+                                (vTeNorm && String(item?.verseTe || '').trim() === vTeNorm));
+                            if (matched) {
+                                bundledVerseFallback = matched;
+                            }
+                        }
+                    }
+                    if (!verseDocData && bundledVerseFallback) {
+                        verseDocData = bundledVerseFallback;
+                        verseId = `bulk_${targetIndex}`;
+                    }
+                    break;
                 }
             }
         }
-        catch (_) { }
     }
+    catch (_) { }
     if (!verseDocData) {
         console.warn(`[sendDailyVersePushInternal] No verse found for index ${targetIndex}`);
         return { success: false, error: `Verse not found for index ${targetIndex}` };
     }
-    const verseEnText = (verseDocData.verseEn || '').trim();
-    const refEnText = (verseDocData.referenceEn || '').trim();
-    const verseTeText = (verseDocData.verseTe || verseDocData.verse || '').trim();
-    const refTeText = (verseDocData.referenceTe || verseDocData.reference || '').trim();
+    // Resolve verse and reference fields across all possible property names + bundled fallback
+    const verseEnText = (verseDocData.verseEn ||
+        verseDocData.english ||
+        verseDocData.textEn ||
+        bundledVerseFallback?.verseEn ||
+        '').trim();
+    const verseTeText = (verseDocData.verseTe ||
+        verseDocData.verse ||
+        verseDocData.telugu ||
+        verseDocData.textTe ||
+        bundledVerseFallback?.verseTe ||
+        '').trim();
+    let refEnText = (verseDocData.referenceEn ||
+        verseDocData.refEn ||
+        verseDocData.verseReferenceEn ||
+        bundledVerseFallback?.referenceEn ||
+        '').trim();
+    let refTeText = (verseDocData.referenceTe ||
+        verseDocData.reference ||
+        verseDocData.refTe ||
+        verseDocData.verseReferenceTe ||
+        bundledVerseFallback?.referenceTe ||
+        '').trim();
+    // Bidirectional English <-> Telugu Bible book name map so neither reference is ever missing or untranslated
+    const BOOK_EN_TO_TE = {
+        'Genesis': 'ఆదికాండము', 'Exodus': 'నిర్గమకాండము', 'Leviticus': 'లేవీయకాండము', 'Numbers': 'సంఖ్యాకాండము', 'Deuteronomy': 'ద్వితీయోపదేశకాండము',
+        'Joshua': 'యెహోషువ', 'Judges': 'న్యాయాధిపతులు', 'Ruth': 'రూతు', '1 Samuel': '1 సమూయేలు', '2 Samuel': '2 సమూయేలు',
+        '1 Kings': '1 రాజులు', '2 Kings': '2 రాజులు', '1 Chronicles': '1 దినవృత్తాంతములు', '2 Chronicles': '2 దినవృత్తాంతములు',
+        'Ezra': 'ఎజ్రా', 'Nehemiah': 'నెహెమ్యా', 'Esther': 'ఎస్తేరు', 'Job': 'యోబు', 'Psalms': 'కీర్తనలు', 'Psalm': 'కీర్తనలు',
+        'Proverbs': 'సామెతలు', 'Ecclesiastes': 'ప్రసంగి', 'Song of Solomon': 'పరమగీతము', 'Song of Songs': 'పరమగీతము',
+        'Isaiah': 'యెషయా', 'Jeremiah': 'యిర్మీయా', 'Lamentations': 'విలాపవాక్యములు', 'Ezekiel': 'యెహెజ్కేలు', 'Daniel': 'దానియేలు',
+        'Hosea': 'హోషేయ', 'Joel': 'యోవేలు', 'Amos': 'ఆమోసు', 'Obadiah': 'ఓబద్యా', 'Jonah': 'యోనా', 'Micah': 'మీకా',
+        'Nahum': 'నహూము', 'Habakkuk': 'హబక్కూకు', 'Zephaniah': 'జెఫన్యా', 'Haggai': 'హగ్గయి', 'Zechariah': 'జెకర్యా', 'Malachi': 'మలాకీ',
+        'Matthew': 'మత్తయి', 'Mark': 'మార్కు', 'Luke': 'లూకా', 'John': 'యోహాను', 'Acts': 'అపొస్తలుల కార్యములు',
+        'Romans': 'రోమీయులకు', '1 Corinthians': '1 కొరింథీయులకు', '2 Corinthians': '2 కొరింథీయులకు', 'Galatians': 'గలతీయులకు',
+        'Ephesians': 'ఎఫెసీయులకు', 'Philippians': 'ఫిలిప్పీయులకు', 'Colossians': 'కొలొస్సయులకు',
+        '1 Thessalonians': '1 థెస్సలొనీకయులకు', '2 Thessalonians': '2 థెస్సలొనీకయులకు',
+        '1 Timothy': '1 తిమోతికి', '2 Timothy': '2 తిమోతికి', 'Titus': 'తీతుకు', 'Philemon': 'ఫిలేమోనుకు',
+        'Hebrews': 'హెబ్రీయులకు', 'James': 'యాకోబు', '1 Peter': '1 పేతురు', '2 Peter': '2 పేతురు',
+        '1 John': '1 యోహాను', '2 John': '2 యోహాను', '3 John': '3 యోహాను', 'Jude': 'యూదా', 'Revelation': 'ప్రకటన గ్రంథము',
+    };
+    if (refEnText && (!refTeText || refTeText === refEnText)) {
+        if (bundledVerseFallback?.referenceTe && bundledVerseFallback.referenceTe !== refEnText) {
+            refTeText = String(bundledVerseFallback.referenceTe).trim();
+        }
+        else {
+            const m = refEnText.match(/^(.+?)\s+(\d+:\d+(?:-\d+)?)$/);
+            if (m && m[1] && m[2] && BOOK_EN_TO_TE[m[1].trim()]) {
+                refTeText = `${BOOK_EN_TO_TE[m[1].trim()]} ${m[2]}`;
+            }
+        }
+    }
+    else if (refTeText && !refEnText) {
+        if (bundledVerseFallback?.referenceEn) {
+            refEnText = String(bundledVerseFallback.referenceEn).trim();
+        }
+        else {
+            for (const [enBook, teBook] of Object.entries(BOOK_EN_TO_TE)) {
+                if (refTeText.startsWith(teBook + ' ')) {
+                    refEnText = enBook + refTeText.slice(teBook.length);
+                    break;
+                }
+            }
+        }
+    }
     // 4. Collect member device FCM tokens
     const tokenSet = new Set();
     try {
@@ -2212,8 +2293,9 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
     console.log(`[sendDailyVersePushInternal] Collected ${tokens.length} FCM tokens for dispatch.`);
     let enSuccess = 0;
     let teSuccess = 0;
-    // 4. Format EXACTLY ONE combined bilingual notification (Telugu + English)
-    // Perfectly matches the layout shown in the user's notification drawer screenshot
+    // 4. Format EXACTLY ONE combined bilingual notification (Telugu + English + Reference)
+    // Uses adaptive line spacing so the Bible reference is NEVER pushed past Android's
+    // 7-line BigTextStyle notification limit and is always 100% visible across all 4 slots.
     const unifiedTitle = slotInfo.title;
     let unifiedBody = '';
     const cleanVerseTe = (verseTeText || '').replace(/^["“”'‘]+|["“”'‘]+$/g, '').trim();
@@ -2223,14 +2305,42 @@ export async function sendDailyVersePushInternal(slotOverride, targetChurchId = 
     const combinedRef = (cleanRefTe && cleanRefEn && cleanRefTe !== cleanRefEn)
         ? `${cleanRefTe} | ${cleanRefEn}`
         : (cleanRefTe || cleanRefEn);
-    // Android notification shade collapses empty newlines unless there is a character.
-    // Using '\n \n' guarantees a visible vertical gap below verses on Android and iOS.
-    const GAP = '\n \n';
     if (cleanVerseTe && cleanVerseEn && cleanVerseTe !== cleanVerseEn) {
-        unifiedBody = `${cleanVerseTe}${GAP}${cleanVerseEn}${GAP}${combinedRef}`;
+        const teLines = Math.max(1, Math.ceil(cleanVerseTe.length / 44));
+        const enLines = Math.max(1, Math.ceil(cleanVerseEn.length / 42));
+        const totalVerseLines = teLines + enLines;
+        if (totalVerseLines <= 3) {
+            // Short verses (1-2 lines each): two visual gaps fit well within 7 lines
+            unifiedBody = combinedRef
+                ? `${cleanVerseTe}\n \n${cleanVerseEn}\n \n${combinedRef}`
+                : `${cleanVerseTe}\n \n${cleanVerseEn}`;
+        }
+        else if (totalVerseLines <= 5) {
+            // Medium verses (4-5 lines combined): one visual gap between verses + reference directly below
+            unifiedBody = combinedRef
+                ? `${cleanVerseTe}\n \n${cleanVerseEn}\n${combinedRef}`
+                : `${cleanVerseTe}\n \n${cleanVerseEn}`;
+        }
+        else if (totalVerseLines === 6) {
+            // 6-line verses (e.g. 3 lines Te + 3 lines En, like Psalms 18:24):
+            // Single newline keeps total lines = 3 + 3 + 1 = 7 lines so combinedRef on line 7 is never clipped
+            unifiedBody = combinedRef
+                ? `${cleanVerseTe}\n${cleanVerseEn}\n${combinedRef}`
+                : `${cleanVerseTe}\n${cleanVerseEn}`;
+        }
+        else {
+            // Very long verses (7+ lines combined): include inline references at the end of each verse
+            // as well as the bottom reference line so the reference is always visible even on 7-line shades
+            const teWithRef = cleanRefTe && !cleanVerseTe.includes(cleanRefTe) ? `${cleanVerseTe} (${cleanRefTe})` : cleanVerseTe;
+            const enWithRef = cleanRefEn && !cleanVerseEn.includes(cleanRefEn) ? `${cleanVerseEn} (${cleanRefEn})` : cleanVerseEn;
+            unifiedBody = combinedRef
+                ? `${teWithRef}\n${enWithRef}\n${combinedRef}`
+                : `${teWithRef}\n${enWithRef}`;
+        }
     }
     else {
-        unifiedBody = `${cleanVerseTe || cleanVerseEn}${GAP}${combinedRef}`;
+        const singleVerse = cleanVerseTe || cleanVerseEn;
+        unifiedBody = combinedRef ? `${singleVerse}\n \n${combinedRef}` : singleVerse;
     }
     try {
         const topicMessage = {

@@ -578,14 +578,6 @@ export default function ProfileScreen({ navigation }: any) {
             subColor={colors.textSecondary}
           />
           <MenuItem 
-            icon={<Calendar size={22} color="#2563EB" strokeWidth={1.8} />} 
-            title="My Service Duties" 
-            sub="Roster assignments, call times & rehearsals" 
-            onPress={() => navigation.navigate('MyService')}
-            textColor={colors.text}
-            subColor={colors.textSecondary}
-          />
-          <MenuItem 
             icon={<Droplets size={22} color={colors.text} strokeWidth={1.8} />} 
             title="Baptism" 
             sub="Submit request & track approval status" 
@@ -593,17 +585,6 @@ export default function ProfileScreen({ navigation }: any) {
             textColor={colors.text}
             subColor={colors.textSecondary}
           />
-
-          {(String(member?.userType || '').toUpperCase().includes('ADMIN') || String(member?.userType || '').toUpperCase().includes('SUPER') || String(member?.userType || '').toUpperCase().includes('PASTOR')) && (
-            <MenuItem 
-              icon={<CreditCard size={22} color={colors.text} strokeWidth={1.8} />} 
-              title={t('profile.churchSubscription')} 
-              sub={t('profile.churchSubscriptionSub')} 
-              onPress={() => navigation.navigate('Subscription')}
-              textColor={colors.text}
-              subColor={colors.textSecondary}
-            />
-          )}
         </View>
 
         {/* Gray Divider Band between sections (Instagram style) */}
