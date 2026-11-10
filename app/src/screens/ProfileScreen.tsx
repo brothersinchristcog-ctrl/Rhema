@@ -101,9 +101,18 @@ export default function ProfileScreen({ navigation }: any) {
   const [selectedCategoryTab, setSelectedCategoryTab] = useState<string>('all');
   const [customSkillInput, setCustomSkillInput] = useState('');
 
+  const resolveInitialNames = (mem: any) => {
+    const rawName = (mem?.name || mem?.displayName || mem?.fullName || '').trim();
+    const parts = rawName ? rawName.split(/\s+/) : [];
+    const first = mem?.firstName?.trim() || parts[0] || '';
+    const last = mem?.lastName?.trim() || (parts.length > 1 ? parts.slice(1).join(' ') : '');
+    return { first, last };
+  };
+
+  const initialNames = resolveInitialNames(authMember);
   const [editForm, setEditForm] = useState({
-    firstName: authMember?.firstName || '',
-    lastName: authMember?.lastName || '',
+    firstName: initialNames.first,
+    lastName: initialNames.last,
     email: authMember?.email || '',
     city: authMember?.city || authMember?.village || authMember?.mailingCity || '',
     mailingStreet: authMember?.mailingStreet || '',
@@ -188,9 +197,10 @@ export default function ProfileScreen({ navigation }: any) {
           if (setGlobalMember) {
             setGlobalMember(contactCheck.member);
           }
+          const memNames = resolveInitialNames(contactCheck.member);
           setEditForm({
-            firstName: contactCheck.member.firstName || '',
-            lastName: contactCheck.member.lastName || '',
+            firstName: memNames.first,
+            lastName: memNames.last,
             email: contactCheck.member.email || '',
             city: contactCheck.member.city || contactCheck.member.village || contactCheck.member.mailingCity || '',
             mailingStreet: contactCheck.member.mailingStreet || '',
@@ -213,12 +223,28 @@ export default function ProfileScreen({ navigation }: any) {
 
   const handleUpdateProfile = async () => {
     if (!member) return;
+    const combinedName = `${editForm.firstName || ''} ${editForm.lastName || ''}`.trim();
+    const existingName = ((member as any)?.name || (member as any)?.displayName || '').trim();
+    const finalName = combinedName || existingName;
+
+    if (!finalName) {
+      Alert.alert('Name Required', 'Please enter your first name and last name to save your profile.');
+      return;
+    }
+
+    const nameParts = finalName.split(/\s+/);
+    const resolvedFirstName = editForm.firstName?.trim() || nameParts[0] || '';
+    const resolvedLastName = editForm.lastName?.trim() || (nameParts.length > 1 ? nameParts.slice(1).join(' ') : '');
+
     setUpdating(true);
     try {
       const updatedDetails = {
         ...editForm,
+        firstName: resolvedFirstName,
+        lastName: resolvedLastName,
         mailingCity: editForm.city, // Keep synced for any legacy UI
-        name: `${editForm.firstName || ''} ${editForm.lastName || ''}`.trim()
+        name: finalName,
+        displayName: finalName
       };
       await FirestoreService.updateMemberProfile(member.churchId || activeChurch?.id || '', member.id, updatedDetails);
       if (user) {
@@ -452,7 +478,7 @@ export default function ProfileScreen({ navigation }: any) {
           {/* Name + Greeting */}
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 22, fontWeight: '800', color: '#fff', lineHeight: 28 }}>
-              {member?.firstName ? `${member.firstName} ${member.lastName || ''}` : member?.name || user?.displayName || 'Beloved Member'}
+              {(member?.name && member.name.trim()) || ((member as any)?.displayName && (member as any).displayName.trim()) || (`${member?.firstName || ''} ${member?.lastName || ''}`.trim()) || user?.displayName || 'Beloved Member'}
             </Text>
             {/* Member Since Pill */}
             <View style={{ marginTop: 8, alignSelf: 'flex-start', backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 }}>

@@ -317,7 +317,11 @@ export default function AdminMembers() {
   const handleSelectMember = (member: any) => {
     setSelectedMember(member);
     setIsEditingMember(false);
-    const memberName = member.name || (`${member.firstName || ''} ${member.lastName || ''}`.trim()) || '';
+    const memberName = (member.name && member.name.trim()) ||
+      (member.displayName && member.displayName.trim()) ||
+      (member.fullName && member.fullName.trim()) ||
+      (`${member.firstName || ''} ${member.lastName || ''}`.trim()) ||
+      '';
     setMemberDetailsForm({
       name: memberName,
       phone: member.phone || '',
@@ -720,7 +724,12 @@ May God bless you abundantly! ❤️`;
   const renderMemberDetails = () => {
     if (!selectedMember) return null;
 
-    const displayName = memberDetailsForm.name.trim() || selectedMember.name || (`${selectedMember.firstName || ''} ${selectedMember.lastName || ''}`.trim()) || 'Unknown';
+    const displayName = (memberDetailsForm.name && memberDetailsForm.name.trim()) ||
+      (selectedMember.name && selectedMember.name.trim()) ||
+      (selectedMember.displayName && selectedMember.displayName.trim()) ||
+      (selectedMember.fullName && selectedMember.fullName.trim()) ||
+      (`${selectedMember.firstName || ''} ${selectedMember.lastName || ''}`.trim()) ||
+      (selectedMember.phone ? `Member (${selectedMember.phone})` : 'Unknown');
     const displayRole = (memberDetailsForm.userType || selectedMember.userType || 'member').toLowerCase();
     const isAdminRole = displayRole === 'admin' || displayRole === 'super_admin' || displayRole === 'super admin';
     const familyMembers = selectedMember.accountId
@@ -1269,7 +1278,11 @@ May God bless you abundantly! ❤️`;
           {familyMembers.length > 0 ? (
             <View style={{ gap: 10 }}>
               {familyMembers.map((famMember, fIdx) => {
-                const famName = famMember.name || (`${famMember.firstName || ''} ${famMember.lastName || ''}`.trim()) || 'Unknown';
+                const famName = (famMember.name && famMember.name.trim()) ||
+                  (famMember.displayName && famMember.displayName.trim()) ||
+                  (famMember.fullName && famMember.fullName.trim()) ||
+                  (`${famMember.firstName || ''} ${famMember.lastName || ''}`.trim()) ||
+                  (famMember.phone ? `Member (${famMember.phone})` : 'Unknown');
                 const famRole = famMember.userType || 'member';
                 return (
                   <TouchableOpacity
@@ -1663,7 +1676,11 @@ May God bless you abundantly! ❤️`;
               ? members.filter(m => m.accountId === member.accountId && m.id !== member.id)
               : [];
             const isActive = true; // Placeholder for future active/inactive flag in Firebase
-            const displayName = member.name || (`${member.firstName || ''} ${member.lastName || ''}`.trim()) || 'Unknown';
+            const displayName = (member.name && member.name.trim()) ||
+              (member.displayName && member.displayName.trim()) ||
+              (member.fullName && member.fullName.trim()) ||
+              (`${member.firstName || ''} ${member.lastName || ''}`.trim()) ||
+              (member.phone ? `Member (${member.phone})` : 'Unknown');
             const displayRole = member.userType || 'member';
             const normalizedRole = displayRole.trim().toLowerCase().replace('_', ' ');
             const isSuperAdmin = normalizedRole === 'super admin' || normalizedRole === 'superadmin';

@@ -228,6 +228,25 @@ export async function sendCandidateAssignmentPush(params: {
     console.warn(`[RosterNotification] Could not write member in-app notif for ${candidate.candidateName}:`, e);
   }
 
+  try {
+    const broadcastRef = db
+      .collection(RHEMA_ROOT_COLLECTION)
+      .doc(churchId)
+      .collection('broadcasts')
+      .doc(`assign_${serviceId}_${roleId}_${candidate.candidateId}`);
+
+    await broadcastRef.set({
+      ...inAppPayload,
+      id: `assign_${serviceId}_${roleId}_${candidate.candidateId}`,
+      content: body,
+      targetMemberId: candidate.candidateId,
+      targetPhone: candidate.candidatePhone || null,
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+  } catch (bErr) {
+    console.warn(`[RosterNotification] Could not write assignment broadcast for ${candidate.candidateName}:`, bErr);
+  }
+
   // 3. Resolve FCM tokens
   const tokens = await resolveCandidateFcmTokens(
     db,
@@ -1305,6 +1324,14 @@ export async function autoDispatchPublishedServiceResponsibilities(params: {
     for (const em of eligibleMembers) {
       try {
         await db.collection(RHEMA_ROOT_COLLECTION).doc(targetChurch).collection('members').doc(em.memberId).collection('notifications').add(inAppPayload);
+        await db.collection(RHEMA_ROOT_COLLECTION).doc(targetChurch).collection('broadcasts').doc(`fcfs_${serviceId}_${resp.roleId}_${em.memberId}`).set({
+          ...inAppPayload,
+          id: `fcfs_${serviceId}_${resp.roleId}_${em.memberId}`,
+          content: notifBody,
+          targetMemberId: em.memberId,
+          targetPhone: em.memberPhone || null,
+          updatedAt: FieldValue.serverTimestamp()
+        }, { merge: true });
       } catch (_) {}
 
       for (const token of em.fcmTokens) {
@@ -1358,6 +1385,78 @@ export const onServicePlanPublished = onDocumentWritten(
     // Only trigger when transitioning to 'published'
     if (afterData.status === 'published' && beforeData?.status !== 'published') {
       console.log(`[RosterNotification] Service plan ${serviceId} published! Auto-dispatching responsibilities.`);
+
+      const targetChurch = churchId || 'rhema';
+      const serviceTitle = String(afterData.serviceTitle || 'Worship Service');
+      const serviceDate = String(afterData.date || '');
+      const serviceTime = String(afterData.startTime || '10:00');
+      const location = String(afterData.location || 'Church Sanctuary');
+
+      const dateDisplay = formatDateMonthYear(serviceDate) || serviceDate;
+      const timeDisplay = formatTimeTo12Hour(serviceTime) || serviceTime;
+
+      const broadcastDoc = {
+        id: `roster_published_${serviceId}`,
+        type: 'service_roster',
+        title: `Service Roster Published: ${serviceTitle}`,
+        content: `The upcoming service roster and worship order for ${dateDisplay} at ${timeDisplay} (${location}) has been published. Tap to view the schedule, setlist and responsibilities.`,
+        body: `The upcoming service roster and worship order for ${dateDisplay} at ${timeDisplay} (${location}) has been published. Tap to view the schedule, setlist and responsibilities.`,
+        churchId: targetChurch,
+        serviceId,
+        serviceTitle,
+        serviceDate,
+        serviceTime,
+        location,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp()
+      };
+
+      try {
+        await db
+          .collection(RHEMA_ROOT_COLLECTION)
+          .doc(targetChurch)
+          .collection('broadcasts')
+          .doc(`roster_published_${serviceId}`)
+          .set(broadcastDoc, { merge: true });
+
+        await db
+          .collection(RHEMA_ROOT_COLLECTION)
+          .doc(targetChurch)
+          .collection('notifications')
+          .doc(`roster_published_${serviceId}`)
+          .set(broadcastDoc, { merge: true });
+      } catch (bErr) {
+        console.warn('[RosterNotification] Could not write published roster broadcast:', bErr);
+      }
+
+      // Send general church-wide push notification to topic
+      try {
+        await getMessaging().send({
+          topic: `church_${targetChurch}`,
+          notification: {
+            title: `📋 Service Roster Published: ${serviceTitle}`,
+            body: `The service roster for ${dateDisplay} at ${timeDisplay} is now live. Tap to view schedule & duties.`
+          },
+          data: {
+            type: 'service_roster',
+            churchId: targetChurch,
+            serviceId,
+            serviceTitle,
+            click_action: 'OPEN_SERVICE_ROSTER'
+          },
+          android: {
+            priority: 'high',
+            notification: {
+              channelId: 'church_alerts',
+              color: '#059669',
+              sound: 'default'
+            }
+          }
+        });
+      } catch (pushErr) {
+        console.warn('[RosterNotification] Topic push for published roster failed:', pushErr);
+      }
+
       await autoDispatchPublishedServiceResponsibilities({
         db,
         churchId,
