@@ -109,65 +109,16 @@ export async function resolveCandidateFcmTokens(
         const data = memDoc.data() || {};
         addToken(data.fcmToken);
         addTokensFromArray(data.fcmTokens);
-
-        // If member record has auth pointer to users/{uid}
-        const authUid = data.uid || data.userId || data.authUid;
-        if (authUid && authUid !== candidateId) {
-          try {
-            const uDoc = await db.collection('users').doc(authUid).get();
-            if (uDoc.exists) {
-              const uData = uDoc.data() || {};
-              addToken(uData.fcmToken);
-              addTokensFromArray(uData.fcmTokens);
-            }
-          } catch (_) {}
-        }
       }
     } catch (e) {
       console.warn(`[RosterNotification] Error resolving memberDoc for ${candidateId}:`, e);
     }
-
-    // 2. Direct candidateId check in users/{candidateId}
-    try {
-      const uDoc = await db.collection('users').doc(candidateId).get();
-      if (uDoc.exists) {
-        const uData = uDoc.data() || {};
-        addToken(uData.fcmToken);
-        addTokensFromArray(uData.fcmTokens);
-      }
-    } catch (e) {
-      console.warn(`[RosterNotification] Error resolving userDoc for ${candidateId}:`, e);
-    }
-
-    // 3. Fallback to legacy churches/{churchId}/members/{candidateId}
-    try {
-      const legacyDoc = await db
-        .collection('churches')
-        .doc(churchId || 'rhema')
-        .collection('members')
-        .doc(candidateId)
-        .get();
-
-      if (legacyDoc.exists) {
-        const data = legacyDoc.data() || {};
-        addToken(data.fcmToken);
-        addTokensFromArray(data.fcmTokens);
-      }
-    } catch (_) {}
   }
 
-  // 4. Query users or members by phone number if tokens not yet found
+  // 2. Query church members by phone number if tokens not yet found
   if (tokens.size === 0 && candidatePhone) {
     const cleanPhone = candidatePhone.replace(/[^\d+]/g, '');
     if (cleanPhone.length >= 7) {
-      try {
-        const uSnap = await db.collection('users').where('phone', '==', cleanPhone).limit(3).get();
-        uSnap.forEach(d => {
-          addToken(d.data()?.fcmToken);
-          addTokensFromArray(d.data()?.fcmTokens);
-        });
-      } catch (_) {}
-
       try {
         const mSnap = await db
           .collection(RHEMA_ROOT_COLLECTION)
@@ -276,14 +227,6 @@ export async function sendCandidateAssignmentPush(params: {
   } catch (e) {
     console.warn(`[RosterNotification] Could not write member in-app notif for ${candidate.candidateName}:`, e);
   }
-
-  try {
-    await db
-      .collection('users')
-      .doc(candidate.candidateId)
-      .collection('notifications')
-      .add(inAppPayload);
-  } catch (_) {}
 
   // 3. Resolve FCM tokens
   const tokens = await resolveCandidateFcmTokens(
@@ -1118,16 +1061,6 @@ export async function notifyChurchAdmins(
         tokens.forEach(t => adminTokens.add(t));
       }
     }
-
-    // Query users collection for admin users
-    try {
-      const uSnap = await db.collection('users').where('isAdmin', '==', true).get();
-      uSnap.docs.forEach(uDoc => {
-        const uData = uDoc.data() || {};
-        if (uData.fcmToken) adminTokens.add(uData.fcmToken);
-        if (Array.isArray(uData.fcmTokens)) uData.fcmTokens.forEach((t: string) => adminTokens.add(t));
-      });
-    } catch (_) {}
 
     // Send in-app notification to all admin members
     const notifPayload = {

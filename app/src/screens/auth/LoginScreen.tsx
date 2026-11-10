@@ -54,12 +54,14 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
       if (cleanNum.length === 10) {
         setVerifyingStatus('Checking membership...');
         try {
-          // Explicitly pass activeChurch?.id so the query knows which church to search in. 
-          // Pass true to enable strictChurch mode so it doesn't fallback to a global search.
-          const result = await FirestoreService.checkContactExists(cleanNum, activeChurch?.id, true);
+          const churchTarget = activeChurch?.id || 'rhema';
+          const result = await FirestoreService.checkContactExists(cleanNum, churchTarget);
 
           if (result && result.exists) {
-            setMemberName(result.member?.firstName || result.member?.name || '');
+            const displayName = result.member?.firstName 
+              ? `${result.member.firstName} ${result.member.lastName || ''}`.trim()
+              : (result.member?.name || result.member?.displayName || '');
+            setMemberName(displayName);
             setContactId(result.member?.id);
             setIsMember(true);
             setVerifyingStatus('');
@@ -67,11 +69,7 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
             setMemberName('');
             setContactId(undefined);
             setIsMember(false);
-            if (result && result.error) {
-              setVerifyingStatus('Number not found in church records.');
-            } else {
-              setVerifyingStatus('Number not found in church records.');
-            }
+            setVerifyingStatus('Number not found in church records.');
           }
         } catch (err) {
           console.error(err);

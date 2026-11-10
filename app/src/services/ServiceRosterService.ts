@@ -1567,13 +1567,6 @@ class ServiceRosterService {
           .collection('notifications')
           .add(notifDoc)
           .catch(() => {});
-
-        await firestore()
-          .collection('users')
-          .doc(activeCand.candidateId)
-          .collection('notifications')
-          .add(notifDoc)
-          .catch(() => {});
       }
     } catch (_) {}
   }
