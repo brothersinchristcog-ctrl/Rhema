@@ -1,4 +1,5 @@
 import { firestore } from './firebaseConfig';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RHEMA_ROOT_COLLECTION } from '../constants/ChurchConfig';
 import { formatDateMonthYear, formatTimeTo12Hour } from '../utils/DateUtils';
 import * as Print from 'expo-print';
@@ -126,6 +127,53 @@ export const BUILT_IN_SERVICE_TEMPLATES: ServiceTemplate[] = [
   }
 ];
 
+export const INITIAL_MINISTRY_TEAM_NAMES: string[] = [
+  'Worship Team',
+  'Prayer Team',
+  'Music Team',
+  'Media Team',
+  'Livestream Team',
+  'Sound Team',
+  'Hospitality Team',
+  'Offering Team',
+  'Stage & Equipment Team',
+  'Communion Team',
+  "Children's Ministry",
+  'Security Team',
+  'Cleaning Team',
+  'Parking Team',
+];
+
+export const INITIAL_MINISTRY_TEAM_IDS: string[] = [
+  'team_worship',
+  'team_prayer',
+  'team_music',
+  'team_media',
+  'team_livestream',
+  'team_sound',
+  'team_hospitality',
+  'team_offering',
+  'team_stage',
+  'team_communion',
+  'team_children',
+  'team_security',
+  'team_cleaning',
+  'team_parking',
+];
+
+export function getTeamDefaultRank(name?: string, id?: string): number {
+  if (id) {
+    const idIdx = INITIAL_MINISTRY_TEAM_IDS.indexOf(id);
+    if (idIdx !== -1) return idIdx;
+  }
+  if (name) {
+    const clean = name.trim().toLowerCase();
+    const nameIdx = INITIAL_MINISTRY_TEAM_NAMES.findIndex(n => n.toLowerCase() === clean);
+    if (nameIdx !== -1) return nameIdx;
+  }
+  return 999;
+}
+
 export const DEFAULT_MINISTRY_TEAMS: Omit<MinistryTeam, 'churchId' | 'createdAt' | 'updatedAt'>[] = [
   {
     id: 'team_worship',
@@ -134,26 +182,12 @@ export const DEFAULT_MINISTRY_TEAMS: Omit<MinistryTeam, 'churchId' | 'createdAt'
     color: '#831843', // Royal Berry
     memberIds: [],
     active: true,
+    order: 0,
     positions: [
       { id: 'pos_worship_leader', title: 'Worship Leader', category: 'worship', defaultSkillRequired: 'Worship Leader' },
       { id: 'pos_singer_soprano', title: 'Vocalist (Soprano)', category: 'worship', defaultSkillRequired: 'Vocals' },
       { id: 'pos_singer_alto', title: 'Vocalist (Alto)', category: 'worship', defaultSkillRequired: 'Vocals' },
       { id: 'pos_singer_tenor', title: 'Vocalist (Tenor)', category: 'worship', defaultSkillRequired: 'Vocals' },
-    ]
-  },
-  {
-    id: 'team_music',
-    name: 'Music Team',
-    description: 'Instrumentalists providing live worship accompaniment.',
-    color: '#4A235A', // Deep Violet
-    memberIds: [],
-    active: true,
-    positions: [
-      { id: 'pos_keyboard', title: 'Keyboard Player', category: 'worship', defaultSkillRequired: 'Keyboard' },
-      { id: 'pos_acoustic', title: 'Acoustic Guitarist', category: 'worship', defaultSkillRequired: 'Guitar' },
-      { id: 'pos_electric', title: 'Electric Guitarist', category: 'worship', defaultSkillRequired: 'Guitar' },
-      { id: 'pos_bass', title: 'Bass Guitarist', category: 'worship', defaultSkillRequired: 'Bass Guitar' },
-      { id: 'pos_drums', title: 'Drummer', category: 'worship', defaultSkillRequired: 'Drums' },
     ]
   },
   {
@@ -163,6 +197,7 @@ export const DEFAULT_MINISTRY_TEAMS: Omit<MinistryTeam, 'churchId' | 'createdAt'
     color: '#92400E', // Amber
     memberIds: [],
     active: true,
+    order: 1,
     positions: [
       { id: 'pos_opening_prayer', title: 'Opening Prayer Leader', category: 'ministry', defaultSkillRequired: 'Opening Prayer' },
       { id: 'pos_intercessor', title: 'Intercessory Prayer Leader', category: 'ministry', defaultSkillRequired: 'Closing Prayer' },
@@ -170,15 +205,19 @@ export const DEFAULT_MINISTRY_TEAMS: Omit<MinistryTeam, 'churchId' | 'createdAt'
     ]
   },
   {
-    id: 'team_sound',
-    name: 'Sound Team',
-    description: 'Front of House (FOH) mix, monitor audio, and acoustic management.',
-    color: '#1E3A8A', // Deep Navy
+    id: 'team_music',
+    name: 'Music Team',
+    description: 'Instrumentalists providing live worship accompaniment.',
+    color: '#4A235A', // Deep Violet
     memberIds: [],
     active: true,
+    order: 2,
     positions: [
-      { id: 'pos_sound_foh', title: 'Sound Engineer (FOH)', category: 'audio_visual', defaultSkillRequired: 'Sound Engineering' },
-      { id: 'pos_sound_stage', title: 'Stage Audio Technician', category: 'audio_visual', defaultSkillRequired: 'Sound Engineering' },
+      { id: 'pos_keyboard', title: 'Keyboard Player', category: 'worship', defaultSkillRequired: 'Keyboard' },
+      { id: 'pos_acoustic', title: 'Acoustic Guitarist', category: 'worship', defaultSkillRequired: 'Guitar' },
+      { id: 'pos_electric', title: 'Electric Guitarist', category: 'worship', defaultSkillRequired: 'Guitar' },
+      { id: 'pos_bass', title: 'Bass Guitarist', category: 'worship', defaultSkillRequired: 'Bass Guitar' },
+      { id: 'pos_drums', title: 'Drummer', category: 'worship', defaultSkillRequired: 'Drums' },
     ]
   },
   {
@@ -188,6 +227,7 @@ export const DEFAULT_MINISTRY_TEAMS: Omit<MinistryTeam, 'churchId' | 'createdAt'
     color: '#0F766E', // Teal
     memberIds: [],
     active: true,
+    order: 3,
     positions: [
       { id: 'pos_lyrics_operator', title: 'Lyrics & Screen Operator', category: 'audio_visual', defaultSkillRequired: 'Lyrics and Projector' },
       { id: 'pos_bible_slides', title: 'Scripture Slides Controller', category: 'audio_visual', defaultSkillRequired: 'Lyrics and Projector' },
@@ -200,9 +240,23 @@ export const DEFAULT_MINISTRY_TEAMS: Omit<MinistryTeam, 'churchId' | 'createdAt'
     color: '#BE123C', // Crimson
     memberIds: [],
     active: true,
+    order: 4,
     positions: [
       { id: 'pos_camera_lead', title: 'Camera Operator #1', category: 'audio_visual', defaultSkillRequired: 'Camera' },
       { id: 'pos_stream_switcher', title: 'Live Video Director', category: 'audio_visual', defaultSkillRequired: 'Livestream' },
+    ]
+  },
+  {
+    id: 'team_sound',
+    name: 'Sound Team',
+    description: 'Front of House (FOH) mix, monitor audio, and acoustic management.',
+    color: '#1E3A8A', // Deep Navy
+    memberIds: [],
+    active: true,
+    order: 5,
+    positions: [
+      { id: 'pos_sound_foh', title: 'Sound Engineer (FOH)', category: 'audio_visual', defaultSkillRequired: 'Sound Engineering' },
+      { id: 'pos_sound_stage', title: 'Stage Audio Technician', category: 'audio_visual', defaultSkillRequired: 'Sound Engineering' },
     ]
   },
   {
@@ -212,6 +266,7 @@ export const DEFAULT_MINISTRY_TEAMS: Omit<MinistryTeam, 'churchId' | 'createdAt'
     color: '#047857', // Emerald
     memberIds: [],
     active: true,
+    order: 6,
     positions: [
       { id: 'pos_greeter_entrance', title: 'Main Door Greeter', category: 'hospitality', defaultSkillRequired: 'Welcome' },
       { id: 'pos_usher', title: 'Sanctuary Usher', category: 'hospitality', defaultSkillRequired: 'Welcome' },
@@ -224,6 +279,7 @@ export const DEFAULT_MINISTRY_TEAMS: Omit<MinistryTeam, 'churchId' | 'createdAt'
     color: '#B45309', // Warm Bronze
     memberIds: [],
     active: true,
+    order: 7,
     positions: [
       { id: 'pos_offering_lead', title: 'Offering Coordinator', category: 'ministry', defaultSkillRequired: 'Offering' },
       { id: 'pos_offering_collector', title: 'Offering Steward', category: 'ministry', defaultSkillRequired: 'Offering' },
@@ -236,6 +292,7 @@ export const DEFAULT_MINISTRY_TEAMS: Omit<MinistryTeam, 'churchId' | 'createdAt'
     color: '#374151', // Charcoal
     memberIds: [],
     active: true,
+    order: 8,
     positions: [
       { id: 'pos_stage_manager', title: 'Stage Manager', category: 'logistics' },
     ]
@@ -247,6 +304,7 @@ export const DEFAULT_MINISTRY_TEAMS: Omit<MinistryTeam, 'churchId' | 'createdAt'
     color: '#701A75', // Fuchsia Dark
     memberIds: [],
     active: true,
+    order: 9,
     positions: [
       { id: 'pos_communion_prep', title: 'Table Preparation Steward', category: 'ministry' },
       { id: 'pos_communion_server', title: 'Communion Server', category: 'ministry' },
@@ -259,6 +317,7 @@ export const DEFAULT_MINISTRY_TEAMS: Omit<MinistryTeam, 'churchId' | 'createdAt'
     color: '#0284C7', // Sky Blue
     memberIds: [],
     active: true,
+    order: 10,
     positions: [
       { id: 'pos_sunday_school_lead', title: 'Sunday School Teacher', category: 'ministry' },
     ]
@@ -270,6 +329,7 @@ export const DEFAULT_MINISTRY_TEAMS: Omit<MinistryTeam, 'churchId' | 'createdAt'
     color: '#1F2937', // Dark Gray
     memberIds: [],
     active: true,
+    order: 11,
     positions: [
       { id: 'pos_safety_officer', title: 'Safety Steward', category: 'logistics' },
     ]
@@ -281,6 +341,7 @@ export const DEFAULT_MINISTRY_TEAMS: Omit<MinistryTeam, 'churchId' | 'createdAt'
     color: '#15803D', // Forest Green
     memberIds: [],
     active: true,
+    order: 12,
     positions: [
       { id: 'pos_sanctuary_care', title: 'Sanctuary Care Steward', category: 'logistics' },
     ]
@@ -292,6 +353,7 @@ export const DEFAULT_MINISTRY_TEAMS: Omit<MinistryTeam, 'churchId' | 'createdAt'
     color: '#4338CA', // Indigo
     memberIds: [],
     active: true,
+    order: 13,
     positions: [
       { id: 'pos_parking_attendant', title: 'Parking Attendant', category: 'logistics' },
     ]
@@ -862,23 +924,55 @@ class ServiceRosterService {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Fetch all ministry teams for church
+   * Fetch all ministry teams for church, sorted by custom display order
    */
   async getMinistryTeams(churchId: string, onlyActive: boolean = false): Promise<MinistryTeam[]> {
+    const targetChurch = churchId || 'rhema';
     try {
-      let query: any = this.getMinistryTeamsCol(churchId).orderBy('name', 'asc');
+      let query: any = this.getMinistryTeamsCol(targetChurch);
       if (onlyActive) {
         query = query.where('active', '==', true);
       }
       const snap = await query.get();
+      let teams: MinistryTeam[] = [];
       if (snap.empty) {
         // Automatically seed default teams if none exist yet!
-        return await this.seedDefaultMinistryTeams(churchId);
+        teams = await this.seedDefaultMinistryTeams(targetChurch);
+      } else {
+        teams = snap.docs.map((doc: any) => ({
+          id: doc.id,
+          ...doc.data()
+        })) as MinistryTeam[];
       }
-      return snap.docs.map((doc: any) => ({
-        id: doc.id,
-        ...doc.data()
-      })) as MinistryTeam[];
+
+      // Check local AsyncStorage order cache first
+      let localOrderMap: Record<string, number> = {};
+      try {
+        const cached = await AsyncStorage.getItem(`@rhema_ministry_teams_order_${targetChurch}`);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) {
+            parsed.forEach((item: any, idx: number) => {
+              if (item?.id) {
+                localOrderMap[item.id] = typeof item.order === 'number' ? item.order : idx;
+              }
+            });
+          }
+        }
+      } catch (_) {}
+
+      // Sort teams according to:
+      // 1. Explicit document order
+      // 2. Cached local order
+      // 3. Fallback default order: Worship, Prayer, Music, Media, Livestream, etc.
+      teams.sort((a, b) => {
+        const orderA = typeof a.order === 'number' ? a.order : (localOrderMap[a.id] !== undefined ? localOrderMap[a.id] : getTeamDefaultRank(a.name, a.id));
+        const orderB = typeof b.order === 'number' ? b.order : (localOrderMap[b.id] !== undefined ? localOrderMap[b.id] : getTeamDefaultRank(b.name, b.id));
+        if (orderA !== orderB) return orderA - orderB;
+        return (a.name || '').localeCompare(b.name || '');
+      });
+
+      return teams;
     } catch (err) {
       console.error('[ServiceRosterService] getMinistryTeams error:', err);
       return [];
@@ -904,6 +998,7 @@ class ServiceRosterService {
       memberIds: (team.memberIds || []).filter((id): id is string => Boolean(id)),
       positions: team.positions || [],
       active: team.active ?? true,
+      order: typeof team.order === 'number' ? team.order : 999,
       createdAt: firestore.FieldValue.serverTimestamp(),
       updatedAt: firestore.FieldValue.serverTimestamp()
     };
@@ -923,6 +1018,41 @@ class ServiceRosterService {
       updatedAt: firestore.FieldValue.serverTimestamp()
     });
     await this.getMinistryTeamsCol(churchId).doc(teamId).set(payload, { merge: true });
+  }
+
+  /**
+   * Save customized display order for ministry teams across app restarts and Firestore
+   */
+  async updateMinistryTeamsOrder(churchId: string, orderedTeams: MinistryTeam[]): Promise<void> {
+    const targetChurch = churchId || 'rhema';
+    try {
+      // 1. Persist to AsyncStorage immediately for instant local retrieval across app restarts
+      const orderMap = orderedTeams.map((t, idx) => ({ id: t.id, name: t.name, order: idx }));
+      try {
+        await AsyncStorage.setItem(`@rhema_ministry_teams_order_${targetChurch}`, JSON.stringify(orderMap));
+      } catch (storageErr) {
+        console.warn('[ServiceRosterService] AsyncStorage order save warning:', storageErr);
+      }
+
+      // 2. Batch update order in Firestore
+      const col = this.getMinistryTeamsCol(targetChurch);
+      const batch = firestore().batch();
+      orderedTeams.forEach((team, index) => {
+        if (!team.id) return;
+        const docRef = col.doc(team.id);
+        batch.set(
+          docRef,
+          {
+            order: index,
+            updatedAt: firestore.FieldValue.serverTimestamp()
+          },
+          { merge: true }
+        );
+      });
+      await batch.commit();
+    } catch (err) {
+      console.error('[ServiceRosterService] updateMinistryTeamsOrder error:', err);
+    }
   }
 
   /**
@@ -951,20 +1081,28 @@ class ServiceRosterService {
    * Seed the 14 standard Rhema Church ministry teams if database is empty
    */
   async seedDefaultMinistryTeams(churchId: string): Promise<MinistryTeam[]> {
-    const col = this.getMinistryTeamsCol(churchId);
+    const targetChurch = churchId || 'rhema';
+    const col = this.getMinistryTeamsCol(targetChurch);
     const seeded: MinistryTeam[] = [];
 
-    for (const def of DEFAULT_MINISTRY_TEAMS) {
+    for (let i = 0; i < DEFAULT_MINISTRY_TEAMS.length; i++) {
+      const def = DEFAULT_MINISTRY_TEAMS[i];
       const docRef = col.doc(def.id);
       const teamObj: MinistryTeam = {
         ...def,
-        churchId: churchId || 'rhema',
+        order: i,
+        churchId: targetChurch,
         createdAt: firestore.FieldValue.serverTimestamp(),
         updatedAt: firestore.FieldValue.serverTimestamp()
       };
       await docRef.set(this.sanitizeForFirestore(teamObj), { merge: true });
       seeded.push(teamObj);
     }
+
+    try {
+      const orderMap = seeded.map((t, idx) => ({ id: t.id, name: t.name, order: idx }));
+      await AsyncStorage.setItem(`@rhema_ministry_teams_order_${targetChurch}`, JSON.stringify(orderMap));
+    } catch (_) {}
 
     return seeded;
   }
