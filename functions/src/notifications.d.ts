@@ -264,4 +264,50 @@ export declare const onTestimonyUpdatedWorkflowLegacy: import("firebase-function
     churchId: string;
     testimonyId: string;
 }>>;
+/**
+ * 🤝 TRIGGER 1: Member Submits Volunteer Application (Admin Notified)
+ */
+export declare const onVolunteerApplicationCreated: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+    churchId: string;
+    applicationId: string;
+}>>;
+export declare const onVolunteerApplicationCreatedLegacy: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+    churchId: string;
+    applicationId: string;
+}>>;
+/**
+ * 🤝 TRIGGER 2, 3, 4: Status Transition & Volunteer Role Assignment (Member Notified)
+ */
+export declare const onVolunteerApplicationUpdated: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+    churchId: string;
+    applicationId: string;
+}>>;
+export declare const onVolunteerApplicationUpdatedLegacy: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+    churchId: string;
+    applicationId: string;
+}>>;
+/**
+ * 📅 TRIGGER 5: Event Details or Cancellation (Affected Approved Volunteers Notified)
+ */
+export declare const onEventUpdatedForVolunteers: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+    churchId: string;
+    eventId: string;
+}>>;
+export declare const onEventUpdatedForVolunteersLegacy: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+    churchId: string;
+    eventId: string;
+}>>;
+/**
+ * ⏰ TRIGGER 6: Scheduled 24-Hour & 2-Hour Volunteer Reminders
+ * Scans upcoming events and sends reliable reminders to approved volunteers.
+ */
+export declare const scheduledVolunteerReminders: import("firebase-functions/v2/scheduler").ScheduleFunction;
+/**
+ * 🛠️ HTTP TEST ENDPOINT: Direct Volunteer Push Verification
+ * Query params:
+ *   action: 'admin_test' | 'member_test'
+ *   churchId: string (default 'rhema')
+ *   memberId: string (required for member_test)
+ */
+export declare const triggerVolunteerPushTestHttp: import("firebase-functions/v2/https").HttpsFunction;
 //# sourceMappingURL=notifications.d.ts.map

@@ -3389,3 +3389,1113 @@ export const onTestimonyUpdatedWorkflowLegacy = onDocumentUpdated(
     await handleTestimonyWorkflowUpdatedPush(before, after, churchId, testimonyId, snapRef);
   }
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🤝 VOLUNTEER MANAGEMENT & RELIABLE PUSH NOTIFICATION SYSTEM
+// Supports: General Church Volunteering & Event-Based Volunteering
+// Multi-Tier Token Resolution (Church Members + Global Users + Phone/Email)
+// High-Priority Push for Foreground, Background, and Killed/Closed App States
+// Strict Idempotent Deduplication
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 🔍 TOKEN RESOLVER: Robust Member Device Token Discovery
+ * Checks:
+ * 1. Rhema Church/{churchId}/members/{memberId}
+ * 2. churches/{churchId}/members/{memberId}
+ * 3. users/{memberId}
+ * 4. Rhema Church/rhema/members/{memberId} (if churchId != 'rhema')
+ * 5. Phone lookup in church members & global users (if phone provided)
+ * 6. Email lookup in church members & global users (if email provided)
+ */
+async function resolveVolunteerMemberTokens(
+  db: FirebaseFirestore.Firestore,
+  churchId: string,
+  memberId: string,
+  memberPhone?: string,
+  memberEmail?: string,
+  memberName?: string,
+  directFcmToken?: string
+): Promise<string[]> {
+  const tokenSet = new Set<string>();
+
+  const addToken = (t: any) => {
+    if (typeof t === 'string' && t.trim().length > 10) {
+      tokenSet.add(t.trim());
+    }
+  };
+
+  const addTokensFromArray = (arr: any) => {
+    if (Array.isArray(arr)) {
+      arr.forEach((t) => addToken(t));
+    }
+  };
+
+  if (directFcmToken) {
+    addToken(directFcmToken);
+  }
+
+  const extractFromDoc = (docSnap: any) => {
+    if (docSnap && docSnap.exists) {
+      const data = docSnap.data() || {};
+      addToken(data.fcmToken);
+      addTokensFromArray(data.fcmTokens);
+    }
+  };
+
+  const cid = churchId || 'rhema';
+
+  // 1. Direct member document in Rhema Church/{churchId}/members/{memberId}
+  if (memberId) {
+    try {
+      const snap = await db.collection('Rhema Church').doc(cid).collection('members').doc(memberId).get();
+      extractFromDoc(snap);
+    } catch (_) {}
+
+    // 2. Direct member document in churches/{churchId}/members/{memberId}
+    try {
+      const snap = await db.collection('churches').doc(cid).collection('members').doc(memberId).get();
+      extractFromDoc(snap);
+    } catch (_) {}
+
+    // 3. User document in users/{memberId}
+    try {
+      const snap = await db.collection('users').doc(memberId).get();
+      extractFromDoc(snap);
+    } catch (_) {}
+
+    // 4. Fallback check in default 'rhema' church if churchId is different
+    if (cid !== 'rhema') {
+      try {
+        const snap = await db.collection('Rhema Church').doc('rhema').collection('members').doc(memberId).get();
+        extractFromDoc(snap);
+      } catch (_) {}
+    }
+  }
+
+  // 5. Query members by phone if no token found yet
+  if (tokenSet.size === 0 && memberPhone) {
+    const cleanPhone = String(memberPhone).replace(/[^\d+]/g, '');
+    const last10 = cleanPhone.slice(-10);
+    if (last10.length >= 7) {
+      try {
+        const mSnap = await db.collection('Rhema Church').doc(cid).collection('members').get();
+        mSnap.forEach((d) => {
+          const dPhone = String(d.data()?.phone || d.data()?.mobile || '').replace(/[^\d+]/g, '');
+          if (dPhone.endsWith(last10)) extractFromDoc(d);
+        });
+      } catch (_) {}
+
+      try {
+        const uSnap = await db.collection('users').get();
+        uSnap.forEach((d) => {
+          const dPhone = String(d.data()?.phone || d.data()?.mobile || '').replace(/[^\d+]/g, '');
+          if (dPhone.endsWith(last10)) extractFromDoc(d);
+        });
+      } catch (_) {}
+    }
+  }
+
+  // 6. Query members by email if no token found yet
+  if (tokenSet.size === 0 && memberEmail) {
+    const cleanEmail = memberEmail.trim().toLowerCase();
+    if (cleanEmail.includes('@')) {
+      try {
+        const mSnap = await db.collection('Rhema Church').doc(cid).collection('members').where('email', '==', cleanEmail).limit(2).get();
+        mSnap.forEach((d) => extractFromDoc(d));
+      } catch (_) {}
+
+      try {
+        const uSnap = await db.collection('users').where('email', '==', cleanEmail).limit(2).get();
+        uSnap.forEach((d) => extractFromDoc(d));
+      } catch (_) {}
+    }
+  }
+
+  return Array.from(tokenSet);
+}
+
+/**
+ * 🔍 ADMIN TOKEN RESOLVER: Comprehensive Church Admin Token Discovery
+ * Checks:
+ * 1. Rhema Church/{churchId}/members for admin/pastor/super roles
+ * 2. churches/{churchId}/members for admin/pastor/super roles
+ * 3. Church document metadata (adminUid, createdBy, pastorUid, ownerUid, adminUids)
+ * 4. Resolves tokens for all discovered admin UIDs in users/{uid} and members/{uid}
+ * 5. Direct users collection scan for global admin/superadmin accounts
+ */
+async function resolveVolunteerAdminTokens(
+  db: FirebaseFirestore.Firestore,
+  churchId: string
+): Promise<{ tokens: string[]; adminUids: string[] }> {
+  const tokenSet = new Set<string>();
+  const adminUidSet = new Set<string>();
+
+  const addToken = (t: any) => {
+    if (typeof t === 'string' && t.trim().length > 10) {
+      tokenSet.add(t.trim());
+    }
+  };
+
+  const addTokensFromArray = (arr: any) => {
+    if (Array.isArray(arr)) {
+      arr.forEach((t) => addToken(t));
+    }
+  };
+
+  const checkMemberDoc = (doc: any) => {
+    const m = doc.data() || {};
+    const role = String(m.userType || m.role || '').toLowerCase();
+    const isAdmin =
+      role.includes('admin') ||
+      role.includes('pastor') ||
+      role.includes('super') ||
+      role.includes('leader') ||
+      role.includes('coordinator') ||
+      Boolean(m.isAdmin) ||
+      Boolean(m.isSuperAdmin);
+
+    if (isAdmin) {
+      adminUidSet.add(doc.id);
+      addToken(m.fcmToken);
+      addTokensFromArray(m.fcmTokens);
+    }
+  };
+
+  const cid = churchId || 'rhema';
+
+  // 1. Check Rhema Church/{churchId}/members
+  try {
+    const snap = await db.collection('Rhema Church').doc(cid).collection('members').get();
+    snap.forEach((d) => checkMemberDoc(d));
+  } catch (_) {}
+
+  // 2. Check churches/{churchId}/members
+  try {
+    const snap = await db.collection('churches').doc(cid).collection('members').get();
+    snap.forEach((d) => checkMemberDoc(d));
+  } catch (_) {}
+
+  // 3. Inspect church metadata document for creator / owner / pastor UIDs
+  const churchDocRefs = [
+    db.collection('Rhema Church').doc(cid),
+    db.collection('churches').doc(cid),
+  ];
+  for (const cRef of churchDocRefs) {
+    try {
+      const cSnap = await cRef.get();
+      if (cSnap.exists) {
+        const cData = cSnap.data() || {};
+        const specialUids = [
+          cData.adminUid,
+          cData.createdBy,
+          cData.pastorUid,
+          cData.ownerUid,
+          ...(Array.isArray(cData.adminUids) ? cData.adminUids : []),
+        ].filter(Boolean);
+        specialUids.forEach((uid: string) => adminUidSet.add(uid));
+      }
+    } catch (_) {}
+  }
+
+  // 4. For all discovered admin UIDs, query their user doc in users/{uid} and member doc
+  for (const uid of Array.from(adminUidSet)) {
+    try {
+      const uSnap = await db.collection('users').doc(uid).get();
+      if (uSnap.exists) {
+        const uData = uSnap.data() || {};
+        addToken(uData.fcmToken);
+        addTokensFromArray(uData.fcmTokens);
+      }
+    } catch (_) {}
+
+    try {
+      const mSnap = await db.collection('Rhema Church').doc(cid).collection('members').doc(uid).get();
+      if (mSnap.exists) {
+        const mData = mSnap.data() || {};
+        addToken(mData.fcmToken);
+        addTokensFromArray(mData.fcmTokens);
+      }
+    } catch (_) {}
+  }
+
+  // 5. Query users collection directly for admin / pastor / super accounts
+  try {
+    const usersSnap = await db.collection('users').get();
+    usersSnap.forEach((doc) => {
+      const uData = doc.data() || {};
+      const role = String(uData.userType || uData.role || '').toLowerCase();
+      const isAdmin =
+        role.includes('admin') ||
+        role.includes('pastor') ||
+        role.includes('super') ||
+        Boolean(uData.isAdmin) ||
+        Boolean(uData.isSuperAdmin);
+
+      if (isAdmin) {
+        adminUidSet.add(doc.id);
+        addToken(uData.fcmToken);
+        addTokensFromArray(uData.fcmTokens);
+      }
+    });
+  } catch (_) {}
+
+  return {
+    tokens: Array.from(tokenSet),
+    adminUids: Array.from(adminUidSet),
+  };
+}
+
+/**
+ * 📲 HIGH PRIORITY FCM MULTICAST DISPATCHER
+ * Configured for maximum reliability across foreground, background, and completely closed app states.
+ */
+async function sendHighPriorityPush(
+  messaging: any,
+  tokens: string[],
+  title: string,
+  body: string,
+  data: Record<string, string>,
+  channelId: string = 'church_alerts'
+): Promise<{ successCount: number; failureCount: number }> {
+  if (!tokens || tokens.length === 0) return { successCount: 0, failureCount: 0 };
+
+  const uniqueTokens = Array.from(new Set(tokens.filter((t) => typeof t === 'string' && t.trim().length > 10)));
+  if (uniqueTokens.length === 0) return { successCount: 0, failureCount: 0 };
+
+  let totalSuccess = 0;
+  let totalFailure = 0;
+
+  for (let i = 0; i < uniqueTokens.length; i += 500) {
+    const chunk = uniqueTokens.slice(i, i + 500);
+    try {
+      const res = await messaging.sendEachForMulticast({
+        notification: { title, body },
+        data: {
+          ...data,
+          title,
+          body,
+          channelId,
+          sound: 'default',
+          priority: 'high',
+          click_action: 'FLUTTER_NOTIFICATION_CLICK',
+        },
+        tokens: chunk,
+        android: {
+          priority: 'high',
+          notification: {
+            title,
+            body,
+            sound: 'default',
+            channelId,
+            priority: 'max',
+            defaultSound: true,
+            defaultVibrateTimings: true,
+            visibility: 'public',
+            clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+          },
+        },
+        apns: {
+          headers: {
+            'apns-priority': '10',
+            'apns-push-type': 'alert',
+          },
+          payload: {
+            aps: {
+              alert: {
+                title,
+                body,
+              },
+              sound: 'default',
+              badge: 1,
+              contentAvailable: true,
+            },
+          },
+        },
+      });
+
+      totalSuccess += res.successCount;
+      totalFailure += res.failureCount;
+
+      if (res.failureCount > 0) {
+        res.responses.forEach((resp: any, idx: number) => {
+          if (!resp.success) {
+            const tokenPreview = chunk[idx] ? chunk[idx].slice(0, 15) : 'unknown';
+            console.warn(`[VolunteerPush] Token delivery failure (${resp.error?.code}): ${tokenPreview}...`);
+          }
+        });
+      }
+    } catch (batchErr) {
+      console.error('[VolunteerPush] Error dispatching push chunk:', batchErr);
+      totalFailure += chunk.length;
+    }
+  }
+
+  return { successCount: totalSuccess, failureCount: totalFailure };
+}
+
+/**
+ * 📡 HIGH PRIORITY TOPIC BROADCASTER
+ */
+async function sendHighPriorityTopicPush(
+  messaging: any,
+  topic: string,
+  title: string,
+  body: string,
+  data: Record<string, string>,
+  channelId: string = 'church_alerts'
+) {
+  try {
+    await messaging.send({
+      notification: { title, body },
+      data: {
+        ...data,
+        title,
+        body,
+        channelId,
+        sound: 'default',
+        priority: 'high',
+        click_action: 'FLUTTER_NOTIFICATION_CLICK',
+      },
+      topic,
+      android: {
+        priority: 'high',
+        notification: {
+          title,
+          body,
+          sound: 'default',
+          channelId,
+          priority: 'max',
+          defaultSound: true,
+          defaultVibrateTimings: true,
+          visibility: 'public',
+          clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+        },
+      },
+      apns: {
+        headers: {
+          'apns-priority': '10',
+          'apns-push-type': 'alert',
+        },
+        payload: {
+          aps: {
+            alert: {
+              title,
+              body,
+            },
+            sound: 'default',
+            badge: 1,
+            contentAvailable: true,
+          },
+        },
+      },
+    });
+    console.log(`📡 Broadcasted high-priority volunteer push to topic: ${topic}`);
+  } catch (topicErr) {
+    console.warn(`[VolunteerPush] Topic broadcast failed for ${topic}:`, topicErr);
+  }
+}
+
+/**
+ * 🤝 HELPER: Notify Authorized Church Admins of a New Volunteer Application
+ */
+async function handleVolunteerApplicationAdminCreatedPush(
+  appData: any,
+  churchId: string,
+  applicationId: string,
+  snapRef?: any
+) {
+  if (!appData) return;
+  const db = getFirestore();
+  const messaging = getMessaging();
+  const cid = churchId || 'rhema';
+
+  // Deduplication guard
+  if (appData.adminPushSent === true || appData.adminNotified === true) {
+    console.log(`🛑 Skipping duplicate volunteer admin push for application: ${applicationId}`);
+    return;
+  }
+
+  // 1. Resolve Member Name
+  let memberName = (appData.memberName || '').trim();
+  if (!memberName || memberName.toLowerCase() === 'church member') {
+    const memberId = appData.memberId;
+    if (memberId) {
+      try {
+        const mDoc = await db.collection('Rhema Church').doc(cid).collection('members').doc(memberId).get();
+        if (mDoc.exists) {
+          const m = mDoc.data();
+          memberName = m?.name || m?.displayName || (m?.firstName ? `${m.firstName} ${m.lastName || ''}`.trim() : '');
+        }
+      } catch (err) {
+        console.warn('Could not resolve volunteer member name:', err);
+      }
+    }
+  }
+  if (!memberName) memberName = 'A Church Member';
+
+  const isEventVolunteer = appData.volunteerType === 'event';
+  const eventName = (appData.eventTitle || 'Church Event').trim();
+
+  // 2. Notification title and body according to specification
+  const title = isEventVolunteer
+    ? '📅 New Event Volunteer Application!'
+    : '📋 New Volunteer Application!';
+
+  const body = isEventVolunteer
+    ? `${memberName} has applied to volunteer for ${eventName}. Please review the application.`
+    : `${memberName} has submitted a new General Volunteer application. Please review the application.`;
+
+  // 3. Query authorized Admins for this church
+  const { tokens: adminTokens } = await resolveVolunteerAdminTokens(db, cid);
+
+  const notificationData: Record<string, string> = {
+    type: 'volunteer_application_admin',
+    churchId: cid,
+    applicationId,
+    requestId: applicationId,
+    volunteerType: appData.volunteerType || 'general',
+    eventId: appData.eventId || '',
+    eventTitle: isEventVolunteer ? eventName : '',
+    memberName,
+    screen: 'AdminRoot',
+    targetTab: 'Volunteer Management',
+    click_action: 'FLUTTER_NOTIFICATION_CLICK',
+  };
+
+  // 4. Multicast push to direct Admin devices
+  if (adminTokens.length > 0) {
+    const sendRes = await sendHighPriorityPush(messaging, adminTokens, title, body, notificationData, 'church_alerts');
+    console.log(`✅ Sent volunteer application push to ${sendRes.successCount} admin devices (${sendRes.failureCount} failed).`);
+  } else {
+    console.warn(`⚠️ No direct admin FCM tokens resolved for church ${cid}`);
+  }
+
+  // 5. Topic Broadcast to church admin topics
+  await sendHighPriorityTopicPush(messaging, `church_${cid}_admin`, title, body, notificationData, 'church_alerts');
+  if (cid !== 'rhema') {
+    await sendHighPriorityTopicPush(messaging, 'church_rhema_admin', title, body, notificationData, 'church_alerts');
+  }
+
+  // 6. Write in-app notification doc for admins
+  try {
+    const notifPayload = {
+      type: 'volunteer_application_admin',
+      targetRole: 'admin',
+      title,
+      body,
+      memberName,
+      volunteerType: appData.volunteerType || 'general',
+      eventId: appData.eventId || '',
+      eventTitle: isEventVolunteer ? eventName : '',
+      applicationId,
+      referenceId: applicationId,
+      referenceType: isEventVolunteer ? 'event_volunteer' : 'general_volunteer',
+      churchId: cid,
+      read: false,
+      createdAt: FieldValue.serverTimestamp(),
+    };
+    await db.collection('Rhema Church').doc(cid).collection('notifications').add(notifPayload);
+  } catch (dbErr) {
+    console.error('Error writing volunteer in-app notification document:', dbErr);
+  }
+
+  // 7. Atomic update on document to prevent duplicates
+  if (snapRef) {
+    try {
+      await snapRef.update({
+        adminPushSent: true,
+        adminNotified: true,
+        adminPushSentAt: FieldValue.serverTimestamp(),
+        adminNotifiedAt: FieldValue.serverTimestamp(),
+      });
+    } catch (_) {}
+  }
+}
+
+/**
+ * 🤝 HELPER: Handle Volunteer Application Status Transitions (Approval, Rejection, Assignment)
+ */
+async function handleVolunteerApplicationWorkflowUpdatedPush(
+  before: any,
+  after: any,
+  churchId: string,
+  applicationId: string,
+  snapRef?: any
+) {
+  if (!after) return;
+  const db = getFirestore();
+  const messaging = getMessaging();
+  const cid = churchId || 'rhema';
+
+  const isEventVolunteer = after.volunteerType === 'event';
+  const eventName = (after.eventTitle || 'the church event').trim();
+  const memberId = after.memberId;
+
+  // Retrieve member tokens across members collection, users collection, direct token, and phone/email lookups
+  const memberTokens = await resolveVolunteerMemberTokens(
+    db,
+    cid,
+    memberId,
+    after.memberPhone,
+    after.memberEmail,
+    after.memberName,
+    after.memberFcmToken || after.fcmToken
+  );
+
+  // Status normalization
+  const currentStatus = String(after.status || '').toLowerCase().trim();
+  const beforeStatus = String(before?.status || '').toLowerCase().trim();
+  const isStatusDecision = currentStatus === 'approved' || currentStatus === 'rejected' || currentStatus === 'declined';
+  const statusChanged = beforeStatus !== currentStatus;
+
+  const currentAssignmentHash = [
+    after.assignedRole || '',
+    after.assignedDate || '',
+    after.assignedTimeSlot || '',
+    after.assignedLocation || '',
+    after.assignedResponsibility || '',
+  ].join('|');
+
+  // ── WORKFLOW TRIGGER 2 & 3: Application Status Changed (Approved / Rejected) ──
+  if (isStatusDecision && after.lastNotifiedStatus !== currentStatus) {
+    let title = '';
+    let body = '';
+
+    if (currentStatus === 'approved') {
+      title = '🎉 Volunteer Application Approved!';
+      if (isEventVolunteer) {
+        body = `Your application for ${eventName} has been approved.${after.assignedRole ? ` Assigned Role: ${after.assignedRole}.` : ''} Please check your event details.`;
+      } else {
+        body = 'Your volunteer application has been approved. Thank you for your willingness to serve the church.';
+      }
+    } else {
+      title = 'Volunteer Application Update';
+      const reasonPart = after.rejectionReason ? ` Reason: ${after.rejectionReason}` : ' Please check your application details in the app.';
+      if (isEventVolunteer) {
+        body = `Your volunteer application for ${eventName} has not been approved.${reasonPart}`;
+      } else {
+        body = `Your volunteer application has not been approved.${reasonPart}`;
+      }
+    }
+
+    const notificationData: Record<string, string> = {
+      type: 'volunteer_application_member',
+      churchId: cid,
+      applicationId,
+      status: currentStatus,
+      volunteerType: after.volunteerType || 'general',
+      eventId: after.eventId || '',
+      eventTitle: isEventVolunteer ? eventName : '',
+      screen: isEventVolunteer && after.eventId ? 'EventDetails' : 'Volunteer',
+      click_action: 'FLUTTER_NOTIFICATION_CLICK',
+    };
+
+    if (memberTokens.length > 0) {
+      const sendRes = await sendHighPriorityPush(messaging, memberTokens, title, body, notificationData, 'church_alerts');
+      console.log(`✅ Sent volunteer status (${currentStatus}) push to member ${memberId}: ${sendRes.successCount} delivered.`);
+    } else {
+      console.warn(`⚠️ No device FCM tokens resolved for member ${memberId} (${after.memberName || 'Volunteer'})`);
+    }
+
+    // In-app notification record for the member
+    try {
+      const inAppDoc = {
+        type: 'volunteer_application_member',
+        recipientId: memberId,
+        recipientRole: 'member',
+        targetMemberId: memberId,
+        title,
+        body,
+        status: currentStatus,
+        volunteerType: after.volunteerType || 'general',
+        eventId: after.eventId || '',
+        referenceId: applicationId,
+        referenceType: isEventVolunteer ? 'event_volunteer' : 'general_volunteer',
+        churchId: cid,
+        read: false,
+        createdAt: FieldValue.serverTimestamp(),
+      };
+      await db.collection('Rhema Church').doc(cid).collection('notifications').add(inAppDoc);
+    } catch (_) {}
+
+    // Atomic update to mark status notification delivered and initialize assignment hash
+    if (snapRef) {
+      try {
+        const updatePayload: any = {
+          lastNotifiedStatus: currentStatus,
+          lastNotifiedStatusAt: FieldValue.serverTimestamp(),
+        };
+        if (currentStatus === 'approved') {
+          updatePayload.lastNotifiedAssignmentHash = currentAssignmentHash;
+        }
+        await snapRef.update(updatePayload);
+      } catch (_) {}
+    }
+  }
+
+  // ── WORKFLOW TRIGGER 4: Specific Volunteer Assignment Made or Modified (Subsequent Updates Only) ──
+  const beforeAssignmentHash = [
+    before?.assignedRole || '',
+    before?.assignedDate || '',
+    before?.assignedTimeSlot || '',
+    before?.assignedLocation || '',
+    before?.assignedResponsibility || '',
+  ].join('|');
+
+  const assignmentChanged =
+    currentStatus === 'approved' &&
+    !statusChanged && // Prevent duplicate notification on the same approval turn
+    currentAssignmentHash.trim() !== '||||' &&
+    currentAssignmentHash !== beforeAssignmentHash &&
+    after.lastNotifiedAssignmentHash !== currentAssignmentHash;
+
+  if (assignmentChanged) {
+    const title = '⭐ You Have Been Assigned!';
+    const roleText = after.assignedRole ? `as ${after.assignedRole}` : 'a volunteer';
+    const body = `You have been assigned ${roleText} for ${eventName}.${after.assignedResponsibility ? ` Duty: ${after.assignedResponsibility}.` : ''} Please check your assignment details.`;
+
+    const notificationData: Record<string, string> = {
+      type: 'volunteer_assignment',
+      churchId: cid,
+      applicationId,
+      eventId: after.eventId || '',
+      assignedRole: after.assignedRole || '',
+      assignedTimeSlot: after.assignedTimeSlot || '',
+      assignedLocation: after.assignedLocation || '',
+      screen: 'EventDetails',
+      click_action: 'FLUTTER_NOTIFICATION_CLICK',
+    };
+
+    if (memberTokens.length > 0) {
+      const sendRes = await sendHighPriorityPush(messaging, memberTokens, title, body, notificationData, 'church_alerts');
+      console.log(`✅ Sent volunteer assignment push to member ${memberId}: ${sendRes.successCount} delivered.`);
+    }
+
+    try {
+      const inAppDoc = {
+        type: 'volunteer_assignment',
+        recipientId: memberId,
+        recipientRole: 'member',
+        targetMemberId: memberId,
+        title,
+        body,
+        eventId: after.eventId || '',
+        referenceId: applicationId,
+        referenceType: 'event_volunteer',
+        churchId: cid,
+        read: false,
+        createdAt: FieldValue.serverTimestamp(),
+      };
+      await db.collection('Rhema Church').doc(cid).collection('notifications').add(inAppDoc);
+    } catch (_) {}
+
+    if (snapRef) {
+      try {
+        await snapRef.update({
+          lastNotifiedAssignmentHash: currentAssignmentHash,
+          assignedAt: FieldValue.serverTimestamp(),
+        });
+      } catch (_) {}
+    }
+  }
+}
+
+/**
+ * 📢 HELPER: Handle Event Changes or Cancellation (Notifies Affected Approved Volunteers Only)
+ */
+async function handleEventChangesForVolunteersPush(
+  before: any,
+  after: any,
+  churchId: string,
+  eventId: string
+) {
+  if (!after) return;
+  const db = getFirestore();
+  const messaging = getMessaging();
+  const cid = churchId || 'rhema';
+
+  const isCancelled = !before?.isCancelled && after?.isCancelled === true;
+  const dateChanged = before?.date !== after?.date;
+  const timeChanged = (before?.time || before?.startTime) !== (after?.time || after?.startTime);
+  const locationChanged = before?.location !== after?.location;
+
+  if (!isCancelled && !dateChanged && !timeChanged && !locationChanged) {
+    return;
+  }
+
+  // Query only approved volunteers for this specific event
+  try {
+    const volSnap = await db
+      .collection('Rhema Church')
+      .doc(cid)
+      .collection('volunteer_applications')
+      .where('eventId', '==', eventId)
+      .where('status', '==', 'approved')
+      .get();
+
+    if (volSnap.empty) return;
+
+    const eventName = (after.title || after.name || 'Church Event').trim();
+    let title = '';
+    let body = '';
+
+    if (isCancelled) {
+      title = `⚠️ Event Cancelled: ${eventName}`;
+      body = `The event "${eventName}" has been cancelled. Your volunteer assignment is cancelled. Thank you for your willingness to serve.`;
+    } else {
+      title = `📅 Volunteer Update: ${eventName}`;
+      const changeParts: string[] = [];
+      if (dateChanged && after.date) changeParts.push(`Date: ${after.date}`);
+      if (timeChanged) changeParts.push(`Time: ${after.time || after.startTime}`);
+      if (locationChanged && after.location) changeParts.push(`Location: ${after.location}`);
+      body = `Details for "${eventName}" have changed (${changeParts.join(', ')}). Please check your updated volunteer assignment.`;
+    }
+
+    const volunteerMemberIds = volSnap.docs.map((d) => d.data().memberId).filter(Boolean);
+    const allTokens: string[] = [];
+
+    for (const vDoc of volSnap.docs) {
+      const vd = vDoc.data();
+      const mTokens = await resolveVolunteerMemberTokens(db, cid, vd.memberId, vd.memberPhone, vd.memberEmail, vd.memberName);
+      allTokens.push(...mTokens);
+    }
+
+    const uniqueTokens = Array.from(new Set(allTokens));
+    if (uniqueTokens.length > 0) {
+      await sendHighPriorityPush(
+        messaging,
+        uniqueTokens,
+        title,
+        body,
+        {
+          type: 'volunteer_event_change',
+          churchId: cid,
+          eventId,
+          screen: 'EventDetails',
+          isCancelled: String(isCancelled),
+          click_action: 'FLUTTER_NOTIFICATION_CLICK',
+        },
+        'church_alerts'
+      );
+      console.log(`✅ Sent event change alert to ${uniqueTokens.length} approved volunteer devices.`);
+    }
+
+    // Write in-app notification doc for each approved volunteer
+    for (const mId of volunteerMemberIds) {
+      try {
+        await db.collection('Rhema Church').doc(cid).collection('notifications').add({
+          type: 'volunteer_event_change',
+          recipientId: mId,
+          recipientRole: 'member',
+          targetMemberId: mId,
+          title,
+          body,
+          eventId,
+          churchId: cid,
+          read: false,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      } catch (_) {}
+    }
+  } catch (err) {
+    console.error('Error dispatching event volunteer change pushes:', err);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🚀 EXPORTED VOLUNTEER CLOUD FUNCTIONS (v2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 🤝 TRIGGER 1: Member Submits Volunteer Application (Admin Notified)
+ */
+export const onVolunteerApplicationCreated = onDocumentCreated(
+  { document: 'Rhema Church/{churchId}/volunteer_applications/{applicationId}', region: 'asia-south1' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const appData = snap.data();
+    const churchId = event.params.churchId;
+    const applicationId = event.params.applicationId;
+    await handleVolunteerApplicationAdminCreatedPush(appData, churchId, applicationId, snap.ref);
+  }
+);
+
+export const onVolunteerApplicationCreatedLegacy = onDocumentCreated(
+  { document: 'churches/{churchId}/volunteer_applications/{applicationId}', region: 'asia-south1' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const appData = snap.data();
+    const churchId = event.params.churchId;
+    const applicationId = event.params.applicationId;
+    await handleVolunteerApplicationAdminCreatedPush(appData, churchId, applicationId, snap.ref);
+  }
+);
+
+/**
+ * 🤝 TRIGGER 2, 3, 4: Status Transition & Volunteer Role Assignment (Member Notified)
+ */
+export const onVolunteerApplicationUpdated = onDocumentUpdated(
+  { document: 'Rhema Church/{churchId}/volunteer_applications/{applicationId}', region: 'asia-south1' },
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    const snapRef = event.data?.after.ref;
+    if (!after) return;
+    const churchId = event.params.churchId;
+    const applicationId = event.params.applicationId;
+    await handleVolunteerApplicationWorkflowUpdatedPush(before, after, churchId, applicationId, snapRef);
+  }
+);
+
+export const onVolunteerApplicationUpdatedLegacy = onDocumentUpdated(
+  { document: 'churches/{churchId}/volunteer_applications/{applicationId}', region: 'asia-south1' },
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    const snapRef = event.data?.after.ref;
+    if (!after) return;
+    const churchId = event.params.churchId;
+    const applicationId = event.params.applicationId;
+    await handleVolunteerApplicationWorkflowUpdatedPush(before, after, churchId, applicationId, snapRef);
+  }
+);
+
+/**
+ * 📅 TRIGGER 5: Event Details or Cancellation (Affected Approved Volunteers Notified)
+ */
+export const onEventUpdatedForVolunteers = onDocumentUpdated(
+  { document: 'Rhema Church/{churchId}/events/{eventId}', region: 'asia-south1' },
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!after) return;
+    const churchId = event.params.churchId;
+    const eventId = event.params.eventId;
+    await handleEventChangesForVolunteersPush(before, after, churchId, eventId);
+  }
+);
+
+export const onEventUpdatedForVolunteersLegacy = onDocumentUpdated(
+  { document: 'churches/{churchId}/events/{eventId}', region: 'asia-south1' },
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!after) return;
+    const churchId = event.params.churchId;
+    const eventId = event.params.eventId;
+    await handleEventChangesForVolunteersPush(before, after, churchId, eventId);
+  }
+);
+
+/**
+ * ⏰ TRIGGER 6: Scheduled 24-Hour & 2-Hour Volunteer Reminders
+ * Scans upcoming events and sends reliable reminders to approved volunteers.
+ */
+export const scheduledVolunteerReminders = onSchedule(
+  { schedule: '*/30 * * * *', timeZone: 'Asia/Kolkata', region: 'asia-south1' },
+  async (event) => {
+    const db = getFirestore();
+    const messaging = getMessaging();
+    const now = new Date();
+
+    console.log('⏰ Running scheduled volunteer reminder cron at:', now.toISOString());
+
+    try {
+      const churchesSnap = await db.collection('Rhema Church').get();
+      for (const cDoc of churchesSnap.docs) {
+        const churchId = cDoc.id;
+
+        const eventsSnap = await db
+          .collection('Rhema Church')
+          .doc(churchId)
+          .collection('events')
+          .where('volunteerEnabled', '==', true)
+          .get();
+
+        if (eventsSnap.empty) continue;
+
+        for (const eDoc of eventsSnap.docs) {
+          const ev = eDoc.data();
+          if (ev.isCancelled === true) continue;
+
+          const dateStr = ev.date;
+          const timeStr = ev.time || ev.startTime || '10:00';
+          if (!dateStr) continue;
+
+          let eventTimestamp: number;
+          try {
+            eventTimestamp = new Date(`${dateStr}T${timeStr.includes(':') ? timeStr.split(' ')[0] : '10:00'}:00`).getTime();
+            if (isNaN(eventTimestamp)) {
+              eventTimestamp = new Date(dateStr).getTime();
+            }
+          } catch (_) {
+            continue;
+          }
+
+          const diffHours = (eventTimestamp - now.getTime()) / (1000 * 60 * 60);
+          const is24hWindow = diffHours >= 23 && diffHours <= 25;
+          const is2hWindow = diffHours >= 1.5 && diffHours <= 2.5;
+
+          if (!is24hWindow && !is2hWindow) continue;
+
+          const volSnap = await db
+            .collection('Rhema Church')
+            .doc(churchId)
+            .collection('volunteer_applications')
+            .where('eventId', '==', eDoc.id)
+            .where('status', '==', 'approved')
+            .get();
+
+          if (volSnap.empty) continue;
+
+          for (const vDoc of volSnap.docs) {
+            const vData = vDoc.data();
+            const remindersSent = vData.remindersSent || {};
+
+            let shouldSend = false;
+            let reminderType = '';
+            let title = '';
+            let body = '';
+
+            if (is24hWindow && !remindersSent.h24) {
+              shouldSend = true;
+              reminderType = '24h';
+              title = '⏰ Volunteer Reminder: Tomorrow!';
+              body = `You are scheduled to volunteer for ${ev.title || 'Church Event'} tomorrow. Date: ${dateStr}, Time: ${timeStr}, Role: ${vData.assignedRole || vData.preferredRole || 'Volunteer'}, Location: ${ev.location || 'Church'}.`;
+            } else if (is2hWindow && !remindersSent.h2) {
+              shouldSend = true;
+              reminderType = '2h';
+              title = '🔔 Volunteer Reminder: In 2 Hours!';
+              body = `Reminder: You are scheduled to volunteer for ${ev.title || 'Church Event'} in 2 hours. Role: ${vData.assignedRole || vData.preferredRole || 'Volunteer'}, Location: ${ev.location || 'Church'}.`;
+            }
+
+            if (!shouldSend) continue;
+
+            const updateField = reminderType === '24h'
+              ? { 'remindersSent.h24': true, 'remindersSent.h24At': FieldValue.serverTimestamp() }
+              : { 'remindersSent.h2': true, 'remindersSent.h2At': FieldValue.serverTimestamp() };
+
+            try {
+              await vDoc.ref.update(updateField);
+            } catch (_) {}
+
+            const memberId = vData.memberId;
+            if (memberId) {
+              const tokens = await resolveVolunteerMemberTokens(db, churchId, memberId, vData.memberPhone, vData.memberEmail, vData.memberName);
+              if (tokens.length > 0) {
+                await sendHighPriorityPush(
+                  messaging,
+                  tokens,
+                  title,
+                  body,
+                  {
+                    type: 'volunteer_reminder',
+                    churchId,
+                    eventId: eDoc.id,
+                    screen: 'EventDetails',
+                    click_action: 'FLUTTER_NOTIFICATION_CLICK',
+                  },
+                  'church_alerts'
+                );
+                console.log(`✅ Sent ${reminderType} reminder to volunteer member: ${memberId}`);
+              }
+            }
+          }
+        }
+      }
+    } catch (cronErr) {
+      console.error('Error in scheduledVolunteerReminders cron:', cronErr);
+    }
+  }
+);
+
+/**
+ * 🛠️ HTTP TEST ENDPOINT: Direct Volunteer Push Verification
+ * Query params:
+ *   action: 'admin_test' | 'member_test'
+ *   churchId: string (default 'rhema')
+ *   memberId: string (required for member_test)
+ */
+export const triggerVolunteerPushTestHttp = onRequest(
+  { cors: true, region: 'asia-south1' },
+  async (req, res) => {
+    try {
+      const db = getFirestore();
+      const messaging = getMessaging();
+      const action = String(req.query.action || 'admin_test');
+      const churchId = String(req.query.churchId || 'rhema');
+      const memberId = String(req.query.memberId || '');
+
+      if (action === 'admin_test') {
+        const { tokens, adminUids } = await resolveVolunteerAdminTokens(db, churchId);
+        const title = '📋 [Test] Volunteer Application Received';
+        const body = 'This is a test notification verifying Church Admin volunteer alert delivery.';
+        const sendRes = await sendHighPriorityPush(
+          messaging,
+          tokens,
+          title,
+          body,
+          {
+            type: 'volunteer_application_admin',
+            churchId,
+            applicationId: 'test_app_id',
+            screen: 'AdminRoot',
+            targetTab: 'Volunteer Management',
+          },
+          'church_alerts'
+        );
+        res.status(200).json({
+          success: true,
+          action,
+          churchId,
+          adminUids,
+          resolvedTokensCount: tokens.length,
+          result: sendRes,
+        });
+        return;
+      }
+
+      if (action === 'member_test') {
+        if (!memberId) {
+          res.status(400).json({ success: false, error: 'memberId query param is required for member_test' });
+          return;
+        }
+        const tokens = await resolveVolunteerMemberTokens(db, churchId, memberId);
+        const title = '🎉 [Test] Volunteer Application Approved!';
+        const body = 'This is a test notification verifying Member volunteer approval delivery.';
+        const sendRes = await sendHighPriorityPush(
+          messaging,
+          tokens,
+          title,
+          body,
+          {
+            type: 'volunteer_application_member',
+            churchId,
+            applicationId: 'test_app_id',
+            status: 'approved',
+            screen: 'Volunteer',
+          },
+          'church_alerts'
+        );
+        res.status(200).json({
+          success: true,
+          action,
+          churchId,
+          memberId,
+          resolvedTokensCount: tokens.length,
+          result: sendRes,
+        });
+        return;
+      }
+
+      res.status(400).json({ success: false, error: 'Invalid action. Use action=admin_test or action=member_test' });
+    } catch (err: any) {
+      console.error('Error in triggerVolunteerPushTestHttp:', err);
+      res.status(500).json({ success: false, error: err?.message || String(err) });
+    }
+  }
+);
+

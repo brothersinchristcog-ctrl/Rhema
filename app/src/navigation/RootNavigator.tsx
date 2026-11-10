@@ -45,6 +45,7 @@ import PrayerWallScreen from '../screens/PrayerWallScreen';
 import GivingScreen from '../screens/GivingScreen';
 import GivingHistoryScreen from '../screens/GivingHistoryScreen';
 import BaptismRequestScreen from '../screens/BaptismRequestScreen';
+import VolunteerScreen from '../screens/VolunteerScreen';
 import SermonsScreen from '../screens/SermonsScreen';
 import SongsScreen from '../screens/SongsScreen';
 import EventDetailsScreen from '../screens/EventDetailsScreen';
@@ -755,6 +756,24 @@ function Navigation() {
             });
           } else if (type === 'baptism_request_member') {
             navigationRef.navigate('BaptismRequest', { requestId: data.requestId || data.id });
+          } else if (type === 'volunteer_application_admin') {
+            const appId = data.applicationId || data.requestId || data.id;
+            console.log('🤝 [RootNavigator] Direct routing to Admin Volunteer Management:', { appId });
+            if (isAdmin && viewMode !== 'admin') {
+              setViewMode('admin');
+            }
+            navigationRef.navigate('AdminRoot', {
+              targetTab: 'Volunteer Management',
+              applicationId: appId,
+              subType: data.volunteerType || data.subType || 'general',
+              timestamp: Date.now(),
+            });
+          } else if (type === 'volunteer_application_member' || type === 'volunteer_assignment' || type === 'volunteer_reminder' || type === 'volunteer_event_change') {
+            if (data.eventId) {
+              navigationRef.navigate('EventDetails', { eventId: data.eventId, id: data.eventId });
+            } else {
+              navigationRef.navigate('Volunteer');
+            }
           } else if (type === 'prayer_request_member') {
             navigationRef.navigate('PrayerWall', { prayerId: data.prayerId || data.requestId || data.id });
           } else if (type === 'prayer_request_admin' || type === 'prayer_request' || type === 'prayer') {
@@ -846,7 +865,8 @@ function Navigation() {
           type === 'prayer_request_admin' ||
           type === 'prayer_request' ||
           type === 'prayer' ||
-          type === 'testimony_admin';
+          type === 'testimony_admin' ||
+          type === 'volunteer_application_admin';
 
         if (isAdminNotification && isAdmin && viewMode !== 'admin') {
           setViewMode('admin');
@@ -870,7 +890,9 @@ function Navigation() {
             type === 'baptism' || 
             type === 'prayer_request_admin' ||
             type === 'prayer_request' ||
-            type === 'prayer';
+            type === 'prayer' ||
+            type === 'testimony_admin' ||
+            type === 'volunteer_application_admin';
 
           if (isAdminNotification && isAdmin && viewMode !== 'admin') {
             setViewMode('admin');
@@ -906,7 +928,10 @@ function Navigation() {
             type === 'baptism_request' || 
             type === 'baptism' || 
             type === 'prayer_request_admin' ||
-            type === 'testimony_admin';
+            type === 'prayer_request' ||
+            type === 'prayer' ||
+            type === 'testimony_admin' ||
+            type === 'volunteer_application_admin';
 
           if (isAdminNotification && isAdmin && viewMode !== 'admin') {
             console.log(`Switching to admin view to handle ${type} notification`);
@@ -1045,6 +1070,8 @@ function Navigation() {
             <Stack.Screen name="Give" component={renderPremium(GivingScreen)} />
             <Stack.Screen name="GivingHistory" component={renderPremium(GivingHistoryScreen)} />
             <Stack.Screen name="BaptismRequest" component={renderPremium(BaptismRequestScreen)} />
+            <Stack.Screen name="Volunteer" component={renderPremium(VolunteerScreen)} />
+            <Stack.Screen name="VolunteerScreen" component={renderPremium(VolunteerScreen)} />
             <Stack.Screen name="Sermons" component={renderPremium(SermonsScreen)} />
             <Stack.Screen name="Songs" component={renderPremium(SongsScreen)} />
             <Stack.Screen name="EventDetails" component={renderPremium(EventDetailsScreen)} />

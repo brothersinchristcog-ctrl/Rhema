@@ -90,7 +90,7 @@ const CATEGORIES = [
     darkColor: '#C084FC',
 
 
-    keywords: ['Member', 'Attendance', 'Prayer', 'Testimon', 'Care Cell', 'Care Cells']
+    keywords: ['Member', 'Attendance', 'Prayer', 'Testimon', 'Care Cell', 'Care Cells', 'Volunteer']
 
   },
   {
