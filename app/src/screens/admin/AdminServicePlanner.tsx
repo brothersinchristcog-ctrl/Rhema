@@ -2336,62 +2336,6 @@ export default function AdminServicePlanner({ navigation }: any) {
     }
   };
 
-  const [seedingTestData, setSeedingTestData] = useState(false);
-
-  const handleSeedFullTestData = () => {
-    Alert.alert(
-      'Seed Service Roster Test Data',
-      'This will safely populate 3 realistic sample services ([TEST] Sunday Morning Celebration, [TEST] Midweek Bible Study, [TEST] Youth Revival), worship setlists, assignment queues, rehearsals, attendance records, and verified member skills for complete end-to-end testing.\n\nAll test records are tagged with [TEST] and existing church records will NOT be overwritten. Proceed?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Seed Test Data',
-          onPress: async () => {
-            try {
-              setSeedingTestData(true);
-              const res = await ServiceRosterService.seedFullTestData(churchId);
-              await fetchPlans();
-              await fetchMinistryTeams();
-              Alert.alert(
-                'Test Data Ready! 🎉',
-                `Successfully seeded:\n• ${res.plansCreated} Sample Services\n• ${res.queuesCreated} Assignment Queues\n• ${res.rehearsalsCreated} Rehearsal\n• ${res.attendanceCreated} Volunteer Attendance Records\n• ${res.skillsCreated} Verified Member Skills\n\nYou can now test all workflows (Run Sheet, Setlists, Queues, Live Stage HUD, Rehearsals, and Analytics).`
-              );
-            } catch (err: any) {
-              Alert.alert('Error', err?.message || 'Failed to seed test data.');
-            } finally {
-              setSeedingTestData(false);
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const handlePurgeTestData = () => {
-    Alert.alert(
-      'Clean Up Test Data',
-      'Are you sure you want to remove all [TEST] sample services, rehearsals, attendance records, and test skills? Real church data will remain untouched.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Purge Test Data',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setSeedingTestData(true);
-              const res = await ServiceRosterService.purgeTestData(churchId);
-              await fetchPlans();
-              Alert.alert('Cleaned Up', `Removed ${res.deletedPlans} test service plans and ${res.deletedSkills} test skill records.`);
-            } catch (err: any) {
-              Alert.alert('Error', err?.message || 'Failed to clean test data.');
-            } finally {
-              setSeedingTestData(false);
-            }
-          },
-        },
-      ]
-    );
-  };
 
   const handleSeedDefaultTeams = async () => {
     Alert.alert(
@@ -3287,40 +3231,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                 ))}
               </ScrollView>
 
-              {/* E2E Testing Sandbox Action Bar */}
-              <View style={[styles.testBarContainer, { backgroundColor: isDark ? '#1C1917' : '#FEF3C7', borderColor: isDark ? '#78350F' : '#FDE68A' }]}>
-                <View style={{ flex: 1 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                    <Sparkles size={13} color="#D97706" />
-                    <Text style={[styles.testBarTitle, { color: isDark ? '#FDE68A' : '#92400E' }]}>
-                      E2E Testing Sandbox
-                    </Text>
-                  </View>
-                  <Text style={[styles.testBarSubtitle, { color: isDark ? '#D6D3D1' : '#B45309' }]}>
-                    Load realistic test services (Sunday, Midweek, Youth), setlists, role queues & attendance.
-                  </Text>
-                </View>
-                <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
-                  <TouchableOpacity
-                    style={[styles.testBarBtn, { backgroundColor: '#D97706' }]}
-                    onPress={handleSeedFullTestData}
-                    disabled={seedingTestData}
-                  >
-                    <Sparkles size={12} color="#FFFFFF" />
-                    <Text style={styles.testBarBtnTxt}>{seedingTestData ? 'Loading...' : 'Seed Data'}</Text>
-                  </TouchableOpacity>
-                  {plans.some(p => (p as any).isTestData || p.serviceTitle?.startsWith('[TEST]')) && (
-                    <TouchableOpacity
-                      style={[styles.testBarBtn, { backgroundColor: '#DC2626' }]}
-                      onPress={handlePurgeTestData}
-                      disabled={seedingTestData}
-                    >
-                      <Trash2 size={12} color="#FFFFFF" />
-                      <Text style={styles.testBarBtnTxt}>Purge</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
+
 
               {filteredPlans.length === 0 ? (
                 <View style={[styles.emptyCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
@@ -8405,39 +8316,6 @@ const styles = StyleSheet.create({
   lyricsText: {
     fontSize: 14,
     lineHeight: 22,
-  },
-  testBarContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 12,
-    gap: 8,
-  },
-  testBarTitle: {
-    fontSize: 12.5,
-    fontWeight: '800',
-  },
-  testBarSubtitle: {
-    fontSize: 11,
-    marginTop: 2,
-    lineHeight: 14,
-  },
-  testBarBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  testBarBtnTxt: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
   },
   templateCard: {
     borderRadius: 16,
