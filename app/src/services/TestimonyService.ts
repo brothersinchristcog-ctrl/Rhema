@@ -288,14 +288,82 @@ class TestimonyService {
 
       if (doc.exists()) {
         const data = doc.data() || {};
+        const photo =
+          data.profilePhoto ||
+          data.photoURL ||
+          data.photoUrl ||
+          data.profileImage ||
+          data.profileImageUrl ||
+          data.avatar ||
+          data.avatarUrl ||
+          data.image ||
+          data.imageUrl ||
+          fallbackPhoto ||
+          null;
+
         return {
           id: doc.id,
           name: data.name || fallbackName || 'Church Member',
-          photoURL: data.photoURL || data.profileImage || fallbackPhoto || null,
+          photoURL: photo,
           phone: data.phone || fallbackPhone || null,
-          role: data.userType || data.role || 'Member',
+          role: data.userType || data.role || (data.isAdmin ? 'Admin' : 'Member'),
           exists: true,
         };
+      } else {
+        // Fallback: search members by uid or userId or phone
+        let qSnap = await firestore()
+          .collection('Rhema Church')
+          .doc(targetChurchId)
+          .collection('members')
+          .where('uid', '==', memberId)
+          .limit(1)
+          .get();
+
+        if (qSnap.empty) {
+          qSnap = await firestore()
+            .collection('Rhema Church')
+            .doc(targetChurchId)
+            .collection('members')
+            .where('userId', '==', memberId)
+            .limit(1)
+            .get();
+        }
+
+        if (qSnap.empty && fallbackPhone) {
+          qSnap = await firestore()
+            .collection('Rhema Church')
+            .doc(targetChurchId)
+            .collection('members')
+            .where('phone', '==', fallbackPhone)
+            .limit(1)
+            .get();
+        }
+
+        if (!qSnap.empty) {
+          const matchedDoc = qSnap.docs[0];
+          const data = matchedDoc.data() || {};
+          const photo =
+            data.profilePhoto ||
+            data.photoURL ||
+            data.photoUrl ||
+            data.profileImage ||
+            data.profileImageUrl ||
+            data.avatar ||
+            data.avatarUrl ||
+            data.image ||
+            data.imageUrl ||
+            fallbackPhoto ||
+            null;
+
+          return {
+            id: matchedDoc.id,
+            name: data.name || fallbackName || 'Church Member',
+            photoURL: photo,
+            phone: data.phone || fallbackPhone || null,
+            role: data.userType || data.role || (data.isAdmin ? 'Admin' : 'Member'),
+            exists: true,
+          };
+        }
       }
     } catch (e) {
       console.warn('⚠️ [TestimonyService] Member lookup error:', e);

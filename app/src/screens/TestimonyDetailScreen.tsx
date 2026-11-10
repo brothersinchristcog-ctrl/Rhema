@@ -38,6 +38,9 @@ import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { RHEMA_CHURCH_ID } from '../constants/ChurchConfig';
 import TestimonyService, { MemberSummary } from '../services/TestimonyService';
+import InAppDocumentViewerModal, {
+  InAppDocumentViewerDoc,
+} from '../components/InAppDocumentViewerModal';
 import { Testimony, TestimonyAttachment, TestimonyStatus } from '../types/testimony';
 
 const formatDuration = (ms?: number | null): string => {
@@ -111,6 +114,7 @@ export default function TestimonyDetailScreen({ route, navigation }: any) {
   const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({});
   const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
   const [openingAttachmentPath, setOpeningAttachmentPath] = useState<string | null>(null);
+  const [viewerDoc, setViewerDoc] = useState<InAppDocumentViewerDoc | null>(null);
 
   const isUserAdmin = Boolean(
     isPlatformSuperAdmin ||
@@ -276,28 +280,12 @@ export default function TestimonyDetailScreen({ route, navigation }: any) {
         return;
       }
 
-      const isImage =
-        att.mimeType?.toLowerCase().includes('image') ||
-        /\.(jpg|jpeg|png)$/i.test(att.name || '');
-
-      if (isImage) {
-        setPreviewImageUri(url);
-      } else {
-        // Download document locally to cache and open in app / document viewer
-        const cleanName = (att.name || 'document.pdf').replace(/[^a-zA-Z0-9._-]/g, '_');
-        const localUri = `${FileSystem.cacheDirectory}${Date.now()}_${cleanName}`;
-        const downloadRes = await FileSystem.downloadAsync(url, localUri);
-
-        if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(downloadRes.uri, {
-            mimeType: att.mimeType || 'application/pdf',
-            UTI: att.mimeType?.includes('pdf') ? '.pdf' : undefined,
-            dialogTitle: `Open ${att.name}`,
-          });
-        } else {
-          await Linking.openURL(url);
-        }
-      }
+      // Open directly inside the Rhema Church app via in-app document viewer modal!
+      setViewerDoc({
+        url,
+        name: att.name || 'Testimony Attachment',
+        mimeType: att.mimeType,
+      });
     } catch (err: any) {
       console.warn('Could not open attachment:', err);
       Alert.alert('Error', 'Failed to open attachment: ' + (err?.message || 'Unknown error'));
@@ -760,6 +748,13 @@ export default function TestimonyDetailScreen({ route, navigation }: any) {
           ) : null}
         </View>
       </Modal>
+
+      {/* ── IN-APP DOCUMENT VIEWER (PDFs & Documents with Zoom & Scroll) ── */}
+      <InAppDocumentViewerModal
+        visible={Boolean(viewerDoc)}
+        doc={viewerDoc}
+        onClose={() => setViewerDoc(null)}
+      />
     </SafeAreaView>
   );
 }
