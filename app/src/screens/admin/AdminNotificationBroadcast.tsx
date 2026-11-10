@@ -272,10 +272,10 @@ export default function AdminNotificationBroadcast() {
       const fullTimeStr = `${formattedMeetingDate} at ${formattedMeetingTime}`;
 
       const db = getFirestore();
+      const churchId = (await FirestoreService.getChurchId()) || 'rhema';
 
       // Save to Firestore dynamic updates
       try {
-        const churchId = await FirestoreService.getChurchId();
         await FirestoreService.createNotificationBroadcast({
           title: `🚨 EMERGENCY MEETING: ${emergencyAlert.title}`,
           content: `⏰ TIME: ${fullTimeStr}\n📍 LOCATION: ${emergencyAlert.location}\n\n${emergencyAlert.message}`,

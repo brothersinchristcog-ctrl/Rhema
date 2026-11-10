@@ -1,6 +1,6 @@
 import { firestore, FieldValue } from './firebaseConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { RHEMA_CHURCH_ID } from '../constants/ChurchConfig';
+import { RHEMA_CHURCH_ID, RHEMA_ROOT_COLLECTION } from '../constants/ChurchConfig';
 import * as Notifications from 'expo-notifications';
 import { isSermonVisibleToMembers, formatDateDisplay } from '../utils/DateUtils';
 
