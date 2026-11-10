@@ -42,6 +42,13 @@ export interface MemberSummary {
   exists: boolean;
 }
 
+// Helper function to safely check DocumentSnapshot existence in both Web and React Native Firebase
+function checkDocExists(doc: any): boolean {
+  if (!doc) return false;
+  if (typeof doc.exists === 'function') return doc.exists();
+  return Boolean(doc.exists);
+}
+
 class TestimonyService {
   private uploadConfig: TestimonyUploadConfig = { ...DEFAULT_TESTIMONY_UPLOAD_CONFIG };
 
@@ -324,11 +331,15 @@ class TestimonyService {
       // 3. Extract and resolve photos
       await Promise.all(
         docsToProcess.map(async (doc) => {
+          if (!checkDocExists(doc)) return;
           const data = doc.data() || {};
           const rawPhoto =
+            data.ProfilePhoto ||
             data.profilePhoto ||
             data.photoURL ||
             data.photoUrl ||
+            data.Photo ||
+            data.PhotoUrl ||
             data.profileImage ||
             data.profileImageUrl ||
             data.avatar ||
@@ -399,16 +410,20 @@ class TestimonyService {
         .doc(memberId)
         .get();
 
-      if (doc.exists()) {
+      if (checkDocExists(doc)) {
         const data = doc.data() || {};
         const photo =
+          data.ProfilePhoto ||
           data.profilePhoto ||
           data.photoURL ||
           data.photoUrl ||
+          data.Photo ||
+          data.PhotoUrl ||
           data.profileImage ||
           data.profileImageUrl ||
           data.avatar ||
           data.avatarUrl ||
+          data.photo ||
           data.image ||
           data.imageUrl ||
           fallbackPhoto ||
@@ -458,13 +473,17 @@ class TestimonyService {
           const matchedDoc = qSnap.docs[0];
           const data = matchedDoc.data() || {};
           const photo =
+            data.ProfilePhoto ||
             data.profilePhoto ||
             data.photoURL ||
             data.photoUrl ||
+            data.Photo ||
+            data.PhotoUrl ||
             data.profileImage ||
             data.profileImageUrl ||
             data.avatar ||
             data.avatarUrl ||
+            data.photo ||
             data.image ||
             data.imageUrl ||
             fallbackPhoto ||
@@ -641,7 +660,7 @@ class TestimonyService {
     const docRef = this.getCollectionRef(targetChurch).doc(testimonyId);
     const snap = await docRef.get();
 
-    if (!snap.exists()) {
+    if (!checkDocExists(snap)) {
       throw new Error('Testimony not found.');
     }
 
@@ -811,7 +830,7 @@ class TestimonyService {
     if (!testimonyId) return null;
     try {
       const doc = await this.getCollectionRef(churchId).doc(testimonyId).get();
-      if (!doc.exists()) return null;
+      if (!checkDocExists(doc)) return null;
       return this.mapDocToTestimony(doc);
     } catch (e) {
       console.warn('⚠️ [TestimonyService] getTestimonyById error:', e);
@@ -837,7 +856,7 @@ class TestimonyService {
       .doc(testimonyId)
       .onSnapshot(
         (doc) => {
-          if (!doc.exists()) {
+          if (!checkDocExists(doc)) {
             onUpdate(null);
             return;
           }
@@ -862,7 +881,7 @@ class TestimonyService {
   ): Promise<void> {
     const docRef = this.getCollectionRef(churchId).doc(testimonyId);
     const snap = await docRef.get();
-    if (!snap.exists()) throw new Error('Testimony not found.');
+    if (!checkDocExists(snap)) throw new Error('Testimony not found.');
 
     const data = this.mapDocToTestimony(snap);
     if (data.privacy === 'Private') {
@@ -893,7 +912,7 @@ class TestimonyService {
   ): Promise<void> {
     const docRef = this.getCollectionRef(churchId).doc(testimonyId);
     const snap = await docRef.get();
-    if (!snap.exists()) throw new Error('Testimony not found.');
+    if (!checkDocExists(snap)) throw new Error('Testimony not found.');
 
     const data = this.mapDocToTestimony(snap);
     if (data.privacy === 'Private') {
@@ -928,7 +947,7 @@ class TestimonyService {
   ): Promise<void> {
     const docRef = this.getCollectionRef(churchId).doc(testimonyId);
     const snap = await docRef.get();
-    if (!snap.exists()) throw new Error('Testimony not found.');
+    if (!checkDocExists(snap)) throw new Error('Testimony not found.');
 
     const data = this.mapDocToTestimony(snap);
     if (data.privacy === 'Private') {
@@ -957,7 +976,7 @@ class TestimonyService {
   ): Promise<void> {
     const docRef = this.getCollectionRef(churchId).doc(testimonyId);
     const snap = await docRef.get();
-    if (!snap.exists()) throw new Error('Testimony not found.');
+    if (!checkDocExists(snap)) throw new Error('Testimony not found.');
 
     await docRef.update({
       status: 'Approved',
@@ -980,7 +999,7 @@ class TestimonyService {
   ): Promise<void> {
     const docRef = this.getCollectionRef(churchId).doc(testimonyId);
     const snap = await docRef.get();
-    if (!snap.exists()) throw new Error('Testimony not found.');
+    if (!checkDocExists(snap)) throw new Error('Testimony not found.');
 
     await docRef.update({
       privacy: 'Private',
@@ -1000,7 +1019,7 @@ class TestimonyService {
     const docRef = this.getCollectionRef(churchId).doc(testimonyId);
     const snap = await docRef.get();
 
-    if (snap.exists()) {
+    if (checkDocExists(snap)) {
       const data = this.mapDocToTestimony(snap);
       const storagePaths: string[] = [];
       if (data.videoStoragePath) {
