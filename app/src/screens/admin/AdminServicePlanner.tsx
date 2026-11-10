@@ -176,8 +176,8 @@ export default function AdminServicePlanner({ navigation }: any) {
 
   const churchId = activeChurch?.id || 'rhema';
 
-  // Navigation / Tab state: Added 'setlist' (Phase 3), 'queue' (Phase 4), 'rehearsals' (Phase 6), 'attendance' & 'analytics' (Phase 9)
-  const [activePlannerTab, setActivePlannerTab] = useState<'calendar' | 'builder' | 'setlist' | 'queue' | 'rehearsals' | 'attendance' | 'analytics' | 'teams' | 'skills' | 'templates'>('calendar');
+  // Navigation / Tab state: 'calendar', 'builder', 'setlist', 'queue', 'attendance', 'analytics', 'teams', 'skills', 'templates'
+  const [activePlannerTab, setActivePlannerTab] = useState<'calendar' | 'builder' | 'setlist' | 'queue' | 'attendance' | 'analytics' | 'teams' | 'skills' | 'templates'>('calendar');
 
   // Service Plans state
   const [plans, setPlans] = useState<ServicePlan[]>([]);
@@ -275,26 +275,6 @@ export default function AdminServicePlanner({ navigation }: any) {
   const [simulateAction, setSimulateAction] = useState<'accept' | 'decline'>('accept');
   const [simulateDeclineReason, setSimulateDeclineReason] = useState('Out of town for family engagement');
   const [submittingSimulate, setSubmittingSimulate] = useState(false);
-
-  // Rehearsal Management state (Phase 6)
-  const [rehearsals, setRehearsals] = useState<ServiceRehearsal[]>([]);
-  const [loadingRehearsals, setLoadingRehearsals] = useState(false);
-  const [showRehearsalModal, setShowRehearsalModal] = useState(false);
-  const [editingRehearsalId, setEditingRehearsalId] = useState<string | null>(null);
-  const [rehearsalNameInput, setRehearsalNameInput] = useState('Saturday Full Band Rehearsal');
-  const [rehearsalDateInput, setRehearsalDateInput] = useState('');
-  const [rehearsalStartTimeInput, setRehearsalStartTimeInput] = useState('06:00 PM');
-  const [rehearsalEndTimeInput, setRehearsalEndTimeInput] = useState('07:30 PM');
-  const [rehearsalLocationInput, setRehearsalLocationInput] = useState('Church Sanctuary');
-  const [rehearsalTeamIds, setRehearsalTeamIds] = useState<string[]>(['team_worship', 'team_music']);
-  const [rehearsalParticipantIds, setRehearsalParticipantIds] = useState<string[]>([]);
-  const [rehearsalSongPracticeIds, setRehearsalSongPracticeIds] = useState<string[]>([]);
-  const [rehearsalNotesInput, setRehearsalNotesInput] = useState('');
-  const [savingRehearsal, setSavingRehearsal] = useState(false);
-
-  // Rehearsal Attendance Modal state
-  const [showRehearsalAttendanceModal, setShowRehearsalAttendanceModal] = useState(false);
-  const [activeRehearsalForAttendance, setActiveRehearsalForAttendance] = useState<ServiceRehearsal | null>(null);
 
   // Volunteer Attendance state (Phase 9)
   const [attendanceRecords, setAttendanceRecords] = useState<VolunteerAttendanceRecord[]>([]);
@@ -622,24 +602,6 @@ export default function AdminServicePlanner({ navigation }: any) {
       (queues) => {
         setAssignmentQueues(queues);
         setLoadingQueues(false);
-      }
-    );
-    return () => unsubscribe();
-  }, [selectedPlan?.id, churchId]);
-
-  // Realtime subscription for Rehearsals on selected service (Phase 6)
-  useEffect(() => {
-    if (!selectedPlan?.id) {
-      setRehearsals([]);
-      return;
-    }
-    setLoadingRehearsals(true);
-    const unsubscribe = ServiceRosterService.listenServiceRehearsals(
-      churchId,
-      selectedPlan.id,
-      (list) => {
-        setRehearsals(list);
-        setLoadingRehearsals(false);
       }
     );
     return () => unsubscribe();
@@ -2374,6 +2336,7 @@ export default function AdminServicePlanner({ navigation }: any) {
     }
   };
 
+
   const handleSeedDefaultTeams = async () => {
     Alert.alert(
       'Seed Ministry Teams',
@@ -2734,130 +2697,6 @@ export default function AdminServicePlanner({ navigation }: any) {
   };
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Rehearsal Management Handlers (Phase 6)
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  const openCreateRehearsalModal = () => {
-    if (!selectedPlan) return;
-    setEditingRehearsalId(null);
-    setRehearsalNameInput('Saturday Full Band Rehearsal');
-    const svcDate = new Date(selectedPlan.date);
-    svcDate.setDate(svcDate.getDate() - 1);
-    const prevDate = svcDate.toISOString().split('T')[0];
-    setRehearsalDateInput(prevDate || selectedPlan.date);
-    setRehearsalStartTimeInput('06:00 PM');
-    setRehearsalEndTimeInput('07:30 PM');
-    setRehearsalLocationInput('Church Sanctuary');
-    setRehearsalTeamIds(['team_worship', 'team_music']);
-    setRehearsalParticipantIds([]);
-    setRehearsalSongPracticeIds((selectedPlan.setlist || []).map(s => s.id));
-    setRehearsalNotesInput('Full run-through of worship setlist, transition cues, and soundcheck.');
-    setShowRehearsalModal(true);
-  };
-
-  const openEditRehearsalModal = (rehearsal: ServiceRehearsal) => {
-    setEditingRehearsalId(rehearsal.id);
-    setRehearsalNameInput(rehearsal.rehearsalName);
-    setRehearsalDateInput(rehearsal.date);
-    setRehearsalStartTimeInput(formatTimeTo12Hour(rehearsal.startTime) || '06:00 PM');
-    setRehearsalEndTimeInput(formatTimeTo12Hour(rehearsal.endTime) || '07:30 PM');
-    setRehearsalLocationInput(rehearsal.location);
-    setRehearsalTeamIds(rehearsal.assignedTeamIds || []);
-    setRehearsalParticipantIds(rehearsal.participantMemberIds || []);
-    setRehearsalSongPracticeIds(rehearsal.songPracticeIds || []);
-    setRehearsalNotesInput(rehearsal.notes || '');
-    setShowRehearsalModal(true);
-  };
-
-  const handleSaveRehearsal = async () => {
-    if (!selectedPlan) return;
-    if (!rehearsalNameInput.trim()) {
-      Alert.alert('Required', 'Please enter rehearsal name.');
-      return;
-    }
-    if (!rehearsalDateInput.trim()) {
-      Alert.alert('Required', 'Please enter rehearsal date.');
-      return;
-    }
-
-    try {
-      setSavingRehearsal(true);
-      await ServiceRosterService.createOrUpdateRehearsal(churchId, selectedPlan.id, {
-        ...(editingRehearsalId ? { id: editingRehearsalId } : {}),
-        rehearsalName: rehearsalNameInput.trim(),
-        date: rehearsalDateInput.trim(),
-        startTime: rehearsalStartTimeInput.trim(),
-        endTime: rehearsalEndTimeInput.trim(),
-        location: rehearsalLocationInput.trim(),
-        assignedTeamIds: rehearsalTeamIds,
-        participantMemberIds: rehearsalParticipantIds,
-        songPracticeIds: rehearsalSongPracticeIds,
-        notes: rehearsalNotesInput.trim()
-      });
-
-      setShowRehearsalModal(false);
-      Alert.alert(
-        editingRehearsalId ? 'Updated' : 'Rehearsal Scheduled',
-        `Rehearsal "${rehearsalNameInput.trim()}" saved. Automated FCM notifications dispatched to all musicians and invited teams.`
-      );
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to save rehearsal.');
-    } finally {
-      setSavingRehearsal(false);
-    }
-  };
-
-  const handleDeleteRehearsal = (rehearsalId: string, name: string) => {
-    if (!selectedPlan) return;
-    Alert.alert(
-      'Delete Rehearsal',
-      `Are you sure you want to remove rehearsal "${name}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await ServiceRosterService.deleteRehearsal(churchId, selectedPlan.id, rehearsalId);
-              Alert.alert('Deleted', 'Rehearsal removed.');
-            } catch (err: any) {
-              Alert.alert('Error', err.message || 'Failed to delete rehearsal.');
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  const openTakeRehearsalAttendance = (rehearsal: ServiceRehearsal) => {
-    setActiveRehearsalForAttendance(rehearsal);
-    setShowRehearsalAttendanceModal(true);
-  };
-
-  const handleSetParticipantAttendance = async (
-    rehearsalId: string,
-    memberId: string,
-    status: 'present' | 'absent' | 'late' | 'excused'
-  ) => {
-    if (!selectedPlan) return;
-    try {
-      await ServiceRosterService.updateRehearsalAttendance(churchId, selectedPlan.id, rehearsalId, memberId, status);
-      if (activeRehearsalForAttendance && activeRehearsalForAttendance.id === rehearsalId) {
-        setActiveRehearsalForAttendance({
-          ...activeRehearsalForAttendance,
-          attendance: {
-            ...(activeRehearsalForAttendance.attendance || {}),
-            [memberId]: status
-          }
-        });
-      }
-    } catch (err) {
-      console.error('Failed to update rehearsal attendance:', err);
-    }
-  };
-
-  // ─────────────────────────────────────────────────────────────────────────────
   // Phase 9: Volunteer Attendance & Native PDF/CSV Run-Sheet Export Actions
   // ─────────────────────────────────────────────────────────────────────────────
 
@@ -3155,13 +2994,12 @@ export default function AdminServicePlanner({ navigation }: any) {
             <Text style={[styles.headerTitle, { color: primaryText }]} numberOfLines={1}>
               {activePlannerTab === 'setlist' ? 'Worship Setlist' :
                 activePlannerTab === 'queue' ? 'Assignments' :
-                  activePlannerTab === 'rehearsals' ? 'Service Rehearsals' :
-                    activePlannerTab === 'attendance' ? 'Volunteer Attendance' :
-                      activePlannerTab === 'analytics' ? 'Roster Analytics' :
-                        activePlannerTab === 'teams' ? 'Ministry Teams' :
-                          activePlannerTab === 'skills' ? 'Verified Skills' :
-                            activePlannerTab === 'templates' ? 'Service Templates' :
-                              'Service Roster'}
+                  activePlannerTab === 'attendance' ? 'Volunteer Attendance' :
+                    activePlannerTab === 'analytics' ? 'Roster Analytics' :
+                      activePlannerTab === 'teams' ? 'Ministry Teams' :
+                        activePlannerTab === 'skills' ? 'Verified Skills' :
+                          activePlannerTab === 'templates' ? 'Service Templates' :
+                            'Service Roster'}
             </Text>
           </View>
 
@@ -3176,7 +3014,6 @@ export default function AdminServicePlanner({ navigation }: any) {
               }
             ]}
             onPress={
-              activePlannerTab === 'rehearsals' ? openCreateRehearsalModal :
               activePlannerTab === 'attendance' ? handleCheckInAllVolunteers :
               activePlannerTab === 'analytics' ? fetchAnalytics :
               activePlannerTab === 'setlist' ? openSongPicker :
@@ -3194,8 +3031,7 @@ export default function AdminServicePlanner({ navigation }: any) {
               ]}
               numberOfLines={1}
             >
-              {activePlannerTab === 'rehearsals' ? 'Practice' :
-               activePlannerTab === 'attendance' ? 'Check-In' :
+              {activePlannerTab === 'attendance' ? 'Check-In' :
                activePlannerTab === 'analytics' ? 'Refresh' :
                activePlannerTab === 'setlist' ? 'Add Song' :
                activePlannerTab === 'teams' ? 'Add Team' :
@@ -3394,6 +3230,8 @@ export default function AdminServicePlanner({ navigation }: any) {
                   </TouchableOpacity>
                 ))}
               </ScrollView>
+
+
 
               {filteredPlans.length === 0 ? (
                 <View style={[styles.emptyCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
@@ -4529,161 +4367,6 @@ export default function AdminServicePlanner({ navigation }: any) {
                   </View>
                 );
               })}
-            </View>
-          )}
-
-          {/* TAB: REHEARSAL MANAGEMENT (PHASE 6) */}
-          {activePlannerTab === 'rehearsals' && selectedPlan && (
-            <View style={styles.tabContent}>
-              <View style={styles.sectionHeaderRow}>
-                <View>
-                  <Text style={[styles.sectionHeading, { color: primaryText }]}>Service Rehearsals</Text>
-                  <Text style={[styles.sectionSubheading, { color: secondaryText }]}>
-                    Coordinate band practice, vocal run-throughs, and technical soundchecks.
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.newServiceBtn}
-                  onPress={openCreateRehearsalModal}
-                  activeOpacity={0.85}
-                >
-                  <Plus size={14} color="#FFFFFF" />
-                  <Text style={styles.newServiceBtnTxt}>Add Practice</Text>
-                </TouchableOpacity>
-              </View>
-
-              {rehearsals.length === 0 ? (
-                <View style={[styles.emptyCard, { backgroundColor: cardSurface, borderColor }]}>
-                  <Clock size={36} color="#94A3B8" />
-                  <Text style={[styles.emptyTitle, { color: primaryText }]}>No Rehearsals Scheduled</Text>
-                  <Text style={[styles.emptySubtitle, { color: secondaryText }]}>
-                    Schedule vocal rehearsals, full band soundchecks, or worship team practices.
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.createEmptyBtn}
-                    onPress={openCreateRehearsalModal}
-                  >
-                    <Plus size={15} color="#FFFFFF" />
-                    <Text style={styles.createEmptyBtnTxt}>Schedule First Rehearsal</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                rehearsals.map(reh => {
-                  const dayStr = reh.date.split('-')[2] || '01';
-                  const monthStr = new Date(reh.date).toLocaleString('default', { month: 'short' }).toUpperCase();
-                  const attendanceRecord = reh.attendance || {};
-                  const presentCount = Object.values(attendanceRecord).filter(v => v === 'present').length;
-                  const lateCount = Object.values(attendanceRecord).filter(v => v === 'late').length;
-                  const absentCount = Object.values(attendanceRecord).filter(v => v === 'absent').length;
-
-                  // Target songs from plan's setlist
-                  const practiceSongs = (selectedPlan.setlist || []).filter(s => 
-                    (reh.songPracticeIds || []).includes(s.id)
-                  );
-
-                  return (
-                    <View
-                      key={reh.id}
-                      style={[styles.rehearsalCard, { backgroundColor: cardSurface, borderColor }]}
-                    >
-                      <View style={styles.rehearsalCardTop}>
-                        <View style={styles.dateBadge}>
-                          <Text style={styles.dateBadgeDay}>{dayStr}</Text>
-                          <Text style={styles.dateBadgeMonth}>{monthStr}</Text>
-                        </View>
-
-                        <View style={{ flex: 1, paddingHorizontal: 10 }}>
-                          <Text style={[styles.rehearsalTitle, { color: primaryText }]}>
-                            {reh.rehearsalName}
-                          </Text>
-                          <Text style={[styles.rehearsalMeta, { color: secondaryText }]}>
-                            ⏰ {reh.startTime} - {reh.endTime} · 📍 {reh.location}
-                          </Text>
-                        </View>
-
-                        <View style={styles.rehearsalCardActions}>
-                          <TouchableOpacity
-                            style={styles.itemEditBtn}
-                            onPress={() => openEditRehearsalModal(reh)}
-                          >
-                            <Edit3 size={14} color={secondaryBtnText} />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={styles.itemDeleteBtn}
-                            onPress={() => handleDeleteRehearsal(reh.id, reh.rehearsalName)}
-                          >
-                            <Trash2 size={14} color="#DC2626" />
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-
-                      {/* Assigned Teams Pills */}
-                      {reh.assignedTeamIds && reh.assignedTeamIds.length > 0 && (
-                        <View style={styles.rehearsalTeamsRow}>
-                          {reh.assignedTeamIds.map((tId, tIdx) => {
-                            const teamObj = ministryTeams.find(t => t.id === tId);
-                            return (
-                              <View key={tId ? `team_${tId}_${tIdx}` : `team_${tIdx}`} style={[styles.rehTeamPill, { backgroundColor: teamObj?.color ? `${teamObj.color}15` : '#E0E7FF' }]}>
-                                <Users size={11} color={teamObj?.color || '#2E6B4F'} />
-                                <Text style={[styles.rehTeamPillTxt, { color: teamObj?.color || '#2E6B4F' }]}>
-                                  {teamObj?.name || tId}
-                                </Text>
-                              </View>
-                            );
-                          })}
-                        </View>
-                      )}
-
-                      {/* Practice Songs Section */}
-                      {practiceSongs.length > 0 && (
-                        <View style={styles.rehSongsBox}>
-                          <Text style={[styles.rehSectionSubheading, { color: secondaryText }]}>
-                            SONGS FOR PRACTICE ({practiceSongs.length})
-                          </Text>
-                          {practiceSongs.map((s, sIdx) => (
-                            <View key={s.id ? `prac_${s.id}_${sIdx}` : `prac_${sIdx}`} style={styles.rehSongItemRow}>
-                              <Music size={12} color={secondaryText} />
-                              <Text style={[styles.rehSongTitle, { color: primaryText }]} numberOfLines={1}>
-                                {s.title} {s.titleTe ? `(${s.titleTe})` : ''}
-                              </Text>
-                              <View style={styles.keyBadge}>
-                                <Text style={styles.keyBadgeTxt}>Key {s.key}</Text>
-                              </View>
-                              <Text style={[styles.ladderCandMeta, { color: secondaryText }]}>{s.tempo} BPM</Text>
-                            </View>
-                          ))}
-                        </View>
-                      )}
-
-                      {/* Instructions / Notes */}
-                      {reh.notes ? (
-                        <View style={styles.rehNotesBox}>
-                          <Text style={[styles.rehNotesTxt, { color: secondaryText }]}>
-                            📝 {reh.notes}
-                          </Text>
-                        </View>
-                      ) : null}
-
-                      {/* Attendance Bar */}
-                      <View style={styles.rehAttendanceFooter}>
-                        <View style={styles.attendanceStats}>
-                          <Text style={styles.attStatItem}>✅ {presentCount} Present</Text>
-                          {lateCount > 0 && <Text style={styles.attStatItem}>⏳ {lateCount} Late</Text>}
-                          {absentCount > 0 && <Text style={styles.attStatItem}>❌ {absentCount} Absent</Text>}
-                        </View>
-
-                        <TouchableOpacity
-                          style={styles.takeAttendanceBtn}
-                          onPress={() => openTakeRehearsalAttendance(reh)}
-                        >
-                          <UserCheck size={13} color="#FFFFFF" />
-                          <Text style={styles.takeAttendanceBtnTxt}>Take Attendance</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  );
-                })
-              )}
             </View>
           )}
 
@@ -7807,311 +7490,6 @@ export default function AdminServicePlanner({ navigation }: any) {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ─── MODAL: SCHEDULE / EDIT REHEARSAL (PHASE 6) ─── */}
-      <Modal visible={showRehearsalModal} animationType="slide" transparent>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalOverlay}>
-          <View style={[styles.modalSheet, { backgroundColor: cardSurface, maxHeight: '90%' }]}>
-            <View style={styles.modalHeader}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.queueCategoryPill}>REHEARSAL PLANNER</Text>
-                <Text style={[styles.modalTitle, { color: primaryText }]}>
-                  {editingRehearsalId ? 'Edit Service Rehearsal' : 'Schedule Service Rehearsal'}
-                </Text>
-                {selectedPlan && (
-                  <Text style={[styles.modalSubtitle, { color: secondaryText }]}>
-                    Service: {selectedPlan.serviceTitle} ({formatDateMonthYear(selectedPlan.date)})
-                  </Text>
-                )}
-              </View>
-              <TouchableOpacity onPress={() => setShowRehearsalModal(false)}>
-                <X size={20} color="#64748B" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={{ maxHeight: 460 }} showsVerticalScrollIndicator={false}>
-              {/* Presets */}
-              <Text style={[styles.fieldLabel, { color: primaryText }]}>Rehearsal Type Preset</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-                {[
-                  'Saturday Full Band Rehearsal',
-                  'Vocal Harmonies Practice',
-                  'Midweek Acoustic Practice',
-                  'Sunday Morning Sound Check'
-                ].map(pre => (
-                  <TouchableOpacity
-                    key={pre}
-                    style={[styles.rehPresetChip, rehearsalNameInput === pre && styles.rehPresetChipActive]}
-                    onPress={() => setRehearsalNameInput(pre)}
-                  >
-                    <Text style={[styles.rehPresetChipTxt, rehearsalNameInput === pre && styles.rehPresetChipTxtActive]}>
-                      {pre}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-
-              <Text style={[styles.fieldLabel, { color: primaryText }]}>Rehearsal Title *</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
-                placeholder="e.g. Saturday Full Band Rehearsal"
-                placeholderTextColor="#94A3B8"
-                value={rehearsalNameInput}
-                onChangeText={setRehearsalNameInput}
-              />
-
-              <View style={styles.formRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Date (YYYY-MM-DD) *</Text>
-                  <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
-                    value={rehearsalDateInput}
-                    onChangeText={setRehearsalDateInput}
-                  />
-                </View>
-                <View style={{ width: 95 }}>
-                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Start Time</Text>
-                  <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
-                    value={rehearsalStartTimeInput}
-                    onChangeText={setRehearsalStartTimeInput}
-                  />
-                </View>
-                <View style={{ width: 95 }}>
-                  <Text style={[styles.fieldLabel, { color: primaryText }]}>End Time</Text>
-                  <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
-                    value={rehearsalEndTimeInput}
-                    onChangeText={setRehearsalEndTimeInput}
-                  />
-                </View>
-              </View>
-
-              <Text style={[styles.fieldLabel, { color: primaryText }]}>Location</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
-                value={rehearsalLocationInput}
-                onChangeText={setRehearsalLocationInput}
-              />
-
-              {/* Teams Selector */}
-              <Text style={[styles.fieldLabel, { color: primaryText }]}>Ministry Teams Participating</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
-                {ministryTeams.map(t => {
-                  const isChecked = rehearsalTeamIds.includes(t.id);
-                  return (
-                    <TouchableOpacity
-                      key={t.id}
-                      style={[
-                        styles.teamPickerChip,
-                        isChecked && { backgroundColor: t.color || primaryBtnBg, borderColor: t.color || primaryBtnBg }
-                      ]}
-                      onPress={() => {
-                        if (isChecked) {
-                          setRehearsalTeamIds(rehearsalTeamIds.filter(id => id !== t.id));
-                        } else {
-                          setRehearsalTeamIds([...rehearsalTeamIds, t.id]);
-                        }
-                      }}
-                    >
-                      <Text style={[styles.teamPickerChipTxt, isChecked && { color: '#FFFFFF' }]}>
-                        {t.name}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              {/* Songs for Practice Selector */}
-              <Text style={[styles.fieldLabel, { color: primaryText }]}>Songs to Practice (from Setlist)</Text>
-              {(selectedPlan?.setlist || []).length === 0 ? (
-                <Text style={[styles.fieldHint, { color: secondaryText }]}>
-                  No songs in worship setlist yet. Add songs from Worship Setlist tab.
-                </Text>
-              ) : (
-                (selectedPlan?.setlist || []).map((song, sIdx) => {
-                  const isSelected = rehearsalSongPracticeIds.includes(song.id);
-                  return (
-                    <TouchableOpacity
-                      key={song.id ? `reh_song_${song.id}_${sIdx}` : `reh_song_${sIdx}`}
-                      style={[
-                        styles.rehSongPickRow,
-                        { borderColor },
-                        isSelected && styles.rehSongPickRowActive
-                      ]}
-                      onPress={() => {
-                        if (isSelected) {
-                          setRehearsalSongPracticeIds(rehearsalSongPracticeIds.filter(id => id !== song.id));
-                        } else {
-                          setRehearsalSongPracticeIds([...rehearsalSongPracticeIds, song.id]);
-                        }
-                      }}
-                    >
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-                        <View style={[styles.rankCircle, isSelected ? styles.rankCircleAccepted : styles.rankCircleIdle]}>
-                          {isSelected ? <Check size={12} color="#FFFFFF" /> : <Plus size={12} color="#64748B" />}
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={[styles.rehSongPickTxt, { color: primaryText }]}>
-                            {song.title} {song.titleTe ? `(${song.titleTe})` : ''}
-                          </Text>
-                          <Text style={[styles.ladderCandMeta, { color: secondaryText }]}>
-                            Key {song.key} · {song.tempo} BPM · Leader: {song.ledBy || 'Worship Team'}
-                          </Text>
-                        </View>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })
-              )}
-
-              <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 12 }]}>
-                Rehearsal Notes & Arrangements
-              </Text>
-              <TextInput
-                style={[styles.textArea, { backgroundColor: screenBg, color: primaryText, borderColor }]}
-                placeholder="Arrangement notes, keys, vocal harmonies, audio check cues..."
-                placeholderTextColor="#94A3B8"
-                multiline
-                numberOfLines={3}
-                value={rehearsalNotesInput}
-                onChangeText={setRehearsalNotesInput}
-              />
-            </ScrollView>
-
-            <View style={styles.modalFooter}>
-              <TouchableOpacity
-                style={styles.modalCancelBtn}
-                onPress={() => setShowRehearsalModal(false)}
-              >
-                <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalConfirmBtn}
-                disabled={savingRehearsal}
-                onPress={handleSaveRehearsal}
-              >
-                {savingRehearsal ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.modalConfirmBtnTxt}>
-                    {editingRehearsalId ? 'Update Rehearsal' : 'Schedule & Notify'}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {/* ─── MODAL: REHEARSAL ATTENDANCE TRACKER (PHASE 6) ─── */}
-      <Modal visible={showRehearsalAttendanceModal} animationType="slide" transparent>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalOverlay}>
-          <View style={[styles.modalSheet, { backgroundColor: cardSurface, maxHeight: '90%' }]}>
-            <View style={styles.modalHeader}>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={styles.queueCategoryPill}>ATTENDANCE</Text>
-                  <Text style={[styles.headerBadgeTxt, { color: '#059669' }]}>REHEARSAL CHECK-IN</Text>
-                </View>
-                <Text style={[styles.modalTitle, { color: primaryText }]}>
-                  {activeRehearsalForAttendance?.rehearsalName}
-                </Text>
-                <Text style={[styles.modalSubtitle, { color: secondaryText }]}>
-                  📅 {activeRehearsalForAttendance?.date} · ⏰ {activeRehearsalForAttendance?.startTime}
-                </Text>
-              </View>
-              <TouchableOpacity onPress={() => setShowRehearsalAttendanceModal(false)}>
-                <X size={20} color="#64748B" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={{ maxHeight: 460 }} showsVerticalScrollIndicator={false}>
-              {(() => {
-                // Collect participants from assigned teams + direct participant IDs
-                const teamMemberIds = new Set<string>();
-                (activeRehearsalForAttendance?.assignedTeamIds || []).forEach(tId => {
-                  const teamObj = ministryTeams.find(t => t.id === tId);
-                  (teamObj?.memberIds || []).forEach(mId => teamMemberIds.add(mId));
-                });
-                (activeRehearsalForAttendance?.participantMemberIds || []).forEach(mId => teamMemberIds.add(mId));
-
-                const participantMembers = churchMembers.filter(m => teamMemberIds.has(m.id));
-
-                if (participantMembers.length === 0) {
-                  return (
-                    <View style={[styles.emptyCard, { backgroundColor: screenBg, borderColor }]}>
-                      <Text style={[styles.emptySubtitle, { color: secondaryText }]}>
-                        No participants assigned to this rehearsal yet.
-                      </Text>
-                    </View>
-                  );
-                }
-
-                return participantMembers.map((m, mIdx) => {
-                  const curStatus = activeRehearsalForAttendance?.attendance?.[m.id];
-                  return (
-                    <View
-                      key={m.id ? `part_${m.id}_${mIdx}` : `part_${mIdx}`}
-                      style={[styles.attMemberCard, { backgroundColor: screenBg, borderColor }]}
-                    >
-                      <View style={{ flex: 1, paddingRight: 8 }}>
-                        <Text style={[styles.recMemberName, { color: primaryText }]}>
-                          {m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim()}
-                        </Text>
-                        <Text style={[styles.ladderCandMeta, { color: secondaryText }]}>
-                          {m.phone || 'In directory'} · {m.primarySkill || 'Volunteer'}
-                        </Text>
-                      </View>
-
-                      {/* 4-way attendance status pills */}
-                      <View style={styles.attPillGroup}>
-                        {[
-                          { key: 'present', label: 'P', color: '#059669', bg: '#ECFDF5' },
-                          { key: 'late', label: 'L', color: '#D97706', bg: '#FEF3C7' },
-                          { key: 'absent', label: 'A', color: '#DC2626', bg: '#FEF2F2' },
-                          { key: 'excused', label: 'E', color: '#64748B', bg: '#F1F5F9' },
-                        ].map(st => {
-                          const isSelected = curStatus === st.key;
-                          return (
-                            <TouchableOpacity
-                              key={st.key}
-                              style={[
-                                styles.attPill,
-                                isSelected ? { backgroundColor: st.color, borderColor: st.color } : { borderColor }
-                              ]}
-                              onPress={() => activeRehearsalForAttendance && handleSetParticipantAttendance(
-                                activeRehearsalForAttendance.id,
-                                m.id,
-                                st.key as any
-                              )}
-                            >
-                              <Text style={[
-                                styles.attPillTxt,
-                                isSelected ? { color: '#FFFFFF', fontWeight: '800' } : { color: secondaryText }
-                              ]}>
-                                {st.label}
-                              </Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </View>
-                    </View>
-                  );
-                });
-              })()}
-            </ScrollView>
-
-            <View style={styles.modalFooter}>
-              <TouchableOpacity
-                style={[styles.modalConfirmBtn, { width: '100%' }]}
-                onPress={() => setShowRehearsalAttendanceModal(false)}
-              >
-                <Text style={styles.modalConfirmBtnTxt}>Done Check-In</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
     </View>
   );
 }
