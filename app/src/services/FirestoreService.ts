@@ -71,7 +71,6 @@ export interface AppMember {
   secondarySkill?: string;
   primarySkills?: string[];
   secondarySkills?: string[];
-  status?: string;
   relation?: string;
   isGuest?: boolean;
   invitedByMemberId?: string;

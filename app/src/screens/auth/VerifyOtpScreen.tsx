@@ -13,7 +13,7 @@ import {
   ScrollView,
   Image
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import auth from '@react-native-firebase/auth';
 import { AuthStackParamList } from '../../navigation/AuthNavigator';
