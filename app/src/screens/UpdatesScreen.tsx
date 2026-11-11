@@ -128,7 +128,7 @@ function stripHtml(html: string): string {
 
 export default function UpdatesScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { highlightId, highlightType } = route?.params || {};
   const { t } = useLanguage();
 
@@ -139,9 +139,12 @@ export default function UpdatesScreen({ navigation, route }: any) {
     if (type === 'baptism_request_admin' || type === 'baptism_request') return 'BAPTISM REQUEST';
     if (type === 'prayer_request_admin' || type === 'prayer_request' || type === 'prayer') return 'PRAYER REQUEST';
     if (type === 'baptism' || type === 'baptism_request_member') return 'BAPTISM';
+    if (type === 'admin_roster_alert') return 'SERVICE ROSTER ALERT';
     if (type === 'service_roster') return 'SERVICE ROSTER';
     if (type === 'service_assignment') return 'SERVICE ASSIGNMENT';
     if (type === 'service_responsibility_broadcast') return 'OPEN DUTY AVAILABLE';
+    if (type === 'service_reminder') return 'SERVICE REMINDER';
+    if (type === 'rehearsal_alert') return 'REHEARSAL SCHEDULED';
     if (type === 'volunteer_application_admin') return 'VOLUNTEER APPLICATION';
     if (type === 'volunteer_application_member') return 'VOLUNTEER UPDATE';
     if (type === 'volunteer_assignment') return 'VOLUNTEER ASSIGNMENT';
@@ -162,6 +165,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
     const combined = [...broadcastsList, ...churchNotifsList, ...meetingsList, ...memberNotifsList].sort((a, b) => (b.rawDate || 0) - (a.rawDate || 0));
     const seenIds = new Set<string>();
     const seenVolunteerKeys = new Set<string>();
+    const seenRosterAlertKeys = new Set<string>();
     const seenLiveStreams = new Set<string>();
     const deduplicated = combined.filter(item => {
       if (!item || !item.id) return false;
@@ -177,6 +181,15 @@ export default function UpdatesScreen({ navigation, route }: any) {
           return false;
         }
         seenVolunteerKeys.add(volKey);
+      }
+
+      // Deduplicate duplicate admin roster alerts with identical service/title/content
+      if (item.type === 'admin_roster_alert') {
+        const rosterKey = `${item.serviceId || ''}|${item.title || ''}|${item.content || ''}`;
+        if (seenRosterAlertKeys.has(rosterKey)) {
+          return false;
+        }
+        seenRosterAlertKeys.add(rosterKey);
       }
 
       // Deduplicate live stream broadcasts so members only see the single latest active live alert
@@ -355,6 +368,10 @@ export default function UpdatesScreen({ navigation, route }: any) {
       icon = Calendar;
       color = '#10b981';
       resolvedType = 'event';
+    } else if (data.type === 'admin_roster_alert' || data.title?.includes('Response Deadline Expired') || data.title?.includes('No Volunteers:') || data.title?.includes('All Volunteers Declined') || data.title?.includes('Unfilled Dut')) {
+      icon = Layers;
+      color = '#DC2626';
+      resolvedType = 'admin_roster_alert';
     } else if (data.type === 'service_roster' || data.title?.includes('Service Roster') || data.title?.includes('Roster Published')) {
       icon = Layers;
       color = '#059669';
@@ -367,6 +384,14 @@ export default function UpdatesScreen({ navigation, route }: any) {
       icon = Zap;
       color = '#D97706';
       resolvedType = 'service_responsibility_broadcast';
+    } else if (data.type === 'service_reminder' || data.title?.includes('Serving Tomorrow')) {
+      icon = Bell;
+      color = '#059669';
+      resolvedType = 'service_reminder';
+    } else if (data.type === 'rehearsal_alert' || data.title?.includes('Rehearsal Scheduled')) {
+      icon = Music;
+      color = '#7C3AED';
+      resolvedType = 'rehearsal_alert';
     } else if (data.type === 'baptism_request_admin' || data.title?.includes('New Baptism Request')) {
       icon = Droplets;
       color = '#0284c7';
@@ -499,6 +524,10 @@ export default function UpdatesScreen({ navigation, route }: any) {
       serviceId: data.serviceId || null,
       roleId: data.roleId || null,
       roleTitle: data.roleTitle || null,
+      serviceTitle: data.serviceTitle || null,
+      serviceDate: data.serviceDate || null,
+      requestId: data.requestId || null,
+      prayerId: data.prayerId || null,
       applicationId: data.applicationId || data.referenceId || null,
       eventId: data.eventId || null,
       volunteerType: data.volunteerType || null,
@@ -685,8 +714,11 @@ export default function UpdatesScreen({ navigation, route }: any) {
   }, [highlightId, highlightType, allUpdates, hasAutoOpened, loading]);
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FAF7F2" />
+    <View style={[styles.container, { backgroundColor: isDark ? colors.background : '#FAF7F2' }]}>
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={isDark ? colors.background : '#FAF7F2'}
+      />
       
       {/* ── Page Header Hero Card ── */}
             {/* ── Screen Header (Clean circular back button & title) ── */}
@@ -721,15 +753,18 @@ export default function UpdatesScreen({ navigation, route }: any) {
             </View>
           ) : loading && visibleUpdates.length > 0 ? (
             <View style={styles.loadingBox}>
-              <ActivityIndicator size="small" color="#1a2d5a" />
-              <Text style={styles.loadingTxt}>{t('updates.syncingAlerts')}</Text>
+              <ActivityIndicator size="small" color={isDark ? '#E4E4E7' : '#1a2d5a'} />
+              <Text style={[styles.loadingTxt, isDark && { color: colors.textSecondary }]}>{t('updates.syncingAlerts')}</Text>
             </View>
           ) : null}
 
           {visibleUpdates.map((update) => (
             <SwipeableRow key={update.id} onDelete={() => handleDeleteUpdate(update.id)}>
               <TouchableOpacity 
-                style={styles.updateCard}
+                style={[
+                  styles.updateCard,
+                  isDark && { backgroundColor: colors.surface, borderColor: colors.border },
+                ]}
                 activeOpacity={0.7}
                 onPress={() => {
                   if (update.type === 'song') {
@@ -753,7 +788,62 @@ export default function UpdatesScreen({ navigation, route }: any) {
                     const qId = update.quizId || update.relatedId || update.id;
                     navigation.navigate('BibleQuizDetail', { quizId: qId, churchId: update.churchId });
                   } else if (update.type === 'event') {
-                    navigation.navigate('Events');
+                    if (update.eventId) {
+                      navigation.navigate('EventDetails', { eventId: update.eventId, id: update.eventId });
+                    } else {
+                      navigation.navigate('Events');
+                    }
+                  } else if (update.type === 'admin_roster_alert') {
+                    navigation.navigate('AdminRoot', {
+                      targetTab: 'Service Roster',
+                      serviceId: update.serviceId,
+                      roleId: update.roleId,
+                      timestamp: Date.now(),
+                    });
+                  } else if (update.type === 'service_roster' || update.type === 'rehearsal_alert') {
+                    navigation.navigate('MyService', {
+                      serviceId: update.serviceId,
+                      initialTab: 'roster',
+                    });
+                  } else if (
+                    update.type === 'service_assignment' ||
+                    update.type === 'service_responsibility_broadcast' ||
+                    update.type === 'service_reminder'
+                  ) {
+                    navigation.navigate('MyService', {
+                      serviceId: update.serviceId,
+                      initialTab: 'responsibilities',
+                    });
+                  } else if (update.type === 'volunteer_application_admin') {
+                    const appId = update.applicationId || update.relatedId || update.id;
+                    navigation.navigate('AdminRoot', {
+                      targetTab: 'Volunteer Management',
+                      applicationId: appId,
+                      subType: update.volunteerType || 'general',
+                      timestamp: Date.now(),
+                    });
+                  } else if (
+                    update.type === 'volunteer_application_member' ||
+                    update.type === 'volunteer_assignment' ||
+                    update.type === 'volunteer_event_change' ||
+                    update.type === 'volunteer_reminder'
+                  ) {
+                    if (update.eventId) {
+                      navigation.navigate('EventDetails', { eventId: update.eventId, id: update.eventId });
+                    } else {
+                      navigation.navigate('Volunteer');
+                    }
+                  } else if (
+                    update.type === 'baptism_request_admin' ||
+                    update.type === 'baptism_request' ||
+                    update.type === 'baptism'
+                  ) {
+                    const reqId = update.requestId || update.id;
+                    if (isAdmin) {
+                      navigation.navigate('AdminRoot', { targetTab: 'Baptism', requestId: reqId, timestamp: Date.now() });
+                    } else {
+                      navigation.navigate('BaptismRequest', { requestId: reqId });
+                    }
                   } else if (update.type === 'prayer_request_admin' || update.type === 'prayer_request' || update.type === 'prayer' || update.type === 'prayer_request_member') {
                     const pId = update.prayerId || update.requestId || update.id;
                     if (isAdmin && update.type !== 'prayer_request_member') {
@@ -791,10 +881,10 @@ export default function UpdatesScreen({ navigation, route }: any) {
                 <View style={styles.updateInfo}>
                   <View style={styles.metaRow}>
                     <Text style={[styles.typeTag, { color: update.color }]}>{getTypeName(update.type)}</Text>
-                    <Text style={styles.dateTxt}>{formatDateDisplay(update.date)}</Text>
+                    <Text style={[styles.dateTxt, isDark && { color: colors.textSecondary }]}>{formatDateDisplay(update.date)}</Text>
                   </View>
-                  <Text style={styles.updateTitle}>{update.title}</Text>
-                  <Text style={styles.updateContent} numberOfLines={2}>{update.content}</Text>
+                  <Text style={[styles.updateTitle, isDark && { color: colors.text }]}>{update.title}</Text>
+                  <Text style={[styles.updateContent, isDark && { color: colors.textSecondary }]} numberOfLines={2}>{update.content}</Text>
                 </View>
               </TouchableOpacity>
             </SwipeableRow>
@@ -926,18 +1016,22 @@ export default function UpdatesScreen({ navigation, route }: any) {
                 <View style={styles.standardModalHeader}>
                   <View style={[
                     styles.stdIconBox, 
-                    (selectedUpdate?.type === 'emergency' || selectedUpdate?.title?.includes('🚨') || selectedUpdate?.type === 'youtube_live') && styles.stdIconBoxEmergency,
-                    (selectedUpdate?.type === 'service_roster' || selectedUpdate?.type === 'volunteer_application_member') && { backgroundColor: '#ECFDF5' },
+                    (selectedUpdate?.type === 'emergency' || selectedUpdate?.title?.includes('🚨') || selectedUpdate?.type === 'youtube_live' || selectedUpdate?.type === 'admin_roster_alert') && styles.stdIconBoxEmergency,
+                    (selectedUpdate?.type === 'service_roster' || selectedUpdate?.type === 'volunteer_application_member' || selectedUpdate?.type === 'service_reminder') && { backgroundColor: '#ECFDF5' },
                     (selectedUpdate?.type === 'service_assignment' || selectedUpdate?.type === 'service_responsibility_broadcast' || selectedUpdate?.type === 'volunteer_assignment') && { backgroundColor: '#EFF6FF' },
                     (selectedUpdate?.type === 'volunteer_application_admin' || selectedUpdate?.type === 'volunteer_event_change') && { backgroundColor: '#FEF3C7' },
-                    selectedUpdate?.type === 'volunteer_reminder' && { backgroundColor: '#F3E8FF' }
+                    (selectedUpdate?.type === 'volunteer_reminder' || selectedUpdate?.type === 'rehearsal_alert') && { backgroundColor: '#F3E8FF' }
                   ]}>
                     {selectedUpdate?.type === 'emergency' || selectedUpdate?.title?.includes('🚨') ? (
                       <AlertTriangle size={24} color="#ef4444" />
                     ) : selectedUpdate?.type === 'youtube_live' ? (
                       <Tv size={24} color="#ef4444" />
+                    ) : selectedUpdate?.type === 'admin_roster_alert' ? (
+                      <Layers size={24} color="#DC2626" />
                     ) : selectedUpdate?.type === 'service_roster' ? (
                       <Layers size={24} color="#059669" />
+                    ) : selectedUpdate?.type === 'rehearsal_alert' ? (
+                      <Music size={24} color="#7C3AED" />
                     ) : selectedUpdate?.type === 'service_assignment' || selectedUpdate?.type === 'volunteer_assignment' ? (
                       <UserCheck size={24} color="#2563EB" />
                     ) : selectedUpdate?.type === 'service_responsibility_broadcast' ? (
@@ -954,7 +1048,9 @@ export default function UpdatesScreen({ navigation, route }: any) {
                     <Text style={[
                       styles.stdTypeTag,
                       (selectedUpdate?.type === 'emergency' || selectedUpdate?.title?.includes('🚨') || selectedUpdate?.type === 'youtube_live') && { color: '#ef4444' },
-                      selectedUpdate?.type === 'service_roster' && { color: '#059669' },
+                      selectedUpdate?.type === 'admin_roster_alert' && { color: '#DC2626' },
+                      (selectedUpdate?.type === 'service_roster' || selectedUpdate?.type === 'service_reminder') && { color: '#059669' },
+                      selectedUpdate?.type === 'rehearsal_alert' && { color: '#7C3AED' },
                       (selectedUpdate?.type === 'service_assignment' || selectedUpdate?.type === 'service_responsibility_broadcast') && { color: '#2563EB' },
                       selectedUpdate?.type?.startsWith('volunteer_') && { color: selectedUpdate?.color || '#059669' }
                     ]}>
@@ -1106,6 +1202,25 @@ export default function UpdatesScreen({ navigation, route }: any) {
                     }}
                   >
                     <Text style={styles.joinLiveBtnTxt}>✨ View Testimony</Text>
+                  </TouchableOpacity>
+                )}
+
+                {selectedUpdate?.type === 'admin_roster_alert' && (
+                  <TouchableOpacity
+                    style={[styles.joinLiveBtn, { backgroundColor: '#DC2626', marginTop: 16 }]}
+                    onPress={() => {
+                      const sId = selectedUpdate?.serviceId;
+                      const rId = selectedUpdate?.roleId;
+                      setSelectedUpdate(null);
+                      navigation.navigate('AdminRoot', {
+                        targetTab: 'Service Roster',
+                        serviceId: sId,
+                        roleId: rId,
+                        timestamp: Date.now(),
+                      });
+                    }}
+                  >
+                    <Text style={styles.joinLiveBtnTxt}>📋 Open Service Roster</Text>
                   </TouchableOpacity>
                 )}
 

@@ -156,7 +156,7 @@ const getSafeDateParts = (dateStr: string) => {
   return { day: '01', month: 'SUN' };
 };
 
-export default function AdminServicePlanner({ navigation }: any) {
+export default function AdminServicePlanner({ navigation, routeParams }: any) {
   const insets = useSafeAreaInsets();
   const { isDark, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor, appFontFamily } = useAdminTheme();
   const inputBg = isDark ? '#27272A' : '#FAFAF9';
@@ -630,6 +630,16 @@ export default function AdminServicePlanner({ navigation }: any) {
     fetchMemberSkills();
     fetchCustomCategories();
   }, [churchId]);
+
+  useEffect(() => {
+    const targetServiceId = routeParams?.serviceId;
+    if (!targetServiceId || plans.length === 0) return;
+    const match = plans.find((p) => p.id === targetServiceId);
+    if (match) {
+      setSelectedPlan(match);
+      setActivePlannerTab('queue');
+    }
+  }, [routeParams?.serviceId, routeParams?.timestamp, plans]);
 
   // Realtime subscription for Assignment Queues on selected service (Phase 4)
   useEffect(() => {

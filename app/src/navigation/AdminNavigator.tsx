@@ -182,12 +182,14 @@ export default function AdminNavigator({ navigation, route }: any) {
   useEffect(() => {
     if (route?.params?.targetTab) {
       const target = String(route.params.targetTab).trim();
+      const lower = target.toLowerCase();
       const idx = tabs.findIndex(t => 
-        t.name.toLowerCase() === target.toLowerCase() ||
-        (target.toLowerCase().includes('prayer') && t.name === 'Prayers') ||
-        (target.toLowerCase().includes('baptism') && t.name === 'Baptism') ||
-        (target.toLowerCase().includes('testimon') && t.name === 'Testimonies') ||
-        (target.toLowerCase().includes('volunteer') && t.name === 'Volunteer Management')
+        t.name.toLowerCase() === lower ||
+        (lower.includes('prayer') && t.name === 'Prayers') ||
+        (lower.includes('baptism') && t.name === 'Baptism') ||
+        (lower.includes('testimon') && t.name === 'Testimonies') ||
+        (lower.includes('volunteer') && t.name === 'Volunteer Management') ||
+        ((lower.includes('roster') || lower.includes('service')) && t.name === 'Service Roster')
       );
       if (idx !== -1 && idx !== activeTab) {
         setTimeout(() => {
@@ -196,7 +198,7 @@ export default function AdminNavigator({ navigation, route }: any) {
         }, 0);
       }
     }
-  }, [route?.params?.targetTab, route?.params?.timestamp, route?.params?.requestId, route?.params?.prayerId, route?.params?.testimonyId]);
+  }, [route?.params?.targetTab, route?.params?.timestamp, route?.params?.requestId, route?.params?.prayerId, route?.params?.testimonyId, route?.params?.serviceId, route?.params?.applicationId]);
 
   const handleSetTab = (index: number) => {
     if (index !== activeTab) {

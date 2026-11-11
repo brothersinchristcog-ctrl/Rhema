@@ -689,10 +689,26 @@ class ServiceRosterService {
   }
 
   /**
-   * Delete a service plan
+   * Delete a service plan and its assignmentQueues / rehearsals / volunteerAttendance subcollections
    */
   async deleteServicePlan(churchId: string, planId: string): Promise<void> {
-    await this.getServicePlansCol(churchId).doc(planId).delete();
+    const planRef = this.getServicePlansCol(churchId).doc(planId);
+    const subcollections = ['assignmentQueues', 'rehearsals', 'volunteerAttendance'];
+
+    for (const sub of subcollections) {
+      try {
+        const subSnap = await planRef.collection(sub).get();
+        if (!subSnap.empty) {
+          const batch = firestore().batch();
+          subSnap.docs.forEach((doc) => batch.delete(doc.ref));
+          await batch.commit();
+        }
+      } catch (err) {
+        console.warn(`[ServiceRosterService] Could not clean up subcollection ${sub} for plan ${planId}:`, err);
+      }
+    }
+
+    await planRef.delete();
   }
 
   /**

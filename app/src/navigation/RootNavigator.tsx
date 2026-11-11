@@ -756,6 +756,16 @@ function Navigation() {
             });
           } else if (type === 'baptism_request_member') {
             navigationRef.navigate('BaptismRequest', { requestId: data.requestId || data.id });
+          } else if (type === 'admin_roster_alert') {
+            if (isAdmin && viewMode !== 'admin') {
+              setViewMode('admin');
+            }
+            navigationRef.navigate('AdminRoot', {
+              targetTab: 'Service Roster',
+              serviceId: data.serviceId,
+              roleId: data.roleId,
+              timestamp: Date.now(),
+            });
           } else if (type === 'volunteer_application_admin') {
             const appId = data.applicationId || data.requestId || data.id;
             console.log('🤝 [RootNavigator] Direct routing to Admin Volunteer Management:', { appId });
@@ -866,7 +876,8 @@ function Navigation() {
           type === 'prayer_request' ||
           type === 'prayer' ||
           type === 'testimony_admin' ||
-          type === 'volunteer_application_admin';
+          type === 'volunteer_application_admin' ||
+          type === 'admin_roster_alert';
 
         if (isAdminNotification && isAdmin && viewMode !== 'admin') {
           setViewMode('admin');
@@ -892,7 +903,8 @@ function Navigation() {
             type === 'prayer_request' ||
             type === 'prayer' ||
             type === 'testimony_admin' ||
-            type === 'volunteer_application_admin';
+            type === 'volunteer_application_admin' ||
+            type === 'admin_roster_alert';
 
           if (isAdminNotification && isAdmin && viewMode !== 'admin') {
             setViewMode('admin');
@@ -931,7 +943,8 @@ function Navigation() {
             type === 'prayer_request' ||
             type === 'prayer' ||
             type === 'testimony_admin' ||
-            type === 'volunteer_application_admin';
+            type === 'volunteer_application_admin' ||
+            type === 'admin_roster_alert';
 
           if (isAdminNotification && isAdmin && viewMode !== 'admin') {
             console.log(`Switching to admin view to handle ${type} notification`);

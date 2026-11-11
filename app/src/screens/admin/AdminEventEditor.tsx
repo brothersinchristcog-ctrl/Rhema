@@ -1841,15 +1841,35 @@ export default function AdminEventEditor() {
         </View>
 
         {/* ── RSVP Poll Settings ── */}
-        <View style={[styles.section, styles.secNavy, rsvpEnabled && { borderColor: '#4F46E5', borderWidth: 1.5, backgroundColor: '#EEF2FF' }]}>
+        <View
+          style={[
+            styles.section,
+            styles.secNavy,
+            rsvpEnabled && {
+              borderColor: isDark ? '#6366F1' : '#4F46E5',
+              borderWidth: 1.5,
+              backgroundColor: isDark ? '#14172C' : '#EEF2FF',
+            },
+          ]}
+        >
           <View style={styles.secHd}>
             <View style={[styles.secHdPill, { backgroundColor: rsvpEnabled ? '#4F46E5' : '#1a2d5a' }]}>
               <Users size={13} color="#fff" />
             </View>
             <Text style={styles.secHdTXT}>Member RSVP Poll</Text>
             {rsvpEnabled && (
-              <View style={{ backgroundColor: '#E0E7FF', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, marginLeft: 'auto' }}>
-                <Text style={{ fontSize: 10, fontWeight: '800', color: '#4338CA' }}>POLL ACTIVE</Text>
+              <View
+                style={{
+                  backgroundColor: isDark ? 'rgba(99, 102, 241, 0.25)' : '#E0E7FF',
+                  paddingHorizontal: 8,
+                  paddingVertical: 2,
+                  borderRadius: 6,
+                  marginLeft: 'auto',
+                }}
+              >
+                <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? '#C7D2FE' : '#4338CA' }}>
+                  POLL ACTIVE
+                </Text>
               </View>
             )}
           </View>
@@ -1866,30 +1886,37 @@ export default function AdminEventEditor() {
             <Switch
               value={rsvpEnabled}
               onValueChange={setRsvpEnabled}
-              trackColor={{ false: '#CBD5E1', true: '#4F46E5' }}
-              thumbColor={rsvpEnabled ? '#6366F1' : '#FFFFFF'}
+              trackColor={{ false: isDark ? '#3F3F46' : '#CBD5E1', true: '#4F46E5' }}
+              thumbColor={rsvpEnabled ? '#818CF8' : '#FFFFFF'}
             />
           </View>
 
           {rsvpEnabled && (
-            <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#E2E8F0' }}>
+            <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: isDark ? '#2E324D' : '#E2E8F0' }}>
               <Text style={styles.fLabel}>RSVP DEADLINE (OPTIONAL)</Text>
               <View style={{ flexDirection: 'row', gap: 8, marginTop: 4, alignItems: 'center' }}>
                 <TouchableOpacity
                   style={[styles.inputWrap, { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12 }]}
                   onPress={() => setRsvpDeadlinePickerVisible(true)}
                 >
-                  <Text style={{ fontSize: 13, color: rsvpDeadline ? '#0F172A' : '#94A3B8', fontWeight: rsvpDeadline ? '600' : '400' }}>
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 13,
+                      color: rsvpDeadline ? (isDark ? '#F8FAFC' : '#0F172A') : (isDark ? '#94A3B8' : '#64748B'),
+                      fontWeight: rsvpDeadline ? '600' : '400',
+                    }}
+                  >
                     {rsvpDeadline || 'Select deadline date (defaults to event start)'}
                   </Text>
-                  <Calendar size={16} color="#64748B" />
+                  <Calendar size={16} color={isDark ? '#94A3B8' : '#64748B'} />
                 </TouchableOpacity>
                 {!!rsvpDeadline && (
                   <TouchableOpacity
                     onPress={() => setRsvpDeadline('')}
-                    style={{ padding: 10, borderRadius: 10, backgroundColor: '#F1F5F9' }}
+                    style={{ padding: 10, borderRadius: 10, backgroundColor: isDark ? '#27272A' : '#F1F5F9' }}
                   >
-                    <X size={16} color="#64748B" />
+                    <X size={16} color={isDark ? '#A1A1AA' : '#64748B'} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -1897,9 +1924,21 @@ export default function AdminEventEditor() {
                 After this deadline, the RSVP poll will become read-only and no new or modified responses will be accepted.
               </Text>
 
-              <View style={{ marginTop: 12, padding: 10, borderRadius: 10, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#C7D2FE', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <Info size={16} color="#4F46E5" />
-                <Text style={{ flex: 1, fontSize: 11, color: '#3730A3', lineHeight: 15 }}>
+              <View
+                style={{
+                  marginTop: 12,
+                  padding: 10,
+                  borderRadius: 10,
+                  backgroundColor: isDark ? '#1D213D' : '#FFFFFF',
+                  borderWidth: 1,
+                  borderColor: isDark ? '#3B4270' : '#C7D2FE',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 10,
+                }}
+              >
+                <Info size={16} color={isDark ? '#818CF8' : '#4F46E5'} />
+                <Text style={{ flex: 1, fontSize: 11, color: isDark ? '#E0E7FF' : '#3730A3', lineHeight: 15 }}>
                   RSVP options: 🟢 Going · 🟡 Interested · 🔴 Not Going. Church leaders will have access to participation breakdown, member roster, and exportable reports.
                 </Text>
               </View>
@@ -2024,36 +2063,58 @@ export default function AdminEventEditor() {
           )}
         </View>
 
-        <View style={styles.footerBtnRow}>
-          <TouchableOpacity 
-            style={[
-              styles.btnDraft, 
-              isDark ? {
-                backgroundColor: '#27272A',
-                borderColor: 'rgba(255, 255, 255, 0.25)',
-                borderWidth: 1.5,
-              } : {
-                backgroundColor: '#F8FAFC',
-                borderColor: '#CBD5E1',
-                borderWidth: 1.5,
-              }
-            ]} 
-            onPress={() => handleSave('Draft')} 
-            disabled={loading}
-            activeOpacity={0.8}
-          >
-            {loading && publishStatus === 'Draft' ? (
-              <ActivityIndicator color={isDark ? '#FFFFFF' : '#0F172A'} size="small" />
-            ) : (
-              <Text style={[styles.btnDraftTxt, { color: isDark ? '#FFFFFF' : '#0F172A', fontWeight: '800' }]}>
-                Save as Draft
-              </Text>
-            )}
-          </TouchableOpacity>
-          {editingData ? (
+        <View style={styles.footerActionsWrap}>
+          <View style={styles.footerBtnRow}>
             <TouchableOpacity
               style={[
                 styles.btnDraft,
+                isDark ? {
+                  backgroundColor: '#27272A',
+                  borderColor: 'rgba(255, 255, 255, 0.25)',
+                  borderWidth: 1.5,
+                } : {
+                  backgroundColor: '#F8FAFC',
+                  borderColor: '#CBD5E1',
+                  borderWidth: 1.5,
+                },
+              ]}
+              onPress={() => handleSave('Draft')}
+              disabled={loading}
+              activeOpacity={0.8}
+            >
+              {loading && publishStatus === 'Draft' ? (
+                <ActivityIndicator color={isDark ? '#FFFFFF' : '#0F172A'} size="small" />
+              ) : (
+                <Text style={[styles.btnDraftTxt, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                  Save as Draft
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.btnSave,
+                isDark && {
+                  backgroundColor: '#10B981',
+                  shadowColor: '#10B981',
+                },
+              ]}
+              onPress={() => handleSave('Published')}
+              disabled={loading}
+              activeOpacity={0.8}
+            >
+              {loading && publishStatus === 'Published' ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.btnSaveTxt}>Publish Event</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {editingData ? (
+            <TouchableOpacity
+              style={[
+                styles.btnSecondaryFull,
                 {
                   borderColor: isDark ? 'rgba(255,255,255,0.2)' : '#94A3B8',
                   backgroundColor: publishStatus === 'Completed' ? (isDark ? '#3F3F46' : '#E2E8F0') : (isDark ? '#27272A' : '#F8FAFC'),
@@ -2066,30 +2127,12 @@ export default function AdminEventEditor() {
               {loading && publishStatus === 'Completed' ? (
                 <ActivityIndicator color={isDark ? '#FFFFFF' : '#1a2d5a'} size="small" />
               ) : (
-                <Text style={[styles.btnDraftTxt, { color: isDark ? '#FFFFFF' : '#334155', fontWeight: '800' }]}>
+                <Text style={[styles.btnDraftTxt, { color: isDark ? '#FFFFFF' : '#334155' }]}>
                   {publishStatus === 'Completed' ? 'Reopen Event' : 'Mark Completed ✓'}
                 </Text>
               )}
             </TouchableOpacity>
           ) : null}
-          <TouchableOpacity 
-            style={[
-              styles.btnSave,
-              isDark && {
-                backgroundColor: '#10B981',
-                shadowColor: '#10B981',
-              }
-            ]} 
-            onPress={() => handleSave('Published')} 
-            disabled={loading}
-            activeOpacity={0.8}
-          >
-            {loading && publishStatus === 'Published' ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Text style={styles.btnSaveTxt}>Publish Event</Text>
-            )}
-          </TouchableOpacity>
         </View>
 
         <TouchableOpacity style={styles.btnBack} onPress={() => { resetForm(); setTabByName?.('Events'); }}>
@@ -2795,25 +2838,52 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     padding: 6,
   },
 
-  footerBtnRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 16 },
+  footerActionsWrap: { gap: 10, marginBottom: 16 },
+  footerBtnRow: { flexDirection: 'row', gap: 12 },
   btnSave: {
-    flex: 1, backgroundColor: '#2E6B4F', borderRadius: 14, paddingVertical: 16,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    elevation: 6, shadowColor: '#2E6B4F', shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 5 },
-  },
-  btnSaveTxt: { color: '#fff', fontSize: 13, fontWeight: '800', letterSpacing: 0.3 },
-  btnDraft: {
-    flex: 1, 
-    backgroundColor: '#F8FAFC', 
-    borderRadius: 14, 
-    paddingVertical: 16,
-    flexDirection: 'row', 
-    alignItems: 'center', 
+    flex: 1,
+    minHeight: 50,
+    backgroundColor: '#2E6B4F',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5, 
+    elevation: 6,
+    shadowColor: '#2E6B4F',
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+  },
+  btnSaveTxt: { color: '#fff', fontSize: 13.5, fontWeight: '800', letterSpacing: 0.3, textAlign: 'center' },
+  btnDraft: {
+    flex: 1,
+    minHeight: 50,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
     borderColor: '#CBD5E1',
   },
-  btnDraftTxt: { color: '#0F172A', fontSize: 13, fontWeight: '800', letterSpacing: 0.2 },
+  btnSecondaryFull: {
+    width: '100%',
+    minHeight: 48,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+  },
+  btnDraftTxt: { color: '#0F172A', fontSize: 13.5, fontWeight: '800', letterSpacing: 0.2, textAlign: 'center' },
   btnBack: { alignItems: 'center', paddingVertical: 10 },
   btnBackTxt: { fontSize: 14, color: '#6B7280', fontWeight: '600' },
 
