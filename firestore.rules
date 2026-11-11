@@ -255,7 +255,10 @@ service cloud.firestore {
           (resource.data.memberId == request.auth.uid && request.resource.data.status == 'withdrawn') ||
           isChurchAdmin()
         );
-        allow delete: if isChurchAdmin();
+        allow delete: if isChurchAdmin() || (
+          isAuthenticated() &&
+          resource.data.memberId == request.auth.uid
+        );
       }
 
       // Promises (Daily Word)

@@ -31,6 +31,7 @@ import {
   Calendar,
   MapPin,
   Plus,
+  Trash2,
   X,
 } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
@@ -42,7 +43,7 @@ import {
   VolunteerStatus,
   COMMON_MINISTRIES,
 } from '../types/volunteer';
-import { formatDateDisplay } from '../utils/DateUtils';
+import { formatDateDisplay, formatDateMonthYear, formatTimeTo12Hour } from '../utils/DateUtils';
 import { CustomAlert } from '../components/CustomAlert';
 
 const { width } = Dimensions.get('window');
@@ -313,6 +314,40 @@ export default function VolunteerScreen({ navigation }: any) {
               }
             } catch (err) {
               console.warn('Withdraw error:', err);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteApplication = (appId: string) => {
+    Alert.alert(
+      'Delete Application',
+      'Are you sure you want to permanently delete this volunteer application? This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await VolunteerService.deleteApplication(churchId, appId);
+              setMyApplications((prev) => prev.filter((item) => item.id !== appId));
+              setAlertConfig({
+                visible: true,
+                title: 'Application Deleted',
+                message: 'Your volunteer application has been removed.',
+                type: 'info',
+              });
+              fetchApplications();
+            } catch (err: any) {
+              setAlertConfig({
+                visible: true,
+                title: 'Delete Failed',
+                message: err?.message || 'Could not delete your application. Please try again.',
+                type: 'error',
+              });
             }
           },
         },
@@ -1074,7 +1109,7 @@ export default function VolunteerScreen({ navigation }: any) {
                           {isEvent ? app.eventTitle || 'Church Event' : app.memberName || 'Volunteer'}
                         </Text>
                         <Text style={[styles.appDateTxt, { color: colors.textSecondary }]}>
-                          Submitted: {app.createdAt?.toDate ? formatDateDisplay(app.createdAt.toDate()) : 'Recently'}
+                          Submitted: {app.createdAt?.toDate ? formatDateMonthYear(app.createdAt.toDate()) : 'Recently'}
                         </Text>
                       </View>
                     </View>
@@ -1086,7 +1121,7 @@ export default function VolunteerScreen({ navigation }: any) {
                           <View style={styles.eventMetaRow}>
                             <Calendar size={12} color="#059669" />
                             <Text style={[styles.eventMetaTxt, { color: colors.text }]}>
-                              Date: <Text style={{ fontWeight: '700' }}>{app.eventDate}</Text>
+                              Date: <Text style={{ fontWeight: '700' }}>{formatDateMonthYear(app.eventDate)}</Text>
                             </Text>
                           </View>
                         )}
@@ -1094,7 +1129,7 @@ export default function VolunteerScreen({ navigation }: any) {
                           <View style={styles.eventMetaRow}>
                             <Clock size={12} color="#0284C7" />
                             <Text style={[styles.eventMetaTxt, { color: colors.text }]}>
-                              Time: <Text style={{ fontWeight: '700' }}>{app.eventTime}</Text>
+                              Time: <Text style={{ fontWeight: '700' }}>{formatTimeTo12Hour(app.eventTime)}</Text>
                             </Text>
                           </View>
                         )}
@@ -1142,7 +1177,7 @@ export default function VolunteerScreen({ navigation }: any) {
                         </View>
                         {!!app.assignedTimeSlot && (
                           <Text style={styles.approvedMetaTxt}>
-                            ⏰ Reporting Time: {app.assignedTimeSlot}
+                            ⏰ Reporting Time: {formatTimeTo12Hour(app.assignedTimeSlot)}
                           </Text>
                         )}
                         {!!app.assignedLocation && (
@@ -1179,18 +1214,34 @@ export default function VolunteerScreen({ navigation }: any) {
                       </View>
                     )}
 
-                    {/* WITHDRAW BUTTON FOR PENDING APPS */}
-                    {isPending && (
-                      <View style={[styles.cardFooter, { borderTopColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+                    {/* WITHDRAW & DELETE FOOTER */}
+                    <View style={[styles.cardFooter, { borderTopColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+                      {isPending && (
                         <TouchableOpacity
                           onPress={() => handleWithdraw(app.id)}
                           style={styles.withdrawBtn}
                           activeOpacity={0.7}
                         >
-                          <Text style={styles.withdrawBtnTxt}>Withdraw Application</Text>
+                          <Text style={styles.withdrawBtnTxt}>Withdraw</Text>
                         </TouchableOpacity>
-                      </View>
-                    )}
+                      )}
+                      <TouchableOpacity
+                        onPress={() => handleDeleteApplication(app.id)}
+                        style={[
+                          styles.deleteBtn,
+                          {
+                            backgroundColor: isDark ? 'rgba(239, 68, 68, 0.14)' : '#FEF2F2',
+                            borderColor: isDark ? 'rgba(248, 113, 113, 0.3)' : '#FECACA',
+                          },
+                        ]}
+                        activeOpacity={0.7}
+                      >
+                        <Trash2 size={12} color={isDark ? '#F87171' : '#DC2626'} />
+                        <Text style={[styles.deleteBtnTxt, { color: isDark ? '#F87171' : '#DC2626' }]}>
+                          Delete Application
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 );
               })
@@ -1859,17 +1910,34 @@ const styles = StyleSheet.create({
   },
   cardFooter: {
     marginTop: 10,
-    paddingTop: 8,
+    paddingTop: 10,
     borderTopWidth: 1,
-    alignItems: 'flex-end',
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 10,
   },
   withdrawBtn: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
   },
   withdrawBtnTxt: {
-    fontSize: 11,
-    color: '#EF4444',
+    fontSize: 11.5,
+    color: '#D97706',
+    fontWeight: '700',
+  },
+  deleteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 11,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  deleteBtnTxt: {
+    fontSize: 11.5,
     fontWeight: '700',
   },
   badge: {

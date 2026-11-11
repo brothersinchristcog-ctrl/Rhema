@@ -50,7 +50,7 @@ import { AdminTabContext } from '../../context/AdminTabContext';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 import VolunteerService from '../../services/VolunteerService';
 import { VolunteerApplication, VolunteerStatus, VolunteerType } from '../../types/volunteer';
-import { formatDateDisplay } from '../../utils/DateUtils';
+import { formatDateMonthYear, formatTimeTo12Hour } from '../../utils/DateUtils';
 import { CustomAlert } from '../../components/CustomAlert';
 
 const { width } = Dimensions.get('window');
@@ -240,7 +240,7 @@ export default function AdminVolunteerManagement({ navigation, route, routeParam
     setSelectedApp(app);
     if (app.volunteerType === 'event') {
       setAssignedRole(app.assignedRole || app.preferredRole || 'Event Volunteer');
-      setAssignedTimeSlot(app.assignedTimeSlot || app.eventTime || '');
+      setAssignedTimeSlot(formatTimeTo12Hour(app.assignedTimeSlot || app.eventTime || ''));
       setAssignedLocation(app.assignedLocation || app.eventLocation || '');
       setAssignedResponsibility(app.assignedResponsibility || '');
       setShowApprovalModal(true);
@@ -356,7 +356,7 @@ export default function AdminVolunteerManagement({ navigation, route, routeParam
   const handleOpenAssignDuty = (app: VolunteerApplication) => {
     setSelectedApp(app);
     setAssignedRole(app.assignedRole || app.preferredRole || '');
-    setAssignedTimeSlot(app.assignedTimeSlot || app.eventTime || '');
+    setAssignedTimeSlot(formatTimeTo12Hour(app.assignedTimeSlot || app.eventTime || ''));
     setAssignedLocation(app.assignedLocation || app.eventLocation || '');
     setAssignedResponsibility(app.assignedResponsibility || '');
     setShowAssignModal(true);
@@ -647,7 +647,7 @@ export default function AdminVolunteerManagement({ navigation, route, routeParam
               statusFilter === 'all' && [
                 styles.activeStatCard,
                 {
-                  backgroundColor: isDark ? 'rgba(5, 150, 105, 0.18)' : '#ECFDF5',
+                  backgroundColor: isDark ? '#0B2920' : '#ECFDF5',
                   borderColor: isDark ? '#10B981' : '#059669',
                 },
               ],
@@ -682,7 +682,7 @@ export default function AdminVolunteerManagement({ navigation, route, routeParam
               statusFilter === 'pending' && [
                 styles.activeStatCard,
                 {
-                  backgroundColor: isDark ? 'rgba(245, 158, 11, 0.18)' : '#FFFBEB',
+                  backgroundColor: isDark ? '#261D0B' : '#FFFBEB',
                   borderColor: isDark ? '#F59E0B' : '#D97706',
                 },
               ],
@@ -717,7 +717,7 @@ export default function AdminVolunteerManagement({ navigation, route, routeParam
               statusFilter === 'approved' && [
                 styles.activeStatCard,
                 {
-                  backgroundColor: isDark ? 'rgba(16, 185, 129, 0.18)' : '#ECFDF5',
+                  backgroundColor: isDark ? '#0B2920' : '#ECFDF5',
                   borderColor: isDark ? '#10B981' : '#059669',
                 },
               ],
@@ -752,7 +752,7 @@ export default function AdminVolunteerManagement({ navigation, route, routeParam
               statusFilter === 'rejected' && [
                 styles.activeStatCard,
                 {
-                  backgroundColor: isDark ? 'rgba(239, 68, 68, 0.18)' : '#FEF2F2',
+                  backgroundColor: isDark ? '#2A1215' : '#FEF2F2',
                   borderColor: isDark ? '#EF4444' : '#DC2626',
                 },
               ],
@@ -865,119 +865,250 @@ export default function AdminVolunteerManagement({ navigation, route, routeParam
                     },
                   ]}
                 >
-                  {/* CARD HEADER */}
-                  <TouchableOpacity
-                    style={styles.cardHeader}
-                    onPress={() => setExpandedId(isExpanded ? null : app.id)}
-                    activeOpacity={0.8}
-                  >
-                    <View style={styles.profileSection}>
-                      <View
-                        style={[
-                          styles.avatar,
-                          {
-                            backgroundColor: isEvent
-                              ? (isDark ? '#0369A1' : '#0284C7')
-                              : (isDark ? '#047857' : '#059669'),
-                          },
-                        ]}
-                      >
-                        <Text style={styles.avatarTxt}>{initials}</Text>
-                      </View>
-
-                      <View style={styles.nameSection}>
-                        <View style={styles.nameRow}>
-                          <Text
-                            style={[
-                              styles.name,
-                              { color: isDark ? '#FFFFFF' : '#1a2d5a' },
-                            ]}
-                            numberOfLines={1}
-                          >
-                            {app.memberName}
-                          </Text>
-                          {renderStatusBadge(app.status)}
-                        </View>
-
-                        <View style={styles.badgeRow}>
-                          <View
-                            style={[
-                              styles.roleBadge,
-                              {
-                                backgroundColor: isDark ? '#27272A' : '#F9F6F0',
-                                borderColor: isDark ? '#3F3F46' : '#E2DDD5',
-                              },
-                            ]}
-                          >
-                            <Text style={[styles.roleTxt, { color: isDark ? '#60A5FA' : '#1a2d5a' }]}>
-                              {isEvent ? (app.preferredRole || 'EVENT VOLUNTEER') : 'GENERAL CHURCH'}
+                  {/* CARD HEADER & SUMMARY */}
+                  {isEvent ? (
+                    <TouchableOpacity
+                      style={styles.cardHeader}
+                      onPress={() => setExpandedId(isExpanded ? null : app.id)}
+                      activeOpacity={0.8}
+                    >
+                      <View style={{ flex: 1 }}>
+                        {/* 1. Event Name at top + Status Badge & Expand Chevron (no Trash icon) */}
+                        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+                          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            <View
+                              style={{
+                                width: 34,
+                                height: 34,
+                                borderRadius: 10,
+                                backgroundColor: isDark ? 'rgba(2, 132, 199, 0.18)' : '#E0F2FE',
+                                borderWidth: 1,
+                                borderColor: isDark ? 'rgba(56, 189, 248, 0.32)' : '#BAE6FD',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
+                              <Calendar size={16} color={isDark ? '#38BDF8' : '#0284C7'} />
+                            </View>
+                            <Text
+                              style={{
+                                flex: 1,
+                                fontSize: 15.5,
+                                fontWeight: '800',
+                                color: isDark ? '#FFFFFF' : '#1a2d5a',
+                                lineHeight: 20,
+                              }}
+                              numberOfLines={2}
+                            >
+                              {app.eventTitle || 'Church Event'}
                             </Text>
                           </View>
-                          <Text style={{ fontSize: 11, color: isDark ? '#71717A' : '#94A3B8' }}>
-                            {app.createdAt?.toDate ? formatDateDisplay(app.createdAt.toDate()) : 'Recent'}
+
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0, marginTop: 2 }}>
+                            {renderStatusBadge(app.status)}
+                            <View style={styles.chevronWrap}>
+                              {isExpanded ? (
+                                <ChevronUp size={16} color={isDark ? '#A1A1AA' : '#64748B'} />
+                              ) : (
+                                <ChevronDown size={16} color={isDark ? '#A1A1AA' : '#64748B'} />
+                              )}
+                            </View>
+                          </View>
+                        </View>
+
+                        {/* 2. Volunteer Name & Submitted Date below Event Name */}
+                        <View style={{ marginTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, flex: 1 }}>
+                            <User size={14} color={isDark ? '#A1A1AA' : '#64748B'} />
+                            <Text
+                              style={{
+                                flex: 1,
+                                fontSize: 14,
+                                fontWeight: '700',
+                                color: isDark ? '#F4F4F5' : '#0F172A',
+                              }}
+                              numberOfLines={1}
+                            >
+                              {app.memberName || 'Church Member'}
+                            </Text>
+                          </View>
+                          <Text
+                            style={{
+                              fontSize: 11,
+                              fontWeight: '600',
+                              color: isDark ? '#71717A' : '#94A3B8',
+                              flexShrink: 0,
+                            }}
+                          >
+                            {app.createdAt?.toDate ? formatDateMonthYear(app.createdAt.toDate()) : 'Recent'}
                           </Text>
-                          <View style={{ flex: 1 }} />
+                        </View>
+
+                        {/* 3. Applied for the Role: [Role Name] */}
+                        <View
+                          style={{
+                            marginTop: 8,
+                            paddingVertical: 6,
+                            paddingHorizontal: 10,
+                            borderRadius: 8,
+                            backgroundColor: isDark ? 'rgba(39, 39, 42, 0.85)' : '#F8FAFC',
+                            borderWidth: 1,
+                            borderColor: isDark ? '#3F3F46' : '#E2E8F0',
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 12.5,
+                              fontWeight: '600',
+                              color: isDark ? '#A1A1AA' : '#475569',
+                            }}
+                          >
+                            Applied for the Role:{' '}
+                            <Text style={{ fontWeight: '800', color: isDark ? '#60A5FA' : '#0369A1' }}>
+                              {app.preferredRole || 'Event Volunteer'}
+                            </Text>
+                          </Text>
+                        </View>
+
+                        {/* 4. Clickable Mobile Number */}
+                        {!!app.memberPhone && (
                           <TouchableOpacity
                             onPress={(e) => {
                               e.stopPropagation?.();
-                              promptDeleteApplication(app);
+                              const cleanPhone = String(app.memberPhone).replace(/[^\d+]/g, '');
+                              if (cleanPhone) {
+                                Linking.openURL(`tel:${cleanPhone}`);
+                              }
                             }}
-                            style={[
-                              styles.cardDeleteBtn,
-                              {
-                                backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2',
-                                borderColor: isDark ? 'rgba(239, 68, 68, 0.25)' : '#FECACA',
-                              },
-                            ]}
-                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                             activeOpacity={0.7}
+                            hitSlop={{ top: 6, bottom: 6, left: 4, right: 12 }}
+                            style={{
+                              marginTop: 8,
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              gap: 7,
+                              alignSelf: 'flex-start',
+                              paddingVertical: 2,
+                            }}
                           >
-                            <Trash2 size={13} color={isDark ? '#F87171' : '#DC2626'} />
+                            <Phone size={13} color={isDark ? '#34D399' : '#059669'} />
+                            <Text
+                              style={{
+                                fontSize: 13,
+                                fontWeight: '700',
+                                color: isDark ? '#34D399' : '#059669',
+                                textDecorationLine: 'underline',
+                              }}
+                            >
+                              {app.memberPhone}
+                            </Text>
                           </TouchableOpacity>
-                          <View style={styles.chevronWrap}>
-                            {isExpanded ? (
-                              <ChevronUp size={16} color={isDark ? '#A1A1AA' : '#64748B'} />
-                            ) : (
-                              <ChevronDown size={16} color={isDark ? '#A1A1AA' : '#64748B'} />
-                            )}
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  ) : (
+                    <>
+                      <TouchableOpacity
+                        style={styles.cardHeader}
+                        onPress={() => setExpandedId(isExpanded ? null : app.id)}
+                        activeOpacity={0.8}
+                      >
+                        <View style={styles.profileSection}>
+                          <View
+                            style={[
+                              styles.avatar,
+                              { backgroundColor: isDark ? '#047857' : '#059669' },
+                            ]}
+                          >
+                            <Text style={styles.avatarTxt}>{initials}</Text>
+                          </View>
+
+                          <View style={styles.nameSection}>
+                            <View style={styles.nameRow}>
+                              <Text
+                                style={[
+                                  styles.name,
+                                  { color: isDark ? '#FFFFFF' : '#1a2d5a' },
+                                ]}
+                                numberOfLines={1}
+                              >
+                                {app.memberName}
+                              </Text>
+                              {renderStatusBadge(app.status)}
+                            </View>
+
+                            <View style={styles.badgeRow}>
+                              <View
+                                style={[
+                                  styles.roleBadge,
+                                  {
+                                    backgroundColor: isDark ? '#27272A' : '#F9F6F0',
+                                    borderColor: isDark ? '#3F3F46' : '#E2DDD5',
+                                  },
+                                ]}
+                              >
+                                <Text style={[styles.roleTxt, { color: isDark ? '#60A5FA' : '#1a2d5a' }]}>
+                                  GENERAL CHURCH
+                                </Text>
+                              </View>
+                              <Text style={{ fontSize: 11, color: isDark ? '#71717A' : '#94A3B8' }}>
+                                {app.createdAt?.toDate ? formatDateMonthYear(app.createdAt.toDate()) : 'Recent'}
+                              </Text>
+                              <View style={{ flex: 1 }} />
+                              <TouchableOpacity
+                                onPress={(e) => {
+                                  e.stopPropagation?.();
+                                  promptDeleteApplication(app);
+                                }}
+                                style={[
+                                  styles.cardDeleteBtn,
+                                  {
+                                    backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2',
+                                    borderColor: isDark ? 'rgba(239, 68, 68, 0.25)' : '#FECACA',
+                                  },
+                                ]}
+                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                activeOpacity={0.7}
+                              >
+                                <Trash2 size={13} color={isDark ? '#F87171' : '#DC2626'} />
+                              </TouchableOpacity>
+                              <View style={styles.chevronWrap}>
+                                {isExpanded ? (
+                                  <ChevronUp size={16} color={isDark ? '#A1A1AA' : '#64748B'} />
+                                ) : (
+                                  <ChevronDown size={16} color={isDark ? '#A1A1AA' : '#64748B'} />
+                                )}
+                              </View>
+                            </View>
                           </View>
                         </View>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
+                      </TouchableOpacity>
 
-                  {/* CONTACT & EVENT SNIPPET */}
-                  <View style={styles.contactDetails}>
-                    {!!app.memberPhone && (
-                      <View style={styles.contactRow}>
-                        <Phone size={12} color={isDark ? '#71717A' : '#6B7280'} />
-                        <Text style={[styles.contactTxt, { color: isDark ? '#A1A1AA' : '#6B7280' }]}>
-                          {app.memberPhone}
-                        </Text>
-                        <TouchableOpacity
-                          onPress={() => Linking.openURL(`tel:${app.memberPhone}`)}
-                          style={{
-                            marginLeft: 6,
-                            paddingHorizontal: 8,
-                            paddingVertical: 2,
-                            borderRadius: 6,
-                            backgroundColor: '#E0F2FE',
-                          }}
-                        >
-                          <Text style={{ fontSize: 10, color: '#0369A1', fontWeight: '800' }}>CALL</Text>
-                        </TouchableOpacity>
+                      {/* CONTACT SNIPPET */}
+                      <View style={styles.contactDetails}>
+                        {!!app.memberPhone && (
+                          <View style={styles.contactRow}>
+                            <Phone size={12} color={isDark ? '#71717A' : '#6B7280'} />
+                            <Text style={[styles.contactTxt, { color: isDark ? '#A1A1AA' : '#6B7280' }]}>
+                              {app.memberPhone}
+                            </Text>
+                            <TouchableOpacity
+                              onPress={() => Linking.openURL(`tel:${app.memberPhone}`)}
+                              style={{
+                                marginLeft: 6,
+                                paddingHorizontal: 8,
+                                paddingVertical: 2,
+                                borderRadius: 6,
+                                backgroundColor: '#E0F2FE',
+                              }}
+                            >
+                              <Text style={{ fontSize: 10, color: '#0369A1', fontWeight: '800' }}>CALL</Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
                       </View>
-                    )}
-
-                    {isEvent && !!app.eventTitle && (
-                      <View style={styles.contactRow}>
-                        <Calendar size={12} color="#059669" />
-                        <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#6EE7B7' : '#047857' }}>
-                          {app.eventTitle}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
+                    </>
+                  )}
 
                   {/* EXPANDED CONTENT DETAILS */}
                   {isExpanded && (
@@ -991,15 +1122,15 @@ export default function AdminVolunteerManagement({ navigation, route, routeParam
                             marginBottom: 10,
                           }}
                         >
-                          <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
+                          <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap' }}>
                             {!!app.eventDate && (
                               <Text style={{ fontSize: 11, color: isDark ? '#D4D4D8' : '#334155' }}>
-                                📅 Date: <Text style={{ fontWeight: '700' }}>{app.eventDate}</Text>
+                                📅 Date: <Text style={{ fontWeight: '700' }}>{formatDateMonthYear(app.eventDate)}</Text>
                               </Text>
                             )}
                             {!!app.eventTime && (
                               <Text style={{ fontSize: 11, color: isDark ? '#D4D4D8' : '#334155' }}>
-                                ⏰ Time: <Text style={{ fontWeight: '700' }}>{app.eventTime}</Text>
+                                ⏰ Time: <Text style={{ fontWeight: '700' }}>{formatTimeTo12Hour(app.eventTime)}</Text>
                               </Text>
                             )}
                             {!!app.eventLocation && (
@@ -1091,7 +1222,7 @@ export default function AdminVolunteerManagement({ navigation, route, routeParam
                           </Text>
                           {!!app.assignedTimeSlot && (
                             <Text style={{ fontSize: 11, color: isDark ? '#D4D4D8' : '#334155', marginTop: 1 }}>
-                              ⏰ Reporting Time: {app.assignedTimeSlot}
+                              ⏰ Reporting Time: {formatTimeTo12Hour(app.assignedTimeSlot)}
                             </Text>
                           )}
                           {!!app.assignedLocation && (
@@ -1471,11 +1602,6 @@ const styles = createAdminThemedStyles(
       paddingHorizontal: 16,
       alignItems: 'center',
       borderWidth: 1,
-      shadowColor: '#1a2d5a',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.05,
-      shadowRadius: 5,
-      elevation: 1,
       minWidth: 84,
     },
     activeStatCard: {
