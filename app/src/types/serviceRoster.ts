@@ -22,7 +22,7 @@ export type ServiceStatus =
   | 'completed'
   | 'cancelled';
 
-export type ActivityCategory = 
+export type BuiltInActivityCategory = 
   | 'preparation'
   | 'starting_prayer'
   | 'opening_song'
@@ -38,6 +38,16 @@ export type ActivityCategory =
   | 'benediction'
   | 'break'
   | 'other';
+
+export type ActivityCategory = BuiltInActivityCategory | (string & {});
+
+export interface ActivityCategoryDef {
+  id: string;
+  label: string;
+  bg: string;
+  text: string;
+  isCustom?: boolean;
+}
 
 export interface ActivityAttachment {
   name: string;
@@ -59,6 +69,7 @@ export interface RunSheetItem {
   responsibleMemberId?: string;
   supportingTeam?: string;
   supportingTeamId?: string;
+  supportingTeamIds?: string[];
   instructions?: string;
   attachments?: ActivityAttachment[];
   assignmentStatus?: 'unassigned' | 'pending' | 'confirmed' | 'declined';

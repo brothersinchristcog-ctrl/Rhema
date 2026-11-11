@@ -73,7 +73,10 @@ import { useChurch } from '../../context/ChurchContext';
 import { useAuth } from '../../context/AuthContext';
 import { AdminTabContext } from '../../context/AdminTabContext';
 import FirestoreService, { WorshipSong } from '../../services/FirestoreService';
-import ServiceRosterService, { getTeamDefaultRank } from '../../services/ServiceRosterService';
+import ServiceRosterService, {
+  getTeamDefaultRank,
+  CUSTOM_ACTIVITY_CATEGORY_PRESETS,
+} from '../../services/ServiceRosterService';
 import {
   ServicePlan,
   ServiceStatus,
@@ -81,6 +84,7 @@ import {
   RunSheetItem,
   SetlistItem,
   ActivityCategory,
+  ActivityCategoryDef,
   ServiceTemplate,
   MinistryTeam,
   MemberSkillRecord,
@@ -108,7 +112,7 @@ const SERVICE_TYPE_LABELS: Record<ServiceType, string> = {
   other: 'Special Service'
 };
 
-const CATEGORY_COLORS: Record<ActivityCategory, { bg: string; text: string }> = {
+const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
   preparation: { bg: '#F3F4F6', text: '#4B5563' },
   starting_prayer: { bg: '#FEF3C7', text: '#92400E' },
   opening_song: { bg: '#EDE9FE', text: '#5B21B6' },
@@ -228,6 +232,7 @@ export default function AdminServicePlanner({ navigation }: any) {
   const [teamLeaderId, setTeamLeaderId] = useState<string | undefined>(undefined);
   const [teamMemberIds, setTeamMemberIds] = useState<string[]>([]);
   const [teamMemberSearch, setTeamMemberSearch] = useState('');
+  const [teamSearchQuery, setTeamSearchQuery] = useState('');
   const [savingTeam, setSavingTeam] = useState(false);
   const [isSavingTeamOrder, setIsSavingTeamOrder] = useState(false);
   const [teamOrderFeedback, setTeamOrderFeedback] = useState<string | null>(null);
@@ -386,8 +391,15 @@ export default function AdminServicePlanner({ navigation }: any) {
   const [actResponsible, setActResponsible] = useState('');
   const [actResponsibleId, setActResponsibleId] = useState('');
   const [actTeam, setActTeam] = useState('');
+  const [actTeamIds, setActTeamIds] = useState<string[]>([]);
+  const [actShowAllMembers, setActShowAllMembers] = useState(false);
   const [actInstructions, setActInstructions] = useState('');
   const [savingActivity, setSavingActivity] = useState(false);
+  const [customCategories, setCustomCategories] = useState<ActivityCategoryDef[]>([]);
+  const [showNewCategoryInput, setShowNewCategoryInput] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [newCategoryColorIdx, setNewCategoryColorIdx] = useState(0);
+  const [savingNewCategory, setSavingNewCategory] = useState(false);
 
   // Service Details Edit Modal
   const [showEditDetailsModal, setShowEditDetailsModal] = useState(false);
@@ -600,6 +612,15 @@ export default function AdminServicePlanner({ navigation }: any) {
     }
   };
 
+  const fetchCustomCategories = async () => {
+    try {
+      const cats = await ServiceRosterService.getCustomActivityCategories(churchId);
+      setCustomCategories(cats);
+    } catch (err) {
+      console.error('Error loading custom activity categories:', err);
+    }
+  };
+
   useEffect(() => {
     fetchPlans();
     fetchTemplates();
@@ -607,6 +628,7 @@ export default function AdminServicePlanner({ navigation }: any) {
     fetchChurchSongs();
     fetchMinistryTeams();
     fetchMemberSkills();
+    fetchCustomCategories();
   }, [churchId]);
 
   // Realtime subscription for Assignment Queues on selected service (Phase 4)
@@ -671,6 +693,7 @@ export default function AdminServicePlanner({ navigation }: any) {
     fetchChurchSongs();
     fetchMinistryTeams();
     fetchMemberSkills();
+    fetchCustomCategories();
     if (activePlannerTab === 'analytics') {
       fetchAnalytics();
     }
@@ -723,6 +746,360 @@ export default function AdminServicePlanner({ navigation }: any) {
       return name.includes(q) || phone.includes(q) || skill.includes(q);
     });
   }, [churchMembers, teamMemberSearch]);
+
+  const filteredMinistryTeams = useMemo(() => {
+    if (!teamSearchQuery.trim()) return ministryTeams;
+    const q = teamSearchQuery.toLowerCase().trim();
+    return ministryTeams.filter(team => {
+      const name = (team.name || '').toLowerCase();
+      const desc = (team.description || '').toLowerCase();
+      const leader = (team.leaderName || '').toLowerCase();
+      const memberMatch = (team.memberIds || []).some(mId => {
+        const found = churchMembers.find(m => m.id === mId);
+        const mName = (found?.name || `${found?.firstName || ''} ${found?.lastName || ''}`).toLowerCase();
+        return mName.includes(q);
+      });
+      return name.includes(q) || desc.includes(q) || leader.includes(q) || memberMatch;
+    });
+  }, [ministryTeams, teamSearchQuery, churchMembers]);
+
+  const getTeamMemberNames = (memberIds?: string[]): string[] => {
+    if (!memberIds || memberIds.length === 0) return [];
+    return memberIds
+      .map(id => {
+        const found = churchMembers.find(m => m.id === id);
+        if (!found) return null;
+        return found.name || `${found.firstName || ''} ${found.lastName || ''}`.trim() || 'Member';
+      })
+      .filter((n): n is string => Boolean(n));
+  };
+
+  /**
+   * Resolve MinistryTeam records for a RunSheet activity using explicit team IDs,
+   * custom team names, or category/program defaults.
+   */
+  const resolveTeamsForActivity = (act: Partial<RunSheetItem>): MinistryTeam[] => {
+    const explicitRefs = [
+      ...(act.supportingTeamIds || []),
+      ...(act.supportingTeamId ? [act.supportingTeamId] : []),
+      ...(act.supportingTeam ? [act.supportingTeam] : []),
+    ];
+    const refsToUse = explicitRefs.length > 0
+      ? explicitRefs
+      : ServiceRosterService.getDefaultTeamIdsForActivity(act.category, act.program);
+    return ServiceRosterService.resolveMatchingTeams(ministryTeams, refsToUse);
+  };
+
+  /**
+   * Candidate quick-pick pool for Order Builder's Activity Modal:
+   * prioritizes deduplicated members from selected Ministry Teams.
+   */
+  const activityCandidatePool = useMemo(() => {
+    const selectedTeams = ministryTeams.filter(t => actTeamIds.includes(t.id));
+    const poolMap = new Map<string, { member: any; teamNames: string[] }>();
+
+    selectedTeams.forEach(team => {
+      const teamPeopleIds = Array.from(
+        new Set([...(team.leaderId ? [team.leaderId] : []), ...(team.memberIds || [])].filter(Boolean))
+      );
+      teamPeopleIds.forEach(pid => {
+        const found = churchMembers.find(m => m.id === pid || m.uid === pid);
+        if (!found) return;
+        const existing = poolMap.get(found.id);
+        if (existing) {
+          if (team.name && !existing.teamNames.includes(team.name)) {
+            existing.teamNames.push(team.name);
+          }
+        } else {
+          poolMap.set(found.id, {
+            member: found,
+            teamNames: team.name ? [team.name] : []
+          });
+        }
+      });
+    });
+
+    const teamMembers = Array.from(poolMap.values());
+    const hasTeamPool = teamMembers.length > 0;
+    const rawQuery = (!actResponsibleId && actResponsible.trim()) ? actResponsible.trim().toLowerCase() : '';
+
+    let items = [...teamMembers];
+    if (!hasTeamPool || actShowAllMembers) {
+      churchMembers.forEach(m => {
+        if (!poolMap.has(m.id) && m.status !== 'Left') {
+          items.push({ member: m, teamNames: [] });
+        }
+      });
+    }
+
+    if (rawQuery) {
+      const textMatches = items.filter(entry => {
+        const mName = (entry.member.name || `${entry.member.firstName || ''} ${entry.member.lastName || ''}`).toLowerCase();
+        return mName.includes(rawQuery);
+      });
+      if (textMatches.length > 0) {
+        const rest = items.filter(entry => !textMatches.includes(entry));
+        items = [...textMatches, ...rest];
+      }
+    }
+
+    const capped = (!hasTeamPool && !actShowAllMembers && !rawQuery) ? items.slice(0, 10) : items;
+    return {
+      items: capped,
+      selectedTeams,
+      hasTeamPool
+    };
+  }, [churchMembers, ministryTeams, actTeamIds, actResponsible, actResponsibleId, actShowAllMembers]);
+
+  /**
+   * Combined list of church custom categories + built-in categories.
+   */
+  const allCategoryDefs = useMemo<ActivityCategoryDef[]>(() => {
+    const builtIn: ActivityCategoryDef[] = Object.keys(CATEGORY_COLORS).map(key => ({
+      id: key,
+      label: key.replace(/_/g, ' '),
+      bg: CATEGORY_COLORS[key].bg,
+      text: CATEGORY_COLORS[key].text,
+      isCustom: false,
+    }));
+    const builtInIds = new Set(builtIn.map(b => b.id));
+    const uniqueCustom = customCategories.filter(c => c.id && !builtInIds.has(c.id));
+    return [...uniqueCustom, ...builtIn];
+  }, [customCategories]);
+
+  const getCategoryDef = (categoryId?: string): ActivityCategoryDef => {
+    const key = (categoryId || 'other').trim();
+    const found = allCategoryDefs.find(c => c.id === key);
+    if (found) return found;
+    return {
+      id: key,
+      label: key.replace(/_/g, ' '),
+      bg: CATEGORY_COLORS.other.bg,
+      text: CATEGORY_COLORS.other.text,
+      isCustom: false,
+    };
+  };
+
+  const handleCreateCustomCategory = async (onSelectCat: (cat: ActivityCategory) => void) => {
+    const clean = newCategoryName.trim();
+    if (!clean) {
+      Alert.alert('Required', 'Please enter a category name.');
+      return;
+    }
+
+    const candidateSlug = clean.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    const existing = allCategoryDefs.find(
+      c => c.id === candidateSlug || c.label.toLowerCase() === clean.toLowerCase()
+    );
+    if (existing) {
+      onSelectCat(existing.id);
+      setNewCategoryName('');
+      setShowNewCategoryInput(false);
+      return;
+    }
+
+    try {
+      setSavingNewCategory(true);
+      const chosenPreset = CUSTOM_ACTIVITY_CATEGORY_PRESETS[newCategoryColorIdx] || CUSTOM_ACTIVITY_CATEGORY_PRESETS[0];
+      const created = await ServiceRosterService.addCustomActivityCategory(churchId, clean, chosenPreset);
+      setCustomCategories(prev => [created, ...prev.filter(c => c.id !== created.id)]);
+      onSelectCat(created.id);
+      setNewCategoryName('');
+      setShowNewCategoryInput(false);
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to add category.');
+    } finally {
+      setSavingNewCategory(false);
+    }
+  };
+
+  const handleDeleteCustomCategory = (catDef: ActivityCategoryDef, selectedCat: ActivityCategory, onSelectCat: (cat: ActivityCategory) => void) => {
+    if (!catDef.isCustom) return;
+    Alert.alert(
+      'Remove Custom Category',
+      `Remove "${catDef.label}" from saved categories? Existing service items keep their label.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await ServiceRosterService.deleteCustomActivityCategory(churchId, catDef.id);
+              setCustomCategories(prev => prev.filter(c => c.id !== catDef.id));
+              if (selectedCat === catDef.id) {
+                onSelectCat('other');
+              }
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Failed to remove category.');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const renderActivityCategorySelector = (
+    selectedCat: ActivityCategory,
+    onSelectCat: (cat: ActivityCategory) => void
+  ) => (
+    <View style={{ marginBottom: 12 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <Text style={[styles.fieldLabel, { color: primaryText, marginBottom: 0 }]}>Category</Text>
+        <TouchableOpacity
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 4,
+            paddingHorizontal: 10,
+            paddingVertical: 4,
+            borderRadius: 14,
+            backgroundColor: showNewCategoryInput ? inputBg : publishBtnBg,
+            borderWidth: showNewCategoryInput ? 1 : 0,
+            borderColor: inputBorder,
+          }}
+          onPress={() => {
+            setShowNewCategoryInput(prev => !prev);
+            setNewCategoryName('');
+          }}
+          activeOpacity={0.75}
+        >
+          {showNewCategoryInput ? (
+            <X size={11} color={secondaryText} />
+          ) : (
+            <Plus size={12} color="#FFFFFF" strokeWidth={2.5} />
+          )}
+          <Text style={{
+            fontSize: 11,
+            fontWeight: '700',
+            color: showNewCategoryInput ? secondaryText : '#FFFFFF',
+          }}>
+            {showNewCategoryInput ? 'Close' : 'New'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {showNewCategoryInput && (
+        <View style={{
+          backgroundColor: inputBg,
+          borderColor: publishBtnBg,
+          borderWidth: 1,
+          borderRadius: 12,
+          padding: 10,
+          marginBottom: 10,
+        }}>
+          <Text style={{ fontSize: 11, fontWeight: '700', color: primaryText, marginBottom: 6 }}>
+            Add New Category
+          </Text>
+          <TextInput
+            style={[
+              styles.input,
+              {
+                backgroundColor: cardSurface,
+                color: primaryText,
+                borderColor: inputBorder,
+                marginBottom: 8,
+              }
+            ]}
+            placeholder="e.g. Baby Dedication, Testimony, Baptism..."
+            placeholderTextColor="#94A3B8"
+            value={newCategoryName}
+            onChangeText={setNewCategoryName}
+            autoFocus
+          />
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              {CUSTOM_ACTIVITY_CATEGORY_PRESETS.map((preset, idx) => {
+                const selectedColor = newCategoryColorIdx === idx;
+                return (
+                  <TouchableOpacity
+                    key={idx}
+                    onPress={() => setNewCategoryColorIdx(idx)}
+                    style={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: 11,
+                      backgroundColor: preset.bg,
+                      borderWidth: selectedColor ? 2 : 1,
+                      borderColor: selectedColor ? preset.text : inputBorder,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {selectedColor && (
+                      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: preset.text }} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <TouchableOpacity
+                style={{
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor: inputBorder,
+                }}
+                onPress={() => {
+                  setShowNewCategoryInput(false);
+                  setNewCategoryName('');
+                }}
+              >
+                <Text style={{ fontSize: 11.5, fontWeight: '600', color: secondaryText }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                  borderRadius: 8,
+                  backgroundColor: publishBtnBg,
+                  opacity: savingNewCategory ? 0.7 : 1,
+                }}
+                disabled={savingNewCategory}
+                onPress={() => handleCreateCustomCategory(onSelectCat)}
+              >
+                {savingNewCategory ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={{ fontSize: 11.5, fontWeight: '700', color: '#FFFFFF' }}>Add Category</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        {allCategoryDefs.map(cat => {
+          const isSelected = selectedCat === cat.id;
+          return (
+            <TouchableOpacity
+              key={cat.id}
+              style={[
+                styles.categorySelectChip,
+                isSelected && [styles.categorySelectChipActive, { backgroundColor: primaryBtnBg }],
+                !isSelected && { backgroundColor: inputBg, borderColor: inputBorder, borderWidth: 1 }
+              ]}
+              onPress={() => onSelectCat(cat.id)}
+              onLongPress={() => cat.isCustom && handleDeleteCustomCategory(cat, selectedCat, onSelectCat)}
+            >
+              <Text style={[
+                styles.categorySelectChipTxt,
+                !isSelected && { color: secondaryText },
+                isSelected && [styles.categorySelectChipTxtActive, { color: primaryBtnText }]
+              ]}>
+                {cat.label.toUpperCase()}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
 
   const pendingSkillsCount = useMemo(() => {
     return memberSkills.filter(s => s.verificationStatus === 'pending').length;
@@ -1426,6 +1803,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                 memberName: string;
                 memberPhone?: string;
                 requiredSkill?: string;
+                teamIds?: string[];
               }> = [];
 
               // 1. RunSheet activities (Order of Service)
@@ -1437,6 +1815,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                   if (resolved.id && !seenRoleKeys.has(roleId) && !seenMemberDutyKeys.has(dutyKey)) {
                     seenRoleKeys.add(roleId);
                     seenMemberDutyKeys.add(dutyKey);
+                    const actTeams = resolveTeamsForActivity(item).map(t => t.id);
                     allDuties.push({
                       roleId,
                       roleTitle: item.program || 'Service Activity',
@@ -1445,7 +1824,8 @@ export default function AdminServicePlanner({ navigation }: any) {
                       memberId: resolved.id,
                       memberName: resolved.name,
                       memberPhone: resolved.phone,
-                      requiredSkill: item.category || item.program
+                      requiredSkill: item.category || item.program,
+                      teamIds: actTeams.length > 0 ? actTeams : ServiceRosterService.getDefaultTeamIdsForActivity(item.category, item.program)
                     });
                   }
                 }
@@ -1453,13 +1833,13 @@ export default function AdminServicePlanner({ navigation }: any) {
 
               // 2. Whole-Service Musical Instruments & Worship Band (Primary whole-service notifications)
               const wholeBandRoleDefs = [
-                { roleId: 'role_keyboard', defaultTitle: 'Keyboardist / Pianist', skill: 'Keyboard / Piano' },
-                { roleId: 'role_drums', defaultTitle: 'Drummer / Percussionist', skill: 'Drums / Percussion' },
-                { roleId: 'role_bass', defaultTitle: 'Bass Guitarist', skill: 'Bass Guitar' },
-                { roleId: 'role_acoustic', defaultTitle: 'Acoustic Guitarist', skill: 'Acoustic Guitar' },
-                { roleId: 'role_electric', defaultTitle: 'Electric Guitarist', skill: 'Electric Guitar' },
-                { roleId: 'role_sound', defaultTitle: 'Sound & Audio Engineer', skill: 'Sound Engineer (FOH)' },
-                { roleId: 'role_worship_leader', defaultTitle: 'Worship Leader', skill: 'Worship Leader' },
+                { roleId: 'role_keyboard', defaultTitle: 'Keyboardist / Pianist', skill: 'Keyboard / Piano', teamIds: ['team_music'] },
+                { roleId: 'role_drums', defaultTitle: 'Drummer / Percussionist', skill: 'Drums / Percussion', teamIds: ['team_music'] },
+                { roleId: 'role_bass', defaultTitle: 'Bass Guitarist', skill: 'Bass Guitar', teamIds: ['team_music'] },
+                { roleId: 'role_acoustic', defaultTitle: 'Acoustic Guitarist', skill: 'Acoustic Guitar', teamIds: ['team_music'] },
+                { roleId: 'role_electric', defaultTitle: 'Electric Guitarist', skill: 'Electric Guitar', teamIds: ['team_music'] },
+                { roleId: 'role_sound', defaultTitle: 'Sound & Audio Engineer', skill: 'Sound Engineer (FOH)', teamIds: ['team_sound'] },
+                { roleId: 'role_worship_leader', defaultTitle: 'Worship Leader', skill: 'Worship Leader', teamIds: ['team_worship'] },
               ];
 
               wholeBandRoleDefs.forEach(b => {
@@ -1476,7 +1856,8 @@ export default function AdminServicePlanner({ navigation }: any) {
                       memberId: resolved.id,
                       memberName: resolved.name,
                       memberPhone: resolved.phone,
-                      requiredSkill: b.skill
+                      requiredSkill: b.skill,
+                      teamIds: b.teamIds
                     });
                   }
                 }
@@ -1494,13 +1875,17 @@ export default function AdminServicePlanner({ navigation }: any) {
                     const cleanActId = roleId.replace(/^(role_)?(act_)+/, '');
                     const matchedRunSheetItem = (plan.runSheet || []).find(it => it.id === roleId || it.id === `act_${cleanActId}` || it.id.replace(/^(act_)+/, '') === cleanActId);
                     const roleTitle = (matchedRunSheetItem?.program) || (roleId.includes('act_') ? 'Order of Service Duty' : roleId.replace('role_', '').replace(/_/g, ' ').toUpperCase());
+                    const matchedRoleTeams = matchedRunSheetItem
+                      ? resolveTeamsForActivity(matchedRunSheetItem).map(t => t.id)
+                      : (roleId === 'role_media' ? ['team_media'] : roleId === 'role_sound' ? ['team_sound'] : undefined);
                     allDuties.push({
                       roleId,
                       roleTitle,
                       memberId: resolved.id,
                       memberName: resolved.name,
                       memberPhone: resolved.phone,
-                      requiredSkill: matchedRunSheetItem?.category || roleTitle
+                      requiredSkill: matchedRunSheetItem?.category || roleTitle,
+                      teamIds: matchedRoleTeams
                     });
                   }
                 }
@@ -1556,6 +1941,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                   const backupCandidates: Array<{ candidateId: string; candidateName: string; candidatePhone?: string }> = [];
                   try {
                     const recs = await ServiceRosterService.getEligibleCandidatesForRole(churchId, plan.date, {
+                      teamIds: duty.teamIds,
                       requiredSkill: duty.requiredSkill || duty.roleTitle,
                       roleTitle: duty.roleTitle
                     });
@@ -2056,6 +2442,10 @@ export default function AdminServicePlanner({ navigation }: any) {
     setActResponsible('');
     setActResponsibleId('');
     setActTeam('');
+    setActTeamIds([]);
+    setActShowAllMembers(false);
+    setShowNewCategoryInput(false);
+    setNewCategoryName('');
     setActInstructions('');
     setShowActivityModal(true);
   };
@@ -2068,8 +2458,40 @@ export default function AdminServicePlanner({ navigation }: any) {
     setActResponsible(item.responsiblePerson || '');
     setActResponsibleId(item.responsibleMemberId || '');
     setActTeam(item.supportingTeam || '');
+    const matched = resolveTeamsForActivity({
+      ...item,
+      supportingTeam: item.supportingTeam || (!item.responsibleMemberId ? item.responsiblePerson : '')
+    });
+    setActTeamIds(matched.map(t => t.id));
+    setActShowAllMembers(false);
+    setShowNewCategoryInput(false);
+    setNewCategoryName('');
     setActInstructions(item.instructions || '');
     setShowActivityModal(true);
+  };
+
+  const handleSelectActivityCategory = (cat: ActivityCategory) => {
+    setActCategory(cat);
+    if (!editingActivityId && !actTeam.trim()) {
+      const suggested = ServiceRosterService.resolveMatchingTeams(
+        ministryTeams,
+        ServiceRosterService.getDefaultTeamIdsForActivity(cat, actProgram)
+      );
+      setActTeamIds(suggested.map(t => t.id));
+    }
+  };
+
+  const toggleActivityTeamChip = (team: MinistryTeam) => {
+    const exists = actTeamIds.includes(team.id);
+    const nextIds = exists
+      ? actTeamIds.filter(id => id !== team.id)
+      : [...actTeamIds, team.id];
+    setActTeamIds(nextIds);
+    const nextNames = ministryTeams
+      .filter(t => nextIds.includes(t.id))
+      .map(t => t.name)
+      .filter(Boolean);
+    setActTeam(nextNames.join(' & '));
   };
 
   const handleSaveActivity = async () => {
@@ -2090,6 +2512,8 @@ export default function AdminServicePlanner({ navigation }: any) {
           responsiblePerson: actResponsible.trim(),
           responsibleMemberId: actResponsibleId || undefined,
           supportingTeam: actTeam.trim(),
+          supportingTeamId: actTeamIds[0] || '',
+          supportingTeamIds: actTeamIds,
           instructions: actInstructions.trim()
         });
       } else {
@@ -2102,6 +2526,8 @@ export default function AdminServicePlanner({ navigation }: any) {
           responsiblePerson: actResponsible.trim(),
           responsibleMemberId: actResponsibleId || undefined,
           supportingTeam: actTeam.trim(),
+          supportingTeamId: actTeamIds[0] || '',
+          supportingTeamIds: actTeamIds,
           instructions: actInstructions.trim()
         });
       }
@@ -2657,11 +3083,21 @@ export default function AdminServicePlanner({ navigation }: any) {
       activityName?: string;
       suggestedSkill?: string;
       suggestedTeamId?: string;
+      suggestedTeamIds?: string[];
     }> = [];
 
     // 1. Roles from RunSheet activities
     (selectedPlan.runSheet || []).forEach(act => {
       const rId = `act_${act.id}`;
+      const matchedTeams = resolveTeamsForActivity(act);
+      const defaultIds = ServiceRosterService.getDefaultTeamIdsForActivity(act.category, act.program);
+      const resolvedTeamIds = matchedTeams.length > 0
+        ? matchedTeams.map(t => t.id)
+        : (act.supportingTeamIds && act.supportingTeamIds.length > 0
+            ? act.supportingTeamIds
+            : (act.supportingTeamId
+                ? [act.supportingTeamId]
+                : (defaultIds.length > 0 ? defaultIds : (act.supportingTeam ? [act.supportingTeam] : []))));
       roles.push({
         roleId: rId,
         roleTitle: act.responsiblePerson || act.program,
@@ -2669,7 +3105,8 @@ export default function AdminServicePlanner({ navigation }: any) {
         activityId: act.id,
         activityName: act.program,
         suggestedSkill: act.program,
-        suggestedTeamId: act.supportingTeam
+        suggestedTeamId: resolvedTeamIds[0],
+        suggestedTeamIds: resolvedTeamIds
       });
     });
 
@@ -2697,13 +3134,14 @@ export default function AdminServicePlanner({ navigation }: any) {
           roleTitle: sr.title,
           category: sr.category,
           suggestedSkill: sr.skill,
-          suggestedTeamId: sr.teamId
+          suggestedTeamId: sr.teamId,
+          suggestedTeamIds: sr.teamId ? [sr.teamId] : undefined
         });
       }
     });
 
     return roles;
-  }, [selectedPlan]);
+  }, [selectedPlan, ministryTeams]);
 
   const openDispatchQueueModal = async (
     roleId: string,
@@ -2711,7 +3149,8 @@ export default function AdminServicePlanner({ navigation }: any) {
     activityId?: string,
     activityName?: string,
     suggestedTeamId?: string,
-    suggestedSkill?: string
+    suggestedSkill?: string,
+    suggestedTeamIds?: string[]
   ) => {
     if (!selectedPlan) return;
     setTargetRoleId(roleId);
@@ -2738,6 +3177,7 @@ export default function AdminServicePlanner({ navigation }: any) {
     try {
       const recs = await ServiceRosterService.getEligibleCandidatesForRole(churchId, selectedPlan.date, {
         teamId: suggestedTeamId,
+        teamIds: suggestedTeamIds,
         requiredSkill: suggestedSkill || roleTitle,
         roleTitle
       });
@@ -3424,6 +3864,60 @@ export default function AdminServicePlanner({ navigation }: any) {
             </Text>
           </TouchableOpacity>
         </ScrollView>
+
+        {/* ─── Search Bar below Hero / Tabs ─── */}
+        <View style={styles.headerSearchWrap}>
+          <View style={[
+            styles.headerSearchBar,
+            {
+              backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+              borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+            }
+          ]}>
+            <Search size={16} color={isDark ? '#94A3B8' : '#64748B'} style={{ marginRight: 8 }} />
+            <TextInput
+              placeholder={
+                activePlannerTab === 'teams' ? 'Search ministry teams, leaders, members...' :
+                activePlannerTab === 'calendar' ? 'Search services by title, preacher, date...' :
+                activePlannerTab === 'setlist' ? 'Search worship songs, song leader...' :
+                activePlannerTab === 'queue' ? 'Search roles, assignments...' :
+                activePlannerTab === 'skills' ? 'Search member skills, categories...' :
+                'Search service operations...'
+              }
+              placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+              style={[styles.headerSearchInput, { color: primaryText }]}
+              value={
+                activePlannerTab === 'teams' ? teamSearchQuery :
+                activePlannerTab === 'calendar' ? searchQuery :
+                activePlannerTab === 'setlist' ? songLibrarySearch :
+                searchQuery
+              }
+              onChangeText={(text) => {
+                if (activePlannerTab === 'teams') setTeamSearchQuery(text);
+                else if (activePlannerTab === 'calendar') setSearchQuery(text);
+                else if (activePlannerTab === 'setlist') setSongLibrarySearch(text);
+                else setSearchQuery(text);
+              }}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {((activePlannerTab === 'teams' && teamSearchQuery.length > 0) ||
+              (activePlannerTab === 'calendar' && searchQuery.length > 0) ||
+              (activePlannerTab === 'setlist' && songLibrarySearch.length > 0)) && (
+              <TouchableOpacity
+                onPress={() => {
+                  if (activePlannerTab === 'teams') setTeamSearchQuery('');
+                  else if (activePlannerTab === 'calendar') setSearchQuery('');
+                  else if (activePlannerTab === 'setlist') setSongLibrarySearch('');
+                  else setSearchQuery('');
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <X size={16} color={isDark ? '#94A3B8' : '#64748B'} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
       </View>
 
       {/* ─── Body Content ─── */}
@@ -3772,7 +4266,8 @@ export default function AdminServicePlanner({ navigation }: any) {
                 </View>
               ) : (
                 selectedPlan.runSheet.map((item, index) => {
-                  const catStyle = CATEGORY_COLORS[item.category] || CATEGORY_COLORS.other;
+                  const catDef = getCategoryDef(item.category);
+                  const catStyle = { bg: catDef.bg, text: catDef.text };
                   return (
                     <View
                       key={item.id ? `run_${item.id}_${index}` : `run_${index}`}
@@ -3800,7 +4295,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                           <View style={[styles.categoryBadge, { backgroundColor: catStyle.bg }]}>
                             <Text style={[styles.categoryBadgeTxt, { color: catStyle.text }]}>
-                              {item.category.replace('_', ' ').toUpperCase()}
+                              {catDef.label.toUpperCase()}
                             </Text>
                           </View>
                           <View style={[styles.timeBadge, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: cardBorder, borderWidth: 1 }]}>
@@ -4310,7 +4805,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 5, flexWrap: 'wrap' }}>
                             <View style={[styles.queueCategoryPill, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: cardBorder, borderWidth: 1 }]}>
                               <Text style={[styles.queueCategoryPillTxt, { color: isDark ? '#E2E8F0' : '#0F172A' }]}>
-                                {role.category.replace('_', ' ').toUpperCase()}
+                                {getCategoryDef(role.category).label.toUpperCase()}
                               </Text>
                             </View>
                             {role.activityName ? (
@@ -4510,7 +5005,8 @@ export default function AdminServicePlanner({ navigation }: any) {
                           role.activityId,
                           role.activityName,
                           role.suggestedTeamId,
-                          role.suggestedSkill
+                          role.suggestedSkill,
+                          role.suggestedTeamIds
                         )}
                         activeOpacity={0.8}
                       >
@@ -5053,24 +5549,39 @@ export default function AdminServicePlanner({ navigation }: any) {
                 </View>
               )}
 
-              {ministryTeams.length === 0 ? (
+              {filteredMinistryTeams.length === 0 ? (
                 <View style={[styles.emptyCard, { backgroundColor: cardSurface, borderColor }]}>
                   <Users size={36} color="#94A3B8" />
-                  <Text style={[styles.emptyTitle, { color: primaryText }]}>No Ministry Teams Yet</Text>
-                  <Text style={[styles.emptySubtitle, { color: secondaryText }]}>
-                    Set up your standard ministry departments (Worship, Audio, Livestream, Ushers, Communion).
+                  <Text style={[styles.emptyTitle, { color: primaryText }]}>
+                    {teamSearchQuery.trim() ? 'No Matching Teams' : 'No Ministry Teams Yet'}
                   </Text>
-                  <TouchableOpacity
-                    style={styles.createEmptyBtn}
-                    onPress={handleSeedDefaultTeams}
-                  >
-                    <Sparkles size={15} color="#FFFFFF" />
-                    <Text style={styles.createEmptyBtnTxt}>Seed 14 Standard Teams</Text>
-                  </TouchableOpacity>
+                  <Text style={[styles.emptySubtitle, { color: secondaryText }]}>
+                    {teamSearchQuery.trim()
+                      ? `No ministry teams found matching "${teamSearchQuery}". Try another keyword.`
+                      : 'Set up your standard ministry departments (Worship, Audio, Livestream, Ushers, Communion).'}
+                  </Text>
+                  {teamSearchQuery.trim() ? (
+                    <TouchableOpacity
+                      style={[styles.createEmptyBtn, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }]}
+                      onPress={() => setTeamSearchQuery('')}
+                    >
+                      <X size={15} color={primaryText} />
+                      <Text style={[styles.createEmptyBtnTxt, { color: primaryText }]}>Clear Search</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.createEmptyBtn}
+                      onPress={handleSeedDefaultTeams}
+                    >
+                      <Sparkles size={15} color="#FFFFFF" />
+                      <Text style={styles.createEmptyBtnTxt}>Seed 14 Standard Teams</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               ) : (
-                ministryTeams.map((team, index) => {
+                filteredMinistryTeams.map((team, index) => {
                   const memberCount = team.memberIds?.length || 0;
+                  const memberNames = getTeamMemberNames(team.memberIds);
                   return (
                     <View
                       key={team.id}
@@ -5148,21 +5659,55 @@ export default function AdminServicePlanner({ navigation }: any) {
                           {team.description || 'Ministry team serving Rhema Church'}
                         </Text>
 
-                        {/* Footer Meta Row: Leader and Member Count */}
-                        <View style={[styles.teamMetaRow, { borderTopColor: isDark ? '#27272A' : '#F1F5F9' }]}>
-                          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5, paddingRight: 8 }}>
-                            <Text style={{ fontSize: 13 }}>👑</Text>
-                            <Text style={[styles.teamMetaTxt, { color: secondaryText }]} numberOfLines={1}>
-                              Leader: <Text style={{ fontWeight: '700', color: primaryText }}>{team.leaderName || 'Unassigned'}</Text>
-                            </Text>
+                        {/* Footer Meta: Leader & Assigned Members */}
+                        <View style={[styles.teamMetaBox, { borderTopColor: isDark ? '#27272A' : '#F1F5F9', borderTopWidth: 1, paddingTop: 10, marginTop: 4 }]}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, minWidth: 120 }}>
+                              <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: isDark ? 'rgba(217, 119, 6, 0.2)' : '#FEF3C7', alignItems: 'center', justifyContent: 'center' }}>
+                                <Text style={{ fontSize: 11 }}>👑</Text>
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <Text style={[styles.teamMetaTxt, { color: secondaryText }]} numberOfLines={1}>
+                                  Leader: <Text style={{ fontWeight: '700', color: primaryText }}>{team.leaderName || 'Unassigned'}</Text>
+                                </Text>
+                              </View>
+                            </View>
+
+                            <View style={[styles.teamMembersCountBadge, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: cardBorder, borderWidth: 1 }]}>
+                              <Users size={12} color={secondaryText} />
+                              <Text style={[styles.teamMembersCountTxt, { color: isDark ? '#E4E4E7' : '#0F172A' }]}>
+                                {memberCount} {memberCount === 1 ? 'Member' : 'Members'}
+                              </Text>
+                            </View>
                           </View>
 
-                          <View style={[styles.teamMembersCountBadge, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
-                            <Users size={12} color={secondaryText} />
-                            <Text style={[styles.teamMembersCountTxt, { color: isDark ? '#E4E4E7' : '#0F172A' }]}>
-                              {memberCount} Members
-                            </Text>
-                          </View>
+                          {/* Dedicated Member Names Roster: prevents names from getting mixed */}
+                          {memberNames.length > 0 && (
+                            <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: isDark ? '#27272A' : '#F1F5F9' }}>
+                              <Text style={{ fontSize: 10.5, fontWeight: '700', color: isDark ? '#A1A1AA' : '#64748B', marginBottom: 5 }}>
+                                Team Members ({memberCount}):
+                              </Text>
+                              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+                                {memberNames.map((mName, mIdx) => (
+                                  <View
+                                    key={mIdx}
+                                    style={{
+                                      paddingHorizontal: 7,
+                                      paddingVertical: 3,
+                                      borderRadius: 6,
+                                      backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                                      borderWidth: 1,
+                                      borderColor: cardBorder,
+                                    }}
+                                  >
+                                    <Text style={{ fontSize: 11, fontWeight: '600', color: primaryText }}>
+                                      {mName}
+                                    </Text>
+                                  </View>
+                                ))}
+                              </View>
+                            </View>
+                          )}
                         </View>
                       </TouchableOpacity>
 
@@ -6843,28 +7388,9 @@ export default function AdminServicePlanner({ navigation }: any) {
                 />
               </View>
 
-              <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 12 }]}>Category</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
-                {[
-                  { id: 'worship_songs', label: 'Worship' },
-                  { id: 'sermon_word', label: 'Word' },
-                  { id: 'prayer', label: 'Prayer' },
-                  { id: 'welcome_announcements', label: 'Welcome' },
-                  { id: 'offering_tithe', label: 'Offering' },
-                  { id: 'communion', label: 'Communion' },
-                  { id: 'benediction', label: 'Benediction' }
-                ].map(cat => (
-                  <TouchableOpacity
-                    key={cat.id}
-                    style={[styles.typeSelectChip, quickActCategory === cat.id && styles.typeSelectChipActive]}
-                    onPress={() => setQuickActCategory(cat.id as any)}
-                  >
-                    <Text style={[styles.typeSelectChipTxt, quickActCategory === cat.id && styles.typeSelectChipTxtActive]}>
-                      {cat.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+              <View style={{ marginTop: 12 }}>
+                {renderActivityCategorySelector(quickActCategory, (cat) => setQuickActCategory(cat))}
+              </View>
 
               <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 12 }]}>Planned Duration (Minutes)</Text>
               <View style={[styles.modernInputContainer, { backgroundColor: screenBg, borderColor }]}>
@@ -6989,24 +7515,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                 onChangeText={setActProgram}
               />
 
-              <Text style={[styles.fieldLabel, { color: primaryText }]}>Category</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-                {(Object.keys(CATEGORY_COLORS) as ActivityCategory[]).map(cat => (
-                  <TouchableOpacity
-                    key={cat}
-                    style={[
-                      styles.categorySelectChip,
-                      actCategory === cat && styles.categorySelectChipActive,
-                      actCategory !== cat && { backgroundColor: inputBg, borderColor: inputBorder, borderWidth: 1 }
-                    ]}
-                    onPress={() => setActCategory(cat)}
-                  >
-                    <Text style={[styles.categorySelectChipTxt, actCategory === cat && styles.categorySelectChipTxtActive]}>
-                      {cat.replace('_', ' ').toUpperCase()}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+              {renderActivityCategorySelector(actCategory, handleSelectActivityCategory)}
 
               <Text style={[styles.fieldLabel, { color: primaryText }]}>Duration (Minutes)</Text>
               <TextInput
@@ -7017,6 +7526,37 @@ export default function AdminServicePlanner({ navigation }: any) {
                 value={actDuration}
                 onChangeText={setActDuration}
               />
+
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Ministry Team Pool (Optional Filter)</Text>
+              {ministryTeams.length > 0 && (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+                  {ministryTeams.map(team => {
+                    const isSelectedTeam = actTeamIds.includes(team.id);
+                    const count = Array.from(
+                      new Set([...(team.leaderId ? [team.leaderId] : []), ...(team.memberIds || [])].filter(Boolean))
+                    ).length;
+                    return (
+                      <TouchableOpacity
+                        key={team.id}
+                        style={[
+                          styles.categorySelectChip,
+                          isSelectedTeam
+                            ? { backgroundColor: publishBtnBg, borderColor: publishBtnBg, borderWidth: 1 }
+                            : { backgroundColor: inputBg, borderColor: inputBorder, borderWidth: 1 }
+                        ]}
+                        onPress={() => toggleActivityTeamChip(team)}
+                      >
+                        <Text style={[
+                          styles.categorySelectChipTxt,
+                          { color: isSelectedTeam ? '#FFFFFF' : primaryText }
+                        ]}>
+                          {team.name}{count > 0 ? ` (${count})` : ''}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              )}
 
               <Text style={[styles.fieldLabel, { color: primaryText }]}>Responsible Person</Text>
               <TextInput
@@ -7030,32 +7570,63 @@ export default function AdminServicePlanner({ navigation }: any) {
                 }}
               />
 
+              {activityCandidatePool.selectedTeams.length > 0 && (
+                <Text style={{ fontSize: 11, color: secondaryText, marginBottom: 6 }}>
+                  {activityCandidatePool.hasTeamPool
+                    ? `Eligible members from: ${activityCandidatePool.selectedTeams.map(t => t.name).join(', ')}`
+                    : `No members assigned yet in ${activityCandidatePool.selectedTeams.map(t => t.name).join(', ')} — showing church directory`}
+                </Text>
+              )}
+
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-                {churchMembers.slice(0, 8).map(m => (
+                {activityCandidatePool.items.map(({ member: m, teamNames }) => {
+                  const displayName = m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim() || 'Member';
+                  const isActive = actResponsibleId === m.id;
+                  return (
+                    <TouchableOpacity
+                      key={m.id}
+                      style={[
+                        styles.quickMemberChip,
+                        !isActive && { backgroundColor: inputBg, borderColor: inputBorder },
+                        isActive && styles.quickMemberChipActive
+                      ]}
+                      onPress={() => {
+                        setActResponsible(displayName);
+                        setActResponsibleId(m.id);
+                      }}
+                    >
+                      <Text style={[
+                        styles.quickMemberChipTxt,
+                        !isActive && { color: primaryText },
+                        isActive && styles.quickMemberChipTxtActive
+                      ]}>
+                        {displayName}
+                        {teamNames.length > 0 ? ` · ${teamNames.join(' & ')}` : ''}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+                {activityCandidatePool.hasTeamPool && (
                   <TouchableOpacity
-                    key={m.id}
                     style={[
                       styles.quickMemberChip,
-                      actResponsibleId === m.id && styles.quickMemberChipActive
+                      { backgroundColor: actShowAllMembers ? primaryBtnBg : inputBg, borderColor: inputBorder }
                     ]}
-                    onPress={() => {
-                      setActResponsible(m.name || m.firstName || 'Member');
-                      setActResponsibleId(m.id);
-                    }}
+                    onPress={() => setActShowAllMembers(prev => !prev)}
                   >
                     <Text style={[
                       styles.quickMemberChipTxt,
-                      actResponsibleId === m.id && styles.quickMemberChipTxtActive
+                      { color: actShowAllMembers ? primaryBtnText : secondaryText }
                     ]}>
-                      {m.name || m.firstName}
+                      {actShowAllMembers ? 'Team Pool Only' : '+ All Members'}
                     </Text>
                   </TouchableOpacity>
-                ))}
+                )}
               </ScrollView>
 
-              <Text style={[styles.fieldLabel, { color: primaryText }]}>Supporting Team</Text>
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Supporting Team Label</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                 placeholder="e.g. Worship Team"
                 placeholderTextColor="#94A3B8"
                 value={actTeam}
@@ -8407,6 +8978,27 @@ const styles = StyleSheet.create({
   tabsScroll: {
     marginTop: 6,
     marginBottom: 2,
+  },
+  headerSearchWrap: {
+    marginTop: 8,
+    marginBottom: 2,
+  },
+  headerSearchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 40,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1.2,
+  },
+  headerSearchInput: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '500',
+    paddingVertical: 0,
+  },
+  teamMetaBox: {
+    paddingTop: 8,
   },
   tabBtn: {
     flexDirection: 'row',
