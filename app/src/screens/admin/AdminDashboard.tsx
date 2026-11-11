@@ -34,6 +34,7 @@ const TAB_3D_ASSETS: Record<string, { icon: any }> = {
   'Members': { icon: require('../../../assets/3d_members_family.png') },
   'Attendance': { icon: require('../../../assets/3d_attendance.png') },
   'Prayers': { icon: require('../../../assets/give_hand_heart.png') },
+  'Testimonies': { icon: require('../../../assets/give_hand_heart.png') },
   'Care Cells': { icon: require('../../../assets/gallery_3d_family.png') },
   'Baptism': { icon: require('../../../assets/3d_give.png') },
 
@@ -71,7 +72,7 @@ const SECTIONS = [
   {
     id: 'people',
     title: 'People & Fellowship',
-    tabNames: ['Members', 'Attendance', 'Prayers', 'Care Cells', 'Baptism'],
+    tabNames: ['Members', 'Attendance', 'Prayers', 'Testimonies', 'Care Cells', 'Baptism'],
   },
   {
     id: 'events',

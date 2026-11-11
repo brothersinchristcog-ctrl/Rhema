@@ -25,6 +25,7 @@ import { AdminTabContext } from '../../context/AdminTabContext';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import FirestoreService from '../../services/FirestoreService';
+import EventRsvpService from '../../services/EventRsvpService';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const { width } = Dimensions.get('window');
@@ -62,8 +63,28 @@ export default function AdminEventList() {
   const [showDeleteSuccess, setShowDeleteSuccess] = useState(false);
   const [selectedQrEvent, setSelectedQrEvent] = useState<any>(null);
   const [selectedRsvpEvent, setSelectedRsvpEvent] = useState<any>(null);
+  const [rsvpCounts, setRsvpCounts] = useState<Record<string, number>>({});
   const qrRef = useRef<any>(null);
   const [churchDetails, setChurchDetails] = useState({ id: '', name: 'Rhema Global Ministries', code: 'RHEMA' });
+
+  // Real-time live Going counts for active RSVP events
+  useEffect(() => {
+    const rsvpEvents = events.filter((e) => e.rsvpEnabled === true && e.id);
+    if (!rsvpEvents.length) return;
+
+    const unsubs = rsvpEvents.map((ev) =>
+      EventRsvpService.listenToEventStats(churchDetails.id, ev.id, (stats) => {
+        setRsvpCounts((prev) => ({
+          ...prev,
+          [ev.id]: stats.goingCount,
+        }));
+      })
+    );
+
+    return () => {
+      unsubs.forEach((u) => u && u());
+    };
+  }, [events, churchDetails.id]);
 
   useEffect(() => {
     fetchEvents();
@@ -709,7 +730,7 @@ export default function AdminEventList() {
                 </View>
                 <View style={styles.rsvpBannerRight}>
                   <Text style={[styles.rsvpBannerStats, isDark && { color: '#C7D2FE' }]}>
-                    {event.rsvpStats?.goingCount || 0} Going · View Roster
+                    {rsvpCounts[event.id] ?? event.rsvpStats?.goingCount ?? 0} Going · View Roster
                   </Text>
                   <ChevronRight size={14} color={isDark ? '#A5B4FC' : '#4338CA'} />
                 </View>
@@ -901,7 +922,10 @@ export default function AdminEventList() {
       {selectedRsvpEvent && (
         <EventRsvpAnalyticsModal
           visible={!!selectedRsvpEvent}
-          onClose={() => setSelectedRsvpEvent(null)}
+          onClose={() => {
+            setSelectedRsvpEvent(null);
+            fetchEvents();
+          }}
           eventId={selectedRsvpEvent.id}
           eventTitle={selectedRsvpEvent.name || selectedRsvpEvent.title || 'Event'}
           eventDate={formatDate(selectedRsvpEvent.date)}

@@ -48,6 +48,7 @@ import {
   Crown,
   Award,
   Shield,
+  HeartHandshake,
   Sun,
   Sparkles,
   Search,
@@ -111,9 +112,18 @@ export default function ProfileScreen({ navigation }: any) {
   const [selectedCategoryTab, setSelectedCategoryTab] = useState<string>('all');
   const [customSkillInput, setCustomSkillInput] = useState('');
 
+  const resolveInitialNames = (mem: any) => {
+    const rawName = (mem?.name || mem?.displayName || mem?.fullName || '').trim();
+    const parts = rawName ? rawName.split(/\s+/) : [];
+    const first = mem?.firstName?.trim() || parts[0] || '';
+    const last = mem?.lastName?.trim() || (parts.length > 1 ? parts.slice(1).join(' ') : '');
+    return { first, last };
+  };
+
+  const initialNames = resolveInitialNames(authMember);
   const [editForm, setEditForm] = useState({
-    firstName: authMember?.firstName || '',
-    lastName: authMember?.lastName || '',
+    firstName: initialNames.first,
+    lastName: initialNames.last,
     email: authMember?.email || '',
     city: authMember?.city || authMember?.village || authMember?.mailingCity || '',
     mailingStreet: authMember?.mailingStreet || '',
@@ -230,9 +240,10 @@ export default function ProfileScreen({ navigation }: any) {
           if (setGlobalMember) {
             setGlobalMember(contactCheck.member);
           }
+          const memNames = resolveInitialNames(contactCheck.member);
           setEditForm({
-            firstName: contactCheck.member.firstName || '',
-            lastName: contactCheck.member.lastName || '',
+            firstName: memNames.first,
+            lastName: memNames.last,
             email: contactCheck.member.email || '',
             city: contactCheck.member.city || contactCheck.member.village || contactCheck.member.mailingCity || '',
             mailingStreet: contactCheck.member.mailingStreet || '',
@@ -255,12 +266,28 @@ export default function ProfileScreen({ navigation }: any) {
 
   const handleUpdateProfile = async () => {
     if (!member) return;
+    const combinedName = `${editForm.firstName || ''} ${editForm.lastName || ''}`.trim();
+    const existingName = ((member as any)?.name || (member as any)?.displayName || '').trim();
+    const finalName = combinedName || existingName;
+
+    if (!finalName) {
+      Alert.alert('Name Required', 'Please enter your first name and last name to save your profile.');
+      return;
+    }
+
+    const nameParts = finalName.split(/\s+/);
+    const resolvedFirstName = editForm.firstName?.trim() || nameParts[0] || '';
+    const resolvedLastName = editForm.lastName?.trim() || (nameParts.length > 1 ? nameParts.slice(1).join(' ') : '');
+
     setUpdating(true);
     try {
       const updatedDetails = {
         ...editForm,
+        firstName: resolvedFirstName,
+        lastName: resolvedLastName,
         mailingCity: editForm.city, // Keep synced for any legacy UI
-        name: `${editForm.firstName || ''} ${editForm.lastName || ''}`.trim()
+        name: finalName,
+        displayName: finalName
       };
       await FirestoreService.updateMemberProfile(member.churchId || activeChurch?.id || '', member.id, updatedDetails);
       if (user) {
@@ -569,7 +596,7 @@ export default function ProfileScreen({ navigation }: any) {
 
             {/* Member Name */}
             <Text style={[styles.profileNameText, { color: colors.text }]}>
-              {member?.firstName ? `${member.firstName} ${member.lastName || ''}`.trim() : member?.name || user?.displayName || 'Beloved Member'}
+              {(member?.name && member.name.trim()) || ((member as any)?.displayName && (member as any).displayName.trim()) || (member?.firstName ? `${member.firstName} ${member.lastName || ''}`.trim() : user?.displayName || 'Beloved Member')}
             </Text>
           </Animated.View>
 
@@ -644,14 +671,6 @@ export default function ProfileScreen({ navigation }: any) {
             subColor={colors.textSecondary}
           />
           <MenuItem 
-            icon={<Calendar size={22} color="#2563EB" strokeWidth={1.8} />} 
-            title="My Service Duties" 
-            sub="Roster assignments, call times & rehearsals" 
-            onPress={() => navigation.navigate('MyService')}
-            textColor={colors.text}
-            subColor={colors.textSecondary}
-          />
-          <MenuItem 
             icon={<Droplets size={22} color={colors.text} strokeWidth={1.8} />} 
             title="Baptism" 
             sub="Submit request & track approval status" 
@@ -659,17 +678,14 @@ export default function ProfileScreen({ navigation }: any) {
             textColor={colors.text}
             subColor={colors.textSecondary}
           />
-
-          {(String(member?.userType || '').toUpperCase().includes('ADMIN') || String(member?.userType || '').toUpperCase().includes('SUPER') || String(member?.userType || '').toUpperCase().includes('PASTOR')) && (
-            <MenuItem 
-              icon={<CreditCard size={22} color={colors.text} strokeWidth={1.8} />} 
-              title={t('profile.churchSubscription')} 
-              sub={t('profile.churchSubscriptionSub')} 
-              onPress={() => navigation.navigate('Subscription')}
-              textColor={colors.text}
-              subColor={colors.textSecondary}
-            />
-          )}
+          <MenuItem 
+            icon={<HeartHandshake size={22} color={colors.text} strokeWidth={1.8} />} 
+            title="Church Volunteering" 
+            sub="Apply to serve & view volunteer assignments" 
+            onPress={() => navigation.navigate('Volunteer')}
+            textColor={colors.text}
+            subColor={colors.textSecondary}
+          />
         </View>
 
         {/* Gray Divider Band between sections (Instagram style) */}

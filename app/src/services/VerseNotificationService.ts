@@ -4,9 +4,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { BibleService } from './BibleService';
 import { SupportedLanguage } from '../locales';
-import { getVerseBackgroundUrl } from '../constants/VerseBackgrounds';
+import {
+  getVerseBackgroundUrl,
+  fetchRelevantUnsplashForVerse,
+  getCalendarDayNumber,
+  isStaticCuratedBackgroundUrl,
+} from '../constants/VerseBackgrounds';
 
 const VERSES_CACHE_KEY = '@rhema_verses_cache';
+const USED_UNSPLASH_URLS_KEY = '@rhema_used_unsplash_urls_v2';
 
 // Stable notification ID prefix — used to deduplicate / cancel by slot
 const NOTIF_ID_PREFIX = 'daily_verse_';
@@ -138,21 +144,23 @@ class VerseNotificationService {
     }
   }
 
+  private cachedScheduleStartDate: string = '2026-10-30';
+
   /**
    * Calculates which indices a given date needs (Morning, Afternoon, Evening, Night).
-   * Aligns 100% with SuperAdminVersesManager and HomeScreen:
-   * Today at local midnight is Day 0 (indices 0, 1, 2, 3: Morning, Afternoon, Evening, Night).
-   * Future days are offset by +4 per day. Past days wrap smoothly backwards.
+   * Aligns 100% across Cloud Functions, HomeScreen, and VerseOfTheDayScreen:
+   * Uses an anchor epoch date so each calendar day advances by 4 unique verses.
    */
   getIndicesForDate(date: Date, totalVerses: number = 5863, churchId: string = 'rhema'): number[] {
     if (totalVerses === 0) return [0, 1, 2, 3];
     
-    // Anchor strictly to today at local midnight
-    const now = new Date();
-    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const targetMidnight = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-    const daysFromToday = Math.round((targetMidnight - todayMidnight) / (1000 * 60 * 60 * 24));
-    const base = daysFromToday * 4;
+    const epochStr = this.cachedScheduleStartDate || '2026-10-30';
+    const [eY, eM, eD] = epochStr.split('-').map(Number);
+    const epochUtc = Date.UTC(eY, (eM || 1) - 1, eD || 1);
+    const targetUtc = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+    const MS_PER_DAY = 24 * 60 * 60 * 1000;
+    const diffDays = Math.floor((targetUtc - epochUtc) / MS_PER_DAY);
+    const base = diffDays * 4;
     
     return [
       ((base + 0) % totalVerses + totalVerses) % totalVerses,
@@ -213,6 +221,9 @@ class VerseNotificationService {
       const metaExists = typeof metaDoc.exists === 'function' ? metaDoc.exists() : metaDoc.exists;
       if (!metaExists) return;
       const mData = metaDoc.data();
+      if (mData?.scheduleStartDate) {
+        this.cachedScheduleStartDate = mData.scheduleStartDate;
+      }
       const totalVerses = mData?.totalVerses || 0;
       if (totalVerses === 0) return;
 
@@ -308,9 +319,7 @@ class VerseNotificationService {
       if (!forceRefresh && cacheStr) {
         const cache: Record<number, DailyVerse> = JSON.parse(cacheStr);
         if (cache[targetIndex]) {
-          if (!cache[targetIndex].backgroundUrl) {
-            cache[targetIndex].backgroundUrl = getVerseBackgroundUrl(cache[targetIndex], period, targetIndex);
-          }
+          cache[targetIndex].backgroundUrl = getVerseBackgroundUrl(cache[targetIndex], period, targetIndex, date);
           return cache[targetIndex];
         }
       }
@@ -325,9 +334,7 @@ class VerseNotificationService {
           return tB - tA;
         });
         const vData = docs[0];
-        if (!vData.backgroundUrl) {
-          vData.backgroundUrl = getVerseBackgroundUrl(vData, period, targetIndex);
-        }
+        vData.backgroundUrl = getVerseBackgroundUrl(vData, period, targetIndex, date);
         try {
           const cache = cacheStr ? JSON.parse(cacheStr) : {};
           cache[targetIndex] = vData;
@@ -367,7 +374,12 @@ class VerseNotificationService {
           const idx = dailyIndices[pIdx];
           const bv = bundledVerses[idx] || {};
           const period = PERIODS[pIdx];
-          const bgUrl = bv.backgroundUrl || getVerseBackgroundUrl(bv, period, idx);
+          const bgUrl = getVerseBackgroundUrl(
+            { ...bv, index: idx },
+            period,
+            idx,
+            d
+          );
           versesForDay.push({
             id: `bundled_${idx}_${pIdx}`,
             index: idx,
@@ -389,6 +401,97 @@ class VerseNotificationService {
   }
 
   /**
+   * Dynamically enriches the 4 daily verses for a given date using the live Unsplash Search API
+   * based on each Bible verse's specific scripture theme & keywords + time slot.
+   * Ensures 4 fresh, non-repeating, verse-relevant images every day.
+   */
+  async enrichDayVersesWithUnsplash(
+    verses: DailyVerse[],
+    date: Date = new Date()
+  ): Promise<DailyVerse[]> {
+    if (!verses || verses.length === 0) return verses;
+    const PERIODS = ['Morning', 'Afternoon', 'Evening', 'Night'];
+    const dayNumber = getCalendarDayNumber(date);
+    const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+    try {
+      const usedStr = await AsyncStorage.getItem(USED_UNSPLASH_URLS_KEY);
+      const usedArr: string[] = usedStr ? JSON.parse(usedStr) : [];
+      const usedSet = new Set<string>(usedArr);
+
+      let cacheChanged = false;
+      const cacheStr = await AsyncStorage.getItem(VERSES_CACHE_KEY);
+      const cache: Record<number, DailyVerse> = cacheStr ? JSON.parse(cacheStr) : {};
+
+      // Add already-assigned dynamic URLs from this day's slots to usedSet so no two slots can match
+      for (const v of verses) {
+        if (v?.backgroundUrl && !isStaticCuratedBackgroundUrl(v.backgroundUrl)) {
+          usedSet.add(v.backgroundUrl);
+        }
+      }
+
+      for (let i = 0; i < verses.length; i++) {
+        const v = verses[i];
+        const period = PERIODS[i] || 'Morning';
+        if (!v) continue;
+
+        const hasFreshDynamic =
+          v.isDynamicUnsplash === true &&
+          v.backgroundDateKey === dateKey &&
+          v.backgroundUrl &&
+          !isStaticCuratedBackgroundUrl(v.backgroundUrl);
+
+        if (hasFreshDynamic) continue;
+
+        const fetched = await fetchRelevantUnsplashForVerse(v, period, dayNumber, usedSet);
+        if (fetched && fetched.url) {
+          v.backgroundUrl = fetched.url;
+          v.isDynamicUnsplash = true;
+          v.backgroundDateKey = dateKey;
+          v.unsplashPhotographer = fetched.photographer;
+          v.backgroundTheme = fetched.theme;
+          cacheChanged = true;
+
+          if (typeof v.index === 'number') {
+            cache[v.index] = { ...(cache[v.index] || {}), ...v };
+          }
+
+          // Persist to Firestore if this verse has a real document ID
+          if (v.id && !v.id.startsWith('bundled_') && !v.id.startsWith('verse_') && !v.id.startsWith('today_verse_')) {
+            firestore()
+              .collection('daily_verses')
+              .doc(v.id)
+              .set(
+                {
+                  backgroundUrl: fetched.url,
+                  isDynamicUnsplash: true,
+                  backgroundDateKey: dateKey,
+                  unsplashPhotographer: fetched.photographer,
+                  backgroundTheme: fetched.theme,
+                },
+                { merge: true }
+              )
+              .catch(() => {});
+          }
+        } else {
+          // Ensure deterministic verse-relevant image is applied
+          v.backgroundUrl = getVerseBackgroundUrl(v, period, v.index ?? i, date);
+        }
+      }
+
+      if (cacheChanged) {
+        await AsyncStorage.setItem(VERSES_CACHE_KEY, JSON.stringify(cache)).catch(() => {});
+        const trimmedUsed = Array.from(usedSet).slice(-240);
+        await AsyncStorage.setItem(USED_UNSPLASH_URLS_KEY, JSON.stringify(trimmedUsed)).catch(() => {});
+      }
+    } catch (err) {
+      // Fallback silently to deterministic verse-relevant gallery
+    }
+
+    return verses;
+  }
+
+  /**
    * Fetches verses for multiple recent days efficiently (combines cache and batch firestore queries).
    */
   async getRecentVerses(pastDays: number, includeToday: boolean = true, forceRefresh: boolean = false, churchId: string = 'rhema'): Promise<{ date: Date, verses: DailyVerse[] }[]> {
@@ -405,6 +508,9 @@ class VerseNotificationService {
           const metaExists = typeof metaDoc.exists === 'function' ? metaDoc.exists() : metaDoc.exists;
           if (metaExists) {
             const mData = metaDoc.data();
+            if (mData?.scheduleStartDate) {
+              this.cachedScheduleStartDate = mData.scheduleStartDate;
+            }
             totalVerses = mData?.totalVerses || 0;
             await AsyncStorage.setItem('@rhema_verses_meta', totalVerses.toString());
           }
@@ -472,16 +578,21 @@ class VerseNotificationService {
       }
 
       // Offline / missing fallback: Ensure all required indices are populated from bundled JSON
+      // and backfill any missing referenceEn / referenceTe fields
       let bundledVerses: any[] | null = null;
+      const getBundled = () => {
+        if (!bundledVerses) {
+          try {
+            bundledVerses = require('../../assets/bulk_verses.json');
+          } catch (_) {}
+        }
+        return bundledVerses;
+      };
       for (const idx of requiredIndices) {
         if (!cache[idx]) {
-          if (!bundledVerses) {
-            try {
-              bundledVerses = require('../../assets/bulk_verses.json');
-            } catch (_) {}
-          }
-          if (bundledVerses && bundledVerses[idx]) {
-            const bv = bundledVerses[idx];
+          const list = getBundled();
+          if (list && list[idx]) {
+            const bv = list[idx];
             cache[idx] = {
               id: `verse_${idx}`,
               index: idx,
@@ -490,6 +601,13 @@ class VerseNotificationService {
               referenceEn: bv.referenceEn,
               referenceTe: bv.referenceTe,
             };
+          }
+        } else if (!cache[idx].referenceEn || !cache[idx].referenceTe) {
+          const list = getBundled();
+          if (list && list[idx]) {
+            const bv = list[idx];
+            if (!cache[idx].referenceEn && bv.referenceEn) cache[idx].referenceEn = bv.referenceEn;
+            if (!cache[idx].referenceTe && bv.referenceTe) cache[idx].referenceTe = bv.referenceTe;
           }
         }
       }
@@ -502,15 +620,19 @@ class VerseNotificationService {
         for (let i = 0; i < 4; i++) {
           const idx = dailyIndices[i];
           if (cache[idx]) {
-            const v = cache[idx];
-            if (!v.backgroundUrl) {
-              v.backgroundUrl = getVerseBackgroundUrl(v, PERIODS[i], idx);
-            }
+            const v = { ...cache[idx] };
+            v.backgroundUrl = getVerseBackgroundUrl(v, PERIODS[i], idx, d);
             versesForDay.push(v);
           }
         }
         results.push({ date: d, verses: versesForDay });
       }
+
+      // Enrich today's 4 verses with fresh, verse-relevant Unsplash Search API images
+      if (results.length > 0 && includeToday) {
+        await this.enrichDayVersesWithUnsplash(results[0].verses, results[0].date);
+      }
+
       return results;
     } catch (e) {
       console.error('[VerseNotificationService] Error in getRecentVerses:', e);
@@ -594,20 +716,45 @@ class VerseNotificationService {
       }
 
       const teVerse = (targetVerse.verseTe || targetVerse.verseEn || '').replace(/^["“”'‘]+|["“”'‘]+$/g, '').trim();
-      const teRef = (targetVerse.referenceTe || targetVerse.referenceEn || '').trim();
+      let teRef = (targetVerse.referenceTe || targetVerse.referenceEn || '').trim();
       const enVerse = (targetVerse.verseEn || '').replace(/^["“”'‘]+|["“”'‘]+$/g, '').trim();
-      const enRef = (targetVerse.referenceEn || '').trim();
+      let enRef = (targetVerse.referenceEn || '').trim();
+
+      if ((!teRef || !enRef || teRef === enRef) && typeof targetVerse.index === 'number') {
+        try {
+          const bundled: any[] = require('../../assets/bulk_verses.json');
+          const bv = bundled?.[targetVerse.index];
+          if (bv) {
+            if (!enRef && bv.referenceEn) enRef = String(bv.referenceEn).trim();
+            if ((!teRef || teRef === enRef) && bv.referenceTe) teRef = String(bv.referenceTe).trim();
+          }
+        } catch (_) {}
+      }
 
       const combinedRef = (teRef && enRef && teRef !== enRef)
         ? `${teRef} | ${enRef}`
         : (teRef || enRef);
 
-      const GAP = '\n \n';
       let body = '';
       if (teVerse && enVerse && teVerse !== enVerse) {
-        body = `${teVerse}${GAP}${enVerse}${GAP}${combinedRef}`;
+        const teLines = Math.max(1, Math.ceil(teVerse.length / 44));
+        const enLines = Math.max(1, Math.ceil(enVerse.length / 42));
+        const totalVerseLines = teLines + enLines;
+
+        if (totalVerseLines <= 3) {
+          body = combinedRef ? `${teVerse}\n \n${enVerse}\n \n${combinedRef}` : `${teVerse}\n \n${enVerse}`;
+        } else if (totalVerseLines <= 5) {
+          body = combinedRef ? `${teVerse}\n \n${enVerse}\n${combinedRef}` : `${teVerse}\n \n${enVerse}`;
+        } else if (totalVerseLines === 6) {
+          body = combinedRef ? `${teVerse}\n${enVerse}\n${combinedRef}` : `${teVerse}\n${enVerse}`;
+        } else {
+          const teWithRef = teRef && !teVerse.includes(teRef) ? `${teVerse} (${teRef})` : teVerse;
+          const enWithRef = enRef && !enVerse.includes(enRef) ? `${enVerse} (${enRef})` : enVerse;
+          body = combinedRef ? `${teWithRef}\n${enWithRef}\n${combinedRef}` : `${teWithRef}\n${enWithRef}`;
+        }
       } else {
-        body = `${teVerse || enVerse}${GAP}${combinedRef}`;
+        const singleVerse = teVerse || enVerse;
+        body = combinedRef ? `${singleVerse}\n \n${combinedRef}` : singleVerse;
       }
 
       // Schedule exactly ONE combined notification

@@ -54,6 +54,8 @@ export const hi: TranslationSchema = {
     bible: 'बाइबल',
     giving: 'दान',
     events: 'कार्यक्रम',
+    serviceRoster: 'सर्विस रोस्टर',
+    testimonies: 'गवाहियां',
     adminView: 'व्यवस्थापक दृश्य',
     memberView: 'सदस्य दृश्य',
   },

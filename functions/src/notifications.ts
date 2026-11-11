@@ -133,17 +133,10 @@ async function handlePrayerRequestAdminPush(prayer: any, churchId: string, praye
     const memberId = prayer.uid || prayer.authorId || prayer.contactId;
     if (memberId) {
       try {
-        let mSnap = await db.collection('Rhema Church').doc(churchId).collection('members').doc(memberId).get();
-        if (!mSnap.exists) {
-          mSnap = await db.collection('churches').doc(churchId).collection('members').doc(memberId).get();
-        }
-        if (mSnap.exists && mSnap.data()?.name) {
-          memberName = mSnap.data()!.name;
-        } else {
-          const uSnap = await db.collection('users').doc(memberId).get();
-          if (uSnap.exists && (uSnap.data()?.name || uSnap.data()?.displayName)) {
-            memberName = uSnap.data()!.name || uSnap.data()!.displayName;
-          }
+        const mSnap = await db.collection('Rhema Church').doc(churchId).collection('members').doc(memberId).get();
+        if (mSnap.exists) {
+          const mData = mSnap.data();
+          memberName = mData?.name || mData?.displayName || (mData?.firstName ? `${mData.firstName} ${mData.lastName || ''}`.trim() : '');
         }
       } catch (err) {
         console.warn('Could not resolve prayer member name from Firestore:', err);
@@ -171,10 +164,7 @@ async function handlePrayerRequestAdminPush(prayer: any, churchId: string, praye
 
   try {
     // A. Check Rhema Church members
-    let membersSnap = await db.collection('Rhema Church').doc(churchId).collection('members').get();
-    if (membersSnap.empty) {
-      membersSnap = await db.collection('churches').doc(churchId).collection('members').get();
-    }
+    const membersSnap = await db.collection('Rhema Church').doc(churchId).collection('members').get();
     membersSnap.forEach(doc => {
       const m = doc.data();
       const role = String(m.userType || m.role || '').toLowerCase();
@@ -184,14 +174,16 @@ async function handlePrayerRequestAdminPush(prayer: any, churchId: string, praye
         if (m.fcmToken && typeof m.fcmToken === 'string' && m.fcmToken.trim().length > 10) {
           adminTokens.push(m.fcmToken.trim());
         }
+        if (Array.isArray(m.fcmTokens)) {
+          m.fcmTokens.forEach((t: string) => {
+            if (t && typeof t === 'string' && t.trim().length > 10) adminTokens.push(t.trim());
+          });
+        }
       }
     });
 
     // B. Check church document for admin UIDs
-    let churchDoc = await db.collection('Rhema Church').doc(churchId).get();
-    if (!churchDoc.exists) {
-      churchDoc = await db.collection('churches').doc(churchId).get();
-    }
+    const churchDoc = await db.collection('Rhema Church').doc(churchId).get();
     if (churchDoc.exists) {
       const cData = churchDoc.data();
       const ownerUids = [cData?.adminUid, cData?.createdBy, cData?.pastorUid].filter(Boolean);
@@ -200,20 +192,6 @@ async function handlePrayerRequestAdminPush(prayer: any, churchId: string, praye
           adminUids.push(uid);
         }
       }
-    }
-
-    // C. Check users collection for admin tokens
-    for (const uid of adminUids) {
-      try {
-        const uSnap = await db.collection('users').doc(uid).get();
-        const uData = uSnap.data();
-        if (uData?.fcmToken && typeof uData.fcmToken === 'string' && uData.fcmToken.trim().length > 10) {
-          const t = uData.fcmToken.trim();
-          if (!adminTokens.includes(t)) {
-            adminTokens.push(t);
-          }
-        }
-      } catch (_) {}
     }
   } catch (lookupErr) {
     console.error('Error fetching admin tokens for prayer request notification:', lookupErr);
@@ -303,9 +281,6 @@ async function handlePrayerRequestAdminPush(prayer: any, churchId: string, praye
       createdAt: FieldValue.serverTimestamp(),
     };
     await db.collection('Rhema Church').doc(churchId).collection('notifications').add(notifPayload);
-    try {
-      await db.collection('churches').doc(churchId).collection('notifications').add(notifPayload);
-    } catch (_) {}
   } catch (dbErr) {
     console.error('Error writing prayer in-app notification document:', dbErr);
   }
@@ -377,17 +352,10 @@ async function handleBaptismRequestAdminPush(baptism: any, churchId: string, req
     const memberId = baptism.memberId || baptism.uid || baptism.userId;
     if (memberId) {
       try {
-        let mSnap = await db.collection('Rhema Church').doc(churchId).collection('members').doc(memberId).get();
-        if (!mSnap.exists) {
-          mSnap = await db.collection('churches').doc(churchId).collection('members').doc(memberId).get();
-        }
-        if (mSnap.exists && mSnap.data()?.name) {
-          memberName = mSnap.data()!.name;
-        } else {
-          const uSnap = await db.collection('users').doc(memberId).get();
-          if (uSnap.exists && (uSnap.data()?.name || uSnap.data()?.displayName)) {
-            memberName = uSnap.data()!.name || uSnap.data()!.displayName;
-          }
+        const mSnap = await db.collection('Rhema Church').doc(churchId).collection('members').doc(memberId).get();
+        if (mSnap.exists) {
+          const mData = mSnap.data();
+          memberName = mData?.name || mData?.displayName || (mData?.firstName ? `${mData.firstName} ${mData.lastName || ''}`.trim() : '');
         }
       } catch (err) {
         console.warn('Could not resolve baptism member name:', err);
@@ -411,10 +379,7 @@ async function handleBaptismRequestAdminPush(baptism: any, churchId: string, req
 
   try {
     // A. Check Rhema Church members
-    let membersSnap = await db.collection('Rhema Church').doc(churchId).collection('members').get();
-    if (membersSnap.empty) {
-      membersSnap = await db.collection('churches').doc(churchId).collection('members').get();
-    }
+    const membersSnap = await db.collection('Rhema Church').doc(churchId).collection('members').get();
     membersSnap.forEach(doc => {
       const m = doc.data();
       const role = String(m.userType || m.role || '').toLowerCase();
@@ -424,14 +389,16 @@ async function handleBaptismRequestAdminPush(baptism: any, churchId: string, req
         if (m.fcmToken && typeof m.fcmToken === 'string' && m.fcmToken.trim().length > 10) {
           adminTokens.push(m.fcmToken.trim());
         }
+        if (Array.isArray(m.fcmTokens)) {
+          m.fcmTokens.forEach((t: string) => {
+            if (t && typeof t === 'string' && t.trim().length > 10) adminTokens.push(t.trim());
+          });
+        }
       }
     });
 
     // B. Check church document for admin UIDs
-    let churchDoc = await db.collection('Rhema Church').doc(churchId).get();
-    if (!churchDoc.exists) {
-      churchDoc = await db.collection('churches').doc(churchId).get();
-    }
+    const churchDoc = await db.collection('Rhema Church').doc(churchId).get();
     if (churchDoc.exists) {
       const cData = churchDoc.data();
       const ownerUids = [cData?.adminUid, cData?.createdBy, cData?.pastorUid].filter(Boolean);
@@ -440,20 +407,6 @@ async function handleBaptismRequestAdminPush(baptism: any, churchId: string, req
           adminUids.push(uid);
         }
       }
-    }
-
-    // C. Check users collection for admin tokens
-    for (const uid of adminUids) {
-      try {
-        const uSnap = await db.collection('users').doc(uid).get();
-        const uData = uSnap.data();
-        if (uData?.fcmToken && typeof uData.fcmToken === 'string' && uData.fcmToken.trim().length > 10) {
-          const t = uData.fcmToken.trim();
-          if (!adminTokens.includes(t)) {
-            adminTokens.push(t);
-          }
-        }
-      } catch (_) {}
     }
   } catch (lookupErr) {
     console.error('Error fetching admin tokens for baptism notification:', lookupErr);
@@ -540,9 +493,6 @@ async function handleBaptismRequestAdminPush(baptism: any, churchId: string, req
       createdAt: FieldValue.serverTimestamp(),
     };
     await db.collection('Rhema Church').doc(churchId).collection('notifications').add(notifPayload);
-    try {
-      await db.collection('churches').doc(churchId).collection('notifications').add(notifPayload);
-    } catch (_) {}
   } catch (dbErr) {
     console.error('Error writing baptism in-app notification document:', dbErr);
   }
@@ -624,17 +574,10 @@ async function handlePrayerRequestMemberPush(before: any, after: any, churchId: 
   if (!memberName || memberName.toLowerCase() === 'faithful member' || memberName.toLowerCase() === 'church member' || memberName.toLowerCase() === 'a church member') {
     if (memberId) {
       try {
-        let mSnap = await db.collection('Rhema Church').doc(churchId).collection('members').doc(memberId).get();
-        if (!mSnap.exists) {
-          mSnap = await db.collection('churches').doc(churchId).collection('members').doc(memberId).get();
-        }
-        if (mSnap.exists && mSnap.data()?.name) {
-          memberName = mSnap.data()!.name;
-        } else {
-          const uSnap = await db.collection('users').doc(memberId).get();
-          if (uSnap.exists && (uSnap.data()?.name || uSnap.data()?.displayName)) {
-            memberName = uSnap.data()!.name || uSnap.data()!.displayName;
-          }
+        const mSnap = await db.collection('Rhema Church').doc(churchId).collection('members').doc(memberId).get();
+        if (mSnap.exists) {
+          const mData = mSnap.data();
+          memberName = mData?.name || mData?.displayName || (mData?.firstName ? `${mData.firstName} ${mData.lastName || ''}`.trim() : '');
         }
       } catch (_) {}
     }
@@ -682,38 +625,6 @@ async function handlePrayerRequestMemberPush(before: any, after: any, churchId: 
           }
         }
       } catch (_) {}
-
-      // Check legacy churches members
-      try {
-        const mSnap = await db.collection('churches').doc(churchId).collection('members').doc(memberId).get();
-        if (mSnap.exists) {
-          const m = mSnap.data();
-          if (m?.fcmToken && typeof m.fcmToken === 'string' && m.fcmToken.trim().length > 10) {
-            memberTokens.push(m.fcmToken.trim());
-          }
-          if (Array.isArray(m?.fcmTokens)) {
-            for (const t of m.fcmTokens) {
-              if (typeof t === 'string' && t.trim().length > 10) memberTokens.push(t.trim());
-            }
-          }
-        }
-      } catch (_) {}
-
-      // Check users collection by UID
-      try {
-        const uSnap = await db.collection('users').doc(memberId).get();
-        if (uSnap.exists) {
-          const u = uSnap.data();
-          if (u?.fcmToken && typeof u.fcmToken === 'string' && u.fcmToken.trim().length > 10) {
-            memberTokens.push(u.fcmToken.trim());
-          }
-          if (Array.isArray(u?.fcmTokens)) {
-            for (const t of u.fcmTokens) {
-              if (typeof t === 'string' && t.trim().length > 10) memberTokens.push(t.trim());
-            }
-          }
-        }
-      } catch (_) {}
     }
 
     // Check by Phone number across members and users
@@ -724,31 +635,13 @@ async function handlePrayerRequestMemberPush(before: any, after: any, churchId: 
           const memQuery = await db.collection('Rhema Church').doc(churchId).collection('members').get();
           memQuery.forEach(doc => {
             const m = doc.data();
-            const p = String(m.phone || m.mobile || '').replace(/\D/g, '').slice(-10);
+            const p = String(m.phone || m.mobile || m.phoneNumber || '').replace(/\D/g, '').slice(-10);
             if (p === cleanDigits) {
               if (m?.fcmToken && typeof m.fcmToken === 'string' && m.fcmToken.trim().length > 10) {
                 memberTokens.push(m.fcmToken.trim());
               }
               if (Array.isArray(m?.fcmTokens)) {
                 for (const t of m.fcmTokens) {
-                  if (typeof t === 'string' && t.trim().length > 10) memberTokens.push(t.trim());
-                }
-              }
-            }
-          });
-        } catch (_) {}
-
-        try {
-          const uQuery = await db.collection('users').get();
-          uQuery.forEach(doc => {
-            const u = doc.data();
-            const p = String(u.phone || u.mobile || u.phoneNumber || '').replace(/\D/g, '').slice(-10);
-            if (p === cleanDigits) {
-              if (u?.fcmToken && typeof u.fcmToken === 'string' && u.fcmToken.trim().length > 10) {
-                memberTokens.push(u.fcmToken.trim());
-              }
-              if (Array.isArray(u?.fcmTokens)) {
-                for (const t of u.fcmTokens) {
                   if (typeof t === 'string' && t.trim().length > 10) memberTokens.push(t.trim());
                 }
               }
@@ -821,9 +714,6 @@ async function handlePrayerRequestMemberPush(before: any, after: any, churchId: 
       createdAt: FieldValue.serverTimestamp(),
     };
     await db.collection('Rhema Church').doc(churchId).collection('notifications').add(notifPayload);
-    try {
-      await db.collection('churches').doc(churchId).collection('notifications').add(notifPayload);
-    } catch (_) {}
   } catch (dbErr) {
     console.error('Error writing member prayer in-app notification doc:', dbErr);
   }
@@ -1038,11 +928,7 @@ export const publishScheduledSermons = onSchedule(
       console.log('⏰ [publishScheduledSermons] Checking for due scheduled sermons...');
       
       // 1. Check active Rhema Church collection
-      const rhemaChurchRef = db.collection('Rhema Church').doc('rhema');
-      await checkAndPublishScheduledSermons(rhemaChurchRef.collection('sermons'), 'rhema', rhemaChurchRef);
-
-      // 2. Check legacy churches collection
-      const churchesSnapshot = await db.collection('churches').get();
+      const churchesSnapshot = await db.collection('Rhema Church').get();
       for (const churchDoc of churchesSnapshot.docs) {
         await checkAndPublishScheduledSermons(churchDoc.ref.collection('sermons'), churchDoc.id, churchDoc.ref);
       }
@@ -1058,7 +944,7 @@ export const monitorMeetingLive = onSchedule({ schedule: '* * * * *', timeZone: 
   const fiveMinsAgo = new Date(now.getTime() - 5 * 60 * 1000);
 
   try {
-    const churchesSnapshot = await db.collection('churches').get();
+    const churchesSnapshot = await db.collection('Rhema Church').get();
     
     for (const churchDoc of churchesSnapshot.docs) {
       const churchId = churchDoc.id;
@@ -1588,12 +1474,18 @@ export const pushNewChurchRegistered = onDocumentCreated('churches/{churchId}', 
     const adminIds = adminsSnapshot.docs.map(d => d.id);
     const tokens: string[] = [];
 
-    for (const adminId of adminIds) {
-      const userSnap = await db.collection('users').doc(adminId).get();
-      const data = userSnap.data();
-      if (data?.fcmToken && typeof data.fcmToken === 'string') {
-        tokens.push(data.fcmToken);
+    for (const adminDoc of adminsSnapshot.docs) {
+      const aData = adminDoc.data();
+      if (aData?.fcmToken && typeof aData.fcmToken === 'string') {
+        tokens.push(aData.fcmToken);
       }
+      try {
+        const mSnap = await db.collection('Rhema Church').doc('rhema').collection('members').doc(adminDoc.id).get();
+        const mData = mSnap.data();
+        if (mData?.fcmToken && typeof mData.fcmToken === 'string') {
+          tokens.push(mData.fcmToken);
+        }
+      } catch (_) {}
     }
 
     // 2. Multicast push to Super Admin devices
@@ -1708,25 +1600,13 @@ async function sendBibleQuizPublishNotification(churchId: string, quizId: string
   try {
     const tokenSet = new Set<string>();
 
-    if (churchId && churchId !== 'global') {
-      const usersSnap = await db.collection('users').where('primaryChurchId', '==', churchId).get();
-      usersSnap.forEach((doc: any) => {
-        const u = doc.data();
-        if (u.fcmToken) tokenSet.add(u.fcmToken);
-      });
-
-      const membersSnap = await db.collection('churches').doc(churchId).collection('members').get();
-      membersSnap.forEach((doc: any) => {
-        const m = doc.data();
-        if (m.fcmToken) tokenSet.add(m.fcmToken);
-      });
-    } else {
-      const usersSnap = await db.collection('users').limit(500).get();
-      usersSnap.forEach((doc: any) => {
-        const u = doc.data();
-        if (u.fcmToken) tokenSet.add(u.fcmToken);
-      });
-    }
+    const targetChurch = (churchId && churchId !== 'global') ? churchId : 'rhema';
+    const membersSnap = await db.collection('Rhema Church').doc(targetChurch).collection('members').get();
+    membersSnap.forEach((doc: any) => {
+      const m = doc.data();
+      if (m.fcmToken) tokenSet.add(m.fcmToken);
+      if (Array.isArray(m.fcmTokens)) m.fcmTokens.forEach((t: string) => tokenSet.add(t));
+    });
 
     const tokens = Array.from(tokenSet);
     if (tokens.length > 0) {
@@ -1754,21 +1634,20 @@ async function sendBibleQuizPublishNotification(churchId: string, quizId: string
   }
 
   // 3. Write in-app notification document
-  if (churchId && churchId !== 'global') {
-    try {
-      await db.collection('churches').doc(churchId).collection('notifications').add({
-        type: 'quiz',
-        title,
-        body,
-        quizId,
-        quizTitle: quiz.title || '',
-        category: quiz.category || '',
-        read: false,
-        createdAt: FieldValue.serverTimestamp(),
-      });
-    } catch (dbErr) {
-      console.warn('Error saving quiz in-app notification:', dbErr);
-    }
+  try {
+    const targetChurch = (churchId && churchId !== 'global') ? churchId : 'rhema';
+    await db.collection('Rhema Church').doc(targetChurch).collection('notifications').add({
+      type: 'quiz',
+      title,
+      body,
+      quizId,
+      quizTitle: quiz.title || '',
+      category: quiz.category || '',
+      read: false,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+  } catch (dbErr) {
+    console.warn('Error saving quiz in-app notification:', dbErr);
   }
 }
 
@@ -1898,26 +1777,23 @@ export async function sendDailyQuizNotificationInternal(force: boolean = false):
     click_action: 'FLUTTER_NOTIFICATION_CLICK',
   };
 
-  // 3. Collect registered FCM tokens from users and members
+  // 3. Collect registered FCM tokens from members
   const tokenSet = new Set<string>();
   try {
-    const usersSnap = await db.collection('users').get();
-    usersSnap.forEach((doc: any) => {
-      const data = doc.data();
-      if (data?.fcmToken && typeof data.fcmToken === 'string' && data.fcmToken.trim().length > 10) {
-        tokenSet.add(data.fcmToken.trim());
-      }
-    });
-
     const membersSnap = await db.collectionGroup('members').get();
     membersSnap.forEach((doc: any) => {
       const data = doc.data();
       if (data?.fcmToken && typeof data.fcmToken === 'string' && data.fcmToken.trim().length > 10) {
         tokenSet.add(data.fcmToken.trim());
       }
+      if (Array.isArray(data?.fcmTokens)) {
+        data.fcmTokens.forEach((tk: any) => {
+          if (typeof tk === 'string' && tk.trim().length > 10) tokenSet.add(tk.trim());
+        });
+      }
     });
   } catch (tokenErr) {
-    console.warn('[DailyQuiz] Error collecting user tokens:', tokenErr);
+    console.warn('[DailyQuiz] Error collecting member tokens:', tokenErr);
   }
 
   const tokens = Array.from(tokenSet);
@@ -1958,12 +1834,9 @@ export async function sendDailyQuizNotificationInternal(force: boolean = false):
     console.log(`✅ [DailyQuiz] Multicast push sent: ${multicastSuccess} success, ${multicastFailed} failed.`);
   }
 
-  // 5. Log in broadcasts/notifications for each church (silent — push already sent via multicast above)
-  // NOTE: Topic broadcast has been intentionally REMOVED to prevent duplicate deliveries.
-  // Users subscribed to church_{churchId} topics would receive BOTH the direct multicast push
-  // AND the topic push, resulting in 2× (or more) notifications. Delivery is solely via multicast.
+  // 5. Log in broadcasts/notifications for Rhema Church
   try {
-    const churchesSnap = await db.collection('churches').get();
+    const churchesSnap = await db.collection('Rhema Church').get();
     for (const cDoc of churchesSnap.docs) {
       const churchId = cDoc.id;
       if (churchId === 'global') continue;
@@ -2190,39 +2063,87 @@ export async function sendDailyVersePushInternal(slotOverride?: string, targetCh
     console.log(`🔑 [DailyVerse] Lock acquired for slot ${slotLockKey}. Dispatching notification...`);
   }
 
-  // 2. Resolve today's verse index
-  // 100% synchronized with SuperAdminVersesManager, HomeScreen, and VerseOfTheDayScreen:
-  // Today's 4 slots are strictly indexed: 0 (Morning), 1 (Afternoon), 2 (Evening), 3 (Night)
-  const targetIndex = slotInfo.index;
-  console.log(`[sendDailyVersePushInternal] Target verse index: ${targetIndex} for slot ${slot}`);
+  // 2. Resolve today's verse index dynamically from the anchor schedule date
+  // 100% synchronized with SuperAdminVersesManager, HomeScreen, and VerseOfTheDayScreen
+  let totalVerses = 5863;
+  let epochStr = '2026-10-30';
+  try {
+    const metaDoc = await db.collection('daily_verses_meta').doc('metadata').get();
+    if (metaDoc.exists) {
+      const mData = metaDoc.data() || {};
+      if (mData.totalVerses && typeof mData.totalVerses === 'number') {
+        totalVerses = mData.totalVerses;
+      }
+      if (mData.scheduleStartDate && typeof mData.scheduleStartDate === 'string') {
+        epochStr = mData.scheduleStartDate;
+      }
+    }
+  } catch (mErr) {
+    console.warn('[sendDailyVersePushInternal] Metadata fetch warning, using defaults:', mErr);
+  }
+
+  // Calculate calendar days diff from epoch in IST
+  const parts = epochStr.split('-').map(Number);
+  const eY = parts[0] || 2026;
+  const eM = parts[1] || 10;
+  const eD = parts[2] || 30;
+  const epochUtc = Date.UTC(eY, eM - 1, eD);
+  const targetUtc = Date.UTC(nowIst.getFullYear(), nowIst.getMonth(), nowIst.getDate());
+  const diffDays = Math.floor((targetUtc - epochUtc) / (24 * 60 * 60 * 1000));
+  const base = diffDays * 4;
+
+  const todayIndices = [
+    ((base + 0) % totalVerses + totalVerses) % totalVerses,
+    ((base + 1) % totalVerses + totalVerses) % totalVerses,
+    ((base + 2) % totalVerses + totalVerses) % totalVerses,
+    ((base + 3) % totalVerses + totalVerses) % totalVerses,
+  ];
+
+  const targetIndex: number = (todayIndices[slotInfo.index] !== undefined ? todayIndices[slotInfo.index] : todayIndices[0]) ?? 0;
+  console.log(`[sendDailyVersePushInternal] Target verse index: ${targetIndex} for slot ${slot} (epoch: ${epochStr}, diffDays: ${diffDays}, slotIdx: ${slotInfo.index}, todayIndices: [${todayIndices.join(', ')}])`);
 
   let verseDocData: any = null;
   let verseId: string = `verse_${targetIndex}`;
 
-  // 1. Primary Source of Truth: Firestore 'daily_verses' collection (as configured in SuperAdminVersesManager & shown on HomeScreen)
+  // 1. Primary Source of Truth: Firestore 'daily_verses' collection
   try {
-    const snap = await db.collection('daily_verses')
-      .where('index', '==', targetIndex)
-      .get();
-    if (!snap.empty && snap.docs.length > 0) {
-      let bestDoc: any = snap.docs[0];
-      let bestTime = 0;
-      snap.docs.forEach((doc: any) => {
-        const d = doc.data();
-        const t = d.updatedAt?.toMillis ? d.updatedAt.toMillis() : (d.updatedAt || d.createdAt?.toMillis?.() || d.createdAt || 0);
-        if (t >= bestTime) {
-          bestTime = t;
-          bestDoc = doc;
-        }
-      });
-      if (bestDoc) {
-        verseDocData = bestDoc.data();
-        verseId = bestDoc.id;
-        console.log(`✨ [sendDailyVersePushInternal] Loaded verse from daily_verses for slot '${slot}' (index ${targetIndex}): ${verseDocData.referenceEn || verseDocData.referenceTe}`);
-      }
+    // 1a. Direct doc lookup by deterministic ID
+    const directDoc = await db.collection('daily_verses').doc(`verse_${targetIndex}`).get();
+    if (directDoc.exists) {
+      verseDocData = directDoc.data();
+      verseId = directDoc.id;
+      console.log(`✨ [sendDailyVersePushInternal] Loaded verse via direct doc verse_${targetIndex}: ${verseDocData.referenceEn || verseDocData.referenceTe}`);
     }
-  } catch (err) {
-    console.warn('[sendDailyVersePushInternal] Could not query daily_verses by index:', err);
+  } catch (dErr) {
+    console.warn('[sendDailyVersePushInternal] Direct doc lookup failed, falling back to index query:', dErr);
+  }
+
+  // 1b. If not found by direct ID, query by index field
+  if (!verseDocData) {
+    try {
+      const snap = await db.collection('daily_verses')
+        .where('index', '==', targetIndex)
+        .get();
+      if (!snap.empty && snap.docs.length > 0) {
+        let bestDoc: any = snap.docs[0];
+        let bestTime = 0;
+        snap.docs.forEach((doc: any) => {
+          const d = doc.data();
+          const t = d.updatedAt?.toMillis ? d.updatedAt.toMillis() : (d.updatedAt || d.createdAt?.toMillis?.() || d.createdAt || 0);
+          if (t >= bestTime) {
+            bestTime = t;
+            bestDoc = doc;
+          }
+        });
+        if (bestDoc) {
+          verseDocData = bestDoc.data();
+          verseId = bestDoc.id;
+          console.log(`✨ [sendDailyVersePushInternal] Loaded verse from daily_verses for slot '${slot}' (index ${targetIndex}): ${verseDocData.referenceEn || verseDocData.referenceTe}`);
+        }
+      }
+    } catch (err) {
+      console.warn('[sendDailyVersePushInternal] Could not query daily_verses by index:', err);
+    }
   }
 
   // 2. Secondary fallback: Rhema Church/rhema/daily_verses
@@ -2241,53 +2162,137 @@ export async function sendDailyVersePushInternal(slotOverride?: string, targetCh
     } catch (_) {}
   }
 
-  // 3. Third fallback: bulk_verses.json bundled asset
-  if (!verseDocData) {
-    try {
-      const fsMod = await import('fs');
-      const pathMod = await import('path');
-      const candidates = [
-        pathMod.join(process.cwd(), 'bulk_verses.json'),
-        pathMod.join(process.cwd(), '../bulk_verses.json'),
-        pathMod.join(process.cwd(), 'app/assets/bulk_verses.json'),
-        pathMod.join(process.cwd(), '../app/assets/bulk_verses.json'),
-      ];
-      for (const p of candidates) {
-        if (fsMod.existsSync(p)) {
-          const raw = fsMod.readFileSync(p, 'utf-8');
-          const list = JSON.parse(raw);
-          if (list && list[targetIndex]) {
-            verseDocData = list[targetIndex];
-            verseId = `bulk_${targetIndex}`;
-            break;
+  // 3. Third fallback & reference backfill: bulk_verses.json bundled asset
+  let bundledVerseFallback: any = null;
+  try {
+    const fsMod = await import('fs');
+    const pathMod = await import('path');
+    const candidates = [
+      pathMod.join(process.cwd(), 'bulk_verses.json'),
+      pathMod.join(process.cwd(), '../bulk_verses.json'),
+      pathMod.join(process.cwd(), 'app/assets/bulk_verses.json'),
+      pathMod.join(process.cwd(), '../app/assets/bulk_verses.json'),
+    ];
+    for (const p of candidates) {
+      if (fsMod.existsSync(p)) {
+        const raw = fsMod.readFileSync(p, 'utf-8');
+        const list: any = JSON.parse(raw);
+        if (Array.isArray(list)) {
+          if (list[targetIndex]) {
+            bundledVerseFallback = list[targetIndex];
           }
+          // If verseDocData came from Firestore but is missing a reference, also match by verse text if needed
+          if (verseDocData && (!verseDocData.referenceEn || !verseDocData.referenceTe)) {
+            const vEnNorm = String(verseDocData.verseEn || '').trim().toLowerCase();
+            const vTeNorm = String(verseDocData.verseTe || verseDocData.verse || '').trim();
+            if (bundledVerseFallback && (
+              (vEnNorm && String(bundledVerseFallback.verseEn || '').trim().toLowerCase() === vEnNorm) ||
+              (vTeNorm && String(bundledVerseFallback.verseTe || '').trim() === vTeNorm)
+            )) {
+              // bundledVerseFallback at targetIndex already matches
+            } else if (vEnNorm || vTeNorm) {
+              const matched = list.find((item: any) =>
+                (vEnNorm && String(item?.verseEn || '').trim().toLowerCase() === vEnNorm) ||
+                (vTeNorm && String(item?.verseTe || '').trim() === vTeNorm)
+              );
+              if (matched) {
+                bundledVerseFallback = matched;
+              }
+            }
+          }
+          if (!verseDocData && bundledVerseFallback) {
+            verseDocData = bundledVerseFallback;
+            verseId = `bulk_${targetIndex}`;
+          }
+          break;
         }
       }
-    } catch (_) {}
-  }
+    }
+  } catch (_) {}
 
   if (!verseDocData) {
     console.warn(`[sendDailyVersePushInternal] No verse found for index ${targetIndex}`);
     return { success: false, error: `Verse not found for index ${targetIndex}` };
   }
 
-  const verseEnText = (verseDocData.verseEn || '').trim();
-  const refEnText = (verseDocData.referenceEn || '').trim();
-  const verseTeText = (verseDocData.verseTe || verseDocData.verse || '').trim();
-  const refTeText = (verseDocData.referenceTe || verseDocData.reference || '').trim();
+  // Resolve verse and reference fields across all possible property names + bundled fallback
+  const verseEnText = (
+    verseDocData.verseEn ||
+    verseDocData.english ||
+    verseDocData.textEn ||
+    bundledVerseFallback?.verseEn ||
+    ''
+  ).trim();
+
+  const verseTeText = (
+    verseDocData.verseTe ||
+    verseDocData.verse ||
+    verseDocData.telugu ||
+    verseDocData.textTe ||
+    bundledVerseFallback?.verseTe ||
+    ''
+  ).trim();
+
+  let refEnText = (
+    verseDocData.referenceEn ||
+    verseDocData.refEn ||
+    verseDocData.verseReferenceEn ||
+    bundledVerseFallback?.referenceEn ||
+    ''
+  ).trim();
+
+  let refTeText = (
+    verseDocData.referenceTe ||
+    verseDocData.reference ||
+    verseDocData.refTe ||
+    verseDocData.verseReferenceTe ||
+    bundledVerseFallback?.referenceTe ||
+    ''
+  ).trim();
+
+  // Bidirectional English <-> Telugu Bible book name map so neither reference is ever missing or untranslated
+  const BOOK_EN_TO_TE: Record<string, string> = {
+    'Genesis': 'ఆదికాండము', 'Exodus': 'నిర్గమకాండము', 'Leviticus': 'లేవీయకాండము', 'Numbers': 'సంఖ్యాకాండము', 'Deuteronomy': 'ద్వితీయోపదేశకాండము',
+    'Joshua': 'యెహోషువ', 'Judges': 'న్యాయాధిపతులు', 'Ruth': 'రూతు', '1 Samuel': '1 సమూయేలు', '2 Samuel': '2 సమూయేలు',
+    '1 Kings': '1 రాజులు', '2 Kings': '2 రాజులు', '1 Chronicles': '1 దినవృత్తాంతములు', '2 Chronicles': '2 దినవృత్తాంతములు',
+    'Ezra': 'ఎజ్రా', 'Nehemiah': 'నెహెమ్యా', 'Esther': 'ఎస్తేరు', 'Job': 'యోబు', 'Psalms': 'కీర్తనలు', 'Psalm': 'కీర్తనలు',
+    'Proverbs': 'సామెతలు', 'Ecclesiastes': 'ప్రసంగి', 'Song of Solomon': 'పరమగీతము', 'Song of Songs': 'పరమగీతము',
+    'Isaiah': 'యెషయా', 'Jeremiah': 'యిర్మీయా', 'Lamentations': 'విలాపవాక్యములు', 'Ezekiel': 'యెహెజ్కేలు', 'Daniel': 'దానియేలు',
+    'Hosea': 'హోషేయ', 'Joel': 'యోవేలు', 'Amos': 'ఆమోసు', 'Obadiah': 'ఓబద్యా', 'Jonah': 'యోనా', 'Micah': 'మీకా',
+    'Nahum': 'నహూము', 'Habakkuk': 'హబక్కూకు', 'Zephaniah': 'జెఫన్యా', 'Haggai': 'హగ్గయి', 'Zechariah': 'జెకర్యా', 'Malachi': 'మలాకీ',
+    'Matthew': 'మత్తయి', 'Mark': 'మార్కు', 'Luke': 'లూకా', 'John': 'యోహాను', 'Acts': 'అపొస్తలుల కార్యములు',
+    'Romans': 'రోమీయులకు', '1 Corinthians': '1 కొరింథీయులకు', '2 Corinthians': '2 కొరింథీయులకు', 'Galatians': 'గలతీయులకు',
+    'Ephesians': 'ఎఫెసీయులకు', 'Philippians': 'ఫిలిప్పీయులకు', 'Colossians': 'కొలొస్సయులకు',
+    '1 Thessalonians': '1 థెస్సలొనీకయులకు', '2 Thessalonians': '2 థెస్సలొనీకయులకు',
+    '1 Timothy': '1 తిమోతికి', '2 Timothy': '2 తిమోతికి', 'Titus': 'తీతుకు', 'Philemon': 'ఫిలేమోనుకు',
+    'Hebrews': 'హెబ్రీయులకు', 'James': 'యాకోబు', '1 Peter': '1 పేతురు', '2 Peter': '2 పేతురు',
+    '1 John': '1 యోహాను', '2 John': '2 యోహాను', '3 John': '3 యోహాను', 'Jude': 'యూదా', 'Revelation': 'ప్రకటన గ్రంథము',
+  };
+
+  if (refEnText && (!refTeText || refTeText === refEnText)) {
+    if (bundledVerseFallback?.referenceTe && bundledVerseFallback.referenceTe !== refEnText) {
+      refTeText = String(bundledVerseFallback.referenceTe).trim();
+    } else {
+      const m = refEnText.match(/^(.+?)\s+(\d+:\d+(?:-\d+)?)$/);
+      if (m && m[1] && m[2] && BOOK_EN_TO_TE[m[1].trim()]) {
+        refTeText = `${BOOK_EN_TO_TE[m[1].trim()]} ${m[2]}`;
+      }
+    }
+  } else if (refTeText && !refEnText) {
+    if (bundledVerseFallback?.referenceEn) {
+      refEnText = String(bundledVerseFallback.referenceEn).trim();
+    } else {
+      for (const [enBook, teBook] of Object.entries(BOOK_EN_TO_TE)) {
+        if (refTeText.startsWith(teBook + ' ')) {
+          refEnText = enBook + refTeText.slice(teBook.length);
+          break;
+        }
+      }
+    }
+  }
 
   // 4. Collect member device FCM tokens
   const tokenSet = new Set<string>();
-
-  try {
-    const usersSnap = await db.collection('users').get();
-    usersSnap.forEach((d: any) => {
-      const data = d.data();
-      if (data.fcmToken && typeof data.fcmToken === 'string' && data.fcmToken.length > 10) {
-        tokenSet.add(data.fcmToken);
-      }
-    });
-  } catch (_) {}
 
   try {
     const membersSnap = await db.collection('Rhema Church').doc('rhema').collection('members').get();
@@ -2295,6 +2300,11 @@ export async function sendDailyVersePushInternal(slotOverride?: string, targetCh
       const data = d.data();
       if (data.fcmToken && typeof data.fcmToken === 'string' && data.fcmToken.length > 10) {
         tokenSet.add(data.fcmToken);
+      }
+      if (Array.isArray(data.fcmTokens)) {
+        data.fcmTokens.forEach((tk: any) => {
+          if (typeof tk === 'string' && tk.length > 10) tokenSet.add(tk);
+        });
       }
     });
   } catch (_) {}
@@ -2305,28 +2315,46 @@ export async function sendDailyVersePushInternal(slotOverride?: string, targetCh
   let enSuccess = 0;
   let teSuccess = 0;
 
-  // 4. Format EXACTLY ONE combined bilingual notification (Telugu + English)
-  // Perfectly matches the layout shown in the user's notification drawer screenshot
+  // 4. Format EXACTLY ONE combined bilingual notification (Telugu + English + Bible Reference)
+  // Ensures the Bible reference is NEVER missing, truncated, or separated across all 4 time slots.
+  // Bible references are attached directly inline with each verse, guaranteeing 100% visibility
+  // even on devices where Android's notification drawer limits visible vertical lines.
   const unifiedTitle = slotInfo.title;
   let unifiedBody = '';
 
   const cleanVerseTe = (verseTeText || '').replace(/^["“”'‘]+|["“”'‘]+$/g, '').trim();
   const cleanVerseEn = (verseEnText || '').replace(/^["“”'‘]+|["“”'‘]+$/g, '').trim();
-  const cleanRefTe = (refTeText || '').trim();
-  const cleanRefEn = (refEnText || '').trim();
+  let cleanRefTe = (refTeText || '').trim();
+  let cleanRefEn = (refEnText || '').trim();
+
+  // Safeguard: If either reference is still missing, resolve from bundled backup
+  if ((!cleanRefEn || !cleanRefTe) && bundledVerseFallback) {
+    if (!cleanRefEn && bundledVerseFallback.referenceEn) {
+      cleanRefEn = String(bundledVerseFallback.referenceEn).trim();
+    }
+    if (!cleanRefTe && bundledVerseFallback.referenceTe) {
+      cleanRefTe = String(bundledVerseFallback.referenceTe).trim();
+    }
+  }
 
   const combinedRef = (cleanRefTe && cleanRefEn && cleanRefTe !== cleanRefEn)
     ? `${cleanRefTe} | ${cleanRefEn}`
     : (cleanRefTe || cleanRefEn);
 
-  // Android notification shade collapses empty newlines unless there is a character.
-  // Using '\n \n' guarantees a visible vertical gap below verses on Android and iOS.
-  const GAP = '\n \n';
+  // Directly attach the respective Bible reference inline so it can NEVER be pushed off
+  // or truncated by Android/iOS notification drawer height constraints.
+  const teInline = (cleanRefTe && !cleanVerseTe.includes(cleanRefTe))
+    ? `${cleanVerseTe} — ${cleanRefTe}`
+    : cleanVerseTe;
 
-  if (cleanVerseTe && cleanVerseEn && cleanVerseTe !== cleanVerseEn) {
-    unifiedBody = `${cleanVerseTe}${GAP}${cleanVerseEn}${GAP}${combinedRef}`;
+  const enInline = (cleanRefEn && !cleanVerseEn.includes(cleanRefEn))
+    ? `${cleanVerseEn} — ${cleanRefEn}`
+    : cleanVerseEn;
+
+  if (teInline && enInline && cleanVerseTe !== cleanVerseEn) {
+    unifiedBody = `${teInline}\n${enInline}`;
   } else {
-    unifiedBody = `${cleanVerseTe || cleanVerseEn}${GAP}${combinedRef}`;
+    unifiedBody = teInline || enInline;
   }
 
   try {
@@ -2904,3 +2932,1691 @@ export const pushCareCellVisit = onDocumentCreated(
     }
   }
 );
+
+/**
+ * ✨ HELPER: NOTIFY AUTHORIZED ADMINS OF NEW TESTIMONY SUBMISSION
+ * 1. Notification Trigger: Fires immediately after successful submission & upload completion in Firestore.
+ * 2. Submission Status: Must be saved with 'Pending Review' (or 'Private') status.
+ * 3. Admin Notification: Scoped strictly to authorized Admins of this church (never other churches).
+ * 4. Exact Content:
+ *    Title: "New Testimony Submitted!"
+ *    Body:  "A Member has submitted a new testimony. Please review it."
+ * 5. Navigation: Routes directly to AdminRoot -> Testimonies tab with exact testimonyId.
+ * 6. Duplicate Prevention: Atomic transaction check-and-set prevents duplicate notifications even on retries.
+ * 7. Background/Cold Start: High-priority FCM payload ensures delivery when app is closed or in background.
+ */
+async function handleTestimonyAdminCreatedPush(testimony: any, churchId: string, testimonyId: string, snapRef?: any) {
+  if (!testimony) return;
+
+  // Status requirement: must be 'Pending Review' (or 'Private' submission)
+  const status = testimony.status;
+  if (status !== 'Pending Review' && status !== 'Private') {
+    console.log(`ℹ️ [TestimonyAdminPush] Skipping notification for ${testimonyId}: Status is '${status}', not 'Pending Review' or 'Private'.`);
+    return;
+  }
+
+  const db = getFirestore();
+  const messaging = getMessaging();
+  const docRef = snapRef || db.collection('Rhema Church').doc(churchId).collection('testimonies').doc(testimonyId);
+
+  // Atomic deduplication lock: Only one notification per successful submission, even on retry
+  let lockAcquired = false;
+  try {
+    lockAcquired = await db.runTransaction(async (transaction) => {
+      const snap: any = await transaction.get(docRef as any);
+      if (!snap.exists) return false;
+      const data = snap.data() || {};
+      if (data.adminPushSent === true) {
+        return false;
+      }
+      transaction.update(docRef, {
+        adminPushSent: true,
+        adminPushSentAt: FieldValue.serverTimestamp(),
+      });
+      return true;
+    });
+  } catch (txErr) {
+    console.warn(`[TestimonyAdminPush] Deduplication transaction error for ${testimonyId}:`, txErr);
+    if (testimony.adminPushSent === true) {
+      return;
+    }
+  }
+
+  if (!lockAcquired) {
+    console.log(`🛑 [TestimonyAdminPush] Notification already sent for testimony ${testimonyId}. Skipping duplicate.`);
+    return;
+  }
+
+  // Exact Notification Content per requirements:
+  const title = 'New Testimony Submitted!';
+  const body = 'A Member has submitted a new testimony. Please review it.';
+  const memberName = (testimony.memberName || 'Church Member').trim();
+
+  const adminTokens: string[] = [];
+
+  try {
+    // Look up authorized church admins strictly from the corresponding church's members collection
+    const membersSnap = await db.collection('Rhema Church').doc(churchId).collection('members').get();
+    membersSnap.forEach((doc) => {
+      const m = doc.data();
+      const role = String(m.userType || m.role || '').toLowerCase();
+      const isAdmin = role.includes('admin') || role.includes('pastor') || role.includes('super');
+      if (isAdmin) {
+        if (m.fcmToken && typeof m.fcmToken === 'string' && m.fcmToken.trim().length > 10) {
+          adminTokens.push(m.fcmToken.trim());
+        }
+        if (Array.isArray(m.fcmTokens)) {
+          m.fcmTokens.forEach((tk: any) => {
+            if (typeof tk === 'string' && tk.trim().length > 10) {
+              adminTokens.push(tk.trim());
+            }
+          });
+        }
+      }
+    });
+  } catch (lookupErr) {
+    console.error('Error fetching admin tokens for testimony notification:', lookupErr);
+  }
+
+  const notificationData: Record<string, string> = {
+    type: 'testimony_admin',
+    churchId,
+    testimonyId,
+    screen: 'AdminRoot',
+    targetTab: 'Testimonies',
+    click_action: 'FLUTTER_NOTIFICATION_CLICK',
+    channelId: 'church_alerts',
+  };
+
+  const uniqueAdminTokens = Array.from(new Set(adminTokens));
+  if (uniqueAdminTokens.length > 0) {
+    try {
+      const sendRes = await messaging.sendEachForMulticast({
+        notification: { title, body },
+        data: notificationData,
+        tokens: uniqueAdminTokens,
+        android: {
+          priority: 'high',
+          notification: {
+            sound: 'default',
+            priority: 'max',
+            channelId: 'church_alerts',
+            defaultSound: true,
+            defaultVibrateTimings: true,
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: 'default',
+              badge: 1,
+              contentAvailable: true,
+            },
+          },
+        },
+      });
+      console.log(`✅ Sent testimony admin notification to ${sendRes.successCount} admin devices (${sendRes.failureCount} failed).`);
+    } catch (pushErr) {
+      console.error('Error sending multicast testimony admin notification:', pushErr);
+    }
+  }
+
+  // Broadcast to corresponding church admin topic ONLY: church_{churchId}_admin
+  try {
+    await messaging.send({
+      notification: { title, body },
+      data: notificationData,
+      topic: `church_${churchId}_admin`,
+      android: {
+        priority: 'high',
+        notification: {
+          sound: 'default',
+          priority: 'max',
+          channelId: 'church_alerts',
+          defaultSound: true,
+          defaultVibrateTimings: true,
+        },
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: 'default',
+            badge: 1,
+            contentAvailable: true,
+          },
+        },
+      },
+    });
+    console.log(`✅ Broadcasted testimony notification to topic: church_${churchId}_admin`);
+  } catch (topicErr) {
+    console.error('Error sending testimony notification to church admin topic:', topicErr);
+  }
+
+  // Write in-app notification doc for church admins into both broadcasts and notifications
+  try {
+    const notifPayload = {
+      type: 'testimony_admin',
+      targetRole: 'admin',
+      title,
+      body,
+      content: `${memberName} submitted a new testimony: "${testimony.title || 'Untitled'}". Please review it.`,
+      memberName,
+      testimonyId,
+      relatedId: testimonyId,
+      churchId,
+      privacy: testimony.privacy || 'Public',
+      read: false,
+      createdAt: FieldValue.serverTimestamp(),
+    };
+    await db.collection('Rhema Church').doc(churchId).collection('broadcasts').add(notifPayload);
+    await db.collection('Rhema Church').doc(churchId).collection('notifications').add(notifPayload);
+  } catch (dbErr) {
+    console.error('Error writing testimony in-app broadcast/notification document:', dbErr);
+  }
+}
+
+/**
+ * 🔄 HELPER: HANDLE WORKFLOW STATE UPDATES (MEMBER APPROVAL/REJECTION OR CHURCH-WIDE PUBLICATION)
+ */
+async function handleTestimonyWorkflowUpdatedPush(before: any, after: any, churchId: string, testimonyId: string, snapRef?: any) {
+  if (!after) return;
+  const db = getFirestore();
+  const messaging = getMessaging();
+
+  const memberName = (after.memberName || 'Church Member').trim();
+  const testimonyTitle = (after.title || 'Testimony').trim();
+
+  // ── WORKFLOW CASE 0: Resubmitted for Admin Review ──
+  const isResubmittedPendingReview =
+    before?.status !== 'Pending Review' &&
+    after.status === 'Pending Review' &&
+    after.adminPushSent !== true;
+
+  if (isResubmittedPendingReview) {
+    await handleTestimonyAdminCreatedPush(after, churchId, testimonyId, snapRef);
+  }
+
+  // ── WORKFLOW CASE 1: Member Status Update (Approved or Rejected) ──
+  const statusChanged = before?.status !== after.status;
+  const memberNeedsStatusPush =
+    statusChanged &&
+    (after.status === 'Approved' || after.status === 'Rejected') &&
+    after.lastMemberNotifiedStatus !== after.status;
+
+  if (memberNeedsStatusPush && after.memberId) {
+    if (snapRef) {
+      try {
+        await snapRef.update({
+          lastMemberNotifiedStatus: after.status,
+          lastMemberNotifiedAt: FieldValue.serverTimestamp(),
+        });
+      } catch (_) {}
+    }
+
+    const memberTokens: string[] = [];
+    try {
+      // Look up submitting member directly in church members subcollection
+      let memberDoc = await db
+        .collection('Rhema Church')
+        .doc(churchId)
+        .collection('members')
+        .doc(after.memberId)
+        .get();
+
+      if (memberDoc.exists) {
+        const mData = memberDoc.data() || {};
+        if (mData.fcmToken && typeof mData.fcmToken === 'string' && mData.fcmToken.trim().length > 10) {
+          memberTokens.push(mData.fcmToken.trim());
+        }
+        if (Array.isArray(mData.fcmTokens)) {
+          mData.fcmTokens.forEach((tk: any) => {
+            if (typeof tk === 'string' && tk.trim().length > 10) {
+              memberTokens.push(tk.trim());
+            }
+          });
+        }
+      }
+    } catch (mErr) {
+      console.error('Error fetching submitting member tokens:', mErr);
+    }
+
+    const isApproved = after.status === 'Approved';
+    const title = isApproved ? '🎉 Testimony Approved!' : 'Testimony Review Update';
+    const body = isApproved
+      ? `Your testimony "${testimonyTitle}" has been approved by the church admin.`
+      : `Your testimony "${testimonyTitle}" was reviewed.${after.rejectionReason ? ` Note: ${after.rejectionReason}` : ''}`;
+
+    const uniqueMemberTokens = Array.from(new Set(memberTokens));
+    if (uniqueMemberTokens.length > 0) {
+      try {
+        await messaging.sendEachForMulticast({
+          notification: { title, body },
+          data: {
+            type: 'testimony_member_status',
+            churchId,
+            testimonyId,
+            status: after.status,
+            rejectionReason: after.rejectionReason || '',
+            click_action: 'FLUTTER_NOTIFICATION_CLICK',
+          },
+          tokens: uniqueMemberTokens,
+          android: {
+            priority: 'high',
+            notification: { sound: 'default', channelId: 'church_alerts' },
+          },
+          apns: { payload: { aps: { sound: 'default', badge: 1 } } },
+        });
+        console.log(`✅ Sent testimony review update push to member ${after.memberId}`);
+      } catch (pushErr) {
+        console.error('Error sending testimony member status push:', pushErr);
+      }
+    }
+
+    // In-app broadcast for the submitting member
+    try {
+      const memberBroadcast = {
+        type: 'testimony_member_status',
+        targetMemberId: after.memberId,
+        title,
+        body,
+        content: body,
+        testimonyId,
+        relatedId: testimonyId,
+        churchId,
+        status: after.status,
+        createdAt: FieldValue.serverTimestamp(),
+      };
+      await db.collection('Rhema Church').doc(churchId).collection('broadcasts').add(memberBroadcast);
+      await db.collection('Rhema Church').doc(churchId).collection('notifications').add(memberBroadcast);
+    } catch (_) {}
+  }
+
+  // ── WORKFLOW CASE 2: Publication of Public Testimony (Church-wide broadcast) ──
+  const isNewlyPublished =
+    before?.status !== 'Published' &&
+    after.status === 'Published' &&
+    after.privacy === 'Public' &&
+    after.publicationPushSent !== true;
+
+  if (isNewlyPublished) {
+    if (snapRef) {
+      try {
+        await snapRef.update({
+          publicationPushSent: true,
+          publicationPushSentAt: FieldValue.serverTimestamp(),
+        });
+      } catch (_) {}
+    }
+
+    const title = '✨ New Testimony Shared!';
+    const body = `${memberName} shared a testimony: "${testimonyTitle}". Tap to watch or read!`;
+
+    const notificationData: Record<string, string> = {
+      type: 'testimony_published',
+      churchId,
+      testimonyId,
+      screen: 'TestimonyDetail',
+      click_action: 'FLUTTER_NOTIFICATION_CLICK',
+    };
+
+    // 1. Broadcast to general church topic
+    try {
+      await messaging.send({
+        notification: { title, body },
+        data: notificationData,
+        topic: `church_${churchId}`,
+        android: {
+          priority: 'high',
+          notification: { sound: 'default', channelId: 'church_alerts' },
+        },
+        apns: { payload: { aps: { sound: 'default', badge: 1 } } },
+      });
+      console.log(`✅ Broadcasted published testimony to topic: church_${churchId}`);
+    } catch (topicErr) {
+      console.error('Error broadcasting testimony to church topic:', topicErr);
+    }
+
+    // 2. Direct multicast to church members with tokens
+    try {
+      const membersSnap = await db.collection('Rhema Church').doc(churchId).collection('members').get();
+
+      const allTokens: string[] = [];
+      membersSnap.forEach((doc) => {
+        const d = doc.data();
+        if (d.fcmToken && typeof d.fcmToken === 'string' && d.fcmToken.trim().length > 10) {
+          allTokens.push(d.fcmToken.trim());
+        }
+        if (Array.isArray(d.fcmTokens)) {
+          d.fcmTokens.forEach((tk: any) => {
+            if (typeof tk === 'string' && tk.trim().length > 10) {
+              allTokens.push(tk.trim());
+            }
+          });
+        }
+      });
+
+      const uniqueTokens = Array.from(new Set(allTokens));
+      // Send in batches of 500 (FCM multicast limit)
+      for (let i = 0; i < uniqueTokens.length; i += 500) {
+        const batch = uniqueTokens.slice(i, i + 500);
+        await messaging.sendEachForMulticast({
+          notification: { title, body },
+          data: notificationData,
+          tokens: batch,
+          android: {
+            priority: 'high',
+            notification: { sound: 'default', channelId: 'church_alerts' },
+          },
+          apns: { payload: { aps: { sound: 'default', badge: 1 } } },
+        });
+      }
+      console.log(`✅ Sent published testimony notification to ${uniqueTokens.length} church member devices.`);
+    } catch (multicastErr) {
+      console.error('Error sending multicast published testimony notifications:', multicastErr);
+    }
+
+    // 3. In-app notification and broadcast for church members
+    try {
+      const pubPayload = {
+        type: 'testimony_published',
+        title,
+        body,
+        content: body,
+        testimonyId,
+        relatedId: testimonyId,
+        memberName,
+        churchId,
+        createdAt: FieldValue.serverTimestamp(),
+      };
+      await db.collection('Rhema Church').doc(churchId).collection('broadcasts').add(pubPayload);
+      await db.collection('Rhema Church').doc(churchId).collection('notifications').add(pubPayload);
+    } catch (_) {}
+  }
+}
+
+/**
+ * ✨ TRIGGER 1: Member Submits Testimony (Notifies Authorized Admins)
+ */
+export const onTestimonyCreatedAdmin = onDocumentCreated(
+  { document: 'Rhema Church/{churchId}/testimonies/{testimonyId}', region: 'asia-south1' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const testimony = snap.data();
+    const churchId = event.params.churchId;
+    const testimonyId = event.params.testimonyId;
+    await handleTestimonyAdminCreatedPush(testimony, churchId, testimonyId, snap.ref);
+  }
+);
+
+export const onTestimonyCreatedAdminLegacy = onDocumentCreated(
+  { document: 'churches/{churchId}/testimonies/{testimonyId}', region: 'asia-south1' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const testimony = snap.data();
+    const churchId = event.params.churchId;
+    const testimonyId = event.params.testimonyId;
+    await handleTestimonyAdminCreatedPush(testimony, churchId, testimonyId, snap.ref);
+  }
+);
+
+/**
+ * 🔄 TRIGGER 2: Admin Workflow Update (Member Approval/Rejection Notice or Publication Broadcast)
+ */
+export const onTestimonyUpdatedWorkflow = onDocumentUpdated(
+  { document: 'Rhema Church/{churchId}/testimonies/{testimonyId}', region: 'asia-south1' },
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    const snapRef = event.data?.after.ref;
+    if (!after) return;
+    const churchId = event.params.churchId;
+    const testimonyId = event.params.testimonyId;
+    await handleTestimonyWorkflowUpdatedPush(before, after, churchId, testimonyId, snapRef);
+  }
+);
+
+export const onTestimonyUpdatedWorkflowLegacy = onDocumentUpdated(
+  { document: 'churches/{churchId}/testimonies/{testimonyId}', region: 'asia-south1' },
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    const snapRef = event.data?.after.ref;
+    if (!after) return;
+    const churchId = event.params.churchId;
+    const testimonyId = event.params.testimonyId;
+    await handleTestimonyWorkflowUpdatedPush(before, after, churchId, testimonyId, snapRef);
+  }
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🤝 VOLUNTEER MANAGEMENT & RELIABLE PUSH NOTIFICATION SYSTEM
+// Supports: General Church Volunteering & Event-Based Volunteering
+// Multi-Tier Token Resolution (Church Members + Global Users + Phone/Email)
+// High-Priority Push for Foreground, Background, and Killed/Closed App States
+// Strict Idempotent Deduplication
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 🔍 TOKEN RESOLVER: Robust Member Device Token Discovery
+ * Checks:
+ * 1. Rhema Church/{churchId}/members/{memberId}
+ * 2. churches/{churchId}/members/{memberId}
+ * 3. users/{memberId}
+ * 4. Rhema Church/rhema/members/{memberId} (if churchId != 'rhema')
+ * 5. Phone lookup in church members & global users (if phone provided)
+ * 6. Email lookup in church members & global users (if email provided)
+ */
+async function resolveVolunteerMemberTokens(
+  db: FirebaseFirestore.Firestore,
+  churchId: string,
+  memberId: string,
+  memberPhone?: string,
+  memberEmail?: string,
+  memberName?: string,
+  directFcmToken?: string
+): Promise<string[]> {
+  const tokenSet = new Set<string>();
+
+  const addToken = (t: any) => {
+    if (typeof t === 'string' && t.trim().length > 10) {
+      tokenSet.add(t.trim());
+    }
+  };
+
+  const addTokensFromArray = (arr: any) => {
+    if (Array.isArray(arr)) {
+      arr.forEach((t) => addToken(t));
+    }
+  };
+
+  if (directFcmToken) {
+    addToken(directFcmToken);
+  }
+
+  const extractFromDoc = (docSnap: any) => {
+    if (docSnap && docSnap.exists) {
+      const data = docSnap.data() || {};
+      addToken(data.fcmToken);
+      addTokensFromArray(data.fcmTokens);
+    }
+  };
+
+  const cid = churchId || 'rhema';
+
+  // 1. Direct member document in Rhema Church/{churchId}/members/{memberId}
+  if (memberId) {
+    try {
+      const snap = await db.collection('Rhema Church').doc(cid).collection('members').doc(memberId).get();
+      extractFromDoc(snap);
+    } catch (_) {}
+
+    // 2. Direct member document in churches/{churchId}/members/{memberId}
+    try {
+      const snap = await db.collection('churches').doc(cid).collection('members').doc(memberId).get();
+      extractFromDoc(snap);
+    } catch (_) {}
+
+    // 3. User document in users/{memberId}
+    try {
+      const snap = await db.collection('users').doc(memberId).get();
+      extractFromDoc(snap);
+    } catch (_) {}
+
+    // 4. Fallback check in default 'rhema' church if churchId is different
+    if (cid !== 'rhema') {
+      try {
+        const snap = await db.collection('Rhema Church').doc('rhema').collection('members').doc(memberId).get();
+        extractFromDoc(snap);
+      } catch (_) {}
+    }
+  }
+
+  // 5. Query members by phone if no token found yet
+  if (tokenSet.size === 0 && memberPhone) {
+    const cleanPhone = String(memberPhone).replace(/[^\d+]/g, '');
+    const last10 = cleanPhone.slice(-10);
+    if (last10.length >= 7) {
+      try {
+        const mSnap = await db.collection('Rhema Church').doc(cid).collection('members').get();
+        mSnap.forEach((d) => {
+          const dPhone = String(d.data()?.phone || d.data()?.mobile || '').replace(/[^\d+]/g, '');
+          if (dPhone.endsWith(last10)) extractFromDoc(d);
+        });
+      } catch (_) {}
+
+      try {
+        const uSnap = await db.collection('users').get();
+        uSnap.forEach((d) => {
+          const dPhone = String(d.data()?.phone || d.data()?.mobile || '').replace(/[^\d+]/g, '');
+          if (dPhone.endsWith(last10)) extractFromDoc(d);
+        });
+      } catch (_) {}
+    }
+  }
+
+  // 6. Query members by email if no token found yet
+  if (tokenSet.size === 0 && memberEmail) {
+    const cleanEmail = memberEmail.trim().toLowerCase();
+    if (cleanEmail.includes('@')) {
+      try {
+        const mSnap = await db.collection('Rhema Church').doc(cid).collection('members').where('email', '==', cleanEmail).limit(2).get();
+        mSnap.forEach((d) => extractFromDoc(d));
+      } catch (_) {}
+
+      try {
+        const uSnap = await db.collection('users').where('email', '==', cleanEmail).limit(2).get();
+        uSnap.forEach((d) => extractFromDoc(d));
+      } catch (_) {}
+    }
+  }
+
+  return Array.from(tokenSet);
+}
+
+/**
+ * 🔍 ADMIN TOKEN RESOLVER: Comprehensive Church Admin Token Discovery
+ * Checks:
+ * 1. Rhema Church/{churchId}/members for admin/pastor/super roles
+ * 2. churches/{churchId}/members for admin/pastor/super roles
+ * 3. Church document metadata (adminUid, createdBy, pastorUid, ownerUid, adminUids)
+ * 4. Resolves tokens for all discovered admin UIDs in users/{uid} and members/{uid}
+ * 5. Direct users collection scan for global admin/superadmin accounts
+ */
+async function resolveVolunteerAdminTokens(
+  db: FirebaseFirestore.Firestore,
+  churchId: string
+): Promise<{ tokens: string[]; adminUids: string[] }> {
+  const tokenSet = new Set<string>();
+  const adminUidSet = new Set<string>();
+
+  const addToken = (t: any) => {
+    if (typeof t === 'string' && t.trim().length > 10) {
+      tokenSet.add(t.trim());
+    }
+  };
+
+  const addTokensFromArray = (arr: any) => {
+    if (Array.isArray(arr)) {
+      arr.forEach((t) => addToken(t));
+    }
+  };
+
+  const checkMemberDoc = (doc: any) => {
+    const m = doc.data() || {};
+    const role = String(m.userType || m.role || '').toLowerCase();
+    const isAdmin =
+      role.includes('admin') ||
+      role.includes('pastor') ||
+      role.includes('super') ||
+      role.includes('leader') ||
+      role.includes('coordinator') ||
+      Boolean(m.isAdmin) ||
+      Boolean(m.isSuperAdmin);
+
+    if (isAdmin) {
+      adminUidSet.add(doc.id);
+      addToken(m.fcmToken);
+      addTokensFromArray(m.fcmTokens);
+    }
+  };
+
+  const cid = churchId || 'rhema';
+
+  // 1. Check Rhema Church/{churchId}/members
+  try {
+    const snap = await db.collection('Rhema Church').doc(cid).collection('members').get();
+    snap.forEach((d) => checkMemberDoc(d));
+  } catch (_) {}
+
+  // 2. Check churches/{churchId}/members
+  try {
+    const snap = await db.collection('churches').doc(cid).collection('members').get();
+    snap.forEach((d) => checkMemberDoc(d));
+  } catch (_) {}
+
+  // 3. Inspect church metadata document for creator / owner / pastor UIDs
+  const churchDocRefs = [
+    db.collection('Rhema Church').doc(cid),
+    db.collection('churches').doc(cid),
+  ];
+  for (const cRef of churchDocRefs) {
+    try {
+      const cSnap = await cRef.get();
+      if (cSnap.exists) {
+        const cData = cSnap.data() || {};
+        const specialUids = [
+          cData.adminUid,
+          cData.createdBy,
+          cData.pastorUid,
+          cData.ownerUid,
+          ...(Array.isArray(cData.adminUids) ? cData.adminUids : []),
+        ].filter(Boolean);
+        specialUids.forEach((uid: string) => adminUidSet.add(uid));
+      }
+    } catch (_) {}
+  }
+
+  // 4. For all discovered admin UIDs, query their user doc in users/{uid} and member doc
+  for (const uid of Array.from(adminUidSet)) {
+    try {
+      const uSnap = await db.collection('users').doc(uid).get();
+      if (uSnap.exists) {
+        const uData = uSnap.data() || {};
+        addToken(uData.fcmToken);
+        addTokensFromArray(uData.fcmTokens);
+      }
+    } catch (_) {}
+
+    try {
+      const mSnap = await db.collection('Rhema Church').doc(cid).collection('members').doc(uid).get();
+      if (mSnap.exists) {
+        const mData = mSnap.data() || {};
+        addToken(mData.fcmToken);
+        addTokensFromArray(mData.fcmTokens);
+      }
+    } catch (_) {}
+  }
+
+  // 5. Query users collection directly for admin / pastor / super accounts
+  try {
+    const usersSnap = await db.collection('users').get();
+    usersSnap.forEach((doc) => {
+      const uData = doc.data() || {};
+      const role = String(uData.userType || uData.role || '').toLowerCase();
+      const isAdmin =
+        role.includes('admin') ||
+        role.includes('pastor') ||
+        role.includes('super') ||
+        Boolean(uData.isAdmin) ||
+        Boolean(uData.isSuperAdmin);
+
+      if (isAdmin) {
+        adminUidSet.add(doc.id);
+        addToken(uData.fcmToken);
+        addTokensFromArray(uData.fcmTokens);
+      }
+    });
+  } catch (_) {}
+
+  return {
+    tokens: Array.from(tokenSet),
+    adminUids: Array.from(adminUidSet),
+  };
+}
+
+/**
+ * 📲 HIGH PRIORITY FCM MULTICAST DISPATCHER
+ * Configured for maximum reliability across foreground, background, and completely closed app states.
+ */
+async function sendHighPriorityPush(
+  messaging: any,
+  tokens: string[],
+  title: string,
+  body: string,
+  data: Record<string, string>,
+  channelId: string = 'church_alerts'
+): Promise<{ successCount: number; failureCount: number }> {
+  if (!tokens || tokens.length === 0) return { successCount: 0, failureCount: 0 };
+
+  const uniqueTokens = Array.from(new Set(tokens.filter((t) => typeof t === 'string' && t.trim().length > 10)));
+  if (uniqueTokens.length === 0) return { successCount: 0, failureCount: 0 };
+
+  let totalSuccess = 0;
+  let totalFailure = 0;
+
+  for (let i = 0; i < uniqueTokens.length; i += 500) {
+    const chunk = uniqueTokens.slice(i, i + 500);
+    try {
+      const res = await messaging.sendEachForMulticast({
+        notification: { title, body },
+        data: {
+          ...data,
+          title,
+          body,
+          channelId,
+          sound: 'default',
+          priority: 'high',
+          click_action: 'FLUTTER_NOTIFICATION_CLICK',
+        },
+        tokens: chunk,
+        android: {
+          priority: 'high',
+          notification: {
+            title,
+            body,
+            sound: 'default',
+            channelId,
+            priority: 'max',
+            defaultSound: true,
+            defaultVibrateTimings: true,
+            visibility: 'public',
+            clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+          },
+        },
+        apns: {
+          headers: {
+            'apns-priority': '10',
+            'apns-push-type': 'alert',
+          },
+          payload: {
+            aps: {
+              alert: {
+                title,
+                body,
+              },
+              sound: 'default',
+              badge: 1,
+              contentAvailable: true,
+            },
+          },
+        },
+      });
+
+      totalSuccess += res.successCount;
+      totalFailure += res.failureCount;
+
+      if (res.failureCount > 0) {
+        res.responses.forEach((resp: any, idx: number) => {
+          if (!resp.success) {
+            const tokenPreview = chunk[idx] ? chunk[idx].slice(0, 15) : 'unknown';
+            console.warn(`[VolunteerPush] Token delivery failure (${resp.error?.code}): ${tokenPreview}...`);
+          }
+        });
+      }
+    } catch (batchErr) {
+      console.error('[VolunteerPush] Error dispatching push chunk:', batchErr);
+      totalFailure += chunk.length;
+    }
+  }
+
+  return { successCount: totalSuccess, failureCount: totalFailure };
+}
+
+/**
+ * 📡 HIGH PRIORITY TOPIC BROADCASTER
+ */
+async function sendHighPriorityTopicPush(
+  messaging: any,
+  topic: string,
+  title: string,
+  body: string,
+  data: Record<string, string>,
+  channelId: string = 'church_alerts'
+) {
+  try {
+    await messaging.send({
+      notification: { title, body },
+      data: {
+        ...data,
+        title,
+        body,
+        channelId,
+        sound: 'default',
+        priority: 'high',
+        click_action: 'FLUTTER_NOTIFICATION_CLICK',
+      },
+      topic,
+      android: {
+        priority: 'high',
+        notification: {
+          title,
+          body,
+          sound: 'default',
+          channelId,
+          priority: 'max',
+          defaultSound: true,
+          defaultVibrateTimings: true,
+          visibility: 'public',
+          clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+        },
+      },
+      apns: {
+        headers: {
+          'apns-priority': '10',
+          'apns-push-type': 'alert',
+        },
+        payload: {
+          aps: {
+            alert: {
+              title,
+              body,
+            },
+            sound: 'default',
+            badge: 1,
+            contentAvailable: true,
+          },
+        },
+      },
+    });
+    console.log(`📡 Broadcasted high-priority volunteer push to topic: ${topic}`);
+  } catch (topicErr) {
+    console.warn(`[VolunteerPush] Topic broadcast failed for ${topic}:`, topicErr);
+  }
+}
+
+function computeVolunteerAssignmentKey(data: {
+  assignedRole?: string;
+  assignedDate?: string;
+  assignedTimeSlot?: string;
+  assignedLocation?: string;
+  assignedResponsibility?: string;
+}): string {
+  const raw = [
+    data.assignedRole || '',
+    data.assignedDate || '',
+    data.assignedTimeSlot || '',
+    data.assignedLocation || '',
+    data.assignedResponsibility || '',
+  ].join('|');
+  let hash = 5381;
+  for (let i = 0; i < raw.length; i++) {
+    hash = ((hash << 5) + hash + raw.charCodeAt(i)) >>> 0;
+  }
+  return hash.toString(36);
+}
+
+/**
+ * Persist volunteer in-app notification deterministically across notifications,
+ * silent broadcasts (prevents duplicate FCM push), and personal member subcollection.
+ */
+async function writeVolunteerInAppNotifications(
+  db: any,
+  churchId: string,
+  docId: string,
+  payload: Record<string, any>,
+  targetMemberIds?: string | string[]
+): Promise<void> {
+  const cid = churchId || 'rhema';
+  const docData = {
+    ...payload,
+    churchId: cid,
+    read: false,
+    createdAt: FieldValue.serverTimestamp(),
+  };
+
+  const writes: Promise<any>[] = [
+    db.collection('Rhema Church').doc(cid).collection('notifications').doc(docId).set(docData, { merge: true }),
+    db.collection('Rhema Church').doc(cid).collection('broadcasts').doc(docId).set({ ...docData, silent: true }, { merge: true }),
+  ];
+
+  const memberIds = Array.isArray(targetMemberIds)
+    ? Array.from(new Set(targetMemberIds.map((id) => String(id || '').trim()).filter(Boolean)))
+    : targetMemberIds
+      ? [String(targetMemberIds).trim()].filter(Boolean)
+      : [];
+
+  for (const memberId of memberIds) {
+    writes.push(
+      db
+        .collection('Rhema Church')
+        .doc(cid)
+        .collection('members')
+        .doc(memberId)
+        .collection('notifications')
+        .doc(docId)
+        .set(docData, { merge: true })
+    );
+  }
+
+  const results = await Promise.allSettled(writes);
+  for (const res of results) {
+    if (res.status === 'rejected') {
+      console.error('Error writing volunteer in-app notification document:', res.reason);
+    }
+  }
+}
+
+/**
+ * 🤝 HELPER: Notify Authorized Church Admins of a New Volunteer Application
+ */
+async function handleVolunteerApplicationAdminCreatedPush(
+  appData: any,
+  churchId: string,
+  applicationId: string,
+  snapRef?: any
+) {
+  if (!appData) return;
+  const db = getFirestore();
+  const messaging = getMessaging();
+  const cid = churchId || 'rhema';
+
+  // Deduplication guard
+  if (appData.adminPushSent === true || appData.adminNotified === true) {
+    console.log(`🛑 Skipping duplicate volunteer admin push for application: ${applicationId}`);
+    return;
+  }
+
+  // 1. Resolve Member Name
+  let memberName = (appData.memberName || '').trim();
+  if (!memberName || memberName.toLowerCase() === 'church member') {
+    const memberId = appData.memberId;
+    if (memberId) {
+      try {
+        const mDoc = await db.collection('Rhema Church').doc(cid).collection('members').doc(memberId).get();
+        if (mDoc.exists) {
+          const m = mDoc.data();
+          memberName = m?.name || m?.displayName || (m?.firstName ? `${m.firstName} ${m.lastName || ''}`.trim() : '');
+        }
+      } catch (err) {
+        console.warn('Could not resolve volunteer member name:', err);
+      }
+    }
+  }
+  if (!memberName) memberName = 'A Church Member';
+
+  const isEventVolunteer = appData.volunteerType === 'event';
+  const eventName = (appData.eventTitle || 'Church Event').trim();
+
+  // 2. Notification title and body according to specification
+  const title = isEventVolunteer
+    ? '📅 New Event Volunteer Application!'
+    : '📋 New Volunteer Application!';
+
+  const body = isEventVolunteer
+    ? `${memberName} has applied to volunteer for ${eventName}. Please review the application.`
+    : `${memberName} has submitted a new General Volunteer application. Please review the application.`;
+
+  // 3. Query authorized Admins for this church
+  const { tokens: adminTokens, adminUids } = await resolveVolunteerAdminTokens(db, cid);
+
+  const notificationData: Record<string, string> = {
+    type: 'volunteer_application_admin',
+    churchId: cid,
+    applicationId,
+    requestId: applicationId,
+    volunteerType: appData.volunteerType || 'general',
+    eventId: appData.eventId || '',
+    eventTitle: isEventVolunteer ? eventName : '',
+    memberName,
+    screen: 'AdminRoot',
+    targetTab: 'Volunteer Management',
+    click_action: 'FLUTTER_NOTIFICATION_CLICK',
+  };
+
+  // 4. Multicast push to direct Admin devices
+  if (adminTokens.length > 0) {
+    const sendRes = await sendHighPriorityPush(messaging, adminTokens, title, body, notificationData, 'church_alerts');
+    console.log(`✅ Sent volunteer application push to ${sendRes.successCount} admin devices (${sendRes.failureCount} failed).`);
+  } else {
+    console.warn(`⚠️ No direct admin FCM tokens resolved for church ${cid}`);
+  }
+
+  // 5. Topic Broadcast to church admin topics
+  await sendHighPriorityTopicPush(messaging, `church_${cid}_admin`, title, body, notificationData, 'church_alerts');
+  if (cid !== 'rhema') {
+    await sendHighPriorityTopicPush(messaging, 'church_rhema_admin', title, body, notificationData, 'church_alerts');
+  }
+
+  // 6. Write in-app notification doc for admins (notifications, silent broadcast, and admin member feeds)
+  await writeVolunteerInAppNotifications(
+    db,
+    cid,
+    `vol_admin_${applicationId}`,
+    {
+      type: 'volunteer_application_admin',
+      targetRole: 'admin',
+      title,
+      body,
+      content: body,
+      memberName,
+      volunteerType: appData.volunteerType || 'general',
+      eventId: appData.eventId || '',
+      eventTitle: isEventVolunteer ? eventName : '',
+      applicationId,
+      referenceId: applicationId,
+      referenceType: isEventVolunteer ? 'event_volunteer' : 'general_volunteer',
+    },
+    adminUids
+  );
+
+  // 7. Atomic update on document to prevent duplicates
+  if (snapRef) {
+    try {
+      await snapRef.update({
+        adminPushSent: true,
+        adminNotified: true,
+        adminPushSentAt: FieldValue.serverTimestamp(),
+        adminNotifiedAt: FieldValue.serverTimestamp(),
+      });
+    } catch (_) {}
+  }
+}
+
+/**
+ * 🤝 HELPER: Handle Volunteer Application Status Transitions (Approval, Rejection, Assignment)
+ */
+async function handleVolunteerApplicationWorkflowUpdatedPush(
+  before: any,
+  after: any,
+  churchId: string,
+  applicationId: string,
+  snapRef?: any
+) {
+  if (!after) return;
+  const db = getFirestore();
+  const messaging = getMessaging();
+  const cid = churchId || 'rhema';
+
+  const isEventVolunteer = after.volunteerType === 'event';
+  const eventName = (after.eventTitle || 'the church event').trim();
+  const memberId = after.memberId;
+
+  // Retrieve member tokens across members collection, users collection, direct token, and phone/email lookups
+  const memberTokens = await resolveVolunteerMemberTokens(
+    db,
+    cid,
+    memberId,
+    after.memberPhone,
+    after.memberEmail,
+    after.memberName,
+    after.memberFcmToken || after.fcmToken
+  );
+
+  // Status normalization
+  const currentStatus = String(after.status || '').toLowerCase().trim();
+  const beforeStatus = String(before?.status || '').toLowerCase().trim();
+  const isStatusDecision = currentStatus === 'approved' || currentStatus === 'rejected' || currentStatus === 'declined';
+  const statusChanged = beforeStatus !== currentStatus;
+
+  const currentAssignmentHash = [
+    after.assignedRole || '',
+    after.assignedDate || '',
+    after.assignedTimeSlot || '',
+    after.assignedLocation || '',
+    after.assignedResponsibility || '',
+  ].join('|');
+
+  // ── WORKFLOW TRIGGER 2 & 3: Application Status Changed (Approved / Rejected) ──
+  if (isStatusDecision && after.lastNotifiedStatus !== currentStatus) {
+    let title = '';
+    let body = '';
+
+    if (currentStatus === 'approved') {
+      title = '🎉 Volunteer Application Approved!';
+      if (isEventVolunteer) {
+        body = `Your application for ${eventName} has been approved.${after.assignedRole ? ` Assigned Role: ${after.assignedRole}.` : ''} Please check your event details.`;
+      } else {
+        body = 'Your volunteer application has been approved. Thank you for your willingness to serve the church.';
+      }
+    } else {
+      title = 'Volunteer Application Update';
+      const reasonPart = after.rejectionReason ? ` Reason: ${after.rejectionReason}` : ' Please check your application details in the app.';
+      if (isEventVolunteer) {
+        body = `Your volunteer application for ${eventName} has not been approved.${reasonPart}`;
+      } else {
+        body = `Your volunteer application has not been approved.${reasonPart}`;
+      }
+    }
+
+    const notificationData: Record<string, string> = {
+      type: 'volunteer_application_member',
+      churchId: cid,
+      applicationId,
+      status: currentStatus,
+      volunteerType: after.volunteerType || 'general',
+      eventId: after.eventId || '',
+      eventTitle: isEventVolunteer ? eventName : '',
+      screen: isEventVolunteer && after.eventId ? 'EventDetails' : 'Volunteer',
+      click_action: 'FLUTTER_NOTIFICATION_CLICK',
+    };
+
+    if (memberTokens.length > 0) {
+      const sendRes = await sendHighPriorityPush(messaging, memberTokens, title, body, notificationData, 'church_alerts');
+      console.log(`✅ Sent volunteer status (${currentStatus}) push to member ${memberId}: ${sendRes.successCount} delivered.`);
+    } else {
+      console.warn(`⚠️ No device FCM tokens resolved for member ${memberId} (${after.memberName || 'Volunteer'})`);
+    }
+
+    // In-app notification record for the member
+    if (memberId) {
+      const normalizedKeyStatus = currentStatus === 'declined' ? 'rejected' : currentStatus;
+      await writeVolunteerInAppNotifications(
+        db,
+        cid,
+        `vol_status_${applicationId}_${normalizedKeyStatus}`,
+        {
+          type: 'volunteer_application_member',
+          recipientId: memberId,
+          recipientRole: 'member',
+          targetMemberId: memberId,
+          targetPhone: after.memberPhone || '',
+          title,
+          body,
+          content: body,
+          status: currentStatus,
+          volunteerType: after.volunteerType || 'general',
+          eventId: after.eventId || '',
+          eventTitle: isEventVolunteer ? eventName : '',
+          applicationId,
+          referenceId: applicationId,
+          referenceType: isEventVolunteer ? 'event_volunteer' : 'general_volunteer',
+        },
+        memberId
+      );
+    }
+
+    // Atomic update to mark status notification delivered and initialize assignment hash
+    if (snapRef) {
+      try {
+        const updatePayload: any = {
+          lastNotifiedStatus: currentStatus,
+          lastNotifiedStatusAt: FieldValue.serverTimestamp(),
+        };
+        if (currentStatus === 'approved') {
+          updatePayload.lastNotifiedAssignmentHash = currentAssignmentHash;
+        }
+        await snapRef.update(updatePayload);
+      } catch (_) {}
+    }
+  }
+
+  // ── WORKFLOW TRIGGER 4: Specific Volunteer Assignment Made or Modified (Subsequent Updates Only) ──
+  const beforeAssignmentHash = [
+    before?.assignedRole || '',
+    before?.assignedDate || '',
+    before?.assignedTimeSlot || '',
+    before?.assignedLocation || '',
+    before?.assignedResponsibility || '',
+  ].join('|');
+
+  const assignmentChanged =
+    currentStatus === 'approved' &&
+    !statusChanged && // Prevent duplicate notification on the same approval turn
+    currentAssignmentHash.trim() !== '||||' &&
+    currentAssignmentHash !== beforeAssignmentHash &&
+    after.lastNotifiedAssignmentHash !== currentAssignmentHash;
+
+  if (assignmentChanged) {
+    const title = '⭐ You Have Been Assigned!';
+    const roleText = after.assignedRole ? `as ${after.assignedRole}` : 'a volunteer';
+    const body = `You have been assigned ${roleText} for ${eventName}.${after.assignedResponsibility ? ` Duty: ${after.assignedResponsibility}.` : ''} Please check your assignment details.`;
+
+    const notificationData: Record<string, string> = {
+      type: 'volunteer_assignment',
+      churchId: cid,
+      applicationId,
+      eventId: after.eventId || '',
+      assignedRole: after.assignedRole || '',
+      assignedTimeSlot: after.assignedTimeSlot || '',
+      assignedLocation: after.assignedLocation || '',
+      screen: 'EventDetails',
+      click_action: 'FLUTTER_NOTIFICATION_CLICK',
+    };
+
+    if (memberTokens.length > 0) {
+      const sendRes = await sendHighPriorityPush(messaging, memberTokens, title, body, notificationData, 'church_alerts');
+      console.log(`✅ Sent volunteer assignment push to member ${memberId}: ${sendRes.successCount} delivered.`);
+    }
+
+    if (memberId) {
+      const assignKey = computeVolunteerAssignmentKey({
+        assignedRole: after.assignedRole,
+        assignedDate: after.assignedDate,
+        assignedTimeSlot: after.assignedTimeSlot,
+        assignedLocation: after.assignedLocation,
+        assignedResponsibility: after.assignedResponsibility,
+      });
+      await writeVolunteerInAppNotifications(
+        db,
+        cid,
+        `vol_assign_${applicationId}_${assignKey}`,
+        {
+          type: 'volunteer_assignment',
+          recipientId: memberId,
+          recipientRole: 'member',
+          targetMemberId: memberId,
+          targetPhone: after.memberPhone || '',
+          title,
+          body,
+          content: body,
+          volunteerType: after.volunteerType || 'event',
+          eventId: after.eventId || '',
+          eventTitle: eventName,
+          applicationId,
+          referenceId: applicationId,
+          referenceType: 'event_volunteer',
+        },
+        memberId
+      );
+    }
+
+    if (snapRef) {
+      try {
+        await snapRef.update({
+          lastNotifiedAssignmentHash: currentAssignmentHash,
+          assignedAt: FieldValue.serverTimestamp(),
+        });
+      } catch (_) {}
+    }
+  }
+}
+
+/**
+ * 📢 HELPER: Handle Event Changes or Cancellation (Notifies Affected Approved Volunteers Only)
+ */
+async function handleEventChangesForVolunteersPush(
+  before: any,
+  after: any,
+  churchId: string,
+  eventId: string
+) {
+  if (!after) return;
+  const db = getFirestore();
+  const messaging = getMessaging();
+  const cid = churchId || 'rhema';
+
+  const isCancelled = !before?.isCancelled && after?.isCancelled === true;
+  const dateChanged = before?.date !== after?.date;
+  const timeChanged = (before?.time || before?.startTime) !== (after?.time || after?.startTime);
+  const locationChanged = before?.location !== after?.location;
+
+  if (!isCancelled && !dateChanged && !timeChanged && !locationChanged) {
+    return;
+  }
+
+  // Query only approved volunteers for this specific event
+  try {
+    const volSnap = await db
+      .collection('Rhema Church')
+      .doc(cid)
+      .collection('volunteer_applications')
+      .where('eventId', '==', eventId)
+      .where('status', '==', 'approved')
+      .get();
+
+    if (volSnap.empty) return;
+
+    const eventName = (after.title || after.name || 'Church Event').trim();
+    let title = '';
+    let body = '';
+
+    if (isCancelled) {
+      title = `⚠️ Event Cancelled: ${eventName}`;
+      body = `The event "${eventName}" has been cancelled. Your volunteer assignment is cancelled. Thank you for your willingness to serve.`;
+    } else {
+      title = `📅 Volunteer Update: ${eventName}`;
+      const changeParts: string[] = [];
+      if (dateChanged && after.date) changeParts.push(`Date: ${after.date}`);
+      if (timeChanged) changeParts.push(`Time: ${after.time || after.startTime}`);
+      if (locationChanged && after.location) changeParts.push(`Location: ${after.location}`);
+      body = `Details for "${eventName}" have changed (${changeParts.join(', ')}). Please check your updated volunteer assignment.`;
+    }
+
+    const allTokens: string[] = [];
+
+    for (const vDoc of volSnap.docs) {
+      const vd = vDoc.data();
+      const mTokens = await resolveVolunteerMemberTokens(db, cid, vd.memberId, vd.memberPhone, vd.memberEmail, vd.memberName);
+      allTokens.push(...mTokens);
+    }
+
+    const uniqueTokens = Array.from(new Set(allTokens));
+    if (uniqueTokens.length > 0) {
+      await sendHighPriorityPush(
+        messaging,
+        uniqueTokens,
+        title,
+        body,
+        {
+          type: 'volunteer_event_change',
+          churchId: cid,
+          eventId,
+          screen: 'EventDetails',
+          isCancelled: String(isCancelled),
+          click_action: 'FLUTTER_NOTIFICATION_CLICK',
+        },
+        'church_alerts'
+      );
+      console.log(`✅ Sent event change alert to ${uniqueTokens.length} approved volunteer devices.`);
+    }
+
+    // Write in-app notification doc for each approved volunteer
+    for (const vDoc of volSnap.docs) {
+      const vd = vDoc.data();
+      const mId = vd.memberId;
+      if (!mId) continue;
+      await writeVolunteerInAppNotifications(
+        db,
+        cid,
+        `vol_event_${eventId}_${mId}`,
+        {
+          type: 'volunteer_event_change',
+          recipientId: mId,
+          recipientRole: 'member',
+          targetMemberId: mId,
+          targetPhone: vd.memberPhone || '',
+          title,
+          body,
+          content: body,
+          eventId,
+          eventTitle: eventName,
+          referenceId: vDoc.id,
+          referenceType: 'event_volunteer',
+        },
+        mId
+      );
+    }
+  } catch (err) {
+    console.error('Error dispatching event volunteer change pushes:', err);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🚀 EXPORTED VOLUNTEER CLOUD FUNCTIONS (v2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 🤝 TRIGGER 1: Member Submits Volunteer Application (Admin Notified)
+ */
+export const onVolunteerApplicationCreated = onDocumentCreated(
+  { document: 'Rhema Church/{churchId}/volunteer_applications/{applicationId}', region: 'asia-south1' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const appData = snap.data();
+    const churchId = event.params.churchId;
+    const applicationId = event.params.applicationId;
+    await handleVolunteerApplicationAdminCreatedPush(appData, churchId, applicationId, snap.ref);
+  }
+);
+
+export const onVolunteerApplicationCreatedLegacy = onDocumentCreated(
+  { document: 'churches/{churchId}/volunteer_applications/{applicationId}', region: 'asia-south1' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const appData = snap.data();
+    const churchId = event.params.churchId;
+    const applicationId = event.params.applicationId;
+    await handleVolunteerApplicationAdminCreatedPush(appData, churchId, applicationId, snap.ref);
+  }
+);
+
+/**
+ * 🤝 TRIGGER 2, 3, 4: Status Transition & Volunteer Role Assignment (Member Notified)
+ */
+export const onVolunteerApplicationUpdated = onDocumentUpdated(
+  { document: 'Rhema Church/{churchId}/volunteer_applications/{applicationId}', region: 'asia-south1' },
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    const snapRef = event.data?.after.ref;
+    if (!after) return;
+    const churchId = event.params.churchId;
+    const applicationId = event.params.applicationId;
+    await handleVolunteerApplicationWorkflowUpdatedPush(before, after, churchId, applicationId, snapRef);
+  }
+);
+
+export const onVolunteerApplicationUpdatedLegacy = onDocumentUpdated(
+  { document: 'churches/{churchId}/volunteer_applications/{applicationId}', region: 'asia-south1' },
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    const snapRef = event.data?.after.ref;
+    if (!after) return;
+    const churchId = event.params.churchId;
+    const applicationId = event.params.applicationId;
+    await handleVolunteerApplicationWorkflowUpdatedPush(before, after, churchId, applicationId, snapRef);
+  }
+);
+
+/**
+ * 📅 TRIGGER 5: Event Details or Cancellation (Affected Approved Volunteers Notified)
+ */
+export const onEventUpdatedForVolunteers = onDocumentUpdated(
+  { document: 'Rhema Church/{churchId}/events/{eventId}', region: 'asia-south1' },
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!after) return;
+    const churchId = event.params.churchId;
+    const eventId = event.params.eventId;
+    await handleEventChangesForVolunteersPush(before, after, churchId, eventId);
+  }
+);
+
+export const onEventUpdatedForVolunteersLegacy = onDocumentUpdated(
+  { document: 'churches/{churchId}/events/{eventId}', region: 'asia-south1' },
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!after) return;
+    const churchId = event.params.churchId;
+    const eventId = event.params.eventId;
+    await handleEventChangesForVolunteersPush(before, after, churchId, eventId);
+  }
+);
+
+/**
+ * ⏰ TRIGGER 6: Scheduled 24-Hour & 2-Hour Volunteer Reminders
+ * Scans upcoming events and sends reliable reminders to approved volunteers.
+ */
+export const scheduledVolunteerReminders = onSchedule(
+  { schedule: '*/30 * * * *', timeZone: 'Asia/Kolkata', region: 'asia-south1' },
+  async (event) => {
+    const db = getFirestore();
+    const messaging = getMessaging();
+    const now = new Date();
+
+    console.log('⏰ Running scheduled volunteer reminder cron at:', now.toISOString());
+
+    try {
+      const churchesSnap = await db.collection('Rhema Church').get();
+      for (const cDoc of churchesSnap.docs) {
+        const churchId = cDoc.id;
+
+        const eventsSnap = await db
+          .collection('Rhema Church')
+          .doc(churchId)
+          .collection('events')
+          .where('volunteerEnabled', '==', true)
+          .get();
+
+        if (eventsSnap.empty) continue;
+
+        for (const eDoc of eventsSnap.docs) {
+          const ev = eDoc.data();
+          if (ev.isCancelled === true) continue;
+
+          const dateStr = ev.date;
+          const timeStr = ev.time || ev.startTime || '10:00';
+          if (!dateStr) continue;
+
+          let eventTimestamp: number;
+          try {
+            eventTimestamp = new Date(`${dateStr}T${timeStr.includes(':') ? timeStr.split(' ')[0] : '10:00'}:00`).getTime();
+            if (isNaN(eventTimestamp)) {
+              eventTimestamp = new Date(dateStr).getTime();
+            }
+          } catch (_) {
+            continue;
+          }
+
+          const diffHours = (eventTimestamp - now.getTime()) / (1000 * 60 * 60);
+          const is24hWindow = diffHours >= 23 && diffHours <= 25;
+          const is2hWindow = diffHours >= 1.5 && diffHours <= 2.5;
+
+          if (!is24hWindow && !is2hWindow) continue;
+
+          const volSnap = await db
+            .collection('Rhema Church')
+            .doc(churchId)
+            .collection('volunteer_applications')
+            .where('eventId', '==', eDoc.id)
+            .where('status', '==', 'approved')
+            .get();
+
+          if (volSnap.empty) continue;
+
+          for (const vDoc of volSnap.docs) {
+            const vData = vDoc.data();
+            const remindersSent = vData.remindersSent || {};
+
+            let shouldSend = false;
+            let reminderType = '';
+            let title = '';
+            let body = '';
+
+            if (is24hWindow && !remindersSent.h24) {
+              shouldSend = true;
+              reminderType = '24h';
+              title = '⏰ Volunteer Reminder: Tomorrow!';
+              body = `You are scheduled to volunteer for ${ev.title || 'Church Event'} tomorrow. Date: ${dateStr}, Time: ${timeStr}, Role: ${vData.assignedRole || vData.preferredRole || 'Volunteer'}, Location: ${ev.location || 'Church'}.`;
+            } else if (is2hWindow && !remindersSent.h2) {
+              shouldSend = true;
+              reminderType = '2h';
+              title = '🔔 Volunteer Reminder: In 2 Hours!';
+              body = `Reminder: You are scheduled to volunteer for ${ev.title || 'Church Event'} in 2 hours. Role: ${vData.assignedRole || vData.preferredRole || 'Volunteer'}, Location: ${ev.location || 'Church'}.`;
+            }
+
+            if (!shouldSend) continue;
+
+            const updateField = reminderType === '24h'
+              ? { 'remindersSent.h24': true, 'remindersSent.h24At': FieldValue.serverTimestamp() }
+              : { 'remindersSent.h2': true, 'remindersSent.h2At': FieldValue.serverTimestamp() };
+
+            try {
+              await vDoc.ref.update(updateField);
+            } catch (_) {}
+
+            const memberId = vData.memberId;
+            if (memberId) {
+              const tokens = await resolveVolunteerMemberTokens(db, churchId, memberId, vData.memberPhone, vData.memberEmail, vData.memberName);
+              if (tokens.length > 0) {
+                await sendHighPriorityPush(
+                  messaging,
+                  tokens,
+                  title,
+                  body,
+                  {
+                    type: 'volunteer_reminder',
+                    churchId,
+                    eventId: eDoc.id,
+                    screen: 'EventDetails',
+                    click_action: 'FLUTTER_NOTIFICATION_CLICK',
+                  },
+                  'church_alerts'
+                );
+                console.log(`✅ Sent ${reminderType} reminder to volunteer member: ${memberId}`);
+              }
+
+              await writeVolunteerInAppNotifications(
+                db,
+                churchId,
+                `vol_rem_${reminderType}_${eDoc.id}_${memberId}`,
+                {
+                  type: 'volunteer_reminder',
+                  recipientId: memberId,
+                  recipientRole: 'member',
+                  targetMemberId: memberId,
+                  targetPhone: vData.memberPhone || '',
+                  title,
+                  body,
+                  content: body,
+                  eventId: eDoc.id,
+                  eventTitle: ev.title || 'Church Event',
+                  referenceId: vDoc.id,
+                  referenceType: 'event_volunteer',
+                },
+                memberId
+              );
+            }
+          }
+        }
+      }
+    } catch (cronErr) {
+      console.error('Error in scheduledVolunteerReminders cron:', cronErr);
+    }
+  }
+);
+
+/**
+ * 🛠️ HTTP TEST ENDPOINT: Direct Volunteer Push Verification
+ * Query params:
+ *   action: 'admin_test' | 'member_test'
+ *   churchId: string (default 'rhema')
+ *   memberId: string (required for member_test)
+ */
+export const triggerVolunteerPushTestHttp = onRequest(
+  { cors: true, region: 'asia-south1' },
+  async (req, res) => {
+    try {
+      const db = getFirestore();
+      const messaging = getMessaging();
+      const action = String(req.query.action || 'admin_test');
+      const churchId = String(req.query.churchId || 'rhema');
+      const memberId = String(req.query.memberId || '');
+
+      if (action === 'admin_test') {
+        const { tokens, adminUids } = await resolveVolunteerAdminTokens(db, churchId);
+        const title = '📋 [Test] Volunteer Application Received';
+        const body = 'This is a test notification verifying Church Admin volunteer alert delivery.';
+        const sendRes = await sendHighPriorityPush(
+          messaging,
+          tokens,
+          title,
+          body,
+          {
+            type: 'volunteer_application_admin',
+            churchId,
+            applicationId: 'test_app_id',
+            screen: 'AdminRoot',
+            targetTab: 'Volunteer Management',
+          },
+          'church_alerts'
+        );
+        res.status(200).json({
+          success: true,
+          action,
+          churchId,
+          adminUids,
+          resolvedTokensCount: tokens.length,
+          result: sendRes,
+        });
+        return;
+      }
+
+      if (action === 'member_test') {
+        if (!memberId) {
+          res.status(400).json({ success: false, error: 'memberId query param is required for member_test' });
+          return;
+        }
+        const tokens = await resolveVolunteerMemberTokens(db, churchId, memberId);
+        const title = '🎉 [Test] Volunteer Application Approved!';
+        const body = 'This is a test notification verifying Member volunteer approval delivery.';
+        const sendRes = await sendHighPriorityPush(
+          messaging,
+          tokens,
+          title,
+          body,
+          {
+            type: 'volunteer_application_member',
+            churchId,
+            applicationId: 'test_app_id',
+            status: 'approved',
+            screen: 'Volunteer',
+          },
+          'church_alerts'
+        );
+        res.status(200).json({
+          success: true,
+          action,
+          churchId,
+          memberId,
+          resolvedTokensCount: tokens.length,
+          result: sendRes,
+        });
+        return;
+      }
+
+      res.status(400).json({ success: false, error: 'Invalid action. Use action=admin_test or action=member_test' });
+    } catch (err: any) {
+      console.error('Error in triggerVolunteerPushTestHttp:', err);
+      res.status(500).json({ success: false, error: err?.message || String(err) });
+    }
+  }
+);
+

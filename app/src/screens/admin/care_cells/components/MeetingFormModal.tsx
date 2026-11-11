@@ -17,6 +17,7 @@ import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import CareCellService from '../../../../services/CareCellService';
 import PrayerVerseService, { BibleBookItem } from '../../../../services/PrayerVerseService';
 import { formatDateDisplay } from '../../../../utils/DateUtils';
+import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
 import { CareCell, CareCellMeeting, MeetingType, MeetingStatus } from '../../../../types/CareCellTypes';
 
 const MEETING_TYPES: MeetingType[] = [
@@ -45,6 +46,10 @@ export default function MeetingFormModal({
   defaultCellId,
   meetingToEdit,
 }: MeetingFormModalProps) {
+  const { isDark, primaryText, secondaryText } = useAdminTheme();
+  const primaryBtnBg = isDark ? '#FFFFFF' : '#0F172A';
+  const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
+
   const isEditing = !!meetingToEdit;
 
   const [cellId, setCellId] = useState(defaultCellId || (cells[0]?.id || ''));
@@ -275,17 +280,28 @@ export default function MeetingFormModal({
               <View style={styles.fieldGroup}>
                 <Text style={styles.fieldLabel}>Meeting Type</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalChips}>
-                  {MEETING_TYPES.map((t) => (
-                    <TouchableOpacity
-                      key={t}
-                      style={[styles.typeChip, meetingType === t && styles.typeChipActive]}
-                      onPress={() => setMeetingType(t)}
-                    >
-                      <Text style={[styles.typeChipTxt, meetingType === t && styles.typeChipTxtActive]}>
-                        {t}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                  {MEETING_TYPES.map((t) => {
+                    const isSelected = meetingType === t;
+                    return (
+                      <TouchableOpacity
+                        key={t}
+                        style={[
+                          styles.typeChip,
+                          isSelected && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+                        ]}
+                        onPress={() => setMeetingType(t)}
+                      >
+                        <Text
+                          style={[
+                            styles.typeChipTxt,
+                            isSelected && { color: primaryBtnText, fontWeight: '800' },
+                          ]}
+                        >
+                          {t}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </ScrollView>
               </View>
 
@@ -450,15 +466,19 @@ export default function MeetingFormModal({
 
               {/* Submit Button */}
               <TouchableOpacity
-                style={[styles.submitBtn, saving && styles.submitBtnDisabled]}
+                style={[
+                  styles.submitBtn,
+                  { backgroundColor: primaryBtnBg },
+                  saving && styles.submitBtnDisabled,
+                ]}
                 onPress={handleSave}
                 disabled={saving}
                 activeOpacity={0.85}
               >
                 {saving ? (
-                  <ActivityIndicator color="#FFFFFF" />
+                  <ActivityIndicator color={primaryBtnText} />
                 ) : (
-                  <Text style={styles.submitBtnTxt}>
+                  <Text style={[styles.submitBtnTxt, { color: primaryBtnText }]}>
                     {isEditing ? 'UPDATE FELLOWSHIP MEETING' : 'SCHEDULE MEETING'}
                   </Text>
                 )}
@@ -595,7 +615,7 @@ export default function MeetingFormModal({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.65)',
@@ -626,7 +646,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18.5,
     fontWeight: '800',
-    color: '#1A2D5A',
+    color: '#0F172A',
     letterSpacing: -0.3,
   },
   headerSubtitle: {

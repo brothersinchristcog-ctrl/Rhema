@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, StatusBar, Platform, ActivityIndicator, Modal, PanResponder, Animated, Dimensions, Linking, Alert, Image, BackHandler, Clipboard, ToastAndroid } from 'react-native';
-import { ChevronLeft, ArrowLeft, Bell, Calendar, Info, MessageCircle, AlertTriangle, X, Gift, Heart, Sparkles, Droplets, Trash2, Tv, BookOpen, Music, Mic , Video } from 'lucide-react-native';
+import { ChevronLeft, ArrowLeft, Bell, Calendar, Info, MessageCircle, AlertTriangle, X, Gift, Heart, Sparkles, Droplets, Trash2, Tv, BookOpen, Music, Mic , Video, Layers, UserCheck, Zap, HeartHandshake } from 'lucide-react-native';
 import { openZoomMeeting } from '../utils/ZoomLauncher';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -9,6 +9,7 @@ import firestore, {
   getFirestore, 
   collection, 
   query, 
+  where,
   orderBy, 
   limit, 
   onSnapshot 
@@ -21,6 +22,13 @@ import { useTheme } from '../context/ThemeContext';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.35;
+const VOLUNTEER_NOTIFICATION_TYPES = [
+  'volunteer_application_admin',
+  'volunteer_application_member',
+  'volunteer_assignment',
+  'volunteer_event_change',
+  'volunteer_reminder',
+];
 
 function SwipeableRow({ children, onDelete }: { children: React.ReactNode; onDelete: () => void }) {
   const { t } = useLanguage();
@@ -120,14 +128,28 @@ function stripHtml(html: string): string {
 
 export default function UpdatesScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { highlightId, highlightType } = route?.params || {};
   const { t } = useLanguage();
 
   const getTypeName = (type: string) => {
+    if (type === 'testimony_admin') return 'TESTIMONY REVIEW';
+    if (type === 'testimony_published') return 'NEW TESTIMONY';
+    if (type === 'testimony_member_status') return 'TESTIMONY UPDATE';
     if (type === 'baptism_request_admin' || type === 'baptism_request') return 'BAPTISM REQUEST';
     if (type === 'prayer_request_admin' || type === 'prayer_request' || type === 'prayer') return 'PRAYER REQUEST';
     if (type === 'baptism' || type === 'baptism_request_member') return 'BAPTISM';
+    if (type === 'admin_roster_alert') return 'SERVICE ROSTER ALERT';
+    if (type === 'service_roster') return 'SERVICE ROSTER';
+    if (type === 'service_assignment') return 'SERVICE ASSIGNMENT';
+    if (type === 'service_responsibility_broadcast') return 'OPEN DUTY AVAILABLE';
+    if (type === 'service_reminder') return 'SERVICE REMINDER';
+    if (type === 'rehearsal_alert') return 'REHEARSAL SCHEDULED';
+    if (type === 'volunteer_application_admin') return 'VOLUNTEER APPLICATION';
+    if (type === 'volunteer_application_member') return 'VOLUNTEER UPDATE';
+    if (type === 'volunteer_assignment') return 'VOLUNTEER ASSIGNMENT';
+    if (type === 'volunteer_event_change') return 'EVENT VOLUNTEER UPDATE';
+    if (type === 'volunteer_reminder') return 'VOLUNTEER REMINDER';
     if (!type) return (t('updates.types.announcement') || 'ANNOUNCEMENT').toUpperCase();
     const trans = t(`updates.types.${type}`);
     return trans && trans !== `updates.types.${type}` ? trans.toUpperCase() : type.toUpperCase();
@@ -135,13 +157,42 @@ export default function UpdatesScreen({ navigation, route }: any) {
 
   const [dynamicUpdates, setDynamicUpdates] = useState<any[]>([]);
   const [broadcastsList, setBroadcastsList] = useState<any[]>([]);
+  const [churchNotifsList, setChurchNotifsList] = useState<any[]>([]);
   const [meetingsList, setMeetingsList] = useState<any[]>([]);
+  const [memberNotifsList, setMemberNotifsList] = useState<any[]>([]);
 
   useEffect(() => {
-    const combined = [...broadcastsList, ...meetingsList].sort((a, b) => (b.rawDate || 0) - (a.rawDate || 0));
-    // Deduplicate live stream broadcasts so members only see the single latest active live alert
+    const combined = [...broadcastsList, ...churchNotifsList, ...meetingsList, ...memberNotifsList].sort((a, b) => (b.rawDate || 0) - (a.rawDate || 0));
+    const seenIds = new Set<string>();
+    const seenVolunteerKeys = new Set<string>();
+    const seenRosterAlertKeys = new Set<string>();
     const seenLiveStreams = new Set<string>();
     const deduplicated = combined.filter(item => {
+      if (!item || !item.id) return false;
+      if (seenIds.has(item.id)) {
+        return false;
+      }
+      seenIds.add(item.id);
+
+      // Deduplicate identical volunteer alerts across notifications/broadcasts/member subcollection
+      if (String(item.type || '').startsWith('volunteer_')) {
+        const volKey = `${item.type}|${item.applicationId || item.eventId || ''}|${item.volunteerStatus || ''}|${item.title || ''}|${item.content || ''}`;
+        if (seenVolunteerKeys.has(volKey)) {
+          return false;
+        }
+        seenVolunteerKeys.add(volKey);
+      }
+
+      // Deduplicate duplicate admin roster alerts with identical service/title/content
+      if (item.type === 'admin_roster_alert') {
+        const rosterKey = `${item.serviceId || ''}|${item.title || ''}|${item.content || ''}`;
+        if (seenRosterAlertKeys.has(rosterKey)) {
+          return false;
+        }
+        seenRosterAlertKeys.add(rosterKey);
+      }
+
+      // Deduplicate live stream broadcasts so members only see the single latest active live alert
       if (item.type === 'youtube_live') {
         const streamKey = item.videoId || 'active_stream';
         if (seenLiveStreams.has(streamKey)) {
@@ -152,14 +203,15 @@ export default function UpdatesScreen({ navigation, route }: any) {
       return true;
     });
     setDynamicUpdates(deduplicated);
-  }, [broadcastsList, meetingsList]);
+  }, [broadcastsList, churchNotifsList, meetingsList, memberNotifsList]);
   const [selectedUpdate, setSelectedUpdate] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasAutoOpened, setHasAutoOpened] = useState(false);
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const { user, member } = useAuth();
   const { activeChurch } = useChurch();
-  const isAdmin = String(member?.userType || '').toUpperCase().includes('ADMIN') || String(member?.userType || '').toUpperCase().includes('SUPER') || String(member?.userType || '').toUpperCase().includes('PASTOR');
+  const adminRoleStr = `${member?.userType || ''} ${(member as any)?.role || ''}`.toUpperCase();
+  const isAdmin = adminRoleStr.includes('ADMIN') || adminRoleStr.includes('SUPER') || adminRoleStr.includes('PASTOR');
 
   const handleBack = () => {
     if (selectedUpdate) {
@@ -216,6 +268,275 @@ export default function UpdatesScreen({ navigation, route }: any) {
     }
   };
 
+  const parseUpdateDoc = (docId: string, data: any, churchToQuery: string, hasPendingWrite: boolean = false) => {
+    if (!data) return null;
+
+    // SECURITY: If broadcast is targeted to a specific church, skip it if not for this user's church
+    if (data.targetChurchId && churchToQuery && data.targetChurchId !== churchToQuery) {
+      return null;
+    }
+
+    // SECURITY: If broadcast is targeted to admin role, skip if current user is not admin
+    if ((data.targetRole === 'admin' || data.type === 'baptism_request_admin' || data.type === 'prayer_request_admin' || data.type === 'testimony_admin' || data.type === 'volunteer_application_admin') && !isAdmin) {
+      return null;
+    }
+
+    // SECURITY: If broadcast/notification is targeted to a specific user, skip it if not for this user
+    const targetIdVal = data.targetMemberId || data.targetUid || data.recipientId;
+    const isPhoneTargeted = data.targetPhone && typeof data.targetPhone === 'string' && data.targetPhone.trim().length > 0;
+    const isIdTargeted = targetIdVal && typeof targetIdVal === 'string' && targetIdVal.trim().length > 0;
+
+    if (isPhoneTargeted || isIdTargeted) {
+      const uPhone = user?.phoneNumber || '';
+      const mPhone = member?.phone || '';
+      const uId = user?.uid || '';
+      const mId = member?.id || '';
+
+      const idMatch = isIdTargeted && (
+        (uId && (data.targetMemberId === uId || data.targetUid === uId || data.recipientId === uId)) ||
+        (mId && (data.targetMemberId === mId || data.targetUid === mId || data.recipientId === mId))
+      );
+
+      let phoneMatch = false;
+      if (isPhoneTargeted) {
+        const target = data.targetPhone.replace(/\D/g, '');
+        phoneMatch = Boolean(
+          (uPhone && uPhone.replace(/\D/g, '').endsWith(target)) ||
+          (mPhone && mPhone.replace(/\D/g, '').endsWith(target)) ||
+          (target.endsWith(uPhone.replace(/\D/g, '')) && uPhone.length > 5) ||
+          (target.endsWith(mPhone.replace(/\D/g, '')) && mPhone.length > 5)
+        );
+      }
+
+      if (!idMatch && !phoneMatch) {
+        return null; // Skip if not targeted to current user
+      }
+    }
+
+    // Determine icon, color and type classification
+    let icon = Bell;
+    let color = '#3b82f6';
+    let resolvedType = data.type || 'announcement';
+
+    if (data.type === 'online_meeting') {
+      icon = Video;
+      color = '#3b82f6';
+      resolvedType = 'online_meeting';
+    } else if (data.type === 'youtube_live' || data.type === 'live' || (data.title?.includes('🎥') && !data.title?.toLowerCase().includes('online meeting') && !data.title?.toLowerCase().includes('google meet') && !data.title?.toLowerCase().includes('zoom'))) {
+      icon = Tv;
+      color = '#ef4444';
+      resolvedType = 'youtube_live';
+    } else if (data.type === 'emergency' || data.title?.includes('🚨')) {
+      icon = AlertTriangle;
+      color = '#ef4444';
+      resolvedType = 'emergency';
+    } else if (
+      data.type === 'quiz' ||
+      data.type === 'quiz_scheduled' ||
+      data.type === 'bible_quiz' ||
+      data.screen === 'BibleQuizDetail' ||
+      data.quizId ||
+      data.title?.toLowerCase().includes('quiz') ||
+      data.title?.includes('క్విజ్')
+    ) {
+      icon = BookOpen;
+      color = '#1a2d5a';
+      resolvedType = 'quiz';
+    } else if (data.type === 'volunteer_application_admin') {
+      icon = HeartHandshake;
+      color = '#D97706';
+      resolvedType = 'volunteer_application_admin';
+    } else if (data.type === 'volunteer_application_member') {
+      const volStatus = String(data.status || '').toLowerCase();
+      const isDeclined = volStatus === 'rejected' || volStatus === 'declined';
+      icon = isDeclined ? Bell : HeartHandshake;
+      color = isDeclined ? '#DC2626' : '#059669';
+      resolvedType = 'volunteer_application_member';
+    } else if (data.type === 'volunteer_assignment') {
+      icon = UserCheck;
+      color = '#2563EB';
+      resolvedType = 'volunteer_assignment';
+    } else if (data.type === 'volunteer_event_change') {
+      icon = Calendar;
+      color = '#D97706';
+      resolvedType = 'volunteer_event_change';
+    } else if (data.type === 'volunteer_reminder') {
+      icon = Bell;
+      color = '#7C3AED';
+      resolvedType = 'volunteer_reminder';
+    } else if (data.type === 'event' || data.title?.includes('📅')) {
+      icon = Calendar;
+      color = '#10b981';
+      resolvedType = 'event';
+    } else if (data.type === 'admin_roster_alert' || data.title?.includes('Response Deadline Expired') || data.title?.includes('No Volunteers:') || data.title?.includes('All Volunteers Declined') || data.title?.includes('Unfilled Dut')) {
+      icon = Layers;
+      color = '#DC2626';
+      resolvedType = 'admin_roster_alert';
+    } else if (data.type === 'service_roster' || data.title?.includes('Service Roster') || data.title?.includes('Roster Published')) {
+      icon = Layers;
+      color = '#059669';
+      resolvedType = 'service_roster';
+    } else if (data.type === 'service_assignment' || data.title?.includes('Service Assignment') || data.title?.includes('Ministry Responsibility')) {
+      icon = UserCheck;
+      color = '#2563EB';
+      resolvedType = 'service_assignment';
+    } else if (data.type === 'service_responsibility_broadcast' || data.title?.includes('Responsibility Available')) {
+      icon = Zap;
+      color = '#D97706';
+      resolvedType = 'service_responsibility_broadcast';
+    } else if (data.type === 'service_reminder' || data.title?.includes('Serving Tomorrow')) {
+      icon = Bell;
+      color = '#059669';
+      resolvedType = 'service_reminder';
+    } else if (data.type === 'rehearsal_alert' || data.title?.includes('Rehearsal Scheduled')) {
+      icon = Music;
+      color = '#7C3AED';
+      resolvedType = 'rehearsal_alert';
+    } else if (data.type === 'baptism_request_admin' || data.title?.includes('New Baptism Request')) {
+      icon = Droplets;
+      color = '#0284c7';
+      resolvedType = 'baptism_request_admin';
+    } else if (data.type === 'prayer_request_admin' || data.title?.includes('New Prayer Request')) {
+      icon = Heart;
+      color = '#7C3AED';
+      resolvedType = 'prayer_request_admin';
+    } else if (
+      data.type === 'prayer_request_member' || 
+      data.title?.includes('Prayer Request Approved') || 
+      data.title?.includes('Pastoral Prayer Response')
+    ) {
+      icon = Heart;
+      color = '#7C3AED';
+      resolvedType = 'prayer_request_member';
+    } else if (
+      data.type === 'baptism_request_member' || 
+      data.type === 'baptism_request' || 
+      data.title?.includes('Baptism Request Update') || 
+      data.title?.includes('Baptism Request Approved')
+    ) {
+      icon = Droplets;
+      color = '#0284c7';
+      resolvedType = 'baptism';
+    } else if (data.title?.includes('🎂') || data.content?.includes('Birthday') || data.type === 'birthday') {
+      icon = Gift;
+      color = '#d97706';
+      resolvedType = 'birthday';
+    } else if (data.title?.includes('🎉') || data.title?.includes('🕊️') || data.content?.includes('Baptism') || data.title?.includes('Baptism') || data.type === 'baptism' || data.type === 'celebration') {
+      icon = Sparkles;
+      color = '#3b82f6';
+      resolvedType = 'celebration';
+    } else if (data.type === 'testimony_admin' || data.title?.includes('New Testimony Submitted')) {
+      icon = Sparkles;
+      color = '#8B5CF6';
+      resolvedType = 'testimony_admin';
+    } else if (data.type === 'testimony_published' || data.title?.includes('New Testimony Shared')) {
+      icon = Sparkles;
+      color = '#10B981';
+      resolvedType = 'testimony_published';
+    } else if (data.type === 'testimony_member_status' || data.title?.includes('Testimony Approved') || data.title?.includes('Testimony Review')) {
+      icon = Sparkles;
+      color = '#3B82F6';
+      resolvedType = 'testimony_member_status';
+    } else if (data.title?.includes('💐') || data.content?.includes('Anniversary') || data.title?.includes('Anniversary') || data.type === 'anniversary') {
+      icon = Heart;
+      color = '#be185d';
+      resolvedType = 'anniversary';
+    } else if (data.type === 'promise' || data.title?.includes('Promise') || data.title?.includes('వాగ్దానం')) {
+      icon = BookOpen;
+      color = '#8b5cf6';
+      resolvedType = 'promise';
+    } else if (data.type === 'song' || data.title?.includes('Song') || data.title?.includes('🎵')) {
+      icon = Music;
+      color = '#ec4899';
+      resolvedType = 'song';
+    } else if (data.type === 'sermon' || data.title?.includes('Sermon') || data.title?.includes('Message')) {
+      icon = Mic;
+      color = '#6366f1';
+      resolvedType = 'sermon';
+    }
+
+    let dateStr = '';
+    
+    // Extract and format exact publication date & time from createdAt
+    if (data.createdAt && typeof data.createdAt.toDate === 'function') {
+      const dt = data.createdAt.toDate();
+      const y = dt.getFullYear();
+      const m = String(dt.getMonth() + 1).padStart(2, '0');
+      const d = String(dt.getDate()).padStart(2, '0');
+      const dFormatted = `${d}-${m}-${y}`;
+      const timeStr = dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+      dateStr = `${dFormatted} • ${timeStr}`;
+    } else if (typeof data.createdAt === 'number' || typeof data.createdAt === 'string') {
+      const dt = new Date(data.createdAt);
+      if (!isNaN(dt.getTime())) {
+        const y = dt.getFullYear();
+        const m = String(dt.getMonth() + 1).padStart(2, '0');
+        const d = String(dt.getDate()).padStart(2, '0');
+        const dFormatted = `${d}-${m}-${y}`;
+        const timeStr = dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+        dateStr = `${dFormatted} • ${timeStr}`;
+      }
+    }
+
+    // Fallback if createdAt timestamp is not present: format raw date
+    if (!dateStr) {
+      const rawDate = data.date || data.serviceDate || new Date().toISOString().split('T')[0];
+      dateStr = formatDateDisplay(rawDate);
+    }
+
+    let itemTitle = data.title || t('updates.announcement');
+    let itemContent = stripHtml(data.content || data.body || '');
+
+    if (resolvedType === 'youtube_live') {
+      if (
+        !itemTitle ||
+        itemTitle.includes('LIVE on YouTube') ||
+        itemTitle.includes('Rhema Global Ministries is LIVE') ||
+        itemTitle.includes('🔴 Rhema')
+      ) {
+        itemTitle = '🔴 We Are LIVE Now!';
+      }
+      if (
+        !itemContent ||
+        itemContent.includes('Want to watch this again later') ||
+        itemContent.includes('Sign in to add this') ||
+        itemContent.includes('Tap to watch inside the app') ||
+        itemContent.trim().toLowerCase() === 'youtube'
+      ) {
+        itemContent = "Join us for a time of worship, prayer and God's Word. Our live service is now streaming on YouTube. Be blessed!";
+      }
+    }
+
+    return {
+      id: docId,
+      title: itemTitle,
+      content: itemContent,
+      date: dateStr,
+      type: resolvedType,
+      icon: icon,
+      color: color,
+      url: data.url || '',
+      videoId: data.videoId || null,
+      imageUrl: data.imageUrl || null,
+      sermonId: data.sermonId || (resolvedType === 'sermon' && data.id && !String(data.id).startsWith('sermon_') ? data.id : null) || data.relatedId || (resolvedType === 'sermon' ? docId.replace(/^sermon_/, '') : null),
+      relatedId: data.quizId || data.relatedId || null,
+      testimonyId: data.testimonyId || data.relatedId || null,
+      serviceId: data.serviceId || null,
+      roleId: data.roleId || null,
+      roleTitle: data.roleTitle || null,
+      serviceTitle: data.serviceTitle || null,
+      serviceDate: data.serviceDate || null,
+      requestId: data.requestId || null,
+      prayerId: data.prayerId || null,
+      applicationId: data.applicationId || data.referenceId || null,
+      eventId: data.eventId || null,
+      volunteerType: data.volunteerType || null,
+      volunteerStatus: data.status || null,
+      churchId: data.churchId || null,
+      rawDate: data.createdAt?.toMillis?.() || (typeof data.createdAt === 'number' ? data.createdAt : (hasPendingWrite ? Date.now() : 0))
+    };
+  };
+
   useEffect(() => {
     const churchToQuery = activeChurch?.id || member?.churchId;
     if (!churchToQuery) {
@@ -234,202 +555,9 @@ export default function UpdatesScreen({ navigation, route }: any) {
       q,
       (snapshot) => {
         if (snapshot) {
-          const list = snapshot.docs.map(doc => {
-            const data = doc.data();
-            
-            // SECURITY: If broadcast is targeted to a specific church, skip it if not for this user's church
-            if (data.targetChurchId && churchToQuery && data.targetChurchId !== churchToQuery) {
-              return null;
-            }
-
-            // SECURITY: If broadcast is targeted to admin role, skip if current user is not admin
-            if ((data.targetRole === 'admin' || data.type === 'baptism_request_admin' || data.type === 'prayer_request_admin') && !isAdmin) {
-              return null;
-            }
-
-            // SECURITY: If broadcast/notification is targeted to a specific user, skip it if not for this user
-            const isPhoneTargeted = data.targetPhone && typeof data.targetPhone === 'string' && data.targetPhone.trim().length > 0;
-            const isIdTargeted = (data.targetMemberId || data.targetUid) && typeof (data.targetMemberId || data.targetUid) === 'string' && (data.targetMemberId || data.targetUid).trim().length > 0;
-
-            if (isPhoneTargeted || isIdTargeted) {
-              const uPhone = user?.phoneNumber || '';
-              const mPhone = member?.phone || '';
-              const uId = user?.uid || '';
-              const mId = member?.id || '';
-
-              const idMatch = isIdTargeted && (
-                (uId && (data.targetMemberId === uId || data.targetUid === uId)) ||
-                (mId && (data.targetMemberId === mId || data.targetUid === mId))
-              );
-
-              let phoneMatch = false;
-              if (isPhoneTargeted) {
-                const target = data.targetPhone.replace(/\D/g, '');
-                phoneMatch = Boolean(
-                  (uPhone && uPhone.replace(/\D/g, '').endsWith(target)) ||
-                  (mPhone && mPhone.replace(/\D/g, '').endsWith(target)) ||
-                  (target.endsWith(uPhone.replace(/\D/g, '')) && uPhone.length > 5) ||
-                  (target.endsWith(mPhone.replace(/\D/g, '')) && mPhone.length > 5)
-                );
-              }
-
-              if (!idMatch && !phoneMatch) {
-                return null; // Skip if not targeted to current user
-              }
-            }
-
-            // Determine icon, color and type classification
-            let icon = Bell;
-            let color = '#3b82f6';
-            let resolvedType = data.type || 'announcement';
-
-            if (data.type === 'online_meeting') {
-              icon = Video;
-              color = '#3b82f6';
-              resolvedType = 'online_meeting';
-            } else if (data.type === 'youtube_live' || data.type === 'live' || (data.title?.includes('🎥') && !data.title?.toLowerCase().includes('online meeting') && !data.title?.toLowerCase().includes('google meet') && !data.title?.toLowerCase().includes('zoom'))) {
-              icon = Tv;
-              color = '#ef4444';
-              resolvedType = 'youtube_live';
-            } else if (data.type === 'emergency' || data.title?.includes('🚨')) {
-              icon = AlertTriangle;
-              color = '#ef4444';
-              resolvedType = 'emergency';
-            } else if (
-              data.type === 'quiz' ||
-              data.type === 'quiz_scheduled' ||
-              data.type === 'bible_quiz' ||
-              data.screen === 'BibleQuizDetail' ||
-              data.quizId ||
-              data.title?.toLowerCase().includes('quiz') ||
-              data.title?.includes('క్విజ్')
-            ) {
-              icon = BookOpen;
-              color = '#1a2d5a';
-              resolvedType = 'quiz';
-            } else if (data.type === 'event' || data.title?.includes('📅')) {
-              icon = Calendar;
-              color = '#10b981';
-              resolvedType = 'event';
-            } else if (data.type === 'baptism_request_admin' || data.title?.includes('New Baptism Request')) {
-              icon = Droplets;
-              color = '#0284c7';
-              resolvedType = 'baptism_request_admin';
-            } else if (data.type === 'prayer_request_admin' || data.title?.includes('New Prayer Request')) {
-              icon = Heart;
-              color = '#7C3AED';
-              resolvedType = 'prayer_request_admin';
-            } else if (
-              data.type === 'prayer_request_member' || 
-              data.title?.includes('Prayer Request Approved') || 
-              data.title?.includes('Pastoral Prayer Response')
-            ) {
-              icon = Heart;
-              color = '#7C3AED';
-              resolvedType = 'prayer_request_member';
-            } else if (
-              data.type === 'baptism_request_member' || 
-              data.type === 'baptism_request' || 
-              data.title?.includes('Baptism Request Update') || 
-              data.title?.includes('Baptism Request Approved')
-            ) {
-              icon = Droplets;
-              color = '#0284c7';
-              resolvedType = 'baptism';
-            } else if (data.title?.includes('🎂') || data.content?.includes('Birthday') || data.type === 'birthday') {
-              icon = Gift;
-              color = '#d97706';
-              resolvedType = 'birthday';
-            } else if (data.title?.includes('🎉') || data.title?.includes('🕊️') || data.content?.includes('Baptism') || data.title?.includes('Baptism') || data.type === 'baptism' || data.type === 'celebration') {
-              icon = Sparkles;
-              color = '#3b82f6';
-              resolvedType = 'celebration';
-            } else if (data.title?.includes('💐') || data.content?.includes('Anniversary') || data.title?.includes('Anniversary') || data.type === 'anniversary') {
-              icon = Heart;
-              color = '#be185d';
-              resolvedType = 'anniversary';
-            } else if (data.type === 'promise' || data.title?.includes('Promise') || data.title?.includes('వాగ్దానం')) {
-              icon = BookOpen;
-              color = '#8b5cf6';
-              resolvedType = 'promise';
-            } else if (data.type === 'song' || data.title?.includes('Song') || data.title?.includes('🎵')) {
-              icon = Music;
-              color = '#ec4899';
-              resolvedType = 'song';
-            } else if (data.type === 'sermon' || data.title?.includes('Sermon') || data.title?.includes('Message')) {
-              icon = Mic;
-              color = '#6366f1';
-              resolvedType = 'sermon';
-            }
-            let dateStr = '';
-            
-            // Extract and format exact publication date & time from createdAt
-            if (data.createdAt && typeof data.createdAt.toDate === 'function') {
-              const dt = data.createdAt.toDate();
-              const y = dt.getFullYear();
-              const m = String(dt.getMonth() + 1).padStart(2, '0');
-              const d = String(dt.getDate()).padStart(2, '0');
-              const dFormatted = `${d}-${m}-${y}`;
-              const timeStr = dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-              dateStr = `${dFormatted} • ${timeStr}`;
-            } else if (typeof data.createdAt === 'number' || typeof data.createdAt === 'string') {
-              const dt = new Date(data.createdAt);
-              if (!isNaN(dt.getTime())) {
-                const y = dt.getFullYear();
-                const m = String(dt.getMonth() + 1).padStart(2, '0');
-                const d = String(dt.getDate()).padStart(2, '0');
-                const dFormatted = `${d}-${m}-${y}`;
-                const timeStr = dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-                dateStr = `${dFormatted} • ${timeStr}`;
-              }
-            }
-
-            // Fallback if createdAt timestamp is not present: format raw date
-            if (!dateStr) {
-              const rawDate = data.date || new Date().toISOString().split('T')[0];
-              dateStr = formatDateDisplay(rawDate);
-            }
-
-            let itemTitle = data.title || t('updates.announcement');
-            let itemContent = stripHtml(data.content || '');
-
-            if (resolvedType === 'youtube_live') {
-              if (
-                !itemTitle ||
-                itemTitle.includes('LIVE on YouTube') ||
-                itemTitle.includes('Rhema Global Ministries is LIVE') ||
-                itemTitle.includes('🔴 Rhema')
-              ) {
-                itemTitle = '🔴 We Are LIVE Now!';
-              }
-              if (
-                !itemContent ||
-                itemContent.includes('Want to watch this again later') ||
-                itemContent.includes('Sign in to add this') ||
-                itemContent.includes('Tap to watch inside the app') ||
-                itemContent.trim().toLowerCase() === 'youtube'
-              ) {
-                itemContent = "Join us for a time of worship, prayer and God's Word. Our live service is now streaming on YouTube. Be blessed!";
-              }
-            }
-
-            return {
-              id: doc.id,
-              title: itemTitle,
-              content: itemContent,
-              date: dateStr,
-              type: resolvedType,
-              icon: icon,
-              color: color,
-              url: data.url || '',
-              videoId: data.videoId || null,
-              imageUrl: data.imageUrl || null,
-              sermonId: data.sermonId || (resolvedType === 'sermon' && data.id && !String(data.id).startsWith('sermon_') ? data.id : null) || data.relatedId || (resolvedType === 'sermon' ? doc.id.replace(/^sermon_/, '') : null),
-              relatedId: data.quizId || data.relatedId || null,
-              churchId: data.churchId || null,
-              rawDate: data.createdAt?.toMillis?.() || (typeof data.createdAt === 'number' ? data.createdAt : 0)
-            };
-          }).filter(item => item !== null);
+          const list = snapshot.docs
+            .map(doc => parseUpdateDoc(doc.id, doc.data(), churchToQuery, Boolean((doc as any).metadata?.hasPendingWrites)))
+            .filter(item => item !== null);
           setBroadcastsList(list);
         }
         setLoading(false);
@@ -440,7 +568,52 @@ export default function UpdatesScreen({ navigation, route }: any) {
       }
     );
 
-        const qMeetings = query(
+    const qVolunteerNotifs = query(
+      collection(db, 'Rhema Church', churchToQuery, 'notifications'),
+      where('type', 'in', VOLUNTEER_NOTIFICATION_TYPES)
+    );
+
+    const unsubscribeChurchNotifs = onSnapshot(
+      qVolunteerNotifs,
+      (snapshot) => {
+        if (snapshot) {
+          const list = snapshot.docs
+            .map(doc => parseUpdateDoc(doc.id, doc.data(), churchToQuery, Boolean((doc as any).metadata?.hasPendingWrites)))
+            .filter(item => item !== null);
+          setChurchNotifsList(list);
+        }
+      },
+      (error) => {
+        console.warn('Note: Volunteer notifications listener:', error);
+      }
+    );
+
+    const currentMemberId = member?.id || user?.uid;
+    let unsubscribeMemberNotifs = () => {};
+    if (currentMemberId) {
+      const qMemberNotifs = query(
+        collection(db, 'Rhema Church', churchToQuery, 'members', currentMemberId, 'notifications'),
+        orderBy('createdAt', 'desc'),
+        limit(20)
+      );
+
+      unsubscribeMemberNotifs = onSnapshot(
+        qMemberNotifs,
+        (snapshot) => {
+          if (snapshot) {
+            const list = snapshot.docs
+              .map(doc => parseUpdateDoc(doc.id, doc.data(), churchToQuery, Boolean((doc as any).metadata?.hasPendingWrites)))
+              .filter(item => item !== null);
+            setMemberNotifsList(list);
+          }
+        },
+        (error) => {
+          console.warn('Note: Member notifications listener:', error);
+        }
+      );
+    }
+
+    const qMeetings = query(
       collection(db, 'Rhema Church', churchToQuery, 'online_meetings'),
       orderBy('createdAt', 'desc'),
       limit(10)
@@ -478,8 +651,8 @@ export default function UpdatesScreen({ navigation, route }: any) {
       }
     );
 
-    return () => { unsubscribe(); unsubscribeMeetings(); };
-  }, [activeChurch?.id, member?.churchId, user?.phoneNumber, member?.phone]);
+    return () => { unsubscribe(); unsubscribeChurchNotifs(); unsubscribeMeetings(); unsubscribeMemberNotifs(); };
+  }, [activeChurch?.id, member?.churchId, user?.phoneNumber, member?.phone, member?.id, user?.uid, isAdmin]);
   const allUpdates = dynamicUpdates;
   const visibleUpdates = allUpdates.filter(update => !deletedIds.includes(update.id));
 
@@ -541,8 +714,11 @@ export default function UpdatesScreen({ navigation, route }: any) {
   }, [highlightId, highlightType, allUpdates, hasAutoOpened, loading]);
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FAF7F2" />
+    <View style={[styles.container, { backgroundColor: isDark ? colors.background : '#FAF7F2' }]}>
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={isDark ? colors.background : '#FAF7F2'}
+      />
       
       {/* ── Page Header Hero Card ── */}
             {/* ── Screen Header (Clean circular back button & title) ── */}
@@ -577,15 +753,18 @@ export default function UpdatesScreen({ navigation, route }: any) {
             </View>
           ) : loading && visibleUpdates.length > 0 ? (
             <View style={styles.loadingBox}>
-              <ActivityIndicator size="small" color="#1a2d5a" />
-              <Text style={styles.loadingTxt}>{t('updates.syncingAlerts')}</Text>
+              <ActivityIndicator size="small" color={isDark ? '#E4E4E7' : '#1a2d5a'} />
+              <Text style={[styles.loadingTxt, isDark && { color: colors.textSecondary }]}>{t('updates.syncingAlerts')}</Text>
             </View>
           ) : null}
 
           {visibleUpdates.map((update) => (
             <SwipeableRow key={update.id} onDelete={() => handleDeleteUpdate(update.id)}>
               <TouchableOpacity 
-                style={styles.updateCard}
+                style={[
+                  styles.updateCard,
+                  isDark && { backgroundColor: colors.surface, borderColor: colors.border },
+                ]}
                 activeOpacity={0.7}
                 onPress={() => {
                   if (update.type === 'song') {
@@ -609,7 +788,62 @@ export default function UpdatesScreen({ navigation, route }: any) {
                     const qId = update.quizId || update.relatedId || update.id;
                     navigation.navigate('BibleQuizDetail', { quizId: qId, churchId: update.churchId });
                   } else if (update.type === 'event') {
-                    navigation.navigate('Events');
+                    if (update.eventId) {
+                      navigation.navigate('EventDetails', { eventId: update.eventId, id: update.eventId });
+                    } else {
+                      navigation.navigate('Events');
+                    }
+                  } else if (update.type === 'admin_roster_alert') {
+                    navigation.navigate('AdminRoot', {
+                      targetTab: 'Service Roster',
+                      serviceId: update.serviceId,
+                      roleId: update.roleId,
+                      timestamp: Date.now(),
+                    });
+                  } else if (update.type === 'service_roster' || update.type === 'rehearsal_alert') {
+                    navigation.navigate('MyService', {
+                      serviceId: update.serviceId,
+                      initialTab: 'roster',
+                    });
+                  } else if (
+                    update.type === 'service_assignment' ||
+                    update.type === 'service_responsibility_broadcast' ||
+                    update.type === 'service_reminder'
+                  ) {
+                    navigation.navigate('MyService', {
+                      serviceId: update.serviceId,
+                      initialTab: 'responsibilities',
+                    });
+                  } else if (update.type === 'volunteer_application_admin') {
+                    const appId = update.applicationId || update.relatedId || update.id;
+                    navigation.navigate('AdminRoot', {
+                      targetTab: 'Volunteer Management',
+                      applicationId: appId,
+                      subType: update.volunteerType || 'general',
+                      timestamp: Date.now(),
+                    });
+                  } else if (
+                    update.type === 'volunteer_application_member' ||
+                    update.type === 'volunteer_assignment' ||
+                    update.type === 'volunteer_event_change' ||
+                    update.type === 'volunteer_reminder'
+                  ) {
+                    if (update.eventId) {
+                      navigation.navigate('EventDetails', { eventId: update.eventId, id: update.eventId });
+                    } else {
+                      navigation.navigate('Volunteer');
+                    }
+                  } else if (
+                    update.type === 'baptism_request_admin' ||
+                    update.type === 'baptism_request' ||
+                    update.type === 'baptism'
+                  ) {
+                    const reqId = update.requestId || update.id;
+                    if (isAdmin) {
+                      navigation.navigate('AdminRoot', { targetTab: 'Baptism', requestId: reqId, timestamp: Date.now() });
+                    } else {
+                      navigation.navigate('BaptismRequest', { requestId: reqId });
+                    }
                   } else if (update.type === 'prayer_request_admin' || update.type === 'prayer_request' || update.type === 'prayer' || update.type === 'prayer_request_member') {
                     const pId = update.prayerId || update.requestId || update.id;
                     if (isAdmin && update.type !== 'prayer_request_member') {
@@ -619,6 +853,23 @@ export default function UpdatesScreen({ navigation, route }: any) {
                     }
                   } else if (update.type === 'attendance') {
                     navigation.navigate('AttendanceScreen');
+                  } else if (update.type === 'testimony_admin') {
+                    const tId = update.testimonyId || update.relatedId || update.id;
+                    navigation.navigate('AdminRoot', {
+                      targetTab: 'Testimonies',
+                      testimonyId: tId,
+                      timestamp: Date.now(),
+                    });
+                  } else if (update.type === 'testimony_published' || update.type === 'testimony_member_status' || update.type === 'testimony') {
+                    const tId = update.testimonyId || update.relatedId || update.id;
+                    if (tId) {
+                      navigation.navigate('TestimonyDetail', {
+                        testimonyId: tId,
+                        churchId: update.churchId || activeChurch?.id || member?.churchId || 'rhema',
+                      });
+                    } else {
+                      navigation.navigate('Testimonies', { initialTab: 'mine' });
+                    }
                   } else {
                     setSelectedUpdate(update);
                   }
@@ -630,10 +881,10 @@ export default function UpdatesScreen({ navigation, route }: any) {
                 <View style={styles.updateInfo}>
                   <View style={styles.metaRow}>
                     <Text style={[styles.typeTag, { color: update.color }]}>{getTypeName(update.type)}</Text>
-                    <Text style={styles.dateTxt}>{formatDateDisplay(update.date)}</Text>
+                    <Text style={[styles.dateTxt, isDark && { color: colors.textSecondary }]}>{formatDateDisplay(update.date)}</Text>
                   </View>
-                  <Text style={styles.updateTitle}>{update.title}</Text>
-                  <Text style={styles.updateContent} numberOfLines={2}>{update.content}</Text>
+                  <Text style={[styles.updateTitle, isDark && { color: colors.text }]}>{update.title}</Text>
+                  <Text style={[styles.updateContent, isDark && { color: colors.textSecondary }]} numberOfLines={2}>{update.content}</Text>
                 </View>
               </TouchableOpacity>
             </SwipeableRow>
@@ -641,9 +892,9 @@ export default function UpdatesScreen({ navigation, route }: any) {
 
           {visibleUpdates.length === 0 && !loading && (
             <View style={styles.emptyContainer}>
-              <Bell size={48} color="#94a3b8" style={{ marginBottom: 12 }} />
-              <Text style={styles.emptyText}>{t('updates.allCaughtUp')}</Text>
-              <Text style={styles.emptySubText}>{t('updates.emptySub')}</Text>
+              <Bell size={48} color={isDark ? '#64748B' : '#94a3b8'} style={{ marginBottom: 12 }} />
+              <Text style={[styles.emptyText, { color: colors.text }]}>{t('updates.allCaughtUp')}</Text>
+              <Text style={[styles.emptySubText, { color: colors.textSecondary }]}>{t('updates.emptySub')}</Text>
             </View>
           )}
         </View>
@@ -665,6 +916,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
             activeOpacity={1} 
             style={[
               styles.modalCard,
+              isDark && { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
               selectedUpdate?.type === 'birthday' && styles.modalCardBirthday,
               selectedUpdate?.type === 'anniversary' && styles.modalCardAnniversary,
               selectedUpdate?.type === 'celebration' && styles.modalCardCelebration,
@@ -675,13 +927,16 @@ export default function UpdatesScreen({ navigation, route }: any) {
             <TouchableOpacity 
               style={[
                 styles.modalCloseBtn,
+                isDark &&
+                  selectedUpdate?.type !== 'birthday' &&
+                  selectedUpdate?.type !== 'anniversary' && { backgroundColor: colors.background },
                 (selectedUpdate?.type === 'birthday' || selectedUpdate?.type === 'anniversary') && styles.modalCloseBtnGold
               ]} 
               onPress={() => setSelectedUpdate(null)}
             >
               <X size={20} color={
                 selectedUpdate?.type === 'birthday' ? '#b45309' :
-                selectedUpdate?.type === 'anniversary' ? '#be185d' : '#475569'
+                selectedUpdate?.type === 'anniversary' ? '#be185d' : (isDark ? colors.textSecondary : '#475569')
               } />
             </TouchableOpacity>
 
@@ -765,41 +1020,66 @@ export default function UpdatesScreen({ navigation, route }: any) {
                 <View style={styles.standardModalHeader}>
                   <View style={[
                     styles.stdIconBox, 
-                    (selectedUpdate?.type === 'emergency' || selectedUpdate?.title?.includes('🚨') || selectedUpdate?.type === 'youtube_live') && styles.stdIconBoxEmergency
+                    (selectedUpdate?.type === 'emergency' || selectedUpdate?.title?.includes('🚨') || selectedUpdate?.type === 'youtube_live' || selectedUpdate?.type === 'admin_roster_alert') && styles.stdIconBoxEmergency,
+                    (selectedUpdate?.type === 'service_roster' || selectedUpdate?.type === 'volunteer_application_member' || selectedUpdate?.type === 'service_reminder') && { backgroundColor: '#ECFDF5' },
+                    (selectedUpdate?.type === 'service_assignment' || selectedUpdate?.type === 'service_responsibility_broadcast' || selectedUpdate?.type === 'volunteer_assignment') && { backgroundColor: '#EFF6FF' },
+                    (selectedUpdate?.type === 'volunteer_application_admin' || selectedUpdate?.type === 'volunteer_event_change') && { backgroundColor: '#FEF3C7' },
+                    (selectedUpdate?.type === 'volunteer_reminder' || selectedUpdate?.type === 'rehearsal_alert') && { backgroundColor: '#F3E8FF' }
                   ]}>
                     {selectedUpdate?.type === 'emergency' || selectedUpdate?.title?.includes('🚨') ? (
                       <AlertTriangle size={24} color="#ef4444" />
                     ) : selectedUpdate?.type === 'youtube_live' ? (
                       <Tv size={24} color="#ef4444" />
+                    ) : selectedUpdate?.type === 'admin_roster_alert' ? (
+                      <Layers size={24} color="#DC2626" />
+                    ) : selectedUpdate?.type === 'service_roster' ? (
+                      <Layers size={24} color="#059669" />
+                    ) : selectedUpdate?.type === 'rehearsal_alert' ? (
+                      <Music size={24} color="#7C3AED" />
+                    ) : selectedUpdate?.type === 'service_assignment' || selectedUpdate?.type === 'volunteer_assignment' ? (
+                      <UserCheck size={24} color="#2563EB" />
+                    ) : selectedUpdate?.type === 'service_responsibility_broadcast' ? (
+                      <Zap size={24} color="#D97706" />
+                    ) : selectedUpdate?.type === 'volunteer_application_admin' || selectedUpdate?.type === 'volunteer_application_member' ? (
+                      <HeartHandshake size={24} color={selectedUpdate?.color || '#059669'} />
+                    ) : selectedUpdate?.type === 'volunteer_event_change' ? (
+                      <Calendar size={24} color="#D97706" />
                     ) : (
-                      <Bell size={24} color="#1a2d5a" />
+                      <Bell size={24} color={selectedUpdate?.color || '#1a2d5a'} />
                     )}
                   </View>
                   <View style={styles.stdHeaderMeta}>
                     <Text style={[
                       styles.stdTypeTag,
-                      (selectedUpdate?.type === 'emergency' || selectedUpdate?.title?.includes('🚨') || selectedUpdate?.type === 'youtube_live') && { color: '#ef4444' }
+                      isDark && { color: colors.accent },
+                      (selectedUpdate?.type === 'emergency' || selectedUpdate?.title?.includes('🚨') || selectedUpdate?.type === 'youtube_live') && { color: '#ef4444' },
+                      selectedUpdate?.type === 'admin_roster_alert' && { color: '#DC2626' },
+                      (selectedUpdate?.type === 'service_roster' || selectedUpdate?.type === 'service_reminder') && { color: '#059669' },
+                      selectedUpdate?.type === 'rehearsal_alert' && { color: '#7C3AED' },
+                      (selectedUpdate?.type === 'service_assignment' || selectedUpdate?.type === 'service_responsibility_broadcast') && { color: '#2563EB' },
+                      selectedUpdate?.type?.startsWith('volunteer_') && { color: selectedUpdate?.color || '#059669' }
                     ]}>
                       {getTypeName(selectedUpdate?.type || 'announcement')}
                     </Text>
-                    <Text style={styles.stdDateTxt}>{selectedUpdate?.date}</Text>
+                    <Text style={[styles.stdDateTxt, isDark && { color: colors.textSecondary }]}>{selectedUpdate?.date}</Text>
                   </View>
                 </View>
 
                 <Text style={[
                   styles.stdModalTitle,
-                  (selectedUpdate?.type === 'emergency' || selectedUpdate?.title?.includes('🚨') || selectedUpdate?.type === 'youtube_live') && { color: '#b91c1c' }
+                  isDark && { color: colors.text },
+                  (selectedUpdate?.type === 'emergency' || selectedUpdate?.title?.includes('🚨') || selectedUpdate?.type === 'youtube_live') && { color: isDark ? '#F87171' : '#b91c1c' }
                 ]}>
                   {selectedUpdate?.title}
                 </Text>
 
-                <View style={styles.dividerStd} />
+                <View style={[styles.dividerStd, isDark && { backgroundColor: colors.border }]} />
 
                 <ScrollView style={[styles.modalScroll, { maxHeight: 400 }]} showsVerticalScrollIndicator={false}>
                   {selectedUpdate?.imageUrl && (
                     <Image source={{ uri: selectedUpdate.imageUrl }} style={styles.modalImage} resizeMode="cover" />
                   )}
-                  <Text style={styles.stdModalContent}>
+                  <Text style={[styles.stdModalContent, isDark && { color: colors.textSecondary }]}>
                     {selectedUpdate?.content}
                   </Text>
                 </ScrollView>
@@ -891,6 +1171,146 @@ export default function UpdatesScreen({ navigation, route }: any) {
                     }}
                   >
                     <Text style={styles.joinLiveBtnTxt}>🙏 {isAdmin ? 'Open & Review Prayer Request' : 'View Prayer Wall'}</Text>
+                  </TouchableOpacity>
+                )}
+
+                {selectedUpdate?.type === 'testimony_admin' && (
+                  <TouchableOpacity
+                    style={[styles.joinLiveBtn, { backgroundColor: '#8B5CF6' }]}
+                    onPress={() => {
+                      const tId = selectedUpdate?.testimonyId || selectedUpdate?.relatedId || selectedUpdate?.id;
+                      setSelectedUpdate(null);
+                      navigation.navigate('AdminRoot', {
+                        targetTab: 'Testimonies',
+                        testimonyId: tId,
+                        timestamp: Date.now(),
+                      });
+                    }}
+                  >
+                    <Text style={styles.joinLiveBtnTxt}>✨ Review Testimony</Text>
+                  </TouchableOpacity>
+                )}
+
+                {(selectedUpdate?.type === 'testimony_published' || selectedUpdate?.type === 'testimony_member_status') && (
+                  <TouchableOpacity
+                    style={[styles.joinLiveBtn, { backgroundColor: '#10B981' }]}
+                    onPress={() => {
+                      const tId = selectedUpdate?.testimonyId || selectedUpdate?.relatedId || selectedUpdate?.id;
+                      setSelectedUpdate(null);
+                      if (tId) {
+                        navigation.navigate('TestimonyDetail', {
+                          testimonyId: tId,
+                          churchId: selectedUpdate?.churchId || activeChurch?.id || member?.churchId || 'rhema',
+                        });
+                      } else {
+                        navigation.navigate('Testimonies', { initialTab: 'mine' });
+                      }
+                    }}
+                  >
+                    <Text style={styles.joinLiveBtnTxt}>✨ View Testimony</Text>
+                  </TouchableOpacity>
+                )}
+
+                {selectedUpdate?.type === 'admin_roster_alert' && (
+                  <TouchableOpacity
+                    style={[styles.joinLiveBtn, { backgroundColor: '#DC2626', marginTop: 16 }]}
+                    onPress={() => {
+                      const sId = selectedUpdate?.serviceId;
+                      const rId = selectedUpdate?.roleId;
+                      setSelectedUpdate(null);
+                      navigation.navigate('AdminRoot', {
+                        targetTab: 'Service Roster',
+                        serviceId: sId,
+                        roleId: rId,
+                        timestamp: Date.now(),
+                      });
+                    }}
+                  >
+                    <Text style={styles.joinLiveBtnTxt}>📋 Open Service Roster</Text>
+                  </TouchableOpacity>
+                )}
+
+                {selectedUpdate?.type === 'service_roster' && (
+                  <TouchableOpacity
+                    style={[styles.joinLiveBtn, { backgroundColor: '#059669', marginTop: 16 }]}
+                    onPress={() => {
+                      const sId = selectedUpdate?.serviceId;
+                      setSelectedUpdate(null);
+                      navigation.navigate('MyService', {
+                        serviceId: sId,
+                        initialTab: 'roster'
+                      });
+                    }}
+                  >
+                    <Text style={styles.joinLiveBtnTxt}>📋 View Service Roster & Order</Text>
+                  </TouchableOpacity>
+                )}
+
+                {(selectedUpdate?.type === 'service_assignment' || selectedUpdate?.type === 'service_responsibility_broadcast') && (
+                  <TouchableOpacity
+                    style={[styles.joinLiveBtn, { backgroundColor: '#2563EB', marginTop: 16 }]}
+                    onPress={() => {
+                      const sId = selectedUpdate?.serviceId;
+                      setSelectedUpdate(null);
+                      navigation.navigate('MyService', {
+                        serviceId: sId,
+                        initialTab: 'responsibilities'
+                      });
+                    }}
+                  >
+                    <Text style={styles.joinLiveBtnTxt}>⚡ View Duties & Respond</Text>
+                  </TouchableOpacity>
+                )}
+
+                {selectedUpdate?.type === 'volunteer_application_admin' && (
+                  <TouchableOpacity
+                    style={[styles.joinLiveBtn, { backgroundColor: '#D97706', marginTop: 16 }]}
+                    onPress={() => {
+                      const appId = selectedUpdate?.applicationId || selectedUpdate?.relatedId || selectedUpdate?.id;
+                      const subType = selectedUpdate?.volunteerType || 'general';
+                      setSelectedUpdate(null);
+                      navigation.navigate('AdminRoot', {
+                        targetTab: 'Volunteer Management',
+                        applicationId: appId,
+                        subType,
+                        timestamp: Date.now(),
+                      });
+                    }}
+                  >
+                    <Text style={styles.joinLiveBtnTxt}>🤝 Review Volunteer Application</Text>
+                  </TouchableOpacity>
+                )}
+
+                {(selectedUpdate?.type === 'volunteer_application_member' ||
+                  selectedUpdate?.type === 'volunteer_assignment' ||
+                  selectedUpdate?.type === 'volunteer_event_change' ||
+                  selectedUpdate?.type === 'volunteer_reminder') && (
+                  <TouchableOpacity
+                    style={[
+                      styles.joinLiveBtn,
+                      {
+                        backgroundColor:
+                          selectedUpdate?.volunteerStatus === 'rejected' || selectedUpdate?.volunteerStatus === 'declined'
+                            ? '#475569'
+                            : selectedUpdate?.type === 'volunteer_assignment'
+                            ? '#2563EB'
+                            : '#059669',
+                        marginTop: 16,
+                      },
+                    ]}
+                    onPress={() => {
+                      const evId = selectedUpdate?.eventId;
+                      setSelectedUpdate(null);
+                      if (evId) {
+                        navigation.navigate('EventDetails', { eventId: evId, id: evId });
+                      } else {
+                        navigation.navigate('Volunteer');
+                      }
+                    }}
+                  >
+                    <Text style={styles.joinLiveBtnTxt}>
+                      {selectedUpdate?.eventId ? '📅 View Event Volunteer Details' : '🤝 Open Volunteer Portal'}
+                    </Text>
                   </TouchableOpacity>
                 )}
 

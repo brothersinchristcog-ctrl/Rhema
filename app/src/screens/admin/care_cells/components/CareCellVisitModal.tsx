@@ -29,6 +29,7 @@ import {
 } from 'lucide-react-native';
 import CareCellService from '../../../../services/CareCellService';
 import { CareCell, CareCellMembership } from '../../../../types/CareCellTypes';
+import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
 
 interface CareCellVisitModalProps {
   visible: boolean;
@@ -57,6 +58,13 @@ export default function CareCellVisitModal({
   createdByName,
   onSuccess,
 }: CareCellVisitModalProps) {
+  const { isDark, primaryText, secondaryText } = useAdminTheme();
+  const primaryBtnBg = isDark ? '#FFFFFF' : '#0F172A';
+  const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
+  const secondaryBtnBg = isDark ? '#27272A' : '#F8FAFC';
+  const secondaryBtnBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1';
+  const secondaryBtnText = isDark ? '#E4E4E7' : '#334155';
+
   const [selectedCellId, setSelectedCellId] = useState<string>('');
   const [title, setTitle] = useState('Pastoral Home Visit');
   const [purpose, setPurpose] = useState('');
@@ -201,7 +209,7 @@ export default function CareCellVisitModal({
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerIconBadge}>
-              <Home size={20} color="#1A2D5A" strokeWidth={2.4} />
+              <Home size={20} color={primaryText} strokeWidth={2.4} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.headerTitle}>Schedule Care Cell Visit</Text>
@@ -210,7 +218,7 @@ export default function CareCellVisitModal({
               </Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <X size={18} color="#64748B" />
+              <X size={18} color={secondaryText} />
             </TouchableOpacity>
           </View>
 
@@ -219,7 +227,7 @@ export default function CareCellVisitModal({
             <Text style={styles.fieldLabel}>TARGET CARE CELL *</Text>
             {cells.length <= 1 ? (
               <View style={styles.singleCellBanner}>
-                <Building2 size={16} color="#1A2D5A" />
+                <Building2 size={16} color={primaryText} />
                 <Text style={styles.singleCellTxt}>
                   {activeCell ? `${activeCell.cellCode} · ${activeCell.name}` : 'Care Cell'}
                 </Text>
@@ -231,12 +239,15 @@ export default function CareCellVisitModal({
                   return (
                     <TouchableOpacity
                       key={c.id}
-                      style={[styles.cellChip, isSel && styles.cellChipActive]}
+                      style={[
+                        styles.cellChip,
+                        isSel && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+                      ]}
                       onPress={() => setSelectedCellId(c.id)}
                       activeOpacity={0.8}
                     >
-                      <Building2 size={13} color={isSel ? '#FFFFFF' : '#64748B'} style={{ marginRight: 6 }} />
-                      <Text style={[styles.cellChipTxt, isSel && styles.cellChipTxtActive]}>
+                      <Building2 size={13} color={isSel ? primaryBtnText : secondaryText} style={{ marginRight: 6 }} />
+                      <Text style={[styles.cellChipTxt, isSel && { color: primaryBtnText }]}>
                         {c.cellCode} ({c.name})
                       </Text>
                     </TouchableOpacity>
@@ -249,23 +260,29 @@ export default function CareCellVisitModal({
             <Text style={styles.fieldLabel}>VISIT RECIPIENTS / TARGET *</Text>
             <View style={styles.scopeToggleRow}>
               <TouchableOpacity
-                style={[styles.scopeBtn, visitScope === 'ALL' && styles.scopeBtnActive]}
+                style={[
+                  styles.scopeBtn,
+                  visitScope === 'ALL' && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+                ]}
                 onPress={() => setVisitScope('ALL')}
                 activeOpacity={0.8}
               >
-                <Users size={14} color={visitScope === 'ALL' ? '#FFFFFF' : '#475569'} style={{ marginRight: 6 }} />
-                <Text style={[styles.scopeBtnTxt, visitScope === 'ALL' && styles.scopeBtnTxtActive]}>
+                <Users size={14} color={visitScope === 'ALL' ? primaryBtnText : secondaryText} style={{ marginRight: 6 }} />
+                <Text style={[styles.scopeBtnTxt, visitScope === 'ALL' && { color: primaryBtnText, fontWeight: '800' }]}>
                   All Members ({memberCount || 0})
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.scopeBtn, visitScope === 'SPECIFIC' && styles.scopeBtnActive]}
+                style={[
+                  styles.scopeBtn,
+                  visitScope === 'SPECIFIC' && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+                ]}
                 onPress={() => setVisitScope('SPECIFIC')}
                 activeOpacity={0.8}
               >
-                <UserCheck size={14} color={visitScope === 'SPECIFIC' ? '#FFFFFF' : '#475569'} style={{ marginRight: 6 }} />
-                <Text style={[styles.scopeBtnTxt, visitScope === 'SPECIFIC' && styles.scopeBtnTxtActive]}>
+                <UserCheck size={14} color={visitScope === 'SPECIFIC' ? primaryBtnText : secondaryText} style={{ marginRight: 6 }} />
+                <Text style={[styles.scopeBtnTxt, visitScope === 'SPECIFIC' && { color: primaryBtnText, fontWeight: '800' }]}>
                   Specific Member{selectedMemberIds.length > 0 ? ` (${selectedMemberIds.length})` : 's'}
                 </Text>
               </TouchableOpacity>
@@ -278,7 +295,7 @@ export default function CareCellVisitModal({
                   Tap members to select who should receive this house visit notification:
                 </Text>
                 {loadingMembers ? (
-                  <ActivityIndicator size="small" color="#1A2D5A" style={{ marginVertical: 8 }} />
+                  <ActivityIndicator size="small" color={primaryText} style={{ marginVertical: 8 }} />
                 ) : cellMembers.length === 0 ? (
                   <Text style={styles.noMembersInCellTxt}>No active members in this cell yet.</Text>
                 ) : (
@@ -288,7 +305,10 @@ export default function CareCellVisitModal({
                       return (
                         <TouchableOpacity
                           key={m.memberId}
-                          style={[styles.memberSelectChip, isSelected && styles.memberSelectChipActive]}
+                          style={[
+                            styles.memberSelectChip,
+                            isSelected && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+                          ]}
                           onPress={() => {
                             setSelectedMemberIds((prev) =>
                               prev.includes(m.memberId)
@@ -298,14 +318,14 @@ export default function CareCellVisitModal({
                           }}
                           activeOpacity={0.75}
                         >
-                          <View style={[styles.miniCheck, isSelected && styles.miniCheckActive]}>
-                            {isSelected && <Check size={10} color="#FFFFFF" strokeWidth={3} />}
+                          <View style={[styles.miniCheck, isSelected && { backgroundColor: primaryBtnText, borderColor: primaryBtnText }]}>
+                            {isSelected && <Check size={10} color={primaryBtnBg} strokeWidth={3} />}
                           </View>
-                          <Text style={[styles.memberSelectChipName, isSelected && styles.memberSelectChipNameActive]}>
+                          <Text style={[styles.memberSelectChipName, isSelected && { color: primaryBtnText, fontWeight: '700' }]}>
                             {m.memberName}
                           </Text>
                           {m.memberPhone ? (
-                            <Text style={[styles.memberSelectChipPhone, isSelected && { color: '#E0E7FF' }]}>
+                            <Text style={[styles.memberSelectChipPhone, isSelected && { color: primaryBtnText, opacity: 0.75 }]}>
                               ({m.memberPhone.slice(-4)})
                             </Text>
                           ) : null}
@@ -328,17 +348,23 @@ export default function CareCellVisitModal({
             />
 
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.presetScroll}>
-              {TITLE_PRESETS.map((preset) => (
-                <TouchableOpacity
-                  key={preset}
-                  style={[styles.presetChip, title === preset && styles.presetChipActive]}
-                  onPress={() => setTitle(preset)}
-                >
-                  <Text style={[styles.presetChipTxt, title === preset && styles.presetChipTxtActive]}>
-                    {preset}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              {TITLE_PRESETS.map((preset) => {
+                const isActive = title === preset;
+                return (
+                  <TouchableOpacity
+                    key={preset}
+                    style={[
+                      styles.presetChip,
+                      isActive && { backgroundColor: primaryBtnBg, borderWidth: 1, borderColor: primaryBtnBg },
+                    ]}
+                    onPress={() => setTitle(preset)}
+                  >
+                    <Text style={[styles.presetChipTxt, isActive && { color: primaryBtnText, fontWeight: '800' }]}>
+                      {preset}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </ScrollView>
 
             {/* Date & Time Row */}
@@ -346,7 +372,7 @@ export default function CareCellVisitModal({
               <View style={{ flex: 1, marginRight: 8 }}>
                 <Text style={styles.fieldLabel}>VISIT DATE *</Text>
                 <View style={styles.iconInputWrap}>
-                  <Calendar size={16} color="#64748B" style={styles.inputIcon} />
+                  <Calendar size={16} color={secondaryText} style={styles.inputIcon} />
                   <TextInput
                     style={[styles.input, styles.inputWithIcon]}
                     placeholder="YYYY-MM-DD"
@@ -360,7 +386,7 @@ export default function CareCellVisitModal({
               <View style={{ flex: 1, marginLeft: 8 }}>
                 <Text style={styles.fieldLabel}>VISIT TIME *</Text>
                 <View style={styles.iconInputWrap}>
-                  <Clock size={16} color="#64748B" style={styles.inputIcon} />
+                  <Clock size={16} color={secondaryText} style={styles.inputIcon} />
                   <TextInput
                     style={[styles.input, styles.inputWithIcon]}
                     placeholder="e.g. 17:00 / 5 PM"
@@ -375,21 +401,30 @@ export default function CareCellVisitModal({
             {/* Quick Date Shortcuts below Date & Time */}
             <View style={styles.shortcutRow}>
               <Text style={styles.shortcutMiniLbl}>QUICK DATE:</Text>
-              <TouchableOpacity onPress={() => handleDateShortcut(0)} style={styles.dateShortcutBtn}>
-                <Text style={styles.dateShortcutTxt}>Today</Text>
+              <TouchableOpacity
+                onPress={() => handleDateShortcut(0)}
+                style={[styles.dateShortcutBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
+              >
+                <Text style={[styles.dateShortcutTxt, { color: secondaryBtnText }]}>Today</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => handleDateShortcut(1)} style={styles.dateShortcutBtn}>
-                <Text style={styles.dateShortcutTxt}>Tomorrow</Text>
+              <TouchableOpacity
+                onPress={() => handleDateShortcut(1)}
+                style={[styles.dateShortcutBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
+              >
+                <Text style={[styles.dateShortcutTxt, { color: secondaryBtnText }]}>Tomorrow</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => handleDateShortcut(2)} style={styles.dateShortcutBtn}>
-                <Text style={styles.dateShortcutTxt}>In 2 Days</Text>
+              <TouchableOpacity
+                onPress={() => handleDateShortcut(2)}
+                style={[styles.dateShortcutBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
+              >
+                <Text style={[styles.dateShortcutTxt, { color: secondaryBtnText }]}>In 2 Days</Text>
               </TouchableOpacity>
             </View>
 
             {/* Visiting Team */}
             <Text style={styles.fieldLabel}>VISITING TEAM / VISITORS *</Text>
             <View style={styles.iconInputWrap}>
-              <Users size={16} color="#64748B" style={styles.inputIcon} />
+              <Users size={16} color={secondaryText} style={styles.inputIcon} />
               <TextInput
                 style={[styles.input, styles.inputWithIcon]}
                 placeholder="e.g. Pastor & Cell Leader"
@@ -432,17 +467,26 @@ export default function CareCellVisitModal({
 
           {/* Footer Actions */}
           <View style={styles.footer}>
-            <TouchableOpacity onPress={onClose} style={styles.cancelBtn} disabled={saving}>
-              <Text style={styles.cancelBtnTxt}>Cancel</Text>
+            <TouchableOpacity
+              onPress={onClose}
+              style={[styles.cancelBtn, { backgroundColor: secondaryBtnBg, borderWidth: 1, borderColor: secondaryBtnBorder }]}
+              disabled={saving}
+            >
+              <Text style={[styles.cancelBtnTxt, { color: secondaryBtnText }]}>Cancel</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={handleSave} style={styles.submitBtn} disabled={saving} activeOpacity={0.85}>
+            <TouchableOpacity
+              onPress={handleSave}
+              style={[styles.submitBtn, { backgroundColor: primaryBtnBg }]}
+              disabled={saving}
+              activeOpacity={0.85}
+            >
               {saving ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
+                <ActivityIndicator size="small" color={primaryBtnText} />
               ) : (
                 <>
-                  <Send size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
-                  <Text style={styles.submitBtnTxt}>Send Visit Notification</Text>
+                  <Send size={16} color={primaryBtnText} style={{ marginRight: 8 }} />
+                  <Text style={[styles.submitBtnTxt, { color: primaryBtnText }]}>Send Visit Notification</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -453,7 +497,7 @@ export default function CareCellVisitModal({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.6)',

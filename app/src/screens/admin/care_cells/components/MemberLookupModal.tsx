@@ -17,6 +17,7 @@ import { Search, X, Check, CheckCircle2, UserCheck, AlertCircle, Phone, ArrowRig
 import FirestoreService from '../../../../services/FirestoreService';
 import CareCellService, { isMemberInLocation } from '../../../../services/CareCellService';
 import { CareCellMembership } from '../../../../types/CareCellTypes';
+import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
 
 interface MemberItem {
   id: string;
@@ -64,6 +65,13 @@ export default function MemberLookupModal({
   onSelectSingle,
   onConfirmMultiple,
 }: MemberLookupModalProps) {
+  const { isDark, primaryText, secondaryText } = useAdminTheme();
+  const primaryBtnBg = isDark ? '#FFFFFF' : '#0F172A';
+  const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
+  const secondaryBtnBg = isDark ? '#27272A' : '#F8FAFC';
+  const secondaryBtnBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1';
+  const secondaryBtnText = isDark ? '#E4E4E7' : '#334155';
+
   const [loading, setLoading] = useState(true);
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -344,18 +352,18 @@ export default function MemberLookupModal({
 
         {/* Mode Actions */}
         {mode === 'single' ? (
-          <View style={styles.selectSingleBtn}>
-            <Text style={styles.selectSingleBtnTxt}>Select</Text>
+          <View style={[styles.selectSingleBtn, { backgroundColor: primaryBtnBg }]}>
+            <Text style={[styles.selectSingleBtnTxt, { color: primaryBtnText }]}>Select</Text>
           </View>
         ) : (
           <View
             style={[
               styles.checkboxBox,
               isAlreadyInThisCell && styles.checkboxDisabled,
-              isSelected && styles.checkboxSelected,
+              isSelected && { borderColor: primaryBtnBg, backgroundColor: primaryBtnBg },
             ]}
           >
-            {isSelected && <Check size={14} color="#FFFFFF" strokeWidth={3} />}
+            {isSelected && <Check size={14} color={primaryBtnText} strokeWidth={3} />}
           </View>
         )}
       </TouchableOpacity>
@@ -377,7 +385,7 @@ export default function MemberLookupModal({
               </Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <X size={20} color="#1E293B" />
+              <X size={20} color={primaryText} />
             </TouchableOpacity>
           </View>
 
@@ -404,7 +412,7 @@ export default function MemberLookupModal({
           {targetLocation && targetLocation.trim().length > 0 && (
             <View style={styles.targetLocationBanner}>
               <View style={styles.targetLocationLeft}>
-                <MapPin size={16} color="#1A2D5A" />
+                <MapPin size={16} color={primaryText} />
                 <View style={{ marginLeft: 8, flex: 1 }}>
                   <Text style={styles.targetLocationTitle}>
                     Showing members in: {targetLocation}
@@ -419,7 +427,7 @@ export default function MemberLookupModal({
               <TouchableOpacity
                 style={[
                   styles.locationToggleBtn,
-                  filterByLocation ? styles.locationToggleBtnActive : styles.locationToggleBtnInactive,
+                  filterByLocation ? { backgroundColor: primaryBtnBg } : styles.locationToggleBtnInactive,
                 ]}
                 onPress={() => setFilterByLocation(!filterByLocation)}
                 activeOpacity={0.8}
@@ -427,7 +435,7 @@ export default function MemberLookupModal({
                 <Text
                   style={[
                     styles.locationToggleTxt,
-                    filterByLocation ? styles.locationToggleTxtActive : styles.locationToggleTxtInactive,
+                    filterByLocation ? { color: primaryBtnText } : styles.locationToggleTxtInactive,
                   ]}
                 >
                   {filterByLocation ? 'Location: ON' : 'Show All'}
@@ -441,10 +449,13 @@ export default function MemberLookupModal({
             <View style={styles.localityFilterWrap}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.localityScroll}>
                 <TouchableOpacity
-                  style={[styles.localityPill, selectedLocality === 'ALL' && styles.localityPillActive]}
+                  style={[
+                    styles.localityPill,
+                    selectedLocality === 'ALL' && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+                  ]}
                   onPress={() => setSelectedLocality('ALL')}
                 >
-                  <Text style={[styles.localityPillTxt, selectedLocality === 'ALL' && styles.localityPillTxtActive]}>
+                  <Text style={[styles.localityPillTxt, selectedLocality === 'ALL' && { color: primaryBtnText, fontWeight: '700' }]}>
                     All Localities
                   </Text>
                 </TouchableOpacity>
@@ -453,11 +464,14 @@ export default function MemberLookupModal({
                   return (
                     <TouchableOpacity
                       key={loc}
-                      style={[styles.localityPill, isSel && styles.localityPillActive]}
+                      style={[
+                        styles.localityPill,
+                        isSel && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+                      ]}
                       onPress={() => setSelectedLocality(loc)}
                     >
-                      <MapPin size={10} color={isSel ? '#FFFFFF' : '#64748B'} style={{ marginRight: 3 }} />
-                      <Text style={[styles.localityPillTxt, isSel && styles.localityPillTxtActive]}>
+                      <MapPin size={10} color={isSel ? primaryBtnText : secondaryText} style={{ marginRight: 3 }} />
+                      <Text style={[styles.localityPillTxt, isSel && { color: primaryBtnText, fontWeight: '700' }]}>
                         {loc}
                       </Text>
                     </TouchableOpacity>
@@ -470,7 +484,7 @@ export default function MemberLookupModal({
           {/* Member List */}
           {loading ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#1A2D5A" />
+              <ActivityIndicator size="large" color={primaryText} />
               <Text style={styles.loadingText}>Fetching church members...</Text>
             </View>
           ) : filteredMembers.length === 0 ? (
@@ -490,10 +504,10 @@ export default function MemberLookupModal({
               </Text>
               {targetLocation && filterByLocation && (
                 <TouchableOpacity
-                  style={styles.showAllEmptyBtn}
+                  style={[styles.showAllEmptyBtn, { backgroundColor: primaryBtnBg }]}
                   onPress={() => setFilterByLocation(false)}
                 >
-                  <Text style={styles.showAllEmptyBtnTxt}>Show All Church Members</Text>
+                  <Text style={[styles.showAllEmptyBtnTxt, { color: primaryBtnText }]}>Show All Church Members</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -514,7 +528,7 @@ export default function MemberLookupModal({
           {mode === 'multiple' && (
             <View style={styles.footer}>
               <View style={styles.footerInfo}>
-                <Text style={styles.footerCountTxt}>
+                <Text style={[styles.footerCountTxt, { color: primaryText }]}>
                   {selectedMap.size} {selectedMap.size === 1 ? 'member' : 'members'} selected
                 </Text>
                 {transferIdsSet.size > 0 && (
@@ -524,12 +538,18 @@ export default function MemberLookupModal({
                 )}
               </View>
               <TouchableOpacity
-                style={[styles.confirmBtn, selectedMap.size === 0 && styles.confirmBtnDisabled]}
+                style={[
+                  styles.confirmBtn,
+                  { backgroundColor: primaryBtnBg },
+                  selectedMap.size === 0 && styles.confirmBtnDisabled,
+                ]}
                 disabled={selectedMap.size === 0}
                 onPress={handleConfirmMultiple}
                 activeOpacity={0.8}
               >
-                <Text style={styles.confirmBtnTxt}>Assign Selected</Text>
+                <Text style={[styles.confirmBtnTxt, { color: selectedMap.size === 0 ? '#FFFFFF' : primaryBtnText }]}>
+                  Assign Selected
+                </Text>
               </TouchableOpacity>
             </View>
           )}
@@ -539,7 +559,7 @@ export default function MemberLookupModal({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.65)',

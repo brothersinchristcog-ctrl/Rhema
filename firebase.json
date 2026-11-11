@@ -22,5 +22,23 @@
   },
   "storage": {
     "rules": "storage.rules"
+  },
+  "hosting": {
+    "public": "hosting",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "/invite",
+        "function": "guestInviteLanding"
+      },
+      {
+        "source": "/invite/**",
+        "function": "guestInviteLanding"
+      }
+    ]
   }
 }

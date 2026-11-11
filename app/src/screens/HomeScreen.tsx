@@ -17,6 +17,7 @@ import {
   Share,
   Modal,
   Linking,
+  AppState,
   Animated,
   Easing,
   Pressable,
@@ -26,7 +27,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Font from 'expo-font';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { formatDateDisplay, formatSermonDuration } from '../utils/DateUtils';
+import { formatDateDisplay, formatDateMonthYear, formatSermonDuration, formatTimeTo12Hour } from '../utils/DateUtils';
 import { 
   Bell, 
   Hexagon,
@@ -588,6 +589,10 @@ interface ScreenThemeConfig {
   bentoYoutubeBorder: string;
   bentoYoutubeText: string;
   bentoYoutubeSub: string;
+  bentoRosterGradient: readonly [string, string, ...string[]];
+  bentoRosterBorder: string;
+  bentoRosterText: string;
+  bentoRosterSub: string;
 }
 
 const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig => {
@@ -698,6 +703,10 @@ const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig =>
         bentoYoutubeBorder: '#991B1B',
         bentoYoutubeText: '#FFFFFF',
         bentoYoutubeSub: '#FECACA',
+        bentoRosterGradient: ['#0F5A54', '#083733'],
+        bentoRosterBorder: '#14847B',
+        bentoRosterText: '#FFFFFF',
+        bentoRosterSub: '#CCFBF1',
       };
     case 'sage_ecru':
       return {
@@ -798,6 +807,10 @@ const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig =>
         bentoYoutubeBorder: '#7E2222',
         bentoYoutubeText: '#FFFFFF',
         bentoYoutubeSub: '#F8D7D7',
+        bentoRosterGradient: ['#234B44', '#142E29'],
+        bentoRosterBorder: '#387066',
+        bentoRosterText: '#FFFFFF',
+        bentoRosterSub: '#D1E7E2',
       };
     case 'pure_dark':
       return {
@@ -905,6 +918,10 @@ const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig =>
         bentoYoutubeBorder: '#591D1D',
         bentoYoutubeText: '#F8FAFC',
         bentoYoutubeSub: '#FCA5A5',
+        bentoRosterGradient: ['#112E2B', '#091B19'],
+        bentoRosterBorder: '#1F524C',
+        bentoRosterText: '#F8FAFC',
+        bentoRosterSub: '#99F6E4',
       };
     case 'pure_white':
       return {
@@ -1012,6 +1029,10 @@ const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig =>
         bentoYoutubeBorder: '#991B1B',
         bentoYoutubeText: '#FFFFFF',
         bentoYoutubeSub: '#FECACA',
+        bentoRosterGradient: ['#0F5A54', '#083733'],
+        bentoRosterBorder: '#14847B',
+        bentoRosterText: '#FFFFFF',
+        bentoRosterSub: '#CCFBF1',
       };
     case 'theme_green':
     default:
@@ -2044,7 +2065,7 @@ export const getSynchronousVersesForToday = (date: Date = new Date()): DailyVers
     return indices.map((idx, pIdx) => {
       const bv = bulk[idx] || {};
       const period = PERIODS[pIdx];
-      const bgUrl = bv.backgroundUrl || getVerseBackgroundUrl(bv, period, idx);
+      const bgUrl = getVerseBackgroundUrl({ ...bv, index: idx }, period, idx, date);
       return {
         id: `today_verse_${idx}_${pIdx}`,
         index: idx,
@@ -2065,7 +2086,7 @@ export const getSynchronousVersesForToday = (date: Date = new Date()): DailyVers
     ];
     return defs.map((d, pIdx) => ({
       ...d,
-      backgroundUrl: getVerseBackgroundUrl(d, PERIODS[pIdx], d.index),
+      backgroundUrl: getVerseBackgroundUrl(d, PERIODS[pIdx], d.index, date),
     }));
   }
 };
@@ -2372,20 +2393,40 @@ export default function HomeScreen() {
     outputRange: ['0deg', '-18deg', '16deg', '-12deg', '8deg', '-4deg', '2deg', '0deg'],
   });
 
-  // Load today's daily verse
+  // Load today's daily verse & listen to foreground resume for date advancement
   useEffect(() => {
-    const period = getCurrentPeriod();
-    setTodayPeriod(period);
-    VerseNotificationService.getVerseForDate(new Date(), period, true).then(async v => {
-      if (v) {
-        if (language !== 'en') {
-          const lv = await VerseNotificationService.localizeVerse(v, language as any);
-          setTodayVerse(lv);
-        } else {
-          setTodayVerse(v);
+    let active = true;
+    const loadCurrentVerse = () => {
+      const period = getCurrentPeriod();
+      setTodayPeriod(period);
+      VerseNotificationService.getVerseForDate(new Date(), period, true).then(async v => {
+        if (!active) return;
+        if (v) {
+          if (language !== 'en') {
+            const lv = await VerseNotificationService.localizeVerse(v, language as any);
+            if (active) setTodayVerse(lv);
+          } else {
+            if (active) setTodayVerse(v);
+          }
         }
+      }).catch(() => {});
+    };
+
+    loadCurrentVerse();
+
+    // Re-check periodically & on app focus so date/period changes reflect immediately
+    const interval = setInterval(loadCurrentVerse, 60000);
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        loadCurrentVerse();
       }
-    }).catch(() => {});
+    });
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+      sub.remove();
+    };
   }, [language]);
 
   const fetchLiveCelebrations = async () => {
@@ -2780,7 +2821,7 @@ export default function HomeScreen() {
     },
     {
       id: 'myService',
-      title: 'My Service',
+      title: t('nav.serviceRoster') === 'nav.serviceRoster' ? 'Service Roster' : t('nav.serviceRoster'),
       icon: require('../../assets/gallery_3d_stage.png'),
       onPress: () => navigation.navigate('MyService'),
     },
@@ -2801,6 +2842,12 @@ export default function HomeScreen() {
           });
         }
       },
+    },
+    {
+      id: 'testimonies',
+      title: t('nav.testimonies') === 'nav.testimonies' ? 'Testimonies' : t('nav.testimonies'),
+      icon: require('../../assets/3d_party_popper.png'),
+      onPress: () => navigation.navigate('Testimonies'),
     },
   ];
 
@@ -3179,21 +3226,30 @@ export default function HomeScreen() {
             });
 
             const freshList: DailyVerse[] = [];
+            const nowDate = new Date();
             for (let i = 0; i < 4; i++) {
               const idx = todayIndices[i];
               if (map[idx]) {
                 const v = { ...map[idx] };
-                if (!v.backgroundUrl) {
-                  v.backgroundUrl = getVerseBackgroundUrl(v, PERIODS[i], idx);
-                }
+                v.backgroundUrl = getVerseBackgroundUrl(v, PERIODS[i], idx, nowDate);
                 freshList.push(v);
               }
             }
 
             if (freshList.length >= 4) {
-              cachedTodayFourVersesDateStr = new Date().toDateString();
+              cachedTodayFourVersesDateStr = nowDate.toDateString();
               cachedTodayFourVerses = freshList;
               setTodayFourVerses(freshList);
+
+              // Enrich today's 4 verses with fresh, verse-relevant Unsplash Search API images
+              VerseNotificationService.enrichDayVersesWithUnsplash(freshList, nowDate)
+                .then(enriched => {
+                  if (enriched && enriched.length >= 4) {
+                    cachedTodayFourVerses = [...enriched];
+                    setTodayFourVerses([...enriched]);
+                  }
+                })
+                .catch(() => {});
 
               // Synchronize todayVerse for current period
               const currentPeriod = getCurrentPeriod();
@@ -3240,6 +3296,10 @@ export default function HomeScreen() {
         async (metaSnap) => {
           if (!metaSnap || !metaSnap.exists) return;
           try {
+            const mData = metaSnap.data();
+            if (mData?.scheduleStartDate) {
+              (VerseNotificationService as any).cachedScheduleStartDate = mData.scheduleStartDate;
+            }
             await VerseNotificationService.invalidateCache();
             const fresh = await VerseNotificationService.getTodayVerses(true);
             if (fresh && fresh.length >= 4) {
@@ -4046,7 +4106,7 @@ export default function HomeScreen() {
                           onPress={() => navigation.navigate('VerseOfTheDay', { verseId: verse.id, period })}
                         >
                           <ImageBackground
-                            source={{ uri: getVerseBackgroundUrl(verse, period, idx) }}
+                            source={{ uri: getVerseBackgroundUrl(verse, period, typeof verse.index === 'number' ? verse.index : idx, currentTime) }}
                             style={[
                               styles.vdCleanWhiteCard, 
                               {
@@ -4175,40 +4235,35 @@ export default function HomeScreen() {
             })()}
           </View>
 
-          {/* Phase 8: Member Service Duty Alert Banner */}
-          {upcomingDuty && (
+          {/* Phase 8: Member Service Duty Alert Banner (Pending Action Required Only) */}
+          {upcomingDuty && upcomingDuty.status === 'pending' && (
             <TouchableOpacity
               style={[
                 styles.memberDutyBanner,
-                upcomingDuty.status === 'pending'
-                  ? styles.memberDutyBannerPending
-                  : styles.memberDutyBannerConfirmed,
+                styles.memberDutyBannerPending,
               ]}
-              onPress={() => navigation.navigate('MyService')}
+              onPress={() => navigation.navigate('MyService', {
+                serviceId: upcomingDuty.serviceId,
+                initialTab: 'responsibilities',
+              })}
               activeOpacity={0.88}
             >
               <View style={styles.memberDutyIconWrap}>
-                {upcomingDuty.status === 'pending' ? (
-                  <AlertCircle size={22} color="#FFFFFF" />
-                ) : (
-                  <Calendar size={22} color="#FFFFFF" />
-                )}
+                <AlertCircle size={22} color="#FFFFFF" />
               </View>
 
               <View style={{ flex: 1, paddingHorizontal: 10 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={styles.memberDutyTag}>
-                    {upcomingDuty.status === 'pending' ? 'ACTION REQUIRED' : 'CONFIRMED SERVICE DUTY'}
+                  <Text style={styles.memberDutyTag}>ACTION REQUIRED</Text>
+                  <Text style={styles.memberDutyDate}>
+                    {formatDateMonthYear(upcomingDuty.date)}
                   </Text>
-                  <Text style={styles.memberDutyDate}>{upcomingDuty.date}</Text>
                 </View>
                 <Text style={styles.memberDutyTitle} numberOfLines={1}>
-                  {upcomingDuty.roleTitle} · {upcomingDuty.serviceTitle}
+                  {upcomingDuty.roleTitle}
                 </Text>
                 <Text style={styles.memberDutySub} numberOfLines={1}>
-                  {upcomingDuty.status === 'pending'
-                    ? 'Tap to accept or decline this duty'
-                    : `Reporting Call Time: ${upcomingDuty.callTime} · ${upcomingDuty.location}`}
+                  {upcomingDuty.serviceTitle} · Tap to accept or decline
                 </Text>
               </View>
 
@@ -4300,6 +4355,30 @@ export default function HomeScreen() {
                               ]}
                               resizeMode="contain"
                             />
+                            {item.id === 'myService' && upcomingDuty && upcomingDuty.status !== 'declined' && (
+                              <View
+                                style={{
+                                  position: 'absolute',
+                                  top: 5,
+                                  right: 5,
+                                  width: 14,
+                                  height: 14,
+                                  borderRadius: 7,
+                                  backgroundColor:
+                                    upcomingDuty.status === 'pending' ? '#F59E0B' : '#10B981',
+                                  borderWidth: 1.5,
+                                  borderColor: screenTheme.isDark ? '#121212' : '#FFFFFF',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                              >
+                                {upcomingDuty.status === 'pending' ? (
+                                  <AlertCircle size={8} color="#FFFFFF" strokeWidth={3} />
+                                ) : (
+                                  <CheckCircle size={8} color="#FFFFFF" strokeWidth={3} />
+                                )}
+                              </View>
+                            )}
                           </View>
                           <Text
                             style={[styles.grid4Label, { color: screenTheme.text }]}
@@ -4937,6 +5016,199 @@ export default function HomeScreen() {
                 </LinearGradient>
               </TouchableOpacity>
             </View>
+
+            {/* ── ROW 7: Service Roster Banner Card (matches 4-in-a-Row Quick Access items) ── */}
+            <TouchableOpacity
+              style={styles.clayGalleryTouch}
+              activeOpacity={0.88}
+              onPress={() =>
+                navigation.navigate(
+                  'MyService',
+                  upcomingDuty && upcomingDuty.status !== 'declined'
+                    ? {
+                        serviceId: upcomingDuty.serviceId,
+                        initialTab: upcomingDuty.status === 'pending' ? 'responsibilities' : 'roster',
+                      }
+                    : undefined
+                )
+              }
+            >
+              <LinearGradient
+                colors={screenTheme.bentoRosterGradient || ['#0F5A54', '#083733']}
+                start={{ x: 0, y: 0.25 }}
+                end={{ x: 1, y: 0.75 }}
+                style={[
+                  styles.clayGalleryCard,
+                  {
+                    borderColor: screenTheme.bentoRosterBorder || '#14847B',
+                    borderWidth: 1.2,
+                    paddingRight: 14,
+                    paddingVertical: upcomingDuty && upcomingDuty.status !== 'declined' ? 10 : 4,
+                  },
+                ]}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                  {/* 3D Service Roster Stage Icon */}
+                  <View style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+                    <Image
+                      source={require('../../assets/gallery_3d_stage.png')}
+                      style={{ width: 40, height: 40 }}
+                      resizeMode="contain"
+                    />
+                  </View>
+
+                  <View style={{ flex: 1, justifyContent: 'center', marginLeft: 10, marginRight: 8 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                      <Text
+                        style={[styles.clayCardTitle, { color: screenTheme.bentoRosterText || '#FFFFFF', fontSize: 15.5, fontWeight: '800' }]}
+                        numberOfLines={1}
+                      >
+                        {t('nav.serviceRoster') === 'nav.serviceRoster' ? 'Service Roster' : t('nav.serviceRoster')}
+                      </Text>
+
+                      {upcomingDuty && upcomingDuty.status !== 'declined' && (
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 4,
+                            paddingHorizontal: 7,
+                            paddingVertical: 2,
+                            borderRadius: 999,
+                            backgroundColor:
+                              upcomingDuty.status === 'pending'
+                                ? 'rgba(245, 158, 11, 0.25)'
+                                : 'rgba(16, 185, 129, 0.24)',
+                            borderWidth: 1,
+                            borderColor:
+                              upcomingDuty.status === 'pending'
+                                ? 'rgba(252, 211, 77, 0.6)'
+                                : 'rgba(110, 231, 183, 0.55)',
+                          }}
+                        >
+                          {upcomingDuty.status === 'pending' ? (
+                            <AlertCircle size={10} color="#FCD34D" strokeWidth={2.5} />
+                          ) : (
+                            <CheckCircle size={10} color="#6EE7B7" strokeWidth={2.5} />
+                          )}
+                          <Text
+                            style={{
+                              fontSize: 9.5,
+                              fontWeight: '800',
+                              letterSpacing: 0.4,
+                              color: upcomingDuty.status === 'pending' ? '#FEF3C7' : '#D1FAE5',
+                            }}
+                          >
+                            {upcomingDuty.status === 'pending' ? 'ACTION NEEDED' : 'CONFIRMED'}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {upcomingDuty && upcomingDuty.status !== 'declined' ? (
+                      <>
+                        <Text
+                          style={{
+                            color: screenTheme.bentoRosterText || '#FFFFFF',
+                            fontSize: 12.5,
+                            fontWeight: '700',
+                            marginTop: 3,
+                            opacity: 0.96,
+                          }}
+                          numberOfLines={1}
+                        >
+                          {upcomingDuty.roleTitle}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.clayCardSub,
+                            {
+                              color: screenTheme.bentoRosterSub || 'rgba(255,255,255,0.85)',
+                              fontSize: 11,
+                              marginTop: 1.5,
+                            },
+                          ]}
+                          numberOfLines={1}
+                          adjustsFontSizeToFit
+                          minimumFontScale={0.85}
+                        >
+                          {upcomingDuty.status === 'pending'
+                            ? `${formatDateMonthYear(upcomingDuty.date)} · Tap to respond`
+                            : `${formatDateMonthYear(upcomingDuty.date)}${
+                                upcomingDuty.callTime
+                                  ? ` · Call ${formatTimeTo12Hour(upcomingDuty.callTime)}`
+                                  : upcomingDuty.startTime
+                                    ? ` · ${formatTimeTo12Hour(upcomingDuty.startTime)}`
+                                    : ''
+                              }`}
+                        </Text>
+                      </>
+                    ) : (
+                      <Text
+                        style={[styles.clayCardSub, { color: screenTheme.bentoRosterSub || 'rgba(255,255,255,0.85)', fontSize: 11, marginTop: 1.5 }]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.8}
+                      >
+                        My duties, worship setlist & schedule
+                      </Text>
+                    )}
+                  </View>
+
+                  <View style={[styles.clayArrowCircleSm, { backgroundColor: 'rgba(255,255,255,0.16)' }]}>
+                    <ChevronRight size={15} color="#FFFFFF" strokeWidth={2.5} />
+                  </View>
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            {/* ── ROW 8: Testimonies Banner Card (matches 4-in-a-Row Quick Access items) ── */}
+            <TouchableOpacity
+              style={[styles.clayGalleryTouch, { marginTop: 10 }]}
+              activeOpacity={0.88}
+              onPress={() => navigation.navigate('Testimonies')}
+            >
+              <LinearGradient
+                colors={screenTheme.isDark ? ['#3B0764', '#1E0338'] : ['#581C87', '#3B0764']}
+                start={{ x: 0, y: 0.25 }}
+                end={{ x: 1, y: 0.75 }}
+                style={[styles.clayGalleryCard, { borderColor: screenTheme.isDark ? '#6B21A8' : '#7E22CE', borderWidth: 1.2, paddingRight: 14 }]}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                  {/* 3D Testimonies Celebration Icon */}
+                  <View style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+                    <Image
+                      source={require('../../assets/3d_party_popper.png')}
+                      style={{ width: 40, height: 40 }}
+                      resizeMode="contain"
+                    />
+                  </View>
+
+                  <View style={{ flex: 1, justifyContent: 'center', marginLeft: 10, marginRight: 8 }}>
+                    <Text
+                      style={[styles.clayCardTitle, { color: '#FFFFFF', fontSize: 15.5, fontWeight: '800' }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.8}
+                    >
+                      {t('nav.testimonies') === 'nav.testimonies' ? 'Testimonies' : t('nav.testimonies')}
+                    </Text>
+                    <Text
+                      style={[styles.clayCardSub, { color: 'rgba(255,255,255,0.85)', fontSize: 11, marginTop: 1.5 }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.8}
+                    >
+                      Watch videos & read what God has done
+                    </Text>
+                  </View>
+
+                  <View style={[styles.clayArrowCircleSm, { backgroundColor: 'rgba(255,255,255,0.16)' }]}>
+                    <ChevronRight size={15} color="#FFFFFF" strokeWidth={2.5} />
+                  </View>
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
               </View>
             )}
         </View>
@@ -5283,7 +5555,7 @@ export default function HomeScreen() {
           <ViewShot ref={captureVerseRef} options={{ format: 'png', quality: 1 }}>
             <View style={{ width, height: width * 1.5, backgroundColor: '#0a1945' }} collapsable={false}>
               <Image
-                  source={{ uri: getVerseBackgroundUrl(captureVerseConfig.verse, captureVerseConfig.period) }}
+                  source={{ uri: getVerseBackgroundUrl(captureVerseConfig.verse, captureVerseConfig.period, captureVerseConfig.verse?.index ?? 0, currentTime) }}
                   style={StyleSheet.absoluteFillObject}
                   resizeMode="cover"
                 />

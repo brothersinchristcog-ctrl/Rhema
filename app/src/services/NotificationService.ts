@@ -311,6 +311,100 @@ class NotificationService {
           });
           break;
         }
+        case 'admin_roster_alert': {
+          nav.navigate('AdminRoot', {
+            targetTab: 'Service Roster',
+            serviceId: rawData.serviceId,
+            roleId: rawData.roleId,
+            timestamp: Date.now(),
+          });
+          break;
+        }
+        case 'service_responsibility_broadcast':
+        case 'service_reminder':
+        case 'rehearsal_alert':
+        case 'service_assignment':
+        case 'service_roster':
+        case 'roster_assignment': {
+          const initialTab =
+            type === 'service_assignment' ||
+            type === 'service_responsibility_broadcast' ||
+            type === 'service_reminder'
+              ? 'responsibilities'
+              : 'roster';
+          nav.navigate('MyService', {
+            serviceId: rawData.serviceId,
+            initialTab,
+          });
+          break;
+        }
+        case 'testimony_admin': {
+          const testimonyId = rawData.testimonyId || rawData.id || id;
+          console.log('✨ [NotificationService] Routing to Admin Testimonies tab:', { testimonyId });
+          nav.navigate('AdminRoot', {
+            targetTab: 'Testimonies',
+            testimonyId,
+            timestamp: Date.now(),
+          });
+          break;
+        }
+        case 'testimony_member_status': {
+          const testimonyId = rawData.testimonyId || rawData.id || id;
+          console.log('✨ [NotificationService] Routing to Member Testimony:', { testimonyId });
+          if (testimonyId) {
+            nav.navigate('TestimonyDetail', {
+              testimonyId,
+              churchId: rawData.churchId || 'rhema',
+            });
+          } else {
+            nav.navigate('Testimonies', { initialTab: 'mine' });
+          }
+          break;
+        }
+        case 'testimony_published':
+        case 'testimony': {
+          const testimonyId = rawData.testimonyId || rawData.id || id;
+          console.log('✨ [NotificationService] Routing to Published Testimony:', { testimonyId });
+          nav.navigate('TestimonyDetail', {
+            testimonyId,
+            churchId: rawData.churchId || 'rhema',
+          });
+          break;
+        }
+        case 'volunteer_application_admin': {
+          const appId = rawData.applicationId || rawData.requestId || id;
+          console.log('🤝 [NotificationService] Routing to Admin Volunteer Management tab:', { appId });
+          nav.navigate('AdminRoot', {
+            targetTab: 'Volunteer Management',
+            applicationId: appId,
+            subType: rawData.volunteerType || rawData.subType || 'general',
+            timestamp: Date.now(),
+          });
+          break;
+        }
+        case 'volunteer_application_member': {
+          const appId = rawData.applicationId || rawData.requestId || id;
+          const eventId = rawData.eventId;
+          console.log('🤝 [NotificationService] Routing to Member Volunteer screen:', { appId, eventId });
+          if (eventId) {
+            nav.navigate('EventDetails', { eventId, id: eventId });
+          } else {
+            nav.navigate('Volunteer');
+          }
+          break;
+        }
+        case 'volunteer_assignment':
+        case 'volunteer_reminder':
+        case 'volunteer_event_change': {
+          const eventId = rawData.eventId || id;
+          console.log('⭐ [NotificationService] Routing to Event Assignment/Reminder:', { eventId });
+          if (eventId) {
+            nav.navigate('EventDetails', { eventId, id: eventId });
+          } else {
+            nav.navigate('Volunteer');
+          }
+          break;
+        }
         default:
           if (id) {
             nav.navigate('Updates', { highlightId: id, highlightType: type });

@@ -15,6 +15,7 @@ import {
 import { X, HeartHandshake, Shield, Globe } from 'lucide-react-native';
 import CareCellService from '../../../../services/CareCellService';
 import { CareCellPrayerRequest, PrayerRequestPrivacy } from '../../../../types/CareCellTypes';
+import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
 
 interface CareCellPrayerModalProps {
   visible: boolean;
@@ -41,6 +42,13 @@ export default function CareCellPrayerModal({
   memberPhoto,
   onSuccess,
 }: CareCellPrayerModalProps) {
+  const { isDark, primaryText, secondaryText } = useAdminTheme();
+  const primaryBtnBg = isDark ? '#FFFFFF' : '#0F172A';
+  const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
+  const secondaryBtnBg = isDark ? '#27272A' : '#F8FAFC';
+  const secondaryBtnBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1';
+  const secondaryBtnText = isDark ? '#E4E4E7' : '#334155';
+
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [privacy, setPrivacy] = useState<PrayerRequestPrivacy>('Cell');
@@ -98,7 +106,7 @@ export default function CareCellPrayerModal({
           <View style={styles.header}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <View style={styles.headerIcon}>
-                <HeartHandshake size={20} color="#1A2D5A" />
+                <HeartHandshake size={20} color={primaryText} />
               </View>
               <View>
                 <Text style={styles.headerTitle}>Care Cell Prayer Request</Text>
@@ -108,7 +116,7 @@ export default function CareCellPrayerModal({
               </View>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <X size={20} color="#64748B" />
+              <X size={20} color={secondaryText} />
             </TouchableOpacity>
           </View>
 
@@ -141,13 +149,16 @@ export default function CareCellPrayerModal({
             <Text style={styles.label}>Who can see this prayer?</Text>
             <View style={styles.privacyRow}>
               <TouchableOpacity
-                style={[styles.privacyCard, privacy === 'Cell' && styles.privacyCardSelected]}
+                style={[
+                  styles.privacyCard,
+                  privacy === 'Cell' && { borderColor: primaryBtnBg, backgroundColor: secondaryBtnBg },
+                ]}
                 onPress={() => setPrivacy('Cell')}
                 activeOpacity={0.8}
               >
-                <Shield size={18} color={privacy === 'Cell' ? '#1A2D5A' : '#64748B'} />
+                <Shield size={18} color={privacy === 'Cell' ? primaryText : secondaryText} />
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.privacyTitle, privacy === 'Cell' && styles.privacyTitleSelected]}>
+                  <Text style={[styles.privacyTitle, privacy === 'Cell' && { color: primaryText, fontWeight: '800' }]}>
                     Care Cell Only
                   </Text>
                   <Text style={styles.privacyDesc}>Shared with members & leaders of your cell</Text>
@@ -155,13 +166,16 @@ export default function CareCellPrayerModal({
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.privacyCard, privacy === 'Public' && styles.privacyCardSelected]}
+                style={[
+                  styles.privacyCard,
+                  privacy === 'Public' && { borderColor: primaryBtnBg, backgroundColor: secondaryBtnBg },
+                ]}
                 onPress={() => setPrivacy('Public')}
                 activeOpacity={0.8}
               >
-                <Globe size={18} color={privacy === 'Public' ? '#1A2D5A' : '#64748B'} />
+                <Globe size={18} color={privacy === 'Public' ? primaryText : secondaryText} />
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.privacyTitle, privacy === 'Public' && styles.privacyTitleSelected]}>
+                  <Text style={[styles.privacyTitle, privacy === 'Public' && { color: primaryText, fontWeight: '800' }]}>
                     Church Prayer Wall
                   </Text>
                   <Text style={styles.privacyDesc}>Share on community prayer wall</Text>
@@ -171,14 +185,22 @@ export default function CareCellPrayerModal({
 
             {/* Action Buttons */}
             <View style={styles.actionRow}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={onClose} disabled={saving}>
-                <Text style={styles.cancelBtnTxt}>Cancel</Text>
+              <TouchableOpacity
+                style={[styles.cancelBtn, { backgroundColor: secondaryBtnBg, borderWidth: 1, borderColor: secondaryBtnBorder }]}
+                onPress={onClose}
+                disabled={saving}
+              >
+                <Text style={[styles.cancelBtnTxt, { color: secondaryBtnText }]}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.submitBtn} onPress={handleSave} disabled={saving}>
+              <TouchableOpacity
+                style={[styles.submitBtn, { backgroundColor: primaryBtnBg }]}
+                onPress={handleSave}
+                disabled={saving}
+              >
                 {saving ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <ActivityIndicator size="small" color={primaryBtnText} />
                 ) : (
-                  <Text style={styles.submitBtnTxt}>Submit Prayer</Text>
+                  <Text style={[styles.submitBtnTxt, { color: primaryBtnText }]}>Submit Prayer</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -189,7 +211,7 @@ export default function CareCellPrayerModal({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.65)',

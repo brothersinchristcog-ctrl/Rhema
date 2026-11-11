@@ -87,6 +87,8 @@ import ChurchService from '../services/ChurchService';
 import AdminDailyVersesManager from '../screens/admin/AdminDailyVersesManager';
 import AdminCareCellsHub from '../screens/admin/care_cells/AdminCareCellsHub';
 import AdminServicePlanner from '../screens/admin/AdminServicePlanner';
+import AdminTestimonies from '../screens/admin/AdminTestimonies';
+import AdminVolunteerManagement from '../screens/admin/AdminVolunteerManagement';
 import CareCellService from '../services/CareCellService';
 import { RHEMA_CHURCH_ID } from '../constants/ChurchConfig';
 
@@ -179,10 +181,14 @@ export default function AdminNavigator({ navigation, route }: any) {
   useEffect(() => {
     if (route?.params?.targetTab) {
       const target = String(route.params.targetTab).trim();
+      const lower = target.toLowerCase();
       const idx = tabs.findIndex(t => 
-        t.name.toLowerCase() === target.toLowerCase() ||
-        (target.toLowerCase().includes('prayer') && t.name === 'Prayers') ||
-        (target.toLowerCase().includes('baptism') && t.name === 'Baptism')
+        t.name.toLowerCase() === lower ||
+        (lower.includes('prayer') && t.name === 'Prayers') ||
+        (lower.includes('baptism') && t.name === 'Baptism') ||
+        (lower.includes('testimon') && t.name === 'Testimonies') ||
+        (lower.includes('volunteer') && t.name === 'Volunteer Management') ||
+        ((lower.includes('roster') || lower.includes('service')) && t.name === 'Service Roster')
       );
       if (idx !== -1 && idx !== activeTab) {
         setTimeout(() => {
@@ -191,7 +197,7 @@ export default function AdminNavigator({ navigation, route }: any) {
         }, 0);
       }
     }
-  }, [route?.params?.targetTab, route?.params?.timestamp, route?.params?.requestId, route?.params?.prayerId]);
+  }, [route?.params?.targetTab, route?.params?.timestamp, route?.params?.requestId, route?.params?.prayerId, route?.params?.testimonyId, route?.params?.serviceId, route?.params?.applicationId]);
 
   const handleSetTab = (index: number) => {
     if (index !== activeTab) {
@@ -288,9 +294,11 @@ export default function AdminNavigator({ navigation, route }: any) {
     { name: 'New Event', icon: CalendarPlus, component: AdminEventEditor },
     { name: 'Pastor Event', icon: Briefcase, component: PastorEventDashboard },
     { name: 'Prayers', icon: Heart, component: AdminPrayerModeration },
+    { name: 'Testimonies', icon: Sparkles, component: AdminTestimonies },
     { name: 'Attendance', icon: ClipboardCheck, component: AdminAttendance },
     ...(isSuperAdminUser || hasCareCellAccess ? [{ name: 'Care Cells', icon: HeartHandshake, component: AdminCareCellsHub }] : []),
     { name: 'Service Roster', icon: CalendarDays, component: AdminServicePlanner },
+    { name: 'Volunteer Management', icon: HeartHandshake, component: AdminVolunteerManagement },
     { name: 'Members', icon: Users, component: AdminMembers },
     { name: 'Approvals', icon: UserCheck, component: AdminRegistrationApprovals },
     { name: 'Celebrations', icon: Gift, component: AdminCelebrations },

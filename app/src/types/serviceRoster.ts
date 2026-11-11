@@ -22,7 +22,7 @@ export type ServiceStatus =
   | 'completed'
   | 'cancelled';
 
-export type ActivityCategory = 
+export type BuiltInActivityCategory = 
   | 'preparation'
   | 'starting_prayer'
   | 'opening_song'
@@ -38,6 +38,16 @@ export type ActivityCategory =
   | 'benediction'
   | 'break'
   | 'other';
+
+export type ActivityCategory = BuiltInActivityCategory | (string & {});
+
+export interface ActivityCategoryDef {
+  id: string;
+  label: string;
+  bg: string;
+  text: string;
+  isCustom?: boolean;
+}
 
 export interface ActivityAttachment {
   name: string;
@@ -59,6 +69,7 @@ export interface RunSheetItem {
   responsibleMemberId?: string;
   supportingTeam?: string;
   supportingTeamId?: string;
+  supportingTeamIds?: string[];
   instructions?: string;
   attachments?: ActivityAttachment[];
   assignmentStatus?: 'unassigned' | 'pending' | 'confirmed' | 'declined';
@@ -91,7 +102,7 @@ export interface SetlistItem {
 
 export interface ServiceRecurrenceRule {
   isRecurring: boolean;
-  recurrenceType: 'one_time' | 'weekly' | 'monthly' | 'custom';
+  recurrenceType: 'one_time' | 'weekly' | 'biweekly' | 'monthly' | 'custom';
   seriesId?: string;         // Shared ID across all generated occurrences in the series
   frequency?: number;        // e.g., every 1 week
   dayOfWeek?: number;        // 0 = Sunday, 1 = Monday, etc.
@@ -203,6 +214,7 @@ export interface MinistryTeam {
   memberIds: string[];
   positions: MinistryRole[];
   active: boolean;
+  order?: number;
   createdAt?: any;
   updatedAt?: any;
 }
@@ -260,9 +272,14 @@ export interface ServiceAssignmentQueue {
   roleTitle: string;
   activityId?: string;
   activityName?: string;
+  mode?: 'sequential' | 'first_come_first_served';
   status: 'draft' | 'pending' | 'confirmed' | 'exhausted' | 'manual_required' | 'cancelled';
   confirmedCandidateId?: string;
   confirmedCandidateName?: string;
+  bookedAt?: string;
+  deadline?: string;
+  eligibleMemberIds?: string[];
+  declinedMemberIds?: string[];
   currentCandidateIndex: number;
   timeoutMinutes: number; // e.g. 1440 (24 hours)
   candidates: CandidateEntry[];

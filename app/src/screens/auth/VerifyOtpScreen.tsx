@@ -18,6 +18,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import auth from '@react-native-firebase/auth';
 import { AuthStackParamList } from '../../navigation/AuthNavigator';
 import FirestoreService from '../../services/FirestoreService';
+import InviteLinkService from '../../services/InviteLinkService';
 import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
 import { ChevronLeft } from 'lucide-react-native';
@@ -25,9 +26,10 @@ import { ChevronLeft } from 'lucide-react-native';
 type VerifyOtpScreenProps = NativeStackScreenProps<AuthStackParamList, 'VerifyOtp'>;
 
 export default function VerifyOtpScreen({ route, navigation }: VerifyOtpScreenProps) {
-  const { confirmation, phoneNumber, contactId, memberName, formData, isSignUp } = route.params;
-  const { setMember, setPendingApprovalState } = useAuth();
-  const { churchId: activeChurchId } = useChurch();
+  const insets = useSafeAreaInsets();
+  const { confirmation, phoneNumber, contactId, memberName, formData, isSignUp, invitedChurchId, isGuestInvite } = route.params;
+  const { member, setMember, setPendingApprovalState } = useAuth();
+  const { churchId: activeChurchId, setChurchId } = useChurch();
   
   const [currConfirmation, setCurrConfirmation] = useState(confirmation);
   const [code, setCode] = useState('');
@@ -101,6 +103,7 @@ export default function VerifyOtpScreen({ route, navigation }: VerifyOtpScreenPr
     
     try {
       const result = await currConfirmation.confirm(code);
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
 
       // ── Handle Sign Up Flow: Store details and send for Admin Approval ──
       if (result?.user && isSignUp && formData) {
@@ -121,7 +124,6 @@ export default function VerifyOtpScreen({ route, navigation }: VerifyOtpScreenPr
         };
 
         // 1. Immediately store in AsyncStorage and in AuthContext state
-        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
         await AsyncStorage.removeItem('@cached_member').catch(() => {});
         await AsyncStorage.multiSet([
           ['@pending_registration_phone', cleanPhone],
@@ -158,7 +160,7 @@ export default function VerifyOtpScreen({ route, navigation }: VerifyOtpScreenPr
       }
 
       if (result?.user) {
-        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        await AsyncStorage.removeItem('@guest_intent').catch(() => {});
         await AsyncStorage.setItem('@cached_user', JSON.stringify({
           uid: result.user.uid,
           phoneNumber: result.user.phoneNumber || phoneNumber || '',
@@ -167,25 +169,32 @@ export default function VerifyOtpScreen({ route, navigation }: VerifyOtpScreenPr
         })).catch(() => {});
       }
 
+      const pendingInvite = await InviteLinkService.getPendingInvite().catch(() => null);
+      const effectiveChurchId = invitedChurchId || pendingInvite?.churchId || activeChurchId || 'rhema';
+      if (effectiveChurchId && effectiveChurchId !== activeChurchId) {
+        await setChurchId(effectiveChurchId).catch(() => {});
+      }
+      const { firestore, FieldValue } = require('../../services/firebaseConfig');
+
       let hasLinked = false;
       if (result?.user && contactId && !isSignUp) {
         setStatus('Linking church profile...');
         try {
-          await FirestoreService.syncMember(activeChurchId || '', contactId, result.user.uid);
+          await FirestoreService.syncMember(effectiveChurchId, contactId, result.user.uid);
           hasLinked = true;
         } catch (syncError) {
           console.error('❌ Sync failed:', syncError);
         }
       }
 
-      // Safety fallback: if contactId was not passed but this phone matches an invited member
+      // Safety fallback: check church records by phone if contactId was not passed or match already existed under UID
       if (result?.user && !hasLinked && !isSignUp) {
         const userPhone = result.user.phoneNumber || phoneNumber;
         if (userPhone) {
           try {
-            const contactCheck = await FirestoreService.checkContactExists(userPhone, activeChurchId || 'rhema', true);
+            const contactCheck = await FirestoreService.checkContactExists(userPhone, effectiveChurchId, true);
             if (contactCheck?.exists && contactCheck.member) {
-              const targetChurch = contactCheck.member.churchId || activeChurchId || 'rhema';
+              const targetChurch = contactCheck.member.churchId || effectiveChurchId;
               setStatus('Linking church profile...');
               await FirestoreService.syncMember(targetChurch, contactCheck.member.id, result.user.uid);
               hasLinked = true;
@@ -193,6 +202,23 @@ export default function VerifyOtpScreen({ route, navigation }: VerifyOtpScreenPr
           } catch (fallbackErr) {
             console.warn('Fallback contact sync in VerifyOtp:', fallbackErr);
           }
+        }
+      }
+
+      if (result?.user && !hasLinked && !isSignUp) {
+        const existingUidProfile = await FirestoreService.getMemberProfile(result.user.uid, effectiveChurchId).catch(() => null);
+        if (existingUidProfile) {
+          await FirestoreService.syncMember(effectiveChurchId, result.user.uid, result.user.uid);
+          hasLinked = true;
+        }
+      }
+
+      if (result?.user && hasLinked) {
+        await InviteLinkService.clearPendingInvite().catch(() => {});
+        const linkedProfile = await FirestoreService.getMemberProfile(result.user.uid, effectiveChurchId).catch(() => null);
+        if (linkedProfile) {
+          setMember(linkedProfile as any);
+          await AsyncStorage.setItem('@cached_member', JSON.stringify(linkedProfile)).catch(() => {});
         }
       }
 
@@ -227,8 +253,6 @@ export default function VerifyOtpScreen({ route, navigation }: VerifyOtpScreenPr
           }
         }
       }
-
-      // After OTP confirmed: if user has no primaryChurchId yet
       if (result?.user && !hasLinked) {
         const globalUser = await FirestoreService.getGlobalUser(result.user.uid);
         

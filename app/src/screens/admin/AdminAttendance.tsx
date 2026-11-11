@@ -58,6 +58,7 @@ import {
 
 import AttendanceService, { AttendanceRecord } from '../../services/AttendanceService';
 import FirestoreService from '../../services/FirestoreService';
+import { isGuestMemberDoc, normalizePhone10, stripGuestSuffix } from '../../utils/phoneUtils';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 import { useChurch } from '../../context/ChurchContext';
 import { AdminTabContext } from '../../context/AdminTabContext';
@@ -414,14 +415,14 @@ export default function AdminAttendance() {
             statsByEvent.set(evId, entry);
           }
           entry.presentCount++;
-          const isGuest = Boolean(d.isGuest || doc.id.startsWith('guest_') || (d.memberName && d.memberName.includes('(Guest)')));
+          const isGuest = Boolean(d.isGuest || doc.id.startsWith('guest_') || (d.memberName && /\(guest\)\s*$/i.test(d.memberName)));
           const isFamily = !isGuest && (d.method === 'FAMILY_CHECKIN' || doc.id.startsWith('fam_') || (d.memberName && d.memberName.includes('Family')));
           if (isGuest) entry.guestCount++;
           if (isFamily) entry.familyCount++;
         });
       }
 
-      const totalExpected = members.length;
+      const totalExpected = members.filter((m: any) => !isGuestMemberDoc(m)).length;
       const todayStr = new Date().toISOString().split('T')[0];
       const startOfToday = new Date();
       startOfToday.setHours(0, 0, 0, 0);
@@ -772,17 +773,19 @@ export default function AdminAttendance() {
     const attendedPhones = new Set<string>();
 
     attendees.forEach(a => {
+      const mId = a.memberId || a.id;
+      const cleanPhone = normalizePhone10(a.memberPhone || (a as any).normalizedPhone10 || '');
+      if (mId && attendedMemberIds.has(mId)) return;
+      if (cleanPhone && attendedPhones.has(cleanPhone)) return;
+
       const isGuest = Boolean(
         a.isGuest ||
         a.id?.startsWith('guest_') ||
         a.memberId?.startsWith('guest_') ||
-        (a.memberName && a.memberName.includes('(Guest)'))
+        (a.memberName && /\(guest\)\s*$/i.test(a.memberName))
       );
 
-      const mId = a.memberId || a.id;
       if (mId) attendedMemberIds.add(mId);
-
-      const cleanPhone = a.memberPhone ? String(a.memberPhone).replace(/\D/g, '').slice(-10) : '';
       if (cleanPhone) attendedPhones.add(cleanPhone);
 
       if (isGuest) {
@@ -792,10 +795,13 @@ export default function AdminAttendance() {
       }
     });
 
-    // Absent members = Registered church members who did NOT attend
-    const absentList = churchMembers.filter(m => {
+    // Exclude guest records from regular-member Absent expectations on other events
+    const expectedRegularMembers = churchMembers.filter(m => !isGuestMemberDoc(m));
+
+    // Absent members = Registered full church members who did NOT attend
+    const absentList = expectedRegularMembers.filter(m => {
       const mId = m.id || m.Id;
-      const cleanPhone = (m.phone || m.MobilePhone || '').replace(/\D/g, '').slice(-10);
+      const cleanPhone = normalizePhone10(m.phone || m.MobilePhone || m.phoneNumber || '');
 
       const attendedById = mId ? attendedMemberIds.has(mId) : false;
       const attendedByPhone = cleanPhone ? attendedPhones.has(cleanPhone) : false;
@@ -803,8 +809,8 @@ export default function AdminAttendance() {
       return !attendedById && !attendedByPhone;
     });
 
-    const totalExpected = churchMembers.length;
-    const presentCount = attendees.length;
+    const totalExpected = expectedRegularMembers.length;
+    const presentCount = presentList.length + guestsList.length;
     const guestCount = guestsList.length;
     const familyCount = presentList.filter(
       p => p.method === 'FAMILY_CHECKIN' || p.id?.startsWith('fam_') || (p.memberName && p.memberName.includes('Family'))
@@ -1666,10 +1672,11 @@ export default function AdminAttendance() {
           ) : (
             <View style={styles.memberListWrap}>
               {filteredReportMembers.map((item, idx) => {
-                const name = item.name || item.Name || item.memberName || 'Member';
+                const rawName = item.guestName || item.name || item.Name || item.memberName || 'Member';
+                const name = stripGuestSuffix(rawName) || 'Member';
                 const phone = item.phone || item.MobilePhone || item.memberPhone || '';
                 const isAbsent = reportFilter === 'Absent' || reportData.absentList.some(a => (a.id && a.id === item.id) || (a.phone && a.phone === phone));
-                const isGuest = Boolean(item.isGuest || item.id?.startsWith('guest_') || item.memberName?.includes('(Guest)'));
+                const isGuest = Boolean(item.isGuest || item.id?.startsWith('guest_') || (item.memberName && /\(guest\)\s*$/i.test(item.memberName)));
 
                 return (
                   <View
@@ -1730,9 +1737,11 @@ export default function AdminAttendance() {
                           {phone ? phone : 'No phone number registered'}
                         </Text>
 
-                        {isGuest && item.invitedByMemberName ? (
+                        {isGuest && (item.guestRelation || item.invitedByMemberName) ? (
                           <Text style={styles.guestInviterTxt}>
-                            Brought by {item.invitedByMemberName}
+                            {item.guestRelation ? `${item.guestRelation}` : ''}
+                            {item.guestRelation && item.invitedByMemberName ? ' · ' : ''}
+                            {item.invitedByMemberName ? `Brought by ${item.invitedByMemberName}` : ''}
                           </Text>
                         ) : null}
                       </View>

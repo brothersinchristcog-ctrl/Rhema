@@ -1771,6 +1771,18 @@ export {
   pushCareCellMeeting,
   pushCareCellPrayerRequest,
   pushCareCellVisit,
+  onTestimonyCreatedAdmin,
+  onTestimonyCreatedAdminLegacy,
+  onTestimonyUpdatedWorkflow,
+  onTestimonyUpdatedWorkflowLegacy,
+  onVolunteerApplicationCreated,
+  onVolunteerApplicationCreatedLegacy,
+  onVolunteerApplicationUpdated,
+  onVolunteerApplicationUpdatedLegacy,
+  onEventUpdatedForVolunteers,
+  onEventUpdatedForVolunteersLegacy,
+  scheduledVolunteerReminders,
+  triggerVolunteerPushTestHttp,
 } from './notifications.js';
 
 export {
@@ -1779,5 +1791,11 @@ export {
   checkServiceAssignmentTimeoutsCron,
   sendServiceRosterRemindersCron,
   triggerCheckRosterTimeoutsHttp,
+  dispatchServiceAssignmentNotificationHttp,
   onServiceRehearsalCreated,
+  onServicePlanPublished,
+  bookResponsibilitySlotHttp,
+  declineResponsibilitySlotHttp,
 } from './rosterNotifications.js';
+
+export { guestInviteLanding } from './guestInvite.js';

@@ -19,7 +19,12 @@ import {
 } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
 import { LinearGradient } from 'expo-linear-gradient';
-import { getVerseBackgroundUrl } from '../../constants/VerseBackgrounds';
+import {
+  getVerseBackgroundUrl,
+  fetchRelevantUnsplashForVerse,
+  getCalendarDayNumber,
+  isStaticCuratedBackgroundUrl,
+} from '../../constants/VerseBackgrounds';
 import {
   UploadCloud,
   Trash2,
@@ -102,13 +107,15 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
   }, []);
 
   // Compute Fast Future Schedule:
-  // Starts strictly at TODAY (index 0). Every verse index is mapped forward into future dates.
-  // 0 past dates exist in the schedule.
+  // Dynamically aligned with the global anchor schedule
   const getFastSchedule = useCallback((index: number) => {
     const total = totalVerses || 5863;
     const safeIdx = ((typeof index === 'number' && index >= 0) ? index : 0) % total;
 
-    const daysOffset = Math.floor(safeIdx / 4);
+    const todayIndices = VerseNotificationService.getIndicesForDate(new Date(), total);
+    const todayBase = todayIndices[0];
+    const diffIndex = safeIdx - todayBase;
+    const daysOffset = Math.floor(diffIndex / 4);
     const periodIndex = safeIdx % 4;
     const period = PERIOD_NAMES[periodIndex] || 'Morning';
     const periodTime = PERIOD_TIMES[periodIndex] || '6:00 AM';
@@ -165,11 +172,13 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
       cachedTotalVerses = total;
 
       const COUNT = 120; // Next 30 upcoming days (4 per day)
+      const todayIndices = VerseNotificationService.getIndicesForDate(new Date(), total);
+      const todayBase = todayIndices[0] || 0;
       let fetched: any[] = [];
       try {
         const snap = await firestore().collection('daily_verses')
-          .where('index', '>=', 0)
-          .where('index', '<', COUNT)
+          .where('index', '>=', todayBase)
+          .where('index', '<', todayBase + COUNT)
           .get();
         fetched = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       } catch (fErr) {
@@ -180,7 +189,8 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
       if (fetched.length === 0) {
         try {
           const bundled = bundledBulkVerses;
-          for (let idx = 0; idx < COUNT && idx < bundled.length; idx++) {
+          for (let offset = 0; offset < COUNT; offset++) {
+            const idx = (todayBase + offset) % total;
             const bv = bundled[idx];
             if (bv) {
               fetched.push({
@@ -403,24 +413,30 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
       let photographer = '';
       let theme = 'nature sunrise';
 
+      const periodIdx = PERIOD_NAMES.indexOf(newVerse.period);
+      const todayIndices = VerseNotificationService.getIndicesForDate(new Date(), totalVerses || 5863);
+      const targetIndex = todayIndices[periodIdx >= 0 ? periodIdx : 0] ?? (periodIdx >= 0 ? periodIdx : 0);
+
       if (newVerse.autoFetchImage) {
         try {
-          const UNSPLASH_KEY = 'ppd4mBIqu8573rS42D9fobzAipdPsYdKkfOD0A5yiQc';
-          const THEMES = ['christian cross', 'jesus light', 'nature sunrise', 'mountains sunset', 'bible prayer', 'heavenly clouds', 'hope light', 'peaceful water'];
-          theme = THEMES[Math.floor(Math.random() * THEMES.length)];
-          const res = await fetch('https://api.unsplash.com/photos/random?query=' + encodeURIComponent(theme) + '&orientation=portrait&content_filter=high', {
-            headers: { Authorization: 'Client-ID ' + UNSPLASH_KEY },
-          });
-          const data = await res.json();
-          imageUrl = data?.urls?.regular || null;
-          photographer = data?.user?.name || 'Unsplash';
+          const fetched = await fetchRelevantUnsplashForVerse(
+            {
+              index: targetIndex,
+              verseEn: newVerse.verseEn.trim(),
+              referenceEn: newVerse.referenceEn.trim(),
+            },
+            newVerse.period,
+            getCalendarDayNumber(new Date())
+          );
+          if (fetched) {
+            imageUrl = fetched.url;
+            photographer = fetched.photographer;
+            theme = fetched.theme;
+          }
         } catch (imgErr) {
           console.warn('Auto fetch Unsplash image error:', imgErr);
         }
       }
-
-      const periodIdx = PERIOD_NAMES.indexOf(newVerse.period);
-      const targetIndex = (periodIdx >= 0 ? periodIdx : 0);
 
       // Check if a document already exists with this index to prevent duplicates
       const existingSnap = await firestore().collection('daily_verses').where('index', '==', targetIndex).get();
@@ -661,42 +677,44 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
   const handleFetchUnsplashBackgrounds = async () => {
     try {
       setIsUpdating(true);
-      const UNSPLASH_KEY = 'ppd4mBIqu8573rS42D9fobzAipdPsYdKkfOD0A5yiQc';
-      const THEMES = [
-        'christian cross', 'jesus light', 'nature sunrise', 'mountains sunset',
-        'bible prayer', 'heavenly clouds', 'hope light', 'peaceful water',
-      ];
-      const missing = upcomingVerses.filter(v => !v.backgroundUrl).slice(0, 8);
+      const missing = upcomingVerses
+        .filter(v => !v.backgroundUrl || !v.isDynamicUnsplash || isStaticCuratedBackgroundUrl(v.backgroundUrl))
+        .slice(0, 12);
       if (missing.length === 0) {
-        Alert.alert('Up to Date', 'Upcoming verses already have high-resolution backgrounds.');
+        Alert.alert('Up to Date', 'Upcoming verses already have unique verse-relevant Unsplash backgrounds.');
         setIsUpdating(false);
         return;
       }
+      const usedSet = new Set<string>(
+        upcomingVerses
+          .filter(v => v.backgroundUrl && !isStaticCuratedBackgroundUrl(v.backgroundUrl))
+          .map(v => v.backgroundUrl)
+      );
       let updated = 0;
       for (const verse of missing) {
-        const theme = THEMES[Math.floor(Math.random() * THEMES.length)];
+        const schedule = getFastSchedule(verse.index);
+        const dayNum = getCalendarDayNumber(new Date()) + (schedule.daysOffset || 0);
         try {
-          const res = await fetch(`https://api.unsplash.com/photos/random?query=${encodeURIComponent(theme)}&orientation=portrait&content_filter=high`, {
-            headers: { Authorization: `Client-ID ${UNSPLASH_KEY}` },
-          });
-          const data = await res.json();
-          const imageUrl = data?.urls?.regular;
-          if (imageUrl) {
+          const fetched = await fetchRelevantUnsplashForVerse(verse, schedule.period, dayNum, usedSet);
+          if (fetched && fetched.url) {
             await firestore().collection('daily_verses').doc(verse.id).set({
               ...verse,
-              backgroundUrl: imageUrl,
-              unsplashPhotographer: data?.user?.name || 'Unsplash',
-              backgroundTheme: theme,
+              backgroundUrl: fetched.url,
+              isDynamicUnsplash: true,
+              unsplashPhotographer: fetched.photographer,
+              backgroundTheme: fetched.theme,
               updatedAt: firestore.FieldValue.serverTimestamp(),
             }, { merge: true });
-            verse.backgroundUrl = imageUrl;
+            verse.backgroundUrl = fetched.url;
+            verse.isDynamicUnsplash = true;
             updated++;
           }
         } catch (err) {
           console.warn('Unsplash fetch error:', err);
         }
       }
-      Alert.alert('Success', `Updated ${updated} verses with Unsplash backgrounds.`);
+      await VerseNotificationService.invalidateCache();
+      Alert.alert('Success', `Updated ${updated} verses with fresh, verse-relevant Unsplash backgrounds.`);
       cachedUpcomingVerses = null;
       fetchUpcomingVerses(true);
     } catch (e: any) {

@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { X, Megaphone, Users, Globe } from 'lucide-react-native';
 import CareCellService from '../../../../services/CareCellService';
+import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
 
 interface CareCellAnnouncementModalProps {
   visible: boolean;
@@ -36,6 +37,13 @@ export default function CareCellAnnouncementModal({
   createdByName,
   onSuccess,
 }: CareCellAnnouncementModalProps) {
+  const { isDark, primaryText, secondaryText } = useAdminTheme();
+  const primaryBtnBg = isDark ? '#FFFFFF' : '#0F172A';
+  const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
+  const secondaryBtnBg = isDark ? '#27272A' : '#F8FAFC';
+  const secondaryBtnBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1';
+  const secondaryBtnText = isDark ? '#E4E4E7' : '#334155';
+
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
   const [targetScope, setTargetScope] = useState<'cell' | 'all'>(cellId ? 'cell' : 'all');
@@ -114,21 +122,27 @@ export default function CareCellAnnouncementModal({
                 <Text style={styles.label}>Broadcast Target</Text>
                 <View style={styles.scopeRow}>
                   <TouchableOpacity
-                    style={[styles.scopeBtn, targetScope === 'cell' && styles.scopeBtnSelected]}
+                    style={[
+                      styles.scopeBtn,
+                      targetScope === 'cell' && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+                    ]}
                     onPress={() => setTargetScope('cell')}
                   >
-                    <Users size={15} color={targetScope === 'cell' ? '#1A2D5A' : '#64748B'} style={{ marginRight: 6 }} />
-                    <Text style={[styles.scopeBtnTxt, targetScope === 'cell' && styles.scopeBtnTxtSelected]}>
+                    <Users size={15} color={targetScope === 'cell' ? primaryBtnText : secondaryText} style={{ marginRight: 6 }} />
+                    <Text style={[styles.scopeBtnTxt, targetScope === 'cell' && { color: primaryBtnText, fontWeight: '700' }]}>
                       This Cell ({cellCode || 'Current'})
                     </Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.scopeBtn, targetScope === 'all' && styles.scopeBtnSelected]}
+                    style={[
+                      styles.scopeBtn,
+                      targetScope === 'all' && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+                    ]}
                     onPress={() => setTargetScope('all')}
                   >
-                    <Globe size={15} color={targetScope === 'all' ? '#1A2D5A' : '#64748B'} style={{ marginRight: 6 }} />
-                    <Text style={[styles.scopeBtnTxt, targetScope === 'all' && styles.scopeBtnTxtSelected]}>
+                    <Globe size={15} color={targetScope === 'all' ? primaryBtnText : secondaryText} style={{ marginRight: 6 }} />
+                    <Text style={[styles.scopeBtnTxt, targetScope === 'all' && { color: primaryBtnText, fontWeight: '700' }]}>
                       All Cells (Church-wide)
                     </Text>
                   </TouchableOpacity>
@@ -172,14 +186,22 @@ export default function CareCellAnnouncementModal({
 
             {/* Action Buttons */}
             <View style={styles.actionRow}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={onClose} disabled={saving}>
-                <Text style={styles.cancelBtnTxt}>Cancel</Text>
+              <TouchableOpacity
+                style={[styles.cancelBtn, { backgroundColor: secondaryBtnBg, borderWidth: 1, borderColor: secondaryBtnBorder }]}
+                onPress={onClose}
+                disabled={saving}
+              >
+                <Text style={[styles.cancelBtnTxt, { color: secondaryBtnText }]}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.submitBtn} onPress={handleSave} disabled={saving}>
+              <TouchableOpacity
+                style={[styles.submitBtn, { backgroundColor: primaryBtnBg }]}
+                onPress={handleSave}
+                disabled={saving}
+              >
                 {saving ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <ActivityIndicator size="small" color={primaryBtnText} />
                 ) : (
-                  <Text style={styles.submitBtnTxt}>Publish Notice</Text>
+                  <Text style={[styles.submitBtnTxt, { color: primaryBtnText }]}>Publish Notice</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -190,7 +212,7 @@ export default function CareCellAnnouncementModal({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.65)',

@@ -30,6 +30,7 @@ import {
 import CareCellService from '../../../../services/CareCellService';
 import { formatDateDisplay } from '../../../../utils/DateUtils';
 import { useAuth } from '../../../../context/AuthContext';
+import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
 import { CareCell, CareCellVisit, VisitStatus } from '../../../../types/CareCellTypes';
 import CareCellVisitModal from '../components/CareCellVisitModal';
 import CareCellVisitResponsesModal from '../components/CareCellVisitResponsesModal';
@@ -49,6 +50,16 @@ export default function CareCellVisitsTab({
   onSelectCellId,
   churchId,
 }: CareCellVisitsTabProps) {
+  const { isDark, primaryText, secondaryText, cardSurface, secondarySurface, borderColor } = useAdminTheme();
+  const primaryBtnBg = isDark ? '#FFFFFF' : '#0F172A';
+  const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
+  const secondaryBtnBg = isDark ? '#27272A' : '#F8FAFC';
+  const secondaryBtnBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1';
+  const secondaryBtnText = isDark ? '#E4E4E7' : '#334155';
+  const dangerBtnBg = isDark ? 'rgba(220, 38, 38, 0.14)' : '#FEF2F2';
+  const dangerBtnBorder = isDark ? 'rgba(248, 113, 113, 0.35)' : '#FECACA';
+  const dangerBtnText = isDark ? '#F87171' : '#DC2626';
+
   const { user, member, isPlatformSuperAdmin } = useAuth();
   const [activeCellId, setActiveCellId] = useState<string>(selectedCellId || 'ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'Scheduled' | 'Completed' | 'Cancelled'>('ALL');
@@ -162,11 +173,19 @@ export default function CareCellVisitsTab({
         <View style={styles.topActionsHeaderRow}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.cellFilterScroll} contentContainerStyle={{ paddingRight: 8 }}>
             <TouchableOpacity
-              style={[styles.cellChip, activeCellId === 'ALL' && styles.cellChipActive]}
+              style={[
+                styles.cellChip,
+                activeCellId === 'ALL' && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+              ]}
               onPress={() => handleCellSelect('ALL')}
               activeOpacity={0.8}
             >
-              <Text style={[styles.cellChipTxt, activeCellId === 'ALL' && styles.cellChipTxtActive]}>
+              <Text
+                style={[
+                  styles.cellChipTxt,
+                  activeCellId === 'ALL' && { color: primaryBtnText, fontWeight: '800' },
+                ]}
+              >
                 All Cells ({cells.length})
               </Text>
             </TouchableOpacity>
@@ -176,11 +195,19 @@ export default function CareCellVisitsTab({
               return (
                 <TouchableOpacity
                   key={c.id}
-                  style={[styles.cellChip, isSel && styles.cellChipActive]}
+                  style={[
+                    styles.cellChip,
+                    isSel && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+                  ]}
                   onPress={() => handleCellSelect(c.id)}
                   activeOpacity={0.8}
                 >
-                  <Text style={[styles.cellChipTxt, isSel && styles.cellChipTxtActive]}>
+                  <Text
+                    style={[
+                      styles.cellChipTxt,
+                      isSel && { color: primaryBtnText, fontWeight: '800' },
+                    ]}
+                  >
                     {c.cellCode}
                   </Text>
                 </TouchableOpacity>
@@ -189,12 +216,12 @@ export default function CareCellVisitsTab({
           </ScrollView>
 
           <TouchableOpacity
-            style={styles.scheduleVisitBtn}
+            style={[styles.scheduleVisitBtn, { backgroundColor: primaryBtnBg }]}
             onPress={() => setCreateModalVisible(true)}
             activeOpacity={0.85}
           >
-            <Plus size={15} color="#FFFFFF" strokeWidth={2.5} style={{ marginRight: 4 }} />
-            <Text style={styles.scheduleVisitBtnTxt}>Schedule</Text>
+            <Plus size={15} color={primaryBtnText} strokeWidth={2.5} style={{ marginRight: 5 }} />
+            <Text style={[styles.scheduleVisitBtnTxt, { color: primaryBtnText }]}>Schedule</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -203,26 +230,38 @@ export default function CareCellVisitsTab({
       <View style={styles.kpiCardsRow}>
         <View style={styles.kpiCard}>
           <View style={styles.kpiCardTop}>
-            <Home size={14} color="#1A2D5A" />
+            <Home size={14} color={primaryText} />
             <Text style={styles.kpiCardVal}>{metrics.totalVisits}</Text>
           </View>
           <Text style={styles.kpiCardLbl}>Total Visits</Text>
         </View>
 
-        <View style={[styles.kpiCard, styles.kpiCardAccepted]}>
+        <View
+          style={[
+            styles.kpiCard,
+            styles.kpiCardAccepted,
+            isDark && { backgroundColor: 'rgba(5, 150, 105, 0.14)', borderColor: 'rgba(16, 185, 129, 0.35)' },
+          ]}
+        >
           <View style={styles.kpiCardTop}>
-            <CheckCircle2 size={14} color="#059669" />
-            <Text style={[styles.kpiCardVal, { color: '#059669' }]}>{metrics.totalAccepted}</Text>
+            <CheckCircle2 size={14} color={isDark ? '#34D399' : '#059669'} />
+            <Text style={[styles.kpiCardVal, { color: isDark ? '#34D399' : '#059669' }]}>{metrics.totalAccepted}</Text>
           </View>
-          <Text style={[styles.kpiCardLbl, { color: '#065F46' }]}>Accepted</Text>
+          <Text style={[styles.kpiCardLbl, { color: isDark ? '#34D399' : '#065F46' }]}>Accepted</Text>
         </View>
 
-        <View style={[styles.kpiCard, styles.kpiCardPending]}>
+        <View
+          style={[
+            styles.kpiCard,
+            styles.kpiCardPending,
+            isDark && { backgroundColor: 'rgba(217, 119, 6, 0.14)', borderColor: 'rgba(245, 158, 11, 0.35)' },
+          ]}
+        >
           <View style={styles.kpiCardTop}>
-            <Clock size={14} color="#D97706" />
-            <Text style={[styles.kpiCardVal, { color: '#D97706' }]}>{metrics.totalPending}</Text>
+            <Clock size={14} color={isDark ? '#FBBF24' : '#D97706'} />
+            <Text style={[styles.kpiCardVal, { color: isDark ? '#FBBF24' : '#D97706' }]}>{metrics.totalPending}</Text>
           </View>
-          <Text style={[styles.kpiCardLbl, { color: '#92400E' }]}>Pending</Text>
+          <Text style={[styles.kpiCardLbl, { color: isDark ? '#FBBF24' : '#92400E' }]}>Pending</Text>
         </View>
       </View>
 
@@ -233,11 +272,19 @@ export default function CareCellVisitsTab({
           return (
             <TouchableOpacity
               key={st}
-              style={[styles.statusTabBtn, isActive && styles.statusTabBtnActive]}
+              style={[
+                styles.statusTabBtn,
+                isActive && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+              ]}
               onPress={() => setStatusFilter(st)}
               activeOpacity={0.8}
             >
-              <Text style={[styles.statusTabBtnTxt, isActive && styles.statusTabBtnTxtActive]}>
+              <Text
+                style={[
+                  styles.statusTabBtnTxt,
+                  isActive && { color: primaryBtnText, fontWeight: '800' },
+                ]}
+              >
                 {st}
               </Text>
             </TouchableOpacity>
@@ -248,7 +295,7 @@ export default function CareCellVisitsTab({
       {/* Visits List */}
       {loading ? (
         <View style={styles.centerLoading}>
-          <ActivityIndicator size="large" color="#1A2D5A" />
+          <ActivityIndicator size="large" color={primaryText} />
           <Text style={styles.loadingTxt}>Loading Care Cell visits...</Text>
         </View>
       ) : (
@@ -256,23 +303,23 @@ export default function CareCellVisitsTab({
           data={visits}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#1A2D5A']} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[primaryBtnBg]} />}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <View style={styles.emptyIconWrap}>
-                <Home size={36} color="#1A2D5A" strokeWidth={1.8} />
+              <View style={[styles.emptyIconWrap, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder, borderWidth: 1 }]}>
+                <Home size={34} color={primaryText} strokeWidth={1.8} />
               </View>
               <Text style={styles.emptyTitle}>No Visit Notifications Found</Text>
               <Text style={styles.emptySubtitle}>
                 Schedule a pastoral or fellowship visit to send instant in-app & push notifications to all assigned members with Accept & Decline confirmation.
               </Text>
               <TouchableOpacity
-                style={styles.emptyActionBtn}
+                style={[styles.emptyActionBtn, { backgroundColor: primaryBtnBg }]}
                 onPress={() => setCreateModalVisible(true)}
                 activeOpacity={0.85}
               >
-                <Plus size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-                <Text style={styles.emptyActionBtnTxt}>Schedule First Visit</Text>
+                <Plus size={16} color={primaryBtnText} style={{ marginRight: 6 }} />
+                <Text style={[styles.emptyActionBtnTxt, { color: primaryBtnText }]}>Schedule First Visit</Text>
               </TouchableOpacity>
             </View>
           }
@@ -379,44 +426,44 @@ export default function CareCellVisitsTab({
                 {/* Bottom Card Actions */}
                 <View style={styles.cardActionsRow}>
                   <TouchableOpacity
-                    style={styles.viewResponsesBtn}
+                    style={[styles.viewResponsesBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
                     onPress={() => setSelectedVisitForResponses(item)}
                     activeOpacity={0.8}
                   >
-                    <Users size={14} color="#1A2D5A" style={{ marginRight: 6 }} />
-                    <Text style={styles.viewResponsesBtnTxt}>
+                    <Users size={14} color={secondaryBtnText} style={{ marginRight: 6 }} />
+                    <Text style={[styles.viewResponsesBtnTxt, { color: secondaryBtnText }]}>
                       View Member Responses ({total})
                     </Text>
-                    <ChevronRight size={14} color="#1A2D5A" />
+                    <ChevronRight size={14} color={secondaryBtnText} />
                   </TouchableOpacity>
 
                   <View style={styles.quickOpsRow}>
                     {isScheduled && (
                       <TouchableOpacity
                         onPress={() => handleStatusChange(item, 'Completed')}
-                        style={styles.quickOpIconBtn}
+                        style={[styles.quickOpIconBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
-                        <Check size={14} color="#059669" />
+                        <Check size={15} color="#059669" />
                       </TouchableOpacity>
                     )}
 
                     {isScheduled && (
                       <TouchableOpacity
                         onPress={() => handleStatusChange(item, 'Cancelled')}
-                        style={styles.quickOpIconBtn}
+                        style={[styles.quickOpIconBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
-                        <Ban size={14} color="#E11D48" />
+                        <Ban size={14} color="#D97706" />
                       </TouchableOpacity>
                     )}
 
                     <TouchableOpacity
                       onPress={() => handleDelete(item)}
-                      style={styles.quickOpIconBtn}
+                      style={[styles.quickOpIconBtn, { backgroundColor: dangerBtnBg, borderColor: dangerBtnBorder }]}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     >
-                      <Trash2 size={14} color="#94A3B8" />
+                      <Trash2 size={14} color={dangerBtnText} />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -449,10 +496,10 @@ export default function CareCellVisitsTab({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FAF7F2',
   },
   topBar: {
     paddingHorizontal: 16,
@@ -473,12 +520,12 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#CBD5E1',
     marginRight: 8,
   },
   cellChipActive: {
-    backgroundColor: '#1A2D5A',
-    borderColor: '#1A2D5A',
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
   },
   cellChipTxt: {
     fontSize: 12,
@@ -491,15 +538,10 @@ const styles = StyleSheet.create({
   scheduleVisitBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1A2D5A',
-    paddingHorizontal: 13,
-    paddingVertical: 8,
+    backgroundColor: '#0F172A',
+    paddingHorizontal: 14,
+    paddingVertical: 8.5,
     borderRadius: 10,
-    shadowColor: '#1A2D5A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 3,
-    elevation: 2,
   },
   scheduleVisitBtnTxt: {
     fontSize: 12.5,
@@ -555,18 +597,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: 16,
     marginBottom: 10,
-    gap: 6,
+    gap: 8,
   },
   statusTabBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 8,
-    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 13,
+    paddingVertical: 6.5,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
   },
   statusTabBtnActive: {
-    backgroundColor: '#EEF2FF',
-    borderWidth: 1,
-    borderColor: '#C7D2FE',
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
   },
   statusTabBtnTxt: {
     fontSize: 11.5,
@@ -574,7 +617,7 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   statusTabBtnTxtActive: {
-    color: '#3730A3',
+    color: '#FFFFFF',
     fontWeight: '800',
   },
   listContent: {
@@ -754,15 +797,17 @@ const styles = StyleSheet.create({
   viewResponsesBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#EEF2FF',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.2,
+    borderColor: '#CBD5E1',
     paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingVertical: 8,
     borderRadius: 10,
   },
   viewResponsesBtnTxt: {
     fontSize: 12,
-    fontWeight: '800',
-    color: '#1A2D5A',
+    fontWeight: '700',
+    color: '#334155',
     marginRight: 4,
   },
   quickOpsRow: {
@@ -770,12 +815,12 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   quickOpIconBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
+    width: 34,
+    height: 34,
+    borderRadius: 10,
     backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderWidth: 1.2,
+    borderColor: '#CBD5E1',
     justifyContent: 'center',
     alignItems: 'center',
   },

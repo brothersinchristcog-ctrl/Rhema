@@ -444,7 +444,11 @@ export default function MembersScreen({ navigation }: any) {
                 }
               }
               
-              const contactName = (`${c.FirstName || c.firstName || ''} ${c.LastName || c.lastName || ''}`.trim()) || c.Name || c.name || 'Unknown';
+              const contactName = (`${c.FirstName || c.firstName || ''} ${c.LastName || c.lastName || ''}`.trim()) ||
+                (c.Name && c.Name.trim()) ||
+                (c.name && c.name.trim()) ||
+                (c.displayName && c.displayName.trim()) ||
+                (c.phone ? `Member (${c.phone})` : 'Unknown');
               const rawRole = (c.userType || c.User_Type__c || 'Member').toString();
               const displayRole = rawRole.toLowerCase() === 'member' ? t('members.memberRole') : (rawRole.charAt(0).toUpperCase() + rawRole.slice(1).toLowerCase());
               const displayRelation = getRelationLabel(c.relation || c.Relation || '');

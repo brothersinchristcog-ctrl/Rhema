@@ -17,6 +17,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import {
+  ArrowLeft,
   Calendar,
   CalendarDays,
   Clock,
@@ -44,6 +45,7 @@ import {
   Check,
   X,
   Share2,
+  Bookmark,
   Award,
   ShieldCheck,
   UserCheck,
@@ -66,11 +68,15 @@ import {
 } from 'lucide-react-native';
 
 import { useAdminTheme } from '../../utils/adminThemeHelper';
+import { formatDateMonthYear, formatTimeTo12Hour } from '../../utils/DateUtils';
 import { useChurch } from '../../context/ChurchContext';
 import { useAuth } from '../../context/AuthContext';
 import { AdminTabContext } from '../../context/AdminTabContext';
 import FirestoreService, { WorshipSong } from '../../services/FirestoreService';
-import ServiceRosterService from '../../services/ServiceRosterService';
+import ServiceRosterService, {
+  getTeamDefaultRank,
+  CUSTOM_ACTIVITY_CATEGORY_PRESETS,
+} from '../../services/ServiceRosterService';
 import {
   ServicePlan,
   ServiceStatus,
@@ -78,6 +84,7 @@ import {
   RunSheetItem,
   SetlistItem,
   ActivityCategory,
+  ActivityCategoryDef,
   ServiceTemplate,
   MinistryTeam,
   MemberSkillRecord,
@@ -105,7 +112,7 @@ const SERVICE_TYPE_LABELS: Record<ServiceType, string> = {
   other: 'Special Service'
 };
 
-const CATEGORY_COLORS: Record<ActivityCategory, { bg: string; text: string }> = {
+const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
   preparation: { bg: '#F3F4F6', text: '#4B5563' },
   starting_prayer: { bg: '#FEF3C7', text: '#92400E' },
   opening_song: { bg: '#EDE9FE', text: '#5B21B6' },
@@ -114,7 +121,7 @@ const CATEGORY_COLORS: Record<ActivityCategory, { bg: string; text: string }> = 
   bible_reading: { bg: '#E0F2FE', text: '#0369A1' },
   offering: { bg: '#ECFDF5', text: '#065F46' },
   announcements: { bg: '#FFFBEB', text: '#B45309' },
-  sermon: { bg: '#EFF6FF', text: '#1E40AF' },
+  sermon: { bg: '#FEF3C7', text: '#92400E' },
   communion: { bg: '#FCE7F3', text: '#831843' },
   special_performance: { bg: '#F5F3FF', text: '#6D28D9' },
   closing_prayer: { bg: '#FEF2F2', text: '#991B1B' },
@@ -134,17 +141,47 @@ const SKILL_CATEGORIES = [
 
 const STANDARD_KEYS = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B', 'Em', 'Am', 'Dm', 'Bm'];
 
-export default function AdminServicePlanner({ navigation }: any) {
+const SERIF_FONT = Platform.OS === 'ios' ? 'Georgia' : 'serif';
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const getSafeDateParts = (dateStr: string) => {
+  if (!dateStr) return { day: '01', month: 'SUN' };
+  const parts = dateStr.split('-');
+  if (parts.length === 3) {
+    const monthIdx = parseInt(parts[1], 10) - 1;
+    return {
+      day: parts[2] || '01',
+      month: (MONTH_NAMES[monthIdx] || 'SUN').toUpperCase()
+    };
+  }
+  return { day: '01', month: 'SUN' };
+};
+
+export default function AdminServicePlanner({ navigation, routeParams }: any) {
   const insets = useSafeAreaInsets();
-  const { isDark, screenBg, cardSurface, primaryText, secondaryText, borderColor } = useAdminTheme();
+  const { isDark, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor, appFontFamily } = useAdminTheme();
+  const inputBg = isDark ? '#27272A' : '#FAFAF9';
+  const inputBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1';
+  const cardBorder = isDark ? 'rgba(255, 255, 255, 0.14)' : '#CBD5E1';
+
+  // Unified Rhema Button Color Tokens (strictly matching Promises, Sermons, Events)
+  const primaryBtnBg = isDark ? '#FFFFFF' : '#000000';
+  const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
+  const publishBtnBg = isDark ? '#10B981' : '#2E6B4F'; // Forest Green / Emerald from AdminEventEditor
+  const secondaryBtnBg = isDark ? '#27272A' : '#F8FAFC';
+  const secondaryBtnBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1';
+  const secondaryBtnText = isDark ? '#E4E4E7' : '#334155';
+  const dangerBtnBg = isDark ? '#27272A' : '#F8FAFC';
+  const dangerBtnBorder = isDark ? 'rgba(248, 113, 113, 0.35)' : '#FECACA';
+  const dangerBtnText = isDark ? '#F87171' : '#DC2626';
+
   const { activeChurch } = useChurch();
   const { member } = useAuth();
-  const { setActiveTab } = useContext(AdminTabContext);
+  const { setActiveTab, setTabByName } = useContext(AdminTabContext);
 
   const churchId = activeChurch?.id || 'rhema';
 
-  // Navigation / Tab state: Added 'setlist' (Phase 3), 'queue' (Phase 4), 'rehearsals' (Phase 6), 'attendance' & 'analytics' (Phase 9)
-  const [activePlannerTab, setActivePlannerTab] = useState<'calendar' | 'builder' | 'setlist' | 'queue' | 'rehearsals' | 'attendance' | 'analytics' | 'teams' | 'skills' | 'templates'>('calendar');
+  // Navigation / Tab state: 'calendar', 'builder', 'setlist', 'queue', 'attendance', 'analytics', 'teams', 'skills', 'templates'
+  const [activePlannerTab, setActivePlannerTab] = useState<'calendar' | 'builder' | 'setlist' | 'queue' | 'attendance' | 'analytics' | 'teams' | 'skills' | 'templates'>('calendar');
 
   // Service Plans state
   const [plans, setPlans] = useState<ServicePlan[]>([]);
@@ -160,6 +197,8 @@ export default function AdminServicePlanner({ navigation }: any) {
   const [loadingSongs, setLoadingSongs] = useState(false);
   const [songLibrarySearch, setSongLibrarySearch] = useState('');
   const [showSongPickerModal, setShowSongPickerModal] = useState(false);
+  const [selectedSongIdsForBatch, setSelectedSongIdsForBatch] = useState<string[]>([]);
+  const [addingBatchSongs, setAddingBatchSongs] = useState(false);
   const [showConfigureSongModal, setShowConfigureSongModal] = useState(false);
   const [selectedSongForSetlist, setSelectedSongForSetlist] = useState<WorshipSong | null>(null);
   const [editingSetlistIndex, setEditingSetlistIndex] = useState<number | null>(null);
@@ -189,10 +228,14 @@ export default function AdminServicePlanner({ navigation }: any) {
   const [selectedTeam, setSelectedTeam] = useState<MinistryTeam | null>(null);
   const [teamNameInput, setTeamNameInput] = useState('');
   const [teamDescInput, setTeamDescInput] = useState('');
-  const [teamColorInput, setTeamColorInput] = useState('#1E3A8A');
+  const [teamColorInput, setTeamColorInput] = useState('#2E6B4F');
   const [teamLeaderId, setTeamLeaderId] = useState<string | undefined>(undefined);
   const [teamMemberIds, setTeamMemberIds] = useState<string[]>([]);
+  const [teamMemberSearch, setTeamMemberSearch] = useState('');
+  const [teamSearchQuery, setTeamSearchQuery] = useState('');
   const [savingTeam, setSavingTeam] = useState(false);
+  const [isSavingTeamOrder, setIsSavingTeamOrder] = useState(false);
+  const [teamOrderFeedback, setTeamOrderFeedback] = useState<string | null>(null);
 
   // Member Skills state (Phase 2)
   const [memberSkills, setMemberSkills] = useState<MemberSkillRecord[]>([]);
@@ -241,26 +284,6 @@ export default function AdminServicePlanner({ navigation }: any) {
   const [simulateDeclineReason, setSimulateDeclineReason] = useState('Out of town for family engagement');
   const [submittingSimulate, setSubmittingSimulate] = useState(false);
 
-  // Rehearsal Management state (Phase 6)
-  const [rehearsals, setRehearsals] = useState<ServiceRehearsal[]>([]);
-  const [loadingRehearsals, setLoadingRehearsals] = useState(false);
-  const [showRehearsalModal, setShowRehearsalModal] = useState(false);
-  const [editingRehearsalId, setEditingRehearsalId] = useState<string | null>(null);
-  const [rehearsalNameInput, setRehearsalNameInput] = useState('Saturday Full Band Rehearsal');
-  const [rehearsalDateInput, setRehearsalDateInput] = useState('');
-  const [rehearsalStartTimeInput, setRehearsalStartTimeInput] = useState('18:00');
-  const [rehearsalEndTimeInput, setRehearsalEndTimeInput] = useState('19:30');
-  const [rehearsalLocationInput, setRehearsalLocationInput] = useState('Church Sanctuary');
-  const [rehearsalTeamIds, setRehearsalTeamIds] = useState<string[]>(['team_worship', 'team_music']);
-  const [rehearsalParticipantIds, setRehearsalParticipantIds] = useState<string[]>([]);
-  const [rehearsalSongPracticeIds, setRehearsalSongPracticeIds] = useState<string[]>([]);
-  const [rehearsalNotesInput, setRehearsalNotesInput] = useState('');
-  const [savingRehearsal, setSavingRehearsal] = useState(false);
-
-  // Rehearsal Attendance Modal state
-  const [showRehearsalAttendanceModal, setShowRehearsalAttendanceModal] = useState(false);
-  const [activeRehearsalForAttendance, setActiveRehearsalForAttendance] = useState<ServiceRehearsal | null>(null);
-
   // Volunteer Attendance state (Phase 9)
   const [attendanceRecords, setAttendanceRecords] = useState<VolunteerAttendanceRecord[]>([]);
   const [loadingAttendance, setLoadingAttendance] = useState(false);
@@ -289,17 +312,34 @@ export default function AdminServicePlanner({ navigation }: any) {
     nextSunday.setDate(nextSunday.getDate() + ((7 - nextSunday.getDay()) % 7 || 7));
     return nextSunday.toISOString().split('T')[0];
   });
-  const [createStartTime, setCreateStartTime] = useState('10:00');
-  const [createEndTime, setCreateEndTime] = useState('12:00');
+  const [createStartTime, setCreateStartTime] = useState('10:00 AM');
+  const [createEndTime, setCreateEndTime] = useState('12:00 PM');
   const [createLocation, setCreateLocation] = useState('');
   const [createPreacher, setCreatePreacher] = useState('');
   const [createTheme, setCreateTheme] = useState('');
   const [createScripture, setCreateScripture] = useState('');
   const [createDescription, setCreateDescription] = useState('');
-  const [createRecurrence, setCreateRecurrence] = useState<'one_time' | 'weekly' | 'monthly'>('one_time');
+  const [createRecurrence, setCreateRecurrence] = useState<'one_time' | 'weekly' | 'biweekly' | 'monthly'>('one_time');
   const [createOccurrencesCount, setCreateOccurrencesCount] = useState(4);
   const [selectedTemplateForNew, setSelectedTemplateForNew] = useState<string>('tpl_sunday_worship');
   const [savingService, setSavingService] = useState(false);
+
+  // Created Service Success Modal Card State
+  const [showCreatedSuccessModal, setShowCreatedSuccessModal] = useState(false);
+  const [createdSuccessInfo, setCreatedSuccessInfo] = useState<{
+    title: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+    location: string;
+    preacher?: string;
+    isRecurring: boolean;
+    occurrencesCount?: number;
+    recurrenceFrequency?: string;
+    templateName?: string;
+    planId: string;
+    isEdit?: boolean;
+  } | null>(null);
 
   // ─── Unified All-In-One Roster Form State ───
   const [createRunSheet, setCreateRunSheet] = useState<RunSheetItem[]>([]);
@@ -351,8 +391,15 @@ export default function AdminServicePlanner({ navigation }: any) {
   const [actResponsible, setActResponsible] = useState('');
   const [actResponsibleId, setActResponsibleId] = useState('');
   const [actTeam, setActTeam] = useState('');
+  const [actTeamIds, setActTeamIds] = useState<string[]>([]);
+  const [actShowAllMembers, setActShowAllMembers] = useState(false);
   const [actInstructions, setActInstructions] = useState('');
   const [savingActivity, setSavingActivity] = useState(false);
+  const [customCategories, setCustomCategories] = useState<ActivityCategoryDef[]>([]);
+  const [showNewCategoryInput, setShowNewCategoryInput] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [newCategoryColorIdx, setNewCategoryColorIdx] = useState(0);
+  const [savingNewCategory, setSavingNewCategory] = useState(false);
 
   // Service Details Edit Modal
   const [showEditDetailsModal, setShowEditDetailsModal] = useState(false);
@@ -360,11 +407,119 @@ export default function AdminServicePlanner({ navigation }: any) {
   const [editType, setEditType] = useState<ServiceType>('sunday_worship');
   const [editDate, setEditDate] = useState('');
   const [editStartTime, setEditStartTime] = useState('');
+  const [editEndTime, setEditEndTime] = useState('');
+  const [isEditEndTimePickerVisible, setEditEndTimePickerVisible] = useState(false);
   const [editLocation, setEditLocation] = useState('');
   const [editPreacher, setEditPreacher] = useState('');
   const [editTheme, setEditTheme] = useState('');
   const [editScripture, setEditScripture] = useState('');
   const [editDescription, setEditDescription] = useState('');
+
+  // Save Service as Reusable Template Modal
+  const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
+  const [newTemplateName, setNewTemplateName] = useState('');
+  const [newTemplateDesc, setNewTemplateDesc] = useState('');
+  const [savingTemplate, setSavingTemplate] = useState(false);
+
+  // Service Worship Band Modal (Whole Service Assignment)
+  const [showBandModal, setShowBandModal] = useState(false);
+  const [bandKeyboard, setBandKeyboard] = useState('');
+  const [bandKeyboardId, setBandKeyboardId] = useState('');
+  const [bandDrums, setBandDrums] = useState('');
+  const [bandDrumsId, setBandDrumsId] = useState('');
+  const [bandBass, setBandBass] = useState('');
+  const [bandBassId, setBandBassId] = useState('');
+  const [bandAcoustic, setBandAcoustic] = useState('');
+  const [bandAcousticId, setBandAcousticId] = useState('');
+  const [bandElectric, setBandElectric] = useState('');
+  const [bandElectricId, setBandElectricId] = useState('');
+  const [bandSound, setBandSound] = useState('');
+  const [bandSoundId, setBandSoundId] = useState('');
+  const [bandWorshipLeader, setBandWorshipLeader] = useState('');
+  const [bandWorshipLeaderId, setBandWorshipLeaderId] = useState('');
+  const [savingBand, setSavingBand] = useState(false);
+  const [expandedInstrumentMembers, setExpandedInstrumentMembers] = useState<Record<string, boolean>>({});
+
+  const parseSkillsList = (val: any): string[] => {
+    if (Array.isArray(val)) return val.filter(Boolean);
+    if (typeof val === 'string' && val.trim()) {
+      return val.split(',').map((s: string) => s.trim()).filter(Boolean);
+    }
+    return [];
+  };
+
+  interface MusicianCandidate {
+    id: string;
+    name: string;
+    phone?: string;
+    isPrimary: boolean;
+    isSecondary: boolean;
+    isVerified: boolean;
+    badge: string;
+  }
+
+  const getMusicianCandidates = (instrumentKey: string): MusicianCandidate[] => {
+    const keywordMap: Record<string, string[]> = {
+      keyboard: ['keyboard', 'piano', 'keys', 'synth', 'organ'],
+      drums: ['drum', 'percussion', 'cajon', 'pad', 'octapad'],
+      bass: ['bass'],
+      acoustic: ['acoustic', 'guitar'],
+      electric: ['electric', 'lead guitar'],
+      sound: ['sound', 'audio', 'foh', 'stage audio', 'monitors', 'mixer'],
+      worship_leader: ['worship leader', 'worship', 'vocal', 'singer', 'vocalist', 'songs', 'choir']
+    };
+
+    const keywords = keywordMap[instrumentKey] || [];
+    if (keywords.length === 0) return [];
+
+    const list: MusicianCandidate[] = [];
+
+    churchMembers.forEach(m => {
+      const pSkills = [
+        ...parseSkillsList(m.primarySkill),
+        ...(Array.isArray(m.primarySkills) ? m.primarySkills : [])
+      ].map(s => String(s).toLowerCase().trim());
+
+      const sSkills = [
+        ...parseSkillsList(m.secondarySkill),
+        ...(Array.isArray(m.secondarySkills) ? m.secondarySkills : [])
+      ].map(s => String(s).toLowerCase().trim());
+
+      const verifiedRecords = memberSkills.filter(
+        s => s.memberId === m.id && s.verificationStatus === 'verified'
+      );
+      const vSkills = verifiedRecords.map(s => String(s.skillName || '').toLowerCase().trim());
+
+      const isPrimary = pSkills.some(ps => keywords.some(k => ps.includes(k)));
+      const isSecondary = sSkills.some(ss => keywords.some(k => ss.includes(k)));
+      const isVerified = vSkills.some(vs => keywords.some(k => vs.includes(k)));
+
+      if (isPrimary || isSecondary || isVerified) {
+        let badge = '';
+        if (isVerified && isPrimary) badge = '★ Primary (Verified)';
+        else if (isPrimary) badge = '★ Primary';
+        else if (isVerified && isSecondary) badge = '★ Secondary (Verified)';
+        else if (isSecondary) badge = '★ Secondary';
+        else if (isVerified) badge = '✓ Verified';
+
+        list.push({
+          id: m.id,
+          name: m.name || m.fullName || `${m.firstName || ''} ${m.lastName || ''}`.trim() || 'Church Member',
+          phone: m.phone || m.phoneNumber || m.mobile,
+          isPrimary,
+          isSecondary,
+          isVerified,
+          badge
+        });
+      }
+    });
+
+    return list.sort((a, b) => {
+      const scoreA = (a.isVerified && a.isPrimary ? 40 : 0) + (a.isPrimary ? 30 : 0) + (a.isVerified && a.isSecondary ? 20 : 0) + (a.isSecondary ? 10 : 0) + (a.isVerified ? 5 : 0);
+      const scoreB = (b.isVerified && b.isPrimary ? 40 : 0) + (b.isPrimary ? 30 : 0) + (b.isVerified && b.isSecondary ? 20 : 0) + (b.isSecondary ? 10 : 0) + (b.isVerified ? 5 : 0);
+      return scoreB - scoreA;
+    });
+  };
 
   // Templates state
   const [templates, setTemplates] = useState<ServiceTemplate[]>([]);
@@ -457,6 +612,15 @@ export default function AdminServicePlanner({ navigation }: any) {
     }
   };
 
+  const fetchCustomCategories = async () => {
+    try {
+      const cats = await ServiceRosterService.getCustomActivityCategories(churchId);
+      setCustomCategories(cats);
+    } catch (err) {
+      console.error('Error loading custom activity categories:', err);
+    }
+  };
+
   useEffect(() => {
     fetchPlans();
     fetchTemplates();
@@ -464,7 +628,18 @@ export default function AdminServicePlanner({ navigation }: any) {
     fetchChurchSongs();
     fetchMinistryTeams();
     fetchMemberSkills();
+    fetchCustomCategories();
   }, [churchId]);
+
+  useEffect(() => {
+    const targetServiceId = routeParams?.serviceId;
+    if (!targetServiceId || plans.length === 0) return;
+    const match = plans.find((p) => p.id === targetServiceId);
+    if (match) {
+      setSelectedPlan(match);
+      setActivePlannerTab('queue');
+    }
+  }, [routeParams?.serviceId, routeParams?.timestamp, plans]);
 
   // Realtime subscription for Assignment Queues on selected service (Phase 4)
   useEffect(() => {
@@ -479,24 +654,6 @@ export default function AdminServicePlanner({ navigation }: any) {
       (queues) => {
         setAssignmentQueues(queues);
         setLoadingQueues(false);
-      }
-    );
-    return () => unsubscribe();
-  }, [selectedPlan?.id, churchId]);
-
-  // Realtime subscription for Rehearsals on selected service (Phase 6)
-  useEffect(() => {
-    if (!selectedPlan?.id) {
-      setRehearsals([]);
-      return;
-    }
-    setLoadingRehearsals(true);
-    const unsubscribe = ServiceRosterService.listenServiceRehearsals(
-      churchId,
-      selectedPlan.id,
-      (list) => {
-        setRehearsals(list);
-        setLoadingRehearsals(false);
       }
     );
     return () => unsubscribe();
@@ -546,6 +703,7 @@ export default function AdminServicePlanner({ navigation }: any) {
     fetchChurchSongs();
     fetchMinistryTeams();
     fetchMemberSkills();
+    fetchCustomCategories();
     if (activePlannerTab === 'analytics') {
       fetchAnalytics();
     }
@@ -587,6 +745,371 @@ export default function AdminServicePlanner({ navigation }: any) {
       s.artist?.toLowerCase().includes(q)
     );
   }, [churchSongs, songLibrarySearch]);
+
+  const filteredTeamMembers = useMemo(() => {
+    if (!teamMemberSearch.trim()) return churchMembers;
+    const q = teamMemberSearch.toLowerCase().trim();
+    return churchMembers.filter(m => {
+      const name = (m.name || `${m.firstName || ''} ${m.lastName || ''}`).toLowerCase();
+      const phone = (m.phone || (m as any).phoneNumber || (m as any).mobile || '').toLowerCase();
+      const skill = (m.primarySkill || m.userType || '').toLowerCase();
+      return name.includes(q) || phone.includes(q) || skill.includes(q);
+    });
+  }, [churchMembers, teamMemberSearch]);
+
+  const filteredMinistryTeams = useMemo(() => {
+    if (!teamSearchQuery.trim()) return ministryTeams;
+    const q = teamSearchQuery.toLowerCase().trim();
+    return ministryTeams.filter(team => {
+      const name = (team.name || '').toLowerCase();
+      const desc = (team.description || '').toLowerCase();
+      const leader = (team.leaderName || '').toLowerCase();
+      const memberMatch = (team.memberIds || []).some(mId => {
+        const found = churchMembers.find(m => m.id === mId);
+        const mName = (found?.name || `${found?.firstName || ''} ${found?.lastName || ''}`).toLowerCase();
+        return mName.includes(q);
+      });
+      return name.includes(q) || desc.includes(q) || leader.includes(q) || memberMatch;
+    });
+  }, [ministryTeams, teamSearchQuery, churchMembers]);
+
+  const getTeamMemberNames = (memberIds?: string[]): string[] => {
+    if (!memberIds || memberIds.length === 0) return [];
+    return memberIds
+      .map(id => {
+        const found = churchMembers.find(m => m.id === id);
+        if (!found) return null;
+        return found.name || `${found.firstName || ''} ${found.lastName || ''}`.trim() || 'Member';
+      })
+      .filter((n): n is string => Boolean(n));
+  };
+
+  /**
+   * Resolve MinistryTeam records for a RunSheet activity using explicit team IDs,
+   * custom team names, or category/program defaults.
+   */
+  const resolveTeamsForActivity = (act: Partial<RunSheetItem>): MinistryTeam[] => {
+    const explicitRefs = [
+      ...(act.supportingTeamIds || []),
+      ...(act.supportingTeamId ? [act.supportingTeamId] : []),
+      ...(act.supportingTeam ? [act.supportingTeam] : []),
+    ];
+    const refsToUse = explicitRefs.length > 0
+      ? explicitRefs
+      : ServiceRosterService.getDefaultTeamIdsForActivity(act.category, act.program);
+    return ServiceRosterService.resolveMatchingTeams(ministryTeams, refsToUse);
+  };
+
+  /**
+   * Candidate quick-pick pool for Order Builder's Activity Modal:
+   * prioritizes deduplicated members from selected Ministry Teams.
+   */
+  const activityCandidatePool = useMemo(() => {
+    const selectedTeams = ministryTeams.filter(t => actTeamIds.includes(t.id));
+    const poolMap = new Map<string, { member: any; teamNames: string[] }>();
+
+    selectedTeams.forEach(team => {
+      const teamPeopleIds = Array.from(
+        new Set([...(team.leaderId ? [team.leaderId] : []), ...(team.memberIds || [])].filter(Boolean))
+      );
+      teamPeopleIds.forEach(pid => {
+        const found = churchMembers.find(m => m.id === pid || m.uid === pid);
+        if (!found) return;
+        const existing = poolMap.get(found.id);
+        if (existing) {
+          if (team.name && !existing.teamNames.includes(team.name)) {
+            existing.teamNames.push(team.name);
+          }
+        } else {
+          poolMap.set(found.id, {
+            member: found,
+            teamNames: team.name ? [team.name] : []
+          });
+        }
+      });
+    });
+
+    const teamMembers = Array.from(poolMap.values());
+    const hasTeamPool = teamMembers.length > 0;
+    const rawQuery = (!actResponsibleId && actResponsible.trim()) ? actResponsible.trim().toLowerCase() : '';
+
+    let items = [...teamMembers];
+    if (!hasTeamPool || actShowAllMembers) {
+      churchMembers.forEach(m => {
+        if (!poolMap.has(m.id) && m.status !== 'Left') {
+          items.push({ member: m, teamNames: [] });
+        }
+      });
+    }
+
+    if (rawQuery) {
+      const textMatches = items.filter(entry => {
+        const mName = (entry.member.name || `${entry.member.firstName || ''} ${entry.member.lastName || ''}`).toLowerCase();
+        return mName.includes(rawQuery);
+      });
+      if (textMatches.length > 0) {
+        const rest = items.filter(entry => !textMatches.includes(entry));
+        items = [...textMatches, ...rest];
+      }
+    }
+
+    const capped = (!hasTeamPool && !actShowAllMembers && !rawQuery) ? items.slice(0, 10) : items;
+    return {
+      items: capped,
+      selectedTeams,
+      hasTeamPool
+    };
+  }, [churchMembers, ministryTeams, actTeamIds, actResponsible, actResponsibleId, actShowAllMembers]);
+
+  /**
+   * Combined list of church custom categories + built-in categories.
+   */
+  const allCategoryDefs = useMemo<ActivityCategoryDef[]>(() => {
+    const builtIn: ActivityCategoryDef[] = Object.keys(CATEGORY_COLORS).map(key => ({
+      id: key,
+      label: key.replace(/_/g, ' '),
+      bg: CATEGORY_COLORS[key].bg,
+      text: CATEGORY_COLORS[key].text,
+      isCustom: false,
+    }));
+    const builtInIds = new Set(builtIn.map(b => b.id));
+    const uniqueCustom = customCategories.filter(c => c.id && !builtInIds.has(c.id));
+    return [...uniqueCustom, ...builtIn];
+  }, [customCategories]);
+
+  const getCategoryDef = (categoryId?: string): ActivityCategoryDef => {
+    const key = (categoryId || 'other').trim();
+    const found = allCategoryDefs.find(c => c.id === key);
+    if (found) return found;
+    return {
+      id: key,
+      label: key.replace(/_/g, ' '),
+      bg: CATEGORY_COLORS.other.bg,
+      text: CATEGORY_COLORS.other.text,
+      isCustom: false,
+    };
+  };
+
+  const handleCreateCustomCategory = async (onSelectCat: (cat: ActivityCategory) => void) => {
+    const clean = newCategoryName.trim();
+    if (!clean) {
+      Alert.alert('Required', 'Please enter a category name.');
+      return;
+    }
+
+    const candidateSlug = clean.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    const existing = allCategoryDefs.find(
+      c => c.id === candidateSlug || c.label.toLowerCase() === clean.toLowerCase()
+    );
+    if (existing) {
+      onSelectCat(existing.id);
+      setNewCategoryName('');
+      setShowNewCategoryInput(false);
+      return;
+    }
+
+    try {
+      setSavingNewCategory(true);
+      const chosenPreset = CUSTOM_ACTIVITY_CATEGORY_PRESETS[newCategoryColorIdx] || CUSTOM_ACTIVITY_CATEGORY_PRESETS[0];
+      const created = await ServiceRosterService.addCustomActivityCategory(churchId, clean, chosenPreset);
+      setCustomCategories(prev => [created, ...prev.filter(c => c.id !== created.id)]);
+      onSelectCat(created.id);
+      setNewCategoryName('');
+      setShowNewCategoryInput(false);
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to add category.');
+    } finally {
+      setSavingNewCategory(false);
+    }
+  };
+
+  const handleDeleteCustomCategory = (catDef: ActivityCategoryDef, selectedCat: ActivityCategory, onSelectCat: (cat: ActivityCategory) => void) => {
+    if (!catDef.isCustom) return;
+    Alert.alert(
+      'Remove Custom Category',
+      `Remove "${catDef.label}" from saved categories? Existing service items keep their label.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await ServiceRosterService.deleteCustomActivityCategory(churchId, catDef.id);
+              setCustomCategories(prev => prev.filter(c => c.id !== catDef.id));
+              if (selectedCat === catDef.id) {
+                onSelectCat('other');
+              }
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Failed to remove category.');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const renderActivityCategorySelector = (
+    selectedCat: ActivityCategory,
+    onSelectCat: (cat: ActivityCategory) => void
+  ) => (
+    <View style={{ marginBottom: 12 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <Text style={[styles.fieldLabel, { color: primaryText, marginBottom: 0 }]}>Category</Text>
+        <TouchableOpacity
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 4,
+            paddingHorizontal: 10,
+            paddingVertical: 4,
+            borderRadius: 14,
+            backgroundColor: showNewCategoryInput ? inputBg : publishBtnBg,
+            borderWidth: showNewCategoryInput ? 1 : 0,
+            borderColor: inputBorder,
+          }}
+          onPress={() => {
+            setShowNewCategoryInput(prev => !prev);
+            setNewCategoryName('');
+          }}
+          activeOpacity={0.75}
+        >
+          {showNewCategoryInput ? (
+            <X size={11} color={secondaryText} />
+          ) : (
+            <Plus size={12} color="#FFFFFF" strokeWidth={2.5} />
+          )}
+          <Text style={{
+            fontSize: 11,
+            fontWeight: '700',
+            color: showNewCategoryInput ? secondaryText : '#FFFFFF',
+          }}>
+            {showNewCategoryInput ? 'Close' : 'New'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {showNewCategoryInput && (
+        <View style={{
+          backgroundColor: inputBg,
+          borderColor: publishBtnBg,
+          borderWidth: 1,
+          borderRadius: 12,
+          padding: 10,
+          marginBottom: 10,
+        }}>
+          <Text style={{ fontSize: 11, fontWeight: '700', color: primaryText, marginBottom: 6 }}>
+            Add New Category
+          </Text>
+          <TextInput
+            style={[
+              styles.input,
+              {
+                backgroundColor: cardSurface,
+                color: primaryText,
+                borderColor: inputBorder,
+                marginBottom: 8,
+              }
+            ]}
+            placeholder="e.g. Baby Dedication, Testimony, Baptism..."
+            placeholderTextColor="#94A3B8"
+            value={newCategoryName}
+            onChangeText={setNewCategoryName}
+            autoFocus
+          />
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              {CUSTOM_ACTIVITY_CATEGORY_PRESETS.map((preset, idx) => {
+                const selectedColor = newCategoryColorIdx === idx;
+                return (
+                  <TouchableOpacity
+                    key={idx}
+                    onPress={() => setNewCategoryColorIdx(idx)}
+                    style={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: 11,
+                      backgroundColor: preset.bg,
+                      borderWidth: selectedColor ? 2 : 1,
+                      borderColor: selectedColor ? preset.text : inputBorder,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {selectedColor && (
+                      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: preset.text }} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <TouchableOpacity
+                style={{
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor: inputBorder,
+                }}
+                onPress={() => {
+                  setShowNewCategoryInput(false);
+                  setNewCategoryName('');
+                }}
+              >
+                <Text style={{ fontSize: 11.5, fontWeight: '600', color: secondaryText }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                  borderRadius: 8,
+                  backgroundColor: publishBtnBg,
+                  opacity: savingNewCategory ? 0.7 : 1,
+                }}
+                disabled={savingNewCategory}
+                onPress={() => handleCreateCustomCategory(onSelectCat)}
+              >
+                {savingNewCategory ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={{ fontSize: 11.5, fontWeight: '700', color: '#FFFFFF' }}>Add Category</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        {allCategoryDefs.map(cat => {
+          const isSelected = selectedCat === cat.id;
+          return (
+            <TouchableOpacity
+              key={cat.id}
+              style={[
+                styles.categorySelectChip,
+                isSelected && [styles.categorySelectChipActive, { backgroundColor: primaryBtnBg }],
+                !isSelected && { backgroundColor: inputBg, borderColor: inputBorder, borderWidth: 1 }
+              ]}
+              onPress={() => onSelectCat(cat.id)}
+              onLongPress={() => cat.isCustom && handleDeleteCustomCategory(cat, selectedCat, onSelectCat)}
+            >
+              <Text style={[
+                styles.categorySelectChipTxt,
+                !isSelected && { color: secondaryText },
+                isSelected && [styles.categorySelectChipTxtActive, { color: primaryBtnText }]
+              ]}>
+                {cat.label.toUpperCase()}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
 
   const pendingSkillsCount = useMemo(() => {
     return memberSkills.filter(s => s.verificationStatus === 'pending').length;
@@ -816,6 +1339,81 @@ export default function AdminServicePlanner({ navigation }: any) {
     return new Date();
   };
 
+  const getDayOfWeekName = (dateStr: string) => {
+    try {
+      const parts = dateStr.split('-');
+      if (parts.length === 3) {
+        const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0);
+        return d.toLocaleDateString('en-US', { weekday: 'long' });
+      }
+    } catch {}
+    return 'Sunday';
+  };
+
+  const calculateRecurrencePreviewDates = (
+    startDateStr: string,
+    frequency: 'weekly' | 'biweekly' | 'monthly',
+    count: number
+  ): string[] => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const toLocalDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+    const parts = (startDateStr || toLocalDate(new Date())).split('-').map(Number);
+    const y = parts[0] || new Date().getFullYear();
+    const m = parts[1] || (new Date().getMonth() + 1);
+    const d = parts[2] || new Date().getDate();
+
+    const dates: string[] = [];
+    const total = Math.min(Math.max(count || 1, 1), 12);
+
+    for (let i = 0; i < total; i++) {
+      const cur = new Date(y, m - 1, d, 12, 0, 0);
+      if (i > 0) {
+        if (frequency === 'weekly') {
+          cur.setDate(cur.getDate() + (i * 7));
+        } else if (frequency === 'biweekly') {
+          cur.setDate(cur.getDate() + (i * 14));
+        } else if (frequency === 'monthly') {
+          cur.setMonth(cur.getMonth() + i);
+        }
+      }
+      dates.push(toLocalDate(cur));
+    }
+    return dates;
+  };
+
+  const recurrenceDayName = useMemo(() => getDayOfWeekName(createDate), [createDate]);
+
+  const recurrenceCountOptions = useMemo(() => {
+    if (createRecurrence === 'weekly') {
+      return [
+        { count: 2, label: '2 Weeks' },
+        { count: 4, label: '4 Weeks (1 Mo)' },
+        { count: 8, label: '8 Weeks (2 Mos)' },
+        { count: 12, label: '12 Weeks (3 Mos)' },
+      ];
+    } else if (createRecurrence === 'biweekly') {
+      return [
+        { count: 2, label: '2 (1 Mo)' },
+        { count: 4, label: '4 (2 Mos)' },
+        { count: 6, label: '6 (3 Mos)' },
+        { count: 8, label: '8 (4 Mos)' },
+      ];
+    } else {
+      return [
+        { count: 2, label: '2 Months' },
+        { count: 3, label: '3 Months' },
+        { count: 6, label: '6 Months' },
+        { count: 12, label: '12 Months' },
+      ];
+    }
+  }, [createRecurrence]);
+
+  const previewRecurrenceDates = useMemo(() => {
+    if (createRecurrence === 'one_time') return [];
+    return calculateRecurrencePreviewDates(createDate, createRecurrence as any, createOccurrencesCount);
+  }, [createDate, createRecurrence, createOccurrencesCount]);
+
   const handleConfirmCreateDate = (selectedDate: Date) => {
     const y = selectedDate.getFullYear();
     const m = String(selectedDate.getMonth() + 1).padStart(2, '0');
@@ -851,6 +1449,13 @@ export default function AdminServicePlanner({ navigation }: any) {
     const m = String(selectedTime.getMinutes()).padStart(2, '0');
     setEditStartTime(`${h}:${m}`);
     setEditStartTimePickerVisible(false);
+  };
+
+  const handleConfirmEditEndTime = (selectedTime: Date) => {
+    const h = String(selectedTime.getHours()).padStart(2, '0');
+    const m = String(selectedTime.getMinutes()).padStart(2, '0');
+    setEditEndTime(`${h}:${m}`);
+    setEditEndTimePickerVisible(false);
   };
 
   const DEFAULT_FORM_DUTIES = [
@@ -891,8 +1496,8 @@ export default function AdminServicePlanner({ navigation }: any) {
     const m = String(nextSunday.getMonth() + 1).padStart(2, '0');
     const d = String(nextSunday.getDate()).padStart(2, '0');
     setCreateDate(`${y}-${m}-${d}`);
-    setCreateStartTime('10:00');
-    setCreateEndTime('12:00');
+    setCreateStartTime('10:00 AM');
+    setCreateEndTime('12:00 PM');
     setCreateLocation('');
     setCreatePreacher('');
     setCreateTheme('');
@@ -939,8 +1544,8 @@ export default function AdminServicePlanner({ navigation }: any) {
     setCreateTitle(plan.serviceTitle || '');
     setCreateType(plan.serviceType || 'sunday_worship');
     setCreateDate(plan.date || '');
-    setCreateStartTime(plan.startTime || '10:00');
-    setCreateEndTime(plan.endTime || '12:00');
+    setCreateStartTime(formatTimeTo12Hour(plan.startTime) || '10:00 AM');
+    setCreateEndTime(formatTimeTo12Hour(plan.endTime) || '12:00 PM');
     setCreateLocation(plan.location || '');
     setCreatePreacher(plan.preacher || '');
     setCreateTheme(plan.theme || '');
@@ -1136,7 +1741,7 @@ export default function AdminServicePlanner({ navigation }: any) {
   const handlePublishServiceWithCascade = (plan: ServicePlan) => {
     Alert.alert(
       'Publish Service & Dispatch Notifications 🚀',
-      `Publish "${plan.serviceTitle}" (${plan.date}) and send push notifications to assigned volunteers with a 2-hour response deadline?`,
+      `Publish "${plan.serviceTitle}" (${formatDateMonthYear(plan.date)}) and send push notifications to assigned volunteers with a 2-hour response deadline?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -1146,60 +1751,271 @@ export default function AdminServicePlanner({ navigation }: any) {
             try {
               setSavingService(true);
               await ServiceRosterService.updateServiceStatus(churchId, plan.id, 'published');
+              await ServiceRosterService.publishServiceRosterBroadcast(churchId, plan.id);
 
-              let dispatchedCount = 0;
               const timeoutMinutes = 120; // 2 hours default
+              const dispatchedDuties: string[] = [];
+              const seenRoleKeys = new Set<string>();
+              const seenMemberDutyKeys = new Set<string>();
 
+              // Helper to resolve member ID from member name or phone
+              const resolveMemberId = (rawId?: string, rawName?: string): { id?: string; name: string; phone?: string } => {
+                const cleanName = (rawName || '').trim();
+                const lowerName = cleanName.toLowerCase();
+
+                if (rawId && rawId.trim()) {
+                  const m = churchMembers.find(m => m.id === rawId || m.uid === rawId);
+                  if (m) {
+                    const mName = m.name || m.fullName || `${m.firstName || ''} ${m.lastName || ''}`.trim() || cleanName;
+                    return { id: m.id || rawId, name: mName, phone: m.phone || m.phoneNumber || m.mobile };
+                  }
+                  return { id: rawId, name: cleanName, phone: undefined };
+                }
+
+                if (lowerName) {
+                  // 1. Exact match
+                  const exactMatch = churchMembers.find(m => {
+                    const mName = (m.name || m.fullName || `${m.firstName || ''} ${m.lastName || ''}`.trim() || '').toLowerCase();
+                    const mPhone = (m.phone || m.phoneNumber || m.mobile || '').trim();
+                    return mName === lowerName || mPhone === cleanName;
+                  });
+                  if (exactMatch) {
+                    const mName = exactMatch.name || exactMatch.fullName || `${exactMatch.firstName || ''} ${exactMatch.lastName || ''}`.trim() || cleanName;
+                    return { id: exactMatch.id, name: mName, phone: exactMatch.phone || exactMatch.phoneNumber || exactMatch.mobile };
+                  }
+
+                  // 2. Inclusion / substring match
+                  const partialMatch = churchMembers.find(m => {
+                    const mName = (m.name || m.fullName || `${m.firstName || ''} ${m.lastName || ''}`.trim() || '').toLowerCase();
+                    const mFirst = (m.firstName || '').toLowerCase().trim();
+                    const mLast = (m.lastName || '').toLowerCase().trim();
+                    return (
+                      (mName && (mName.includes(lowerName) || lowerName.includes(mName))) ||
+                      (mFirst && (mFirst === lowerName || lowerName.includes(mFirst))) ||
+                      (mLast && (mLast === lowerName || lowerName.includes(mLast)))
+                    );
+                  });
+                  if (partialMatch) {
+                    const mName = partialMatch.name || partialMatch.fullName || `${partialMatch.firstName || ''} ${partialMatch.lastName || ''}`.trim() || cleanName;
+                    return { id: partialMatch.id, name: mName, phone: partialMatch.phone || partialMatch.phoneNumber || partialMatch.mobile };
+                  }
+                }
+                return { id: rawId || undefined, name: cleanName, phone: undefined };
+              };
+
+              // Collect duties across RunSheet, Band, Setlist, and Assignments
+              const allDuties: Array<{
+                roleId: string;
+                roleTitle: string;
+                activityId?: string;
+                activityName?: string;
+                memberId: string;
+                memberName: string;
+                memberPhone?: string;
+                requiredSkill?: string;
+                teamIds?: string[];
+              }> = [];
+
+              // 1. RunSheet activities (Order of Service)
+              (plan.runSheet || []).forEach((item, idx) => {
+                if (item.responsiblePerson && item.responsiblePerson.trim()) {
+                  const resolved = resolveMemberId(item.responsibleMemberId, item.responsiblePerson);
+                  const roleId = item.id ? (item.id.startsWith('act_') ? item.id : `act_${item.id}`) : `act_${idx}`;
+                  const dutyKey = `${resolved.id || resolved.name}_${roleId}`;
+                  if (resolved.id && !seenRoleKeys.has(roleId) && !seenMemberDutyKeys.has(dutyKey)) {
+                    seenRoleKeys.add(roleId);
+                    seenMemberDutyKeys.add(dutyKey);
+                    const actTeams = resolveTeamsForActivity(item).map(t => t.id);
+                    allDuties.push({
+                      roleId,
+                      roleTitle: item.program || 'Service Activity',
+                      activityId: item.id,
+                      activityName: item.program,
+                      memberId: resolved.id,
+                      memberName: resolved.name,
+                      memberPhone: resolved.phone,
+                      requiredSkill: item.category || item.program,
+                      teamIds: actTeams.length > 0 ? actTeams : ServiceRosterService.getDefaultTeamIdsForActivity(item.category, item.program)
+                    });
+                  }
+                }
+              });
+
+              // 2. Whole-Service Musical Instruments & Worship Band (Primary whole-service notifications)
+              const wholeBandRoleDefs = [
+                { roleId: 'role_keyboard', defaultTitle: 'Keyboardist / Pianist', skill: 'Keyboard / Piano', teamIds: ['team_music'] },
+                { roleId: 'role_drums', defaultTitle: 'Drummer / Percussionist', skill: 'Drums / Percussion', teamIds: ['team_music'] },
+                { roleId: 'role_bass', defaultTitle: 'Bass Guitarist', skill: 'Bass Guitar', teamIds: ['team_music'] },
+                { roleId: 'role_acoustic', defaultTitle: 'Acoustic Guitarist', skill: 'Acoustic Guitar', teamIds: ['team_music'] },
+                { roleId: 'role_electric', defaultTitle: 'Electric Guitarist', skill: 'Electric Guitar', teamIds: ['team_music'] },
+                { roleId: 'role_sound', defaultTitle: 'Sound & Audio Engineer', skill: 'Sound Engineer (FOH)', teamIds: ['team_sound'] },
+                { roleId: 'role_worship_leader', defaultTitle: 'Worship Leader', skill: 'Worship Leader', teamIds: ['team_worship'] },
+              ];
+
+              wholeBandRoleDefs.forEach(b => {
+                const memberName = plan.assignments?.[b.roleId];
+                if (memberName && memberName.trim() && !seenRoleKeys.has(b.roleId)) {
+                  const resolved = resolveMemberId(plan.assignmentMemberIds?.[b.roleId], memberName);
+                  const dutyKey = `${resolved.id || resolved.name}_${b.roleId}`;
+                  if (resolved.id && !seenMemberDutyKeys.has(dutyKey)) {
+                    seenRoleKeys.add(b.roleId);
+                    seenMemberDutyKeys.add(dutyKey);
+                    allDuties.push({
+                      roleId: b.roleId,
+                      roleTitle: b.defaultTitle,
+                      memberId: resolved.id,
+                      memberName: resolved.name,
+                      memberPhone: resolved.phone,
+                      requiredSkill: b.skill,
+                      teamIds: b.teamIds
+                    });
+                  }
+                }
+              });
+
+              // 3. Other General Service Assignments (Preacher, Ushes, Media, etc.)
               if (plan.assignments) {
                 for (const [roleId, memberName] of Object.entries(plan.assignments)) {
-                  if (!memberName) continue;
-                  const memberId = plan.assignmentMemberIds?.[roleId];
-                  if (!memberId) continue;
+                  if (!memberName || !memberName.trim() || seenRoleKeys.has(roleId)) continue;
+                  const resolved = resolveMemberId(plan.assignmentMemberIds?.[roleId], memberName);
+                  const dutyKey = `${resolved.id || resolved.name}_${roleId}`;
+                  if (resolved.id && !seenMemberDutyKeys.has(dutyKey)) {
+                    seenRoleKeys.add(roleId);
+                    seenMemberDutyKeys.add(dutyKey);
+                    const cleanActId = roleId.replace(/^(role_)?(act_)+/, '');
+                    const matchedRunSheetItem = (plan.runSheet || []).find(it => it.id === roleId || it.id === `act_${cleanActId}` || it.id.replace(/^(act_)+/, '') === cleanActId);
+                    const roleTitle = (matchedRunSheetItem?.program) || (roleId.includes('act_') ? 'Order of Service Duty' : roleId.replace('role_', '').replace(/_/g, ' ').toUpperCase());
+                    const matchedRoleTeams = matchedRunSheetItem
+                      ? resolveTeamsForActivity(matchedRunSheetItem).map(t => t.id)
+                      : (roleId === 'role_media' ? ['team_media'] : roleId === 'role_sound' ? ['team_sound'] : undefined);
+                    allDuties.push({
+                      roleId,
+                      roleTitle,
+                      memberId: resolved.id,
+                      memberName: resolved.name,
+                      memberPhone: resolved.phone,
+                      requiredSkill: matchedRunSheetItem?.category || roleTitle,
+                      teamIds: matchedRoleTeams
+                    });
+                  }
+                }
+              }
 
-                  const roleObj = serviceRolesList.find(r => r.roleId === roleId);
-                  const roleTitle = roleObj?.roleTitle || roleId.replace('role_', '').replace('act_', '');
+              // 4. Setlist songs (Only notify guest / unique players not already covered by whole-service band)
+              (plan.setlist || []).forEach((song, idx) => {
+                const wholeServiceLeader = plan.assignments?.['role_worship_leader'];
+                if (song.ledBy && song.ledBy.trim() && song.ledBy !== wholeServiceLeader) {
+                  const resolved = resolveMemberId(song.ledByMemberId, song.ledBy);
+                  const roleId = `worship_lead_${song.id || idx}`;
+                  const dutyKey = `${resolved.id || resolved.name}_worship_leader`;
+                  if (resolved.id && !seenRoleKeys.has(roleId) && !seenMemberDutyKeys.has(dutyKey)) {
+                    seenRoleKeys.add(roleId);
+                    seenMemberDutyKeys.add(dutyKey);
+                    allDuties.push({
+                      roleId,
+                      roleTitle: `Worship Lead (${song.title})`,
+                      memberId: resolved.id,
+                      memberName: resolved.name,
+                      memberPhone: resolved.phone,
+                      requiredSkill: 'Worship Leader'
+                    });
+                  }
+                }
+                if (song.musicianAssignments) {
+                  Object.entries(song.musicianAssignments).forEach(([instrument, assignment]) => {
+                    const wholeBandName = plan.assignments?.[`role_${instrument}`];
+                    if (assignment?.memberName && assignment.memberName.trim() && assignment.memberName !== wholeBandName) {
+                      const resolved = resolveMemberId(assignment.memberId, assignment.memberName);
+                      const roleId = `band_${song.id || idx}_${instrument}`;
+                      const dutyKey = `${resolved.id || resolved.name}_${instrument}`;
+                      if (resolved.id && !seenRoleKeys.has(roleId) && !seenMemberDutyKeys.has(dutyKey)) {
+                        seenRoleKeys.add(roleId);
+                        seenMemberDutyKeys.add(dutyKey);
+                        allDuties.push({
+                          roleId,
+                          roleTitle: `${instrument.charAt(0).toUpperCase() + instrument.slice(1)} (${song.title})`,
+                          memberId: resolved.id,
+                          memberName: resolved.name,
+                          memberPhone: resolved.phone,
+                          requiredSkill: instrument
+                        });
+                      }
+                    }
+                  });
+                }
+              });
 
+              // Dispatch queue for each duty
+              for (const duty of allDuties) {
+                try {
                   const backupCandidates: Array<{ candidateId: string; candidateName: string; candidatePhone?: string }> = [];
                   try {
                     const recs = await ServiceRosterService.getEligibleCandidatesForRole(churchId, plan.date, {
-                      requiredSkill: roleObj?.suggestedSkill || roleTitle,
-                      roleTitle
+                      teamIds: duty.teamIds,
+                      requiredSkill: duty.requiredSkill || duty.roleTitle,
+                      roleTitle: duty.roleTitle
                     });
                     for (const r of recs) {
-                      if (r.memberId !== memberId && backupCandidates.length < 2) {
+                      if (r.memberId !== duty.memberId && backupCandidates.length < 2) {
                         backupCandidates.push({
                           candidateId: r.memberId,
-                          candidateName: r.memberName,
-                          candidatePhone: r.memberPhone
+                          candidateName: r.memberName || 'Volunteer',
+                          candidatePhone: r.memberPhone || undefined
                         });
                       }
                     }
                   } catch (e) {
-                    console.warn('Backup fetch error for role:', roleTitle, e);
+                    console.warn('Backup fetch error for role:', duty.roleTitle, e);
                   }
 
                   const ladder = [
-                    { candidateId: memberId, candidateName: memberName },
+                    {
+                      candidateId: duty.memberId,
+                      candidateName: duty.memberName || 'Volunteer',
+                      candidatePhone: duty.memberPhone || undefined
+                    },
                     ...backupCandidates
                   ];
 
                   await ServiceRosterService.dispatchAssignmentQueue(churchId, plan.id, {
-                    roleId,
-                    roleTitle,
+                    roleId: duty.roleId,
+                    roleTitle: duty.roleTitle,
+                    ...(duty.activityId ? { activityId: duty.activityId } : {}),
+                    ...(duty.activityName ? { activityName: duty.activityName } : {}),
                     candidates: ladder,
                     timeoutMinutes
                   });
-                  dispatchedCount++;
+
+                  dispatchedDuties.push(`${duty.memberName} (${duty.roleTitle})`);
+                } catch (dutyErr: any) {
+                  console.warn(`[PublishService] Error dispatching queue for ${duty.roleTitle}:`, dutyErr);
                 }
+              }
+
+              // Automatically dispatch First-Come, First-Served broadcast for all unassigned responsibilities
+              let fcfsDispatchedCount = 0;
+              try {
+                const fcfsRes = await ServiceRosterService.autoDispatchFirstComeResponsibilities(churchId, plan.id);
+                fcfsDispatchedCount = fcfsRes.dispatchedCount;
+              } catch (fcfsErr) {
+                console.warn('[PublishService] autoDispatchFirstComeResponsibilities error:', fcfsErr);
               }
 
               const updatedPlan = { ...plan, status: 'published' as ServiceStatus };
               setSelectedPlan(updatedPlan);
               setPlans(plans.map(p => p.id === plan.id ? updatedPlan : p));
 
+              const count = dispatchedDuties.length;
               Alert.alert(
-                'Service Published! 🚀',
-                `"${plan.serviceTitle}" is now published!\n\n${dispatchedCount > 0 ? `${dispatchedCount} push notification(s) dispatched to assigned volunteers with a 2-hour response window.\n\n` : ''}Rhema's automated cloud engine will monitor responses and automatically notify verified backups if any volunteer declines or times out.`
+                'Service Published & Broadcasted! 🚀',
+                `"${plan.serviceTitle}" is now published!\n\n` +
+                (fcfsDispatchedCount > 0
+                  ? `⚡ ${fcfsDispatchedCount} open responsibility slot(s) automatically broadcasted to all verified musicians & members (First-Come, First-Served).\n\n`
+                  : '') +
+                (count > 0
+                  ? `👤 ${count} volunteer notification(s) dispatched.\n\n`
+                  : '') +
+                `The first eligible member to accept each slot gets booked immediately!`
               );
             } catch (err: any) {
               Alert.alert('Error', err.message || 'Failed to publish service.');
@@ -1300,60 +2116,58 @@ export default function AdminServicePlanner({ navigation }: any) {
 
       // 2. If publishing, dispatch assignment queues for each assigned duty role
       if (publishNow && targetPlanId) {
+        await ServiceRosterService.publishServiceRosterBroadcast(churchId, targetPlanId);
         const timeoutMinutes = responseTimeoutHours * 60;
         let dispatchedCount = 0;
 
         for (const duty of createAssignments) {
           if (!duty.assignedMemberId) continue;
 
-          // Primary candidate
-          const primaryCandidate = {
-            candidateId: duty.assignedMemberId,
-            candidateName: duty.assignedMemberName || 'Volunteer',
-            candidatePhone: duty.assignedMemberPhone
-          };
-
-          // Fetch up to 2 backup candidates who have the verified skill for this duty
-          const backupCandidates: Array<{ candidateId: string; candidateName: string; candidatePhone?: string }> = [];
           try {
-            const recs = await ServiceRosterService.getEligibleCandidatesForRole(churchId, createDate, {
-              requiredSkill: duty.requiredSkill || duty.roleTitle,
-              roleTitle: duty.roleTitle
-            });
-            for (const r of recs) {
-              if (r.memberId !== duty.assignedMemberId && backupCandidates.length < 2) {
-                backupCandidates.push({
-                  candidateId: r.memberId,
-                  candidateName: r.memberName,
-                  candidatePhone: r.memberPhone
-                });
+            // Primary candidate
+            const primaryCandidate = {
+              candidateId: duty.assignedMemberId,
+              candidateName: duty.assignedMemberName || 'Volunteer',
+              candidatePhone: duty.assignedMemberPhone || undefined
+            };
+
+            // Fetch up to 2 backup candidates who have the verified skill for this duty
+            const backupCandidates: Array<{ candidateId: string; candidateName: string; candidatePhone?: string }> = [];
+            try {
+              const recs = await ServiceRosterService.getEligibleCandidatesForRole(churchId, createDate, {
+                requiredSkill: duty.requiredSkill || duty.roleTitle,
+                roleTitle: duty.roleTitle
+              });
+              for (const r of recs) {
+                if (r.memberId !== duty.assignedMemberId && backupCandidates.length < 2) {
+                  backupCandidates.push({
+                    candidateId: r.memberId,
+                    candidateName: r.memberName || 'Volunteer',
+                    candidatePhone: r.memberPhone || undefined
+                  });
+                }
               }
+            } catch (e) {
+              console.warn('Could not auto-fetch backup candidates for role:', duty.roleTitle, e);
             }
-          } catch (e) {
-            console.warn('Could not auto-fetch backup candidates for role:', duty.roleTitle, e);
+
+            const ladder = [primaryCandidate, ...backupCandidates];
+
+            await ServiceRosterService.dispatchAssignmentQueue(churchId, targetPlanId, {
+              roleId: duty.id,
+              roleTitle: duty.roleTitle,
+              candidates: ladder,
+              timeoutMinutes
+            });
+            dispatchedCount++;
+          } catch (dutyErr) {
+            console.warn(`[CreatePublish] Error dispatching queue for ${duty.roleTitle}:`, dutyErr);
           }
-
-          const ladder = [primaryCandidate, ...backupCandidates];
-
-          await ServiceRosterService.dispatchAssignmentQueue(churchId, targetPlanId, {
-            roleId: duty.id,
-            roleTitle: duty.roleTitle,
-            candidates: ladder,
-            timeoutMinutes
-          });
-          dispatchedCount++;
         }
 
         Alert.alert(
           'Service Published! 🚀',
           `"${createTitle}" is now published!\n\n${dispatchedCount} push notification(s) dispatched to assigned volunteers with a ${responseTimeoutHours}-hour response deadline.\n\nRhema's automated cloud engine will monitor responses and automatically notify verified backups if any volunteer declines or times out.`
-        );
-      } else {
-        Alert.alert(
-          isEditingExistingPlan ? 'Service Updated 💾' : 'Service Created! 📋',
-          isEditingExistingPlan
-            ? `"${createTitle}" details have been updated.`
-            : `"${createTitle}" created successfully. You are now in the dedicated Order Builder workspace to prepare your run sheet timeline, setlist, and responsibilities.`
         );
       }
 
@@ -1365,7 +2179,30 @@ export default function AdminServicePlanner({ navigation }: any) {
           setSelectedPlan(fresh);
         }
       }
-      setActivePlannerTab('builder');
+
+      if (!publishNow) {
+        const chosenTplName = selectedTemplateForNew === 'blank'
+          ? 'Blank Order'
+          : (templates.find(t => t.id === selectedTemplateForNew)?.name || 'Sunday Worship Preset');
+
+        setCreatedSuccessInfo({
+          title: createTitle.trim() || 'Worship Service',
+          date: createDate,
+          startTime: createStartTime,
+          endTime: createEndTime,
+          location: createLocation.trim() || 'Church Sanctuary',
+          preacher: createPreacher.trim(),
+          isRecurring: createRecurrence !== 'one_time',
+          occurrencesCount: createRecurrence !== 'one_time' ? createOccurrencesCount : 1,
+          recurrenceFrequency: createRecurrence,
+          templateName: chosenTplName,
+          planId: targetPlanId || '',
+          isEdit: isEditingExistingPlan,
+        });
+        setShowCreatedSuccessModal(true);
+      } else {
+        setActivePlannerTab('builder');
+      }
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to save service.');
     } finally {
@@ -1428,12 +2265,13 @@ export default function AdminServicePlanner({ navigation }: any) {
 
   const openEditDetailsModal = () => {
     if (!selectedPlan) return;
-    setEditTitle(selectedPlan.serviceTitle);
-    setEditType(selectedPlan.serviceType);
-    setEditDate(selectedPlan.date);
-    setEditStartTime(selectedPlan.startTime);
-    setEditLocation(selectedPlan.location);
-    setEditPreacher(selectedPlan.preacher);
+    setEditTitle(selectedPlan.serviceTitle || '');
+    setEditType(selectedPlan.serviceType || 'sunday_worship');
+    setEditDate(selectedPlan.date || '');
+    setEditStartTime(formatTimeTo12Hour(selectedPlan.startTime) || '10:00 AM');
+    setEditEndTime(formatTimeTo12Hour(selectedPlan.endTime) || '12:00 PM');
+    setEditLocation(selectedPlan.location || '');
+    setEditPreacher(selectedPlan.preacher || '');
     setEditTheme(selectedPlan.theme || '');
     setEditScripture(selectedPlan.bibleReference || '');
     setEditDescription(selectedPlan.description || '');
@@ -1448,6 +2286,7 @@ export default function AdminServicePlanner({ navigation }: any) {
         serviceType: editType,
         date: editDate.trim(),
         startTime: editStartTime.trim(),
+        endTime: editEndTime.trim(),
         location: editLocation.trim(),
         preacher: editPreacher.trim(),
         theme: editTheme.trim(),
@@ -1465,6 +2304,142 @@ export default function AdminServicePlanner({ navigation }: any) {
     }
   };
 
+  const openSaveAsTemplateModal = () => {
+    if (!selectedPlan) return;
+    setNewTemplateName(`${selectedPlan.serviceTitle} Template`);
+    setNewTemplateDesc(selectedPlan.description || `Reusable service order based on ${selectedPlan.serviceTitle}`);
+    setShowSaveTemplateModal(true);
+  };
+
+  const handleSaveCurrentAsTemplate = async () => {
+    if (!selectedPlan) return;
+    if (!newTemplateName.trim()) {
+      Alert.alert('Required', 'Please enter a template name.');
+      return;
+    }
+    setSavingTemplate(true);
+    try {
+      const created = await ServiceRosterService.createServiceTemplate(churchId, {
+        name: newTemplateName.trim(),
+        description: newTemplateDesc.trim(),
+        runSheetTemplate: selectedPlan.runSheet || []
+      });
+      setTemplates(prev => [created, ...prev]);
+      setShowSaveTemplateModal(false);
+      Alert.alert('Success 🎉', `Template "${created.name}" saved! You can now reuse this service structure anytime when creating new services.`);
+    } catch (tErr: any) {
+      Alert.alert('Error', tErr?.message || 'Failed to save template');
+    } finally {
+      setSavingTemplate(false);
+    }
+  };
+
+  const openServiceBandModal = () => {
+    if (!selectedPlan) return;
+    const a = selectedPlan.assignments || {};
+    const m = selectedPlan.assignmentMemberIds || {};
+
+    setBandKeyboard(a['role_keyboard'] || '');
+    setBandKeyboardId(m['role_keyboard'] || '');
+    setBandDrums(a['role_drums'] || '');
+    setBandDrumsId(m['role_drums'] || '');
+    setBandBass(a['role_bass'] || '');
+    setBandBassId(m['role_bass'] || '');
+    setBandAcoustic(a['role_acoustic'] || '');
+    setBandAcousticId(m['role_acoustic'] || '');
+    setBandElectric(a['role_electric'] || '');
+    setBandElectricId(m['role_electric'] || '');
+    setBandSound(a['role_sound'] || '');
+    setBandSoundId(m['role_sound'] || '');
+    setBandWorshipLeader(a['role_worship_leader'] || '');
+    setBandWorshipLeaderId(m['role_worship_leader'] || '');
+    setShowBandModal(true);
+  };
+
+  const handleSaveServiceBand = async () => {
+    if (!selectedPlan) return;
+    try {
+      setSavingBand(true);
+      const newAssignments: Record<string, string> = { ...(selectedPlan.assignments || {}) };
+      const newMemberIds: Record<string, string> = { ...(selectedPlan.assignmentMemberIds || {}) };
+
+      const updateRole = (roleKey: string, name: string, id: string) => {
+        const clean = name.trim();
+        if (clean) {
+          newAssignments[roleKey] = clean;
+          if (id) {
+            newMemberIds[roleKey] = id;
+          } else {
+            const lower = clean.toLowerCase();
+            const found = churchMembers.find(m => {
+              const mName = (m.name || m.fullName || `${m.firstName || ''} ${m.lastName || ''}`).toLowerCase().trim();
+              const mFirst = (m.firstName || '').toLowerCase().trim();
+              const mLast = (m.lastName || '').toLowerCase().trim();
+              return mName === lower || mName.includes(lower) || lower.includes(mName) || mFirst === lower || mLast === lower;
+            });
+            if (found) newMemberIds[roleKey] = found.id;
+          }
+        } else {
+          delete newAssignments[roleKey];
+          delete newMemberIds[roleKey];
+        }
+      };
+
+      updateRole('role_keyboard', bandKeyboard, bandKeyboardId);
+      updateRole('role_drums', bandDrums, bandDrumsId);
+      updateRole('role_bass', bandBass, bandBassId);
+      updateRole('role_acoustic', bandAcoustic, bandAcousticId);
+      updateRole('role_electric', bandElectric, bandElectricId);
+      updateRole('role_sound', bandSound, bandSoundId);
+      updateRole('role_worship_leader', bandWorshipLeader, bandWorshipLeaderId);
+
+      // Populate across all songs in the setlist so song cards and setlist reflect the whole-service band
+      const updatedSetlist = (selectedPlan.setlist || []).map(song => {
+        const musicians: Record<string, { memberName: string; memberId?: string }> = { ...(song.musicianAssignments || {}) };
+        if (bandKeyboard.trim() && !musicians.keyboard?.memberName) {
+          musicians.keyboard = { memberName: bandKeyboard.trim(), ...(newMemberIds['role_keyboard'] ? { memberId: newMemberIds['role_keyboard'] } : {}) };
+        }
+        if (bandDrums.trim() && !musicians.drums?.memberName) {
+          musicians.drums = { memberName: bandDrums.trim(), ...(newMemberIds['role_drums'] ? { memberId: newMemberIds['role_drums'] } : {}) };
+        }
+        if (bandBass.trim() && !musicians.bass?.memberName) {
+          musicians.bass = { memberName: bandBass.trim(), ...(newMemberIds['role_bass'] ? { memberId: newMemberIds['role_bass'] } : {}) };
+        }
+        if (bandAcoustic.trim() && !musicians.acoustic?.memberName) {
+          musicians.acoustic = { memberName: bandAcoustic.trim(), ...(newMemberIds['role_acoustic'] ? { memberId: newMemberIds['role_acoustic'] } : {}) };
+        }
+        if (bandElectric.trim() && !musicians.electric?.memberName) {
+          musicians.electric = { memberName: bandElectric.trim(), ...(newMemberIds['role_electric'] ? { memberId: newMemberIds['role_electric'] } : {}) };
+        }
+        return {
+          ...song,
+          musicianAssignments: musicians,
+          ledBy: song.ledBy || bandWorshipLeader.trim() || 'Worship Leader'
+        };
+      });
+
+      const updates: Partial<ServicePlan> = {
+        assignments: newAssignments,
+        assignmentMemberIds: newMemberIds,
+        setlist: updatedSetlist
+      };
+
+      await ServiceRosterService.updateServicePlan(churchId, selectedPlan.id, updates);
+      const updatedPlan: ServicePlan = {
+        ...selectedPlan,
+        ...updates
+      };
+      setSelectedPlan(updatedPlan);
+      setPlans(plans.map(p => p.id === selectedPlan.id ? updatedPlan : p));
+      setShowBandModal(false);
+      Alert.alert('Worship Band Assigned! 🎹🥁', 'The keyboard player, drummer, and musical instruments have been assigned for the entire service and all songs.');
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to save worship band.');
+    } finally {
+      setSavingBand(false);
+    }
+  };
+
   // ─────────────────────────────────────────────────────────────────────────────
   // Dynamic Order Builder (RunSheet Actions)
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1477,6 +2452,10 @@ export default function AdminServicePlanner({ navigation }: any) {
     setActResponsible('');
     setActResponsibleId('');
     setActTeam('');
+    setActTeamIds([]);
+    setActShowAllMembers(false);
+    setShowNewCategoryInput(false);
+    setNewCategoryName('');
     setActInstructions('');
     setShowActivityModal(true);
   };
@@ -1489,8 +2468,40 @@ export default function AdminServicePlanner({ navigation }: any) {
     setActResponsible(item.responsiblePerson || '');
     setActResponsibleId(item.responsibleMemberId || '');
     setActTeam(item.supportingTeam || '');
+    const matched = resolveTeamsForActivity({
+      ...item,
+      supportingTeam: item.supportingTeam || (!item.responsibleMemberId ? item.responsiblePerson : '')
+    });
+    setActTeamIds(matched.map(t => t.id));
+    setActShowAllMembers(false);
+    setShowNewCategoryInput(false);
+    setNewCategoryName('');
     setActInstructions(item.instructions || '');
     setShowActivityModal(true);
+  };
+
+  const handleSelectActivityCategory = (cat: ActivityCategory) => {
+    setActCategory(cat);
+    if (!editingActivityId && !actTeam.trim()) {
+      const suggested = ServiceRosterService.resolveMatchingTeams(
+        ministryTeams,
+        ServiceRosterService.getDefaultTeamIdsForActivity(cat, actProgram)
+      );
+      setActTeamIds(suggested.map(t => t.id));
+    }
+  };
+
+  const toggleActivityTeamChip = (team: MinistryTeam) => {
+    const exists = actTeamIds.includes(team.id);
+    const nextIds = exists
+      ? actTeamIds.filter(id => id !== team.id)
+      : [...actTeamIds, team.id];
+    setActTeamIds(nextIds);
+    const nextNames = ministryTeams
+      .filter(t => nextIds.includes(t.id))
+      .map(t => t.name)
+      .filter(Boolean);
+    setActTeam(nextNames.join(' & '));
   };
 
   const handleSaveActivity = async () => {
@@ -1511,6 +2522,8 @@ export default function AdminServicePlanner({ navigation }: any) {
           responsiblePerson: actResponsible.trim(),
           responsibleMemberId: actResponsibleId || undefined,
           supportingTeam: actTeam.trim(),
+          supportingTeamId: actTeamIds[0] || '',
+          supportingTeamIds: actTeamIds,
           instructions: actInstructions.trim()
         });
       } else {
@@ -1523,6 +2536,8 @@ export default function AdminServicePlanner({ navigation }: any) {
           responsiblePerson: actResponsible.trim(),
           responsibleMemberId: actResponsibleId || undefined,
           supportingTeam: actTeam.trim(),
+          supportingTeamId: actTeamIds[0] || '',
+          supportingTeamIds: actTeamIds,
           instructions: actInstructions.trim()
         });
       }
@@ -1540,18 +2555,31 @@ export default function AdminServicePlanner({ navigation }: any) {
     }
   };
 
-  const handleDeleteActivity = async (itemId: string) => {
+  const handleDeleteActivity = (itemId: string, itemTitle?: string) => {
     if (!selectedPlan) return;
-    try {
-      await ServiceRosterService.deleteActivityItem(churchId, selectedPlan.id, itemId);
-      const freshPlan = await ServiceRosterService.getServicePlanById(churchId, selectedPlan.id);
-      if (freshPlan) {
-        setSelectedPlan(freshPlan);
-        setPlans(plans.map(p => p.id === freshPlan.id ? freshPlan : p));
-      }
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to delete activity.');
-    }
+    Alert.alert(
+      'Delete Activity',
+      `Are you sure you want to remove "${itemTitle || 'this activity'}" from the Order of Service?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await ServiceRosterService.deleteActivityItem(churchId, selectedPlan.id, itemId);
+              const freshPlan = await ServiceRosterService.getServicePlanById(churchId, selectedPlan.id);
+              if (freshPlan) {
+                setSelectedPlan(freshPlan);
+                setPlans(plans.map(p => p.id === freshPlan.id ? freshPlan : p));
+              }
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Failed to delete activity.');
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleMoveActivity = async (index: number, direction: 'up' | 'down') => {
@@ -1610,13 +2638,27 @@ export default function AdminServicePlanner({ navigation }: any) {
 
   const openSongPicker = () => {
     setSongLibrarySearch('');
+    setSelectedSongIdsForBatch([]);
     setShowSongPickerModal(true);
   };
 
-  const handleSelectSongFromLibrary = async (song: WorshipSong) => {
+  const toggleSongSelectionForBatch = (songId: string) => {
+    setSelectedSongIdsForBatch(prev =>
+      prev.includes(songId)
+        ? prev.filter(id => id !== songId)
+        : [...prev, songId]
+    );
+  };
+
+  const handleBatchAddSongsToSetlist = async () => {
+    if (selectedSongIdsForBatch.length === 0) return;
     try {
-      const newSetlistItem: SetlistItem = {
-        id: `set_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      setAddingBatchSongs(true);
+      const chosenSongs = churchSongs.filter(s => selectedSongIdsForBatch.includes(s.id));
+      if (chosenSongs.length === 0) return;
+
+      const newItems: SetlistItem[] = chosenSongs.map((song, idx) => ({
+        id: `set_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`,
         songId: song.id,
         title: song.title || song.titleEn || song.titleTe || 'Worship Song',
         titleTe: song.titleTe || '',
@@ -1629,32 +2671,39 @@ export default function AdminServicePlanner({ navigation }: any) {
         ledBy: 'Worship Leader',
         musicianAssignments: {},
         rehearsalNotes: ''
-      };
+      }));
 
       if (showCreateModal) {
-        if (createSetlist.some(s => s.songId === song.id)) {
-          Alert.alert('Notice', 'Song is already added to the setlist.');
-          return;
-        }
-        setCreateSetlist(prev => [...prev, newSetlistItem]);
+        setCreateSetlist(prev => [...prev, ...newItems]);
         setShowSongPickerModal(false);
-        Alert.alert('Song Added 🎵', `Added "${newSetlistItem.title}" to setlist.`);
+        setSelectedSongIdsForBatch([]);
+        Alert.alert('Songs Added 🎵', `Added ${newItems.length} songs to setlist.`);
         return;
       }
 
       if (!selectedPlan) return;
-      setShowSongPickerModal(false);
 
-      await ServiceRosterService.addSongToSetlist(churchId, selectedPlan.id, newSetlistItem);
+      await ServiceRosterService.addMultipleSongsToSetlist(churchId, selectedPlan.id, newItems);
 
       const freshPlan = await ServiceRosterService.getServicePlanById(churchId, selectedPlan.id);
       if (freshPlan) {
         setSelectedPlan(freshPlan);
         setPlans(plans.map(p => p.id === freshPlan.id ? freshPlan : p));
       }
+
+      setShowSongPickerModal(false);
+      setSelectedSongIdsForBatch([]);
+      Alert.alert('Setlist Updated 🎵', `Added ${newItems.length} song(s) to "${selectedPlan.serviceTitle}" setlist.`);
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to add song to setlist.');
+      console.error('Failed to batch add songs:', err);
+      Alert.alert('Error', err?.message || 'Failed to add songs to setlist.');
+    } finally {
+      setAddingBatchSongs(false);
     }
+  };
+
+  const handleSelectSongFromLibrary = async (song: WorshipSong) => {
+    toggleSongSelectionForBatch(song.id);
   };
 
   const openEditSetlistItem = (item: SetlistItem, index: number) => {
@@ -1795,9 +2844,10 @@ export default function AdminServicePlanner({ navigation }: any) {
     setSelectedTeam(null);
     setTeamNameInput('');
     setTeamDescInput('');
-    setTeamColorInput('#1E3A8A');
+    setTeamColorInput('#2E6B4F');
     setTeamLeaderId(undefined);
     setTeamMemberIds([]);
+    setTeamMemberSearch('');
     setShowTeamModal(true);
   };
 
@@ -1805,10 +2855,40 @@ export default function AdminServicePlanner({ navigation }: any) {
     setSelectedTeam(team);
     setTeamNameInput(team.name);
     setTeamDescInput(team.description || '');
-    setTeamColorInput(team.color || '#1E3A8A');
+    setTeamColorInput(team.color || '#2E6B4F');
     setTeamLeaderId(team.leaderId);
     setTeamMemberIds(team.memberIds || []);
+    setTeamMemberSearch('');
     setShowTeamModal(true);
+  };
+
+  const handleDeleteTeam = (team: MinistryTeam) => {
+    Alert.alert(
+      'Delete Ministry Team',
+      `Are you sure you want to delete the "${team.name}" ministry team? This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setSavingTeam(true);
+              await ServiceRosterService.deleteMinistryTeam(churchId, team.id);
+              if (showTeamModal) {
+                setShowTeamModal(false);
+              }
+              await fetchMinistryTeams();
+              Alert.alert('Deleted', `Ministry team "${team.name}" has been deleted.`);
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Failed to delete ministry team.');
+            } finally {
+              setSavingTeam(false);
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleSaveTeam = async () => {
@@ -1816,7 +2896,14 @@ export default function AdminServicePlanner({ navigation }: any) {
       Alert.alert('Required', 'Please enter ministry team name.');
       return;
     }
-    const leaderMember = churchMembers.find(m => m.id === teamLeaderId);
+    const leaderMember = teamLeaderId ? churchMembers.find(m => m.id === teamLeaderId) : undefined;
+    const leaderName = leaderMember
+      ? (leaderMember.name || `${leaderMember.firstName || ''} ${leaderMember.lastName || ''}`.trim() || '')
+      : '';
+    const leaderPhone = leaderMember
+      ? (leaderMember.phone || (leaderMember as any).phoneNumber || (leaderMember as any).mobile || '')
+      : '';
+    const cleanMemberIds = (teamMemberIds || []).filter((id): id is string => Boolean(id));
 
     try {
       setSavingTeam(true);
@@ -1824,21 +2911,21 @@ export default function AdminServicePlanner({ navigation }: any) {
         await ServiceRosterService.updateMinistryTeam(churchId, selectedTeam.id, {
           name: teamNameInput.trim(),
           description: teamDescInput.trim(),
-          color: teamColorInput,
-          leaderId: teamLeaderId,
-          leaderName: leaderMember?.name || leaderMember?.firstName,
-          leaderPhone: leaderMember?.phone,
-          memberIds: teamMemberIds
+          color: teamColorInput || '#2E6B4F',
+          leaderId: teamLeaderId || '',
+          leaderName,
+          leaderPhone,
+          memberIds: cleanMemberIds
         });
       } else {
         await ServiceRosterService.createMinistryTeam(churchId, {
           name: teamNameInput.trim(),
           description: teamDescInput.trim(),
-          color: teamColorInput,
-          leaderId: teamLeaderId,
-          leaderName: leaderMember?.name || leaderMember?.firstName,
-          leaderPhone: leaderMember?.phone,
-          memberIds: teamMemberIds,
+          color: teamColorInput || '#2E6B4F',
+          leaderId: teamLeaderId || '',
+          leaderName,
+          leaderPhone,
+          memberIds: cleanMemberIds,
           active: true
         });
       }
@@ -1851,6 +2938,63 @@ export default function AdminServicePlanner({ navigation }: any) {
     } finally {
       setSavingTeam(false);
     }
+  };
+
+
+  const handleMoveTeam = async (index: number, direction: 'up' | 'down') => {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= ministryTeams.length) return;
+
+    const reordered = [...ministryTeams];
+    const [moved] = reordered.splice(index, 1);
+    reordered.splice(targetIndex, 0, moved);
+
+    // Immediate optimistic update
+    setMinistryTeams(reordered);
+    setTeamOrderFeedback(`Moved ${moved.name} to #${targetIndex + 1}`);
+
+    try {
+      setIsSavingTeamOrder(true);
+      await ServiceRosterService.updateMinistryTeamsOrder(churchId, reordered);
+      setTimeout(() => setTeamOrderFeedback(null), 2500);
+    } catch (err: any) {
+      console.error('Failed to update team order:', err);
+    } finally {
+      setIsSavingTeamOrder(false);
+    }
+  };
+
+  const handleResetTeamOrder = () => {
+    Alert.alert(
+      'Reset Ministry Team Order',
+      'Reset all ministry teams back to the standard default order?\n\n1. Worship Team\n2. Prayer Team\n3. Music Team\n4. Media Team\n5. Livestream Team\n(followed by remaining departments)',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset Order',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setIsSavingTeamOrder(true);
+              const reset = [...ministryTeams].sort((a, b) => {
+                const rankA = getTeamDefaultRank(a.name, a.id);
+                const rankB = getTeamDefaultRank(b.name, b.id);
+                if (rankA !== rankB) return rankA - rankB;
+                return (a.name || '').localeCompare(b.name || '');
+              });
+              setMinistryTeams(reset);
+              await ServiceRosterService.updateMinistryTeamsOrder(churchId, reset);
+              setTeamOrderFeedback('Restored to default order');
+              setTimeout(() => setTeamOrderFeedback(null), 2500);
+            } catch (err: any) {
+              Alert.alert('Error', err?.message || 'Failed to reset order.');
+            } finally {
+              setIsSavingTeamOrder(false);
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleSeedDefaultTeams = async () => {
@@ -1949,11 +3093,21 @@ export default function AdminServicePlanner({ navigation }: any) {
       activityName?: string;
       suggestedSkill?: string;
       suggestedTeamId?: string;
+      suggestedTeamIds?: string[];
     }> = [];
 
     // 1. Roles from RunSheet activities
     (selectedPlan.runSheet || []).forEach(act => {
       const rId = `act_${act.id}`;
+      const matchedTeams = resolveTeamsForActivity(act);
+      const defaultIds = ServiceRosterService.getDefaultTeamIdsForActivity(act.category, act.program);
+      const resolvedTeamIds = matchedTeams.length > 0
+        ? matchedTeams.map(t => t.id)
+        : (act.supportingTeamIds && act.supportingTeamIds.length > 0
+            ? act.supportingTeamIds
+            : (act.supportingTeamId
+                ? [act.supportingTeamId]
+                : (defaultIds.length > 0 ? defaultIds : (act.supportingTeam ? [act.supportingTeam] : []))));
       roles.push({
         roleId: rId,
         roleTitle: act.responsiblePerson || act.program,
@@ -1961,7 +3115,8 @@ export default function AdminServicePlanner({ navigation }: any) {
         activityId: act.id,
         activityName: act.program,
         suggestedSkill: act.program,
-        suggestedTeamId: act.supportingTeam
+        suggestedTeamId: resolvedTeamIds[0],
+        suggestedTeamIds: resolvedTeamIds
       });
     });
 
@@ -1971,6 +3126,7 @@ export default function AdminServicePlanner({ navigation }: any) {
       { id: 'role_worship_leader', title: 'Worship Leader', category: 'worship', skill: 'Worship Leader', teamId: 'team_worship' },
       { id: 'role_keyboard', title: 'Keyboardist / Synth', category: 'music', skill: 'Keyboard', teamId: 'team_music' },
       { id: 'role_acoustic', title: 'Acoustic Guitar', category: 'music', skill: 'Guitar', teamId: 'team_music' },
+      { id: 'role_electric', title: 'Electric Guitarist', category: 'music', skill: 'Electric Guitar', teamId: 'team_music' },
       { id: 'role_bass', title: 'Bass Guitar', category: 'music', skill: 'Bass Guitar', teamId: 'team_music' },
       { id: 'role_drums', title: 'Drummer', category: 'music', skill: 'Drums', teamId: 'team_music' },
       { id: 'role_sound', title: 'Sound Engineer', category: 'technical', skill: 'Sound Engineering', teamId: 'team_sound' },
@@ -1988,13 +3144,14 @@ export default function AdminServicePlanner({ navigation }: any) {
           roleTitle: sr.title,
           category: sr.category,
           suggestedSkill: sr.skill,
-          suggestedTeamId: sr.teamId
+          suggestedTeamId: sr.teamId,
+          suggestedTeamIds: sr.teamId ? [sr.teamId] : undefined
         });
       }
     });
 
     return roles;
-  }, [selectedPlan]);
+  }, [selectedPlan, ministryTeams]);
 
   const openDispatchQueueModal = async (
     roleId: string,
@@ -2002,7 +3159,8 @@ export default function AdminServicePlanner({ navigation }: any) {
     activityId?: string,
     activityName?: string,
     suggestedTeamId?: string,
-    suggestedSkill?: string
+    suggestedSkill?: string,
+    suggestedTeamIds?: string[]
   ) => {
     if (!selectedPlan) return;
     setTargetRoleId(roleId);
@@ -2029,6 +3187,7 @@ export default function AdminServicePlanner({ navigation }: any) {
     try {
       const recs = await ServiceRosterService.getEligibleCandidatesForRole(churchId, selectedPlan.date, {
         teamId: suggestedTeamId,
+        teamIds: suggestedTeamIds,
         requiredSkill: suggestedSkill || roleTitle,
         roleTitle
       });
@@ -2050,7 +3209,7 @@ export default function AdminServicePlanner({ navigation }: any) {
       return;
     }
     if (ladderCandidates.length >= 3) {
-      Alert.alert('Maximum Reached', 'You can specify up to 3 candidates in the sequential ladder (Rank 1, Rank 2, Rank 3).');
+      Alert.alert('Maximum Reached', 'You can specify up to 3 candidates in the sequential ladder (Primary, 1st Backup, 2nd Backup).');
       return;
     }
 
@@ -2080,7 +3239,7 @@ export default function AdminServicePlanner({ navigation }: any) {
       });
 
       setShowDispatchQueueModal(false);
-      Alert.alert('Queue Dispatched', `Assignment queue for "${targetRoleTitle}" activated! Push notification dispatched to Rank 1 (${ladderCandidates[0]?.candidateName}) with a ${dispatchTimeoutHours}h response deadline.`);
+      Alert.alert('Queue Dispatched', `Assignment queue for "${targetRoleTitle}" activated! Push notification dispatched to Primary Volunteer (${ladderCandidates[0]?.candidateName}) with a ${dispatchTimeoutHours}h response deadline.`);
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to dispatch assignment queue.');
     } finally {
@@ -2127,17 +3286,21 @@ export default function AdminServicePlanner({ navigation }: any) {
     }
   };
 
-  const openSimulateModal = (queue: ServiceAssignmentQueue) => {
+  const openSimulateModal = (queue: ServiceAssignmentQueue, initialAction: 'accept' | 'decline' = 'accept') => {
     setActiveQueueForSimulate(queue);
-    setSimulateAction('accept');
+    setSimulateAction(initialAction);
     setSimulateDeclineReason('Out of town for personal engagement');
     setShowSimulateModal(true);
   };
 
   const handleSimulateResponseSubmit = async () => {
     if (!selectedPlan || !activeQueueForSimulate) return;
+    const uniqueCands = ServiceRosterService.deduplicateCandidates(activeQueueForSimulate.candidates || []);
     const curIdx = activeQueueForSimulate.currentCandidateIndex || 0;
-    const candidate = activeQueueForSimulate.candidates?.[curIdx];
+    const pendingCand = uniqueCands.find(c => c.status === 'pending' || c.status === 'waiting');
+    const candidate = activeQueueForSimulate.mode === 'first_come_first_served'
+      ? (pendingCand || uniqueCands[0])
+      : (uniqueCands[curIdx] || pendingCand || uniqueCands[0]);
     if (!candidate) {
       Alert.alert('Error', 'No active candidate found in this queue.');
       return;
@@ -2151,18 +3314,30 @@ export default function AdminServicePlanner({ navigation }: any) {
         activeQueueForSimulate.roleId,
         candidate.candidateId,
         simulateAction,
-        simulateAction === 'decline' ? simulateDeclineReason : undefined
+        simulateAction === 'decline' ? simulateDeclineReason : undefined,
+        candidate.candidateName
       );
 
       setShowSimulateModal(false);
       if (simulateAction === 'accept') {
-        Alert.alert('Confirmed!', `${candidate.candidateName} accepted the duty. Assignment status updated to CONFIRMED.`);
+        Alert.alert(
+          'Slot Booked! 🎉',
+          `${candidate.candidateName} accepted the responsibility. Slot is now BOOKED and locked.`
+        );
       } else {
-        const nextCand = activeQueueForSimulate.candidates?.[curIdx + 1];
-        if (nextCand) {
-          Alert.alert('Declined & Cascaded!', `${candidate.candidateName} declined ("${simulateDeclineReason}"). Auto-cascade advanced immediately to Rank #${curIdx + 2}: ${nextCand.candidateName}!`);
+        if (activeQueueForSimulate.mode === 'first_come_first_served') {
+          Alert.alert(
+            'Declined!',
+            `${candidate.candidateName} declined ("${simulateDeclineReason}"). Slot remains available for other eligible volunteers.`
+          );
         } else {
-          Alert.alert('Queue Exhausted!', `${candidate.candidateName} declined and no more candidates remain in the ladder. Queue marked as EXHAUSTED.`);
+          const nextCand = activeQueueForSimulate.candidates?.[curIdx + 1];
+          if (nextCand) {
+            const nextPriorityLabel = curIdx + 1 === 1 ? '1st Backup' : '2nd Backup';
+            Alert.alert('Declined & Cascaded!', `${candidate.candidateName} declined ("${simulateDeclineReason}"). Auto-cascade advanced immediately to ${nextPriorityLabel}: ${nextCand.candidateName}!`);
+          } else {
+            Alert.alert('Queue Exhausted!', `${candidate.candidateName} declined and no more candidates remain in the ladder. Queue marked as EXHAUSTED.`);
+          }
         }
       }
     } catch (err: any) {
@@ -2193,130 +3368,6 @@ export default function AdminServicePlanner({ navigation }: any) {
         }
       ]
     );
-  };
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Rehearsal Management Handlers (Phase 6)
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  const openCreateRehearsalModal = () => {
-    if (!selectedPlan) return;
-    setEditingRehearsalId(null);
-    setRehearsalNameInput('Saturday Full Band Rehearsal');
-    const svcDate = new Date(selectedPlan.date);
-    svcDate.setDate(svcDate.getDate() - 1);
-    const prevDate = svcDate.toISOString().split('T')[0];
-    setRehearsalDateInput(prevDate || selectedPlan.date);
-    setRehearsalStartTimeInput('18:00');
-    setRehearsalEndTimeInput('19:30');
-    setRehearsalLocationInput('Church Sanctuary');
-    setRehearsalTeamIds(['team_worship', 'team_music']);
-    setRehearsalParticipantIds([]);
-    setRehearsalSongPracticeIds((selectedPlan.setlist || []).map(s => s.id));
-    setRehearsalNotesInput('Full run-through of worship setlist, transition cues, and soundcheck.');
-    setShowRehearsalModal(true);
-  };
-
-  const openEditRehearsalModal = (rehearsal: ServiceRehearsal) => {
-    setEditingRehearsalId(rehearsal.id);
-    setRehearsalNameInput(rehearsal.rehearsalName);
-    setRehearsalDateInput(rehearsal.date);
-    setRehearsalStartTimeInput(rehearsal.startTime);
-    setRehearsalEndTimeInput(rehearsal.endTime);
-    setRehearsalLocationInput(rehearsal.location);
-    setRehearsalTeamIds(rehearsal.assignedTeamIds || []);
-    setRehearsalParticipantIds(rehearsal.participantMemberIds || []);
-    setRehearsalSongPracticeIds(rehearsal.songPracticeIds || []);
-    setRehearsalNotesInput(rehearsal.notes || '');
-    setShowRehearsalModal(true);
-  };
-
-  const handleSaveRehearsal = async () => {
-    if (!selectedPlan) return;
-    if (!rehearsalNameInput.trim()) {
-      Alert.alert('Required', 'Please enter rehearsal name.');
-      return;
-    }
-    if (!rehearsalDateInput.trim()) {
-      Alert.alert('Required', 'Please enter rehearsal date.');
-      return;
-    }
-
-    try {
-      setSavingRehearsal(true);
-      await ServiceRosterService.createOrUpdateRehearsal(churchId, selectedPlan.id, {
-        ...(editingRehearsalId ? { id: editingRehearsalId } : {}),
-        rehearsalName: rehearsalNameInput.trim(),
-        date: rehearsalDateInput.trim(),
-        startTime: rehearsalStartTimeInput.trim(),
-        endTime: rehearsalEndTimeInput.trim(),
-        location: rehearsalLocationInput.trim(),
-        assignedTeamIds: rehearsalTeamIds,
-        participantMemberIds: rehearsalParticipantIds,
-        songPracticeIds: rehearsalSongPracticeIds,
-        notes: rehearsalNotesInput.trim()
-      });
-
-      setShowRehearsalModal(false);
-      Alert.alert(
-        editingRehearsalId ? 'Updated' : 'Rehearsal Scheduled',
-        `Rehearsal "${rehearsalNameInput.trim()}" saved. Automated FCM notifications dispatched to all musicians and invited teams.`
-      );
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to save rehearsal.');
-    } finally {
-      setSavingRehearsal(false);
-    }
-  };
-
-  const handleDeleteRehearsal = (rehearsalId: string, name: string) => {
-    if (!selectedPlan) return;
-    Alert.alert(
-      'Delete Rehearsal',
-      `Are you sure you want to remove rehearsal "${name}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await ServiceRosterService.deleteRehearsal(churchId, selectedPlan.id, rehearsalId);
-              Alert.alert('Deleted', 'Rehearsal removed.');
-            } catch (err: any) {
-              Alert.alert('Error', err.message || 'Failed to delete rehearsal.');
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  const openTakeRehearsalAttendance = (rehearsal: ServiceRehearsal) => {
-    setActiveRehearsalForAttendance(rehearsal);
-    setShowRehearsalAttendanceModal(true);
-  };
-
-  const handleSetParticipantAttendance = async (
-    rehearsalId: string,
-    memberId: string,
-    status: 'present' | 'absent' | 'late' | 'excused'
-  ) => {
-    if (!selectedPlan) return;
-    try {
-      await ServiceRosterService.updateRehearsalAttendance(churchId, selectedPlan.id, rehearsalId, memberId, status);
-      if (activeRehearsalForAttendance && activeRehearsalForAttendance.id === rehearsalId) {
-        setActiveRehearsalForAttendance({
-          ...activeRehearsalForAttendance,
-          attendance: {
-            ...(activeRehearsalForAttendance.attendance || {}),
-            [memberId]: status
-          }
-        });
-      }
-    } catch (err) {
-      console.error('Failed to update rehearsal attendance:', err);
-    }
   };
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -2418,212 +3469,478 @@ export default function AdminServicePlanner({ navigation }: any) {
     }
   };
 
+  const renderBandInstrumentSection = (config: {
+    emoji: string;
+    title: string;
+    instrumentKey: string;
+    value: string;
+    valueId: string;
+    onChangeText: (txt: string) => void;
+    onSelectCandidate: (cand: { id: string; name: string }) => void;
+    onClear: () => void;
+  }) => {
+    const candidates = getMusicianCandidates(config.instrumentKey);
+    const isExpanded = expandedInstrumentMembers[config.instrumentKey] || false;
+
+    return (
+      <View style={{ marginBottom: 16 }}>
+        {/* Header with Title and Clear button */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+            <Text style={{ fontSize: 16 }}>{config.emoji}</Text>
+            <Text style={[styles.fieldLabel, { color: primaryText, marginBottom: 0, fontWeight: '700' }]}>
+              {config.title}
+            </Text>
+          </View>
+          {config.value ? (
+            <TouchableOpacity onPress={config.onClear} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+              <Text style={{ fontSize: 11.5, color: '#EF4444', fontWeight: '700' }}>Clear</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+
+        {/* Input */}
+        <TextInput
+          style={[
+            styles.input,
+            {
+              backgroundColor: inputBg,
+              color: primaryText,
+              borderColor: config.value ? '#10B981' : inputBorder,
+              borderWidth: config.value ? 1.5 : 1
+            }
+          ]}
+          placeholder={`Enter or select ${config.title.toLowerCase()}`}
+          placeholderTextColor="#94A3B8"
+          value={config.value}
+          onChangeText={config.onChangeText}
+        />
+
+        {/* Skilled Candidates Display */}
+        <View style={{ marginTop: 6 }}>
+          {candidates.length > 0 ? (
+            <View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <Text style={{ fontSize: 10.5, color: isDark ? '#34D399' : '#059669', fontWeight: '700', letterSpacing: 0.5 }}>
+                  MATCHED BY SKILL ({candidates.length}):
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setExpandedInstrumentMembers(prev => ({ ...prev, [config.instrumentKey]: !isExpanded }))}
+                  hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                >
+                  <Text style={{ fontSize: 10.5, color: secondaryText, fontWeight: '600' }}>
+                    {isExpanded ? 'Hide All' : '+ Show All Members'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                {candidates.map(c => {
+                  const isSelected = config.valueId === c.id || config.value.toLowerCase().trim() === c.name.toLowerCase().trim();
+                  return (
+                    <TouchableOpacity
+                      key={c.id}
+                      style={[
+                        styles.quickMemberChip,
+                        {
+                          backgroundColor: isSelected ? publishBtnBg : (isDark ? '#27272A' : '#F1F5F9'),
+                          borderColor: isSelected ? publishBtnBg : (c.isPrimary ? '#10B981' : (isDark ? '#3F3F46' : '#CBD5E1')),
+                          borderWidth: 1,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 5
+                        }
+                      ]}
+                      onPress={() => config.onSelectCandidate({ id: c.id, name: c.name })}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[styles.quickMemberChipTxt, isSelected && { color: '#FFFFFF', fontWeight: '700' }]}>
+                        {c.name}
+                      </Text>
+                      <View style={{
+                        paddingHorizontal: 5,
+                        paddingVertical: 1.5,
+                        borderRadius: 6,
+                        backgroundColor: isSelected ? 'rgba(255,255,255,0.25)' : (c.isPrimary ? (isDark ? 'rgba(16,185,129,0.2)' : '#DCFCE7') : (isDark ? 'rgba(100,116,139,0.2)' : '#E2E8F0'))
+                      }}>
+                        <Text style={{
+                          fontSize: 9,
+                          fontWeight: '800',
+                          color: isSelected ? '#FFFFFF' : (c.isPrimary ? (isDark ? '#34D399' : '#15803D') : secondaryText)
+                        }}>
+                          {c.badge}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          ) : (
+            <View>
+              <Text style={{ fontSize: 11, color: secondaryText, fontStyle: 'italic', marginBottom: 4 }}>
+                No members tagged with this skill in profile. Select volunteer:
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                {churchMembers.slice(0, 12).map(m => {
+                  const mName = m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim() || 'Member';
+                  const isSelected = config.valueId === m.id || config.value.toLowerCase().trim() === mName.toLowerCase().trim();
+                  return (
+                    <TouchableOpacity
+                      key={m.id}
+                      style={[
+                        styles.quickMemberChip,
+                        {
+                          backgroundColor: isSelected ? publishBtnBg : (isDark ? '#27272A' : '#F1F5F9'),
+                          borderColor: isSelected ? publishBtnBg : (isDark ? '#3F3F46' : '#CBD5E1'),
+                          borderWidth: 1
+                        }
+                      ]}
+                      onPress={() => config.onSelectCandidate({ id: m.id, name: mName })}
+                    >
+                      <Text style={[styles.quickMemberChipTxt, isSelected && { color: '#FFFFFF', fontWeight: '700' }]}>
+                        {mName}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
+
+          {/* Expanded all members if toggled */}
+          {candidates.length > 0 && isExpanded && (
+            <View style={{ marginTop: 8, paddingTop: 6, borderTopWidth: 1, borderTopColor: cardBorder }}>
+              <Text style={{ fontSize: 10, color: secondaryText, fontWeight: '700', marginBottom: 4 }}>
+                ALL CHURCH MEMBERS:
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                {churchMembers.map(m => {
+                  const mName = m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim() || 'Member';
+                  const isSelected = config.valueId === m.id || config.value.toLowerCase().trim() === mName.toLowerCase().trim();
+                  return (
+                    <TouchableOpacity
+                      key={m.id}
+                      style={[
+                        styles.quickMemberChip,
+                        {
+                          backgroundColor: isSelected ? publishBtnBg : (isDark ? '#27272A' : '#F1F5F9'),
+                          borderColor: isSelected ? publishBtnBg : (isDark ? '#3F3F46' : '#CBD5E1'),
+                          borderWidth: 1
+                        }
+                      ]}
+                      onPress={() => config.onSelectCandidate({ id: m.id, name: mName })}
+                    >
+                      <Text style={[styles.quickMemberChipTxt, isSelected && { color: '#FFFFFF', fontWeight: '700' }]}>
+                        {mName}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
+        </View>
+      </View>
+    );
+  };
+
   // ─────────────────────────────────────────────────────────────────────────────
   // RENDER SECTIONS
   // ─────────────────────────────────────────────────────────────────────────────
 
   return (
     <View style={[styles.container, { backgroundColor: screenBg }]}>
-      {/* ─── Top Header ─── */}
+      {/* ─── Top Header (Matching Daily Promises, Events, Sermons) ─── */}
       <View style={[styles.header, { paddingTop: insets.top + 8, backgroundColor: cardSurface, borderBottomColor: borderColor }]}>
         <View style={styles.headerRow}>
-          <View style={{ flex: 1 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <View style={styles.headerBadge}>
-                <Sparkles size={11} color="#D97706" />
-                <Text style={styles.headerBadgeTxt}>WORSHIP OPERATIONS</Text>
-              </View>
-              {selectedPlan && (activePlannerTab === 'builder' || activePlannerTab === 'setlist') && (
-                <View style={[
-                  styles.statusPill,
-                  selectedPlan.status === 'published' ? styles.statusPillPublished :
-                    selectedPlan.status === 'live' ? styles.statusPillLive :
-                      selectedPlan.status === 'completed' ? styles.statusPillCompleted :
-                        styles.statusPillDraft
-                ]}>
-                  <Text style={styles.statusPillTxt}>{selectedPlan.status.toUpperCase()}</Text>
-                </View>
-              )}
-            </View>
+          {/* Circular Back Button (identical to Promises, Sermons, Events) */}
+          <TouchableOpacity
+            onPress={() => { if (setTabByName) setTabByName('Dashboard'); else if (navigation?.canGoBack?.()) navigation.goBack(); else setActiveTab(0); }}
+            style={[styles.circularBackBtn, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? '#3F3F46' : '#E2E8F0' }]}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.2} />
+          </TouchableOpacity>
+
+          <View style={{ flex: 1, paddingHorizontal: 12, justifyContent: 'center' }}>
             <Text style={[styles.headerTitle, { color: primaryText }]} numberOfLines={1}>
-              {activePlannerTab === 'setlist' ? 'Worship Setlist & Songs' :
-                activePlannerTab === 'queue' ? 'Assignment Queue & Cascade' :
-                  activePlannerTab === 'rehearsals' ? 'Service Rehearsals' :
-                    activePlannerTab === 'attendance' ? 'Volunteer Attendance' :
-                      activePlannerTab === 'analytics' ? 'Roster Analytics & Health' :
-                        activePlannerTab === 'teams' ? 'Ministry Teams' :
-                          activePlannerTab === 'skills' ? 'Member Skills & Verification' :
-                            activePlannerTab === 'templates' ? 'Service Templates' :
-                              selectedPlan ? selectedPlan.serviceTitle : 'Service Roster'}
-            </Text>
-            <Text style={[styles.headerSubtitle, { color: secondaryText }]} numberOfLines={1}>
-              {activePlannerTab === 'setlist' ? `${selectedPlan?.setlist?.length || 0} songs · ~${totalSetlistMinutes} mins praise flow` :
-                activePlannerTab === 'queue' ? `${assignmentQueues.filter(q => q.status === 'confirmed').length} confirmed · ${assignmentQueues.filter(q => q.status === 'pending').length} pending queue(s)` :
-                  activePlannerTab === 'rehearsals' ? `${rehearsals.length} rehearsal(s) scheduled for this service` :
-                    activePlannerTab === 'attendance' ? `${serviceVolunteers.length} volunteer(s) assigned for this service` :
-                      activePlannerTab === 'analytics' ? 'Turnout rates, burnout risk & worship analytics' :
-                        activePlannerTab === 'teams' ? `${ministryTeams.length} active ministry teams · ${churchMembers.length} members` :
-                          activePlannerTab === 'skills' ? `${memberSkills.length} skills recorded · ${pendingSkillsCount} pending review` :
-                            selectedPlan ? `📅 ${selectedPlan.date} · ${selectedPlan.startTime} - ${selectedPlan.endTime}` : 'Plan & coordinate church worship'}
+              {activePlannerTab === 'setlist' ? 'Worship Setlist' :
+                activePlannerTab === 'queue' ? 'Assignments' :
+                  activePlannerTab === 'attendance' ? 'Volunteer Attendance' :
+                    activePlannerTab === 'analytics' ? 'Roster Analytics' :
+                      activePlannerTab === 'teams' ? 'Ministry Teams' :
+                        activePlannerTab === 'skills' ? 'Verified Skills' :
+                          activePlannerTab === 'templates' ? 'Service Templates' :
+                            'Service Roster'}
             </Text>
           </View>
 
-          {activePlannerTab === 'rehearsals' ? (
-            <TouchableOpacity
-              style={styles.newServiceBtn}
-              onPress={openCreateRehearsalModal}
-              activeOpacity={0.85}
+          {/* Right Action Button (Pill shaped, black in light mode, white in dark mode - NO BLUE) */}
+          <TouchableOpacity
+            style={[
+              styles.newServiceBtn,
+              {
+                backgroundColor: primaryBtnBg,
+                borderColor: primaryBtnBg,
+                flexShrink: 0
+              }
+            ]}
+            onPress={
+              activePlannerTab === 'attendance' ? handleCheckInAllVolunteers :
+              activePlannerTab === 'analytics' ? fetchAnalytics :
+              activePlannerTab === 'setlist' ? openSongPicker :
+              activePlannerTab === 'teams' ? openCreateTeamModal :
+              activePlannerTab === 'skills' ? () => setShowAddSkillModal(true) :
+              openCreateModal
+            }
+            activeOpacity={0.85}
+          >
+            <Plus size={14} color={primaryBtnText} strokeWidth={2.5} />
+            <Text
+              style={[
+                styles.newServiceBtnTxt,
+                { color: primaryBtnText }
+              ]}
+              numberOfLines={1}
             >
-              <Plus size={16} color="#FFFFFF" />
-              <Text style={styles.newServiceBtnTxt}>Add Rehearsal</Text>
-            </TouchableOpacity>
-          ) : activePlannerTab === 'attendance' ? (
-            <TouchableOpacity
-              style={[styles.newServiceBtn, { backgroundColor: '#059669' }]}
-              onPress={handleCheckInAllVolunteers}
-              activeOpacity={0.85}
-              disabled={savingAttendance || serviceVolunteers.length === 0}
-            >
-              <UserCheck size={16} color="#FFFFFF" />
-              <Text style={styles.newServiceBtnTxt}>Check-In All</Text>
-            </TouchableOpacity>
-          ) : activePlannerTab === 'analytics' ? (
-            <TouchableOpacity
-              style={styles.newServiceBtn}
-              onPress={fetchAnalytics}
-              activeOpacity={0.85}
-              disabled={loadingAnalytics}
-            >
-              <RefreshCw size={14} color="#FFFFFF" />
-              <Text style={styles.newServiceBtnTxt}>Refresh</Text>
-            </TouchableOpacity>
-          ) : activePlannerTab === 'setlist' ? (
-            <TouchableOpacity
-              style={styles.newServiceBtn}
-              onPress={openSongPicker}
-              activeOpacity={0.85}
-            >
-              <Plus size={16} color="#FFFFFF" />
-              <Text style={styles.newServiceBtnTxt}>Add Song</Text>
-            </TouchableOpacity>
-          ) : activePlannerTab === 'teams' ? (
-            <TouchableOpacity
-              style={styles.newServiceBtn}
-              onPress={openCreateTeamModal}
-              activeOpacity={0.85}
-            >
-              <Plus size={16} color="#FFFFFF" />
-              <Text style={styles.newServiceBtnTxt}>Add Team</Text>
-            </TouchableOpacity>
-          ) : activePlannerTab === 'skills' ? (
-            <TouchableOpacity
-              style={styles.newServiceBtn}
-              onPress={() => setShowAddSkillModal(true)}
-              activeOpacity={0.85}
-            >
-              <Plus size={16} color="#FFFFFF" />
-              <Text style={styles.newServiceBtnTxt}>Add Skill</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={styles.newServiceBtn}
-              onPress={openCreateModal}
-              activeOpacity={0.85}
-            >
-              <Plus size={16} color="#FFFFFF" />
-              <Text style={styles.newServiceBtnTxt}>New Service</Text>
-            </TouchableOpacity>
-          )}
+              {activePlannerTab === 'attendance' ? 'Check-In' :
+               activePlannerTab === 'analytics' ? 'Refresh' :
+               activePlannerTab === 'setlist' ? 'Add Song' :
+               activePlannerTab === 'teams' ? 'Add Team' :
+               activePlannerTab === 'skills' ? 'Add Skill' :
+               'New Service'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
-        {/* ─── Navigation Tabs ─── */}
+        {/* ─── Navigation Tabs (Black active in light, white active in dark - NO BLUE) ─── */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsScroll}>
           <TouchableOpacity
-            style={[styles.tabBtn, activePlannerTab === 'calendar' && styles.tabBtnActive]}
+            style={[
+              styles.tabBtn,
+              activePlannerTab === 'calendar' ? {
+                backgroundColor: primaryBtnBg,
+                borderColor: primaryBtnBg,
+              } : {
+                backgroundColor: isDark ? '#18181B' : '#F8FAFC',
+                borderColor: cardBorder,
+              }
+            ]}
             onPress={() => setActivePlannerTab('calendar')}
           >
-            <CalendarDays size={14} color={activePlannerTab === 'calendar' ? '#1E3A8A' : secondaryText} />
-            <Text style={[styles.tabBtnTxt, activePlannerTab === 'calendar' && styles.tabBtnTxtActive]}>
+            <CalendarDays size={14} color={activePlannerTab === 'calendar' ? primaryBtnText : secondaryText} />
+            <Text style={[
+              styles.tabBtnTxt,
+              activePlannerTab === 'calendar' ? { color: primaryBtnText, fontWeight: '800' } : { color: secondaryText }
+            ]}>
               Services ({plans.length})
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabBtn, activePlannerTab === 'builder' && styles.tabBtnActive]}
+            style={[
+              styles.tabBtn,
+              activePlannerTab === 'builder' ? {
+                backgroundColor: primaryBtnBg,
+                borderColor: primaryBtnBg,
+              } : {
+                backgroundColor: isDark ? '#18181B' : '#F8FAFC',
+                borderColor: cardBorder,
+              }
+            ]}
             onPress={() => setActivePlannerTab('builder')}
             disabled={!selectedPlan}
           >
-            <Layers size={14} color={activePlannerTab === 'builder' ? '#1E3A8A' : secondaryText} />
-            <Text style={[styles.tabBtnTxt, activePlannerTab === 'builder' && styles.tabBtnTxtActive]}>
+            <Layers size={14} color={activePlannerTab === 'builder' ? primaryBtnText : secondaryText} />
+            <Text style={[
+              styles.tabBtnTxt,
+              activePlannerTab === 'builder' ? { color: primaryBtnText, fontWeight: '800' } : { color: secondaryText }
+            ]}>
               Order Builder {selectedPlan ? `(${selectedPlan.runSheet?.length || 0})` : ''}
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabBtn, activePlannerTab === 'setlist' && styles.tabBtnActive]}
+            style={[
+              styles.tabBtn,
+              activePlannerTab === 'setlist' ? {
+                backgroundColor: primaryBtnBg,
+                borderColor: primaryBtnBg,
+              } : {
+                backgroundColor: isDark ? '#18181B' : '#F8FAFC',
+                borderColor: cardBorder,
+              }
+            ]}
             onPress={() => setActivePlannerTab('setlist')}
             disabled={!selectedPlan}
           >
-            <Music size={14} color={activePlannerTab === 'setlist' ? '#1E3A8A' : secondaryText} />
-            <Text style={[styles.tabBtnTxt, activePlannerTab === 'setlist' && styles.tabBtnTxtActive]}>
+            <Music size={14} color={activePlannerTab === 'setlist' ? primaryBtnText : secondaryText} />
+            <Text style={[
+              styles.tabBtnTxt,
+              activePlannerTab === 'setlist' ? { color: primaryBtnText, fontWeight: '800' } : { color: secondaryText }
+            ]}>
               Worship Setlist {selectedPlan ? `(${selectedPlan.setlist?.length || 0})` : ''}
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabBtn, activePlannerTab === 'queue' && styles.tabBtnActive]}
+            style={[
+              styles.tabBtn,
+              activePlannerTab === 'queue' ? {
+                backgroundColor: primaryBtnBg,
+                borderColor: primaryBtnBg,
+              } : {
+                backgroundColor: isDark ? '#18181B' : '#F8FAFC',
+                borderColor: cardBorder,
+              }
+            ]}
             onPress={() => setActivePlannerTab('queue')}
             disabled={!selectedPlan}
           >
-            <ListOrdered size={14} color={activePlannerTab === 'queue' ? '#1E3A8A' : secondaryText} />
-            <Text style={[styles.tabBtnTxt, activePlannerTab === 'queue' && styles.tabBtnTxtActive]}>
+            <ListOrdered size={14} color={activePlannerTab === 'queue' ? primaryBtnText : secondaryText} />
+            <Text style={[
+              styles.tabBtnTxt,
+              activePlannerTab === 'queue' ? { color: primaryBtnText, fontWeight: '800' } : { color: secondaryText }
+            ]}>
               Assignments {selectedPlan ? `(${assignmentQueues.length})` : ''}
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabBtn, activePlannerTab === 'teams' && styles.tabBtnActive]}
+            style={[
+              styles.tabBtn,
+              activePlannerTab === 'teams' ? {
+                backgroundColor: primaryBtnBg,
+                borderColor: primaryBtnBg,
+              } : {
+                backgroundColor: isDark ? '#18181B' : '#F8FAFC',
+                borderColor: cardBorder,
+              }
+            ]}
             onPress={() => setActivePlannerTab('teams')}
           >
-            <Users size={14} color={activePlannerTab === 'teams' ? '#1E3A8A' : secondaryText} />
-            <Text style={[styles.tabBtnTxt, activePlannerTab === 'teams' && styles.tabBtnTxtActive]}>
+            <Users size={14} color={activePlannerTab === 'teams' ? primaryBtnText : secondaryText} />
+            <Text style={[
+              styles.tabBtnTxt,
+              activePlannerTab === 'teams' ? { color: primaryBtnText, fontWeight: '800' } : { color: secondaryText }
+            ]}>
               Ministry Teams ({ministryTeams.length})
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabBtn, activePlannerTab === 'skills' && styles.tabBtnActive]}
+            style={[
+              styles.tabBtn,
+              activePlannerTab === 'skills' ? {
+                backgroundColor: primaryBtnBg,
+                borderColor: primaryBtnBg,
+              } : {
+                backgroundColor: isDark ? '#18181B' : '#F8FAFC',
+                borderColor: cardBorder,
+              }
+            ]}
             onPress={() => setActivePlannerTab('skills')}
           >
-            <Award size={14} color={activePlannerTab === 'skills' ? '#1E3A8A' : secondaryText} />
-            <Text style={[styles.tabBtnTxt, activePlannerTab === 'skills' && styles.tabBtnTxtActive]}>
+            <Award size={14} color={activePlannerTab === 'skills' ? primaryBtnText : secondaryText} />
+            <Text style={[
+              styles.tabBtnTxt,
+              activePlannerTab === 'skills' ? { color: primaryBtnText, fontWeight: '800' } : { color: secondaryText }
+            ]}>
               Verified Skills {pendingSkillsCount > 0 ? `(${pendingSkillsCount} ⚠️)` : `(${memberSkills.length})`}
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabBtn, activePlannerTab === 'templates' && styles.tabBtnActive]}
+            style={[
+              styles.tabBtn,
+              activePlannerTab === 'templates' ? {
+                backgroundColor: primaryBtnBg,
+                borderColor: primaryBtnBg,
+              } : {
+                backgroundColor: isDark ? '#18181B' : '#F8FAFC',
+                borderColor: cardBorder,
+              }
+            ]}
             onPress={() => setActivePlannerTab('templates')}
           >
-            <BookOpen size={14} color={activePlannerTab === 'templates' ? '#1E3A8A' : secondaryText} />
-            <Text style={[styles.tabBtnTxt, activePlannerTab === 'templates' && styles.tabBtnTxtActive]}>
+            <BookOpen size={14} color={activePlannerTab === 'templates' ? primaryBtnText : secondaryText} />
+            <Text style={[
+              styles.tabBtnTxt,
+              activePlannerTab === 'templates' ? { color: primaryBtnText, fontWeight: '800' } : { color: secondaryText }
+            ]}>
               Templates ({templates.length})
             </Text>
           </TouchableOpacity>
         </ScrollView>
+
+        {/* ─── Search Bar below Hero / Tabs ─── */}
+        <View style={styles.headerSearchWrap}>
+          <View style={[
+            styles.headerSearchBar,
+            {
+              backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+              borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+            }
+          ]}>
+            <Search size={16} color={isDark ? '#94A3B8' : '#64748B'} style={{ marginRight: 8 }} />
+            <TextInput
+              placeholder={
+                activePlannerTab === 'teams' ? 'Search ministry teams, leaders, members...' :
+                activePlannerTab === 'calendar' ? 'Search services by title, preacher, date...' :
+                activePlannerTab === 'setlist' ? 'Search worship songs, song leader...' :
+                activePlannerTab === 'queue' ? 'Search roles, assignments...' :
+                activePlannerTab === 'skills' ? 'Search member skills, categories...' :
+                'Search service operations...'
+              }
+              placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+              style={[styles.headerSearchInput, { color: primaryText }]}
+              value={
+                activePlannerTab === 'teams' ? teamSearchQuery :
+                activePlannerTab === 'calendar' ? searchQuery :
+                activePlannerTab === 'setlist' ? songLibrarySearch :
+                searchQuery
+              }
+              onChangeText={(text) => {
+                if (activePlannerTab === 'teams') setTeamSearchQuery(text);
+                else if (activePlannerTab === 'calendar') setSearchQuery(text);
+                else if (activePlannerTab === 'setlist') setSongLibrarySearch(text);
+                else setSearchQuery(text);
+              }}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {((activePlannerTab === 'teams' && teamSearchQuery.length > 0) ||
+              (activePlannerTab === 'calendar' && searchQuery.length > 0) ||
+              (activePlannerTab === 'setlist' && songLibrarySearch.length > 0)) && (
+              <TouchableOpacity
+                onPress={() => {
+                  if (activePlannerTab === 'teams') setTeamSearchQuery('');
+                  else if (activePlannerTab === 'calendar') setSearchQuery('');
+                  else if (activePlannerTab === 'setlist') setSongLibrarySearch('');
+                  else setSearchQuery('');
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <X size={16} color={isDark ? '#94A3B8' : '#64748B'} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
       </View>
 
       {/* ─── Body Content ─── */}
       {loading ? (
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color="#1E3A8A" />
+          <ActivityIndicator size="large" color={primaryBtnBg} />
           <Text style={[styles.centerText, { color: secondaryText }]}>Loading service operations...</Text>
         </View>
       ) : (
         <ScrollView
           style={styles.bodyScroll}
           contentContainerStyle={{ paddingBottom: 100 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#1E3A8A']} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[primaryBtnBg]} />}
         >
           {/* TAB 1: CALENDAR & SERVICE SCHEDULE */}
           {activePlannerTab === 'calendar' && (
@@ -2642,8 +3959,10 @@ export default function AdminServicePlanner({ navigation }: any) {
                 ))}
               </ScrollView>
 
+
+
               {filteredPlans.length === 0 ? (
-                <View style={[styles.emptyCard, { backgroundColor: cardSurface, borderColor }]}>
+                <View style={[styles.emptyCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
                   <Calendar size={36} color="#94A3B8" />
                   <Text style={[styles.emptyTitle, { color: primaryText }]}>No Services Scheduled</Text>
                   <Text style={[styles.emptySubtitle, { color: secondaryText }]}>
@@ -2661,12 +3980,13 @@ export default function AdminServicePlanner({ navigation }: any) {
                 filteredPlans.map((plan, planIdx) => {
                   const isSelected = selectedPlan?.id === plan.id;
                   const typeLabel = SERVICE_TYPE_LABELS[plan.serviceType] || plan.serviceType;
+                  const { day, month } = getSafeDateParts(plan.date);
                   return (
                     <TouchableOpacity
                       key={plan.id ? `plan_${plan.id}_${planIdx}` : `plan_${planIdx}`}
                       style={[
                         styles.planCard,
-                        { backgroundColor: cardSurface, borderColor },
+                        { backgroundColor: cardSurface, borderColor: isSelected ? primaryBtnBg : cardBorder },
                         isSelected && styles.planCardSelected
                       ]}
                       activeOpacity={0.85}
@@ -2677,10 +3997,8 @@ export default function AdminServicePlanner({ navigation }: any) {
                     >
                       <View style={styles.planCardTop}>
                         <View style={styles.dateBadge}>
-                          <Text style={styles.dateBadgeDay}>{plan.date.split('-')[2] || '01'}</Text>
-                          <Text style={styles.dateBadgeMonth}>
-                            {new Date(plan.date).toLocaleString('default', { month: 'short' }).toUpperCase()}
-                          </Text>
+                          <Text style={styles.dateBadgeDay}>{day}</Text>
+                          <Text style={styles.dateBadgeMonth}>{month}</Text>
                         </View>
                         <View style={{ flex: 1, paddingHorizontal: 10 }}>
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -2698,13 +4016,13 @@ export default function AdminServicePlanner({ navigation }: any) {
                             {plan.serviceTitle}
                           </Text>
                           <Text style={[styles.planMeta, { color: secondaryText }]} numberOfLines={1}>
-                            ⏰ {plan.startTime} - {plan.endTime} ({plan.totalDurationMinutes || 120}m) · 📍 {plan.location}
+                            ⏰ {formatDisplayTime(plan.startTime)} - {formatDisplayTime(plan.endTime)} ({plan.totalDurationMinutes || 120}m) · 📍 {plan.location}
                           </Text>
                         </View>
                         <ChevronRight size={18} color="#94A3B8" />
                       </View>
 
-                      <View style={styles.planCardBottom}>
+                      <View style={[styles.planCardBottom, { borderTopColor: borderColor }]}>
                         <View style={styles.planStatRow}>
                           <Text style={[styles.planStatTxt, { color: secondaryText }]}>
                             📋 {plan.runSheet?.length || 0} Activities
@@ -2712,9 +4030,11 @@ export default function AdminServicePlanner({ navigation }: any) {
                           <Text style={[styles.planStatTxt, { color: secondaryText }]}>
                             🎵 {plan.setlist?.length || 0} Songs
                           </Text>
-                          <Text style={[styles.planStatTxt, { color: secondaryText }]}>
-                            🎤 {plan.preacher || 'Pastor'}
-                          </Text>
+                          {plan.preacher && plan.preacher.trim() && plan.preacher.trim().toLowerCase() !== 'bro. y. rajesh' ? (
+                            <Text style={[styles.planStatTxt, { color: secondaryText }]}>
+                              🎤 {plan.preacher.trim()}
+                            </Text>
+                          ) : null}
                         </View>
 
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -2728,18 +4048,26 @@ export default function AdminServicePlanner({ navigation }: any) {
                             </TouchableOpacity>
                           )}
                           <TouchableOpacity
-                            style={styles.cardManageBtn}
+                            style={[styles.cardManageBtn, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: cardBorder }]}
+                            onPress={() => openEditServiceInForm(plan)}
+                            activeOpacity={0.8}
+                          >
+                            <Edit3 size={12} color={primaryText} style={{ marginRight: 4 }} />
+                            <Text style={[styles.cardManageBtnTxt, { color: primaryText }]}>Edit</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.cardManageBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
                             onPress={() => {
                               setSelectedPlan(plan);
                               setActivePlannerTab('builder');
                             }}
                             activeOpacity={0.8}
                           >
-                            <Layers size={12} color="#1E3A8A" style={{ marginRight: 4 }} />
-                            <Text style={styles.cardManageBtnTxt}>Order Builder</Text>
+                            <Layers size={12} color={secondaryBtnText} style={{ marginRight: 4 }} />
+                            <Text style={[styles.cardManageBtnTxt, { color: secondaryBtnText }]}>Order Builder</Text>
                           </TouchableOpacity>
                           <TouchableOpacity
-                            style={styles.cardDeleteBtn}
+                            style={[styles.cardDeleteBtn, { backgroundColor: isDark ? 'rgba(220, 38, 38, 0.15)' : '#FEF2F2', borderColor: isDark ? 'rgba(220, 38, 38, 0.35)' : '#FECACA' }]}
                             onPress={() => handleDeleteServicePlan(plan.id, plan.serviceTitle, plan.date)}
                             activeOpacity={0.8}
                             hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
@@ -2759,50 +4087,73 @@ export default function AdminServicePlanner({ navigation }: any) {
           {/* TAB 2: DYNAMIC ORDER BUILDER & RUNSHEET */}
           {activePlannerTab === 'builder' && selectedPlan && (
             <View style={styles.tabContent}>
-              <View style={[styles.selectedBanner, { backgroundColor: cardSurface, borderColor }]}>
+              <View style={[styles.selectedBanner, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <View style={{ flex: 1, paddingRight: 8 }}>
+                  <View style={{ flex: 1, paddingRight: 10 }}>
                     <Text style={styles.selectedBannerTag}>SELECTED SERVICE</Text>
                     <Text style={[styles.selectedBannerTitle, { color: primaryText }]}>
                       {selectedPlan.serviceTitle}
                     </Text>
-                    <Text style={[styles.selectedBannerMeta, { color: secondaryText }]}>
-                      📅 {selectedPlan.date} · ⏰ {selectedPlan.startTime} - {selectedPlan.endTime} · 📍 {selectedPlan.location}
-                    </Text>
-                    {selectedPlan.theme ? (
-                      <Text style={[styles.selectedBannerTheme, { color: '#D97706' }]}>
-                        Theme: "{selectedPlan.theme}" {selectedPlan.bibleReference ? `(${selectedPlan.bibleReference})` : ''}
-                      </Text>
-                    ) : null}
+
+                    {/* Date and Time neatly displayed below title with proper spacing */}
+                    <View style={{ marginTop: 8, gap: 5 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                          <Calendar size={13} color="#2E6B4F" />
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: primaryText }}>
+                            {formatDateMonthYear(selectedPlan.date)}
+                          </Text>
+                        </View>
+                        <Text style={{ color: secondaryText, fontSize: 12 }}>•</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                          <Clock size={13} color="#D97706" />
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: primaryText }}>
+                            {formatDisplayTime(selectedPlan.startTime)} - {formatDisplayTime(selectedPlan.endTime)}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {selectedPlan.location ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 1 }}>
+                          <MapPin size={13} color="#DC2626" />
+                          <Text style={{ fontSize: 12.5, fontWeight: '500', color: secondaryText }} numberOfLines={1}>
+                            {selectedPlan.location}
+                          </Text>
+                        </View>
+                      ) : null}
+
+                      {selectedPlan.theme ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 1 }}>
+                          <BookOpen size={13} color="#D97706" />
+                          <Text style={{ fontSize: 12, fontWeight: '600', color: '#D97706' }} numberOfLines={1}>
+                            Theme: "{selectedPlan.theme}" {selectedPlan.bibleReference ? `(${selectedPlan.bibleReference})` : ''}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
                   </View>
 
                   <View style={{ flexDirection: 'row', gap: 6 }}>
                     <TouchableOpacity
-                      style={[styles.bannerActionBtn, { backgroundColor: '#7C3AED', borderColor: '#7C3AED' }]}
-                      onPress={() => {
-                        navigation.navigate('LiveStageHUD', {
-                          serviceId: selectedPlan.id,
-                          churchId,
-                          plan: selectedPlan
-                        });
-                      }}
-                    >
-                      <Radio size={14} color="#FFFFFF" />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.bannerActionBtn}
+                      style={[styles.bannerActionBtn, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: cardBorder }]}
                       onPress={openEditDetailsModal}
                     >
-                      <Edit3 size={14} color="#1E3A8A" />
+                      <Edit3 size={14} color={secondaryBtnText} />
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={styles.bannerActionBtn}
+                      style={[styles.bannerActionBtn, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: cardBorder }]}
+                      onPress={openSaveAsTemplateModal}
+                    >
+                      <Bookmark size={14} color={secondaryBtnText} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.bannerActionBtn, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: cardBorder }]}
                       onPress={() => setShowApplyTemplateModal(true)}
                     >
-                      <Copy size={14} color="#1E3A8A" />
+                      <Copy size={14} color={secondaryBtnText} />
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.bannerActionBtn, { borderColor: '#FCA5A5' }]}
+                      style={[styles.bannerActionBtn, { backgroundColor: isDark ? 'rgba(220, 38, 38, 0.15)' : '#FEF2F2', borderColor: isDark ? 'rgba(220, 38, 38, 0.35)' : '#FCA5A5' }]}
                       onPress={handleDeleteService}
                     >
                       <Trash2 size={14} color="#DC2626" />
@@ -2810,91 +4161,58 @@ export default function AdminServicePlanner({ navigation }: any) {
                   </View>
                 </View>
 
-                {/* Status Switcher Bar */}
-                <View style={[styles.statusSwitcherRow, { flexWrap: 'wrap', gap: 8 }]}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                {/* Status Indicator & Main Action (Publish / Print) */}
+                <View style={[styles.bannerBottomRow, { borderTopColor: borderColor, marginTop: 12, paddingTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <Text style={[styles.statusSwitcherLabel, { color: secondaryText }]}>Status:</Text>
-                    <View style={styles.statusButtonsGroup}>
-                      {(['draft', 'published', 'completed', 'cancelled'] as ServiceStatus[]).map(st => (
-                        <TouchableOpacity
-                          key={st}
-                          style={[
-                            styles.statusToggleBtn,
-                            selectedPlan.status === st && styles.statusToggleBtnActive
-                          ]}
-                          onPress={() => handleUpdateStatus(st)}
-                        >
-                          <Text style={[
-                            styles.statusToggleBtnTxt,
-                            selectedPlan.status === st && styles.statusToggleBtnTxtActive
-                          ]}>
-                            {st.toUpperCase()}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
+                    <View style={[
+                      styles.statusPill,
+                      selectedPlan.status === 'published' ? styles.statusPillPublished :
+                        selectedPlan.status === 'live' ? styles.statusPillLive :
+                          selectedPlan.status === 'completed' ? styles.statusPillCompleted :
+                            styles.statusPillDraft
+                    ]}>
+                      <Text style={[
+                        styles.statusPillTxt,
+                        selectedPlan.status === 'published' ? { color: '#047857' } :
+                          selectedPlan.status === 'live' ? { color: '#DC2626' } :
+                            selectedPlan.status === 'completed' ? { color: '#475569' } :
+                              { color: '#64748B' }
+                      ]}>
+                        {selectedPlan.status.toUpperCase()}
+                      </Text>
                     </View>
                   </View>
 
-                  {selectedPlan.status === 'draft' && (
-                    <TouchableOpacity
-                      style={[styles.publishServiceBtn, { paddingVertical: 6, paddingHorizontal: 12 }]}
-                      onPress={() => handlePublishServiceWithCascade(selectedPlan)}
-                      activeOpacity={0.85}
-                    >
-                      <Send size={12} color="#FFFFFF" />
-                      <Text style={[styles.publishServiceBtnTxt, { fontSize: 11 }]}>
-                        🚀 Publish & Dispatch Notifications
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-
-                {/* Run-sheet PDF & CSV Export Toolbar (Phase 9) */}
-                <View style={styles.exportToolbar}>
-                  <TouchableOpacity
-                    style={[styles.exportBtn, { backgroundColor: '#1E3A8A' }]}
-                    onPress={handleExportPdf}
-                    disabled={exportingPdf}
-                  >
-                    {exportingPdf ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    {selectedPlan.status === 'draft' ? (
+                      <TouchableOpacity
+                        style={[styles.publishServiceBtn, { paddingVertical: 8, paddingHorizontal: 14 }]}
+                        onPress={() => handlePublishServiceWithCascade(selectedPlan)}
+                        activeOpacity={0.85}
+                      >
+                        <Send size={13} color="#FFFFFF" />
+                        <Text style={styles.publishServiceBtnTxt}>
+                          🚀 Publish Service & Notify Volunteers
+                        </Text>
+                      </TouchableOpacity>
                     ) : (
-                      <>
-                        <FileText size={13} color="#FFFFFF" />
-                        <Text style={styles.exportBtnTxt}>Export PDF</Text>
-                      </>
+                      <TouchableOpacity
+                        style={[styles.printSheetBtn, { backgroundColor: isDark ? '#27272A' : '#FFFFFF', borderColor: cardBorder }]}
+                        onPress={handlePrintDirectly}
+                        disabled={printingSheet}
+                      >
+                        {printingSheet ? (
+                          <ActivityIndicator size="small" color={primaryText} />
+                        ) : (
+                          <>
+                            <Printer size={13} color={secondaryBtnText} />
+                            <Text style={[styles.printSheetBtnTxt, { color: secondaryBtnText }]}>Print Sheet</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
                     )}
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.exportBtn, { backgroundColor: '#059669' }]}
-                    onPress={handleExportCsv}
-                    disabled={exportingCsv}
-                  >
-                    {exportingCsv ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <>
-                        <Download size={13} color="#FFFFFF" />
-                        <Text style={styles.exportBtnTxt}>Export CSV</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.exportBtn, { backgroundColor: '#475569' }]}
-                    onPress={handlePrintDirectly}
-                    disabled={printingSheet}
-                  >
-                    {printingSheet ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <>
-                        <Printer size={13} color="#FFFFFF" />
-                        <Text style={styles.exportBtnTxt}>Print Sheet</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
+                  </View>
                 </View>
               </View>
 
@@ -2951,14 +4269,15 @@ export default function AdminServicePlanner({ navigation }: any) {
                       style={styles.applyTemplateBtn}
                       onPress={() => setShowApplyTemplateModal(true)}
                     >
-                      <Copy size={14} color="#1E3A8A" />
+                      <Copy size={14} color={secondaryBtnText} />
                       <Text style={styles.applyTemplateBtnTxt}>Apply Template</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
               ) : (
                 selectedPlan.runSheet.map((item, index) => {
-                  const catStyle = CATEGORY_COLORS[item.category] || CATEGORY_COLORS.other;
+                  const catDef = getCategoryDef(item.category);
+                  const catStyle = { bg: catDef.bg, text: catDef.text };
                   return (
                     <View
                       key={item.id ? `run_${item.id}_${index}` : `run_${index}`}
@@ -2986,13 +4305,13 @@ export default function AdminServicePlanner({ navigation }: any) {
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                           <View style={[styles.categoryBadge, { backgroundColor: catStyle.bg }]}>
                             <Text style={[styles.categoryBadgeTxt, { color: catStyle.text }]}>
-                              {item.category.replace('_', ' ').toUpperCase()}
+                              {catDef.label.toUpperCase()}
                             </Text>
                           </View>
-                          <View style={styles.timeBadge}>
-                            <Clock size={11} color="#1E3A8A" />
-                            <Text style={styles.timeBadgeTxt}>
-                              {item.startTime} - {item.endTime} ({item.durationMinutes}m)
+                          <View style={[styles.timeBadge, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: cardBorder, borderWidth: 1 }]}>
+                            <Clock size={11} color={isDark ? '#A1A1AA' : secondaryText} />
+                            <Text style={[styles.timeBadgeTxt, { color: isDark ? '#E2E8F0' : '#475569' }]}>
+                              {formatDisplayTime(item.startTime)} - {formatDisplayTime(item.endTime)} ({item.durationMinutes}m)
                             </Text>
                           </View>
                         </View>
@@ -3017,16 +4336,34 @@ export default function AdminServicePlanner({ navigation }: any) {
 
                       <View style={styles.itemActionCol}>
                         <TouchableOpacity
-                          style={styles.itemEditBtn}
+                          style={[
+                            styles.itemEditBtn,
+                            {
+                              backgroundColor: isDark ? 'rgba(59, 130, 246, 0.16)' : '#EFF6FF',
+                              borderColor: isDark ? 'rgba(59, 130, 246, 0.4)' : '#BFDBFE',
+                            }
+                          ]}
                           onPress={() => openEditActivityModal(item)}
+                          activeOpacity={0.7}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          accessibilityLabel="Edit activity"
                         >
-                          <Edit3 size={14} color="#1E3A8A" />
+                          <Edit3 size={15} color={isDark ? '#60A5FA' : '#2563EB'} />
                         </TouchableOpacity>
                         <TouchableOpacity
-                          style={styles.itemDeleteBtn}
-                          onPress={() => handleDeleteActivity(item.id)}
+                          style={[
+                            styles.itemDeleteBtn,
+                            {
+                              backgroundColor: isDark ? 'rgba(239, 68, 68, 0.16)' : '#FEF2F2',
+                              borderColor: isDark ? 'rgba(239, 68, 68, 0.4)' : '#FECACA',
+                            }
+                          ]}
+                          onPress={() => handleDeleteActivity(item.id, item.program)}
+                          activeOpacity={0.7}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          accessibilityLabel="Delete activity"
                         >
-                          <Trash2 size={14} color="#DC2626" />
+                          <Trash2 size={15} color={isDark ? '#F87171' : '#DC2626'} />
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -3040,12 +4377,12 @@ export default function AdminServicePlanner({ navigation }: any) {
           {activePlannerTab === 'setlist' && selectedPlan && (
             <View style={styles.tabContent}>
               {/* Setlist Summary Banner */}
-              <View style={[styles.selectedBanner, { backgroundColor: cardSurface, borderColor }]}>
+              <View style={[styles.selectedBanner, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.selectedBannerTag}>WORSHIP SETLIST</Text>
                     <Text style={[styles.selectedBannerTitle, { color: primaryText }]}>
-                      {selectedPlan.serviceTitle} ({selectedPlan.date})
+                      {selectedPlan.serviceTitle} ({formatDateMonthYear(selectedPlan.date)})
                     </Text>
                     <Text style={[styles.selectedBannerMeta, { color: secondaryText }]}>
                       🎵 {selectedPlan.setlist?.length || 0} Songs Selected · Total Worship Time: ~{totalSetlistMinutes} mins
@@ -3058,6 +4395,120 @@ export default function AdminServicePlanner({ navigation }: any) {
                     <Plus size={14} color="#FFFFFF" />
                     <Text style={styles.addActivityBtnTxt}>Add Song</Text>
                   </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* WHOLE-SERVICE WORSHIP BAND CARD */}
+              <View style={[styles.selectedBanner, { backgroundColor: cardSurface, borderColor: cardBorder, marginTop: 10, marginBottom: 14 }]}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                    <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: isDark ? 'rgba(46, 107, 79, 0.25)' : '#ECFDF5', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <Music size={16} color="#2E6B4F" />
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[styles.selectedBannerTag, { marginBottom: 1 }]}>SERVICE WORSHIP BAND</Text>
+                      <Text style={[styles.selectedBannerTitle, { color: primaryText, fontSize: 15 }]} numberOfLines={1}>
+                        Whole-Service Musical Instruments
+                      </Text>
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[styles.publishServiceBtn, { paddingVertical: 6, paddingHorizontal: 12, backgroundColor: publishBtnBg, flexShrink: 0 }]}
+                    onPress={openServiceBandModal}
+                    activeOpacity={0.85}
+                  >
+                    <Edit3 size={13} color="#FFFFFF" />
+                    <Text style={[styles.publishServiceBtnTxt, { fontSize: 12 }]}>
+                      {selectedPlan.assignments?.['role_keyboard'] || selectedPlan.assignments?.['role_drums'] ? 'Edit Band' : '+ Assign Band'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={{ fontSize: 11.5, color: secondaryText, marginBottom: 10 }}>
+                  Assigned once for the whole service. All setlist praise songs automatically use this band without needing to assign per song.
+                </Text>
+
+                {/* Band Members Quick Grid - 2-Column Responsive Layout */}
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between' }}>
+                  {/* Keyboard */}
+                  <View style={{ width: '48.5%', minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
+                    <Text style={{ fontSize: 14 }}>🎹</Text>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }} numberOfLines={1}>KEYBOARD</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_keyboard'] ? primaryText : '#94A3B8', lineHeight: 16 }} numberOfLines={2}>
+                        {selectedPlan.assignments?.['role_keyboard'] || 'Not Assigned'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Drums */}
+                  <View style={{ width: '48.5%', minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
+                    <Text style={{ fontSize: 14 }}>🥁</Text>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }} numberOfLines={1}>DRUMS</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_drums'] ? primaryText : '#94A3B8', lineHeight: 16 }} numberOfLines={2}>
+                        {selectedPlan.assignments?.['role_drums'] || 'Not Assigned'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Bass Guitar */}
+                  <View style={{ width: '48.5%', minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
+                    <Text style={{ fontSize: 14 }}>🎸</Text>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }} numberOfLines={1}>BASS GUITAR</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_bass'] ? primaryText : '#94A3B8', lineHeight: 16 }} numberOfLines={2}>
+                        {selectedPlan.assignments?.['role_bass'] || 'Not Assigned'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Acoustic Guitar */}
+                  <View style={{ width: '48.5%', minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
+                    <Text style={{ fontSize: 14 }}>🎸</Text>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }} numberOfLines={1}>ACOUSTIC GUITAR</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_acoustic'] ? primaryText : '#94A3B8', lineHeight: 16 }} numberOfLines={2}>
+                        {selectedPlan.assignments?.['role_acoustic'] || 'Not Assigned'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Electric Guitar */}
+                  <View style={{ width: '48.5%', minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
+                    <Text style={{ fontSize: 14 }}>⚡</Text>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }} numberOfLines={1}>ELECTRIC GUITAR</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_electric'] ? primaryText : '#94A3B8', lineHeight: 16 }} numberOfLines={2}>
+                        {selectedPlan.assignments?.['role_electric'] || 'Not Assigned'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Sound & Audio */}
+                  <View style={{ width: '48.5%', minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
+                    <Text style={{ fontSize: 14 }}>🎧</Text>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }} numberOfLines={1}>SOUND / AUDIO</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: selectedPlan.assignments?.['role_sound'] ? primaryText : '#94A3B8', lineHeight: 16 }} numberOfLines={2}>
+                        {selectedPlan.assignments?.['role_sound'] || 'Not Assigned'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Worship Leader */}
+                  {selectedPlan.assignments?.['role_worship_leader'] ? (
+                    <View style={{ width: '100%', minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}>
+                      <Text style={{ fontSize: 14 }}>🎤</Text>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={{ fontSize: 9.5, color: secondaryText, fontWeight: '700' }} numberOfLines={1}>WORSHIP LEADER</Text>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: primaryText, lineHeight: 16 }} numberOfLines={2}>
+                          {selectedPlan.assignments['role_worship_leader']}
+                        </Text>
+                      </View>
+                    </View>
+                  ) : null}
                 </View>
               </View>
 
@@ -3085,105 +4536,121 @@ export default function AdminServicePlanner({ navigation }: any) {
                       key={item.id ? `set_${item.id}_${index}` : `set_${index}`}
                       style={[styles.setlistCard, { backgroundColor: cardSurface, borderColor }]}
                     >
-                      {/* Reorder Arrows */}
-                      <View style={styles.reorderColumn}>
-                        <TouchableOpacity
-                          style={[styles.reorderArrow, index === 0 && { opacity: 0.2 }]}
-                          disabled={index === 0}
-                          onPress={() => handleMoveSetlistSong(index, 'up')}
-                        >
-                          <ChevronUp size={16} color="#64748B" />
-                        </TouchableOpacity>
-                        <Text style={styles.orderNumberText}>{index + 1}</Text>
-                        <TouchableOpacity
-                          style={[styles.reorderArrow, index === selectedPlan.setlist.length - 1 && { opacity: 0.2 }]}
-                          disabled={index === selectedPlan.setlist.length - 1}
-                          onPress={() => handleMoveSetlistSong(index, 'down')}
-                        >
-                          <ChevronDown size={16} color="#64748B" />
-                        </TouchableOpacity>
-                      </View>
-
-                      {/* Song Details */}
-                      <View style={{ flex: 1, paddingHorizontal: 10 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                          <View style={styles.keyBadge}>
-                            <Text style={styles.keyBadgeTxt}>Key {item.key || 'G'}</Text>
-                          </View>
-                          <View style={styles.bpmBadge}>
-                            <Text style={styles.bpmBadgeTxt}>{item.tempo || '120'} BPM</Text>
-                          </View>
-                          <View style={styles.timeSigBadge}>
-                            <Text style={styles.timeSigBadgeTxt}>{item.timeSignature || '4/4'}</Text>
-                          </View>
-                          <Text style={[styles.durationTxt, { color: secondaryText }]}>
-                            ⏱️ ~{item.durationMinutes || 6}m
-                          </Text>
+                      {/* Top Row: Reorder Arrows + Song Details */}
+                      <View style={{ flexDirection: 'row', alignItems: 'flex-start', width: '100%' }}>
+                        {/* Reorder Arrows */}
+                        <View style={styles.reorderColumn}>
+                          <TouchableOpacity
+                            style={[styles.reorderArrow, index === 0 && { opacity: 0.2 }]}
+                            disabled={index === 0}
+                            onPress={() => handleMoveSetlistSong(index, 'up')}
+                          >
+                            <ChevronUp size={16} color="#64748B" />
+                          </TouchableOpacity>
+                          <Text style={styles.orderNumberText}>{index + 1}</Text>
+                          <TouchableOpacity
+                            style={[styles.reorderArrow, index === selectedPlan.setlist.length - 1 && { opacity: 0.2 }]}
+                            disabled={index === selectedPlan.setlist.length - 1}
+                            onPress={() => handleMoveSetlistSong(index, 'down')}
+                          >
+                            <ChevronDown size={16} color="#64748B" />
+                          </TouchableOpacity>
                         </View>
 
-                        <Text style={[styles.setlistSongTitle, { color: primaryText }]}>
-                          {item.title}
-                        </Text>
-                        {item.titleTe ? (
-                          <Text style={[styles.setlistSongTe, { color: '#D97706' }]}>
-                            {item.titleTe}
+                        {/* Song Details */}
+                        <View style={{ flex: 1, paddingHorizontal: 10 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <View style={styles.keyBadge}>
+                              <Text style={styles.keyBadgeTxt}>Key {item.key || 'G'}</Text>
+                            </View>
+                            <View style={styles.bpmBadge}>
+                              <Text style={styles.bpmBadgeTxt}>{item.tempo || '120'} BPM</Text>
+                            </View>
+                            <View style={styles.timeSigBadge}>
+                              <Text style={styles.timeSigBadgeTxt}>{item.timeSignature || '4/4'}</Text>
+                            </View>
+                            <Text style={[styles.durationTxt, { color: secondaryText }]}>
+                              ⏱️ ~{item.durationMinutes || 6}m
+                            </Text>
+                          </View>
+
+                          <Text style={[styles.setlistSongTitle, { color: primaryText }]}>
+                            {item.title}
                           </Text>
-                        ) : null}
+                          {item.titleTe ? (
+                            <Text style={[styles.setlistSongTe, { color: '#D97706' }]}>
+                              {item.titleTe}
+                            </Text>
+                          ) : null}
 
-                        <Text style={[styles.setlistLeaderTxt, { color: secondaryText }]}>
-                          🎤 Song Leader: <Text style={{ fontWeight: '700', color: primaryText }}>{item.ledBy || 'Worship Leader'}</Text>
-                        </Text>
+                          <Text style={[styles.setlistLeaderTxt, { color: secondaryText }]}>
+                            🎤 Song Leader: <Text style={{ fontWeight: '700', color: primaryText }}>{item.ledBy || 'Worship Leader'}</Text>
+                          </Text>
 
-                        {/* Musicians Breakdown */}
-                        <View style={styles.musiciansChipRow}>
-                          {musicians.keyboard && (
-                            <View style={styles.musicianChip}>
-                              <Text style={styles.musicianChipTxt}>🎹 Keys: {musicians.keyboard.memberName}</Text>
-                            </View>
-                          )}
-                          {musicians.acoustic && (
-                            <View style={styles.musicianChip}>
-                              <Text style={styles.musicianChipTxt}>🎸 Acoustic: {musicians.acoustic.memberName}</Text>
-                            </View>
-                          )}
-                          {musicians.drums && (
-                            <View style={styles.musicianChip}>
-                              <Text style={styles.musicianChipTxt}>🥁 Drums: {musicians.drums.memberName}</Text>
-                            </View>
-                          )}
-                          {musicians.bass && (
-                            <View style={styles.musicianChip}>
-                              <Text style={styles.musicianChipTxt}>🎸 Bass: {musicians.bass.memberName}</Text>
-                            </View>
-                          )}
+                          {/* Musicians Breakdown (Inherits from Whole-Service Band) */}
+                          <View style={styles.musiciansChipRow}>
+                            {(musicians.keyboard?.memberName || selectedPlan.assignments?.['role_keyboard']) && (
+                              <View style={styles.musicianChip}>
+                                <Text style={styles.musicianChipTxt}>🎹 Keys: {musicians.keyboard?.memberName || selectedPlan.assignments?.['role_keyboard']}</Text>
+                              </View>
+                            )}
+                            {(musicians.drums?.memberName || selectedPlan.assignments?.['role_drums']) && (
+                              <View style={styles.musicianChip}>
+                                <Text style={styles.musicianChipTxt}>🥁 Drums: {musicians.drums?.memberName || selectedPlan.assignments?.['role_drums']}</Text>
+                              </View>
+                            )}
+                            {(musicians.bass?.memberName || selectedPlan.assignments?.['role_bass']) && (
+                              <View style={styles.musicianChip}>
+                                <Text style={styles.musicianChipTxt}>🎸 Bass: {musicians.bass?.memberName || selectedPlan.assignments?.['role_bass']}</Text>
+                              </View>
+                            )}
+                            {(musicians.acoustic?.memberName || selectedPlan.assignments?.['role_acoustic']) && (
+                              <View style={styles.musicianChip}>
+                                <Text style={styles.musicianChipTxt}>🎸 Acoustic: {musicians.acoustic?.memberName || selectedPlan.assignments?.['role_acoustic']}</Text>
+                              </View>
+                            )}
+                            {(musicians.electric?.memberName || selectedPlan.assignments?.['role_electric']) && (
+                              <View style={styles.musicianChip}>
+                                <Text style={styles.musicianChipTxt}>⚡ Electric: {musicians.electric?.memberName || selectedPlan.assignments?.['role_electric']}</Text>
+                              </View>
+                            )}
+                          </View>
+
+                          {item.rehearsalNotes ? (
+                            <Text style={[styles.rehearsalNotesTxt, { color: secondaryText }]} numberOfLines={2}>
+                              📝 Arrangement: {item.rehearsalNotes}
+                            </Text>
+                          ) : null}
                         </View>
-
-                        {item.rehearsalNotes ? (
-                          <Text style={[styles.rehearsalNotesTxt, { color: secondaryText }]} numberOfLines={2}>
-                            📝 Arrangement: {item.rehearsalNotes}
-                          </Text>
-                        ) : null}
                       </View>
 
-                      {/* Action Col */}
-                      <View style={styles.setlistActionCol}>
+                      {/* Action Row below song details - Clean, professional, dark-mode compliant */}
+                      <View style={{ width: '100%', flexDirection: 'row', gap: 8, alignItems: 'center', marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: isDark ? '#27272A' : '#E2E8F0' }}>
                         <TouchableOpacity
-                          style={styles.lyricsBtn}
+                          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}
                           onPress={() => openLyricsModal(item)}
+                          activeOpacity={0.7}
                         >
-                          <FileText size={14} color="#1E3A8A" />
+                          <FileText size={13} color={primaryText} />
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: primaryText }}>Lyrics</Text>
                         </TouchableOpacity>
+
                         <TouchableOpacity
-                          style={styles.itemEditBtn}
+                          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }}
                           onPress={() => openEditSetlistItem(item, index)}
+                          activeOpacity={0.7}
                         >
-                          <Sliders size={14} color="#1E3A8A" />
+                          <Sliders size={13} color={primaryText} />
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: primaryText }}>Edit / Key</Text>
                         </TouchableOpacity>
+
                         <TouchableOpacity
-                          style={styles.itemDeleteBtn}
+                          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, backgroundColor: isDark ? 'rgba(220, 38, 38, 0.15)' : '#FEF2F2', borderWidth: 1, borderColor: isDark ? 'rgba(220, 38, 38, 0.3)' : '#FECACA' }}
                           onPress={() => handleRemoveSetlistSong(item.id)}
+                          activeOpacity={0.7}
                         >
-                          <Trash2 size={14} color="#DC2626" />
+                          <Trash2 size={13} color="#DC2626" />
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: '#DC2626' }}>Delete</Text>
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -3197,7 +4664,7 @@ export default function AdminServicePlanner({ navigation }: any) {
           {activePlannerTab === 'queue' && selectedPlan && (
             <View style={styles.tabContent}>
               {/* Selected Service Banner in Assignments tab */}
-              <View style={[styles.selectedBanner, { backgroundColor: cardSurface, borderColor, marginBottom: 12 }]}>
+              <View style={[styles.selectedBanner, { backgroundColor: cardSurface, borderColor: cardBorder, marginBottom: 12 }]}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <View style={{ flex: 1, paddingRight: 8 }}>
                     <Text style={styles.selectedBannerTag}>SERVICE RESPONSIBILITY ASSIGNMENTS</Text>
@@ -3205,18 +4672,18 @@ export default function AdminServicePlanner({ navigation }: any) {
                       {selectedPlan.serviceTitle}
                     </Text>
                     <Text style={[styles.selectedBannerMeta, { color: secondaryText }]}>
-                      📅 {selectedPlan.date} · ⏰ {selectedPlan.startTime} - {selectedPlan.endTime} · 📍 {selectedPlan.location}
+                      📅 {formatDateMonthYear(selectedPlan.date)} · ⏰ {formatDisplayTime(selectedPlan.startTime)} - {formatDisplayTime(selectedPlan.endTime)} · 📍 {selectedPlan.location}
                     </Text>
                   </View>
                   <View style={{ flexDirection: 'row', gap: 6 }}>
                     <TouchableOpacity
-                      style={styles.bannerActionBtn}
+                      style={[styles.bannerActionBtn, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: cardBorder }]}
                       onPress={openEditDetailsModal}
                     >
-                      <Edit3 size={14} color="#1E3A8A" />
+                      <Edit3 size={14} color={secondaryBtnText} />
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.bannerActionBtn, { borderColor: '#FCA5A5' }]}
+                      style={[styles.bannerActionBtn, { backgroundColor: isDark ? 'rgba(220, 38, 38, 0.15)' : '#FEF2F2', borderColor: isDark ? 'rgba(220, 38, 38, 0.35)' : '#FCA5A5' }]}
                       onPress={handleDeleteService}
                     >
                       <Trash2 size={14} color="#DC2626" />
@@ -3225,7 +4692,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                 </View>
 
                 {/* Status and Publish button */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: borderColor }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: borderColor }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     <Text style={{ fontSize: 12, color: secondaryText, fontWeight: '600' }}>Service Status:</Text>
                     <View style={[
@@ -3238,24 +4705,24 @@ export default function AdminServicePlanner({ navigation }: any) {
 
                   {selectedPlan.status === 'draft' ? (
                     <TouchableOpacity
-                      style={[styles.publishServiceBtn, { paddingVertical: 8, paddingHorizontal: 12 }]}
+                      style={[styles.publishServiceBtn, { paddingVertical: 7, paddingHorizontal: 12 }]}
                       onPress={() => handlePublishServiceWithCascade(selectedPlan)}
                       activeOpacity={0.85}
                     >
                       <Send size={13} color="#FFFFFF" />
                       <Text style={[styles.publishServiceBtnTxt, { fontSize: 12 }]}>
-                        🚀 Publish & Dispatch Notifications
+                        Publish & Dispatch
                       </Text>
                     </TouchableOpacity>
                   ) : (
                     <TouchableOpacity
-                      style={[styles.outlineActionBtn, { paddingVertical: 6, paddingHorizontal: 10, borderColor: '#059669' }]}
+                      style={[styles.outlineActionBtn, { paddingVertical: 6, paddingHorizontal: 10, borderColor: '#059669', backgroundColor: isDark ? 'rgba(5, 150, 105, 0.12)' : '#ECFDF5' }]}
                       onPress={() => handlePublishServiceWithCascade(selectedPlan)}
                       activeOpacity={0.85}
                     >
                       <CheckCircle2 size={13} color="#059669" />
                       <Text style={{ fontSize: 11, fontWeight: '700', color: '#059669' }}>
-                        Published · Re-dispatch / Notify
+                        Re-dispatch / Notify
                       </Text>
                     </TouchableOpacity>
                   )}
@@ -3263,39 +4730,39 @@ export default function AdminServicePlanner({ navigation }: any) {
               </View>
 
               {/* Automatic Background Notifications Alert Box */}
-              <View style={[styles.cascadeAlertBox, { backgroundColor: isDark ? '#1E293B' : '#EFF6FF', borderColor: '#93C5FD', marginBottom: 12 }]}>
-                <Send size={15} color="#1E3A8A" style={{ marginTop: 2 }} />
+              <View style={[styles.cascadeAlertBox, { backgroundColor: isDark ? '#18181B' : '#F8FAFC', borderColor: cardBorder, marginBottom: 12 }]}>
+                <Send size={15} color={isDark ? '#10B981' : '#2E6B4F'} style={{ marginTop: 2 }} />
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.cascadeAlertTitle, { color: '#1E3A8A' }]}>
-                    Automatic Background Notifications & Replacement
+                  <Text style={[styles.cascadeAlertTitle, { color: isDark ? '#10B981' : '#2E6B4F' }]}>
+                    Automatic Responsibility Assignment & Slot Booking
                   </Text>
                   <Text style={[styles.cascadeAlertBody, { color: secondaryText }]}>
-                    When assigned or published, volunteers receive instant push notifications with Accept/Decline options and a 2-hour response window. If declined or timed out, Rhema automatically contacts the next eligible member with verified skills in the background.
+                    When a service is published, Rhema automatically identifies all eligible members based on verified skills (Keyboards, Drums, Guitars, Audio, Order of Service) and broadcasts simultaneous notifications (First-Come, First-Served). The first member to accept books the slot immediately.
                   </Text>
                 </View>
               </View>
 
               {/* Summary banner */}
-              <View style={[styles.queueSummaryBanner, { backgroundColor: cardSurface, borderColor }]}>
+              <View style={[styles.queueSummaryBanner, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
                 <View style={styles.queueSummaryCol}>
                   <Text style={[styles.queueSummaryNum, { color: primaryText }]}>{serviceRolesList.length}</Text>
                   <Text style={[styles.queueSummaryLbl, { color: secondaryText }]}>Total Roles</Text>
                 </View>
-                <View style={styles.queueSummaryDivider} />
+                <View style={[styles.queueSummaryDivider, { backgroundColor: borderColor }]} />
                 <View style={styles.queueSummaryCol}>
                   <Text style={[styles.queueSummaryNum, { color: '#059669' }]}>
                     {assignmentQueues.filter(q => q.status === 'confirmed').length}
                   </Text>
                   <Text style={[styles.queueSummaryLbl, { color: secondaryText }]}>Confirmed</Text>
                 </View>
-                <View style={styles.queueSummaryDivider} />
+                <View style={[styles.queueSummaryDivider, { backgroundColor: borderColor }]} />
                 <View style={styles.queueSummaryCol}>
                   <Text style={[styles.queueSummaryNum, { color: '#D97706' }]}>
                     {assignmentQueues.filter(q => q.status === 'pending').length}
                   </Text>
                   <Text style={[styles.queueSummaryLbl, { color: secondaryText }]}>Pending</Text>
                 </View>
-                <View style={styles.queueSummaryDivider} />
+                <View style={[styles.queueSummaryDivider, { backgroundColor: borderColor }]} />
                 <View style={styles.queueSummaryCol}>
                   <Text style={[styles.queueSummaryNum, { color: '#DC2626' }]}>
                     {assignmentQueues.filter(q => q.status === 'exhausted').length}
@@ -3305,351 +4772,371 @@ export default function AdminServicePlanner({ navigation }: any) {
               </View>
 
               {/* Roles list */}
-              {serviceRolesList.map((role, rIdx) => {
-                const queue = assignmentQueues.find(q => q.roleId === role.roleId);
-                const curIdx = queue?.currentCandidateIndex || 0;
-                const activeCandidate = queue?.candidates?.[curIdx];
-                const isConfirmed = queue?.status === 'confirmed';
-                const isPending = queue?.status === 'pending';
-                const isExhausted = queue?.status === 'exhausted';
-                const notDispatched = !queue;
-
-                return (
-                  <View
-                    key={role.roleId ? `role_${role.roleId}_${rIdx}` : `role_${rIdx}`}
-                    style={[
-                      styles.queueRoleCard,
-                      { backgroundColor: cardSurface, borderColor },
-                      isConfirmed && styles.queueRoleCardConfirmed,
-                      isPending && styles.queueRoleCardPending,
-                      isExhausted && styles.queueRoleCardExhausted
-                    ]}
+              {serviceRolesList.length === 0 ? (
+                <View style={[styles.emptyRunSheetCard, { backgroundColor: cardSurface, borderColor: cardBorder, marginTop: 12 }]}>
+                  <Users size={32} color="#94A3B8" />
+                  <Text style={[styles.emptyTitle, { color: primaryText }]}>No Roles Found</Text>
+                  <Text style={[styles.emptySubtitle, { color: secondaryText }]}>
+                    Service roles are generated from your Order of Service items and standard church positions. Add items in the Order Builder to assign responsibilities.
+                  </Text>
+                  <TouchableOpacity
+                    style={[styles.addActivityBtn, { marginTop: 12 }]}
+                    onPress={() => setActivePlannerTab('builder')}
                   >
-                    {/* Header */}
-                    <View style={styles.queueRoleHeader}>
-                      <View style={{ flex: 1 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                          <Text style={styles.queueCategoryPill}>{role.category.toUpperCase()}</Text>
-                          {role.activityName && (
-                            <Text style={[styles.queueActivityTag, { color: secondaryText }]} numberOfLines={1}>
-                              Activity: {role.activityName}
-                            </Text>
-                          )}
-                        </View>
-                        <Text style={[styles.queueRoleTitle, { color: primaryText }]}>
-                          {role.roleTitle}
-                        </Text>
-                      </View>
+                    <Layers size={14} color="#FFFFFF" />
+                    <Text style={styles.addActivityBtnTxt}>Go to Order Builder</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                serviceRolesList.map((role, rIdx) => {
+                  const queue = assignmentQueues.find(q => q.roleId === role.roleId);
+                  const curIdx = queue?.currentCandidateIndex || 0;
+                  const activeCandidate = queue?.candidates?.[curIdx];
+                  const directAssignedName = selectedPlan.assignments?.[role.roleId];
+                  const isConfirmed = queue?.status === 'confirmed' || (Boolean(directAssignedName) && queue?.status !== 'exhausted' && queue?.status !== 'cancelled');
+                  const isPending = queue?.status === 'pending' && !isConfirmed;
+                  const isExhausted = queue?.status === 'exhausted' && !isConfirmed;
+                  const notDispatched = !queue && !isConfirmed;
 
-                      {/* Status Pill */}
-                      {isConfirmed && (
-                        <View style={[styles.queueStatusBadge, styles.badgeConfirmed]}>
-                          <CheckCircle2 size={12} color="#059669" />
-                          <Text style={styles.badgeConfirmedTxt}>CONFIRMED</Text>
-                        </View>
-                      )}
-                      {isPending && (
-                        <View style={[styles.queueStatusBadge, styles.badgePending]}>
-                          <Timer size={12} color="#D97706" />
-                          <Text style={styles.badgePendingTxt}>PENDING (Rank {curIdx + 1})</Text>
-                        </View>
-                      )}
-                      {isExhausted && (
-                        <View style={[styles.queueStatusBadge, styles.badgeExhausted]}>
-                          <AlertCircle size={12} color="#DC2626" />
-                          <Text style={styles.badgeExhaustedTxt}>EXHAUSTED</Text>
-                        </View>
-                      )}
-                      {notDispatched && (
-                        <View style={[styles.queueStatusBadge, styles.badgeDraft]}>
-                          <Text style={styles.badgeDraftTxt}>UNASSIGNED</Text>
-                        </View>
-                      )}
-                    </View>
-
-                    {/* Confirmed Volunteer Banner */}
-                    {isConfirmed && (
-                      <View style={styles.confirmedVolunteerBanner}>
-                        <CheckCircle2 size={16} color="#059669" />
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.confirmedVolunteerName}>
-                            {queue?.confirmedCandidateName || selectedPlan.assignments?.[role.roleId] || 'Assigned Volunteer'}
-                          </Text>
-                          <Text style={styles.confirmedVolunteerSub}>
-                            Ready for service duty · Contact: {activeCandidate?.candidatePhone || 'In church directory'}
-                          </Text>
-                        </View>
-                      </View>
-                    )}
-
-                    {/* Candidate Ladder when queue exists */}
-                    {queue && queue.candidates && queue.candidates.length > 0 && (
-                      <View style={styles.candidateLadderBox}>
-                        <Text style={[styles.candidateLadderHeading, { color: secondaryText }]}>
-                          CANDIDATE REPLACEMENT LADDER ({queue.candidates.length} candidates)
-                        </Text>
-                        {queue.candidates.map((cand, idx) => {
-                          const isCurrentActive = idx === curIdx && isPending;
-                          const isCandAccepted = cand.status === 'accepted';
-                          const isCandDeclined = cand.status === 'declined';
-                          const isCandTimedOut = cand.status === 'timed_out';
-
-                          return (
-                            <View
-                              key={cand.candidateId ? `cand_${cand.candidateId}_${idx}` : `cand_${idx}`}
-                              style={[
-                                styles.ladderCandidateRow,
-                                isCurrentActive && styles.ladderCandidateRowActive,
-                                isCandAccepted && styles.ladderCandidateRowAccepted
-                              ]}
-                            >
-                              <View style={[
-                                styles.rankCircle,
-                                isCurrentActive ? styles.rankCircleActive :
-                                  isCandAccepted ? styles.rankCircleAccepted :
-                                    isCandDeclined ? styles.rankCircleDeclined :
-                                      styles.rankCircleIdle
-                              ]}>
-                                <Text style={styles.rankCircleTxt}>{idx + 1}</Text>
-                              </View>
-
-                              <View style={{ flex: 1, paddingHorizontal: 8 }}>
-                                <Text style={[styles.ladderCandName, { color: primaryText }]}>
-                                  {cand.candidateName}
-                                </Text>
-                                <Text style={[styles.ladderCandMeta, { color: secondaryText }]}>
-                                  {isCandAccepted ? '✅ Accepted & confirmed' :
-                                    isCandDeclined ? `❌ Declined: ${cand.declineReason || 'Unavailable'}` :
-                                      isCandTimedOut ? '⏰ No response (Timed Out)' :
-                                        isCurrentActive ? `⏳ Awaiting response · Deadline in ~${Math.round(queue.timeoutMinutes / 60)}h` :
-                                          'In queue (Next candidate on decline)'}
-                                </Text>
-                              </View>
-
-                              <View style={[
-                                styles.candStatusMiniPill,
-                                isCandAccepted ? styles.candPillAccepted :
-                                  isCandDeclined ? styles.candPillDeclined :
-                                    isCandTimedOut ? styles.candPillTimedOut :
-                                      isCurrentActive ? styles.candPillActive :
-                                        styles.candPillWaiting
-                              ]}>
-                                <Text style={styles.candStatusMiniTxt}>
-                                  {cand.status.toUpperCase()}
-                                </Text>
-                              </View>
+                  return (
+                    <View
+                      key={role.roleId ? `role_${role.roleId}_${rIdx}` : `role_${rIdx}`}
+                      style={[
+                        styles.queueRoleCard,
+                        { backgroundColor: cardSurface, borderColor: cardBorder },
+                        isConfirmed && styles.queueRoleCardConfirmed,
+                        isPending && styles.queueRoleCardPending,
+                        isExhausted && styles.queueRoleCardExhausted
+                      ]}
+                    >
+                      {/* Header */}
+                      <View style={styles.queueRoleHeader}>
+                        <View style={{ flex: 1, paddingRight: 8 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 5, flexWrap: 'wrap' }}>
+                            <View style={[styles.queueCategoryPill, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: cardBorder, borderWidth: 1 }]}>
+                              <Text style={[styles.queueCategoryPillTxt, { color: isDark ? '#E2E8F0' : '#0F172A' }]}>
+                                {getCategoryDef(role.category).label.toUpperCase()}
+                              </Text>
                             </View>
-                          );
-                        })}
-                      </View>
-                    )}
+                            {role.activityName ? (
+                              <Text style={[styles.queueActivityTag, { color: secondaryText }]} numberOfLines={1}>
+                                Activity: {role.activityName}
+                              </Text>
+                            ) : null}
+                          </View>
+                          <Text style={[styles.queueRoleTitle, { color: primaryText }]}>
+                            {role.roleTitle}
+                          </Text>
+                        </View>
 
-                    {/* Actions Row */}
-                    <View style={styles.queueActionsRow}>
+                        {/* Status Pill */}
+                        {isConfirmed && (
+                          <View style={[styles.queueStatusBadge, { backgroundColor: isDark ? 'rgba(5, 150, 105, 0.2)' : '#ECFDF5', borderColor: isDark ? 'rgba(5, 150, 105, 0.4)' : '#A7F3D0', borderWidth: 1 }]}>
+                            <CheckCircle2 size={12} color={isDark ? '#34D399' : '#059669'} />
+                            <Text style={[styles.badgeConfirmedTxt, { color: isDark ? '#34D399' : '#059669' }]}>
+                              {queue?.mode === 'first_come_first_served' ? 'BOOKED' : 'CONFIRMED'}
+                            </Text>
+                          </View>
+                        )}
+                        {isPending && (
+                          <View style={[styles.queueStatusBadge, { backgroundColor: isDark ? 'rgba(217, 119, 6, 0.2)' : '#FEF3C7', borderColor: isDark ? 'rgba(217, 119, 6, 0.4)' : '#FDE68A', borderWidth: 1 }]}>
+                            <Timer size={12} color={isDark ? '#FBBF24' : '#D97706'} />
+                            <Text style={[styles.badgePendingTxt, { color: isDark ? '#FBBF24' : '#D97706' }]}>
+                              {queue?.mode === 'first_come_first_served'
+                                ? `AVAILABLE (${queue.eligibleMemberIds?.length || queue.candidates?.length || 0} Eligible)`
+                                : `PENDING (${curIdx === 0 ? 'Primary' : curIdx === 1 ? '1st Backup' : '2nd Backup'})`}
+                            </Text>
+                          </View>
+                        )}
+                        {isExhausted && (
+                          <View style={[styles.queueStatusBadge, { backgroundColor: isDark ? 'rgba(220, 38, 38, 0.2)' : '#FEF2F2', borderColor: isDark ? 'rgba(220, 38, 38, 0.4)' : '#FECACA', borderWidth: 1 }]}>
+                            <AlertCircle size={12} color={isDark ? '#F87171' : '#DC2626'} />
+                            <Text style={[styles.badgeExhaustedTxt, { color: isDark ? '#F87171' : '#DC2626' }]}>
+                              {queue?.mode === 'first_come_first_served' ? 'NO MEMBERS AVAILABLE' : 'EXHAUSTED'}
+                            </Text>
+                          </View>
+                        )}
+                        {notDispatched && (
+                          <View style={[styles.queueStatusBadge, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: cardBorder, borderWidth: 1 }]}>
+                            <Text style={[styles.badgeDraftTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>UNASSIGNED</Text>
+                          </View>
+                        )}
+                      </View>
+
+                      {/* Confirmed Volunteer Banner */}
+                      {isConfirmed && (
+                        <View style={[
+                          styles.confirmedVolunteerBanner,
+                          {
+                            backgroundColor: isDark ? 'rgba(5, 150, 105, 0.15)' : '#ECFDF5',
+                            borderColor: isDark ? 'rgba(5, 150, 105, 0.35)' : '#A7F3D0',
+                            borderWidth: 1,
+                          }
+                        ]}>
+                          <CheckCircle2 size={16} color={isDark ? '#34D399' : '#059669'} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.confirmedVolunteerName, { color: isDark ? '#34D399' : '#065F46' }]}>
+                              {queue?.confirmedCandidateName || directAssignedName || 'Assigned Volunteer'}
+                            </Text>
+                            <Text style={[styles.confirmedVolunteerSub, { color: isDark ? '#A7F3D0' : '#047857' }]}>
+                              Ready for service responsibility · Contact: {activeCandidate?.candidatePhone || 'In church directory'}
+                            </Text>
+                          </View>
+                        </View>
+                      )}
+
+                    {/* Candidate Ladder / Eligible Members when queue exists */}
+                    {queue && queue.candidates && queue.candidates.length > 0 && (() => {
+                      const uniqueCandidates = ServiceRosterService.deduplicateCandidates(queue.candidates);
+                      return (
+                        <View style={[
+                          styles.candidateLadderBox,
+                          {
+                            backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                            borderColor: isDark ? '#3F3F46' : '#E2E8F0',
+                            borderWidth: 1,
+                          }
+                        ]}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                            <Text style={[styles.candidateLadderHeading, { color: isDark ? '#A1A1AA' : '#64748B', marginBottom: 0 }]}>
+                              {queue.mode === 'first_come_first_served'
+                                ? `ELIGIBLE MEMBERS & RESPONSES (${uniqueCandidates.length} ${uniqueCandidates.length === 1 ? 'volunteer' : 'volunteers'})`
+                                : `CANDIDATE REPLACEMENT LADDER (${uniqueCandidates.length} ${uniqueCandidates.length === 1 ? 'candidate' : 'candidates'})`}
+                            </Text>
+                            <Text style={{ fontSize: 10, color: isDark ? '#71717A' : '#94A3B8' }}>
+                              Timeout: {Math.round((queue.timeoutMinutes || 1440) / 60)}h{queue.mode === 'first_come_first_served' ? ' · First-Come' : ''}
+                            </Text>
+                          </View>
+                          {uniqueCandidates.map((cand, idx) => {
+                            const isCurrentActive = idx === curIdx && isPending;
+                            const isCandAccepted = cand.status === 'accepted';
+                            const isCandDeclined = cand.status === 'declined';
+                            const isCandTimedOut = cand.status === 'timed_out';
+
+                            return (
+                              <View
+                                key={cand.candidateId ? `cand_${cand.candidateId}_${idx}` : `cand_${idx}`}
+                                style={[
+                                  styles.ladderCandidateRow,
+                                  { borderBottomColor: isDark ? '#3F3F46' : '#F1F5F9' },
+                                  isCurrentActive && [
+                                    styles.ladderCandidateRowActive,
+                                    { backgroundColor: isDark ? 'rgba(217, 119, 6, 0.2)' : '#FEF3C7' }
+                                  ],
+                                  isCandAccepted && [
+                                    styles.ladderCandidateRowAccepted,
+                                    { backgroundColor: isDark ? 'rgba(5, 150, 105, 0.2)' : '#ECFDF5' }
+                                  ]
+                                ]}
+                              >
+                                <View style={[
+                                  styles.rankCircle,
+                                  isCurrentActive ? styles.rankCircleActive :
+                                    isCandAccepted ? styles.rankCircleAccepted :
+                                      isCandDeclined ? styles.rankCircleDeclined :
+                                        styles.rankCircleIdle
+                                ]}>
+                                  <Text style={styles.rankCircleTxt}>{idx + 1}</Text>
+                                </View>
+
+                                <View style={{ flex: 1, paddingHorizontal: 8 }}>
+                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                    <Text style={[styles.ladderCandName, { color: primaryText }]}>
+                                      {cand.candidateName}
+                                    </Text>
+                                    {queue.mode !== 'first_come_first_served' && !isCandDeclined && !isCandAccepted && (
+                                      <View style={{
+                                        paddingHorizontal: 5,
+                                        paddingVertical: 1,
+                                        borderRadius: 4,
+                                        backgroundColor: isDark ? 'rgba(217, 119, 6, 0.2)' : '#FFFBEB'
+                                      }}>
+                                        <Text style={{
+                                          fontSize: 9.5,
+                                          fontWeight: '700',
+                                          color: isDark ? '#FBBF24' : '#D97706'
+                                        }}>
+                                          {idx === 0 ? 'Primary' : idx === 1 ? '1st Backup' : '2nd Backup'}
+                                        </Text>
+                                      </View>
+                                    )}
+                                  </View>
+                                  <Text style={[
+                                    styles.ladderCandMeta,
+                                    {
+                                      color: isCandAccepted ? (isDark ? '#34D399' : '#059669') :
+                                        isCandDeclined ? (isDark ? '#F87171' : '#DC2626') :
+                                          isCurrentActive ? (isDark ? '#FBBF24' : '#D97706') :
+                                            secondaryText
+                                    }
+                                  ]}>
+                                    {isCandAccepted ? '✅ Accepted & confirmed (Slot Booked)' :
+                                      isCandDeclined ? `❌ Declined: ${cand.declineReason || 'Unavailable'}` :
+                                        isCandTimedOut ? '⏰ Response deadline expired' :
+                                          queue.mode === 'first_come_first_served'
+                                            ? (queue.status === 'confirmed' ? 'Slot booked by another member' : `⏳ Awaiting response · First to accept gets booked`)
+                                            : (isCurrentActive ? `⏳ Awaiting response · Deadline in ~${Math.round(queue.timeoutMinutes / 60)}h` :
+                                                idx === 1 ? 'In reserve (1st Backup)' : 'In reserve (2nd Backup)')}
+                                  </Text>
+                                </View>
+
+                                {!isCandDeclined && (
+                                  <View style={[
+                                    styles.candStatusMiniPill,
+                                    isCandAccepted ? styles.candPillAccepted :
+                                      isCandTimedOut ? styles.candPillTimedOut :
+                                        isCurrentActive ? styles.candPillActive :
+                                          [styles.candPillWaiting, { backgroundColor: isDark ? '#3F3F46' : '#E2E8F0' }]
+                                  ]}>
+                                    <Text style={[
+                                      styles.candStatusMiniTxt,
+                                      (!isCandAccepted && !isCandTimedOut && !isCurrentActive) ? {
+                                        color: isDark ? '#D4D4D8' : '#64748B'
+                                      } : { color: '#FFFFFF' }
+                                    ]}>
+                                      {isCandAccepted ? 'BOOKED' : (queue.mode === 'first_come_first_served' ? 'OFFERED' : cand.status.toUpperCase())}
+                                    </Text>
+                                  </View>
+                                )}
+                              </View>
+                            );
+                          })}
+                        </View>
+                      );
+                    })()}
+
+                    {/* Actions: Row 1 (Primary 2-column balanced action buttons: Broadcast & Direct Assign) */}
+                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
                       <TouchableOpacity
-                        style={styles.dispatchQueueBtn}
+                        style={[styles.dispatchQueueBtn, { flex: 1, paddingVertical: 9, paddingHorizontal: 10, justifyContent: 'center' }]}
                         onPress={() => openDispatchQueueModal(
                           role.roleId,
                           role.roleTitle,
                           role.activityId,
                           role.activityName,
                           role.suggestedTeamId,
-                          role.suggestedSkill
+                          role.suggestedSkill,
+                          role.suggestedTeamIds
                         )}
+                        activeOpacity={0.8}
                       >
                         <Send size={12} color="#FFFFFF" />
-                        <Text style={styles.dispatchQueueBtnTxt}>
-                          {notDispatched ? '⚡ Auto-Assign (Queue)' : 'Reconfigure Ladder'}
+                        <Text style={styles.dispatchQueueBtnTxt} numberOfLines={1}>
+                          {notDispatched ? '⚡ Auto-Assign' : (queue?.mode === 'first_come_first_served' ? '⚡ Broadcast' : '⚡ Reconfigure')}
                         </Text>
                       </TouchableOpacity>
 
                       <TouchableOpacity
-                        style={styles.overrideBtn}
+                        style={[
+                          styles.overrideBtn,
+                          {
+                            flex: 1,
+                            paddingVertical: 9,
+                            paddingHorizontal: 10,
+                            justifyContent: 'center',
+                            backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                            borderColor: isDark ? '#3F3F46' : '#CBD5E1'
+                          }
+                        ]}
                         onPress={() => openManualOverrideModal(role.roleId, role.roleTitle)}
+                        activeOpacity={0.8}
                       >
-                        <UserCheck size={12} color="#1E3A8A" />
-                        <Text style={styles.overrideBtnTxt}>Direct Assign</Text>
+                        <UserCheck size={13} color={primaryText} />
+                        <Text style={[styles.overrideBtnTxt, { color: primaryText }]} numberOfLines={1}>Direct Assign</Text>
                       </TouchableOpacity>
-
-                      {isPending && queue && (
-                        <TouchableOpacity
-                          style={styles.simulateBtn}
-                          onPress={() => openSimulateModal(queue)}
-                        >
-                          <RefreshCw size={12} color="#D97706" />
-                          <Text style={styles.simulateBtnTxt}>Simulate Member</Text>
-                        </TouchableOpacity>
-                      )}
-
-                      {queue && (
-                        <TouchableOpacity
-                          style={styles.deleteQueueBtn}
-                          onPress={() => handleDeleteQueue(role.roleId, role.roleTitle)}
-                        >
-                          <Trash2 size={13} color="#DC2626" />
-                        </TouchableOpacity>
-                      )}
                     </View>
+
+                    {/* Actions: Row 2 (Accept, Decline & Reset buttons cleanly aligned) */}
+                    {(queue || isConfirmed) && (
+                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                        <TouchableOpacity
+                          style={[
+                            styles.simulateBtn,
+                            {
+                              flex: 1,
+                              paddingVertical: 8,
+                              paddingHorizontal: 8,
+                              justifyContent: 'center',
+                              backgroundColor: isDark ? 'rgba(5, 150, 105, 0.15)' : '#ECFDF5',
+                              borderColor: isDark ? 'rgba(5, 150, 105, 0.35)' : '#A7F3D0'
+                            }
+                          ]}
+                          onPress={() => {
+                            if (queue?.candidates && queue.candidates.length > 0) {
+                              openSimulateModal(queue, 'accept');
+                            } else {
+                              openManualOverrideModal(role.roleId, role.roleTitle);
+                            }
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          <CheckCircle2 size={12} color={isDark ? '#34D399' : '#059669'} />
+                          <Text style={[styles.simulateBtnTxt, { color: isDark ? '#34D399' : '#059669' }]} numberOfLines={1}>
+                            Accept
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.simulateBtn,
+                            {
+                              flex: 1,
+                              paddingVertical: 8,
+                              paddingHorizontal: 8,
+                              justifyContent: 'center',
+                              backgroundColor: isDark ? 'rgba(217, 119, 6, 0.15)' : '#FFFBEB',
+                              borderColor: isDark ? 'rgba(217, 119, 6, 0.35)' : '#FDE68A'
+                            }
+                          ]}
+                          onPress={() => {
+                            if (queue?.candidates && queue.candidates.length > 0) {
+                              openSimulateModal(queue, 'decline');
+                            } else {
+                              Alert.alert(
+                                'No Candidates in Queue',
+                                `No candidate is currently queued for "${role.roleTitle}". Tap "⚡ Auto-Assign" to broadcast to eligible members.`
+                              );
+                            }
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          <X size={12} color={isDark ? '#FBBF24' : '#D97706'} />
+                          <Text style={[styles.simulateBtnTxt, { color: isDark ? '#FBBF24' : '#B45309' }]} numberOfLines={1}>
+                            Decline
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.deleteQueueBtn,
+                            {
+                              flex: 1,
+                              paddingVertical: 8,
+                              paddingHorizontal: 8,
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 5,
+                              backgroundColor: isDark ? 'rgba(220, 38, 38, 0.15)' : '#FEF2F2',
+                              borderColor: isDark ? 'rgba(220, 38, 38, 0.35)' : '#FECACA'
+                            }
+                          ]}
+                          onPress={() => handleDeleteQueue(role.roleId, role.roleTitle)}
+                          activeOpacity={0.8}
+                        >
+                          <Trash2 size={12} color={isDark ? '#F87171' : '#DC2626'} />
+                          <Text style={{ fontSize: 11.5, fontWeight: '700', color: isDark ? '#F87171' : '#DC2626' }} numberOfLines={1}>
+                            Reset
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
                   </View>
                 );
-              })}
-            </View>
-          )}
-
-          {/* TAB: REHEARSAL MANAGEMENT (PHASE 6) */}
-          {activePlannerTab === 'rehearsals' && selectedPlan && (
-            <View style={styles.tabContent}>
-              <View style={styles.sectionHeaderRow}>
-                <View>
-                  <Text style={[styles.sectionHeading, { color: primaryText }]}>Service Rehearsals</Text>
-                  <Text style={[styles.sectionSubheading, { color: secondaryText }]}>
-                    Coordinate band practice, vocal run-throughs, and technical soundchecks.
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.newServiceBtn}
-                  onPress={openCreateRehearsalModal}
-                  activeOpacity={0.85}
-                >
-                  <Plus size={14} color="#FFFFFF" />
-                  <Text style={styles.newServiceBtnTxt}>Add Practice</Text>
-                </TouchableOpacity>
-              </View>
-
-              {rehearsals.length === 0 ? (
-                <View style={[styles.emptyCard, { backgroundColor: cardSurface, borderColor }]}>
-                  <Clock size={36} color="#94A3B8" />
-                  <Text style={[styles.emptyTitle, { color: primaryText }]}>No Rehearsals Scheduled</Text>
-                  <Text style={[styles.emptySubtitle, { color: secondaryText }]}>
-                    Schedule vocal rehearsals, full band soundchecks, or worship team practices.
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.createEmptyBtn}
-                    onPress={openCreateRehearsalModal}
-                  >
-                    <Plus size={15} color="#FFFFFF" />
-                    <Text style={styles.createEmptyBtnTxt}>Schedule First Rehearsal</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                rehearsals.map(reh => {
-                  const dayStr = reh.date.split('-')[2] || '01';
-                  const monthStr = new Date(reh.date).toLocaleString('default', { month: 'short' }).toUpperCase();
-                  const attendanceRecord = reh.attendance || {};
-                  const presentCount = Object.values(attendanceRecord).filter(v => v === 'present').length;
-                  const lateCount = Object.values(attendanceRecord).filter(v => v === 'late').length;
-                  const absentCount = Object.values(attendanceRecord).filter(v => v === 'absent').length;
-
-                  // Target songs from plan's setlist
-                  const practiceSongs = (selectedPlan.setlist || []).filter(s => 
-                    (reh.songPracticeIds || []).includes(s.id)
-                  );
-
-                  return (
-                    <View
-                      key={reh.id}
-                      style={[styles.rehearsalCard, { backgroundColor: cardSurface, borderColor }]}
-                    >
-                      <View style={styles.rehearsalCardTop}>
-                        <View style={styles.dateBadge}>
-                          <Text style={styles.dateBadgeDay}>{dayStr}</Text>
-                          <Text style={styles.dateBadgeMonth}>{monthStr}</Text>
-                        </View>
-
-                        <View style={{ flex: 1, paddingHorizontal: 10 }}>
-                          <Text style={[styles.rehearsalTitle, { color: primaryText }]}>
-                            {reh.rehearsalName}
-                          </Text>
-                          <Text style={[styles.rehearsalMeta, { color: secondaryText }]}>
-                            ⏰ {reh.startTime} - {reh.endTime} · 📍 {reh.location}
-                          </Text>
-                        </View>
-
-                        <View style={styles.rehearsalCardActions}>
-                          <TouchableOpacity
-                            style={styles.itemEditBtn}
-                            onPress={() => openEditRehearsalModal(reh)}
-                          >
-                            <Edit3 size={14} color="#1E3A8A" />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={styles.itemDeleteBtn}
-                            onPress={() => handleDeleteRehearsal(reh.id, reh.rehearsalName)}
-                          >
-                            <Trash2 size={14} color="#DC2626" />
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-
-                      {/* Assigned Teams Pills */}
-                      {reh.assignedTeamIds && reh.assignedTeamIds.length > 0 && (
-                        <View style={styles.rehearsalTeamsRow}>
-                          {reh.assignedTeamIds.map((tId, tIdx) => {
-                            const teamObj = ministryTeams.find(t => t.id === tId);
-                            return (
-                              <View key={tId ? `team_${tId}_${tIdx}` : `team_${tIdx}`} style={[styles.rehTeamPill, { backgroundColor: teamObj?.color ? `${teamObj.color}15` : '#E0E7FF' }]}>
-                                <Users size={11} color={teamObj?.color || '#1E3A8A'} />
-                                <Text style={[styles.rehTeamPillTxt, { color: teamObj?.color || '#1E3A8A' }]}>
-                                  {teamObj?.name || tId}
-                                </Text>
-                              </View>
-                            );
-                          })}
-                        </View>
-                      )}
-
-                      {/* Practice Songs Section */}
-                      {practiceSongs.length > 0 && (
-                        <View style={styles.rehSongsBox}>
-                          <Text style={[styles.rehSectionSubheading, { color: secondaryText }]}>
-                            SONGS FOR PRACTICE ({practiceSongs.length})
-                          </Text>
-                          {practiceSongs.map((s, sIdx) => (
-                            <View key={s.id ? `prac_${s.id}_${sIdx}` : `prac_${sIdx}`} style={styles.rehSongItemRow}>
-                              <Music size={12} color="#1E3A8A" />
-                              <Text style={[styles.rehSongTitle, { color: primaryText }]} numberOfLines={1}>
-                                {s.title} {s.titleTe ? `(${s.titleTe})` : ''}
-                              </Text>
-                              <View style={styles.keyBadge}>
-                                <Text style={styles.keyBadgeTxt}>Key {s.key}</Text>
-                              </View>
-                              <Text style={[styles.ladderCandMeta, { color: secondaryText }]}>{s.tempo} BPM</Text>
-                            </View>
-                          ))}
-                        </View>
-                      )}
-
-                      {/* Instructions / Notes */}
-                      {reh.notes ? (
-                        <View style={styles.rehNotesBox}>
-                          <Text style={[styles.rehNotesTxt, { color: secondaryText }]}>
-                            📝 {reh.notes}
-                          </Text>
-                        </View>
-                      ) : null}
-
-                      {/* Attendance Bar */}
-                      <View style={styles.rehAttendanceFooter}>
-                        <View style={styles.attendanceStats}>
-                          <Text style={styles.attStatItem}>✅ {presentCount} Present</Text>
-                          {lateCount > 0 && <Text style={styles.attStatItem}>⏳ {lateCount} Late</Text>}
-                          {absentCount > 0 && <Text style={styles.attStatItem}>❌ {absentCount} Absent</Text>}
-                        </View>
-
-                        <TouchableOpacity
-                          style={styles.takeAttendanceBtn}
-                          onPress={() => openTakeRehearsalAttendance(reh)}
-                        >
-                          <UserCheck size={13} color="#FFFFFF" />
-                          <Text style={styles.takeAttendanceBtnTxt}>Take Attendance</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  );
-                })
-              )}
-            </View>
-          )}
+              })
+            )}
+          </View>
+        )}
 
           {/* TAB: VOLUNTEER ATTENDANCE (PHASE 9) */}
           {activePlannerTab === 'attendance' && selectedPlan && (
@@ -3663,7 +5150,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                       {selectedPlan.serviceTitle}
                     </Text>
                     <Text style={[styles.selectedBannerMeta, { color: secondaryText }]}>
-                      📅 {selectedPlan.date} · ⏰ {selectedPlan.startTime} - {selectedPlan.endTime} · 📍 {selectedPlan.location}
+                      📅 {formatDateMonthYear(selectedPlan.date)} · ⏰ {formatDisplayTime(selectedPlan.startTime)} - {formatDisplayTime(selectedPlan.endTime)} · 📍 {selectedPlan.location}
                     </Text>
                   </View>
                   <View style={styles.turnoutCircle}>
@@ -3687,7 +5174,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                     <Text style={styles.attCounterLbl}>Absent</Text>
                   </View>
                   <View style={styles.attCounterItem}>
-                    <Text style={[styles.attCounterVal, { color: '#2563EB' }]}>{attendanceStats.excused}</Text>
+                    <Text style={[styles.attCounterVal, { color: '#64748B' }]}>{attendanceStats.excused}</Text>
                     <Text style={styles.attCounterLbl}>Excused</Text>
                   </View>
                   <View style={styles.attCounterItem}>
@@ -3844,14 +5331,14 @@ export default function AdminServicePlanner({ navigation }: any) {
                   onPress={fetchAnalytics}
                   disabled={loadingAnalytics}
                 >
-                  <RefreshCw size={13} color="#1E3A8A" />
+                  <RefreshCw size={13} color={secondaryBtnText} />
                   <Text style={styles.refreshAnalyticsBtnTxt}>Reload</Text>
                 </TouchableOpacity>
               </View>
 
               {loadingAnalytics ? (
                 <View style={styles.analyticsLoadingBox}>
-                  <ActivityIndicator size="large" color="#1E3A8A" />
+                  <ActivityIndicator size="large" color={primaryBtnBg} />
                   <Text style={[styles.analyticsLoadingTxt, { color: secondaryText }]}>
                     Analyzing church volunteer health and service metrics...
                   </Text>
@@ -3882,9 +5369,9 @@ export default function AdminServicePlanner({ navigation }: any) {
                     <View style={[styles.kpiCard, { backgroundColor: cardSurface, borderColor }]}>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                         <Text style={[styles.kpiLabel, { color: secondaryText }]}>Acceptance</Text>
-                        <CheckCircle2 size={16} color="#1E3A8A" />
+                        <CheckCircle2 size={16} color={isDark ? '#10B981' : '#2E6B4F'} />
                       </View>
-                      <Text style={[styles.kpiValue, { color: '#1E3A8A' }]}>
+                      <Text style={[styles.kpiValue, { color: primaryText }]}>
                         {analyticsData.acceptanceRatePercent}%
                       </Text>
                       <Text style={[styles.kpiSub, { color: secondaryText }]}>
@@ -3895,9 +5382,9 @@ export default function AdminServicePlanner({ navigation }: any) {
                     <View style={[styles.kpiCard, { backgroundColor: cardSurface, borderColor }]}>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                         <Text style={[styles.kpiLabel, { color: secondaryText }]}>Active Volunteers</Text>
-                        <Users size={16} color="#7C3AED" />
+                        <Users size={16} color="#2E6B4F" />
                       </View>
-                      <Text style={[styles.kpiValue, { color: '#7C3AED' }]}>
+                      <Text style={[styles.kpiValue, { color: '#2E6B4F' }]}>
                         {analyticsData.volunteerServingCounts.length}
                       </Text>
                       <Text style={[styles.kpiSub, { color: secondaryText }]}>
@@ -4048,7 +5535,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                             </Text>
                           </View>
                           <View style={styles.songCountBadge}>
-                            <Music size={12} color="#1E3A8A" />
+                            <Music size={12} color={secondaryText} />
                             <Text style={styles.songCountTxt}>{song.count}x</Text>
                           </View>
                         </View>
@@ -4063,78 +5550,228 @@ export default function AdminServicePlanner({ navigation }: any) {
           {/* TAB 4: MINISTRY TEAMS MANAGEMENT (PHASE 2) */}
           {activePlannerTab === 'teams' && (
             <View style={styles.tabContent}>
-              <View style={styles.sectionHeaderRow}>
-                <View>
-                  <Text style={[styles.sectionHeading, { color: primaryText }]}>Church Ministry Teams</Text>
-                  <Text style={[styles.sectionSubheading, { color: secondaryText }]}>
-                    Organize volunteers across 14 church departments and operational teams.
+              {teamOrderFeedback && (
+                <View style={[styles.feedbackBanner, { backgroundColor: isDark ? '#064E3B' : '#ECFDF5', borderColor: '#10B981' }]}>
+                  <CheckCircle2 size={13} color="#10B981" />
+                  <Text style={[styles.feedbackBannerTxt, { color: isDark ? '#A7F3D0' : '#065F46' }]}>
+                    {teamOrderFeedback}
                   </Text>
                 </View>
-                {ministryTeams.length === 0 && (
-                  <TouchableOpacity
-                    style={styles.seedTeamsBtn}
-                    onPress={handleSeedDefaultTeams}
-                  >
-                    <Sparkles size={13} color="#D97706" />
-                    <Text style={styles.seedTeamsBtnTxt}>Seed 14 Teams</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
+              )}
 
-              {ministryTeams.length === 0 ? (
+              {filteredMinistryTeams.length === 0 ? (
                 <View style={[styles.emptyCard, { backgroundColor: cardSurface, borderColor }]}>
                   <Users size={36} color="#94A3B8" />
-                  <Text style={[styles.emptyTitle, { color: primaryText }]}>No Ministry Teams Yet</Text>
-                  <Text style={[styles.emptySubtitle, { color: secondaryText }]}>
-                    Set up your standard ministry departments (Worship, Audio, Livestream, Ushers, Communion).
+                  <Text style={[styles.emptyTitle, { color: primaryText }]}>
+                    {teamSearchQuery.trim() ? 'No Matching Teams' : 'No Ministry Teams Yet'}
                   </Text>
-                  <TouchableOpacity
-                    style={styles.createEmptyBtn}
-                    onPress={handleSeedDefaultTeams}
-                  >
-                    <Sparkles size={15} color="#FFFFFF" />
-                    <Text style={styles.createEmptyBtnTxt}>Seed 14 Standard Teams</Text>
-                  </TouchableOpacity>
+                  <Text style={[styles.emptySubtitle, { color: secondaryText }]}>
+                    {teamSearchQuery.trim()
+                      ? `No ministry teams found matching "${teamSearchQuery}". Try another keyword.`
+                      : 'Set up your standard ministry departments (Worship, Audio, Livestream, Ushers, Communion).'}
+                  </Text>
+                  {teamSearchQuery.trim() ? (
+                    <TouchableOpacity
+                      style={[styles.createEmptyBtn, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderWidth: 1, borderColor: cardBorder }]}
+                      onPress={() => setTeamSearchQuery('')}
+                    >
+                      <X size={15} color={primaryText} />
+                      <Text style={[styles.createEmptyBtnTxt, { color: primaryText }]}>Clear Search</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.createEmptyBtn}
+                      onPress={handleSeedDefaultTeams}
+                    >
+                      <Sparkles size={15} color="#FFFFFF" />
+                      <Text style={styles.createEmptyBtnTxt}>Seed 14 Standard Teams</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               ) : (
-                ministryTeams.map(team => {
+                filteredMinistryTeams.map((team, index) => {
                   const memberCount = team.memberIds?.length || 0;
+                  const memberNames = getTeamMemberNames(team.memberIds);
                   return (
-                    <TouchableOpacity
+                    <View
                       key={team.id}
-                      style={[styles.teamCard, { backgroundColor: cardSurface, borderColor }]}
-                      activeOpacity={0.88}
-                      onPress={() => openEditTeamModal(team)}
+                      style={[
+                        styles.teamCard,
+                        {
+                          backgroundColor: cardSurface,
+                          borderColor: cardBorder,
+                        }
+                      ]}
                     >
-                      <View style={[styles.teamColorBar, { backgroundColor: team.color || '#1E3A8A' }]} />
-                      <View style={{ flex: 1, paddingVertical: 12, paddingHorizontal: 12 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      {/* Left Department Accent Bar */}
+                      <View style={[styles.teamColorBar, { backgroundColor: team.color || '#2E6B4F' }]} />
+
+                      {/* Main Card Information Area */}
+                      <TouchableOpacity
+                        style={styles.teamCardContent}
+                        activeOpacity={0.85}
+                        onPress={() => openEditTeamModal(team)}
+                      >
+                        {/* Header: Team Name & Status Badge */}
+                        <View style={styles.teamHeaderRow}>
+                          <Text style={[styles.teamTitle, { color: primaryText, flex: 1, marginRight: 8 }]} numberOfLines={1}>
+                            {team.name}
+                          </Text>
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <Text style={[styles.teamTitle, { color: primaryText }]}>{team.name}</Text>
-                            <View style={[styles.teamActiveBadge, team.active ? styles.teamActiveBadgeOn : styles.teamActiveBadgeOff]}>
-                              <Text style={[styles.teamActiveBadgeTxt, team.active ? styles.teamActiveBadgeTxtOn : styles.teamActiveBadgeTxtOff]}>
+                            <View
+                              style={[
+                                styles.teamActiveBadge,
+                                team.active
+                                  ? (isDark ? styles.teamActiveBadgeOnDark : styles.teamActiveBadgeOn)
+                                  : (isDark ? styles.teamActiveBadgeOffDark : styles.teamActiveBadgeOff)
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.teamActiveBadgeTxt,
+                                  team.active
+                                    ? (isDark ? styles.teamActiveBadgeTxtOnDark : styles.teamActiveBadgeTxtOn)
+                                    : styles.teamActiveBadgeTxtOff
+                                ]}
+                              >
                                 {team.active ? 'ACTIVE' : 'INACTIVE'}
                               </Text>
                             </View>
+
+                            <TouchableOpacity
+                              style={[
+                                styles.itemDeleteBtn,
+                                {
+                                  width: 28,
+                                  height: 28,
+                                  borderRadius: 7,
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  backgroundColor: isDark ? 'rgba(239, 68, 68, 0.16)' : '#FEF2F2',
+                                  borderWidth: 1,
+                                  borderColor: isDark ? 'rgba(239, 68, 68, 0.35)' : '#FECACA',
+                                }
+                              ]}
+                              onPress={(e) => {
+                                e.stopPropagation?.();
+                                handleDeleteTeam(team);
+                              }}
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              accessibilityLabel={`Delete ${team.name}`}
+                            >
+                              <Trash2 size={13} color={isDark ? '#F87171' : '#DC2626'} />
+                            </TouchableOpacity>
                           </View>
-                          <ChevronRight size={16} color="#94A3B8" />
                         </View>
 
+                        {/* Description */}
                         <Text style={[styles.teamDescription, { color: secondaryText }]} numberOfLines={2}>
                           {team.description || 'Ministry team serving Rhema Church'}
                         </Text>
 
-                        <View style={styles.teamMetaRow}>
-                          <Text style={[styles.teamMetaTxt, { color: secondaryText }]}>
-                            👑 Leader: <Text style={{ fontWeight: '700', color: primaryText }}>{team.leaderName || 'Unassigned'}</Text>
-                          </Text>
-                          <View style={styles.teamMembersCountBadge}>
-                            <Users size={12} color="#1E3A8A" />
-                            <Text style={styles.teamMembersCountTxt}>{memberCount} Members</Text>
+                        {/* Footer Meta: Leader & Assigned Members */}
+                        <View style={[styles.teamMetaBox, { borderTopColor: isDark ? '#27272A' : '#F1F5F9', borderTopWidth: 1, paddingTop: 10, marginTop: 4 }]}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, minWidth: 120 }}>
+                              <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: isDark ? 'rgba(217, 119, 6, 0.2)' : '#FEF3C7', alignItems: 'center', justifyContent: 'center' }}>
+                                <Text style={{ fontSize: 11 }}>👑</Text>
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <Text style={[styles.teamMetaTxt, { color: secondaryText }]} numberOfLines={1}>
+                                  Leader: <Text style={{ fontWeight: '700', color: primaryText }}>{team.leaderName || 'Unassigned'}</Text>
+                                </Text>
+                              </View>
+                            </View>
+
+                            <View style={[styles.teamMembersCountBadge, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: cardBorder, borderWidth: 1 }]}>
+                              <Users size={12} color={secondaryText} />
+                              <Text style={[styles.teamMembersCountTxt, { color: isDark ? '#E4E4E7' : '#0F172A' }]}>
+                                {memberCount} {memberCount === 1 ? 'Member' : 'Members'}
+                              </Text>
+                            </View>
                           </View>
+
+                          {/* Dedicated Member Names Roster: prevents names from getting mixed */}
+                          {memberNames.length > 0 && (
+                            <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: isDark ? '#27272A' : '#F1F5F9' }}>
+                              <Text style={{ fontSize: 10.5, fontWeight: '700', color: isDark ? '#A1A1AA' : '#64748B', marginBottom: 5 }}>
+                                Team Members ({memberCount}):
+                              </Text>
+                              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+                                {memberNames.map((mName, mIdx) => (
+                                  <View
+                                    key={mIdx}
+                                    style={{
+                                      paddingHorizontal: 7,
+                                      paddingVertical: 3,
+                                      borderRadius: 6,
+                                      backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                                      borderWidth: 1,
+                                      borderColor: cardBorder,
+                                    }}
+                                  >
+                                    <Text style={{ fontSize: 11, fontWeight: '600', color: primaryText }}>
+                                      {mName}
+                                    </Text>
+                                  </View>
+                                ))}
+                              </View>
+                            </View>
+                          )}
                         </View>
+                      </TouchableOpacity>
+
+                      {/* Clean Dedicated Reorder Column */}
+                      <View style={[styles.teamReorderCol, { borderLeftColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+                        <TouchableOpacity
+                          style={[
+                            styles.reorderArrowBtn,
+                            {
+                              backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                              borderColor: isDark ? '#3F3F46' : '#E2E8F0',
+                            },
+                            index === 0 && styles.reorderArrowBtnDisabled
+                          ]}
+                          disabled={index === 0 || isSavingTeamOrder}
+                          onPress={() => handleMoveTeam(index, 'up')}
+                          activeOpacity={0.7}
+                          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                        >
+                          <ChevronUp
+                            size={16}
+                            color={index === 0 ? (isDark ? '#52525B' : '#CBD5E1') : (isDark ? '#FAFAFA' : '#0F172A')}
+                            strokeWidth={2.6}
+                          />
+                        </TouchableOpacity>
+
+                        <View style={styles.orderRankPill}>
+                          <Text style={[styles.orderRankTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+                            #{index + 1}
+                          </Text>
+                        </View>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.reorderArrowBtn,
+                            {
+                              backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                              borderColor: isDark ? '#3F3F46' : '#E2E8F0',
+                            },
+                            index === ministryTeams.length - 1 && styles.reorderArrowBtnDisabled
+                          ]}
+                          disabled={index === ministryTeams.length - 1 || isSavingTeamOrder}
+                          onPress={() => handleMoveTeam(index, 'down')}
+                          activeOpacity={0.7}
+                          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                        >
+                          <ChevronDown
+                            size={16}
+                            color={index === ministryTeams.length - 1 ? (isDark ? '#52525B' : '#CBD5E1') : (isDark ? '#FAFAFA' : '#0F172A')}
+                            strokeWidth={2.6}
+                          />
+                        </TouchableOpacity>
                       </View>
-                    </TouchableOpacity>
+                    </View>
                   );
                 })
               )}
@@ -4146,7 +5783,7 @@ export default function AdminServicePlanner({ navigation }: any) {
             <View style={styles.tabContent}>
               <View style={styles.skillStatsRow}>
                 <View style={[styles.skillStatCard, { backgroundColor: cardSurface, borderColor }]}>
-                  <Text style={[styles.skillStatNum, { color: '#1E3A8A' }]}>{memberSkills.length}</Text>
+                  <Text style={[styles.skillStatNum, { color: primaryText }]}>{memberSkills.length}</Text>
                   <Text style={[styles.skillStatLbl, { color: secondaryText }]}>Total Skills</Text>
                 </View>
                 <View style={[styles.skillStatCard, { backgroundColor: cardSurface, borderColor }]}>
@@ -4156,7 +5793,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                   <Text style={[styles.skillStatLbl, { color: secondaryText }]}>Verified</Text>
                 </View>
                 <View style={[styles.skillStatCard, { backgroundColor: cardSurface, borderColor }]}>
-                  <Text style={[styles.skillStatNum, { color: pendingSkillsCount > 0 ? '#DC2626' : '#1E3A8A' }]}>
+                  <Text style={[styles.skillStatNum, { color: pendingSkillsCount > 0 ? '#DC2626' : primaryText }]}>
                     {pendingSkillsCount}
                   </Text>
                   <Text style={[styles.skillStatLbl, { color: secondaryText }]}>Pending Review</Text>
@@ -4227,7 +5864,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                               </Text>
                             </View>
                           </View>
-                          <Text style={[styles.skillNameText, { color: '#1E3A8A' }]}>
+                          <Text style={[styles.skillNameText, { color: primaryText }]}>
                             🎯 {skill.skillName} ({skill.proficiencyLevel?.toUpperCase() || 'INTERMEDIATE'})
                           </Text>
                           <Text style={[styles.skillCategoryMeta, { color: secondaryText }]}>
@@ -4298,7 +5935,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                       </Text>
                     ))}
                     {tpl.runSheetTemplate.length > 4 && (
-                      <Text style={[styles.templatePreviewMore, { color: '#1E3A8A' }]}>
+                      <Text style={[styles.templatePreviewMore, { color: isDark ? '#10B981' : '#2E6B4F' }]}>
                         + {tpl.runSheetTemplate.length - 4} more activities...
                       </Text>
                     )}
@@ -4330,19 +5967,23 @@ export default function AdminServicePlanner({ navigation }: any) {
         >
           <View style={[styles.modalBox, { backgroundColor: cardSurface }]}>
             <View style={styles.modalHeader}>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={[styles.modalTitle, { color: primaryText }]}>Select Songs from Library</Text>
                 <Text style={[styles.modalSubtitle, { color: secondaryText }]}>
-                  Choose from {churchSongs.length} Telugu & English praise songs.
+                  {selectedSongIdsForBatch.length > 0 ? `${selectedSongIdsForBatch.length} song(s) selected · ` : ''}Choose from {churchSongs.length} Telugu & English praise songs.
                 </Text>
               </View>
-              <TouchableOpacity onPress={() => setShowSongPickerModal(false)}>
-                <X size={20} color={secondaryText} />
+              <TouchableOpacity
+                style={[styles.modalCloseCircle, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}
+                onPress={() => setShowSongPickerModal(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <X size={18} color={secondaryText} />
               </TouchableOpacity>
             </View>
 
             {/* Song Search Bar */}
-            <View style={[styles.searchBox, { backgroundColor: screenBg, borderColor }]}>
+            <View style={[styles.searchBox, { backgroundColor: inputBg, borderColor: inputBorder }]}>
               <Search size={16} color="#94A3B8" />
               <TextInput
                 style={[styles.searchInput, { color: primaryText }]}
@@ -4358,47 +5999,61 @@ export default function AdminServicePlanner({ navigation }: any) {
               )}
             </View>
 
-            {/* Song List */}
+            {/* Song List with Multi-Selection Checkboxes */}
             {loadingSongs ? (
-              <ActivityIndicator size="small" color="#1E3A8A" style={{ marginVertical: 30 }} />
+              <ActivityIndicator size="small" color={primaryBtnBg} style={{ marginVertical: 30 }} />
             ) : (
               <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
                 {filteredLibrarySongs.map((song, songIdx) => {
-                  const alreadyInSetlist = selectedPlan?.setlist?.some(s => s.songId === song.id);
+                  const isAlreadyInSetlist = (showCreateModal ? createSetlist : (selectedPlan?.setlist || [])).some(s => s.songId === song.id);
+                  const isSelected = selectedSongIdsForBatch.includes(song.id);
                   return (
                     <TouchableOpacity
                       key={song.id ? `song_${song.id}_${songIdx}` : `song_${songIdx}`}
                       style={[
                         styles.songPickItem,
-                        { borderColor },
-                        alreadyInSetlist && { backgroundColor: isDark ? '#1E293B' : '#EFF6FF', borderColor: '#1E3A8A' }
+                        { borderColor: cardBorder },
+                        isSelected && { backgroundColor: isDark ? 'rgba(46, 107, 79, 0.25)' : '#ECFDF5', borderColor: publishBtnBg },
+                        isAlreadyInSetlist && { opacity: 0.65, backgroundColor: isDark ? '#1E293B' : '#F8FAFC' }
                       ]}
-                      onPress={() => handleSelectSongFromLibrary(song)}
+                      onPress={() => {
+                        if (isAlreadyInSetlist) {
+                          Alert.alert('Already Added', `"${song.title}" is already in the setlist.`);
+                          return;
+                        }
+                        toggleSongSelectionForBatch(song.id);
+                      }}
                       activeOpacity={0.7}
                     >
-                      <View style={[styles.songPickIconBox, alreadyInSetlist && { backgroundColor: '#1E3A8A' }]}>
-                        {alreadyInSetlist ? (
-                          <Check size={16} color="#FFFFFF" strokeWidth={3} />
-                        ) : (
-                          <Music size={16} color="#1E3A8A" />
+                      <View style={[
+                        styles.songCheckbox,
+                        isSelected && styles.songCheckboxSelected,
+                        isAlreadyInSetlist && { backgroundColor: '#10B981', borderColor: '#10B981' }
+                      ]}>
+                        {(isSelected || isAlreadyInSetlist) && (
+                          <Check size={14} color="#FFFFFF" strokeWidth={3} />
                         )}
                       </View>
-                      <View style={{ flex: 1, paddingHorizontal: 10 }}>
-                        <Text style={[styles.songPickTitle, { color: primaryText }]}>{song.title}</Text>
+                      <View style={{ flex: 1, paddingHorizontal: 6 }}>
+                        <Text style={[styles.songPickTitle, { color: primaryText }]} numberOfLines={1}>{song.title}</Text>
                         {song.titleTe ? (
-                          <Text style={[styles.songPickTe, { color: '#D97706' }]}>{song.titleTe}</Text>
+                          <Text style={[styles.songPickTe, { color: '#D97706' }]} numberOfLines={1}>{song.titleTe}</Text>
                         ) : null}
-                        <Text style={[styles.songPickMeta, { color: secondaryText }]}>
+                        <Text style={[styles.songPickMeta, { color: secondaryText }]} numberOfLines={1}>
                           Key: {song.key || 'G'} · {song.artist || 'Traditional Worship'}
                         </Text>
                       </View>
-                      {alreadyInSetlist ? (
+                      {isAlreadyInSetlist ? (
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                          <Check size={14} color="#1E3A8A" strokeWidth={3} />
-                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#1E3A8A' }}>Added</Text>
+                          <Check size={13} color="#10B981" strokeWidth={2.5} />
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#10B981' }}>Added</Text>
+                        </View>
+                      ) : isSelected ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: publishBtnBg, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 }}>
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFFFFF' }}>Selected</Text>
                         </View>
                       ) : (
-                        <Plus size={16} color="#1E3A8A" />
+                        <Plus size={16} color={secondaryText} />
                       )}
                     </TouchableOpacity>
                   );
@@ -4412,6 +6067,34 @@ export default function AdminServicePlanner({ navigation }: any) {
                 onPress={() => setShowSongPickerModal(false)}
               >
                 <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.modalConfirmBtn,
+                  {
+                    backgroundColor: selectedSongIdsForBatch.length > 0 ? publishBtnBg : '#94A3B8',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 6
+                  }
+                ]}
+                disabled={selectedSongIdsForBatch.length === 0 || addingBatchSongs}
+                onPress={handleBatchAddSongsToSetlist}
+                activeOpacity={0.85}
+              >
+                {addingBatchSongs ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Music size={14} color="#FFFFFF" />
+                    <Text style={styles.modalConfirmBtnTxt}>
+                      {selectedSongIdsForBatch.length > 0
+                        ? `Add (${selectedSongIdsForBatch.length}) Songs to Setlist`
+                        : 'Select Songs to Add'}
+                    </Text>
+                  </>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -4428,7 +6111,7 @@ export default function AdminServicePlanner({ navigation }: any) {
         >
           <View style={[styles.modalBox, { backgroundColor: cardSurface }]}>
             <View style={styles.modalHeader}>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={[styles.modalTitle, { color: primaryText }]}>
                   {editingSetlistIndex !== null ? 'Edit Setlist Song' : 'Configure Song for Worship'}
                 </Text>
@@ -4436,8 +6119,12 @@ export default function AdminServicePlanner({ navigation }: any) {
                   {selectedSongForSetlist?.title || 'Assign Key, BPM, Song Leader & Musicians'}
                 </Text>
               </View>
-              <TouchableOpacity onPress={() => setShowConfigureSongModal(false)}>
-                <X size={20} color={secondaryText} />
+              <TouchableOpacity
+                style={[styles.modalCloseCircle, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}
+                onPress={() => setShowConfigureSongModal(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <X size={18} color={secondaryText} />
               </TouchableOpacity>
             </View>
 
@@ -4448,7 +6135,11 @@ export default function AdminServicePlanner({ navigation }: any) {
                 {STANDARD_KEYS.map(k => (
                   <TouchableOpacity
                     key={k}
-                    style={[styles.keyPickerChip, songKeyInput === k && styles.keyPickerChipActive]}
+                    style={[
+                      styles.keyPickerChip,
+                      songKeyInput === k && styles.keyPickerChipActive,
+                      songKeyInput !== k && { backgroundColor: inputBg, borderColor: inputBorder }
+                    ]}
                     onPress={() => setSongKeyInput(k)}
                   >
                     <Text style={[styles.keyPickerChipTxt, songKeyInput === k && styles.keyPickerChipTxtActive]}>
@@ -4463,7 +6154,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.fieldLabel, { color: primaryText }]}>Tempo (BPM)</Text>
                   <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                     placeholder="120"
                     keyboardType="numeric"
                     value={songBpmInput}
@@ -4473,7 +6164,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.fieldLabel, { color: primaryText }]}>Time Signature</Text>
                   <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                     placeholder="4/4"
                     value={songTimeSigInput}
                     onChangeText={setSongTimeSigInput}
@@ -4482,7 +6173,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.fieldLabel, { color: primaryText }]}>Duration (Mins)</Text>
                   <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                     placeholder="6"
                     keyboardType="numeric"
                     value={songDurationInput}
@@ -4494,33 +6185,72 @@ export default function AdminServicePlanner({ navigation }: any) {
               {/* Song Leader */}
               <Text style={[styles.fieldLabel, { color: primaryText }]}>Song Leader *</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                 placeholder="Name of song leader"
                 value={songLeaderInput}
                 onChangeText={setSongLeaderInput}
               />
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-                {churchMembers.slice(0, 6).map(m => (
-                  <TouchableOpacity
-                    key={m.id}
-                    style={[styles.quickMemberChip, songLeaderInput === m.name && styles.quickMemberChipActive]}
-                    onPress={() => setSongLeaderInput(m.name || m.firstName)}
-                  >
-                    <Text style={[styles.quickMemberChipTxt, songLeaderInput === m.name && styles.quickMemberChipTxtActive]}>
-                      {m.name || m.firstName}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                {(() => {
+                  const leadCandidates = getMusicianCandidates('worship_leader');
+                  const list = leadCandidates.length > 0
+                    ? leadCandidates.map(c => ({ id: c.id, name: c.name, badge: c.badge }))
+                    : churchMembers.slice(0, 8).map(m => ({ id: m.id, name: m.name || m.firstName, badge: '' }));
+                  return list.map(item => {
+                    const isSelected = songLeaderInput === item.name;
+                    return (
+                      <TouchableOpacity
+                        key={item.id}
+                        style={[
+                          styles.quickMemberChip,
+                          {
+                            backgroundColor: isSelected ? publishBtnBg : (isDark ? '#27272A' : '#F1F5F9'),
+                            borderColor: isSelected ? publishBtnBg : (isDark ? '#3F3F46' : '#CBD5E1'),
+                            borderWidth: 1,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 4
+                          }
+                        ]}
+                        onPress={() => setSongLeaderInput(item.name)}
+                      >
+                        <Text style={[styles.quickMemberChipTxt, isSelected && { color: '#FFFFFF', fontWeight: '700' }]}>
+                          {item.name}
+                        </Text>
+                        {item.badge ? (
+                          <View style={{
+                            paddingHorizontal: 4,
+                            paddingVertical: 1,
+                            borderRadius: 4,
+                            backgroundColor: isSelected ? 'rgba(255,255,255,0.25)' : (isDark ? 'rgba(16,185,129,0.2)' : '#DCFCE7')
+                          }}>
+                            <Text style={{ fontSize: 8.5, fontWeight: '800', color: isSelected ? '#FFFFFF' : (isDark ? '#34D399' : '#15803D') }}>
+                              {item.badge}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </TouchableOpacity>
+                    );
+                  });
+                })()}
               </ScrollView>
 
               {/* Musician Assignments */}
-              <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 4 }]}>Band Musician Assignments</Text>
+              <View style={{ backgroundColor: isDark ? '#27272A' : '#F1F5F9', padding: 10, borderRadius: 8, marginTop: 6, marginBottom: 8, borderWidth: 1, borderColor: cardBorder }}>
+                <Text style={{ fontSize: 11.5, color: secondaryText, lineHeight: 17 }}>
+                  ℹ️ <Text style={{ fontWeight: '700', color: primaryText }}>Service Band Auto-Applied:</Text>{' '}
+                  🎹 Keys: <Text style={{ fontWeight: '700', color: selectedPlan?.assignments?.['role_keyboard'] ? primaryText : '#94A3B8' }}>{selectedPlan?.assignments?.['role_keyboard'] || 'Unassigned'}</Text> · 🥁 Drums: <Text style={{ fontWeight: '700', color: selectedPlan?.assignments?.['role_drums'] ? primaryText : '#94A3B8' }}>{selectedPlan?.assignments?.['role_drums'] || 'Unassigned'}</Text>
+                  {'\n'}Optional: Only edit below if this specific song features a different guest player.
+                </Text>
+              </View>
+
+              <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 4 }]}>Band Musician Overrides (Optional)</Text>
 
               <View style={styles.formRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.subFieldLabel, { color: secondaryText }]}>Keyboard</Text>
                   <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                     placeholder="Keyboard player"
                     value={songKeyboardInput}
                     onChangeText={setSongKeyboardInput}
@@ -4529,7 +6259,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.subFieldLabel, { color: secondaryText }]}>Acoustic Guitar</Text>
                   <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                     placeholder="Acoustic guitarist"
                     value={songAcousticInput}
                     onChangeText={setSongAcousticInput}
@@ -4541,7 +6271,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.subFieldLabel, { color: secondaryText }]}>Drums</Text>
                   <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                     placeholder="Drummer"
                     value={songDrumsInput}
                     onChangeText={setSongDrumsInput}
@@ -4550,7 +6280,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.subFieldLabel, { color: secondaryText }]}>Bass Guitar</Text>
                   <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                     placeholder="Bassist"
                     value={songBassInput}
                     onChangeText={setSongBassInput}
@@ -4561,7 +6291,7 @@ export default function AdminServicePlanner({ navigation }: any) {
               {/* Rehearsal Arrangement Notes */}
               <Text style={[styles.fieldLabel, { color: primaryText }]}>Rehearsal & Arrangement Notes</Text>
               <TextInput
-                style={[styles.textArea, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                style={[styles.textArea, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                 placeholder="e.g. Intro with Keys -> Acoustic joins on Verse 1 -> Full Band Chorus -> Modulate to Key A on Bridge"
                 multiline
                 numberOfLines={3}
@@ -4594,8 +6324,215 @@ export default function AdminServicePlanner({ navigation }: any) {
       </Modal>
 
       {/* ───────────────────────────────────────────────────────────────────────── */}
-      {/* MODAL: BILINGUAL LYRICS VIEWER MODAL (PHASE 3) */}
+      {/* MODAL: ASSIGN SERVICE WORSHIP BAND & MUSICIANS (WHOLE SERVICE) */}
       {/* ───────────────────────────────────────────────────────────────────────── */}
+      <Modal visible={showBandModal} animationType="slide" transparent>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={[styles.modalBox, { backgroundColor: cardSurface, maxHeight: '92%' }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1, paddingRight: 8 }}>
+                <Text style={[styles.modalTitle, { color: primaryText }]}>
+                  Assign Service Worship Band 🎹🥁
+                </Text>
+                <Text style={[styles.modalSubtitle, { color: secondaryText }]}>
+                  Assigned once for the whole service · Applies to all songs
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.modalCloseCircle, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}
+                onPress={() => setShowBandModal(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <X size={18} color={secondaryText} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              style={{ flexShrink: 1 }}
+              contentContainerStyle={{ paddingBottom: 16 }}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={true}
+            >
+              {/* Info Banner */}
+              <View style={{ backgroundColor: isDark ? 'rgba(46, 107, 79, 0.2)' : '#ECFDF5', padding: 12, borderRadius: 8, marginBottom: 14, borderWidth: 1, borderColor: isDark ? 'rgba(46, 107, 79, 0.4)' : '#A7F3D0' }}>
+                <Text style={{ fontSize: 12, color: primaryText, fontWeight: '600', lineHeight: 18 }}>
+                  💡 Assign your musical instruments once here. Rhema will automatically apply them across all praise & worship songs, display them on the print sheet, and notify them on service publish!
+                </Text>
+              </View>
+
+              {/* 1. Keyboard */}
+              {renderBandInstrumentSection({
+                emoji: '🎹',
+                title: 'Keyboardist / Pianist',
+                instrumentKey: 'keyboard',
+                value: bandKeyboard,
+                valueId: bandKeyboardId,
+                onChangeText: (txt) => {
+                  setBandKeyboard(txt);
+                  setBandKeyboardId('');
+                },
+                onSelectCandidate: (cand) => {
+                  setBandKeyboard(cand.name);
+                  setBandKeyboardId(cand.id);
+                },
+                onClear: () => {
+                  setBandKeyboard('');
+                  setBandKeyboardId('');
+                }
+              })}
+
+              {/* 2. Drums */}
+              {renderBandInstrumentSection({
+                emoji: '🥁',
+                title: 'Drummer / Percussionist',
+                instrumentKey: 'drums',
+                value: bandDrums,
+                valueId: bandDrumsId,
+                onChangeText: (txt) => {
+                  setBandDrums(txt);
+                  setBandDrumsId('');
+                },
+                onSelectCandidate: (cand) => {
+                  setBandDrums(cand.name);
+                  setBandDrumsId(cand.id);
+                },
+                onClear: () => {
+                  setBandDrums('');
+                  setBandDrumsId('');
+                }
+              })}
+
+              {/* 3. Bass Guitar */}
+              {renderBandInstrumentSection({
+                emoji: '🎸',
+                title: 'Bass Guitarist',
+                instrumentKey: 'bass',
+                value: bandBass,
+                valueId: bandBassId,
+                onChangeText: (txt) => {
+                  setBandBass(txt);
+                  setBandBassId('');
+                },
+                onSelectCandidate: (cand) => {
+                  setBandBass(cand.name);
+                  setBandBassId(cand.id);
+                },
+                onClear: () => {
+                  setBandBass('');
+                  setBandBassId('');
+                }
+              })}
+
+              {/* 4. Acoustic Guitar */}
+              {renderBandInstrumentSection({
+                emoji: '🎸',
+                title: 'Acoustic Guitarist',
+                instrumentKey: 'acoustic',
+                value: bandAcoustic,
+                valueId: bandAcousticId,
+                onChangeText: (txt) => {
+                  setBandAcoustic(txt);
+                  setBandAcousticId('');
+                },
+                onSelectCandidate: (cand) => {
+                  setBandAcoustic(cand.name);
+                  setBandAcousticId(cand.id);
+                },
+                onClear: () => {
+                  setBandAcoustic('');
+                  setBandAcousticId('');
+                }
+              })}
+
+              {/* 5. Electric Guitar */}
+              {renderBandInstrumentSection({
+                emoji: '⚡',
+                title: 'Electric Guitarist',
+                instrumentKey: 'electric',
+                value: bandElectric,
+                valueId: bandElectricId,
+                onChangeText: (txt) => {
+                  setBandElectric(txt);
+                  setBandElectricId('');
+                },
+                onSelectCandidate: (cand) => {
+                  setBandElectric(cand.name);
+                  setBandElectricId(cand.id);
+                },
+                onClear: () => {
+                  setBandElectric('');
+                  setBandElectricId('');
+                }
+              })}
+
+              {/* 6. Sound & Audio */}
+              {renderBandInstrumentSection({
+                emoji: '🎧',
+                title: 'Sound & Audio Engineer',
+                instrumentKey: 'sound',
+                value: bandSound,
+                valueId: bandSoundId,
+                onChangeText: (txt) => {
+                  setBandSound(txt);
+                  setBandSoundId('');
+                },
+                onSelectCandidate: (cand) => {
+                  setBandSound(cand.name);
+                  setBandSoundId(cand.id);
+                },
+                onClear: () => {
+                  setBandSound('');
+                  setBandSoundId('');
+                }
+              })}
+
+              {/* 7. Worship Leader */}
+              {renderBandInstrumentSection({
+                emoji: '🎤',
+                title: 'Primary Worship Leader',
+                instrumentKey: 'worship_leader',
+                value: bandWorshipLeader,
+                valueId: bandWorshipLeaderId,
+                onChangeText: (txt) => {
+                  setBandWorshipLeader(txt);
+                  setBandWorshipLeaderId('');
+                },
+                onSelectCandidate: (cand) => {
+                  setBandWorshipLeader(cand.name);
+                  setBandWorshipLeaderId(cand.id);
+                },
+                onClear: () => {
+                  setBandWorshipLeader('');
+                  setBandWorshipLeaderId('');
+                }
+              })}
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setShowBandModal(false)}
+              >
+                <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalConfirmBtn, { backgroundColor: publishBtnBg }]}
+                onPress={handleSaveServiceBand}
+                disabled={savingBand}
+              >
+                {savingBand ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalConfirmBtnTxt}>Save Service Band</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
       <Modal visible={showLyricsModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalBox, { backgroundColor: cardSurface, maxHeight: '85%' }]}>
@@ -4637,7 +6574,7 @@ export default function AdminServicePlanner({ navigation }: any) {
               {/* English Lyrics */}
               {viewingLyricsSong?.lyricsEn ? (
                 <View style={styles.lyricsBlock}>
-                  <Text style={[styles.lyricsLangHeader, { color: '#1E3A8A' }]}>ENGLISH LYRICS / TRANSLITERATION</Text>
+                  <Text style={[styles.lyricsLangHeader, { color: primaryText }]}>ENGLISH LYRICS / TRANSLITERATION</Text>
                   <Text style={[styles.lyricsText, { color: primaryText }]}>
                     {viewingLyricsSong.lyricsEn}
                   </Text>
@@ -4678,8 +6615,8 @@ export default function AdminServicePlanner({ navigation }: any) {
             {/* Modal Header */}
             <View style={styles.modalHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-                <View style={[styles.modalHeaderIconBadge, { backgroundColor: isDark ? '#1E293B' : '#EFF6FF' }]}>
-                  <CalendarDays size={20} color="#1E3A8A" />
+                <View style={[styles.modalHeaderIconBadge, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+                  <CalendarDays size={20} color={primaryText} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.modalTitle, { color: primaryText }]}>
@@ -4717,14 +6654,14 @@ export default function AdminServicePlanner({ navigation }: any) {
               showsVerticalScrollIndicator={true}
             >
               {/* CARD 1: BASIC INFORMATION */}
-              <View style={[styles.formSectionCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor }]}>
+              <View style={[styles.formSectionCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
                 <View style={[styles.formCardHeaderRow, { borderBottomColor: borderColor }]}>
-                  <Sparkles size={14} color="#1E3A8A" />
+                  <Sparkles size={14} color={isDark ? '#10B981' : '#2E6B4F'} />
                   <Text style={[styles.formCardHeaderText, { color: primaryText }]}>BASIC INFORMATION</Text>
                 </View>
 
                 <Text style={[styles.fieldLabel, { color: primaryText }]}>Service Name *</Text>
-                <View style={[styles.modernInputContainer, { backgroundColor: screenBg, borderColor }]}>
+                <View style={[styles.modernInputContainer, { backgroundColor: inputBg, borderColor: inputBorder }]}>
                   <TextInput
                     style={[styles.modernInput, { color: primaryText }]}
                     placeholder="e.g. Sunday Morning Worship"
@@ -4739,7 +6676,11 @@ export default function AdminServicePlanner({ navigation }: any) {
                   {(Object.keys(SERVICE_TYPE_LABELS) as ServiceType[]).map(st => (
                     <TouchableOpacity
                       key={st}
-                      style={[styles.typeSelectChip, createType === st && styles.typeSelectChipActive]}
+                      style={[
+                        styles.typeSelectChip,
+                        createType === st && styles.typeSelectChipActive,
+                        createType !== st && { backgroundColor: inputBg, borderColor: inputBorder, borderWidth: 1 }
+                      ]}
                       onPress={() => setCreateType(st)}
                     >
                       <Text style={[styles.typeSelectChipTxt, createType === st && styles.typeSelectChipTxtActive]}>
@@ -4751,27 +6692,27 @@ export default function AdminServicePlanner({ navigation }: any) {
               </View>
 
               {/* CARD 2: DATE & SCHEDULE */}
-              <View style={[styles.formSectionCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor }]}>
+              <View style={[styles.formSectionCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
                 <View style={[styles.formCardHeaderRow, { borderBottomColor: borderColor }]}>
-                  <Calendar size={14} color="#1E3A8A" />
+                  <Calendar size={14} color={isDark ? '#10B981' : '#2E6B4F'} />
                   <Text style={[styles.formCardHeaderText, { color: primaryText }]}>DATE & SCHEDULE</Text>
                 </View>
 
                 <Text style={[styles.fieldLabel, { color: primaryText }]}>Service Date *</Text>
                 <TouchableOpacity
-                  style={[styles.pickerInputBtn, { backgroundColor: screenBg, borderColor }]}
+                  style={[styles.pickerInputBtn, { backgroundColor: inputBg, borderColor: inputBorder }]}
                   onPress={() => setDatePickerVisible(true)}
                   activeOpacity={0.7}
                 >
-                  <View style={styles.pickerIconContainer}>
-                    <Calendar size={18} color="#1E3A8A" />
+                  <View style={[styles.pickerIconContainer, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+                    <Calendar size={18} color={primaryText} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.pickerValueText, { color: primaryText }]}>
                       {formatDisplayDate(createDate)}
                     </Text>
                     <Text style={[styles.pickerSubText, { color: secondaryText }]}>
-                      {createDate || 'Tap to select service date'}
+                      {createDate ? `${formatDateMonthYear(createDate)} (Date Month Year)` : 'Tap to select service date'}
                     </Text>
                   </View>
                   <ChevronDown size={16} color={secondaryText} />
@@ -4781,19 +6722,19 @@ export default function AdminServicePlanner({ navigation }: any) {
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.fieldLabel, { color: primaryText }]}>Start Time *</Text>
                     <TouchableOpacity
-                      style={[styles.pickerInputBtn, { backgroundColor: screenBg, borderColor }]}
+                      style={[styles.pickerInputBtn, { backgroundColor: inputBg, borderColor: inputBorder }]}
                       onPress={() => setStartTimePickerVisible(true)}
                       activeOpacity={0.7}
                     >
-                      <View style={styles.pickerIconContainer}>
-                        <Clock size={16} color="#1E3A8A" />
+                      <View style={[styles.pickerIconContainer, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+                        <Clock size={16} color={primaryText} />
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.pickerValueText, { color: primaryText }]} numberOfLines={1}>
                           {formatDisplayTime(createStartTime)}
                         </Text>
                         <Text style={[styles.pickerSubText, { color: secondaryText }]} numberOfLines={1}>
-                          {createStartTime ? `${createStartTime} (24h)` : 'Select start time'}
+                          {createStartTime ? `${formatDisplayTime(createStartTime)} (12-hour format)` : 'Select start time'}
                         </Text>
                       </View>
                     </TouchableOpacity>
@@ -4802,11 +6743,11 @@ export default function AdminServicePlanner({ navigation }: any) {
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.fieldLabel, { color: primaryText }]}>End Time *</Text>
                     <TouchableOpacity
-                      style={[styles.pickerInputBtn, { backgroundColor: screenBg, borderColor }]}
+                      style={[styles.pickerInputBtn, { backgroundColor: inputBg, borderColor: inputBorder }]}
                       onPress={() => setEndTimePickerVisible(true)}
                       activeOpacity={0.7}
                     >
-                      <View style={[styles.pickerIconContainer, { backgroundColor: '#FEF3C7' }]}>
+                      <View style={[styles.pickerIconContainer, { backgroundColor: isDark ? 'rgba(217, 119, 6, 0.25)' : '#FEF3C7' }]}>
                         <Clock size={16} color="#D97706" />
                       </View>
                       <View style={{ flex: 1 }}>
@@ -4814,7 +6755,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                           {formatDisplayTime(createEndTime)}
                         </Text>
                         <Text style={[styles.pickerSubText, { color: secondaryText }]} numberOfLines={1}>
-                          {createEndTime ? `${createEndTime} (24h)` : 'Select end time'}
+                          {createEndTime ? `${formatDisplayTime(createEndTime)} (12-hour format)` : 'Select end time'}
                         </Text>
                       </View>
                     </TouchableOpacity>
@@ -4823,15 +6764,15 @@ export default function AdminServicePlanner({ navigation }: any) {
               </View>
 
               {/* CARD 3: LOCATION & SERMON DETAILS */}
-              <View style={[styles.formSectionCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor }]}>
+              <View style={[styles.formSectionCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
                 <View style={[styles.formCardHeaderRow, { borderBottomColor: borderColor }]}>
-                  <MapPin size={14} color="#1E3A8A" />
+                  <MapPin size={14} color={isDark ? '#10B981' : '#2E6B4F'} />
                   <Text style={[styles.formCardHeaderText, { color: primaryText }]}>LOCATION & SERMON DETAILS</Text>
                 </View>
 
                 {/* Location */}
                 <Text style={[styles.fieldLabel, { color: primaryText }]}>Service Location</Text>
-                <View style={[styles.modernInputContainer, { backgroundColor: screenBg, borderColor }]}>
+                <View style={[styles.modernInputContainer, { backgroundColor: inputBg, borderColor: inputBorder }]}>
                   <MapPin size={16} color="#64748B" style={styles.inputLeftIcon} />
                   <TextInput
                     style={[styles.modernInput, { color: primaryText }]}
@@ -4844,7 +6785,7 @@ export default function AdminServicePlanner({ navigation }: any) {
 
                 {/* Preacher / Speaker */}
                 <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 12 }]}>Preacher / Speaker</Text>
-                <View style={[styles.modernInputContainer, { backgroundColor: screenBg, borderColor }]}>
+                <View style={[styles.modernInputContainer, { backgroundColor: inputBg, borderColor: inputBorder }]}>
                   <Mic size={16} color="#64748B" style={styles.inputLeftIcon} />
                   <TextInput
                     style={[styles.modernInput, { color: primaryText }]}
@@ -4857,7 +6798,7 @@ export default function AdminServicePlanner({ navigation }: any) {
 
                 {/* Sermon Theme */}
                 <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 12 }]}>Sermon Theme</Text>
-                <View style={[styles.modernInputContainer, { backgroundColor: screenBg, borderColor }]}>
+                <View style={[styles.modernInputContainer, { backgroundColor: inputBg, borderColor: inputBorder }]}>
                   <BookOpen size={16} color="#64748B" style={styles.inputLeftIcon} />
                   <TextInput
                     style={[styles.modernInput, { color: primaryText }]}
@@ -4870,7 +6811,7 @@ export default function AdminServicePlanner({ navigation }: any) {
 
                 {/* Bible Scripture */}
                 <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 12 }]}>Bible Scripture</Text>
-                <View style={[styles.modernInputContainer, { backgroundColor: screenBg, borderColor }]}>
+                <View style={[styles.modernInputContainer, { backgroundColor: inputBg, borderColor: inputBorder }]}>
                   <FileText size={16} color="#64748B" style={styles.inputLeftIcon} />
                   <TextInput
                     style={[styles.modernInput, { color: primaryText }]}
@@ -4883,123 +6824,208 @@ export default function AdminServicePlanner({ navigation }: any) {
               </View>
 
               {/* CARD 4: RECURRENCE & STARTING TEMPLATE */}
-              <View style={[styles.formSectionCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor }]}>
-                <View style={[styles.formCardHeaderRow, { borderBottomColor: borderColor }]}>
-                  <RotateCcw size={14} color="#1E3A8A" />
-                  <Text style={[styles.formCardHeaderText, { color: primaryText }]}>RECURRENCE & ORDER TEMPLATE</Text>
-                </View>
+              {!isEditingExistingPlan && (
+                <View style={[styles.formSectionCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
+                  <View style={[styles.formCardHeaderRow, { borderBottomColor: borderColor }]}>
+                    <RotateCcw size={14} color={isDark ? '#10B981' : '#2E6B4F'} />
+                    <Text style={[styles.formCardHeaderText, { color: primaryText }]}>RECURRENCE & ORDER TEMPLATE</Text>
+                  </View>
 
-                <Text style={[styles.fieldLabel, { color: primaryText }]}>Service Recurrence</Text>
-                <View style={styles.recurrenceOptionRow}>
-                  {[
-                    { id: 'one_time', label: 'One-Time' },
-                    { id: 'weekly', label: 'Weekly (Sundays)' },
-                    { id: 'monthly', label: 'Monthly' }
-                  ].map(r => {
-                    const isSelected = createRecurrence === r.id;
-                    return (
-                      <TouchableOpacity
-                        key={r.id}
-                        style={[
-                          styles.recurrenceBtn,
-                          isSelected && styles.recurrenceBtnActive,
-                          !isSelected && { backgroundColor: isDark ? '#334155' : '#F8FAFC', borderColor }
-                        ]}
-                        onPress={() => setCreateRecurrence(r.id as any)}
-                        activeOpacity={0.8}
-                      >
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                          {isSelected && <Check size={13} color="#FFFFFF" strokeWidth={3} />}
-                          <Text style={[styles.recurrenceBtnTxt, isSelected && styles.recurrenceBtnTxtActive]}>
-                            {r.label}
+                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Service Recurrence</Text>
+                  <View style={styles.recurrenceOptionGrid}>
+                    {[
+                      { id: 'one_time', label: 'One-Time', sub: 'Single service' },
+                      { id: 'weekly', label: 'Weekly', sub: `Every ${recurrenceDayName}` },
+                      { id: 'biweekly', label: 'Bi-Weekly', sub: 'Every 2 weeks' },
+                      { id: 'monthly', label: 'Monthly', sub: `Monthly on ${recurrenceDayName}` }
+                    ].map(r => {
+                      const isSelected = createRecurrence === r.id;
+                      return (
+                        <TouchableOpacity
+                          key={r.id}
+                          style={[
+                            styles.recurrenceGridBtn,
+                            isSelected && {
+                              backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                              borderColor: isDark ? '#FFFFFF' : '#000000',
+                            },
+                            !isSelected && { backgroundColor: inputBg, borderColor: inputBorder }
+                          ]}
+                          onPress={() => setCreateRecurrence(r.id as any)}
+                          activeOpacity={0.8}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+                            <Text style={[styles.recurrenceGridBtnTitle, { color: isSelected ? (isDark ? '#000000' : '#FFFFFF') : primaryText }]}>
+                              {r.label}
+                            </Text>
+                            {isSelected && <Check size={13} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={3} />}
+                          </View>
+                          <Text style={[styles.recurrenceGridBtnSub, { color: isSelected ? (isDark ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.75)') : secondaryText }]} numberOfLines={1}>
+                            {r.sub}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  {createRecurrence !== 'one_time' && (
+                    <View style={{ marginTop: 12 }}>
+                      <Text style={[styles.fieldLabel, { color: primaryText }]}>Occurrences Count</Text>
+                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                        {recurrenceCountOptions.map(opt => {
+                          const isSelected = createOccurrencesCount === opt.count;
+                          return (
+                            <TouchableOpacity
+                              key={opt.count}
+                              style={[
+                                styles.countChip,
+                                isSelected && {
+                                  backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                                  borderColor: isDark ? '#FFFFFF' : '#000000',
+                                },
+                                !isSelected && { backgroundColor: inputBg, borderColor: inputBorder, borderWidth: 1 }
+                              ]}
+                              onPress={() => setCreateOccurrencesCount(opt.count)}
+                              activeOpacity={0.8}
+                            >
+                              <Text style={[styles.countChipTxt, { color: isSelected ? (isDark ? '#000000' : '#FFFFFF') : primaryText, fontWeight: isSelected ? '800' : '600' }]}>
+                                {opt.label}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+
+                      {/* Live Preview Card of Generated Recurring Dates */}
+                      <View style={[styles.recurrencePreviewCard, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.08)' : '#ECFDF5', borderColor: isDark ? '#059669' : '#A7F3D0' }]}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <CalendarDays size={13} color="#059669" />
+                            <Text style={[styles.recurrencePreviewTitle, { color: isDark ? '#34D399' : '#065F46' }]}>
+                              {previewRecurrenceDates.length} Service Dates Will Be Created:
+                            </Text>
+                          </View>
+                          <Text style={[styles.recurrencePreviewBadge, { color: isDark ? '#34D399' : '#047857' }]}>
+                            {createRecurrence === 'weekly' ? 'Weekly' : createRecurrence === 'biweekly' ? 'Bi-Weekly' : 'Monthly'}
                           </Text>
                         </View>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                {createRecurrence !== 'one_time' && (
-                  <View style={{ marginTop: 10, marginBottom: 4 }}>
-                    <Text style={[styles.fieldLabel, { color: primaryText }]}>Occurrences Count</Text>
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      {[2, 4, 8, 12].map(n => {
-                        const isSelected = createOccurrencesCount === n;
-                        return (
-                          <TouchableOpacity
-                            key={n}
-                            style={[
-                              styles.countChip,
-                              isSelected && styles.countChipActive,
-                              !isSelected && { backgroundColor: isDark ? '#334155' : '#F1F5F9' }
-                            ]}
-                            onPress={() => setCreateOccurrencesCount(n)}
-                            activeOpacity={0.8}
-                          >
-                            <Text style={[styles.countChipTxt, isSelected && styles.countChipTxtActive]}>
-                              {n} Weeks
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                          {previewRecurrenceDates.map((dStr, idx) => (
+                            <View key={dStr} style={[styles.recurrenceDateChip, { backgroundColor: isDark ? '#1F2937' : '#FFFFFF', borderColor: isDark ? '#374151' : '#CBD5E1' }]}>
+                              <View style={[styles.recurrenceDateChipNum, { backgroundColor: idx === 0 ? (isDark ? '#10B981' : '#2E6B4F') : (isDark ? '#374151' : '#E2E8F0') }]}>
+                                <Text style={[styles.recurrenceDateChipNumTxt, { color: idx === 0 ? '#FFFFFF' : (isDark ? '#E2E8F0' : '#475569') }]}>
+                                  #{idx + 1}
+                                </Text>
+                              </View>
+                              <Text style={[styles.recurrenceDateChipTxt, { color: primaryText }]}>
+                                {formatDateMonthYear(dStr)}
+                              </Text>
+                            </View>
+                          ))}
+                        </ScrollView>
+                      </View>
                     </View>
-                  </View>
-                )}
+                  )}
 
-                <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 12 }]}>Order of Service Template</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
-                  <TouchableOpacity
-                    style={[
-                      styles.tplSelectChip,
-                      selectedTemplateForNew === 'blank' && styles.tplSelectChipActive,
-                      selectedTemplateForNew !== 'blank' && { backgroundColor: isDark ? '#334155' : '#F8FAFC', borderColor }
-                    ]}
-                    onPress={() => handleSelectTemplateForForm('blank')}
-                    activeOpacity={0.8}
-                  >
-                    {selectedTemplateForNew === 'blank' && (
-                      <Check size={13} color="#FFFFFF" strokeWidth={3} />
-                    )}
-                    <Text
+                  {/* Order of Service Template Selection */}
+                  <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 14 }]}>Order of Service Template</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, marginTop: 6 }}>
+                    <TouchableOpacity
                       style={[
-                        styles.tplSelectChipTxt,
-                        selectedTemplateForNew === 'blank' && styles.tplSelectChipTxtActive
+                        styles.tplSelectChip,
+                        selectedTemplateForNew === 'blank' && {
+                          backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                          borderColor: isDark ? '#FFFFFF' : '#000000',
+                        },
+                        selectedTemplateForNew !== 'blank' && { backgroundColor: inputBg, borderColor: inputBorder }
                       ]}
+                      onPress={() => handleSelectTemplateForForm('blank')}
+                      activeOpacity={0.8}
                     >
-                      Start Blank
-                    </Text>
-                  </TouchableOpacity>
-                  {templates.map((tpl, tplIdx) => {
-                    const isSelected = selectedTemplateForNew === tpl.id;
-                    return (
-                      <TouchableOpacity
-                        key={tpl.id ? `tpl_${tpl.id}_${tplIdx}` : `tpl_${tplIdx}`}
+                      {selectedTemplateForNew === 'blank' && (
+                        <Check size={13} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={3} />
+                      )}
+                      <Text
                         style={[
-                          styles.tplSelectChip,
-                          isSelected && styles.tplSelectChipActive,
-                          !isSelected && { backgroundColor: isDark ? '#334155' : '#F8FAFC', borderColor }
+                          styles.tplSelectChipTxt,
+                          { color: selectedTemplateForNew === 'blank' ? (isDark ? '#000000' : '#FFFFFF') : primaryText, fontWeight: selectedTemplateForNew === 'blank' ? '800' : '600' }
                         ]}
-                        onPress={() => handleSelectTemplateForForm(tpl.id)}
-                        activeOpacity={0.8}
                       >
-                        {isSelected && (
-                          <Check size={13} color="#FFFFFF" strokeWidth={3} />
-                        )}
-                        <Text style={[styles.tplSelectChipTxt, isSelected && styles.tplSelectChipTxtActive]}>
-                          {tpl.name}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              </View>
+                        Start Blank
+                      </Text>
+                    </TouchableOpacity>
+                    {templates.map((tpl, tplIdx) => {
+                      const isSelected = selectedTemplateForNew === tpl.id;
+                      return (
+                        <TouchableOpacity
+                          key={tpl.id ? `tpl_${tpl.id}_${tplIdx}` : `tpl_${tplIdx}`}
+                          style={[
+                            styles.tplSelectChip,
+                            isSelected && {
+                              backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                              borderColor: isDark ? '#FFFFFF' : '#000000',
+                            },
+                            !isSelected && { backgroundColor: inputBg, borderColor: inputBorder }
+                          ]}
+                          onPress={() => handleSelectTemplateForForm(tpl.id)}
+                          activeOpacity={0.8}
+                        >
+                          {isSelected && (
+                            <Check size={13} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={3} />
+                          )}
+                          <Text style={[styles.tplSelectChipTxt, { color: isSelected ? (isDark ? '#000000' : '#FFFFFF') : primaryText, fontWeight: isSelected ? '800' : '600' }]}>
+                            {tpl.name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+
+                  {/* Selected Template Live Details */}
+                  {selectedTemplateForNew === 'blank' ? (
+                    <View style={[styles.tplSelectedSummary, { backgroundColor: isDark ? '#1F2937' : '#F1F5F9', borderColor: inputBorder }]}>
+                      <Sparkles size={13} color={secondaryText} />
+                      <Text style={[styles.tplSelectedSummaryTxt, { color: secondaryText }]}>
+                        Blank Order: Start fresh without preset timeline activities. You will build them in the Order Builder workspace.
+                      </Text>
+                    </View>
+                  ) : (
+                    (() => {
+                      const selTpl = templates.find(t => t.id === selectedTemplateForNew);
+                      if (!selTpl) return null;
+                      const itemCount = selTpl.runSheetTemplate?.length || 0;
+                      const sampleItems = selTpl.runSheetTemplate?.slice(0, 3).map((i: any) => i.program || i.title || '').filter(Boolean).join(', ') || '';
+                      return (
+                        <View style={[styles.tplSelectedSummary, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.08)' : '#EFF6FF', borderColor: isDark ? '#1D4ED8' : '#BFDBFE' }]}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <Layers size={13} color="#2563EB" />
+                              <Text style={{ fontSize: 12, fontWeight: '800', color: isDark ? '#60A5FA' : '#1D4ED8' }}>
+                                {selTpl.name}
+                              </Text>
+                            </View>
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#93C5FD' : '#2563EB' }}>
+                              {itemCount} activities · {selTpl.defaultDurationMinutes || 120} mins
+                            </Text>
+                          </View>
+                          {sampleItems ? (
+                            <Text style={{ fontSize: 11, color: secondaryText }} numberOfLines={1}>
+                              Preset includes: {sampleItems}{itemCount > 3 ? ` +${itemCount - 3} more` : ''}
+                            </Text>
+                          ) : null}
+                        </View>
+                      );
+                    })()
+                  )}
+                </View>
+              )}
 
               {/* Guidance Info Card */}
-              <View style={[styles.nextStepsCard, { backgroundColor: isDark ? '#1E293B' : '#EFF6FF', borderColor: '#93C5FD' }]}>
+              <View style={[styles.nextStepsCard, { backgroundColor: isDark ? '#18181B' : '#F8FAFC', borderColor: cardBorder }]}>
                 <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
-                  <Layers size={20} color="#1E3A8A" style={{ marginTop: 2 }} />
+                  <Layers size={20} color={isDark ? '#10B981' : '#2E6B4F'} style={{ marginTop: 2 }} />
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.nextStepsTitle, { color: '#1E3A8A' }]}>
+                    <Text style={[styles.nextStepsTitle, { color: primaryText }]}>
                       Dedicated Workspace Preparation
                     </Text>
                     <Text style={[styles.nextStepsBody, { color: secondaryText }]}>
@@ -5010,7 +7036,7 @@ export default function AdminServicePlanner({ navigation }: any) {
               </View>
             </ScrollView>
 
-            <View style={[styles.modalFooterRow, { borderTopColor: borderColor }]}>
+            <View style={[styles.modalFooterRow, { borderTopColor: borderColor, backgroundColor: cardSurface }]}>
               {isEditingExistingPlan && editingPlanId && (
                 <TouchableOpacity
                   style={styles.modalFooterDeleteBtn}
@@ -5022,15 +7048,15 @@ export default function AdminServicePlanner({ navigation }: any) {
                 </TouchableOpacity>
               )}
               <TouchableOpacity
-                style={[styles.modalDraftBtn, { borderColor }]}
+                style={[styles.modalDraftBtn, { borderColor: isDark ? '#374151' : '#E2E8F0', backgroundColor: isDark ? '#18181B' : '#F8FAFC' }]}
                 disabled={savingService}
                 onPress={() => setShowCreateModal(false)}
                 activeOpacity={0.8}
               >
-                <Text style={[styles.modalDraftBtnTxt, { color: secondaryText }]}>Cancel</Text>
+                <Text style={[styles.modalDraftBtnTxt, { color: primaryText }]}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.modalPublishBtn}
+                style={[styles.modalPublishBtn, { backgroundColor: isDark ? '#10B981' : '#2E6B4F' }]}
                 disabled={savingService}
                 onPress={handleCreateService}
                 activeOpacity={0.85}
@@ -5038,10 +7064,16 @@ export default function AdminServicePlanner({ navigation }: any) {
                 {savingService ? (
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={styles.modalPublishBtnTxt}>
-                      {isEditingExistingPlan ? 'Save Changes' : 'Create Service & Prepare Order ➔'}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%' }}>
+                    <Text
+                      style={styles.modalPublishBtnTxt}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.85}
+                    >
+                      {isEditingExistingPlan ? 'Save Changes' : 'Create Service & Prepare Order'}
                     </Text>
+                    <ArrowRight size={15} color="#FFFFFF" strokeWidth={2.5} />
                   </View>
                 )}
               </TouchableOpacity>
@@ -5073,6 +7105,144 @@ export default function AdminServicePlanner({ navigation }: any) {
             />
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ── BEAUTIFUL SERVICE CREATED SUCCESS POPUP MODAL ── */}
+      <Modal
+        visible={showCreatedSuccessModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowCreatedSuccessModal(false)}
+      >
+        <View style={styles.successModalBackdrop}>
+          <View style={[styles.successModalCard, { backgroundColor: cardSurface, borderColor: isDark ? '#374151' : '#E2E8F0' }]}>
+            {/* Top Close Icon */}
+            <TouchableOpacity
+              style={[styles.successModalCloseBtn, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
+              onPress={() => {
+                setShowCreatedSuccessModal(false);
+                setActivePlannerTab('calendar');
+              }}
+              activeOpacity={0.7}
+            >
+              <X size={16} color={primaryText} />
+            </TouchableOpacity>
+
+            {/* Top Header without success icon mark */}
+            <View style={{ alignItems: 'center', marginTop: 6, marginBottom: 16 }}>
+              <Text style={[styles.successModalTitle, { color: primaryText }]}>
+                {createdSuccessInfo?.isEdit
+                  ? 'Service Updated! 💾'
+                  : createdSuccessInfo?.isRecurring
+                    ? `${createdSuccessInfo.occurrencesCount} Services Created! 🎉`
+                    : 'Service Created! 🎉'}
+              </Text>
+              <Text style={[styles.successModalSub, { color: secondaryText }]}>
+                {createdSuccessInfo?.isRecurring
+                  ? 'Your recurring service series is successfully generated and added to the roster.'
+                  : 'Your service is created and ready in the Order Builder workspace.'}
+              </Text>
+            </View>
+
+            {/* Summary Details Card */}
+            <View style={[styles.successDetailsBox, { backgroundColor: isDark ? '#18181B' : '#F8FAFC', borderColor: isDark ? '#27272A' : '#E2E8F0' }]}>
+              <Text style={[styles.successServiceTitle, { color: primaryText }]} numberOfLines={1}>
+                {createdSuccessInfo?.title || 'Worship Service'}
+              </Text>
+
+              <View style={styles.successDetailRow}>
+                <Calendar size={13} color="#2563EB" />
+                <Text style={[styles.successDetailTxt, { color: primaryText }]}>
+                  {formatDateMonthYear(createdSuccessInfo?.date || '')}
+                </Text>
+              </View>
+
+              <View style={styles.successDetailRow}>
+                <Clock size={13} color="#D97706" />
+                <Text style={[styles.successDetailTxt, { color: primaryText }]}>
+                  {createdSuccessInfo?.startTime} – {createdSuccessInfo?.endTime}
+                </Text>
+              </View>
+
+              {createdSuccessInfo?.isRecurring && (
+                <View style={styles.successDetailRow}>
+                  <RotateCcw size={13} color="#059669" />
+                  <Text style={[styles.successDetailTxt, { color: '#059669', fontWeight: '700' }]}>
+                    {createdSuccessInfo?.recurrenceFrequency === 'weekly' ? 'Weekly' : createdSuccessInfo?.recurrenceFrequency === 'biweekly' ? 'Bi-Weekly' : 'Monthly'} · {createdSuccessInfo?.occurrencesCount} occurrences scheduled
+                  </Text>
+                </View>
+              )}
+
+              <View style={styles.successDetailRow}>
+                <Layers size={13} color="#7C3AED" />
+                <Text style={[styles.successDetailTxt, { color: secondaryText }]}>
+                  Template: <Text style={{ color: primaryText, fontWeight: '600' }}>{createdSuccessInfo?.templateName}</Text>
+                </Text>
+              </View>
+
+              {createdSuccessInfo?.location ? (
+                <View style={styles.successDetailRow}>
+                  <MapPin size={13} color="#DC2626" />
+                  <Text style={[styles.successDetailTxt, { color: secondaryText }]} numberOfLines={1}>
+                    {createdSuccessInfo?.location}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
+            {/* What's Next Hint */}
+            <View style={[styles.successHintBox, { backgroundColor: isDark ? 'rgba(217, 119, 6, 0.1)' : '#FFFBEB', borderColor: isDark ? '#B45309' : '#FDE68A' }]}>
+              <Sparkles size={14} color="#D97706" style={{ marginTop: 1 }} />
+              <Text style={[styles.successHintTxt, { color: isDark ? '#FBBF24' : '#92400E' }]}>
+                Next: Open the Order Builder to arrange your run sheet timeline, add songs, and assign volunteer roles.
+              </Text>
+            </View>
+
+            {/* Action Buttons - Beautiful & High Quality */}
+            <View style={styles.successModalActions}>
+              <TouchableOpacity
+                style={[
+                  styles.successPrimaryBtn,
+                  {
+                    backgroundColor: isDark ? '#10B981' : '#2E6B4F',
+                    shadowColor: isDark ? '#10B981' : '#2E6B4F',
+                  }
+                ]}
+                onPress={() => {
+                  setShowCreatedSuccessModal(false);
+                  setActivePlannerTab('builder');
+                }}
+                activeOpacity={0.88}
+              >
+                <Layers size={17} color="#FFFFFF" strokeWidth={2.2} />
+                <Text style={styles.successPrimaryBtnTxt} numberOfLines={1}>
+                  Open Order Builder Workspace
+                </Text>
+                <ArrowRight size={16} color="#FFFFFF" strokeWidth={2.6} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.successSecondaryBtn,
+                  {
+                    borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+                    backgroundColor: isDark ? '#27272A' : '#F1F5F9',
+                  }
+                ]}
+                onPress={() => {
+                  setShowCreatedSuccessModal(false);
+                  setActivePlannerTab('calendar');
+                }}
+                activeOpacity={0.8}
+              >
+                <Calendar size={15} color={isDark ? '#E4E4E7' : '#334155'} />
+                <Text style={[styles.successSecondaryBtnTxt, { color: isDark ? '#E4E4E7' : '#1E293B' }]}>
+                  Done · View in Calendar
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
 
       {/* ───────────────────────────────────────────────────────────────────────── */}
@@ -5181,7 +7351,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                           {verifiedSkill ? ` · 🎯 ${verifiedSkill.skillName}` : ''}
                         </Text>
                       </View>
-                      <Plus size={16} color={verifiedSkill ? '#10B981' : '#1E3A8A'} />
+                      <Plus size={16} color={verifiedSkill ? '#10B981' : primaryText} />
                     </TouchableOpacity>
                   );
                 });
@@ -5228,28 +7398,9 @@ export default function AdminServicePlanner({ navigation }: any) {
                 />
               </View>
 
-              <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 12 }]}>Category</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
-                {[
-                  { id: 'worship_songs', label: 'Worship' },
-                  { id: 'sermon_word', label: 'Word' },
-                  { id: 'prayer', label: 'Prayer' },
-                  { id: 'welcome_announcements', label: 'Welcome' },
-                  { id: 'offering_tithe', label: 'Offering' },
-                  { id: 'communion', label: 'Communion' },
-                  { id: 'benediction', label: 'Benediction' }
-                ].map(cat => (
-                  <TouchableOpacity
-                    key={cat.id}
-                    style={[styles.typeSelectChip, quickActCategory === cat.id && styles.typeSelectChipActive]}
-                    onPress={() => setQuickActCategory(cat.id as any)}
-                  >
-                    <Text style={[styles.typeSelectChipTxt, quickActCategory === cat.id && styles.typeSelectChipTxtActive]}>
-                      {cat.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+              <View style={{ marginTop: 12 }}>
+                {renderActivityCategorySelector(quickActCategory, (cat) => setQuickActCategory(cat))}
+              </View>
 
               <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 12 }]}>Planned Duration (Minutes)</Text>
               <View style={[styles.modernInputContainer, { backgroundColor: screenBg, borderColor }]}>
@@ -5355,39 +7506,30 @@ export default function AdminServicePlanner({ navigation }: any) {
               <Text style={[styles.modalTitle, { color: primaryText }]}>
                 {editingActivityId ? 'Edit Activity Item' : 'Add Activity to Service'}
               </Text>
-              <TouchableOpacity onPress={() => setShowActivityModal(false)}>
-                <X size={20} color={secondaryText} />
+              <TouchableOpacity
+                style={[styles.modalCloseCircle, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}
+                onPress={() => setShowActivityModal(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <X size={18} color={secondaryText} />
               </TouchableOpacity>
             </View>
 
             <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
               <Text style={[styles.fieldLabel, { color: primaryText }]}>Activity / Program Name *</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                 placeholder="e.g. Praise & Worship (Setlist)"
                 placeholderTextColor="#94A3B8"
                 value={actProgram}
                 onChangeText={setActProgram}
               />
 
-              <Text style={[styles.fieldLabel, { color: primaryText }]}>Category</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-                {(Object.keys(CATEGORY_COLORS) as ActivityCategory[]).map(cat => (
-                  <TouchableOpacity
-                    key={cat}
-                    style={[styles.categorySelectChip, actCategory === cat && styles.categorySelectChipActive]}
-                    onPress={() => setActCategory(cat)}
-                  >
-                    <Text style={[styles.categorySelectChipTxt, actCategory === cat && styles.categorySelectChipTxtActive]}>
-                      {cat.replace('_', ' ').toUpperCase()}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+              {renderActivityCategorySelector(actCategory, handleSelectActivityCategory)}
 
               <Text style={[styles.fieldLabel, { color: primaryText }]}>Duration (Minutes)</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                 placeholder="15"
                 keyboardType="numeric"
                 placeholderTextColor="#94A3B8"
@@ -5395,9 +7537,40 @@ export default function AdminServicePlanner({ navigation }: any) {
                 onChangeText={setActDuration}
               />
 
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Ministry Team Pool (Optional Filter)</Text>
+              {ministryTeams.length > 0 && (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+                  {ministryTeams.map(team => {
+                    const isSelectedTeam = actTeamIds.includes(team.id);
+                    const count = Array.from(
+                      new Set([...(team.leaderId ? [team.leaderId] : []), ...(team.memberIds || [])].filter(Boolean))
+                    ).length;
+                    return (
+                      <TouchableOpacity
+                        key={team.id}
+                        style={[
+                          styles.categorySelectChip,
+                          isSelectedTeam
+                            ? { backgroundColor: publishBtnBg, borderColor: publishBtnBg, borderWidth: 1 }
+                            : { backgroundColor: inputBg, borderColor: inputBorder, borderWidth: 1 }
+                        ]}
+                        onPress={() => toggleActivityTeamChip(team)}
+                      >
+                        <Text style={[
+                          styles.categorySelectChipTxt,
+                          { color: isSelectedTeam ? '#FFFFFF' : primaryText }
+                        ]}>
+                          {team.name}{count > 0 ? ` (${count})` : ''}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              )}
+
               <Text style={[styles.fieldLabel, { color: primaryText }]}>Responsible Person</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                 placeholder="Type name or select member below"
                 placeholderTextColor="#94A3B8"
                 value={actResponsible}
@@ -5407,32 +7580,63 @@ export default function AdminServicePlanner({ navigation }: any) {
                 }}
               />
 
+              {activityCandidatePool.selectedTeams.length > 0 && (
+                <Text style={{ fontSize: 11, color: secondaryText, marginBottom: 6 }}>
+                  {activityCandidatePool.hasTeamPool
+                    ? `Eligible members from: ${activityCandidatePool.selectedTeams.map(t => t.name).join(', ')}`
+                    : `No members assigned yet in ${activityCandidatePool.selectedTeams.map(t => t.name).join(', ')} — showing church directory`}
+                </Text>
+              )}
+
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-                {churchMembers.slice(0, 8).map(m => (
+                {activityCandidatePool.items.map(({ member: m, teamNames }) => {
+                  const displayName = m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim() || 'Member';
+                  const isActive = actResponsibleId === m.id;
+                  return (
+                    <TouchableOpacity
+                      key={m.id}
+                      style={[
+                        styles.quickMemberChip,
+                        !isActive && { backgroundColor: inputBg, borderColor: inputBorder },
+                        isActive && styles.quickMemberChipActive
+                      ]}
+                      onPress={() => {
+                        setActResponsible(displayName);
+                        setActResponsibleId(m.id);
+                      }}
+                    >
+                      <Text style={[
+                        styles.quickMemberChipTxt,
+                        !isActive && { color: primaryText },
+                        isActive && styles.quickMemberChipTxtActive
+                      ]}>
+                        {displayName}
+                        {teamNames.length > 0 ? ` · ${teamNames.join(' & ')}` : ''}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+                {activityCandidatePool.hasTeamPool && (
                   <TouchableOpacity
-                    key={m.id}
                     style={[
                       styles.quickMemberChip,
-                      actResponsibleId === m.id && styles.quickMemberChipActive
+                      { backgroundColor: actShowAllMembers ? primaryBtnBg : inputBg, borderColor: inputBorder }
                     ]}
-                    onPress={() => {
-                      setActResponsible(m.name || m.firstName || 'Member');
-                      setActResponsibleId(m.id);
-                    }}
+                    onPress={() => setActShowAllMembers(prev => !prev)}
                   >
                     <Text style={[
                       styles.quickMemberChipTxt,
-                      actResponsibleId === m.id && styles.quickMemberChipTxtActive
+                      { color: actShowAllMembers ? primaryBtnText : secondaryText }
                     ]}>
-                      {m.name || m.firstName}
+                      {actShowAllMembers ? 'Team Pool Only' : '+ All Members'}
                     </Text>
                   </TouchableOpacity>
-                ))}
+                )}
               </ScrollView>
 
-              <Text style={[styles.fieldLabel, { color: primaryText }]}>Supporting Team</Text>
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Supporting Team Label</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                 placeholder="e.g. Worship Team"
                 placeholderTextColor="#94A3B8"
                 value={actTeam}
@@ -5484,10 +7688,33 @@ export default function AdminServicePlanner({ navigation }: any) {
         >
           <View style={[styles.modalBox, { backgroundColor: cardSurface, maxHeight: '92%' }]}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: primaryText }]}>Edit Service Information</Text>
-              <TouchableOpacity onPress={() => setShowEditDetailsModal(false)}>
-                <X size={20} color={secondaryText} />
-              </TouchableOpacity>
+              <View style={{ flex: 1, paddingRight: 8 }}>
+                <Text style={[styles.modalTitle, { color: primaryText }]}>Edit Service Information</Text>
+                <Text style={[styles.modalSubtitle, { color: secondaryText }]} numberOfLines={1}>
+                  Update service schedule, title, preacher & sanctuary details
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                {selectedPlan && (
+                  <TouchableOpacity
+                    style={[styles.bannerActionBtn, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: cardBorder }]}
+                    onPress={() => {
+                      setShowEditDetailsModal(false);
+                      openEditServiceInForm(selectedPlan);
+                    }}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  >
+                    <Layers size={14} color={secondaryBtnText} />
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={[styles.modalCloseCircle, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}
+                  onPress={() => setShowEditDetailsModal(false)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <X size={18} color={secondaryText} />
+                </TouchableOpacity>
+              </View>
             </View>
 
             <ScrollView
@@ -5496,62 +7723,105 @@ export default function AdminServicePlanner({ navigation }: any) {
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={true}
             >
+              {/* Service Type Selection */}
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Service Type</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  {(['sunday_worship', 'midweek_bible_study', 'prayer_fasting', 'youth_fellowship', 'special_event'] as ServiceType[]).map(st => {
+                    const active = editType === st;
+                    return (
+                      <TouchableOpacity
+                        key={st}
+                        style={[
+                          styles.filterChip,
+                          active ? styles.filterChipActive : { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: cardBorder }
+                        ]}
+                        onPress={() => setEditType(st)}
+                      >
+                        <Text style={[styles.filterChipTxt, active && styles.filterChipTxtActive]}>
+                          {SERVICE_TYPE_LABELS[st] || st}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+
               <Text style={[styles.fieldLabel, { color: primaryText }]}>Service Title *</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                 placeholder="e.g. Sunday Morning Worship"
                 placeholderTextColor="#94A3B8"
                 value={editTitle}
                 onChangeText={setEditTitle}
               />
 
-              <View style={styles.formRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Date</Text>
-                  <TouchableOpacity
-                    style={[styles.pickerInputBtn, { backgroundColor: screenBg, borderColor }]}
-                    onPress={() => setEditDatePickerVisible(true)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.pickerIconContainer}>
-                      <Calendar size={16} color="#1E3A8A" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.pickerValueText, { color: primaryText }]} numberOfLines={1}>
-                        {formatDisplayDate(editDate)}
-                      </Text>
-                      <Text style={[styles.pickerSubText, { color: secondaryText }]} numberOfLines={1}>
-                        {editDate || 'Select date'}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Date</Text>
+              <TouchableOpacity
+                style={[styles.pickerInputBtn, { backgroundColor: inputBg, borderColor: inputBorder, marginBottom: 12 }]}
+                onPress={() => setEditDatePickerVisible(true)}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.pickerIconContainer, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+                  <Calendar size={16} color={primaryText} />
                 </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.pickerValueText, { color: primaryText }]} numberOfLines={1}>
+                    {formatDisplayDate(editDate)}
+                  </Text>
+                  <Text style={[styles.pickerSubText, { color: secondaryText }]} numberOfLines={1}>
+                    {editDate ? `${formatDateMonthYear(editDate)} (Date Month Year)` : 'Select date'}
+                  </Text>
+                </View>
+              </TouchableOpacity>
 
+              <View style={styles.formRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.fieldLabel, { color: primaryText }]}>Start Time</Text>
                   <TouchableOpacity
-                    style={[styles.pickerInputBtn, { backgroundColor: screenBg, borderColor }]}
+                    style={[styles.pickerInputBtn, { backgroundColor: inputBg, borderColor: inputBorder }]}
                     onPress={() => setEditStartTimePickerVisible(true)}
                     activeOpacity={0.7}
                   >
-                    <View style={styles.pickerIconContainer}>
-                      <Clock size={16} color="#1E3A8A" />
+                    <View style={[styles.pickerIconContainer, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+                      <Clock size={16} color={primaryText} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.pickerValueText, { color: primaryText }]} numberOfLines={1}>
                         {formatDisplayTime(editStartTime)}
                       </Text>
                       <Text style={[styles.pickerSubText, { color: secondaryText }]} numberOfLines={1}>
-                        {editStartTime ? `${editStartTime} (24h)` : 'Select start time'}
+                        {editStartTime ? `${formatDisplayTime(editStartTime)}` : 'Start time'}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.fieldLabel, { color: primaryText }]}>End Time</Text>
+                  <TouchableOpacity
+                    style={[styles.pickerInputBtn, { backgroundColor: inputBg, borderColor: inputBorder }]}
+                    onPress={() => setEditEndTimePickerVisible(true)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.pickerIconContainer, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+                      <Clock size={16} color={primaryText} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.pickerValueText, { color: primaryText }]} numberOfLines={1}>
+                        {formatDisplayTime(editEndTime)}
+                      </Text>
+                      <Text style={[styles.pickerSubText, { color: secondaryText }]} numberOfLines={1}>
+                        {editEndTime ? `${formatDisplayTime(editEndTime)}` : 'End time'}
                       </Text>
                     </View>
                   </TouchableOpacity>
                 </View>
               </View>
 
-              <Text style={[styles.fieldLabel, { color: primaryText }]}>Location</Text>
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Location / Sanctuary</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                 placeholder="e.g. Main Church Sanctuary / Hall"
                 placeholderTextColor="#94A3B8"
                 value={editLocation}
@@ -5560,7 +7830,7 @@ export default function AdminServicePlanner({ navigation }: any) {
 
               <Text style={[styles.fieldLabel, { color: primaryText }]}>Preacher / Speaker</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                 placeholder="e.g. Pastor / Speaker Name"
                 placeholderTextColor="#94A3B8"
                 value={editPreacher}
@@ -5571,7 +7841,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.fieldLabel, { color: primaryText }]}>Theme</Text>
                   <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                     placeholder="e.g. God's Grace / Living by Faith"
                     placeholderTextColor="#94A3B8"
                     value={editTheme}
@@ -5581,7 +7851,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.fieldLabel, { color: primaryText }]}>Bible Scripture</Text>
                   <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
+                    style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
                     placeholder="e.g. Romans 8:1, Psalm 23"
                     placeholderTextColor="#94A3B8"
                     value={editScripture}
@@ -5589,6 +7859,16 @@ export default function AdminServicePlanner({ navigation }: any) {
                   />
                 </View>
               </View>
+
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Description / Notes</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder, height: 60 }]}
+                placeholder="Additional service details or notes for volunteers..."
+                placeholderTextColor="#94A3B8"
+                multiline
+                value={editDescription}
+                onChangeText={setEditDescription}
+              />
             </ScrollView>
 
             <View style={styles.modalFooter}>
@@ -5622,6 +7902,98 @@ export default function AdminServicePlanner({ navigation }: any) {
               onConfirm={handleConfirmEditStartTime}
               onCancel={() => setEditStartTimePickerVisible(false)}
             />
+            <DateTimePickerModal
+              isVisible={isEditEndTimePickerVisible}
+              mode="time"
+              date={parseTimeForPicker(editEndTime)}
+              is24Hour={false}
+              onConfirm={handleConfirmEditEndTime}
+              onCancel={() => setEditEndTimePickerVisible(false)}
+            />
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      {/* MODAL: SAVE AS REUSABLE TEMPLATE (ISSUE 6) */}
+      {/* ───────────────────────────────────────────────────────────────────────── */}
+      <Modal visible={showSaveTemplateModal} animationType="slide" transparent>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={[styles.modalBox, { backgroundColor: cardSurface, maxHeight: '90%' }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1, paddingRight: 8 }}>
+                <Text style={[styles.modalTitle, { color: primaryText }]}>Save as Service Template</Text>
+                <Text style={[styles.modalSubtitle, { color: secondaryText }]}>
+                  Save this customized order of service as a reusable template for future services
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.modalCloseCircle, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}
+                onPress={() => setShowSaveTemplateModal(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <X size={18} color={secondaryText} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled">
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Template Name *</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder }]}
+                placeholder="e.g. Sunday Celebration Order, Midweek Service"
+                placeholderTextColor="#94A3B8"
+                value={newTemplateName}
+                onChangeText={setNewTemplateName}
+              />
+
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Description</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: inputBg, color: primaryText, borderColor: inputBorder, height: 60 }]}
+                placeholder="Describe when to use this template..."
+                placeholderTextColor="#94A3B8"
+                multiline
+                value={newTemplateDesc}
+                onChangeText={setNewTemplateDesc}
+              />
+
+              <View style={[styles.templatePreviewBox, { backgroundColor: isDark ? '#18181B' : '#F8FAFC', borderColor: cardBorder }]}>
+                <Text style={[styles.templatePreviewTitle, { color: primaryText }]}>
+                  📋 Included Activities ({selectedPlan?.runSheet?.length || 0})
+                </Text>
+                {(selectedPlan?.runSheet || []).map((item, idx) => (
+                  <View key={item.id ? `prv_${item.id}` : `prv_${idx}`} style={styles.templatePreviewRow}>
+                    <Text style={[styles.templatePreviewNum, { color: secondaryText }]}>{idx + 1}.</Text>
+                    <Text style={[styles.templatePreviewTxt, { color: primaryText }]} numberOfLines={1}>
+                      {item.program} ({item.durationMinutes}m)
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setShowSaveTemplateModal(false)}
+                disabled={savingTemplate}
+              >
+                <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalConfirmBtn}
+                onPress={handleSaveCurrentAsTemplate}
+                disabled={savingTemplate}
+              >
+                {savingTemplate ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalConfirmBtnTxt}>Save Template 💾</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -5657,7 +8029,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                       {tpl.runSheetTemplate.length} activities · ~{tpl.defaultDurationMinutes} mins
                     </Text>
                   </View>
-                  <ArrowRight size={16} color="#1E3A8A" />
+                  <ArrowRight size={16} color={primaryText} />
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -5684,7 +8056,7 @@ export default function AdminServicePlanner({ navigation }: any) {
         >
           <View style={[styles.modalBox, { backgroundColor: cardSurface }]}>
             <View style={styles.modalHeader}>
-              <View>
+              <View style={{ flex: 1, paddingRight: 8 }}>
                 <Text style={[styles.modalTitle, { color: primaryText }]}>
                   {selectedTeam ? `Manage ${selectedTeam.name}` : 'Create Ministry Team'}
                 </Text>
@@ -5692,12 +8064,17 @@ export default function AdminServicePlanner({ navigation }: any) {
                   Assign existing church members and designate a team leader.
                 </Text>
               </View>
-              <TouchableOpacity onPress={() => setShowTeamModal(false)}>
+              <TouchableOpacity onPress={() => setShowTeamModal(false)} style={styles.modalCloseCircle}>
                 <X size={20} color={secondaryText} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ maxHeight: 440 }} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={{ maxHeight: 520 }}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled={true}
+            >
               <Text style={[styles.fieldLabel, { color: primaryText }]}>Team Name *</Text>
               <TextInput
                 style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
@@ -5716,80 +8093,280 @@ export default function AdminServicePlanner({ navigation }: any) {
                 onChangeText={setTeamDescInput}
               />
 
-              <Text style={[styles.fieldLabel, { color: primaryText }]}>Designate Team Leader</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-                <TouchableOpacity
-                  style={[styles.quickMemberChip, !teamLeaderId && styles.quickMemberChipActive]}
-                  onPress={() => setTeamLeaderId(undefined)}
-                >
-                  <Text style={[styles.quickMemberChipTxt, !teamLeaderId && styles.quickMemberChipTxtActive]}>
-                    No Leader
-                  </Text>
-                </TouchableOpacity>
-                {churchMembers.map(m => (
-                  <TouchableOpacity
-                    key={m.id}
-                    style={[styles.quickMemberChip, teamLeaderId === m.id && styles.quickMemberChipActive]}
-                    onPress={() => setTeamLeaderId(m.id)}
-                  >
-                    <Text style={[styles.quickMemberChipTxt, teamLeaderId === m.id && styles.quickMemberChipTxtActive]}>
-                      👑 {m.name || m.firstName}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-
-              <Text style={[styles.fieldLabel, { color: primaryText }]}>
-                Team Members ({teamMemberIds.length} Selected)
-              </Text>
-              <View style={styles.memberPickerContainer}>
-                {churchMembers.map(m => {
-                  const isSelected = teamMemberIds.includes(m.id);
+              {/* Accent Color Selection */}
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Team Accent Color</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+                {[
+                  { color: '#2E6B4F', label: 'Forest' },
+                  { color: '#2563EB', label: 'Blue' },
+                  { color: '#7C3AED', label: 'Purple' },
+                  { color: '#D97706', label: 'Amber' },
+                  { color: '#DC2626', label: 'Crimson' },
+                  { color: '#0D9488', label: 'Teal' },
+                ].map(c => {
+                  const isCurColor = teamColorInput === c.color;
                   return (
                     <TouchableOpacity
-                      key={m.id}
-                      style={[
-                        styles.memberRosterItem,
-                        { borderColor },
-                        isSelected && styles.memberRosterItemSelected
-                      ]}
-                      onPress={() => toggleMemberInTeam(m.id)}
+                      key={c.color}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 6,
+                        paddingVertical: 5,
+                        paddingHorizontal: 9,
+                        borderRadius: 16,
+                        backgroundColor: isCurColor
+                          ? (isDark ? 'rgba(255,255,255,0.1)' : '#F1F5F9')
+                          : (isDark ? '#27272A' : '#F8FAFC'),
+                        borderWidth: 1.5,
+                        borderColor: isCurColor ? c.color : (isDark ? '#3F3F46' : '#E2E8F0'),
+                      }}
+                      onPress={() => setTeamColorInput(c.color)}
                     >
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.memberRosterName, { color: primaryText }]}>
-                          {m.name || m.firstName}
-                        </Text>
-                        <Text style={[styles.memberRosterPhone, { color: secondaryText }]}>
-                          {m.phone || 'No phone'} · {m.primarySkill || 'Member'}
-                        </Text>
-                      </View>
-                      <View style={[styles.checkboxCircle, isSelected && styles.checkboxCircleActive]}>
-                        {isSelected && <Check size={12} color="#FFFFFF" />}
-                      </View>
+                      <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: c.color }} />
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: primaryText }}>{c.label}</Text>
                     </TouchableOpacity>
                   );
                 })}
               </View>
+
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>Designate Team Leader</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                <TouchableOpacity
+                  style={[
+                    styles.quickMemberChip,
+                    !teamLeaderId
+                      ? [styles.quickMemberChipActive, { backgroundColor: isDark ? '#10B981' : '#2E6B4F', borderColor: isDark ? '#10B981' : '#2E6B4F' }]
+                      : { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: cardBorder }
+                  ]}
+                  onPress={() => setTeamLeaderId(undefined)}
+                >
+                  <Text style={[
+                    styles.quickMemberChipTxt,
+                    !teamLeaderId
+                      ? styles.quickMemberChipTxtActive
+                      : { color: secondaryText }
+                  ]}>
+                    No Leader
+                  </Text>
+                </TouchableOpacity>
+                {churchMembers.map(m => {
+                  const isActive = teamLeaderId === m.id;
+                  return (
+                    <TouchableOpacity
+                      key={m.id}
+                      style={[
+                        styles.quickMemberChip,
+                        isActive
+                          ? [styles.quickMemberChipActive, { backgroundColor: isDark ? '#10B981' : '#2E6B4F', borderColor: isDark ? '#10B981' : '#2E6B4F' }]
+                          : { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: cardBorder }
+                      ]}
+                      onPress={() => setTeamLeaderId(m.id)}
+                    >
+                      <Text style={[
+                        styles.quickMemberChipTxt,
+                        isActive
+                          ? styles.quickMemberChipTxtActive
+                          : { color: secondaryText }
+                      ]}>
+                        👑 {m.name || m.firstName}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              {/* Team Members Header with Actions */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6, marginBottom: 8 }}>
+                <Text style={[styles.fieldLabel, { color: primaryText, marginBottom: 0 }]}>
+                  Team Members ({teamMemberIds.length} Selected)
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      const allIds = churchMembers.map(m => m.id).filter(Boolean);
+                      setTeamMemberIds(allIds);
+                    }}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  >
+                    <Text style={{ fontSize: 11.5, fontWeight: '700', color: isDark ? '#34D399' : '#059669' }}>
+                      Select All
+                    </Text>
+                  </TouchableOpacity>
+                  <Text style={{ color: secondaryText, fontSize: 11 }}>•</Text>
+                  <TouchableOpacity
+                    onPress={() => setTeamMemberIds([])}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  >
+                    <Text style={{ fontSize: 11.5, fontWeight: '700', color: isDark ? '#F87171' : '#DC2626' }}>
+                      Clear
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Search input for members */}
+              <View style={[styles.memberSearchBox, { backgroundColor: screenBg, borderColor }]}>
+                <Search size={14} color={secondaryText} />
+                <TextInput
+                  style={[styles.memberSearchInput, { color: primaryText }]}
+                  placeholder="Filter members by name, phone or skill..."
+                  placeholderTextColor="#94A3B8"
+                  value={teamMemberSearch}
+                  onChangeText={setTeamMemberSearch}
+                  autoCapitalize="none"
+                />
+                {teamMemberSearch.length > 0 && (
+                  <TouchableOpacity onPress={() => setTeamMemberSearch('')}>
+                    <X size={14} color={secondaryText} />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Dedicated Smooth Scrollable Member List */}
+              <View style={[styles.memberPickerContainer, { borderColor: isDark ? '#3F3F46' : '#E2E8F0', backgroundColor: isDark ? '#18181B' : '#F8FAFC' }]}>
+                <ScrollView
+                  nestedScrollEnabled={true}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={true}
+                  style={{ maxHeight: 240 }}
+                  contentContainerStyle={{ padding: 6 }}
+                >
+                  {filteredTeamMembers.length === 0 ? (
+                    <View style={{ padding: 20, alignItems: 'center' }}>
+                      <Text style={{ color: secondaryText, fontSize: 12 }}>
+                        {teamMemberSearch.trim() ? `No members found matching "${teamMemberSearch}"` : 'No church members available'}
+                      </Text>
+                    </View>
+                  ) : (
+                    filteredTeamMembers.map(m => {
+                      const isSelected = teamMemberIds.includes(m.id);
+                      const mName = m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim() || 'Church Member';
+                      const initials = mName.split(' ').map((p: string) => p[0]).filter(Boolean).slice(0, 2).join('').toUpperCase() || 'M';
+                      return (
+                        <TouchableOpacity
+                          key={m.id}
+                          style={[
+                            styles.memberRosterItem,
+                            {
+                              backgroundColor: isSelected
+                                ? (isDark ? 'rgba(16, 185, 129, 0.18)' : '#ECFDF5')
+                                : (isDark ? '#27272A' : '#FFFFFF'),
+                              borderColor: isSelected
+                                ? (isDark ? '#059669' : '#10B981')
+                                : (isDark ? '#3F3F46' : '#E2E8F0'),
+                              borderWidth: 1,
+                            }
+                          ]}
+                          onPress={() => toggleMemberInTeam(m.id)}
+                          activeOpacity={0.7}
+                        >
+                          <View style={[
+                            styles.memberAvatarCircle,
+                            {
+                              backgroundColor: isSelected
+                                ? (isDark ? '#065F46' : '#D1FAE5')
+                                : (isDark ? '#3F3F46' : '#F1F5F9')
+                            }
+                          ]}>
+                            <Text style={[
+                              styles.memberAvatarTxt,
+                              {
+                                color: isSelected
+                                  ? (isDark ? '#34D399' : '#047857')
+                                  : (isDark ? '#D4D4D8' : '#475569')
+                              }
+                            ]}>
+                              {initials}
+                            </Text>
+                          </View>
+
+                          <View style={{ flex: 1, paddingRight: 6 }}>
+                            <Text style={[
+                              styles.memberRosterName,
+                              {
+                                color: isSelected
+                                  ? (isDark ? '#FFFFFF' : '#065F46')
+                                  : primaryText
+                              }
+                            ]} numberOfLines={1}>
+                              {mName}
+                            </Text>
+                            <Text style={[
+                              styles.memberRosterPhone,
+                              {
+                                color: isSelected
+                                  ? (isDark ? '#A7F3D0' : '#047857')
+                                  : secondaryText
+                              }
+                            ]} numberOfLines={1}>
+                              {m.phone || (m as any).phoneNumber || (m as any).mobile || 'No phone'} · {m.primarySkill || m.userType || 'Member'}
+                            </Text>
+                          </View>
+
+                          <View style={[
+                            styles.checkboxCircle,
+                            isSelected ? styles.checkboxCircleActive : {
+                              borderColor: isDark ? '#52525B' : '#CBD5E1',
+                              backgroundColor: isDark ? '#27272A' : '#FFFFFF'
+                            }
+                          ]}>
+                            {isSelected && <Check size={12} color="#FFFFFF" strokeWidth={3} />}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })
+                  )}
+                </ScrollView>
+              </View>
             </ScrollView>
 
-            <View style={styles.modalFooter}>
-              <TouchableOpacity
-                style={styles.modalCancelBtn}
-                onPress={() => setShowTeamModal(false)}
-              >
-                <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalConfirmBtn}
-                disabled={savingTeam}
-                onPress={handleSaveTeam}
-              >
-                {savingTeam ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.modalConfirmBtnTxt}>Save Team</Text>
-                )}
-              </TouchableOpacity>
+            <View style={[styles.modalFooter, { justifyContent: 'space-between' }]}>
+              {selectedTeam ? (
+                <TouchableOpacity
+                  style={[
+                    styles.modalFooterDeleteBtn,
+                    {
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      paddingVertical: 10,
+                      paddingHorizontal: 12,
+                      borderRadius: 10,
+                      backgroundColor: isDark ? 'rgba(239, 68, 68, 0.16)' : '#FEF2F2',
+                      borderWidth: 1,
+                      borderColor: isDark ? 'rgba(239, 68, 68, 0.4)' : '#FECACA',
+                    }
+                  ]}
+                  disabled={savingTeam}
+                  onPress={() => handleDeleteTeam(selectedTeam)}
+                >
+                  <Trash2 size={14} color={isDark ? '#F87171' : '#DC2626'} />
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? '#F87171' : '#DC2626' }}>
+                    Delete
+                  </Text>
+                </TouchableOpacity>
+              ) : <View />}
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity
+                  style={styles.modalCancelBtn}
+                  onPress={() => setShowTeamModal(false)}
+                >
+                  <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.modalConfirmBtn}
+                  disabled={savingTeam}
+                  onPress={handleSaveTeam}
+                >
+                  {savingTeam ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.modalConfirmBtnTxt}>Save Team</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </KeyboardAvoidingView>
@@ -5971,7 +8548,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                 Sequential Candidate Ladder ({ladderCandidates.length}/3)
               </Text>
               <Text style={[styles.fieldHint, { color: secondaryText }]}>
-                Rank 1 is contacted first. If declined or timed out, Rank 2 is automatically promoted.
+                Primary volunteer is contacted first. If declined or timed out, 1st Backup is automatically notified.
               </Text>
 
               {ladderCandidates.length === 0 ? (
@@ -5990,7 +8567,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                       <View>
                         <Text style={styles.ladderSelectedName}>{cand.candidateName}</Text>
                         <Text style={[styles.ladderCandMeta, { color: secondaryText }]}>
-                          Rank #{idx + 1} Candidate · {cand.candidatePhone || 'In directory'}
+                          {idx === 0 ? 'Primary Volunteer' : idx === 1 ? '1st Backup' : '2nd Backup'} · {cand.candidatePhone || 'In directory'}
                         </Text>
                       </View>
                     </View>
@@ -6006,7 +8583,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                 <Text style={[styles.fieldLabel, { color: primaryText, marginBottom: 0 }]}>
                   Recommended Candidates
                 </Text>
-                {loadingRecommendations && <ActivityIndicator size="small" color="#1E3A8A" />}
+                {loadingRecommendations && <ActivityIndicator size="small" color={primaryBtnBg} />}
               </View>
               <Text style={[styles.fieldHint, { color: secondaryText }]}>
                 Ranked by verified skills, ministry team membership, and blockout availability.
@@ -6149,7 +8726,7 @@ export default function AdminServicePlanner({ navigation }: any) {
                             {m.phone || 'No phone'} · {m.userType || 'Member'}
                           </Text>
                         </View>
-                        {isSelected && <Check size={16} color="#1E3A8A" />}
+                        {isSelected && <Check size={16} color={primaryText} />}
                       </TouchableOpacity>
                     );
                   })}
@@ -6291,311 +8868,6 @@ export default function AdminServicePlanner({ navigation }: any) {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ─── MODAL: SCHEDULE / EDIT REHEARSAL (PHASE 6) ─── */}
-      <Modal visible={showRehearsalModal} animationType="slide" transparent>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalOverlay}>
-          <View style={[styles.modalSheet, { backgroundColor: cardSurface, maxHeight: '90%' }]}>
-            <View style={styles.modalHeader}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.queueCategoryPill}>REHEARSAL PLANNER</Text>
-                <Text style={[styles.modalTitle, { color: primaryText }]}>
-                  {editingRehearsalId ? 'Edit Service Rehearsal' : 'Schedule Service Rehearsal'}
-                </Text>
-                {selectedPlan && (
-                  <Text style={[styles.modalSubtitle, { color: secondaryText }]}>
-                    Service: {selectedPlan.serviceTitle} ({selectedPlan.date})
-                  </Text>
-                )}
-              </View>
-              <TouchableOpacity onPress={() => setShowRehearsalModal(false)}>
-                <X size={20} color="#64748B" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={{ maxHeight: 460 }} showsVerticalScrollIndicator={false}>
-              {/* Presets */}
-              <Text style={[styles.fieldLabel, { color: primaryText }]}>Rehearsal Type Preset</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-                {[
-                  'Saturday Full Band Rehearsal',
-                  'Vocal Harmonies Practice',
-                  'Midweek Acoustic Practice',
-                  'Sunday Morning Sound Check'
-                ].map(pre => (
-                  <TouchableOpacity
-                    key={pre}
-                    style={[styles.rehPresetChip, rehearsalNameInput === pre && styles.rehPresetChipActive]}
-                    onPress={() => setRehearsalNameInput(pre)}
-                  >
-                    <Text style={[styles.rehPresetChipTxt, rehearsalNameInput === pre && styles.rehPresetChipTxtActive]}>
-                      {pre}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-
-              <Text style={[styles.fieldLabel, { color: primaryText }]}>Rehearsal Title *</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
-                placeholder="e.g. Saturday Full Band Rehearsal"
-                placeholderTextColor="#94A3B8"
-                value={rehearsalNameInput}
-                onChangeText={setRehearsalNameInput}
-              />
-
-              <View style={styles.formRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Date (YYYY-MM-DD) *</Text>
-                  <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
-                    value={rehearsalDateInput}
-                    onChangeText={setRehearsalDateInput}
-                  />
-                </View>
-                <View style={{ width: 95 }}>
-                  <Text style={[styles.fieldLabel, { color: primaryText }]}>Start Time</Text>
-                  <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
-                    value={rehearsalStartTimeInput}
-                    onChangeText={setRehearsalStartTimeInput}
-                  />
-                </View>
-                <View style={{ width: 95 }}>
-                  <Text style={[styles.fieldLabel, { color: primaryText }]}>End Time</Text>
-                  <TextInput
-                    style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
-                    value={rehearsalEndTimeInput}
-                    onChangeText={setRehearsalEndTimeInput}
-                  />
-                </View>
-              </View>
-
-              <Text style={[styles.fieldLabel, { color: primaryText }]}>Location</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: screenBg, color: primaryText, borderColor }]}
-                value={rehearsalLocationInput}
-                onChangeText={setRehearsalLocationInput}
-              />
-
-              {/* Teams Selector */}
-              <Text style={[styles.fieldLabel, { color: primaryText }]}>Ministry Teams Participating</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
-                {ministryTeams.map(t => {
-                  const isChecked = rehearsalTeamIds.includes(t.id);
-                  return (
-                    <TouchableOpacity
-                      key={t.id}
-                      style={[
-                        styles.teamPickerChip,
-                        isChecked && { backgroundColor: t.color || '#1E3A8A', borderColor: t.color || '#1E3A8A' }
-                      ]}
-                      onPress={() => {
-                        if (isChecked) {
-                          setRehearsalTeamIds(rehearsalTeamIds.filter(id => id !== t.id));
-                        } else {
-                          setRehearsalTeamIds([...rehearsalTeamIds, t.id]);
-                        }
-                      }}
-                    >
-                      <Text style={[styles.teamPickerChipTxt, isChecked && { color: '#FFFFFF' }]}>
-                        {t.name}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              {/* Songs for Practice Selector */}
-              <Text style={[styles.fieldLabel, { color: primaryText }]}>Songs to Practice (from Setlist)</Text>
-              {(selectedPlan?.setlist || []).length === 0 ? (
-                <Text style={[styles.fieldHint, { color: secondaryText }]}>
-                  No songs in worship setlist yet. Add songs from Worship Setlist tab.
-                </Text>
-              ) : (
-                (selectedPlan?.setlist || []).map((song, sIdx) => {
-                  const isSelected = rehearsalSongPracticeIds.includes(song.id);
-                  return (
-                    <TouchableOpacity
-                      key={song.id ? `reh_song_${song.id}_${sIdx}` : `reh_song_${sIdx}`}
-                      style={[
-                        styles.rehSongPickRow,
-                        { borderColor },
-                        isSelected && styles.rehSongPickRowActive
-                      ]}
-                      onPress={() => {
-                        if (isSelected) {
-                          setRehearsalSongPracticeIds(rehearsalSongPracticeIds.filter(id => id !== song.id));
-                        } else {
-                          setRehearsalSongPracticeIds([...rehearsalSongPracticeIds, song.id]);
-                        }
-                      }}
-                    >
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-                        <View style={[styles.rankCircle, isSelected ? styles.rankCircleAccepted : styles.rankCircleIdle]}>
-                          {isSelected ? <Check size={12} color="#FFFFFF" /> : <Plus size={12} color="#64748B" />}
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={[styles.rehSongPickTxt, { color: primaryText }]}>
-                            {song.title} {song.titleTe ? `(${song.titleTe})` : ''}
-                          </Text>
-                          <Text style={[styles.ladderCandMeta, { color: secondaryText }]}>
-                            Key {song.key} · {song.tempo} BPM · Leader: {song.ledBy || 'Worship Team'}
-                          </Text>
-                        </View>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })
-              )}
-
-              <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 12 }]}>
-                Rehearsal Notes & Arrangements
-              </Text>
-              <TextInput
-                style={[styles.textArea, { backgroundColor: screenBg, color: primaryText, borderColor }]}
-                placeholder="Arrangement notes, keys, vocal harmonies, audio check cues..."
-                placeholderTextColor="#94A3B8"
-                multiline
-                numberOfLines={3}
-                value={rehearsalNotesInput}
-                onChangeText={setRehearsalNotesInput}
-              />
-            </ScrollView>
-
-            <View style={styles.modalFooter}>
-              <TouchableOpacity
-                style={styles.modalCancelBtn}
-                onPress={() => setShowRehearsalModal(false)}
-              >
-                <Text style={styles.modalCancelBtnTxt}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalConfirmBtn}
-                disabled={savingRehearsal}
-                onPress={handleSaveRehearsal}
-              >
-                {savingRehearsal ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.modalConfirmBtnTxt}>
-                    {editingRehearsalId ? 'Update Rehearsal' : 'Schedule & Notify'}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {/* ─── MODAL: REHEARSAL ATTENDANCE TRACKER (PHASE 6) ─── */}
-      <Modal visible={showRehearsalAttendanceModal} animationType="slide" transparent>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalOverlay}>
-          <View style={[styles.modalSheet, { backgroundColor: cardSurface, maxHeight: '90%' }]}>
-            <View style={styles.modalHeader}>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={styles.queueCategoryPill}>ATTENDANCE</Text>
-                  <Text style={[styles.headerBadgeTxt, { color: '#059669' }]}>REHEARSAL CHECK-IN</Text>
-                </View>
-                <Text style={[styles.modalTitle, { color: primaryText }]}>
-                  {activeRehearsalForAttendance?.rehearsalName}
-                </Text>
-                <Text style={[styles.modalSubtitle, { color: secondaryText }]}>
-                  📅 {activeRehearsalForAttendance?.date} · ⏰ {activeRehearsalForAttendance?.startTime}
-                </Text>
-              </View>
-              <TouchableOpacity onPress={() => setShowRehearsalAttendanceModal(false)}>
-                <X size={20} color="#64748B" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={{ maxHeight: 460 }} showsVerticalScrollIndicator={false}>
-              {(() => {
-                // Collect participants from assigned teams + direct participant IDs
-                const teamMemberIds = new Set<string>();
-                (activeRehearsalForAttendance?.assignedTeamIds || []).forEach(tId => {
-                  const teamObj = ministryTeams.find(t => t.id === tId);
-                  (teamObj?.memberIds || []).forEach(mId => teamMemberIds.add(mId));
-                });
-                (activeRehearsalForAttendance?.participantMemberIds || []).forEach(mId => teamMemberIds.add(mId));
-
-                const participantMembers = churchMembers.filter(m => teamMemberIds.has(m.id));
-
-                if (participantMembers.length === 0) {
-                  return (
-                    <View style={[styles.emptyCard, { backgroundColor: screenBg, borderColor }]}>
-                      <Text style={[styles.emptySubtitle, { color: secondaryText }]}>
-                        No participants assigned to this rehearsal yet.
-                      </Text>
-                    </View>
-                  );
-                }
-
-                return participantMembers.map((m, mIdx) => {
-                  const curStatus = activeRehearsalForAttendance?.attendance?.[m.id];
-                  return (
-                    <View
-                      key={m.id ? `part_${m.id}_${mIdx}` : `part_${mIdx}`}
-                      style={[styles.attMemberCard, { backgroundColor: screenBg, borderColor }]}
-                    >
-                      <View style={{ flex: 1, paddingRight: 8 }}>
-                        <Text style={[styles.recMemberName, { color: primaryText }]}>
-                          {m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim()}
-                        </Text>
-                        <Text style={[styles.ladderCandMeta, { color: secondaryText }]}>
-                          {m.phone || 'In directory'} · {m.primarySkill || 'Volunteer'}
-                        </Text>
-                      </View>
-
-                      {/* 4-way attendance status pills */}
-                      <View style={styles.attPillGroup}>
-                        {[
-                          { key: 'present', label: 'P', color: '#059669', bg: '#ECFDF5' },
-                          { key: 'late', label: 'L', color: '#D97706', bg: '#FEF3C7' },
-                          { key: 'absent', label: 'A', color: '#DC2626', bg: '#FEF2F2' },
-                          { key: 'excused', label: 'E', color: '#2563EB', bg: '#EFF6FF' },
-                        ].map(st => {
-                          const isSelected = curStatus === st.key;
-                          return (
-                            <TouchableOpacity
-                              key={st.key}
-                              style={[
-                                styles.attPill,
-                                isSelected ? { backgroundColor: st.color, borderColor: st.color } : { borderColor }
-                              ]}
-                              onPress={() => activeRehearsalForAttendance && handleSetParticipantAttendance(
-                                activeRehearsalForAttendance.id,
-                                m.id,
-                                st.key as any
-                              )}
-                            >
-                              <Text style={[
-                                styles.attPillTxt,
-                                isSelected ? { color: '#FFFFFF', fontWeight: '800' } : { color: secondaryText }
-                              ]}>
-                                {st.label}
-                              </Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </View>
-                    </View>
-                  );
-                });
-              })()}
-            </ScrollView>
-
-            <View style={styles.modalFooter}>
-              <TouchableOpacity
-                style={[styles.modalConfirmBtn, { width: '100%' }]}
-                onPress={() => setShowRehearsalAttendanceModal(false)}
-              >
-                <Text style={styles.modalConfirmBtnTxt}>Done Check-In</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
     </View>
   );
 }
@@ -6608,12 +8880,22 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   header: {
     paddingHorizontal: 16,
     paddingBottom: 10,
     borderBottomWidth: 1,
     elevation: 2,
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 3,
@@ -6627,86 +8909,135 @@ const styles = StyleSheet.create({
   headerBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 5,
     backgroundColor: '#FEF3C7',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
   },
   headerBadgeTxt: {
     fontSize: 9.5,
     fontWeight: '800',
     color: '#D97706',
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
   statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
+    paddingVertical: 2.5,
+    borderRadius: 999,
+    borderWidth: 1,
   },
   statusPillDraft: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#F1F5F9',
+    borderColor: '#CBD5E1',
   },
   statusPillPublished: {
-    backgroundColor: '#D1FAE5',
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
   },
   statusPillLive: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
   },
   statusPillCompleted: {
-    backgroundColor: '#E0E7FF',
+    backgroundColor: '#F1F5F9',
+    borderColor: '#CBD5E1',
   },
   statusPillTxt: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '800',
     color: '#1E293B',
+    letterSpacing: 0.5,
   },
   headerTitle: {
-    fontSize: 19,
+    fontFamily: SERIF_FONT,
+    fontSize: 21,
     fontWeight: '800',
+    letterSpacing: -0.4,
     marginTop: 4,
   },
   headerSubtitle: {
     fontSize: 12,
+    fontWeight: '500',
     marginTop: 2,
   },
   newServiceBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#1E3A8A',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 10,
+    backgroundColor: '#000000',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 999,
     elevation: 2,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
   },
   newServiceBtnTxt: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   tabsScroll: {
-    marginTop: 4,
+    marginTop: 6,
+    marginBottom: 2,
+  },
+  headerSearchWrap: {
+    marginTop: 8,
+    marginBottom: 2,
+  },
+  headerSearchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 40,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1.2,
+  },
+  headerSearchInput: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '500',
+    paddingVertical: 0,
+  },
+  teamMetaBox: {
+    paddingTop: 8,
   },
   tabBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 13,
+    borderRadius: 10,
     marginRight: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
   },
   tabBtnActive: {
-    backgroundColor: '#EEF2FF',
+    backgroundColor: '#000000',
+    borderColor: '#000000',
+    elevation: 2,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
   },
   tabBtnTxt: {
-    fontSize: 12.5,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
   },
   tabBtnTxtActive: {
-    color: '#1E3A8A',
+    color: '#FFFFFF',
     fontWeight: '800',
   },
   bodyScroll: {
@@ -6729,70 +9060,85 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   filterChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+    paddingHorizontal: 13,
+    paddingVertical: 7,
+    borderRadius: 10,
     backgroundColor: '#F1F5F9',
     marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   filterChipActive: {
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#000000',
+    borderColor: '#000000',
   },
   filterChipTxt: {
     fontSize: 11,
     fontWeight: '700',
     color: '#475569',
+    letterSpacing: 0.5,
   },
   filterChipTxtActive: {
     color: '#FFFFFF',
+    fontWeight: '800',
   },
   emptyCard: {
-    padding: 32,
-    borderRadius: 16,
-    borderWidth: 1,
+    paddingVertical: 36,
+    paddingHorizontal: 20,
+    borderRadius: 18,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 20,
+    marginTop: 16,
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
   },
   emptyTitle: {
-    fontSize: 16,
+    fontFamily: SERIF_FONT,
+    fontSize: 17,
     fontWeight: '800',
+    letterSpacing: -0.3,
     marginTop: 12,
   },
   emptySubtitle: {
     fontSize: 12.5,
+    lineHeight: 19,
     textAlign: 'center',
     marginTop: 6,
-    maxWidth: 280,
+    maxWidth: 290,
   },
   createEmptyBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#1E3A8A',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    backgroundColor: '#000000',
+    paddingHorizontal: 18,
+    paddingVertical: 11,
     borderRadius: 10,
     marginTop: 18,
   },
   createEmptyBtnTxt: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   planCard: {
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 14,
-    marginBottom: 12,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    padding: 16,
+    marginBottom: 14,
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
   },
   planCardSelected: {
-    borderColor: '#1E3A8A',
+    borderColor: '#000000',
     borderWidth: 2,
   },
   planCardTop: {
@@ -6800,55 +9146,76 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   dateBadge: {
-    width: 44,
-    height: 48,
-    borderRadius: 10,
-    backgroundColor: '#EFF6FF',
+    width: 50,
+    height: 52,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
     alignItems: 'center',
     justifyContent: 'center',
   },
   dateBadgeDay: {
-    fontSize: 16,
+    fontFamily: SERIF_FONT,
+    fontSize: 18,
     fontWeight: '900',
-    color: '#1E3A8A',
+    color: '#0F172A',
   },
   dateBadgeMonth: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '800',
-    color: '#3B82F6',
+    color: '#475569',
+    letterSpacing: 0.8,
   },
   planTypeTag: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '800',
     color: '#D97706',
+    letterSpacing: 0.5,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
   },
   miniStatusPill: {
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
   },
   miniStatusPillTxt: {
     fontSize: 9,
     fontWeight: '800',
+    letterSpacing: 0.4,
   },
   planTitle: {
-    fontSize: 15,
+    fontFamily: SERIF_FONT,
+    fontSize: 16,
     fontWeight: '800',
-    marginTop: 2,
+    letterSpacing: -0.2,
+    marginTop: 4,
   },
   planMeta: {
     fontSize: 11.5,
-    marginTop: 2,
+    marginTop: 3,
   },
   planCardBottom: {
-    marginTop: 10,
-    paddingTop: 8,
+    marginTop: 12,
+    paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 8,
   },
   planStatRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: 10,
+    alignItems: 'center',
   },
   planStatTxt: {
     fontSize: 11,
@@ -6857,7 +9224,7 @@ const styles = StyleSheet.create({
   openHudBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#7C3AED',
+    backgroundColor: '#2E6B4F',
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 8,
@@ -6870,25 +9237,32 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   selectedBanner: {
-    padding: 14,
-    borderRadius: 14,
-    borderWidth: 1,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1.5,
     marginBottom: 16,
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
   },
   selectedBannerTag: {
-    fontSize: 9,
+    fontSize: 9.5,
     fontWeight: '800',
-    color: '#3B82F6',
-    letterSpacing: 0.5,
+    color: '#2E6B4F',
+    letterSpacing: 0.8,
   },
   selectedBannerTitle: {
-    fontSize: 17,
+    fontFamily: SERIF_FONT,
+    fontSize: 18,
     fontWeight: '800',
+    letterSpacing: -0.3,
     marginTop: 2,
   },
   selectedBannerMeta: {
     fontSize: 12,
-    marginTop: 2,
+    marginTop: 3,
   },
   selectedBannerTheme: {
     fontSize: 12,
@@ -6896,18 +9270,21 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   bannerActionBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#F8FAFC',
   },
+  bannerBottomRow: {
+    borderTopWidth: 1,
+  },
   statusSwitcherRow: {
-    marginTop: 12,
-    paddingTop: 10,
+    marginTop: 14,
+    paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
     flexDirection: 'row',
@@ -6916,44 +9293,51 @@ const styles = StyleSheet.create({
   },
   statusSwitcherLabel: {
     fontSize: 11.5,
-    fontWeight: '600',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   statusButtonsGroup: {
     flexDirection: 'row',
     gap: 4,
   },
   statusToggleBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
     backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   statusToggleBtnActive: {
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#000000',
+    borderColor: '#000000',
   },
   statusToggleBtnTxt: {
     fontSize: 10,
     fontWeight: '700',
     color: '#64748B',
+    letterSpacing: 0.3,
   },
   statusToggleBtnTxtActive: {
     color: '#FFFFFF',
+    fontWeight: '800',
   },
   warningBox: {
-    padding: 12,
-    borderRadius: 10,
+    padding: 14,
+    borderRadius: 12,
     backgroundColor: '#FEF2F2',
     borderWidth: 1,
     borderColor: '#FECACA',
     marginBottom: 14,
   },
   warningTitle: {
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '800',
     color: '#991B1B',
   },
   warningMsg: {
-    fontSize: 11,
+    fontSize: 11.5,
     color: '#B91C1C',
     marginTop: 2,
   },
@@ -6961,24 +9345,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   sectionHeading: {
-    fontSize: 16,
+    fontFamily: SERIF_FONT,
+    fontSize: 18,
     fontWeight: '800',
+    letterSpacing: -0.3,
   },
   sectionSubheading: {
-    fontSize: 11.5,
-    marginTop: 1,
+    fontSize: 12,
+    marginTop: 2,
   },
   addActivityBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#1E3A8A',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    gap: 5,
+    backgroundColor: '#000000',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 8,
+    elevation: 1,
   },
   addActivityBtnTxt: {
     color: '#FFFFFF',
@@ -6988,31 +9375,44 @@ const styles = StyleSheet.create({
   applyTemplateBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 5,
     backgroundColor: '#EEF2FF',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
   },
   applyTemplateBtnTxt: {
-    color: '#1E3A8A',
+    color: '#0F172A',
     fontSize: 12,
     fontWeight: '700',
   },
   emptyRunSheetCard: {
-    padding: 24,
-    borderRadius: 14,
-    borderWidth: 1,
+    paddingVertical: 36,
+    paddingHorizontal: 20,
+    borderRadius: 18,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
   },
   runSheetItemCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 10,
-    marginBottom: 8,
+    borderRadius: 14,
+    borderWidth: 1.2,
+    padding: 12,
+    marginBottom: 10,
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
   },
   reorderColumn: {
     alignItems: 'center',
@@ -7040,7 +9440,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     paddingHorizontal: 6,
     paddingVertical: 1,
     borderRadius: 4,
@@ -7048,15 +9448,17 @@ const styles = StyleSheet.create({
   timeBadgeTxt: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#1E3A8A',
+    color: '#0F172A',
   },
   itemProgramTitle: {
-    fontSize: 14,
-    fontWeight: '700',
+    fontFamily: SERIF_FONT,
+    fontSize: 15,
+    fontWeight: '800',
     marginTop: 2,
+    letterSpacing: -0.2,
   },
   itemResponsible: {
-    fontSize: 11,
+    fontSize: 11.5,
     marginTop: 1,
   },
   itemInstructions: {
@@ -7066,30 +9468,70 @@ const styles = StyleSheet.create({
   },
   itemActionCol: {
     flexDirection: 'row',
-    gap: 6,
+    gap: 8,
     alignItems: 'center',
+    flexShrink: 0,
+    marginLeft: 6,
   },
   itemEditBtn: {
-    padding: 6,
-    borderRadius: 6,
-    backgroundColor: '#F1F5F9',
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   itemDeleteBtn: {
-    padding: 6,
-    borderRadius: 6,
-    backgroundColor: '#FEF2F2',
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   // Phase 3: Setlist Styles
   setlistCard: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    borderRadius: 14,
+    borderWidth: 1.2,
+    padding: 13,
+    marginBottom: 10,
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  templatePreviewBox: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  templatePreviewTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  templatePreviewRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 12,
-    marginBottom: 10,
+    gap: 6,
+    paddingVertical: 3,
+  },
+  templatePreviewNum: {
+    fontSize: 12,
+    fontWeight: '600',
+    width: 20,
+  },
+  templatePreviewTxt: {
+    fontSize: 12.5,
+    flex: 1,
   },
   keyBadge: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
@@ -7097,7 +9539,7 @@ const styles = StyleSheet.create({
   keyBadgeTxt: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#1E3A8A',
+    color: '#0F172A',
   },
   bpmBadge: {
     backgroundColor: '#FEF3C7',
@@ -7125,9 +9567,11 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
   },
   setlistSongTitle: {
-    fontSize: 15,
+    fontFamily: SERIF_FONT,
+    fontSize: 15.5,
     fontWeight: '800',
     marginTop: 3,
+    letterSpacing: -0.2,
   },
   setlistSongTe: {
     fontSize: 12,
@@ -7148,9 +9592,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
   musicianChipTxt: {
     fontSize: 10,
@@ -7168,9 +9612,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   lyricsBtn: {
-    padding: 6,
-    borderRadius: 6,
-    backgroundColor: '#EFF6FF',
+    padding: 7,
+    borderRadius: 8,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
   },
   // Search Box in Song Picker
   searchBox: {
@@ -7180,7 +9626,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
     marginBottom: 12,
   },
   searchInput: {
@@ -7188,25 +9634,41 @@ const styles = StyleSheet.create({
     fontSize: 13,
     padding: 0,
   },
+  songCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+    backgroundColor: '#FFFFFF',
+  },
+  songCheckboxSelected: {
+    backgroundColor: '#2E6B4F',
+    borderColor: '#2E6B4F',
+  },
   songPickItem: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
+    borderRadius: 12,
+    borderWidth: 1.2,
     marginBottom: 8,
   },
   songPickIconBox: {
     width: 34,
     height: 34,
     borderRadius: 8,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
   songPickTitle: {
-    fontSize: 14,
-    fontWeight: '700',
+    fontFamily: SERIF_FONT,
+    fontSize: 14.5,
+    fontWeight: '800',
   },
   songPickTe: {
     fontSize: 11.5,
@@ -7226,8 +9688,8 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   keyPickerChipActive: {
-    backgroundColor: '#1E3A8A',
-    borderColor: '#1E3A8A',
+    backgroundColor: '#000000',
+    borderColor: '#000000',
   },
   keyPickerChipTxt: {
     fontSize: 12,
@@ -7259,10 +9721,15 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   templateCard: {
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    padding: 15,
     marginBottom: 12,
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
   },
   templateTypeTag: {
     fontSize: 10,
@@ -7279,9 +9746,11 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   templateTitle: {
-    fontSize: 15,
+    fontFamily: SERIF_FONT,
+    fontSize: 16,
     fontWeight: '800',
-    marginTop: 2,
+    marginTop: 3,
+    letterSpacing: -0.2,
   },
   templateDescription: {
     fontSize: 11.5,
@@ -7312,9 +9781,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: '#1E3A8A',
-    paddingVertical: 8,
-    borderRadius: 8,
+    backgroundColor: '#000000',
+    paddingVertical: 10,
+    borderRadius: 10,
     marginTop: 10,
   },
   applyTemplateCardBtnTxt: {
@@ -7338,51 +9807,80 @@ const styles = StyleSheet.create({
   },
   teamCard: {
     flexDirection: 'row',
-    borderRadius: 14,
-    borderWidth: 1,
+    borderRadius: 16,
+    borderWidth: 1.2,
     marginBottom: 12,
     overflow: 'hidden',
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
   },
   teamColorBar: {
-    width: 6,
+    width: 5,
+  },
+  teamCardContent: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    justifyContent: 'space-between',
+  },
+  teamHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
   },
   teamTitle: {
-    fontSize: 15,
+    fontFamily: SERIF_FONT,
+    fontSize: 16.5,
     fontWeight: '800',
+    letterSpacing: -0.2,
+    flexShrink: 1,
   },
   teamActiveBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 5,
   },
   teamActiveBadgeOn: {
-    backgroundColor: '#D1FAE5',
+    backgroundColor: '#DCFCE7',
+  },
+  teamActiveBadgeOnDark: {
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
   },
   teamActiveBadgeOff: {
     backgroundColor: '#F3F4F6',
   },
+  teamActiveBadgeOffDark: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  },
   teamActiveBadgeTxt: {
-    fontSize: 9,
+    fontSize: 9.5,
     fontWeight: '800',
+    letterSpacing: 0.4,
   },
   teamActiveBadgeTxtOn: {
-    color: '#059669',
+    color: '#15803D',
+  },
+  teamActiveBadgeTxtOnDark: {
+    color: '#34D399',
   },
   teamActiveBadgeTxtOff: {
-    color: '#64748B',
+    color: '#94A3B8',
   },
   teamDescription: {
-    fontSize: 11.5,
-    marginTop: 2,
+    fontSize: 12.5,
+    lineHeight: 18,
+    marginBottom: 10,
   },
   teamMetaRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 8,
-    paddingTop: 6,
+    paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
   },
   teamMetaTxt: {
     fontSize: 11.5,
@@ -7391,15 +9889,54 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
   },
   teamMembersCountTxt: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#1E3A8A',
+  },
+  teamReorderCol: {
+    width: 48,
+    borderLeftWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+  },
+  reorderArrowBtn: {
+    width: 32,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  reorderArrowBtnDisabled: {
+    opacity: 0.35,
+  },
+  orderRankPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  orderRankTxt: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  feedbackBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 10,
+  },
+  feedbackBannerTxt: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   skillStatsRow: {
     flexDirection: 'row',
@@ -7409,12 +9946,13 @@ const styles = StyleSheet.create({
   skillStatCard: {
     flex: 1,
     padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
+    borderRadius: 14,
+    borderWidth: 1.2,
     alignItems: 'center',
   },
   skillStatNum: {
-    fontSize: 18,
+    fontFamily: SERIF_FONT,
+    fontSize: 20,
     fontWeight: '900',
   },
   skillStatLbl: {
@@ -7426,8 +9964,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    borderRadius: 12,
-    borderWidth: 1,
+    borderRadius: 14,
+    borderWidth: 1.2,
     padding: 12,
     marginBottom: 8,
   },
@@ -7445,17 +9983,18 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
   skillAvatarTxt: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#1E3A8A',
+    color: '#0F172A',
   },
   skillMemberName: {
-    fontSize: 13.5,
+    fontFamily: SERIF_FONT,
+    fontSize: 14.5,
     fontWeight: '800',
   },
   miniSkillStatusBadge: {
@@ -7495,9 +10034,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     backgroundColor: '#059669',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
   },
   verifyBtnTxt: {
     fontSize: 11,
@@ -7505,9 +10044,11 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   rejectBtn: {
-    padding: 6,
-    borderRadius: 6,
+    padding: 7,
+    borderRadius: 8,
     backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -7517,8 +10058,8 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalBox: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     padding: 20,
     maxHeight: '90%',
   },
@@ -7534,7 +10075,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 10,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -7552,8 +10093,10 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   modalTitle: {
-    fontSize: 17,
+    fontFamily: SERIF_FONT,
+    fontSize: 18,
     fontWeight: '800',
+    letterSpacing: -0.3,
   },
   modalSubtitle: {
     fontSize: 11.5,
@@ -7561,23 +10104,31 @@ const styles = StyleSheet.create({
     maxWidth: 290,
   },
   fieldLabel: {
-    fontSize: 12,
+    fontSize: 10.5,
     fontWeight: '700',
-    marginBottom: 4,
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+    marginBottom: 6,
   },
   input: {
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 13,
-    marginBottom: 10,
+    paddingVertical: 10,
+    fontSize: 13.5,
+    marginBottom: 12,
+    minHeight: 46,
   },
   formSectionCard: {
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    padding: 16,
     marginBottom: 14,
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
   },
   nextStepsCard: {
     borderWidth: 1,
@@ -7603,9 +10154,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   formCardHeaderText: {
-    fontSize: 11,
+    fontFamily: SERIF_FONT,
+    fontSize: 14,
     fontWeight: '800',
-    letterSpacing: 0.6,
+    letterSpacing: 0.4,
   },
   modernInputContainer: {
     flexDirection: 'row',
@@ -7625,29 +10177,29 @@ const styles = StyleSheet.create({
   },
   textArea: {
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 13,
-    height: 70,
+    paddingVertical: 10,
+    fontSize: 13.5,
+    height: 75,
     textAlignVertical: 'top',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   pickerInputBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 9,
-    marginBottom: 10,
+    marginBottom: 12,
     minHeight: 48,
   },
   pickerIconContainer: {
     width: 32,
     height: 32,
-    borderRadius: 7,
-    backgroundColor: '#EFF6FF',
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
@@ -7672,7 +10224,7 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   typeSelectChipActive: {
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#000000',
   },
   typeSelectChipTxt: {
     fontSize: 11,
@@ -7682,6 +10234,75 @@ const styles = StyleSheet.create({
   typeSelectChipTxtActive: {
     color: '#FFFFFF',
   },
+  recurrenceOptionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 6,
+  },
+  recurrenceGridBtn: {
+    width: '48.5%',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+  },
+  recurrenceGridBtnTitle: {
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
+  recurrenceGridBtnSub: {
+    fontSize: 10.5,
+    marginTop: 2,
+  },
+  recurrencePreviewCard: {
+    marginTop: 10,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  recurrencePreviewTitle: {
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
+  recurrencePreviewBadge: {
+    fontSize: 10.5,
+    fontWeight: '700',
+  },
+  recurrenceDateChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  recurrenceDateChipNum: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recurrenceDateChipNumTxt: {
+    fontSize: 9.5,
+    fontWeight: '800',
+  },
+  recurrenceDateChipTxt: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  tplSelectedSummary: {
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  tplSelectedSummaryTxt: {
+    fontSize: 11.5,
+    lineHeight: 16,
+  },
   recurrenceOptionRow: {
     flexDirection: 'row',
     gap: 8,
@@ -7689,8 +10310,8 @@ const styles = StyleSheet.create({
   },
   recurrenceBtn: {
     flex: 1,
-    paddingVertical: 9,
-    borderRadius: 8,
+    paddingVertical: 10,
+    borderRadius: 10,
     borderWidth: 1.5,
     borderColor: '#E2E8F0',
     alignItems: 'center',
@@ -7698,8 +10319,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   recurrenceBtnActive: {
-    borderColor: '#1E3A8A',
-    backgroundColor: '#1E3A8A',
+    borderColor: '#000000',
+    backgroundColor: '#000000',
   },
   recurrenceBtnTxt: {
     fontSize: 11.5,
@@ -7717,7 +10338,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
   },
   countChipActive: {
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#000000',
   },
   countChipTxt: {
     fontSize: 11.5,
@@ -7733,16 +10354,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 5,
     paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
+    paddingVertical: 8,
+    borderRadius: 10,
     borderWidth: 1.5,
     borderColor: '#E2E8F0',
     marginRight: 8,
     backgroundColor: '#F8FAFC',
   },
   tplSelectChipActive: {
-    borderColor: '#1E3A8A',
-    backgroundColor: '#1E3A8A',
+    borderColor: '#000000',
+    backgroundColor: '#000000',
   },
   tplSelectChipTxt: {
     fontSize: 11.5,
@@ -7761,7 +10382,7 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   categorySelectChipActive: {
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#000000',
   },
   categorySelectChipTxt: {
     fontSize: 10.5,
@@ -7781,8 +10402,8 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   quickMemberChipActive: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#1E3A8A',
+    backgroundColor: '#10B981',
+    borderColor: '#10B981',
   },
   quickMemberChipTxt: {
     fontSize: 11.5,
@@ -7790,23 +10411,42 @@ const styles = StyleSheet.create({
     color: '#475569',
   },
   quickMemberChipTxtActive: {
-    color: '#1E3A8A',
+    color: '#FFFFFF',
+  },
+  memberSearchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 8,
+  },
+  memberSearchInput: {
+    flex: 1,
+    fontSize: 12.5,
+    padding: 0,
   },
   memberPickerContainer: {
     marginTop: 6,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    borderRadius: 10,
-    maxHeight: 200,
+    borderRadius: 12,
+    maxHeight: 260,
+    overflow: 'hidden',
   },
   memberRosterItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
     borderBottomWidth: 1,
+    borderRadius: 8,
+    marginBottom: 4,
   },
   memberRosterItemSelected: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#ECFDF5',
   },
   memberRosterName: {
     fontSize: 13,
@@ -7826,8 +10466,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   checkboxCircleActive: {
-    backgroundColor: '#1E3A8A',
-    borderColor: '#1E3A8A',
+    backgroundColor: '#10B981',
+    borderColor: '#10B981',
   },
   skillCategoryRow: {
     flexDirection: 'row',
@@ -7844,8 +10484,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   skillCategoryBtnActive: {
-    borderColor: '#1E3A8A',
-    backgroundColor: '#EFF6FF',
+    borderColor: '#000000',
+    backgroundColor: '#000000',
   },
   skillCategoryBtnTxt: {
     fontSize: 11,
@@ -7853,7 +10493,7 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   skillCategoryBtnTxtActive: {
-    color: '#1E3A8A',
+    color: '#FFFFFF',
   },
   presetSkillChip: {
     paddingHorizontal: 10,
@@ -7863,7 +10503,7 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   presetSkillChipActive: {
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#000000',
   },
   presetSkillChipTxt: {
     fontSize: 11,
@@ -7888,8 +10528,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   proficiencyChipActive: {
-    borderColor: '#1E3A8A',
-    backgroundColor: '#EFF6FF',
+    borderColor: '#000000',
+    backgroundColor: '#000000',
   },
   proficiencyChipTxt: {
     fontSize: 10,
@@ -7897,7 +10537,7 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   proficiencyChipTxtActive: {
-    color: '#1E3A8A',
+    color: '#FFFFFF',
   },
   modalFooter: {
     flexDirection: 'row',
@@ -7910,8 +10550,11 @@ const styles = StyleSheet.create({
   },
   modalCancelBtn: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingVertical: 11,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#F1F5F9',
   },
   modalCancelBtnTxt: {
     fontSize: 13,
@@ -7919,10 +10562,10 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   modalConfirmBtn: {
-    backgroundColor: '#1E3A8A',
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 8,
+    backgroundColor: '#000000',
+    paddingHorizontal: 20,
+    paddingVertical: 11,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -7952,18 +10595,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1,
+    paddingVertical: 16,
+    borderRadius: 16,
+    borderWidth: 1.5,
     marginBottom: 16,
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
   },
   queueSummaryCol: {
     alignItems: 'center',
     flex: 1,
   },
   queueSummaryNum: {
-    fontSize: 20,
-    fontWeight: '800',
+    fontFamily: SERIF_FONT,
+    fontSize: 22,
+    fontWeight: '900',
   },
   queueSummaryLbl: {
     fontSize: 11,
@@ -7976,10 +10625,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#E2E8F0',
   },
   queueRoleCard: {
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
     padding: 14,
-    marginBottom: 14,
+    marginBottom: 12,
   },
   queueRoleCardConfirmed: {
     borderLeftWidth: 4,
@@ -8000,21 +10649,24 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   queueCategoryPill: {
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 5,
+  },
+  queueCategoryPillTxt: {
     fontSize: 9.5,
     fontWeight: '800',
-    color: '#1E3A8A',
-    backgroundColor: '#E0E7FF',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    letterSpacing: 0.3,
   },
   queueActivityTag: {
     fontSize: 11,
     fontStyle: 'italic',
   },
   queueRoleTitle: {
+    fontFamily: SERIF_FONT,
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: -0.2,
   },
   queueStatusBadge: {
     flexDirection: 'row',
@@ -8076,33 +10728,27 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   candidateLadderBox: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 8,
+    borderRadius: 10,
     padding: 10,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   candidateLadderHeading: {
     fontSize: 10.5,
     fontWeight: '800',
     letterSpacing: 0.5,
-    marginBottom: 8,
   },
   ladderCandidateRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    paddingVertical: 7,
+    paddingHorizontal: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   ladderCandidateRowActive: {
-    backgroundColor: '#FEF3C7',
     borderRadius: 6,
-    paddingHorizontal: 4,
   },
   ladderCandidateRowAccepted: {
-    backgroundColor: '#ECFDF5',
     borderRadius: 6,
-    paddingHorizontal: 4,
   },
   rankCircle: {
     width: 22,
@@ -8168,12 +10814,13 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   dispatchQueueBtn: {
+    minHeight: 38,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 5,
-    backgroundColor: '#1E3A8A',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    backgroundColor: '#2E6B4F',
+    paddingHorizontal: 10,
     borderRadius: 8,
   },
   dispatchQueueBtnTxt: {
@@ -8182,43 +10829,40 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   overrideBtn: {
+    minHeight: 38,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 5,
-    backgroundColor: '#EFF6FF',
     paddingHorizontal: 10,
-    paddingVertical: 7,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#BFDBFE',
   },
   overrideBtnTxt: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#1E3A8A',
+    fontWeight: '700',
   },
   simulateBtn: {
+    minHeight: 36,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 5,
-    backgroundColor: '#FFFBEB',
     paddingHorizontal: 10,
-    paddingVertical: 7,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#FDE68A',
   },
   simulateBtnTxt: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#B45309',
+    fontWeight: '700',
   },
   deleteQueueBtn: {
-    padding: 7,
+    minHeight: 36,
+    paddingHorizontal: 10,
     borderRadius: 8,
-    backgroundColor: '#FEF2F2',
     borderWidth: 1,
-    borderColor: '#FECACA',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   timeoutChip: {
     paddingHorizontal: 10,
@@ -8229,8 +10873,8 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   timeoutChipActive: {
-    backgroundColor: '#1E3A8A',
-    borderColor: '#1E3A8A',
+    backgroundColor: '#000000',
+    borderColor: '#000000',
   },
   timeoutChipTxt: {
     fontSize: 12,
@@ -8255,7 +10899,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#000000',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -8306,7 +10950,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#000000',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
@@ -8326,8 +10970,8 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   memberSelectItemActive: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#1E3A8A',
+    backgroundColor: '#F1F5F9',
+    borderColor: '#000000',
   },
   memberSelectName: {
     fontSize: 13.5,
@@ -8339,7 +10983,7 @@ const styles = StyleSheet.create({
   },
   modalSheet: {
     width: '94%',
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 18,
     elevation: 5,
     shadowColor: '#000',
@@ -8353,10 +10997,15 @@ const styles = StyleSheet.create({
   },
   // Phase 6 Rehearsal Styles
   rehearsalCard: {
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    padding: 15,
     marginBottom: 14,
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
   },
   rehearsalCardTop: {
     flexDirection: 'row',
@@ -8364,8 +11013,10 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   rehearsalTitle: {
-    fontSize: 15,
-    fontWeight: '700',
+    fontFamily: SERIF_FONT,
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.2,
   },
   rehearsalMeta: {
     fontSize: 11.5,
@@ -8467,8 +11118,8 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   rehPresetChipActive: {
-    backgroundColor: '#1E3A8A',
-    borderColor: '#1E3A8A',
+    backgroundColor: '#000000',
+    borderColor: '#000000',
   },
   rehPresetChipTxt: {
     fontSize: 11.5,
@@ -8488,8 +11139,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   rehSongPickRowActive: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#1E3A8A',
+    backgroundColor: '#F1F5F9',
+    borderColor: '#000000',
   },
   rehSongPickTxt: {
     fontSize: 13,
@@ -8560,6 +11211,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
   },
+  printSheetBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  printSheetBtnTxt: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
 
   // Phase 9 Volunteer Attendance Roster
   turnoutCircle: {
@@ -8625,16 +11289,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
+    borderRadius: 14,
+    borderWidth: 1.2,
     marginBottom: 8,
   },
   volCardName: {
-    fontSize: 14,
-    fontWeight: '700',
+    fontFamily: SERIF_FONT,
+    fontSize: 14.5,
+    fontWeight: '800',
   },
   volTeamBadge: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
@@ -8642,7 +11307,7 @@ const styles = StyleSheet.create({
   volTeamBadgeTxt: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#1E3A8A',
+    color: '#0F172A',
   },
   volRoleTitle: {
     fontSize: 12,
@@ -8683,8 +11348,8 @@ const styles = StyleSheet.create({
     borderColor: '#DC2626',
   },
   attStatusPillExcused: {
-    backgroundColor: '#2563EB',
-    borderColor: '#2563EB',
+    backgroundColor: '#64748B',
+    borderColor: '#64748B',
   },
   attStatusPillTxtActive: {
     color: '#FFFFFF',
@@ -8699,12 +11364,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F8FAFC',
   },
   refreshAnalyticsBtnTxt: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#1E3A8A',
+    color: '#334155',
   },
   analyticsLoadingBox: {
     paddingVertical: 40,
@@ -8723,15 +11388,16 @@ const styles = StyleSheet.create({
   },
   kpiCard: {
     width: (width - 42) / 2,
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1.2,
   },
   kpiLabel: {
     fontSize: 12,
     fontWeight: '600',
   },
   kpiValue: {
+    fontFamily: SERIF_FONT,
     fontSize: 22,
     fontWeight: '900',
     marginVertical: 4,
@@ -8740,13 +11406,19 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   analyticsSectionCard: {
-    padding: 14,
-    borderRadius: 10,
-    borderWidth: 1,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1.5,
     marginBottom: 14,
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
   },
   analyticsCardTitle: {
-    fontSize: 14,
+    fontFamily: SERIF_FONT,
+    fontSize: 15,
     fontWeight: '800',
   },
   analyticsCardSub: {
@@ -8861,7 +11533,7 @@ const styles = StyleSheet.create({
   servesCountVal: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#1E3A8A',
+    color: '#0F172A',
   },
   servesCountLbl: {
     fontSize: 9,
@@ -8878,18 +11550,19 @@ const styles = StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 13,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
   songRankTxt: {
     fontSize: 11,
     fontWeight: '800',
-    color: '#1E3A8A',
+    color: '#0F172A',
   },
   topSongTitle: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontFamily: SERIF_FONT,
+    fontSize: 14,
+    fontWeight: '800',
   },
   topSongTeTitle: {
     fontSize: 12,
@@ -8904,7 +11577,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
@@ -8912,23 +11585,23 @@ const styles = StyleSheet.create({
   songCountTxt: {
     fontSize: 12,
     fontWeight: '800',
-    color: '#1E3A8A',
+    color: '#0F172A',
   },
 
   // ─── Unified All-in-One Form Styles ───
   activityItemCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 10,
-    borderRadius: 8,
-    borderWidth: 1,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1.2,
     marginBottom: 8,
   },
   activityOrderBadge: {
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#000000',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 8,
@@ -8939,8 +11612,9 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   activityTitle: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontFamily: SERIF_FONT,
+    fontSize: 14,
+    fontWeight: '800',
   },
   activityMeta: {
     fontSize: 11,
@@ -8964,14 +11638,14 @@ const styles = StyleSheet.create({
   outlineActionBtnTxt: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#1E3A8A',
+    color: '#0F172A',
   },
   songItemCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 10,
-    borderRadius: 8,
-    borderWidth: 1,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1.2,
     marginBottom: 8,
   },
   songOrderBadge: {
@@ -8984,17 +11658,17 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   songKeyBadge: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     paddingHorizontal: 6,
     paddingVertical: 1,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: '#93C5FD',
+    borderColor: '#CBD5E1',
   },
   songKeyBadgeTxt: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#1E3A8A',
+    color: '#0F172A',
   },
   cascadeAlertBox: {
     flexDirection: 'row',
@@ -9014,9 +11688,9 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   dutyItemCard: {
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
+    padding: 13,
+    borderRadius: 14,
+    borderWidth: 1.2,
     marginBottom: 10,
   },
   dutyHeaderRow: {
@@ -9026,7 +11700,8 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   dutyRoleTitle: {
-    fontSize: 13,
+    fontFamily: SERIF_FONT,
+    fontSize: 14.5,
     fontWeight: '800',
   },
   dutySkillTagTxt: {
@@ -9045,7 +11720,7 @@ const styles = StyleSheet.create({
   dutyCascadePillTxt: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#1E3A8A',
+    color: '#2E6B4F',
   },
   dutyAssigneeRow: {
     flexDirection: 'row',
@@ -9074,14 +11749,14 @@ const styles = StyleSheet.create({
   dutyChangeBtn: {
     paddingHorizontal: 8,
     paddingVertical: 4,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F8FAFC',
     borderRadius: 4,
     marginRight: 6,
   },
   dutyChangeBtnTxt: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#1E3A8A',
+    color: '#334155',
   },
   dutyClearBtn: {
     padding: 4,
@@ -9099,7 +11774,7 @@ const styles = StyleSheet.create({
   dutyAssignBtnTxt: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#1E3A8A',
+    color: '#2E6B4F',
   },
   reviewSummaryRow: {
     flexDirection: 'row',
@@ -9119,18 +11794,23 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   publishServiceBtn: {
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#2E6B4F',
     paddingVertical: 14,
-    borderRadius: 10,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 8,
     marginBottom: 8,
+    elevation: 3,
+    shadowColor: '#2E6B4F',
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
   },
   publishServiceBtnTxt: {
     color: '#FFFFFF',
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '800',
     letterSpacing: 0.3,
   },
@@ -9147,48 +11827,189 @@ const styles = StyleSheet.create({
   },
   modalFooterRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 10,
-    padding: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     borderTopWidth: 1,
   },
   modalDraftBtn: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
+    height: 48,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
+    borderWidth: 1.2,
   },
   modalDraftBtnTxt: {
-    fontSize: 12.5,
+    fontSize: 13.5,
     fontWeight: '700',
   },
   modalPublishBtn: {
-    flex: 1.6,
-    backgroundColor: '#1E3A8A',
-    paddingVertical: 12,
-    borderRadius: 8,
+    flex: 2.2,
+    height: 48,
+    borderRadius: 12,
+    paddingHorizontal: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    elevation: 3,
+    shadowColor: '#2E6B4F',
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
   },
   modalPublishBtnTxt: {
-    fontSize: 13,
+    fontSize: 13.5,
     fontWeight: '800',
     color: '#FFFFFF',
+    letterSpacing: -0.2,
+  },
+  // ── Success Popup Modal Styles ──
+  successModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  successModalCard: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    padding: 22,
+    alignItems: 'center',
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+  },
+  successModalCloseBtn: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  successIconBadge: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+    marginTop: 4,
+  },
+  successModalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  successModalSub: {
+    fontSize: 12.5,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 16,
+    paddingHorizontal: 8,
+  },
+  successDetailsBox: {
+    width: '100%',
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    gap: 8,
+    marginBottom: 12,
+  },
+  successServiceTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    marginBottom: 2,
+  },
+  successDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  successDetailTxt: {
+    fontSize: 12,
+    flex: 1,
+  },
+  successHintBox: {
+    width: '100%',
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginBottom: 18,
+  },
+  successHintTxt: {
+    fontSize: 11,
+    flex: 1,
+    lineHeight: 16,
+    fontWeight: '600',
+  },
+  successModalActions: {
+    width: '100%',
+    gap: 10,
+    marginTop: 4,
+  },
+  successPrimaryBtn: {
+    height: 52,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+    elevation: 4,
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  successPrimaryBtnTxt: {
+    fontSize: 14.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
+  },
+  successSecondaryBtn: {
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+  },
+  successSecondaryBtnTxt: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    letterSpacing: 0.1,
   },
   memberAssignCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 10,
-    borderRadius: 8,
-    borderWidth: 1,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1.2,
     marginBottom: 8,
   },
   memberAvatarCircle: {
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#000000',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -9198,8 +12019,9 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   memberAssignName: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontFamily: SERIF_FONT,
+    fontSize: 14,
+    fontWeight: '800',
   },
   memberAssignPhone: {
     fontSize: 11,
@@ -9222,7 +12044,7 @@ const styles = StyleSheet.create({
   cardQuickPublishBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#2E6B4F',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 6,
@@ -9235,15 +12057,15 @@ const styles = StyleSheet.create({
   cardManageBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F8FAFC',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#93C5FD',
+    borderColor: '#CBD5E1',
   },
   cardManageBtnTxt: {
-    color: '#1E3A8A',
+    color: '#334155',
     fontSize: 11,
     fontWeight: '700',
   },

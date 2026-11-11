@@ -93,8 +93,8 @@ export default function AboutUsScreen() {
   }, []);
 
   return (
-    <View style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FAF7F2" />
+    <View style={[styles.safe, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={colors.barStyle || (isDark ? 'light-content' : 'dark-content')} backgroundColor={colors.background} />
       {/* Hero Header Card */}
             {/* ── Screen Header (Clean circular back button & title) ── */}
       <View
@@ -120,19 +120,19 @@ export default function AboutUsScreen() {
       </View>
 
       {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#1a2d5a" />
+        <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+          <ActivityIndicator size="large" color={colors.accent || '#1a2d5a'} />
         </View>
       ) : (
         <ScrollView
-          style={styles.scroll}
+          style={[styles.scroll, { backgroundColor: colors.background }]}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
           {/* Logo and Church Name */}
           <View style={styles.heroSection}>
             {!!activeChurch?.theme?.logoUrl ? (
-              <View style={styles.logoCircle}>
+              <View style={[styles.logoCircle, { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 }]}>
                 <Image
                   source={{ uri: activeChurch.theme.logoUrl }}
                   style={styles.logo}
@@ -140,19 +140,19 @@ export default function AboutUsScreen() {
                 />
               </View>
             ) : (
-              <View style={[styles.logoCircle, { backgroundColor: '#f0f2f7' }]} />
+              <View style={[styles.logoCircle, { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 }]} />
             )}
-            <Text style={styles.churchName}>{data.churchName}</Text>
-            <Text style={styles.churchSubtitle}>{data.churchSubtitle}</Text>
+            <Text style={[styles.churchName, { color: colors.text }]}>{data.churchName}</Text>
+            <Text style={[styles.churchSubtitle, { color: colors.accent }]}>{data.churchSubtitle}</Text>
           </View>
 
           {/* Our Calling Card */}
-          <View style={styles.callingCard}>
+          <View style={[styles.callingCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={styles.callingHeader}>
-              <Heart size={20} color="#1a2d5a" strokeWidth={2} />
-              <Text style={styles.callingTitle}>{t('aboutUs.ourCalling')}</Text>
+              <Heart size={20} color={colors.accent || '#1a2d5a'} strokeWidth={2} />
+              <Text style={[styles.callingTitle, { color: colors.text }]}>{t('aboutUs.ourCalling')}</Text>
             </View>
-            <Text style={styles.callingText}>{data.description}</Text>
+            <Text style={[styles.callingText, { color: colors.textSecondary }]}>{data.description}</Text>
           </View>
 
           {/* Church Image */}
@@ -163,17 +163,17 @@ export default function AboutUsScreen() {
 
           {/* Our Vision */}
           <View style={styles.visionSection}>
-            <Text style={styles.sectionTitle}>{t('aboutUs.ourVision')}</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>{t('aboutUs.ourVision')}</Text>
             <View style={styles.blockquoteContainer}>
               <View style={styles.blockquoteLine} />
-              <Text style={styles.blockquoteText}>{data.vision}</Text>
+              <Text style={[styles.blockquoteText, { color: colors.text }]}>{data.vision}</Text>
             </View>
-            <Text style={styles.visionText}>{data.mission}</Text>
+            <Text style={[styles.visionText, { color: colors.textSecondary }]}>{data.mission}</Text>
           </View>
 
           {/* Our Core Values */}
           <View style={styles.valuesSection}>
-            <Text style={[styles.sectionTitle, { textAlign: 'center' }]}>{t('aboutUs.ourCoreValues')}</Text>
+            <Text style={[styles.sectionTitle, { textAlign: 'center', color: colors.text }]}>{t('aboutUs.ourCoreValues')}</Text>
             <View style={styles.valuesGrid}>
               <View style={[styles.valuePill, { backgroundColor: '#dbeafe' }]}>
                 <Heart size={16} color="#1e3a8a" />
@@ -196,54 +196,54 @@ export default function AboutUsScreen() {
 
           {/* Connected in Spirit */}
           <View style={styles.connectedSection}>
-            <Text style={styles.sectionTitle}>{t('aboutUs.connectedInSpirit')}</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>{t('aboutUs.connectedInSpirit')}</Text>
             
-            <View style={styles.featureCard}>
+            <View style={[styles.featureCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <View style={[styles.featureIconBox, { backgroundColor: '#e2e8f0' }]}>
                 <BookOpen size={20} color="#1e293b" />
               </View>
-              <Text style={styles.featureTitle}>{t('aboutUs.features.sermonsTitle')}</Text>
-              <Text style={styles.featureDesc}>{t('aboutUs.features.sermonsDesc')}</Text>
+              <Text style={[styles.featureTitle, { color: colors.text }]}>{t('aboutUs.features.sermonsTitle')}</Text>
+              <Text style={[styles.featureDesc, { color: colors.textSecondary }]}>{t('aboutUs.features.sermonsDesc')}</Text>
             </View>
             
-            <View style={styles.featureCard}>
+            <View style={[styles.featureCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <View style={[styles.featureIconBox, { backgroundColor: '#fef3c7' }]}>
                 <Video size={20} color="#92400e" />
               </View>
-              <Text style={styles.featureTitle}>{t('aboutUs.features.liveServicesTitle')}</Text>
-              <Text style={styles.featureDesc}>{t('aboutUs.features.liveServicesDesc')}</Text>
+              <Text style={[styles.featureTitle, { color: colors.text }]}>{t('aboutUs.features.liveServicesTitle')}</Text>
+              <Text style={[styles.featureDesc, { color: colors.textSecondary }]}>{t('aboutUs.features.liveServicesDesc')}</Text>
             </View>
             
-            <View style={styles.featureCard}>
+            <View style={[styles.featureCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <View style={[styles.featureIconBox, { backgroundColor: '#fef3c7' }]}>
                 <Hand size={20} color="#92400e" />
               </View>
-              <Text style={styles.featureTitle}>{t('aboutUs.features.prayerRequestsTitle')}</Text>
-              <Text style={styles.featureDesc}>{t('aboutUs.features.prayerRequestsDesc')}</Text>
+              <Text style={[styles.featureTitle, { color: colors.text }]}>{t('aboutUs.features.prayerRequestsTitle')}</Text>
+              <Text style={[styles.featureDesc, { color: colors.textSecondary }]}>{t('aboutUs.features.prayerRequestsDesc')}</Text>
             </View>
             
-            <View style={styles.featureCard}>
+            <View style={[styles.featureCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <View style={[styles.featureIconBox, { backgroundColor: '#e2e8f0' }]}>
                 <Gift size={20} color="#1e293b" />
               </View>
-              <Text style={styles.featureTitle}>{t('aboutUs.features.givingTitle')}</Text>
-              <Text style={styles.featureDesc}>{t('aboutUs.features.givingDesc')}</Text>
+              <Text style={[styles.featureTitle, { color: colors.text }]}>{t('aboutUs.features.givingTitle')}</Text>
+              <Text style={[styles.featureDesc, { color: colors.textSecondary }]}>{t('aboutUs.features.givingDesc')}</Text>
             </View>
             
-            <View style={styles.featureCard}>
+            <View style={[styles.featureCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <View style={[styles.featureIconBox, { backgroundColor: '#e5e7eb' }]}>
                 <Sparkles size={20} color="#1f2937" />
               </View>
-              <Text style={styles.featureTitle}>{t('aboutUs.features.dailyPromisesTitle')}</Text>
-              <Text style={styles.featureDesc}>{t('aboutUs.features.dailyPromisesDesc')}</Text>
+              <Text style={[styles.featureTitle, { color: colors.text }]}>{t('aboutUs.features.dailyPromisesTitle')}</Text>
+              <Text style={[styles.featureDesc, { color: colors.textSecondary }]}>{t('aboutUs.features.dailyPromisesDesc')}</Text>
             </View>
             
-            <View style={styles.featureCard}>
+            <View style={[styles.featureCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <View style={[styles.featureIconBox, { backgroundColor: '#e2e8f0' }]}>
                 <Calendar size={20} color="#1e293b" />
               </View>
-              <Text style={styles.featureTitle}>{t('aboutUs.features.eventsTitle')}</Text>
-              <Text style={styles.featureDesc}>{t('aboutUs.features.eventsDesc')}</Text>
+              <Text style={[styles.featureTitle, { color: colors.text }]}>{t('aboutUs.features.eventsTitle')}</Text>
+              <Text style={[styles.featureDesc, { color: colors.textSecondary }]}>{t('aboutUs.features.eventsDesc')}</Text>
             </View>
           </View>
 

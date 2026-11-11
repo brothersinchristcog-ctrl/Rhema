@@ -117,9 +117,12 @@ const PrayerForm = ({
           })}
         </ScrollView>
 
-        <Text style={styles.inputLabel}>{t('prayer.detailedRequest')}</Text>
+        <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>{t('prayer.detailedRequest')}</Text>
         <TextInput
-          style={styles.composeInput}
+          style={[
+            styles.composeInput,
+            { backgroundColor: colors.background, borderColor: colors.border, color: colors.text },
+          ]}
           placeholder={t('prayer.requestPlaceholder')}
           placeholderTextColor="#94a3b8"
           multiline
@@ -467,19 +470,19 @@ export default function PrayerWallScreen({ navigation, route }: any) {
               activeOpacity={0.7}
             >
               {isExpanded
-                ? <ChevronUp size={18} color="#1a2d5a" />
-                : <ChevronDown size={18} color="#1a2d5a" />}
+                ? <ChevronUp size={18} color={colors.text} />
+                : <ChevronDown size={18} color={colors.text} />}
             </TouchableOpacity>
           </View>
 
           {/* Dropdown: Members Praying List */}
           {isExpanded && prayedNames.length > 0 && (
             <View style={[styles.prayingNamesBox, { marginTop: 12 }]}>
-              <Text style={styles.prayingNamesHeader}>{t('prayer.membersPraying')}</Text>
+              <Text style={[styles.prayingNamesHeader, { color: colors.textSecondary }]}>{t('prayer.membersPraying')}</Text>
               {prayedNames.map((name, idx) => (
                 <View key={idx} style={styles.prayingNameRow}>
-                  <View style={styles.prayingNameDot} />
-                  <Text style={styles.prayingNameText}>{name}</Text>
+                  <View style={[styles.prayingNameDot, { backgroundColor: colors.accent }]} />
+                  <Text style={[styles.prayingNameText, { color: colors.text }]}>{name}</Text>
                 </View>
               ))}
             </View>
@@ -495,22 +498,28 @@ export default function PrayerWallScreen({ navigation, route }: any) {
 
     // ── MY REQUESTS TAB ────────────────────────────────────
     return (
-      <View style={[styles.prayerCard, item.isAnswered && { borderLeftWidth: 4, borderLeftColor: '#16a34a' }]}>
+      <View
+        style={[
+          styles.prayerCard,
+          { backgroundColor: colors.surface, borderColor: colors.border },
+          item.isAnswered && { borderLeftWidth: 4, borderLeftColor: '#16a34a' },
+        ]}
+      >
         {/* Header */}
         <View style={styles.cardHeader}>
           <View style={[styles.avatar, { backgroundColor: item.isAnswered ? '#16a34a' : '#7c3aed' }]}>
             <Text style={styles.avatarText}>{initial}</Text>
           </View>
           <View style={styles.headerInfo}>
-            <Text style={styles.name}>{item.name}</Text>
-            <Text style={styles.metaText}>
+            <Text style={[styles.name, { color: colors.text }]}>{item.name}</Text>
+            <Text style={[styles.metaText, { color: colors.textSecondary }]}>
               {getTimeAgo(item.createdAt)} · {getPrayerCategoryLabel(item.category, t) || 'General'}
             </Text>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             {item.isAnswered && (
-              <View style={{ backgroundColor: '#dcfce7', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 }}>
-                <Text style={{ fontSize: 11, fontWeight: '800', color: '#16a34a' }}>✨ {t('prayer.answered')}</Text>
+              <View style={{ backgroundColor: isDark ? 'rgba(22, 163, 74, 0.2)' : '#dcfce7', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 }}>
+                <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#4ade80' : '#16a34a' }}>✨ {t('prayer.answered')}</Text>
               </View>
             )}
             {isOwner && (
@@ -522,33 +531,33 @@ export default function PrayerWallScreen({ navigation, route }: any) {
         </View>
 
         {/* Prayer Text */}
-        <Text style={styles.prayerText}>{item.text}</Text>
+        <Text style={[styles.prayerText, { color: colors.text }]}>{item.text}</Text>
 
         {/* Attached Bible Verse from Pastor */}
         {(item.bibleVerse || item.verseReference) ? (
           <View style={{
-            backgroundColor: '#fffbeb',
+            backgroundColor: isDark ? 'rgba(217, 119, 6, 0.14)' : '#fffbeb',
             borderRadius: 12,
             padding: 12,
             marginTop: 10,
             borderLeftWidth: 3,
-            borderLeftColor: '#d97706',
+            borderLeftColor: isDark ? '#F59E0B' : '#d97706',
             borderWidth: 1,
-            borderColor: '#fef3c7'
+            borderColor: isDark ? 'rgba(245, 158, 11, 0.28)' : '#fef3c7'
           }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-              <BookOpen size={14} color="#b45309" />
-              <Text style={{ fontSize: 13, fontWeight: '800', color: '#b45309' }}>
+              <BookOpen size={14} color={isDark ? '#FBBF24' : '#b45309'} />
+              <Text style={{ fontSize: 13, fontWeight: '800', color: isDark ? '#FBBF24' : '#b45309' }}>
                 {item.bibleVerse || item.verseReference}
               </Text>
             </View>
             {item.verseText ? (
-              <Text style={{ fontSize: 13, fontStyle: 'italic', color: '#78350f', lineHeight: 18 }}>
+              <Text style={{ fontSize: 13, fontStyle: 'italic', color: isDark ? '#FDE68A' : '#78350f', lineHeight: 18 }}>
                 "{item.verseText}"
               </Text>
             ) : null}
             {item.verseTextTe && item.verseTextTe.trim() !== (item.verseText || '').trim() ? (
-              <Text style={{ fontSize: 12, fontStyle: 'italic', color: '#92400e', marginTop: 4, lineHeight: 17 }}>
+              <Text style={{ fontSize: 12, fontStyle: 'italic', color: isDark ? '#FCD34D' : '#92400e', marginTop: 4, lineHeight: 17 }}>
                 "{item.verseTextTe}"
               </Text>
             ) : null}
@@ -560,22 +569,22 @@ export default function PrayerWallScreen({ navigation, route }: any) {
           <View style={{ marginTop: 12 }}>
             {item.replies.map((reply: any, idx: number) => (
               <View key={reply.id || idx} style={{
-                backgroundColor: '#f0fdf4',
+                backgroundColor: isDark ? 'rgba(22, 163, 74, 0.14)' : '#f0fdf4',
                 borderRadius: 12,
                 padding: 14,
                 marginBottom: 8,
                 borderLeftWidth: 3,
-                borderLeftColor: '#16a34a'
+                borderLeftColor: isDark ? '#22C55E' : '#16a34a'
               }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '800', color: '#15803d' }}>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: isDark ? '#4ADE80' : '#15803d' }}>
                     🙏 {reply.author}
                   </Text>
-                  <Text style={{ fontSize: 11, color: '#86efac' }}>
+                  <Text style={{ fontSize: 11, color: isDark ? '#86EFAC' : '#64748B' }}>
                     {new Date(reply.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                   </Text>
                 </View>
-                <Text style={{ fontSize: 14, color: '#166534', lineHeight: 22 }}>{reply.body}</Text>
+                <Text style={{ fontSize: 14, color: isDark ? '#DCFCE7' : '#166534', lineHeight: 22 }}>{reply.body}</Text>
               </View>
             ))}
           </View>
@@ -585,7 +594,10 @@ export default function PrayerWallScreen({ navigation, route }: any) {
         {isOwner && (
           <View style={[styles.addReplyContainer, { marginTop: 10 }]}>
             <TextInput
-              style={styles.replyInput}
+              style={[
+                styles.replyInput,
+                { backgroundColor: colors.background, borderColor: colors.border, color: colors.text },
+              ]}
               placeholder={item.isAnswered ? 'Write a thank you or comment...' : 'Awaiting Admin response...'}
               placeholderTextColor="#94a3b8"
               value={replyInputs[item.id] || ''}
@@ -594,7 +606,7 @@ export default function PrayerWallScreen({ navigation, route }: any) {
               editable={!!item.isAnswered}
             />
             <TouchableOpacity
-              style={[styles.replySubmitBtn, (!replyInputs[item.id]?.trim() || !item.isAnswered) && styles.replySubmitBtnDisabled]}
+              style={[styles.replySubmitBtn, { backgroundColor: colors.accent }, (!replyInputs[item.id]?.trim() || !item.isAnswered) && styles.replySubmitBtnDisabled]}
               onPress={() => handleReplySubmit(item.id)}
               disabled={!replyInputs[item.id]?.trim() || !item.isAnswered || submittingReplyId === item.id}
             >
@@ -611,9 +623,9 @@ export default function PrayerWallScreen({ navigation, route }: any) {
 
   if (loading && !refreshing) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: '#FAF7F2' }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>{t('prayer.connecting')}</Text>
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.accent || colors.primary} />
+        <Text style={[styles.loadingText, { color: colors.text }]}>{t('prayer.connecting')}</Text>
       </View>
     );
   }
@@ -747,8 +759,8 @@ export default function PrayerWallScreen({ navigation, route }: any) {
         }
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <MessageCircle size={50} color="#cbd5e1" />
-            <Text style={styles.emptyTitle}>{t('prayer.noPrayers')}</Text>
+            <MessageCircle size={50} color={colors.textSecondary} />
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>{t('prayer.noPrayers')}</Text>
           </View>
         }
       />
@@ -756,11 +768,11 @@ export default function PrayerWallScreen({ navigation, route }: any) {
       {/* Success Modal */}
       <Modal visible={showSuccess} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.successCard}>
+          <View style={[styles.successCard, { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 }]}>
             <View style={styles.successIconBox}><CheckCircle size={40} color="#fff" /></View>
-            <Text style={styles.successTitle}>{t('prayer.requestSubmitted')}</Text>
-            <Text style={styles.successSub}>{t('prayer.requestSubmittedSub')}</Text>
-            <TouchableOpacity style={styles.doneBtn} onPress={() => setShowSuccess(false)}>
+            <Text style={[styles.successTitle, { color: colors.text }]}>{t('prayer.requestSubmitted')}</Text>
+            <Text style={[styles.successSub, { color: colors.textSecondary }]}>{t('prayer.requestSubmittedSub')}</Text>
+            <TouchableOpacity style={[styles.doneBtn, { backgroundColor: colors.accent }]} onPress={() => setShowSuccess(false)}>
               <Text style={styles.doneBtnTxt}>{t('prayer.amen')}</Text>
             </TouchableOpacity>
           </View>

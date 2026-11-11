@@ -18,6 +18,10 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.rhemaglobalministries.app",
       "buildNumber": "1",
+      "associatedDomains": [
+        "applinks:rhema-global-ministries.web.app",
+        "applinks:rhemaglobalministries.org"
+      ],
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
@@ -68,6 +72,35 @@
         "android.permission.WRITE_CONTACTS",
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "rhema-global-ministries.web.app",
+              "pathPrefix": "/invite"
+            },
+            {
+              "scheme": "https",
+              "host": "rhemaglobalministries.org",
+              "pathPrefix": "/invite"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        },
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "rhema",
+              "host": "invite"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
       ]
     },
     "web": {

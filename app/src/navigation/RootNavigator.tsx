@@ -3,7 +3,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
 import { Home, Heart, BookOpen, HandCoins, User, ShieldCheck, Users as UsersSwitch } from 'lucide-react-native';
-import { ActivityIndicator, View, Text, StyleSheet, Alert, Platform, TouchableOpacity, AppState, Image, Animated, PanResponder, Dimensions } from 'react-native';
+import { ActivityIndicator, View, Text, StyleSheet, Alert, Platform, TouchableOpacity, AppState, Image, Animated, PanResponder, Dimensions, Linking } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import firestore from '@react-native-firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -26,6 +26,8 @@ import VerseOfTheDayScreen from '../screens/VerseOfTheDayScreen';
 import VerseNotificationService from '../services/VerseNotificationService';
 import DailyQuizNotificationService from '../services/DailyQuizNotificationService';
 import FirestoreService from '../services/FirestoreService';
+import InviteLinkService from '../services/InviteLinkService';
+import { phonesMatch } from '../utils/phoneUtils';
 
 // Auth & Onboarding
 import AuthNavigator from './AuthNavigator';
@@ -48,6 +50,7 @@ import PrayerWallScreen from '../screens/PrayerWallScreen';
 import GivingScreen from '../screens/GivingScreen';
 import GivingHistoryScreen from '../screens/GivingHistoryScreen';
 import BaptismRequestScreen from '../screens/BaptismRequestScreen';
+import VolunteerScreen from '../screens/VolunteerScreen';
 import SermonsScreen from '../screens/SermonsScreen';
 import SongsScreen from '../screens/SongsScreen';
 import EventDetailsScreen from '../screens/EventDetailsScreen';
@@ -78,6 +81,8 @@ import YouTubeLiveScreen from '../screens/YouTubeLiveScreen';
 import LiveStageHUD from '../screens/LiveStageHUD';
 import MyServiceScreen from '../screens/MyServiceScreen';
 import MemberGalleryNavigator from '../screens/gallery/MemberGalleryNavigator';
+import TestimoniesScreen from '../screens/TestimoniesScreen';
+import TestimonyDetailScreen from '../screens/TestimonyDetailScreen';
 
 // Bible Quiz Screens
 import BibleQuizHomeScreen from '../screens/quiz/BibleQuizHomeScreen';
@@ -660,12 +665,13 @@ function Navigation() {
     isRejected,
     registrationRequest,
   } = useAuth();
-  const { activeChurch } = useChurch();
+  const { activeChurch, setChurchId } = useChurch();
   const navigation = useNavigation();
   const [onboardingComplete, setOnboardingComplete] = React.useState<boolean | null>(null);
   const [showSplash, setShowSplash] = useState(true);
   const [isLocked, setIsLocked] = useState(false);
   const appState = React.useRef(AppState.currentState);
+  const handlingInviteRef = React.useRef(false);
 
   const isAdmin = String(member?.userType || '').toUpperCase().includes('ADMIN') || String(member?.userType || '').toUpperCase().includes('SUPER');
   const showAdminView = isAdmin && viewMode === 'admin';
@@ -804,6 +810,34 @@ function Navigation() {
             });
           } else if (type === 'baptism_request_member') {
             navigationRef.navigate('BaptismRequest', { requestId: data.requestId || data.id });
+          } else if (type === 'admin_roster_alert') {
+            if (isAdmin && viewMode !== 'admin') {
+              setViewMode('admin');
+            }
+            navigationRef.navigate('AdminRoot', {
+              targetTab: 'Service Roster',
+              serviceId: data.serviceId,
+              roleId: data.roleId,
+              timestamp: Date.now(),
+            });
+          } else if (type === 'volunteer_application_admin') {
+            const appId = data.applicationId || data.requestId || data.id;
+            console.log('🤝 [RootNavigator] Direct routing to Admin Volunteer Management:', { appId });
+            if (isAdmin && viewMode !== 'admin') {
+              setViewMode('admin');
+            }
+            navigationRef.navigate('AdminRoot', {
+              targetTab: 'Volunteer Management',
+              applicationId: appId,
+              subType: data.volunteerType || data.subType || 'general',
+              timestamp: Date.now(),
+            });
+          } else if (type === 'volunteer_application_member' || type === 'volunteer_assignment' || type === 'volunteer_reminder' || type === 'volunteer_event_change') {
+            if (data.eventId) {
+              navigationRef.navigate('EventDetails', { eventId: data.eventId, id: data.eventId });
+            } else {
+              navigationRef.navigate('Volunteer');
+            }
           } else if (type === 'prayer_request_member') {
             navigationRef.navigate('PrayerWall', { prayerId: data.prayerId || data.requestId || data.id });
           } else if (type === 'prayer_request_admin' || type === 'prayer_request' || type === 'prayer') {
@@ -820,6 +854,32 @@ function Navigation() {
             });
           } else if (type === 'prayer_request_public') {
             navigationRef.navigate('PrayerWall', { tab: 'public_requests' });
+          } else if (type === 'testimony_admin') {
+            const testimonyId = data.testimonyId || data.id;
+            if (isAdmin && viewMode !== 'admin') {
+              setViewMode('admin');
+            }
+            navigationRef.navigate('AdminRoot', {
+              targetTab: 'Testimonies',
+              testimonyId,
+              timestamp: Date.now(),
+            });
+          } else if (type === 'testimony_member_status') {
+            const testimonyId = data.testimonyId || data.id;
+            if (testimonyId) {
+              navigationRef.navigate('TestimonyDetail', {
+                testimonyId,
+                churchId: data.churchId || 'rhema',
+              });
+            } else {
+              navigationRef.navigate('Testimonies', { initialTab: 'mine' });
+            }
+          } else if (type === 'testimony_published') {
+            const testimonyId = data.testimonyId || data.id;
+            navigationRef.navigate('TestimonyDetail', {
+              testimonyId,
+              churchId: data.churchId || 'rhema',
+            });
           } else if (type === 'youtube_live') {
             const liveUrl = data.url || '';
             const videoId = data.videoId || '';
@@ -868,7 +928,10 @@ function Navigation() {
           type === 'baptism' || 
           type === 'prayer_request_admin' ||
           type === 'prayer_request' ||
-          type === 'prayer';
+          type === 'prayer' ||
+          type === 'testimony_admin' ||
+          type === 'volunteer_application_admin' ||
+          type === 'admin_roster_alert';
 
         if (isAdminNotification && isAdmin && viewMode !== 'admin') {
           setViewMode('admin');
@@ -892,7 +955,10 @@ function Navigation() {
             type === 'baptism' || 
             type === 'prayer_request_admin' ||
             type === 'prayer_request' ||
-            type === 'prayer';
+            type === 'prayer' ||
+            type === 'testimony_admin' ||
+            type === 'volunteer_application_admin' ||
+            type === 'admin_roster_alert';
 
           if (isAdminNotification && isAdmin && viewMode !== 'admin') {
             setViewMode('admin');
@@ -914,6 +980,141 @@ function Navigation() {
     };
   }, [navigation]);
 
+  // Handle Guest Invitation Deep Links (HTTPS App Links & rhema://invite)
+  useEffect(() => {
+    const processInviteUrl = async (incomingUrl: string | null) => {
+      if (!incomingUrl || handlingInviteRef.current) return;
+      const parsed = InviteLinkService.parseInviteUrl(incomingUrl);
+      if (!parsed) return;
+
+      handlingInviteRef.current = true;
+      try {
+        const targetChurchId = parsed.churchId || activeChurch?.id || 'rhema';
+        const inviteDetails = parsed.inviteId
+          ? await FirestoreService.getGuestInviteDetails(targetChurchId, parsed.inviteId)
+          : null;
+
+        const resolvedChurchId = inviteDetails?.churchId || targetChurchId;
+        const resolvedPhone = inviteDetails?.phone || parsed.phone || '';
+        const resolvedPhone10 = parsed.phone10;
+        const resolvedName = inviteDetails?.guestName || parsed.guestName || '';
+        const resolvedChurchName = inviteDetails?.churchName || activeChurch?.name || 'Church';
+        const resolvedRelation = inviteDetails?.relation || parsed.relation || '';
+        const resolvedInvitedBy = inviteDetails?.invitedByMemberName || '';
+
+        if (resolvedChurchId && resolvedChurchId !== activeChurch?.id) {
+          await setChurchId(resolvedChurchId);
+        }
+
+        const pendingPayload = {
+          churchId: resolvedChurchId,
+          churchName: resolvedChurchName,
+          inviteId: parsed.inviteId || resolvedPhone10,
+          phone: resolvedPhone,
+          phone10: resolvedPhone10,
+          guestName: resolvedName,
+          relation: resolvedRelation,
+          invitedByMemberName: resolvedInvitedBy,
+          eventId: inviteDetails?.eventId || parsed.eventId,
+          receivedAt: Date.now(),
+          rawUrl: incomingUrl,
+        };
+
+        // Already authenticated with a real phone account
+        if (user && !user.isAnonymous) {
+          const currentPhone = user.phoneNumber || member?.phone || '';
+          if (resolvedPhone && phonesMatch(currentPhone, resolvedPhone)) {
+            await InviteLinkService.clearPendingInvite();
+            await FirestoreService.markGuestInviteJoined(
+              resolvedChurchId,
+              resolvedPhone10 || resolvedPhone,
+              user.uid
+            );
+            Alert.alert(
+              `Welcome${resolvedName ? `, ${resolvedName}` : ''}!`,
+              `You are signed in to ${resolvedChurchName} with your invited mobile number.`
+            );
+            return;
+          }
+
+          await InviteLinkService.savePendingInvite(pendingPayload);
+          Alert.alert(
+            'Invitation Link Opened',
+            `This guest invitation is for ${resolvedName || resolvedPhone || 'another number'}. Would you like to switch to the invited mobile number?`,
+            [
+              {
+                text: 'Keep Current Account',
+                style: 'cancel',
+                onPress: () => {
+                  InviteLinkService.clearPendingInvite().catch(() => {});
+                },
+              },
+              {
+                text: 'Switch Account',
+                onPress: async () => {
+                  await signOut();
+                },
+              },
+            ]
+          );
+          return;
+        }
+
+        // Unauthenticated or Anonymous Guest-Mode user -> route cleanly to pre-filled OTP Login
+        await InviteLinkService.savePendingInvite(pendingPayload);
+
+        if (user && user.isAnonymous) {
+          await signOut();
+          return;
+        }
+
+        const { navigationRef } = require('../../App');
+        let retries = 0;
+        const navigateToInvitedLogin = () => {
+          if (navigationRef && navigationRef.isReady()) {
+            navigationRef.navigate('Auth', {
+              screen: 'Login',
+              params: {
+                showPhoneInput: true,
+                invitedPhone: resolvedPhone10 || resolvedPhone,
+                invitedName: resolvedName,
+                invitedChurchId: resolvedChurchId,
+                invitedChurchName: resolvedChurchName,
+                inviteId: parsed.inviteId,
+                invitedRelation: resolvedRelation,
+                invitedByMemberName: resolvedInvitedBy,
+              },
+            });
+          } else if (retries < 25) {
+            retries++;
+            setTimeout(navigateToInvitedLogin, 200);
+          }
+        };
+        navigateToInvitedLogin();
+      } catch (err) {
+        console.warn('[RootNavigator] Failed processing invite deep link:', err);
+      } finally {
+        handlingInviteRef.current = false;
+      }
+    };
+
+    Linking.getInitialURL()
+      .then((initialUrl) => {
+        if (initialUrl) {
+          processInviteUrl(initialUrl);
+        }
+      })
+      .catch(() => {});
+
+    const urlSub = Linking.addEventListener('url', ({ url }) => {
+      processInviteUrl(url);
+    });
+
+    return () => {
+      urlSub.remove();
+    };
+  }, [user?.uid, user?.isAnonymous, member?.phone, activeChurch?.id]);
+
   useEffect(() => {
     if (user && !loading && pendingNotification) {
       let retryCount = 0;
@@ -927,7 +1128,12 @@ function Navigation() {
             type === 'baptism_request_admin' || 
             type === 'baptism_request' || 
             type === 'baptism' || 
-            type === 'prayer_request_admin';
+            type === 'prayer_request_admin' ||
+            type === 'prayer_request' ||
+            type === 'prayer' ||
+            type === 'testimony_admin' ||
+            type === 'volunteer_application_admin' ||
+            type === 'admin_roster_alert';
 
           if (isAdminNotification && isAdmin && viewMode !== 'admin') {
             console.log(`Switching to admin view to handle ${type} notification`);
@@ -1103,6 +1309,8 @@ function Navigation() {
             <Stack.Screen name="Give" component={renderPremium(GivingScreen)} />
             <Stack.Screen name="GivingHistory" component={renderPremium(GivingHistoryScreen)} />
             <Stack.Screen name="BaptismRequest" component={renderPremium(BaptismRequestScreen)} />
+            <Stack.Screen name="Volunteer" component={renderPremium(VolunteerScreen)} />
+            <Stack.Screen name="VolunteerScreen" component={renderPremium(VolunteerScreen)} />
             <Stack.Screen name="Sermons" component={renderPremium(SermonsScreen)} />
             <Stack.Screen name="Songs" component={renderPremium(SongsScreen)} />
             <Stack.Screen name="EventDetails" component={renderPremium(EventDetailsScreen)} />
@@ -1126,6 +1334,8 @@ function Navigation() {
             <Stack.Screen name="MyServiceDuties" component={renderPremium(MyServiceScreen)} />
             <Stack.Screen name="LiveCelebrationsChat" component={renderPremium(LiveCelebrationsChat)} />
             <Stack.Screen name="Gallery" component={renderPremium(MemberGalleryNavigator)} />
+            <Stack.Screen name="Testimonies" component={renderPremium(TestimoniesScreen)} />
+            <Stack.Screen name="TestimonyDetail" component={renderPremium(TestimonyDetailScreen)} />
             <Stack.Screen name="VerseOfTheDay" component={renderPremium(VerseOfTheDayScreen)} />
             <Stack.Screen name="BibleQuizHome" component={BibleQuizHomeScreen} />
             <Stack.Screen name="ChurchQuizzes" component={ChurchQuizzesScreen} />
