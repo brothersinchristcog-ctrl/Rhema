@@ -18,6 +18,8 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '../../navigation/AuthNavigator';
 import Theme from '../../theme/Theme';
 import FirestoreService from '../../services/FirestoreService';
+import InviteLinkService from '../../services/InviteLinkService';
+import { isGuestMemberDoc, normalizePhone10, stripGuestSuffix } from '../../utils/phoneUtils';
 import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -31,42 +33,139 @@ type LoginScreenProps = {
 
 export default function LoginScreen({ navigation, route }: LoginScreenProps) {
   const { signInAnonymously } = useAuth();
-  const { activeChurch } = useChurch();
-  const [showPhoneInput, setShowPhoneInput] = useState(route.params?.showPhoneInput || false);
+  const { activeChurch, setChurchId } = useChurch();
+  const [showPhoneInput, setShowPhoneInput] = useState(
+    Boolean(route.params?.showPhoneInput || route.params?.invitedPhone)
+  );
 
-  useEffect(() => {
-    if (route.params?.showPhoneInput) {
-      setShowPhoneInput(true);
-    }
-  }, [route.params?.showPhoneInput]);
-  const [phoneNumber, setPhoneNumber] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState(() =>
+    route.params?.invitedPhone ? normalizePhone10(route.params.invitedPhone) : ''
+  );
   const [loading, setLoading] = useState(false);
   const [verifyingStatus, setVerifyingStatus] = useState('');
-  const [memberName, setMemberName] = useState('');
+  const [memberName, setMemberName] = useState(route.params?.invitedName || '');
   const [contactId, setContactId] = useState<string | undefined>(undefined);
   const [isMember, setIsMember] = useState(false);
+  const [isGuestInviteRecord, setIsGuestInviteRecord] = useState(
+    Boolean(route.params?.invitedPhone)
+  );
+  const [inviteContext, setInviteContext] = useState<{
+    churchId?: string;
+    churchName?: string;
+    guestName?: string;
+    relation?: string;
+    invitedByMemberName?: string;
+    phone10?: string;
+  } | null>(() =>
+    route.params?.invitedPhone
+      ? {
+          churchId: route.params.invitedChurchId,
+          churchName: route.params.invitedChurchName,
+          guestName: route.params.invitedName,
+          relation: route.params.invitedRelation,
+          invitedByMemberName: route.params.invitedByMemberName,
+          phone10: normalizePhone10(route.params.invitedPhone),
+        }
+      : null
+  );
+
+  // Sync from deep-link params or pending AsyncStorage invitation
+  useEffect(() => {
+    let cancelled = false;
+    const loadInviteContext = async () => {
+      const paramPhone = route.params?.invitedPhone;
+      if (paramPhone) {
+        const clean10 = normalizePhone10(paramPhone);
+        setShowPhoneInput(true);
+        if (clean10) setPhoneNumber(clean10);
+        if (route.params?.invitedName) setMemberName(stripGuestSuffix(route.params.invitedName));
+        if (route.params?.invitedChurchId && route.params.invitedChurchId !== activeChurch?.id) {
+          await setChurchId(route.params.invitedChurchId);
+        }
+        setInviteContext({
+          churchId: route.params?.invitedChurchId,
+          churchName: route.params?.invitedChurchName,
+          guestName: route.params?.invitedName,
+          relation: route.params?.invitedRelation,
+          invitedByMemberName: route.params?.invitedByMemberName,
+          phone10: clean10,
+        });
+        setIsGuestInviteRecord(true);
+        return;
+      }
+
+      if (route.params?.showPhoneInput) {
+        setShowPhoneInput(true);
+      }
+
+      const pending = await InviteLinkService.getPendingInvite();
+      if (!cancelled && pending && (pending.phone10 || pending.phone)) {
+        const clean10 = pending.phone10 || normalizePhone10(pending.phone);
+        setShowPhoneInput(true);
+        if (clean10) setPhoneNumber(clean10);
+        if (pending.guestName) setMemberName(stripGuestSuffix(pending.guestName));
+        if (pending.churchId && pending.churchId !== activeChurch?.id) {
+          await setChurchId(pending.churchId);
+        }
+        setInviteContext({
+          churchId: pending.churchId,
+          churchName: pending.churchName,
+          guestName: pending.guestName,
+          relation: pending.relation,
+          invitedByMemberName: pending.invitedByMemberName,
+          phone10: clean10,
+        });
+        setIsGuestInviteRecord(true);
+      }
+    };
+    loadInviteContext();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    route.params?.showPhoneInput,
+    route.params?.invitedPhone,
+    route.params?.invitedChurchId,
+    route.params?.invitedName,
+  ]);
 
 
-  // ── Auto-lookup member as user types ──
+  // ── Auto-lookup member or invited guest as user types ──
   useEffect(() => {
     const checkMembership = async () => {
       const cleanNum = phoneNumber.replace(/[^0-9]/g, '');
       if (cleanNum.length === 10) {
-        setVerifyingStatus('Checking membership...');
+        setVerifyingStatus('Checking church records...');
         try {
-          const churchTarget = activeChurch?.id || 'rhema';
+          const churchTarget = inviteContext?.churchId || activeChurch?.id || 'rhema';
           const result = await FirestoreService.checkContactExists(cleanNum, churchTarget);
 
           if (result && result.exists) {
-            const displayName = result.member?.firstName 
+            const rawDisplay = result.member?.firstName 
               ? `${result.member.firstName} ${result.member.lastName || ''}`.trim()
               : (result.member?.name || result.member?.displayName || '');
+            const displayName = stripGuestSuffix(rawDisplay) || inviteContext?.guestName || '';
+            const guestFlag = isGuestMemberDoc(result.member);
             setMemberName(displayName);
             setContactId(result.member?.id);
             setIsMember(true);
+            setIsGuestInviteRecord(guestFlag || Boolean(inviteContext?.phone10 === cleanNum));
+            if (guestFlag && result.member?.invitedByMemberName && !inviteContext?.invitedByMemberName) {
+              setInviteContext((prev) => ({
+                ...(prev || {}),
+                churchId: churchTarget,
+                guestName: displayName,
+                invitedByMemberName: result.member?.invitedByMemberName,
+                relation: result.member?.relation,
+                phone10: cleanNum,
+              }));
+            }
             setVerifyingStatus('');
           } else {
-            setMemberName('');
+            if (!inviteContext?.phone10 || inviteContext.phone10 !== cleanNum) {
+              setMemberName('');
+              setIsGuestInviteRecord(false);
+            }
             setContactId(undefined);
             setIsMember(false);
             setVerifyingStatus('Number not found in church records.');
@@ -82,7 +181,7 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
       }
     };
     checkMembership();
-  }, [phoneNumber]);
+  }, [phoneNumber, activeChurch?.id, inviteContext?.churchId]);
 
   const handleSendCode = async () => {
     let formattedNumber = phoneNumber.trim();
@@ -109,13 +208,32 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
 
     setLoading(true);
     try {
+      const targetChurch = inviteContext?.churchId || activeChurch?.id || 'rhema';
+      let resolvedContactId = contactId;
+      let resolvedName = memberName;
+      let resolvedGuestFlag = isGuestInviteRecord;
+
+      if (!resolvedContactId) {
+        const cleanNum = normalizePhone10(formattedNumber);
+        if (cleanNum) {
+          const lookup = await FirestoreService.checkContactExists(cleanNum, targetChurch, true).catch(() => null);
+          if (lookup?.exists && lookup.member) {
+            resolvedContactId = lookup.member.id;
+            resolvedName = stripGuestSuffix(lookup.member.name || lookup.member.firstName || '') || resolvedName;
+            resolvedGuestFlag = resolvedGuestFlag || isGuestMemberDoc(lookup.member);
+          }
+        }
+      }
+
       setVerifyingStatus('Sending OTP...');
       const confirmation = await auth().signInWithPhoneNumber(formattedNumber);
       navigation.navigate('VerifyOtp', { 
         confirmation, 
         phoneNumber: formattedNumber,
-        contactId: contactId,
-        memberName: memberName
+        contactId: resolvedContactId,
+        memberName: resolvedName,
+        invitedChurchId: targetChurch,
+        isGuestInvite: resolvedGuestFlag,
       });
     } catch (error: any) {
       console.error(error);
@@ -264,10 +382,16 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
               ) : null}
             </View>
 
-            {isMember && (
+            {(isMember || isGuestInviteRecord) && (
               <View style={styles.memberBanner}>
-                <Text style={styles.memberBannerTxt}>Welcome, {memberName} 🙏</Text>
-                <Text style={styles.memberBannerSub}>We found your church record.</Text>
+                <Text style={styles.memberBannerTxt}>
+                  Welcome{memberName ? `, ${memberName}` : ''} 🙏
+                </Text>
+                <Text style={styles.memberBannerSub}>
+                  {isGuestInviteRecord
+                    ? `${inviteContext?.invitedByMemberName ? `Invited by ${inviteContext.invitedByMemberName} • ` : ''}No registration needed — verify OTP to enter.`
+                    : 'We found your church record.'}
+                </Text>
               </View>
             )}
 
@@ -284,12 +408,14 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.footerInfo}>
-            <Text style={styles.footerTxt}>Not a member yet? </Text>
-            <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
-              <Text style={styles.footerLink}>Register Here</Text>
-            </TouchableOpacity>
-          </View>
+          {!isGuestInviteRecord && (
+            <View style={styles.footerInfo}>
+              <Text style={styles.footerTxt}>Not a member yet? </Text>
+              <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
+                <Text style={styles.footerLink}>Register Here</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </SafeAreaView>
     </KeyboardAvoidingView>

@@ -9,10 +9,29 @@ import JoinSuccessScreen from '../screens/auth/JoinSuccessScreen';
 import Theme from '../theme/Theme';
 
 export type AuthStackParamList = {
-  Login: { showPhoneInput?: boolean; fromJoinSuccess?: boolean } | undefined;
+  Login: {
+    showPhoneInput?: boolean;
+    fromJoinSuccess?: boolean;
+    invitedPhone?: string;
+    invitedName?: string;
+    invitedChurchId?: string;
+    invitedChurchName?: string;
+    inviteId?: string;
+    invitedRelation?: string;
+    invitedByMemberName?: string;
+  } | undefined;
   SignUp: undefined;
   RegistrationSuccess: undefined;
-  VerifyOtp: { confirmation: any; phoneNumber: string; contactId?: string; memberName?: string; formData?: any; isSignUp?: boolean };
+  VerifyOtp: {
+    confirmation: any;
+    phoneNumber: string;
+    contactId?: string;
+    memberName?: string;
+    formData?: any;
+    isSignUp?: boolean;
+    invitedChurchId?: string;
+    isGuestInvite?: boolean;
+  };
   ChurchSelection: { code?: string } | undefined;
   JoinSuccess: { churchName: string; isNewChurch?: boolean; churchCode?: string };
 };

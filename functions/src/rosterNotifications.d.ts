@@ -97,8 +97,10 @@ export declare function notifyChurchAdmins(db: FirebaseFirestore.Firestore, chur
     title: string;
     body: string;
     serviceId: string;
-    roleId?: string;
-    serviceTitle?: string;
+    roleId?: string | undefined;
+    serviceTitle?: string | undefined;
+    serviceDate?: string | undefined;
+    notifId?: string | undefined;
 }): Promise<void>;
 /**
  * ⚡ DISPATCH AUTOMATIC RESPONSIBILITIES WHEN SERVICE IS PUBLISHED

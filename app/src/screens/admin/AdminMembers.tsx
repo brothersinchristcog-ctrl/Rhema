@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import { Users, Phone, Mail, ChevronDown, ChevronUp, Clock, UserCheck, UserX, Shield, Plus, X, Trash2, Edit2, ChevronLeft, UserPlus, Search, MoreVertical, Award, Sparkles, Check, Briefcase, ArrowLeft, Calendar, Heart, Droplets, ChevronRight } from 'lucide-react-native';
 import FirestoreService from '../../services/FirestoreService';
+import { isGuestMemberDoc, stripGuestSuffix } from '../../utils/phoneUtils';
 import { useChurch } from '../../context/ChurchContext';
 import { formatDateDisplay } from '../../utils/DateUtils';
 import { CustomAlert, AlertButton } from '../../components/CustomAlert';
@@ -102,6 +103,7 @@ export default function AdminMembers() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'All' | 'Active' | 'Inactive'>('All');
+  const [roleFilter, setRoleFilter] = useState<'All' | 'Members' | 'Guests'>('All');
   const [villageFilter, setVillageFilter] = useState<string>('All');
   const [villageDropdownVisible, setVillageDropdownVisible] = useState(false);
   const [skillPickerModalVisible, setSkillPickerModalVisible] = useState(false);
@@ -267,7 +269,7 @@ export default function AdminMembers() {
     setAlertConfig({
       visible: true,
       title: 'Remove Member',
-      message: `Are you sure you want to remove ${memberName || 'this member'} from the church?`,
+      message: `Are you sure you want to permanently remove ${memberName || 'this member'} from the church?`,
       type: 'warning',
       buttons: [
         { 
@@ -283,17 +285,18 @@ export default function AdminMembers() {
               setLoading(true);
               setAlertConfig(prev => ({ ...prev, visible: false }));
               if (activeChurch?.id) {
-                const success = await FirestoreService.adminRemoveMember(activeChurch.id, memberId);
-                if (success.success) {
-                  setMembers(prev => prev.filter(m => m.id !== memberId));
-                  if (selectedMember && selectedMember.id === memberId) {
+                const res = await FirestoreService.adminRemoveMember(activeChurch.id, memberId);
+                if (res.success) {
+                  const removedSet = new Set([memberId, ...(res.removedIds || [])]);
+                  setMembers(prev => prev.filter(m => !removedSet.has(m.id)));
+                  if (selectedMember && removedSet.has(selectedMember.id)) {
                     setSelectedMember(null);
                   }
                   setTimeout(() => {
                     setAlertConfig({
                       visible: true,
                       title: 'Success!',
-                      message: `${memberName} has been removed.`,
+                      message: `${memberName || 'Member'} has been permanently removed.`,
                       type: 'success',
                       buttons: [{ text: 'OK', onPress: () => setAlertConfig(prev => ({ ...prev, visible: false })) }]
                     });
@@ -469,8 +472,56 @@ export default function AdminMembers() {
 
   // Stats calculation
   const totalMembers = villageFilteredMembers.length;
+  const guestMembersCount = villageFilteredMembers.filter(m => isGuestMemberDoc(m)).length;
+  const fullMembersCount = totalMembers - guestMembersCount;
   const activeMembers = villageFilteredMembers.length; // Assuming all firebase members are active for now
   const inactiveMembers = 0;
+
+  const handleConvertGuestToMember = (targetMemberId: string, targetName: string) => {
+    setAlertConfig({
+      visible: true,
+      title: 'Convert to Full Member?',
+      message: `Upgrade "${stripGuestSuffix(targetName) || 'this guest'}" from Guest to a permanent Church Member?`,
+      type: 'info',
+      buttons: [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+          onPress: () => setAlertConfig(prev => ({ ...prev, visible: false })),
+        },
+        {
+          text: 'Convert to Member',
+          onPress: async () => {
+            setAlertConfig(prev => ({ ...prev, visible: false }));
+            try {
+              const targetChurchId = activeChurch?.id || churchId || (await FirestoreService.getChurchId());
+              const res = await FirestoreService.convertGuestToMember(targetChurchId, targetMemberId);
+              if (res.success) {
+                setMembers(prev =>
+                  prev.map(m =>
+                    m.id === targetMemberId
+                      ? { ...m, userType: 'member', isGuest: false }
+                      : m
+                  )
+                );
+                setSelectedMember((prev: any) =>
+                  prev && prev.id === targetMemberId
+                    ? { ...prev, userType: 'member', isGuest: false }
+                    : prev
+                );
+                setMemberDetailsForm(prev => ({ ...prev, userType: 'member' }));
+                Alert.alert('Success', 'Guest has been converted to a Full Church Member.');
+              } else {
+                Alert.alert('Error', res.error || 'Could not convert guest.');
+              }
+            } catch (e: any) {
+              Alert.alert('Error', e?.message || 'Could not convert guest.');
+            }
+          },
+        },
+      ],
+    });
+  };
 
   const handleAddMember = async () => {
     if (!newMemberForm.name.trim() || !newMemberForm.phone.trim()) {
@@ -698,7 +749,13 @@ May God bless you abundantly! ❤️`;
       (statusFilter === 'Active' && isActive) ||
       (statusFilter === 'Inactive' && !isActive);
 
-    return matchesSearch && matchesStatus;
+    const isGuest = isGuestMemberDoc(m);
+    const matchesRole =
+      roleFilter === 'All' ||
+      (roleFilter === 'Guests' && isGuest) ||
+      (roleFilter === 'Members' && !isGuest);
+
+    return matchesSearch && matchesStatus && matchesRole;
   });
 
   if (loading && members.length === 0) {
@@ -934,6 +991,34 @@ May God bless you abundantly! ❤️`;
               editable={isEditingMember}
             />
           </View>
+
+          {isGuestMemberDoc(selectedMember) && (
+            <View
+              style={{
+                backgroundColor: isDark ? 'rgba(109, 40, 217, 0.16)' : '#F5F3FF',
+                borderWidth: 1,
+                borderColor: isDark ? 'rgba(167, 139, 250, 0.35)' : '#DDD6FE',
+                borderRadius: 14,
+                padding: 14,
+                marginBottom: 16,
+              }}
+            >
+              <Text style={{ fontSize: 12, fontWeight: '800', color: isDark ? '#C4B5FD' : '#6D28D9', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                Guest Invitation Details
+              </Text>
+              <Text style={{ fontSize: 13.5, color: isDark ? '#E4E4E7' : '#1E293B', marginTop: 6, fontWeight: '600' }}>
+                Relation: {selectedMember?.relation || 'Guest'}
+              </Text>
+              {selectedMember?.invitedByMemberName ? (
+                <Text style={{ fontSize: 12.5, color: isDark ? '#A1A1AA' : '#475569', marginTop: 3 }}>
+                  Invited by {selectedMember.invitedByMemberName}
+                </Text>
+              ) : null}
+              <Text style={{ fontSize: 12, color: isDark ? '#34D399' : '#059669', marginTop: 4, fontWeight: '700' }}>
+                App Status: {selectedMember?.inviteStatus === 'joined' ? 'Joined App via Invite' : 'Invited (Pending Sign-In)'}
+              </Text>
+            </View>
+          )}
 
           {/* Email Address Field */}
           <View style={styles.formGroup}>
@@ -1184,6 +1269,33 @@ May God bless you abundantly! ❤️`;
           </View>
 
           <View style={{ gap: 10 }}>
+            {isGuestMemberDoc(selectedMember) && (
+              <TouchableOpacity
+                style={[
+                  styles.adminActionBtn,
+                  {
+                    backgroundColor: '#059669',
+                    borderColor: '#059669',
+                    shadowColor: '#059669',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: isDark ? 0.35 : 0.2,
+                    shadowRadius: 5,
+                    elevation: 3,
+                  }
+                ]}
+                onPress={() => handleConvertGuestToMember(selectedMember.id, memberDetailsForm.name)}
+                activeOpacity={0.8}
+              >
+                <UserCheck size={18} color="#FFFFFF" strokeWidth={2.3} />
+                <View style={{ alignItems: 'center', flexShrink: 1 }}>
+                  <Text style={[styles.adminActionBtnTxt, { color: '#FFFFFF' }]}>Convert to Full Member</Text>
+                  <Text style={{ fontSize: 11.5, color: 'rgba(255, 255, 255, 0.92)', marginTop: 2, fontWeight: '600', textAlign: 'center' }}>
+                    Upgrade {stripGuestSuffix(memberDetailsForm.name) || 'this guest'} into regular church roster
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            )}
+
             {isAdminRole ? (
               <TouchableOpacity
                 style={[
@@ -1590,13 +1702,52 @@ May God bless you abundantly! ❤️`;
           )}
         </View>
 
-        {/* Filter Badges Row: All | Active | Inactive | Village/City (Single Scrollable Row) */}
+        {/* Filter Badges Row: All | Active | Inactive | Members | Guests | Village/City */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ alignItems: 'center', gap: 8, paddingRight: 16 }}
           style={{ marginBottom: 14 }}
         >
+          {(['All', 'Members', 'Guests'] as const).map(rFilter => {
+            const isSelected = roleFilter === rFilter;
+            const label =
+              rFilter === 'Guests'
+                ? `Guests (${guestMembersCount})`
+                : rFilter === 'Members'
+                ? `Members (${fullMembersCount})`
+                : 'All Roles';
+            const isGuestChip = rFilter === 'Guests';
+            return (
+              <TouchableOpacity
+                key={`role-${rFilter}`}
+                style={[
+                  styles.filterChip,
+                  isDark
+                    ? (isSelected
+                        ? { backgroundColor: isGuestChip ? '#7C3AED' : '#FFFFFF', borderColor: isGuestChip ? '#7C3AED' : '#FFFFFF' }
+                        : { backgroundColor: '#18181B', borderColor: isGuestChip ? 'rgba(167,139,250,0.4)' : 'rgba(255, 255, 255, 0.14)' })
+                    : (isSelected
+                        ? { backgroundColor: isGuestChip ? '#6D28D9' : '#000000', borderColor: isGuestChip ? '#6D28D9' : '#000000' }
+                        : { backgroundColor: isGuestChip ? '#F5F3FF' : '#F8FAFC', borderColor: isGuestChip ? '#DDD6FE' : '#CBD5E1' })
+                ]}
+                onPress={() => setRoleFilter(rFilter)}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.filterChipTxt,
+                    isDark
+                      ? (isSelected ? { color: isGuestChip ? '#FFFFFF' : '#000000', fontWeight: '800' } : { color: isGuestChip ? '#C4B5FD' : '#A1A1AA' })
+                      : (isSelected ? { color: '#FFFFFF', fontWeight: '800' } : { color: isGuestChip ? '#6D28D9' : '#64748B' })
+                  ]}
+                >
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+
           {(['All', 'Active', 'Inactive'] as const).map(filter => {
             const isActive = statusFilter === filter;
             return (
@@ -1676,15 +1827,17 @@ May God bless you abundantly! ❤️`;
               ? members.filter(m => m.accountId === member.accountId && m.id !== member.id)
               : [];
             const isActive = true; // Placeholder for future active/inactive flag in Firebase
-            const displayName = (member.name && member.name.trim()) ||
+            const rawDisplayName = (member.name && member.name.trim()) ||
               (member.displayName && member.displayName.trim()) ||
               (member.fullName && member.fullName.trim()) ||
               (`${member.firstName || ''} ${member.lastName || ''}`.trim()) ||
               (member.phone ? `Member (${member.phone})` : 'Unknown');
+            const displayName = stripGuestSuffix(rawDisplayName) || rawDisplayName;
             const displayRole = member.userType || 'member';
             const normalizedRole = displayRole.trim().toLowerCase().replace('_', ' ');
             const isSuperAdmin = normalizedRole === 'super admin' || normalizedRole === 'superadmin';
             const isAdmin = normalizedRole === 'admin';
+            const isGuest = !isSuperAdmin && !isAdmin && isGuestMemberDoc(member);
 
             return (
               <View 
@@ -1694,7 +1847,7 @@ May God bless you abundantly! ❤️`;
                   !isDark && {
                     backgroundColor: '#FFFFFF',
                     borderWidth: 1.5,
-                    borderColor: '#CBD5E1',
+                    borderColor: isGuest ? '#DDD6FE' : '#CBD5E1',
                     shadowColor: '#000',
                     shadowOffset: { width: 0, height: 2 },
                     shadowOpacity: 0.05,
@@ -1704,7 +1857,7 @@ May God bless you abundantly! ❤️`;
                   isDark && {
                     backgroundColor: '#18181B',
                     borderWidth: 1,
-                    borderColor: 'rgba(255, 255, 255, 0.12)',
+                    borderColor: isGuest ? 'rgba(167, 139, 250, 0.35)' : 'rgba(255, 255, 255, 0.12)',
                   },
                   isExpanded && styles.memberCardExpanded,
                   { position: 'relative', overflow: 'hidden' }
@@ -1721,7 +1874,7 @@ May God bless you abundantly! ❤️`;
                     transform: [{ rotate: '45deg' }],
                     backgroundColor: isSuperAdmin 
                       ? '#228B22' // Forest Green
-                      : (isAdmin ? (isDark ? '#D97706' : '#B45309') : (isDark ? '#3F3F46' : '#64748B')),
+                      : (isAdmin ? (isDark ? '#D97706' : '#B45309') : isGuest ? '#6D28D9' : (isDark ? '#3F3F46' : '#64748B')),
                     paddingVertical: 3.5,
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -1743,7 +1896,7 @@ May God bless you abundantly! ❤️`;
                       textTransform: 'uppercase',
                     }}
                   >
-                    {isSuperAdmin ? 'SUPER ADMIN' : (isAdmin ? 'ADMIN' : 'MEMBER')}
+                    {isSuperAdmin ? 'SUPER ADMIN' : (isAdmin ? 'ADMIN' : (isGuest ? 'GUEST' : 'MEMBER'))}
                   </Text>
                 </View>
 
@@ -1758,6 +1911,13 @@ May God bless you abundantly! ❤️`;
                       <MemberAvatar member={member} initials={getInitials(displayName)} styles={styles} size={56} />
                       <View style={{ flex: 1, justifyContent: 'center' }}>
                         <Text style={styles.name} numberOfLines={1}>{displayName}</Text>
+                        {isGuest && (
+                          <Text style={{ fontSize: 11.5, color: isDark ? '#C4B5FD' : '#6D28D9', fontWeight: '700', marginTop: 2 }} numberOfLines={1}>
+                            {member.relation ? `${member.relation}` : 'Guest'}
+                            {member.invitedByMemberName ? ` · Invited by ${member.invitedByMemberName}` : ''}
+                            {member.inviteStatus === 'joined' ? ' · Joined' : ' · Invited'}
+                          </Text>
+                        )}
                         {(member.city || member.village) && (
                           <Text style={{ fontSize: 12, color: isDark ? '#A1A1AA' : '#64748B', marginTop: 2 }}>
                             📍 {(member.city || member.village).trim()}

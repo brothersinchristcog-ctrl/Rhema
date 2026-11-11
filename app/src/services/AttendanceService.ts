@@ -1,11 +1,18 @@
 import firestore from '@react-native-firebase/firestore';
 import FirestoreService from './FirestoreService';
+import {
+  formatPhoneE164,
+  isGuestMemberDoc,
+  normalizePhone10,
+  stripGuestSuffix,
+} from '../utils/phoneUtils';
 
 export interface AttendanceRecord {
   id?: string;
   memberId?: string;
   memberName?: string;
   memberPhone?: string;
+  normalizedPhone10?: string;
   photoUrl?: string;
   status?: 'Present' | 'Absent';
   timestamp?: any;
@@ -16,6 +23,8 @@ export interface AttendanceRecord {
   scannedAt?: string;
   isGuest?: boolean;
   guestName?: string;
+  guestRelation?: string;
+  inviteStatus?: string;
   invitedByMemberId?: string;
   invitedByMemberName?: string;
 }
@@ -292,13 +301,18 @@ class AttendanceService {
       const snap = await attendeesRef.orderBy('timestamp', 'desc').get();
       const records: AttendanceRecord[] = [];
 
+      const seenPhones = new Map<string, number>();
       snap.forEach((doc) => {
         const d = doc.data();
-        records.push({
+        const isGuestFlag = Boolean(d.isGuest || (d.memberName && /\(guest\)\s*$/i.test(d.memberName)) || doc.id.startsWith('guest_'));
+        const cleanDisplayName = stripGuestSuffix(d.memberName || d.guestName || 'Unknown Member') || 'Unknown Member';
+        const phone10 = normalizePhone10(d.memberPhone || d.normalizedPhone10 || '');
+        const entry: AttendanceRecord = {
           id: doc.id,
           memberId: d.memberId || doc.id,
-          memberName: d.memberName || 'Unknown Member',
+          memberName: cleanDisplayName,
           memberPhone: d.memberPhone || '',
+          normalizedPhone10: phone10,
           photoUrl: d.photoUrl || '',
           status: (d.status as 'Present' | 'Absent') || 'Present',
           timestamp: d.timestamp,
@@ -306,11 +320,33 @@ class AttendanceService {
           churchId,
           eventId,
           eventName: d.eventName || '',
-          isGuest: Boolean(d.isGuest || (d.memberName && d.memberName.includes('(Guest)')) || doc.id.startsWith('guest_')),
-          guestName: d.guestName || (d.memberName ? d.memberName.replace(' (Guest)', '').trim() : ''),
+          isGuest: isGuestFlag,
+          guestName: stripGuestSuffix(d.guestName || d.memberName || ''),
+          guestRelation: d.guestRelation || d.relation || '',
+          inviteStatus: d.inviteStatus || '',
           invitedByMemberId: d.invitedByMemberId || '',
           invitedByMemberName: d.invitedByMemberName || '',
-        });
+        };
+
+        if (phone10) {
+          const existingIdx = seenPhones.get(phone10);
+          if (existingIdx !== undefined) {
+            const prev = records[existingIdx];
+            // Prefer non-guest / UID-linked record if a phone appears twice
+            if (prev.id?.startsWith('guest_') && !entry.id?.startsWith('guest_')) {
+              records[existingIdx] = {
+                ...prev,
+                ...entry,
+                guestRelation: entry.guestRelation || prev.guestRelation,
+                invitedByMemberId: entry.invitedByMemberId || prev.invitedByMemberId,
+                invitedByMemberName: entry.invitedByMemberName || prev.invitedByMemberName,
+              };
+            }
+            return;
+          }
+          seenPhones.set(phone10, records.length);
+        }
+        records.push(entry);
       });
 
       // Backward compatibility fallback: ONLY check attendanceRequests if this is NOT an event document in 'events'
@@ -365,9 +401,45 @@ class AttendanceService {
 
   /**
    * Fetches church roster members for attendance comparison (Present vs Absent).
+   * Excludes guest records by default so guests are never marked "Absent" on other events.
    */
-  public async getChurchMembers(churchId: string): Promise<any[]> {
+  public async getChurchMembers(
+    churchId: string,
+    options?: { includeGuests?: boolean }
+  ): Promise<any[]> {
     if (!churchId) return [];
+    const includeGuests = Boolean(options?.includeGuests);
+
+    const normalizeMemberList = (rawDocs: any[]) => {
+      const seenPhones = new Set<string>();
+      const out: any[] = [];
+      for (const m of rawDocs) {
+        if (m.status === 'Left') continue;
+        if (!includeGuests && isGuestMemberDoc(m)) continue;
+        const phone10 = normalizePhone10(m.phone || m.MobilePhone || m.phoneNumber || m.mobile || '');
+        if (phone10) {
+          if (seenPhones.has(phone10)) continue;
+          seenPhones.add(phone10);
+        }
+        const photo = m.profilePhoto || m.photoURL || m.photoUrl || m.profileImageUrl || m.PhotoUrl || m.avatarUrl || m.photo || m.profilePicture || '';
+        const cleanName = stripGuestSuffix(m.name || m.firstName || 'Member') || 'Member';
+        out.push({
+          ...m,
+          id: m.id,
+          Id: m.id,
+          name: cleanName,
+          Name: cleanName,
+          phone: m.phone || m.MobilePhone || '',
+          MobilePhone: m.phone || m.MobilePhone || '',
+          photoURL: photo,
+          profilePicture: photo,
+          firstName: m.firstName || m.FirstName || '',
+          lastName: m.lastName || m.LastName || '',
+        });
+      }
+      return out;
+    };
+
     try {
       // 1. Try church-specific members collection
       const snap = await firestore()
@@ -377,45 +449,12 @@ class AttendanceService {
         .get();
 
       if (!snap.empty) {
-        return snap.docs
-          .filter((d) => d.data().status !== 'Left')
-          .map((d) => {
-            const data = d.data();
-            const photo = data.profilePhoto || data.photoURL || data.photoUrl || data.profileImageUrl || data.PhotoUrl || data.avatarUrl || data.photo || data.profilePicture || '';
-            return {
-              id: d.id,
-              Id: d.id,
-              name: data.name || data.firstName || 'Member',
-              Name: data.name || data.firstName || 'Member',
-              phone: data.phone || data.MobilePhone || '',
-              MobilePhone: data.phone || data.MobilePhone || '',
-              photoURL: photo,
-              profilePicture: photo,
-              firstName: data.firstName || data.FirstName || '',
-              lastName: data.lastName || data.LastName || '',
-              ...data,
-            };
-          });
+        return normalizeMemberList(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
       }
 
       // 2. Fallback via FirestoreService
       const all = await FirestoreService.getAllMembers();
-      return (all || []).map((m: any) => {
-        const photo = m.profilePhoto || m.photoURL || m.photoUrl || m.profileImageUrl || m.PhotoUrl || m.avatarUrl || m.photo || m.profilePicture || '';
-        return {
-          id: m.id,
-          Id: m.id,
-          name: m.name || m.firstName || 'Member',
-          Name: m.name || m.firstName || 'Member',
-          phone: m.phone || m.MobilePhone || '',
-          MobilePhone: m.phone || m.MobilePhone || '',
-          photoURL: photo,
-          profilePicture: photo,
-          firstName: m.firstName || m.FirstName || '',
-          lastName: m.lastName || m.LastName || '',
-          ...m,
-        };
-      });
+      return normalizeMemberList(all || []);
     } catch (e) {
       console.error('[AttendanceService] Error fetching church members:', e);
       return [];
@@ -437,9 +476,11 @@ class AttendanceService {
     method?: 'QR_SCAN' | 'ADMIN_MANUAL' | 'SELF_CHECKIN' | 'GUEST_CHECKIN';
     isGuest?: boolean;
     guestName?: string;
+    guestRelation?: string;
+    inviteStatus?: string;
     invitedByMemberId?: string;
     invitedByMemberName?: string;
-  }): Promise<{ success: boolean; alreadyMarked?: boolean; message?: string }> {
+  }): Promise<{ success: boolean; alreadyMarked?: boolean; existingAttendeeId?: string; message?: string }> {
     const { 
       churchId, 
       eventId = 'general_service', 
@@ -451,6 +492,8 @@ class AttendanceService {
       method = 'QR_SCAN',
       isGuest,
       guestName,
+      guestRelation,
+      inviteStatus,
       invitedByMemberId,
       invitedByMemberName,
     } = params;
@@ -460,13 +503,13 @@ class AttendanceService {
     }
 
     try {
-      const attendeeDocRef = firestore()
+      const attendeesCol = firestore()
         .collection('Rhema Church')
         .doc(churchId)
         .collection('events')
         .doc(eventId)
-        .collection('attendees')
-        .doc(memberId);
+        .collection('attendees');
+      const attendeeDocRef = attendeesCol.doc(memberId);
 
       const existing = await attendeeDocRef.get().catch(() => null);
       const isAlreadyMarked = existing && (existing.data() !== undefined || (typeof (existing as any).exists === 'function' ? (existing as any).exists() : (existing as any).exists === true));
@@ -474,14 +517,42 @@ class AttendanceService {
         return {
           success: true,
           alreadyMarked: true,
+          existingAttendeeId: memberId,
           message: 'Attendance was already recorded for this event.',
         };
       }
 
+      const phone10 = normalizePhone10(memberPhone);
+      const canonicalPhone = memberPhone ? formatPhoneE164(memberPhone) : '';
+      if (phone10) {
+        const eventAttendeesSnap = await attendeesCol.get().catch(() => null);
+        if (eventAttendeesSnap && !eventAttendeesSnap.empty) {
+          const phoneMatch = eventAttendeesSnap.docs.find((d) => {
+            const data = d.data() || {};
+            return (
+              d.id === `guest_${phone10}` ||
+              normalizePhone10(data.memberPhone || data.normalizedPhone10 || '') === phone10
+            );
+          });
+          if (phoneMatch) {
+            return {
+              success: true,
+              alreadyMarked: true,
+              existingAttendeeId: phoneMatch.id,
+              message: 'Attendance was already recorded for this mobile number in this event.',
+            };
+          }
+        }
+      }
+
+      const cleanMemberName = stripGuestSuffix(memberName) || 'Member';
+      const cleanGuestName = stripGuestSuffix(guestName || memberName) || cleanMemberName;
+
       const recordData: any = {
         memberId,
-        memberName: memberName || 'Member',
-        memberPhone: memberPhone || '',
+        memberName: cleanMemberName,
+        memberPhone: canonicalPhone || memberPhone || '',
+        ...(phone10 ? { normalizedPhone10: phone10 } : {}),
         photoUrl: photoUrl || '',
         status: 'Present',
         timestamp: firestore.FieldValue.serverTimestamp(),
@@ -494,14 +565,16 @@ class AttendanceService {
 
       if (isGuest) {
         recordData.isGuest = true;
-        recordData.guestName = guestName || (memberName ? memberName.replace(' (Guest)', '').trim() : '');
+        recordData.guestName = cleanGuestName;
+        if (guestRelation) recordData.guestRelation = guestRelation;
+        if (inviteStatus) recordData.inviteStatus = inviteStatus;
         recordData.invitedByMemberId = invitedByMemberId || '';
         recordData.invitedByMemberName = invitedByMemberName || '';
       }
 
       const responseData: any = {
         memberId,
-        memberName: memberName || 'Member',
+        memberName: cleanMemberName,
         response: 'Yes',
         status: 'Present',
         method,
@@ -514,7 +587,9 @@ class AttendanceService {
 
       if (isGuest) {
         responseData.isGuest = true;
-        responseData.guestName = guestName || (memberName ? memberName.replace(' (Guest)', '').trim() : '');
+        responseData.guestName = cleanGuestName;
+        if (guestRelation) responseData.guestRelation = guestRelation;
+        if (inviteStatus) responseData.inviteStatus = inviteStatus;
         responseData.invitedByMemberId = invitedByMemberId || '';
         responseData.invitedByMemberName = invitedByMemberName || '';
       }

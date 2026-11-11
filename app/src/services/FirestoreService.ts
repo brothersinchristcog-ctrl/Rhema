@@ -3,6 +3,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RHEMA_CHURCH_ID, RHEMA_ROOT_COLLECTION } from '../constants/ChurchConfig';
 import * as Notifications from 'expo-notifications';
 import { isSermonVisibleToMembers, formatDateDisplay } from '../utils/DateUtils';
+import {
+  normalizePhone10,
+  formatPhoneE164,
+  getPhoneVariants,
+  isGuestMemberDoc,
+  stripGuestSuffix,
+} from '../utils/phoneUtils';
 
 // ─── Data Interfaces ─────────────────────────────────────────────────────────
 
@@ -63,6 +70,20 @@ export interface AppMember {
   secondarySkill?: string;
   primarySkills?: string[];
   secondarySkills?: string[];
+  status?: string;
+  relation?: string;
+  isGuest?: boolean;
+  invitedByMemberId?: string;
+  invitedByMemberName?: string;
+  invitedEventId?: string;
+  invitedEventName?: string;
+  inviteStatus?: 'invited' | 'joined' | string;
+  invitedAt?: any;
+  joinedAt?: any;
+  guestNotes?: string;
+  inviteLink?: string;
+  normalizedPhone10?: string;
+  onboardingComplete?: boolean;
 }
 
 export interface FirestorePromise {
@@ -322,36 +343,650 @@ class FirestoreService {
   }
 
   // ─── STRICT DUPLICATE CHECK FOR CHURCH ───
-  async checkMemberExistsInChurch(churchId: string, phone: string, excludeMemberId?: string): Promise<boolean> {
-    if (!phone) return false;
-    const rawDigits = phone.replace(/\D/g, '');
-    if (rawDigits.length < 10) return false;
-    const last10 = rawDigits.slice(-10);
-    const plus91 = `+91${last10}`;
-    const format91 = `91${last10}`;
-    
-    // Check local church collection directly
-    const possibleFormats = [last10, plus91, format91, phone, `+91 ${last10}`];
-    
+  async findExistingMemberByPhone(
+    churchId: string,
+    phone: string,
+    excludeMemberId?: string
+  ): Promise<AppMember | null> {
+    if (!phone) return null;
+    const targetChurchId = churchId || (await this.getChurchId()) || RHEMA_CHURCH_ID;
+    const last10 = normalizePhone10(phone);
+    if (!last10) return null;
+
+    const churchRef = firestore().collection(RHEMA_ROOT_COLLECTION).doc(targetChurchId);
+    const membersRef = churchRef.collection('members');
+
     try {
-      const queries = possibleFormats.map(format => 
-        firestore().collection('Rhema Church').doc(churchId).collection('members').where('phone', '==', format).get()
-      );
-      const results = await Promise.all(queries);
-      for (const snap of results) {
-        if (!snap.empty) {
-          if (excludeMemberId) {
-            const hasOther = snap.docs.some(doc => doc.id !== excludeMemberId);
-            if (hasOther) return true;
-          } else {
-            return true;
+      // 1. Fast path: per-church normalized phone index
+      try {
+        const indexSnap = await churchRef.collection('memberPhoneIndex').doc(last10).get();
+        const indexExists = typeof indexSnap.exists === 'function' ? indexSnap.exists() : indexSnap.exists;
+        if (indexExists) {
+          const indexedMemberId = indexSnap.data()?.memberDocId;
+          if (indexedMemberId && indexedMemberId !== excludeMemberId) {
+            const memberDoc = await membersRef.doc(indexedMemberId).get();
+            const mExists = typeof memberDoc.exists === 'function' ? memberDoc.exists() : memberDoc.exists;
+            if (mExists) {
+              return { id: memberDoc.id, churchId: targetChurchId, ...memberDoc.data() } as AppMember;
+            }
+          }
+        }
+      } catch (idxErr) {
+        // Ignore index read errors and fall back to member queries
+      }
+
+      // 2. Deterministic guest ID check
+      const deterministicGuestId = `guest_${last10}`;
+      if (excludeMemberId !== deterministicGuestId) {
+        try {
+          const detDoc = await membersRef.doc(deterministicGuestId).get();
+          const detExists = typeof detDoc.exists === 'function' ? detDoc.exists() : detDoc.exists;
+          if (detExists) {
+            return { id: detDoc.id, churchId: targetChurchId, ...detDoc.data() } as AppMember;
+          }
+        } catch {
+          // Ignore and continue
+        }
+      }
+
+      // 3. Multi-field exact variant lookup across all phone keys
+      const variants = getPhoneVariants(phone);
+      const phoneFields = ['phone', 'phoneNumber', 'mobile', 'MobilePhone', 'contactNumber'];
+      let matchedGuest: AppMember | null = null;
+
+      if (variants.length > 0) {
+        const queryPromises: Promise<any>[] = [];
+        for (const field of phoneFields) {
+          queryPromises.push(membersRef.where(field, 'in', variants).get());
+        }
+        const results = await Promise.allSettled(queryPromises);
+        for (const res of results) {
+          if (res.status !== 'fulfilled') continue;
+          for (const doc of res.value.docs) {
+            if (excludeMemberId && doc.id === excludeMemberId) continue;
+            const candidate = { id: doc.id, churchId: targetChurchId, ...doc.data() } as AppMember;
+            // Prefer returning full Member / Admin over a Guest if legacy duplicate exists
+            if (!isGuestMemberDoc(candidate)) {
+              return candidate;
+            }
+            if (!matchedGuest) matchedGuest = candidate;
           }
         }
       }
+
+      // 4. Bounded in-memory normalized scan for legacy formatted / integer phones
+      const snap = await membersRef.limit(500).get();
+      for (const doc of snap.docs) {
+        if (excludeMemberId && doc.id === excludeMemberId) continue;
+        const data = doc.data();
+        const candidates = [
+          data.phone,
+          data.phoneNumber,
+          data.mobile,
+          data.MobilePhone,
+          data.contactNumber,
+          data.whatsappNumber,
+          data.whatsapp,
+          data.contact,
+        ];
+        const matched = candidates.some((c) => normalizePhone10(String(c || '')) === last10);
+        if (matched) {
+          const member = { id: doc.id, churchId: targetChurchId, ...data } as AppMember;
+          if (!isGuestMemberDoc(member)) {
+            return member;
+          }
+          if (!matchedGuest) matchedGuest = member;
+        }
+      }
+
+      return matchedGuest;
     } catch (e) {
-      console.warn('Error checking duplicate member:', e);
+      console.warn('Error finding existing member by phone:', e);
+      return null;
     }
-    return false;
+  }
+
+  async upsertPhoneIndex(
+    churchId: string,
+    phone: string,
+    memberDocId: string,
+    extra: Record<string, any> = {}
+  ): Promise<void> {
+    const last10 = normalizePhone10(phone);
+    if (!last10 || !memberDocId) return;
+    const targetChurchId = churchId || (await this.getChurchId()) || RHEMA_CHURCH_ID;
+    const canonicalPhone = formatPhoneE164(phone);
+    try {
+      await firestore()
+        .collection(RHEMA_ROOT_COLLECTION)
+        .doc(targetChurchId)
+        .collection('memberPhoneIndex')
+        .doc(last10)
+        .set(
+          {
+            last10,
+            canonicalPhone,
+            memberDocId,
+            churchId: targetChurchId,
+            updatedAt: FieldValue.serverTimestamp(),
+            ...extra,
+          },
+          { merge: true }
+        );
+    } catch (err) {
+      // Non-fatal if index subcollection rule is restricted for non-admin clients
+      console.warn('Phone index sync skipped (non-critical):', (err as any)?.code || err);
+    }
+  }
+
+  async checkMemberExistsInChurch(churchId: string, phone: string, excludeMemberId?: string): Promise<boolean> {
+    const existing = await this.findExistingMemberByPhone(churchId, phone, excludeMemberId);
+    return Boolean(existing);
+  }
+
+  async ensureGuestMemberRecord(params: {
+    churchId: string;
+    name: string;
+    phone: string;
+    relation?: string;
+    invitedByMemberId?: string;
+    invitedByMemberName?: string;
+    eventId?: string;
+    eventName?: string;
+    shareMethod?: string;
+  }): Promise<{
+    memberDocId: string;
+    inviteId: string;
+    canonicalPhone: string;
+    last10: string;
+    isExistingRecord: boolean;
+    wasAlreadyGuest: boolean;
+    wasAlreadyFullMember: boolean;
+    wasAlreadyInvited: boolean;
+    memberData: AppMember;
+    inviteData: any;
+  }> {
+    const auth = require('@react-native-firebase/auth').default;
+    if (!auth().currentUser) {
+      await auth().signInAnonymously().catch(() => {});
+    }
+
+    const targetChurchId = params.churchId || (await this.getChurchId()) || RHEMA_CHURCH_ID;
+    const last10 = normalizePhone10(params.phone);
+    if (!last10) {
+      throw new Error('INVALID_PHONE');
+    }
+
+    const cleanName = stripGuestSuffix(params.name);
+    if (!cleanName) {
+      throw new Error('INVALID_NAME');
+    }
+
+    const canonicalPhone = formatPhoneE164(params.phone);
+    const cleanRelation = String(params.relation || '').trim() || 'Guest';
+    const churchRef = firestore().collection(RHEMA_ROOT_COLLECTION).doc(targetChurchId);
+    const membersRef = churchRef.collection('members');
+    const indexRef = churchRef.collection('memberPhoneIndex').doc(last10);
+    const inviteRef = churchRef.collection('guestInvites').doc(last10);
+
+    // Pre-scan handles any legacy/random-ID members before running the atomic transaction
+    const existingPreScan = await this.findExistingMemberByPhone(targetChurchId, canonicalPhone);
+
+    const buildNewGuestPayload = (docId: string): any => {
+      const nameParts = cleanName.split(/\s+/);
+      return {
+        id: docId,
+        name: cleanName,
+        displayName: cleanName,
+        firstName: nameParts[0] || '',
+        lastName: nameParts.slice(1).join(' ') || '',
+        phone: canonicalPhone,
+        normalizedPhone10: last10,
+        relation: cleanRelation,
+        userType: 'guest',
+        isGuest: true,
+        status: 'Active',
+        churchId: targetChurchId,
+        primaryChurchId: targetChurchId,
+        joinDate: new Date().toISOString(),
+        invitedByMemberId: params.invitedByMemberId || '',
+        invitedByMemberName: params.invitedByMemberName || '',
+        invitedEventId: params.eventId || '',
+        invitedEventName: params.eventName || '',
+        inviteStatus: 'invited',
+        invitedAt: FieldValue.serverTimestamp(),
+        onboardingComplete: false,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      };
+    };
+
+    try {
+      const txResult = await firestore().runTransaction(async (tx) => {
+        const indexSnap = await tx.get(indexRef);
+        const inviteSnap = await tx.get(inviteRef);
+
+        const idxExists = typeof indexSnap.exists === 'function' ? indexSnap.exists() : indexSnap.exists;
+        const invExists = typeof inviteSnap.exists === 'function' ? inviteSnap.exists() : inviteSnap.exists;
+
+        const indexedId = idxExists ? indexSnap.data()?.memberDocId : undefined;
+        const deterministicId = `guest_${last10}`;
+        const candidateId = indexedId || existingPreScan?.id || deterministicId;
+
+        const candidateRef = membersRef.doc(candidateId);
+        const candidateSnap = await tx.get(candidateRef);
+        const detRef = membersRef.doc(deterministicId);
+        const detSnap = candidateId !== deterministicId ? await tx.get(detRef) : null;
+
+        const candExists = typeof candidateSnap.exists === 'function' ? candidateSnap.exists() : candidateSnap.exists;
+        const detExists = detSnap
+          ? (typeof detSnap.exists === 'function' ? detSnap.exists() : detSnap.exists)
+          : false;
+
+        let effectiveRef = candidateRef;
+        let effectiveId = candidateId;
+        let existingData: any = null;
+
+        if (candExists) {
+          existingData = { id: candidateSnap.id, churchId: targetChurchId, ...candidateSnap.data() };
+        } else if (detExists && detSnap) {
+          effectiveRef = detRef;
+          effectiveId = deterministicId;
+          existingData = { id: detSnap.id, churchId: targetChurchId, ...detSnap.data() };
+        }
+
+        const isExistingRecord = Boolean(existingData);
+        const wasAlreadyGuest = isExistingRecord && isGuestMemberDoc(existingData);
+        const wasAlreadyFullMember = isExistingRecord && !wasAlreadyGuest;
+        const wasAlreadyInvited = invExists;
+
+        let resultingMemberData: AppMember;
+
+        if (existingData) {
+          if (wasAlreadyGuest) {
+            const effectiveName = stripGuestSuffix(existingData.name || existingData.displayName) || cleanName;
+            const effectiveRelation = existingData.relation && existingData.relation !== 'Guest'
+              ? existingData.relation
+              : cleanRelation;
+            const guestUpdate: any = {
+              name: effectiveName,
+              displayName: effectiveName,
+              phone: existingData.phone || canonicalPhone,
+              normalizedPhone10: last10,
+              relation: effectiveRelation,
+              userType: 'guest',
+              isGuest: true,
+              status: existingData.status === 'Left' ? 'Active' : (existingData.status || 'Active'),
+              inviteStatus: existingData.inviteStatus === 'joined' ? 'joined' : 'invited',
+              invitedByMemberId: existingData.invitedByMemberId || params.invitedByMemberId || '',
+              invitedByMemberName: existingData.invitedByMemberName || params.invitedByMemberName || '',
+              invitedEventId: existingData.invitedEventId || params.eventId || '',
+              updatedAt: FieldValue.serverTimestamp(),
+            };
+            tx.set(effectiveRef, guestUpdate, { merge: true });
+            resultingMemberData = { ...existingData, ...guestUpdate, id: effectiveId, churchId: targetChurchId };
+          } else {
+            // Existing full Member / Admin: reuse untouched without overwriting role/profile
+            if (!existingData.phone) {
+              tx.set(effectiveRef, { phone: canonicalPhone, normalizedPhone10: last10 }, { merge: true });
+            }
+            resultingMemberData = { ...existingData, phone: existingData.phone || canonicalPhone, id: effectiveId, churchId: targetChurchId };
+          }
+        } else {
+          const newGuestPayload = buildNewGuestPayload(effectiveId);
+          tx.set(effectiveRef, newGuestPayload);
+          resultingMemberData = newGuestPayload as AppMember;
+        }
+
+        const existingInvite = invExists ? inviteSnap.data() : null;
+        const resolvedStatus =
+          wasAlreadyFullMember || resultingMemberData.inviteStatus === 'joined' || existingInvite?.status === 'joined'
+            ? 'joined'
+            : 'invited';
+
+        const invitePayload: any = existingInvite
+          ? {
+              ...existingInvite,
+              inviteId: last10,
+              churchId: targetChurchId,
+              memberDocId: effectiveId,
+              phone: canonicalPhone,
+              normalizedPhone10: last10,
+              guestName: existingInvite.guestName || stripGuestSuffix(resultingMemberData.name) || cleanName,
+              relation: existingInvite.relation || cleanRelation,
+              status: resolvedStatus,
+              isExistingMember: wasAlreadyFullMember,
+              lastSharedAt: FieldValue.serverTimestamp(),
+              shareCount: (existingInvite.shareCount || 1) + (params.shareMethod && params.shareMethod !== 'direct' ? 1 : 0),
+            }
+          : {
+              inviteId: last10,
+              churchId: targetChurchId,
+              memberDocId: effectiveId,
+              phone: canonicalPhone,
+              normalizedPhone10: last10,
+              guestName: stripGuestSuffix(resultingMemberData.name) || cleanName,
+              relation: resultingMemberData.relation || cleanRelation,
+              invitedByMemberId: params.invitedByMemberId || '',
+              invitedByMemberName: params.invitedByMemberName || '',
+              eventId: params.eventId || '',
+              eventName: params.eventName || '',
+              status: resolvedStatus,
+              isExistingMember: wasAlreadyFullMember,
+              createdAt: FieldValue.serverTimestamp(),
+              lastSharedAt: FieldValue.serverTimestamp(),
+              shareCount: 1,
+            };
+
+        tx.set(inviteRef, invitePayload, { merge: true });
+        tx.set(
+          indexRef,
+          {
+            last10,
+            canonicalPhone,
+            memberDocId: effectiveId,
+            churchId: targetChurchId,
+            userType: resultingMemberData.userType || (wasAlreadyFullMember ? 'member' : 'guest'),
+            inviteId: last10,
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+
+        return {
+          memberDocId: effectiveId,
+          inviteId: last10,
+          canonicalPhone,
+          last10,
+          isExistingRecord,
+          wasAlreadyGuest,
+          wasAlreadyFullMember,
+          wasAlreadyInvited,
+          memberData: resultingMemberData,
+          inviteData: invitePayload,
+        };
+      });
+
+      return txResult;
+    } catch (txErr: any) {
+      // Fallback path when index/invite subcollection rules are restricted on non-admin devices:
+      // still guarantees a single unique member record per canonical phone in `members`.
+      console.warn('Transaction fallback for ensureGuestMemberRecord:', txErr?.code || txErr?.message);
+      const rechecked = existingPreScan || (await this.findExistingMemberByPhone(targetChurchId, canonicalPhone));
+
+      if (rechecked) {
+        const wasAlreadyGuest = isGuestMemberDoc(rechecked);
+        const wasAlreadyFullMember = !wasAlreadyGuest;
+        if (wasAlreadyGuest) {
+          await membersRef
+            .doc(rechecked.id)
+            .set(
+              {
+                relation: rechecked.relation || cleanRelation,
+                inviteStatus: rechecked.inviteStatus || 'invited',
+                updatedAt: FieldValue.serverTimestamp(),
+              },
+              { merge: true }
+            )
+            .catch(() => {});
+        }
+        await this.upsertPhoneIndex(targetChurchId, canonicalPhone, rechecked.id, {
+          userType: rechecked.userType || (wasAlreadyFullMember ? 'member' : 'guest'),
+          inviteId: last10,
+        });
+        return {
+          memberDocId: rechecked.id,
+          inviteId: last10,
+          canonicalPhone,
+          last10,
+          isExistingRecord: true,
+          wasAlreadyGuest,
+          wasAlreadyFullMember,
+          wasAlreadyInvited: true,
+          memberData: rechecked,
+          inviteData: {
+            inviteId: last10,
+            churchId: targetChurchId,
+            memberDocId: rechecked.id,
+            phone: rechecked.phone || canonicalPhone,
+            guestName: stripGuestSuffix(rechecked.name) || cleanName,
+            relation: rechecked.relation || cleanRelation,
+            invitedByMemberName: rechecked.invitedByMemberName || params.invitedByMemberName || '',
+            status: rechecked.inviteStatus || (wasAlreadyFullMember ? 'joined' : 'invited'),
+          },
+        };
+      }
+
+      const deterministicId = `guest_${last10}`;
+      const detRef = membersRef.doc(deterministicId);
+      const existingDet = await detRef.get().catch(() => null);
+      const existingDetExists = existingDet
+        ? (typeof existingDet.exists === 'function' ? existingDet.exists() : existingDet.exists)
+        : false;
+
+      if (existingDetExists && existingDet) {
+        const data = { id: existingDet.id, churchId: targetChurchId, ...existingDet.data() } as AppMember;
+        return {
+          memberDocId: existingDet.id,
+          inviteId: last10,
+          canonicalPhone,
+          last10,
+          isExistingRecord: true,
+          wasAlreadyGuest: isGuestMemberDoc(data),
+          wasAlreadyFullMember: !isGuestMemberDoc(data),
+          wasAlreadyInvited: true,
+          memberData: data,
+          inviteData: {
+            inviteId: last10,
+            churchId: targetChurchId,
+            memberDocId: existingDet.id,
+            phone: data.phone || canonicalPhone,
+            guestName: stripGuestSuffix(data.name) || cleanName,
+            relation: data.relation || cleanRelation,
+            status: data.inviteStatus || 'invited',
+          },
+        };
+      }
+
+      const newGuestPayload = buildNewGuestPayload(deterministicId);
+      await detRef.set(newGuestPayload);
+      await this.upsertPhoneIndex(targetChurchId, canonicalPhone, deterministicId, {
+        userType: 'guest',
+        inviteId: last10,
+      });
+
+      const fallbackInvite = {
+        inviteId: last10,
+        churchId: targetChurchId,
+        memberDocId: deterministicId,
+        phone: canonicalPhone,
+        normalizedPhone10: last10,
+        guestName: cleanName,
+        relation: cleanRelation,
+        invitedByMemberId: params.invitedByMemberId || '',
+        invitedByMemberName: params.invitedByMemberName || '',
+        eventId: params.eventId || '',
+        eventName: params.eventName || '',
+        status: 'invited',
+        createdAt: FieldValue.serverTimestamp(),
+        lastSharedAt: FieldValue.serverTimestamp(),
+        shareCount: 1,
+      };
+      await inviteRef.set(fallbackInvite, { merge: true }).catch(() => {});
+
+      return {
+        memberDocId: deterministicId,
+        inviteId: last10,
+        canonicalPhone,
+        last10,
+        isExistingRecord: false,
+        wasAlreadyGuest: false,
+        wasAlreadyFullMember: false,
+        wasAlreadyInvited: false,
+        memberData: newGuestPayload as AppMember,
+        inviteData: fallbackInvite,
+      };
+    }
+  }
+
+  async getGuestInviteDetails(
+    churchId: string,
+    inviteIdOrPhone: string
+  ): Promise<{
+    exists: boolean;
+    churchId: string;
+    churchName?: string;
+    inviteId: string;
+    phone: string;
+    guestName: string;
+    relation: string;
+    memberDocId?: string;
+    invitedByMemberName?: string;
+    eventId?: string;
+    eventName?: string;
+    status?: string;
+  } | null> {
+    try {
+      const targetChurchId = churchId || (await this.getChurchId()) || RHEMA_CHURCH_ID;
+      const last10 = normalizePhone10(inviteIdOrPhone);
+      if (!last10) return null;
+
+      const auth = require('@react-native-firebase/auth').default;
+      if (!auth().currentUser) {
+        await auth().signInAnonymously().catch(() => {});
+      }
+
+      const churchRef = firestore().collection(RHEMA_ROOT_COLLECTION).doc(targetChurchId);
+      const [churchSnap, inviteSnap] = await Promise.all([
+        churchRef.get().catch(() => null),
+        churchRef.collection('guestInvites').doc(last10).get().catch(() => null),
+      ]);
+
+      const churchExists = churchSnap
+        ? (typeof churchSnap.exists === 'function' ? churchSnap.exists() : churchSnap.exists)
+        : false;
+      const churchName = churchExists && churchSnap ? (churchSnap.data()?.name || '') : '';
+
+      const inviteExists = inviteSnap
+        ? (typeof inviteSnap.exists === 'function' ? inviteSnap.exists() : inviteSnap.exists)
+        : false;
+
+      if (inviteExists && inviteSnap) {
+        const d = inviteSnap.data() || {};
+        return {
+          exists: true,
+          churchId: targetChurchId,
+          churchName,
+          inviteId: last10,
+          phone: d.phone || formatPhoneE164(last10),
+          guestName: stripGuestSuffix(d.guestName) || 'Guest',
+          relation: d.relation || 'Guest',
+          memberDocId: d.memberDocId || `guest_${last10}`,
+          invitedByMemberName: d.invitedByMemberName || '',
+          eventId: d.eventId || '',
+          eventName: d.eventName || '',
+          status: d.status || 'invited',
+        };
+      }
+
+      const existingMember = await this.findExistingMemberByPhone(targetChurchId, last10);
+      if (existingMember) {
+        return {
+          exists: true,
+          churchId: targetChurchId,
+          churchName,
+          inviteId: last10,
+          phone: existingMember.phone || formatPhoneE164(last10),
+          guestName: stripGuestSuffix(existingMember.name || existingMember.displayName) || 'Guest',
+          relation: existingMember.relation || 'Guest',
+          memberDocId: existingMember.id,
+          invitedByMemberName: existingMember.invitedByMemberName || '',
+          eventId: existingMember.invitedEventId || '',
+          eventName: existingMember.invitedEventName || '',
+          status: existingMember.inviteStatus || 'invited',
+        };
+      }
+
+      return null;
+    } catch (error) {
+      console.warn('Error fetching guest invite details:', error);
+      return null;
+    }
+  }
+
+  async markGuestInviteJoined(churchId: string, phoneOrInviteId: string, uid?: string): Promise<void> {
+    try {
+      const targetChurchId = churchId || (await this.getChurchId()) || RHEMA_CHURCH_ID;
+      const last10 = normalizePhone10(phoneOrInviteId);
+      if (!last10) return;
+
+      const churchRef = firestore().collection(RHEMA_ROOT_COLLECTION).doc(targetChurchId);
+      await churchRef
+        .collection('guestInvites')
+        .doc(last10)
+        .set(
+          {
+            status: 'joined',
+            joinedAt: FieldValue.serverTimestamp(),
+            ...(uid ? { claimedByUid: uid, memberDocId: uid } : {}),
+          },
+          { merge: true }
+        )
+        .catch(() => {});
+
+      if (uid) {
+        await churchRef
+          .collection('members')
+          .doc(uid)
+          .set(
+            {
+              inviteStatus: 'joined',
+              joinedAt: FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          )
+          .catch(() => {});
+        await this.upsertPhoneIndex(targetChurchId, last10, uid, { inviteId: last10 });
+      }
+    } catch (e) {
+      console.warn('Non-critical markGuestInviteJoined notice:', e);
+    }
+  }
+
+  async convertGuestToMember(churchId: string, memberId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const targetChurchId = churchId || (await this.getChurchId()) || RHEMA_CHURCH_ID;
+      const memberRef = firestore()
+        .collection(RHEMA_ROOT_COLLECTION)
+        .doc(targetChurchId)
+        .collection('members')
+        .doc(memberId);
+
+      const snap = await memberRef.get();
+      const exists = typeof snap.exists === 'function' ? snap.exists() : snap.exists;
+      const data = exists ? (snap.data() || {}) : {};
+      const cleanName = stripGuestSuffix(data.name || data.displayName || '');
+
+      await memberRef.set(
+        {
+          ...(cleanName ? { name: cleanName, displayName: cleanName } : {}),
+          userType: 'member',
+          isGuest: false,
+          convertedFromGuestAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      if (data.phone) {
+        await this.upsertPhoneIndex(targetChurchId, data.phone, memberId, { userType: 'member' });
+      }
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('Error converting guest to member:', error);
+      return { success: false, error: error?.message || 'Failed to convert guest' };
+    }
   }
 
   // ─── App Users / Auth ───────────────────────────────────────────────────────────────
@@ -1104,19 +1739,28 @@ class FirestoreService {
 
   async adminAddMember(churchId: string, details: any) {
     try {
+      const targetChurchId = churchId || (await this.getChurchId()) || RHEMA_CHURCH_ID;
       if (details.phone) {
-        const isDuplicate = await this.checkMemberExistsInChurch(churchId, details.phone);
+        const isDuplicate = await this.checkMemberExistsInChurch(targetChurchId, details.phone);
         if (isDuplicate) {
           throw new Error('DUPLICATE_MEMBER');
         }
       }
 
-      const docRef = await firestore().collection('Rhema Church').doc(churchId).collection('members').add({
+      const last10 = details.phone ? normalizePhone10(details.phone) : '';
+      const canonicalPhone = details.phone ? formatPhoneE164(details.phone) : '';
+      const docRef = await firestore().collection('Rhema Church').doc(targetChurchId).collection('members').add({
         ...details,
+        ...(canonicalPhone ? { phone: canonicalPhone, normalizedPhone10: last10 } : {}),
         status: 'Active',
         joinDate: new Date().toISOString(),
         onboardingComplete: false,
       });
+      if (last10) {
+        await this.upsertPhoneIndex(targetChurchId, canonicalPhone, docRef.id, {
+          userType: details.userType || 'member',
+        });
+      }
       return { success: true, id: docRef.id };
     } catch (error: any) {
       console.error("Error adding member manually:", error);
@@ -1143,7 +1787,18 @@ class FirestoreService {
       if (typeof safeDetails.displayName === 'string' && !safeDetails.displayName.trim()) {
         delete safeDetails.displayName;
       }
+      if (safeDetails.phone) {
+        const last10 = normalizePhone10(safeDetails.phone);
+        if (last10) {
+          safeDetails.normalizedPhone10 = last10;
+        }
+      }
       await firestore().collection('Rhema Church').doc(targetChurchId).collection('members').doc(memberId).set(safeDetails, { merge: true });
+      if (safeDetails.phone) {
+        await this.upsertPhoneIndex(targetChurchId, safeDetails.phone, memberId, {
+          ...(safeDetails.userType ? { userType: safeDetails.userType } : {}),
+        });
+      }
       return { success: true };
     } catch (error: any) {
       console.error("Error updating member:", error);
@@ -1152,24 +1807,153 @@ class FirestoreService {
   }
 
   async adminRemoveMember(churchId: string, memberId: string) {
-    try {
-      await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(memberId).update({
-        status: 'Left'
-      });
-      return { success: true };
-    } catch (error: any) {
-      console.error("Error removing member:", error);
-      return { success: false, error: error.message };
-    }
+    return this.deleteMemberPermanent(churchId, memberId);
   }
 
   async deleteMemberPermanent(churchId: string, memberId: string) {
     try {
-      await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(memberId).delete();
-      return { success: true };
+      const targetChurchId = churchId || (await this.getChurchId()) || RHEMA_CHURCH_ID;
+      if (!targetChurchId || !memberId) {
+        return { success: false, error: 'Missing churchId or memberId', removedIds: [] as string[] };
+      }
+
+      const churchRef = firestore().collection(RHEMA_ROOT_COLLECTION).doc(targetChurchId);
+      const membersRef = churchRef.collection('members');
+
+      const memberDocSnap = await membersRef.doc(memberId).get().catch(() => null);
+      const memberData: any = memberDocSnap ? memberDocSnap.data() : null;
+      const rawPhone =
+        memberData?.phone ||
+        memberData?.phoneNumber ||
+        memberData?.mobile ||
+        memberData?.MobilePhone ||
+        memberData?.contactNumber ||
+        '';
+      const last10 =
+        normalizePhone10(rawPhone) ||
+        (memberId.startsWith('guest_') ? normalizePhone10(memberId.replace(/^guest_/, '')) : '');
+      const linkedUid = memberData?.uid ? String(memberData.uid) : '';
+
+      const memberIdsToDelete = new Set<string>([memberId]);
+
+      if (last10) {
+        memberIdsToDelete.add(`guest_${last10}`);
+        // Check any duplicate member docs with the same canonical phone in this church
+        try {
+          const variants = getPhoneVariants(rawPhone || last10);
+          const phoneFields = ['phone', 'phoneNumber', 'mobile', 'MobilePhone', 'contactNumber'];
+          const querySnaps = await Promise.allSettled(
+            variants.length > 0
+              ? phoneFields.map((field) => membersRef.where(field, 'in', variants).get())
+              : []
+          );
+          for (const res of querySnaps) {
+            if (res.status === 'fulfilled') {
+              res.value.docs.forEach((d: any) => memberIdsToDelete.add(d.id));
+            }
+          }
+          const byNormalized = await membersRef
+            .where('normalizedPhone10', '==', last10)
+            .get()
+            .catch(() => null);
+          byNormalized?.docs.forEach((d: any) => memberIdsToDelete.add(d.id));
+        } catch {
+          // Best-effort duplicate scan
+        }
+      }
+
+      if (linkedUid && linkedUid !== memberId) {
+        try {
+          const uidDoc = await membersRef.doc(linkedUid).get();
+          const uidExists = typeof uidDoc.exists === 'function' ? (uidDoc as any).exists() : uidDoc.exists;
+          if (uidExists) {
+            const uidPhone = normalizePhone10(uidDoc.data()?.phone || uidDoc.data()?.phoneNumber || '');
+            if (!last10 || !uidPhone || uidPhone === last10) {
+              memberIdsToDelete.add(linkedUid);
+            }
+          }
+        } catch {
+          // Ignore uid lookup errors
+        }
+      }
+
+      const deleteOps: Promise<any>[] = [];
+
+      // Delete each member doc and clear common subcollections so no orphan ghost docs remain in Firebase Console
+      for (const mId of memberIdsToDelete) {
+        const mRef = membersRef.doc(mId);
+        deleteOps.push(
+          (async () => {
+            for (const subCol of ['notifications', 'subscriptions', 'bible', 'sermon_subscriptions']) {
+              try {
+                const subSnap = await mRef.collection(subCol).limit(50).get();
+                if (!subSnap.empty) {
+                  await Promise.allSettled(subSnap.docs.map((sd) => sd.ref.delete().catch(() => {})));
+                }
+              } catch {
+                // Ignore missing/restricted subcollections
+              }
+            }
+            await mRef.delete();
+          })()
+        );
+      }
+
+      // Clean up normalized phone uniqueness index & guest invite doc(s)
+      if (last10) {
+        deleteOps.push(
+          churchRef.collection('memberPhoneIndex').doc(last10).delete().catch(() => {})
+        );
+        deleteOps.push(
+          churchRef.collection('guestInvites').doc(last10).delete().catch(() => {})
+        );
+      }
+
+      try {
+        const inviteByMemberSnap = await churchRef
+          .collection('guestInvites')
+          .where('memberDocId', '==', memberId)
+          .get();
+        inviteByMemberSnap.docs.forEach((doc) => {
+          deleteOps.push(doc.ref.delete().catch(() => {}));
+        });
+      } catch {
+        // Ignore query error
+      }
+
+      // If this was a guest-only record, also clean up any church attendance records referencing them
+      if (isGuestMemberDoc(memberData) || memberId.startsWith('guest_')) {
+        try {
+          const attSnap = await churchRef
+            .collection('attendanceRecords')
+            .where('memberId', '==', memberId)
+            .get();
+          attSnap.docs.forEach((doc) => {
+            deleteOps.push(doc.ref.delete().catch(() => {}));
+          });
+        } catch {
+          // Ignore attendance cleanup error
+        }
+      }
+
+      const results = await Promise.allSettled(deleteOps);
+      // Verify primary member doc deletion succeeded (first operation corresponds to target memberId or its batch)
+      const primaryExistsSnap = await membersRef.doc(memberId).get().catch(() => null);
+      const stillExists =
+        primaryExistsSnap &&
+        (typeof (primaryExistsSnap as any).exists === 'function'
+          ? (primaryExistsSnap as any).exists()
+          : Boolean(primaryExistsSnap.exists));
+
+      if (stillExists) {
+        const firstRejected = results.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined;
+        throw firstRejected?.reason || new Error('Failed to delete member document in Firestore.');
+      }
+
+      return { success: true, removedIds: Array.from(memberIdsToDelete) };
     } catch (error: any) {
       console.error("Error permanently deleting member:", error);
-      return { success: false, error: error.message };
+      return { success: false, error: error.message, removedIds: [] as string[] };
     }
   }
 
@@ -1267,35 +2051,99 @@ class FirestoreService {
 
   async syncMember(churchId: string, contactId: string, uid: string) {
     try {
-      if (!contactId || contactId === uid) return;
-      
+      if (!contactId || !uid) return;
       const targetChurch = churchId || await this.getChurchId() || RHEMA_CHURCH_ID;
       const membersRef = firestore().collection(RHEMA_ROOT_COLLECTION).doc(targetChurch).collection('members');
-      const oldDoc = await membersRef.doc(contactId).get();
-      
+
+      if (contactId === uid) {
+        const selfDoc = await membersRef.doc(uid).get();
+        const selfExists = typeof selfDoc.exists === 'function' ? selfDoc.exists() : selfDoc.exists;
+        if (selfExists) {
+          const selfData = selfDoc.data() || {};
+          const phone = selfData.phone || selfData.phoneNumber || selfData.mobile;
+          if (isGuestMemberDoc(selfData)) {
+            await membersRef.doc(uid).set(
+              {
+                inviteStatus: 'joined',
+                joinedAt: selfData.joinedAt || FieldValue.serverTimestamp(),
+              },
+              { merge: true }
+            ).catch(() => {});
+            if (phone) {
+              await this.markGuestInviteJoined(targetChurch, phone, uid);
+            }
+          } else if (phone) {
+            await this.upsertPhoneIndex(targetChurch, phone, uid, { userType: selfData.userType || 'member' });
+          }
+        }
+        return;
+      }
+
+      const [oldDoc, existingUidDoc] = await Promise.all([
+        membersRef.doc(contactId).get(),
+        membersRef.doc(uid).get(),
+      ]);
+
       const docExists = typeof oldDoc.exists === 'function' ? oldDoc.exists() : oldDoc.exists;
+      const uidDocExists = typeof existingUidDoc.exists === 'function' ? existingUidDoc.exists() : existingUidDoc.exists;
+      const uidData = uidDocExists ? (existingUidDoc.data() || {}) : {};
+
       if (docExists) {
         const oldData = oldDoc.data() || {};
-        const effectiveName = oldData.name || oldData.displayName || '';
-        const nameParts = effectiveName.trim().split(/\s+/);
-        const firstName = oldData.firstName || nameParts[0] || '';
-        const lastName = oldData.lastName || nameParts.slice(1).join(' ') || '';
+        const oldIsGuest = isGuestMemberDoc(oldData);
+        const uidIsFullMember = uidDocExists && !isGuestMemberDoc(uidData);
 
-        // Move data to new document with the correct UID
+        const effectiveName = stripGuestSuffix(
+          (uidIsFullMember && (uidData.name || uidData.displayName)) ||
+            oldData.name ||
+            oldData.displayName ||
+            uidData.name ||
+            uidData.displayName ||
+            ''
+        );
+        const nameParts = effectiveName.trim().split(/\s+/);
+        const firstName = oldData.firstName || uidData.firstName || nameParts[0] || '';
+        const lastName = oldData.lastName || uidData.lastName || nameParts.slice(1).join(' ') || '';
+
+        const mergedUserType = uidIsFullMember
+          ? (uidData.userType || 'member')
+          : (oldData.userType || uidData.userType || 'member');
+        const mergedIsGuest = uidIsFullMember ? false : oldIsGuest;
+
+        const mergedPhone = uidData.phone || oldData.phone || '';
+        const last10 = normalizePhone10(mergedPhone);
+
+        // Move data to document keyed by UID without downgrading existing full member/admin roles
         await membersRef.doc(uid).set({
           ...oldData,
+          ...uidData,
           name: effectiveName || `${firstName} ${lastName}`.trim(),
+          displayName: effectiveName || `${firstName} ${lastName}`.trim(),
           firstName,
           lastName,
+          userType: mergedUserType,
+          isGuest: mergedIsGuest,
+          ...(last10 ? { normalizedPhone10: last10 } : {}),
+          ...(oldIsGuest ? { inviteStatus: 'joined', joinedAt: oldData.joinedAt || FieldValue.serverTimestamp() } : {}),
           uid,
           id: uid,
           churchId: targetChurch,
           primaryChurchId: targetChurch,
           onboardingComplete: true,
-          status: oldData.status || 'Active',
+          status: (uidData.status && uidData.status !== 'Left') ? uidData.status : (oldData.status === 'Left' ? 'Active' : (oldData.status || 'Active')),
         }, { merge: true });
 
-        // Delete the old document with the random ID
+        if (mergedPhone) {
+          await this.upsertPhoneIndex(targetChurch, mergedPhone, uid, {
+            userType: mergedUserType,
+            ...(last10 ? { inviteId: last10 } : {}),
+          });
+          if (oldIsGuest) {
+            await this.markGuestInviteJoined(targetChurch, mergedPhone, uid);
+          }
+        }
+
+        // Delete the old document with the temporary / deterministic guest ID
         await membersRef.doc(contactId).delete().catch((delErr) => {
           console.warn('Could not delete old contact doc (non-critical):', delErr);
         });
@@ -1309,15 +2157,15 @@ class FirestoreService {
 
   async syncMemberByPhone(churchId: string, phone: string, uid: string): Promise<AppMember | null> {
     try {
-      const rawDigits = (phone || '').replace(/\D/g, '');
-      const last10 = rawDigits.slice(-10);
-      if (!last10 || last10.length < 10) return null;
+      const last10 = normalizePhone10(phone);
+      if (!last10) return null;
 
       const targetChurch = churchId || await this.getChurchId() || RHEMA_CHURCH_ID;
       const membersRef = firestore().collection(RHEMA_ROOT_COLLECTION).doc(targetChurch).collection('members');
 
       const currentDoc = await membersRef.doc(uid).get();
-      const currentData = currentDoc.exists ? (currentDoc.data() || {}) : {};
+      const currentExists = typeof currentDoc.exists === 'function' ? currentDoc.exists() : currentDoc.exists;
+      const currentData = currentExists ? (currentDoc.data() || {}) : {};
 
       const snap = await membersRef.get();
       let adminContactDoc: any = null;
@@ -1325,9 +2173,12 @@ class FirestoreService {
       for (const d of snap.docs) {
         if (d.id === uid) continue;
         const data = d.data();
-        const candPhone = String(data.phone || data.phoneNumber || data.mobile || data.contactNumber || '').replace(/\D/g, '').slice(-10);
-        if (candPhone === last10) {
-          if (data.name || data.firstName || !adminContactDoc) {
+        const candidates = [data.phone, data.phoneNumber, data.mobile, data.MobilePhone, data.contactNumber];
+        const matches = candidates.some((c) => normalizePhone10(String(c || '')) === last10);
+        if (matches) {
+          const candIsNonGuest = !isGuestMemberDoc(data);
+          const curIsGuest = adminContactDoc ? isGuestMemberDoc(adminContactDoc) : true;
+          if (!adminContactDoc || (candIsNonGuest && curIsGuest) || ((data.name || data.firstName) && !(adminContactDoc.name || adminContactDoc.firstName))) {
             adminContactDoc = { id: d.id, ...data };
           }
         }
@@ -1335,35 +2186,71 @@ class FirestoreService {
 
       if (adminContactDoc) {
         console.log(`🔗 [syncMemberByPhone] Merging admin contact ${adminContactDoc.id} (${adminContactDoc.name}) into UID ${uid}`);
-        const effectiveName = adminContactDoc.name || adminContactDoc.displayName || currentData.name || '';
+        const curIsFullMember = currentExists && !isGuestMemberDoc(currentData);
+        const contactIsGuest = isGuestMemberDoc(adminContactDoc);
+
+        const effectiveName = stripGuestSuffix(
+          (curIsFullMember && (currentData.name || currentData.displayName)) ||
+            adminContactDoc.name ||
+            adminContactDoc.displayName ||
+            currentData.name ||
+            currentData.displayName ||
+            ''
+        );
         const nameParts = effectiveName.trim().split(/\s+/);
         const firstName = adminContactDoc.firstName || currentData.firstName || nameParts[0] || '';
         const lastName = adminContactDoc.lastName || currentData.lastName || nameParts.slice(1).join(' ') || '';
+
+        const mergedUserType = curIsFullMember
+          ? (currentData.userType || 'member')
+          : (adminContactDoc.userType || currentData.userType || 'member');
+        const mergedIsGuest = curIsFullMember ? false : (contactIsGuest && isGuestMemberDoc({ userType: mergedUserType, isGuest: adminContactDoc.isGuest }));
 
         const mergedPayload: any = {
           ...adminContactDoc,
           ...currentData,
           name: effectiveName || `${firstName} ${lastName}`.trim(),
+          displayName: effectiveName || `${firstName} ${lastName}`.trim(),
           firstName,
           lastName,
           phone: currentData.phone || adminContactDoc.phone || `+91${last10}`,
+          normalizedPhone10: last10,
+          userType: mergedUserType,
+          isGuest: mergedIsGuest,
+          ...(contactIsGuest ? { inviteStatus: 'joined', joinedAt: adminContactDoc.joinedAt || FieldValue.serverTimestamp() } : {}),
           uid,
           id: uid,
           churchId: targetChurch,
           primaryChurchId: targetChurch,
-          status: currentData.status || adminContactDoc.status || 'Active',
+          status: (currentData.status && currentData.status !== 'Left') ? currentData.status : (adminContactDoc.status === 'Left' ? 'Active' : (adminContactDoc.status || 'Active')),
           onboardingComplete: true,
         };
         delete mergedPayload.unlinkedContactId;
 
         await membersRef.doc(uid).set(mergedPayload, { merge: true });
+        await this.upsertPhoneIndex(targetChurch, mergedPayload.phone, uid, {
+          userType: mergedUserType,
+          inviteId: last10,
+        });
+        if (contactIsGuest) {
+          await this.markGuestInviteJoined(targetChurch, mergedPayload.phone, uid);
+        }
 
-        // Remove old auto-ID doc to eliminate duplicates
+        // Remove old auto-ID / deterministic guest doc to eliminate duplicates
         await membersRef.doc(adminContactDoc.id).delete().catch((delErr) => {
           console.warn('Could not delete old contact doc:', delErr);
         });
 
         return mergedPayload as AppMember;
+      }
+
+      if (currentExists) {
+        await this.upsertPhoneIndex(targetChurch, currentData.phone || `+91${last10}`, uid, {
+          userType: currentData.userType || 'member',
+        });
+        if (isGuestMemberDoc(currentData)) {
+          await this.markGuestInviteJoined(targetChurch, currentData.phone || last10, uid);
+        }
       }
 
       return null;
@@ -1399,19 +2286,36 @@ class FirestoreService {
 
   async createMember(churchId: string, data: any, customId?: string) {
     try {
+      const targetChurchId = churchId || (await this.getChurchId()) || RHEMA_CHURCH_ID;
       if (data.phone) {
-        const isDuplicate = await this.checkMemberExistsInChurch(churchId, data.phone);
+        const isDuplicate = await this.checkMemberExistsInChurch(targetChurchId, data.phone, customId);
         if (isDuplicate) {
           throw new Error('DUPLICATE_MEMBER');
         }
       }
 
-      const memberData = { ...data, status: data.status || 'Active' };
+      const last10 = data.phone ? normalizePhone10(data.phone) : '';
+      const canonicalPhone = data.phone ? formatPhoneE164(data.phone) : data.phone;
+      const memberData = {
+        ...data,
+        ...(canonicalPhone ? { phone: canonicalPhone, normalizedPhone10: last10 } : {}),
+        status: data.status || 'Active',
+      };
       if (customId) {
-        await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(customId).set(memberData);
+        await firestore().collection('Rhema Church').doc(targetChurchId).collection('members').doc(customId).set(memberData);
+        if (last10) {
+          await this.upsertPhoneIndex(targetChurchId, canonicalPhone, customId, {
+            userType: memberData.userType || 'member',
+          });
+        }
         return { success: true, id: customId };
       } else {
-        const docRef = await firestore().collection('Rhema Church').doc(churchId).collection('members').add(memberData);
+        const docRef = await firestore().collection('Rhema Church').doc(targetChurchId).collection('members').add(memberData);
+        if (last10) {
+          await this.upsertPhoneIndex(targetChurchId, canonicalPhone, docRef.id, {
+            userType: memberData.userType || 'member',
+          });
+        }
         return { success: true, id: docRef.id };
       }
     } catch (e) {

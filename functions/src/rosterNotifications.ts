@@ -524,6 +524,7 @@ export const checkServiceAssignmentTimeoutsCron = onSchedule(
       console.log('[RosterCron] Checking service assignment timeouts...');
       const db = getFirestore();
       const now = new Date();
+      const todayIso = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
       // Query across all assignmentQueues collectionGroup with direct path fallback
       let queueDocs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
@@ -547,33 +548,101 @@ export const checkServiceAssignmentTimeoutsCron = onSchedule(
       }
 
       let timedOutCount = 0;
+      const planCache = new Map<string, { exists: boolean; data: any }>();
+      const expiredByService = new Map<
+        string,
+        {
+          churchId: string;
+          serviceId: string;
+          serviceTitle: string;
+          serviceDate: string;
+          roles: Array<{ roleId: string; roleTitle: string }>;
+        }
+      >();
 
       for (const doc of queueDocs) {
         const data = doc.data();
+
+        // Validate parent service plan exists and is still active/upcoming so deleted or past plans never alert admins
+        const planRef = doc.ref.parent.parent;
+        if (!planRef) continue;
+        let cachedPlan = planCache.get(planRef.path);
+        if (!cachedPlan) {
+          const planSnap = await planRef.get();
+          cachedPlan = { exists: planSnap.exists, data: planSnap.data() || {} };
+          planCache.set(planRef.path, cachedPlan);
+        }
+
+        if (!cachedPlan.exists) {
+          // Clean up orphaned subcollection queue left behind after plan deletion
+          try {
+            await doc.ref.delete();
+          } catch (_) {}
+          continue;
+        }
+
+        const planDateStr = String(cachedPlan.data.date || '').slice(0, 10);
+        const isPlanInactive = cachedPlan.data.status !== 'published';
+        const isPlanPast = /^\d{4}-\d{2}-\d{2}$/.test(planDateStr) && planDateStr < todayIso;
+        if (isPlanInactive || isPlanPast) {
+          try {
+            await doc.ref.update({
+              status: 'exhausted',
+              updatedAt: FieldValue.serverTimestamp(),
+            });
+          } catch (_) {}
+          continue;
+        }
 
         // Check First-Come First-Served automated responsibilities
         if (data.mode === 'first_come_first_served') {
           const deadline = data.deadline;
           if (deadline && now > new Date(deadline) && data.status === 'pending' && !data.confirmedCandidateId) {
-            console.log(`[RosterCron] First-Come queue ${doc.id} timed out without bookings.`);
-            await doc.ref.update({
-              status: 'exhausted',
-              history: FieldValue.arrayUnion({
-                timestamp: new Date().toISOString(),
-                action: 'first_come_deadline_expired',
-                details: 'Response deadline expired with no member bookings. Admin alerted.'
-              }),
-              updatedAt: FieldValue.serverTimestamp()
-            });
-            timedOutCount++;
+            let transitioned = false;
+            try {
+              transitioned = await db.runTransaction(async (tx) => {
+                const freshSnap = await tx.get(doc.ref);
+                if (!freshSnap.exists) return false;
+                const fresh = freshSnap.data() || {};
+                if (fresh.status !== 'pending' || fresh.confirmedCandidateId || fresh.expiryAlertSent === true) {
+                  return false;
+                }
+                tx.update(doc.ref, {
+                  status: 'exhausted',
+                  expiryAlertSent: true,
+                  history: FieldValue.arrayUnion({
+                    timestamp: new Date().toISOString(),
+                    action: 'first_come_deadline_expired',
+                    details: 'Response deadline expired with no member bookings. Admin alerted.',
+                  }),
+                  updatedAt: FieldValue.serverTimestamp(),
+                });
+                return true;
+              });
+            } catch (txErr) {
+              console.warn(`[RosterCron] Transaction failed expiring queue ${doc.id}:`, txErr);
+            }
 
-            const churchId = data.churchId || 'rhema';
-            await notifyChurchAdmins(db, churchId, {
-              title: `⏰ Response Deadline Expired: ${data.roleTitle || 'Responsibility'}`,
-              body: `No eligible member accepted the ${data.roleTitle || 'Responsibility'} within the response deadline. Please assign manually.`,
-              serviceId: data.serviceId,
-              roleId: data.roleId
-            });
+            if (transitioned) {
+              console.log(`[RosterCron] First-Come queue ${doc.id} timed out without bookings.`);
+              timedOutCount++;
+
+              const churchId = data.churchId || cachedPlan.data.churchId || 'rhema';
+              const serviceId = data.serviceId || planRef.id;
+              const groupKey = `${churchId}|${serviceId}`;
+              const existingGroup = expiredByService.get(groupKey) || {
+                churchId,
+                serviceId,
+                serviceTitle: String(cachedPlan.data.serviceTitle || 'Worship Service'),
+                serviceDate: planDateStr,
+                roles: [] as Array<{ roleId: string; roleTitle: string }>,
+              };
+              existingGroup.roles.push({
+                roleId: String(data.roleId || doc.id),
+                roleTitle: String(data.roleTitle || 'Responsibility'),
+              });
+              expiredByService.set(groupKey, existingGroup);
+            }
             continue;
           }
         }
@@ -609,7 +678,36 @@ export const checkServiceAssignmentTimeoutsCron = onSchedule(
         }
       }
 
-      console.log(`[RosterCron] Done checking timeouts. Marked ${timedOutCount} candidate(s) timed out.`);
+      // Send one consolidated admin alert per service (instead of spamming separate alerts per role)
+      for (const group of expiredByService.values()) {
+        const dateLabel = group.serviceDate ? formatDateMonthYear(group.serviceDate) : '';
+        const dateSuffix = dateLabel ? ` (${dateLabel})` : '';
+        const roleTitles = group.roles.map(r => r.roleTitle);
+        const roleKey = group.roles.map(r => r.roleId).sort().join('_').slice(0, 80);
+
+        const firstRoleTitle = roleTitles[0] || 'Responsibility';
+        const title =
+          group.roles.length === 1
+            ? `⏰ Response Deadline Expired: ${firstRoleTitle}`
+            : `⏰ ${group.roles.length} Unfilled Duties: ${group.serviceTitle}`;
+
+        const body =
+          group.roles.length === 1
+            ? `No eligible member accepted ${firstRoleTitle} for "${group.serviceTitle}"${dateSuffix} within the response deadline. Tap to assign manually in Service Roster.`
+            : `${roleTitles.join(', ')} did not receive an acceptance within the deadline for "${group.serviceTitle}"${dateSuffix}. Tap to assign manually in Service Roster.`;
+
+        await notifyChurchAdmins(db, group.churchId, {
+          title,
+          body,
+          serviceId: group.serviceId,
+          roleId: group.roles[0]?.roleId || '',
+          serviceTitle: group.serviceTitle,
+          serviceDate: group.serviceDate,
+          notifId: `admin_roster_expired_${group.serviceId}_${roleKey}`,
+        });
+      }
+
+      console.log(`[RosterCron] Done checking timeouts. Marked ${timedOutCount} item(s) timed out.`);
     } catch (cronErr) {
       console.error('[RosterCron] Error in checkServiceAssignmentTimeoutsCron:', cronErr);
     }
@@ -1052,15 +1150,17 @@ export async function notifyChurchAdmins(
     title: string;
     body: string;
     serviceId: string;
-    roleId?: string;
-    serviceTitle?: string;
+    roleId?: string | undefined;
+    serviceTitle?: string | undefined;
+    serviceDate?: string | undefined;
+    notifId?: string | undefined;
   }
 ) {
-  const { title, body, serviceId, roleId, serviceTitle } = params;
+  const { title, body, serviceId, roleId, serviceTitle, serviceDate, notifId } = params;
   const targetChurch = churchId || 'rhema';
   try {
     const adminTokens = new Set<string>();
-    const adminMemberIds: string[] = [];
+    const adminMemberIdSet = new Set<string>();
 
     // Query members
     const memSnap = await db
@@ -1075,29 +1175,39 @@ export async function notifyChurchAdmins(
       const posStr = String(data.position || '').toLowerCase();
       const isAdmin = data.isAdmin === true || roleStr.includes('admin') || roleStr.includes('pastor') || posStr.includes('pastor');
       if (isAdmin) {
-        adminMemberIds.push(doc.id);
+        adminMemberIdSet.add(doc.id);
         const tokens = await resolveCandidateFcmTokens(db, targetChurch, doc.id, data.phone, data.name);
         tokens.forEach(t => adminTokens.add(t));
       }
     }
 
+    const adminMemberIds = Array.from(adminMemberIdSet);
+
     // Send in-app notification to all admin members
     const notifPayload = {
       type: 'admin_roster_alert',
+      targetRole: 'admin',
       title,
       body,
       churchId: targetChurch,
       serviceId,
       roleId: roleId || '',
       serviceTitle: serviceTitle || '',
+      serviceDate: serviceDate || '',
       status: 'action_required',
       read: false,
-      createdAt: FieldValue.serverTimestamp()
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     };
 
     for (const aId of adminMemberIds) {
       try {
-        await db.collection(RHEMA_ROOT_COLLECTION).doc(targetChurch).collection('members').doc(aId).collection('notifications').add(notifPayload);
+        const colRef = db.collection(RHEMA_ROOT_COLLECTION).doc(targetChurch).collection('members').doc(aId).collection('notifications');
+        if (notifId) {
+          await colRef.doc(notifId).set(notifPayload, { merge: true });
+        } else {
+          await colRef.add(notifPayload);
+        }
       } catch (_) {}
     }
 
@@ -1112,6 +1222,8 @@ export async function notifyChurchAdmins(
             churchId: targetChurch,
             serviceId,
             roleId: roleId || '',
+            serviceTitle: serviceTitle || '',
+            serviceDate: serviceDate || '',
             click_action: 'OPEN_ADMIN_SERVICE_PLANNER'
           },
           android: {
@@ -1204,11 +1316,13 @@ export async function autoDispatchPublishedServiceResponsibilities(params: {
   const timeoutMinutes = 120; // 2 hours
   const deadlineIso = new Date(Date.now() + timeoutMinutes * 60 * 1000).toISOString();
 
+  const noEligibleRoles: Array<{ roleId: string; roleTitle: string }> = [];
+
   for (const resp of responsibilitiesToDispatch) {
     const qDocRef = queuesCol.doc(resp.roleId);
     const existingSnap = await qDocRef.get();
+    const existingData = existingSnap.exists ? existingSnap.data() || {} : {};
     if (existingSnap.exists) {
-      const existingData = existingSnap.data() || {};
       // If already booked or confirmed, don't overwrite
       if (existingData.status === 'confirmed' || existingData.confirmedCandidateId) {
         continue;
@@ -1227,7 +1341,7 @@ export async function autoDispatchPublishedServiceResponsibilities(params: {
     );
 
     if (eligibleMembers.length === 0) {
-      // No eligible members! Mark exhausted and alert Admin!
+      // No eligible members! Mark exhausted and collect for single summary admin alert
       await qDocRef.set({
         id: resp.roleId,
         serviceId,
@@ -1239,6 +1353,7 @@ export async function autoDispatchPublishedServiceResponsibilities(params: {
         requiredSkill: resp.requiredSkill,
         mode: 'first_come_first_served',
         status: 'exhausted',
+        noEligibleAlertSent: true,
         eligibleMemberIds: [],
         declinedMemberIds: [],
         candidates: [],
@@ -1253,13 +1368,9 @@ export async function autoDispatchPublishedServiceResponsibilities(params: {
         updatedAt: FieldValue.serverTimestamp()
       }, { merge: true });
 
-      await notifyChurchAdmins(db, targetChurch, {
-        title: `⚠️ No Volunteers: ${resp.roleTitle}`,
-        body: `No eligible members found with verified skills for ${resp.roleTitle} in "${serviceTitle}". Please assign manually.`,
-        serviceId,
-        roleId: resp.roleId,
-        serviceTitle
-      });
+      if (existingData.noEligibleAlertSent !== true) {
+        noEligibleRoles.push({ roleId: resp.roleId, roleTitle: resp.roleTitle });
+      }
       continue;
     }
 
@@ -1360,6 +1471,29 @@ export async function autoDispatchPublishedServiceResponsibilities(params: {
     }
 
     console.log(`[RosterNotification] Broadcast ${resp.roleTitle} dispatched to ${eligibleMembers.length} eligible members.`);
+  }
+
+  if (noEligibleRoles.length > 0) {
+    const roleNames = noEligibleRoles.map(r => r.roleTitle);
+    const dateLabel = serviceDate ? formatDateMonthYear(serviceDate) : '';
+    const dateSuffix = dateLabel ? ` (${dateLabel})` : '';
+    const roleKey = noEligibleRoles.map(r => r.roleId).sort().join('_').slice(0, 80);
+
+    await notifyChurchAdmins(db, targetChurch, {
+      title:
+        noEligibleRoles.length === 1
+          ? `⚠️ No Volunteers: ${roleNames[0]}`
+          : `⚠️ ${noEligibleRoles.length} Roles Need Manual Assignment: ${serviceTitle}`,
+      body:
+        noEligibleRoles.length === 1
+          ? `No eligible members found with verified skills for ${roleNames[0]} in "${serviceTitle}"${dateSuffix}. Please assign manually.`
+          : `No eligible members found for ${roleNames.join(', ')} in "${serviceTitle}"${dateSuffix}. Tap to assign manually in Service Roster.`,
+      serviceId,
+      roleId: noEligibleRoles[0]?.roleId || '',
+      serviceTitle,
+      serviceDate,
+      notifId: `admin_roster_no_eligible_${serviceId}_${roleKey}`,
+    });
   }
 }
 
