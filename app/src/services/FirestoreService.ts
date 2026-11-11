@@ -42,6 +42,7 @@ export interface AppMember {
   email?: string;
   phone?: string;
   userType?: string;
+  status?: string;
   churchId: string;
   primaryChurchId?: string;
   joinDate?: string;
@@ -59,6 +60,41 @@ export interface AppMember {
   secondarySkill?: string;
   primarySkills?: string[];
   secondarySkills?: string[];
+}
+
+export interface RegistrationRequest {
+  id: string; // 10-digit phone
+  authUid?: string;
+  firstName: string;
+  lastName: string;
+  fullName?: string;
+  phone: string;
+  email?: string;
+  dob?: string;
+  gender?: string;
+  maritalStatus?: string;
+  anniversaryDate?: string;
+  numberOfChildren?: string;
+  baptized?: string;
+  baptismDate?: string;
+  baptismChurch?: string;
+  churchName?: string;
+  street?: string;
+  mandal?: string;
+  village?: string;
+  city?: string;
+  district?: string;
+  state?: string;
+  zip?: string;
+  nationality?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  rejectionReason?: string;
+  createdAt: string;
+  updatedAt?: string;
+  reviewedByUid?: string;
+  reviewedByName?: string;
+  reviewedAt?: string;
+  churchId: string;
 }
 
 export interface FirestorePromise {
@@ -949,6 +985,27 @@ class FirestoreService {
       }
 
       if (strictChurch) {
+        // Before returning false in strictChurch mode, check registration_requests in targetChurchId
+        try {
+          const reqDoc = await firestore()
+            .collection('Rhema Church')
+            .doc(targetChurchId)
+            .collection('registration_requests')
+            .doc(last10)
+            .get({ source: 'server' })
+            .catch(() => null);
+
+          if (reqDoc && reqDoc.exists) {
+            const reqData = reqDoc.data() as RegistrationRequest;
+            if (reqData?.status === 'pending') {
+              return { exists: false, isPending: true, registrationRequest: reqData };
+            } else if (reqData?.status === 'rejected') {
+              return { exists: false, isRejected: true, registrationRequest: reqData };
+            }
+          }
+        } catch (reqErr) {
+          console.warn('Error checking registration_requests in checkContactExists:', reqErr);
+        }
         return { exists: false };
       }
 
@@ -976,6 +1033,28 @@ class FirestoreService {
       } catch (cgError: any) {
         console.log("Global collection group query failed:", cgError.message);
         return { exists: false };
+      }
+
+      // Check registration_requests in target church
+      try {
+        const reqDoc = await firestore()
+          .collection('Rhema Church')
+          .doc(targetChurchId)
+          .collection('registration_requests')
+          .doc(last10)
+          .get({ source: 'server' })
+          .catch(() => null);
+
+        if (reqDoc && reqDoc.exists) {
+          const reqData = reqDoc.data() as RegistrationRequest;
+          if (reqData?.status === 'pending') {
+            return { exists: false, isPending: true, registrationRequest: reqData };
+          } else if (reqData?.status === 'rejected') {
+            return { exists: false, isRejected: true, registrationRequest: reqData };
+          }
+        }
+      } catch (reqErr) {
+        console.warn('Error checking registration_requests in checkContactExists:', reqErr);
       }
 
       return { exists: false };
@@ -3831,6 +3910,359 @@ class FirestoreService {
     } catch (e: any) {
       console.error('deleteBaptismRequest error:', e);
       return { success: false, error: e.message || 'Failed to delete baptism request' };
+    }
+  }
+
+  // ─── REGISTRATION APPROVALS WORKFLOW ───
+
+  async getRegistrationRequest(churchId: string, phone: string): Promise<RegistrationRequest | null> {
+    try {
+      const rawDigits = phone.replace(/\D/g, '');
+      const docId = rawDigits.slice(-10);
+      if (!docId) return null;
+      const doc = await firestore()
+        .collection('Rhema Church')
+        .doc(churchId)
+        .collection('registration_requests')
+        .doc(docId)
+        .get();
+      if (doc.exists) {
+        return { id: doc.id, ...doc.data() } as RegistrationRequest;
+      }
+      return null;
+    } catch (e) {
+      console.warn('getRegistrationRequest error:', e);
+      return null;
+    }
+  }
+
+  async createOrUpdateRegistrationRequest(churchId: string, data: any): Promise<{ success: boolean; id: string; error?: string }> {
+    try {
+      const rawDigits = (data.phone || '').replace(/\D/g, '');
+      const docId = rawDigits.slice(-10);
+      if (!docId) throw new Error('Valid 10-digit phone number is required');
+
+      const fullName = (data.fullName || `${data.firstName || ''} ${data.lastName || ''}`).trim();
+      const villageOrCity = data.city || data.village || '';
+      const payload: any = {
+        ...data,
+        id: docId,
+        phone: data.phone,
+        fullName,
+        city: villageOrCity,
+        village: villageOrCity,
+        gender: data.gender || '',
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        churchId,
+      };
+      // Remove any previous rejection data when re-applying
+      delete payload.rejectionReason;
+      delete payload.reviewedByUid;
+      delete payload.reviewedByName;
+      delete payload.reviewedAt;
+
+      await firestore()
+        .collection('Rhema Church')
+        .doc(churchId)
+        .collection('registration_requests')
+        .doc(docId)
+        .set(payload, { merge: true });
+
+      return { success: true, id: docId };
+    } catch (e: any) {
+      console.error('createOrUpdateRegistrationRequest error:', e);
+      return { success: false, id: '', error: e.message || 'Failed to submit registration' };
+    }
+  }
+
+  async getRegistrationRequests(churchId: string, status?: 'pending' | 'rejected' | 'approved' | 'all'): Promise<RegistrationRequest[]> {
+    try {
+      let query: any = firestore()
+        .collection('Rhema Church')
+        .doc(churchId)
+        .collection('registration_requests');
+
+      if (status && status !== 'all') {
+        query = query.where('status', '==', status);
+      }
+
+      const snap = await query.get();
+      const list = snap.docs.map((d: any) => ({ id: d.id, ...d.data() } as RegistrationRequest));
+      return list.sort((a: any, b: any) => {
+        const tA = new Date(a.createdAt || 0).getTime();
+        const tB = new Date(b.createdAt || 0).getTime();
+        return tB - tA;
+      });
+    } catch (e) {
+      console.error('getRegistrationRequests error:', e);
+      return [];
+    }
+  }
+
+  subscribeToRegistrationRequests(
+    churchId: string, 
+    status: 'pending' | 'rejected' | 'all', 
+    callback: (requests: RegistrationRequest[]) => void
+  ): () => void {
+    try {
+      let query: any = firestore()
+        .collection('Rhema Church')
+        .doc(churchId)
+        .collection('registration_requests');
+
+      if (status !== 'all') {
+        query = query.where('status', '==', status);
+      }
+
+      return query.onSnapshot(
+        (snap: any) => {
+          if (!snap) {
+            callback([]);
+            return;
+          }
+          const list = snap.docs.map((d: any) => ({ id: d.id, ...d.data() } as RegistrationRequest));
+          list.sort((a: any, b: any) => {
+            const tA = new Date(a.createdAt || 0).getTime();
+            const tB = new Date(b.createdAt || 0).getTime();
+            return tB - tA;
+          });
+          callback(list);
+        },
+        (err: any) => {
+          console.warn('subscribeToRegistrationRequests listener error:', err);
+          callback([]);
+        }
+      );
+    } catch (e) {
+      console.warn('subscribeToRegistrationRequests setup error:', e);
+      return () => {};
+    }
+  }
+
+  subscribeToPendingRegistrationsCount(churchId: string, callback: (count: number) => void): () => void {
+    try {
+      return firestore()
+        .collection('Rhema Church')
+        .doc(churchId)
+        .collection('registration_requests')
+        .where('status', '==', 'pending')
+        .onSnapshot(
+          (snap: any) => {
+            callback(snap ? snap.docs.length : 0);
+          },
+          (err: any) => {
+            console.warn('subscribeToPendingRegistrationsCount error:', err);
+            callback(0);
+          }
+        );
+    } catch (e) {
+      return () => {};
+    }
+  }
+
+  subscribeToRegistrationRequest(
+    churchId: string, 
+    phone: string, 
+    callback: (request: RegistrationRequest | null) => void
+  ): () => void {
+    try {
+      const rawDigits = phone.replace(/\D/g, '');
+      const docId = rawDigits.slice(-10);
+      if (!docId) {
+        callback(null);
+        return () => {};
+      }
+
+      return firestore()
+        .collection('Rhema Church')
+        .doc(churchId)
+        .collection('registration_requests')
+        .doc(docId)
+        .onSnapshot(
+          (snap: any) => {
+            if (snap && snap.exists) {
+              callback({ id: snap.id, ...snap.data() } as RegistrationRequest);
+            } else {
+              callback(null);
+            }
+          },
+          (err: any) => {
+            console.warn('subscribeToRegistrationRequest error:', err);
+            callback(null);
+          }
+        );
+    } catch (e) {
+      return () => {};
+    }
+  }
+
+  async approveRegistrationRequest(
+    churchId: string, 
+    requestId: string, 
+    adminUid?: string, 
+    adminName?: string
+  ): Promise<{ success: boolean; memberId?: string; error?: string }> {
+    try {
+      const docRef = firestore()
+        .collection('Rhema Church')
+        .doc(churchId)
+        .collection('registration_requests')
+        .doc(requestId);
+
+      const snap = await docRef.get();
+      if (!snap.exists) {
+        return { success: false, error: 'Registration request not found' };
+      }
+
+      const reqData = snap.data() as RegistrationRequest;
+      const targetMemberId = reqData.authUid || requestId;
+      const fullName = (reqData.fullName || `${reqData.firstName || ''} ${reqData.lastName || ''}`).trim();
+
+      // Create official member in members subcollection
+      const newMemberDoc: any = {
+        id: targetMemberId,
+        firstName: reqData.firstName || '',
+        lastName: reqData.lastName || '',
+        name: fullName,
+        phone: reqData.phone,
+        email: reqData.email || '',
+        gender: reqData.gender || 'Male',
+        dob: reqData.dob || '',
+        maritalStatus: reqData.maritalStatus || 'Single',
+        anniversaryDate: reqData.anniversaryDate || '',
+        numberOfChildren: reqData.numberOfChildren || '',
+        baptized: reqData.baptized || 'No',
+        baptismDate: reqData.baptismDate || '',
+        baptismChurch: reqData.baptismChurch || '',
+        churchName: reqData.churchName || '',
+        street: reqData.street || '',
+        mailingStreet: reqData.street || '',
+        mandal: reqData.mandal || '',
+        city: reqData.city || '',
+        mailingCity: reqData.city || '',
+        district: reqData.district || '',
+        state: reqData.state || '',
+        mailingState: reqData.state || '',
+        zip: reqData.zip || '',
+        nationality: reqData.nationality || 'Indian',
+        userType: 'Member',
+        role: 'Member',
+        status: 'Active',
+        churchId,
+        primaryChurchId: churchId,
+        joinDate: new Date().toISOString(),
+        approvedAt: new Date().toISOString(),
+        approvedByUid: adminUid || '',
+        approvedByName: adminName || 'Admin',
+      };
+
+      await firestore()
+        .collection('Rhema Church')
+        .doc(churchId)
+        .collection('members')
+        .doc(targetMemberId)
+        .set(newMemberDoc, { merge: true });
+
+      // If the request had a separate 10-digit ID and an authUid, make sure both are synced
+      if (reqData.authUid && reqData.authUid !== requestId) {
+        await firestore()
+          .collection('Rhema Church')
+          .doc(churchId)
+          .collection('members')
+          .doc(requestId)
+          .set(newMemberDoc, { merge: true })
+          .catch(() => {});
+      }
+
+      // Update registration request status
+      await docRef.update({
+        status: 'approved',
+        reviewedByUid: adminUid || '',
+        reviewedByName: adminName || 'Admin',
+        reviewedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+
+      return { success: true, memberId: targetMemberId };
+    } catch (e: any) {
+      console.error('approveRegistrationRequest error:', e);
+      return { success: false, error: e.message || 'Failed to approve registration' };
+    }
+  }
+
+  async rejectRegistrationRequest(
+    churchId: string, 
+    requestId: string, 
+    reason: string, 
+    adminUid?: string, 
+    adminName?: string
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const docRef = firestore()
+        .collection('Rhema Church')
+        .doc(churchId)
+        .collection('registration_requests')
+        .doc(requestId);
+
+      const snap = await docRef.get();
+      if (snap.exists) {
+        const reqData = snap.data() as RegistrationRequest;
+        const targetMemberId = reqData.authUid || requestId;
+        // Delete from members collection in Firebase if any stub or doc exists
+        await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(targetMemberId).delete().catch(() => {});
+        if (reqData.authUid && reqData.authUid !== requestId) {
+          await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(reqData.authUid).delete().catch(() => {});
+        }
+        if (requestId) {
+          await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(requestId).delete().catch(() => {});
+        }
+      }
+
+      await docRef.update({
+        status: 'rejected',
+        rejectionReason: reason || 'Application not approved at this time',
+        reviewedByUid: adminUid || '',
+        reviewedByName: adminName || 'Admin',
+        reviewedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+
+      return { success: true };
+    } catch (e: any) {
+      console.error('rejectRegistrationRequest error:', e);
+      return { success: false, error: e.message || 'Failed to reject registration' };
+    }
+  }
+
+  async deleteRegistrationRequest(churchId: string, requestId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const docRef = firestore()
+        .collection('Rhema Church')
+        .doc(churchId)
+        .collection('registration_requests')
+        .doc(requestId);
+
+      const snap = await docRef.get();
+      if (snap.exists) {
+        const reqData = snap.data() as RegistrationRequest;
+        const targetMemberId = reqData.authUid || requestId;
+        // Ensure any member doc is also permanently deleted
+        await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(targetMemberId).delete().catch(() => {});
+        if (reqData.authUid && reqData.authUid !== requestId) {
+          await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(reqData.authUid).delete().catch(() => {});
+        }
+        if (requestId) {
+          await firestore().collection('Rhema Church').doc(churchId).collection('members').doc(requestId).delete().catch(() => {});
+        }
+      }
+
+      await docRef.delete();
+      return { success: true };
+    } catch (e: any) {
+      console.error('deleteRegistrationRequest error:', e);
+      return { success: false, error: e.message || 'Failed to delete registration request' };
     }
   }
 }

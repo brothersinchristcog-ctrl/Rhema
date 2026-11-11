@@ -13,6 +13,7 @@ import {
   Platform,
   Modal,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Plus,
   Search,
@@ -53,6 +54,7 @@ import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThem
 
 export default function AdminQuizList() {
   const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const adminTabCtx = useContext(AdminTabContext);
   const { activeChurch } = useChurch();
@@ -329,15 +331,15 @@ export default function AdminQuizList() {
     return (
       <Modal visible={!!quizToDelete} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.deleteCard}>
+          <View style={[styles.deleteCard, { backgroundColor: cardSurface, borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#E2E8F0', borderWidth: 1 }]}>
             {/* Top Close Button */}
             <TouchableOpacity
               onPress={() => !isDeleting && setQuizToDelete(null)}
-              style={styles.deleteCloseBtn}
+              style={[styles.deleteCloseBtn, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#F1F5F9' }]}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               disabled={isDeleting}
             >
-              <X size={18} color="#64748B" />
+              <X size={18} color={secondaryText} />
             </TouchableOpacity>
 
             {/* Crimson Danger Icon */}
@@ -345,31 +347,31 @@ export default function AdminQuizList() {
               <Trash2 size={24} color="#DC2626" />
             </View>
 
-            <Text style={styles.deleteTitle}>Delete Bible Quiz?</Text>
-            <Text style={styles.deleteSubtitle}>
+            <Text style={[styles.deleteTitle, { color: primaryText }]}>Delete Bible Quiz?</Text>
+            <Text style={[styles.deleteSubtitle, { color: secondaryText }]}>
               This quiz will be permanently removed from your church library.
             </Text>
 
             {/* Quiz Info Box */}
-            <View style={styles.deleteQuizPreviewBox}>
-              <Text style={styles.deleteQuizPreviewTitle} numberOfLines={2}>
+            <View style={[styles.deleteQuizPreviewBox, { backgroundColor: secondarySurface, borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0' }]}>
+              <Text style={[styles.deleteQuizPreviewTitle, { color: primaryText }]} numberOfLines={2}>
                 "{quizToDelete.title}"
               </Text>
               <View style={styles.deleteQuizBadgesRow}>
-                <View style={styles.deleteQuizBadge}>
-                  <BookOpen size={11} color="#1a2d5a" />
-                  <Text style={styles.deleteQuizBadgeTxt}>
+                <View style={[styles.deleteQuizBadge, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#FFFFFF' }]}>
+                  <BookOpen size={11} color={primaryText} />
+                  <Text style={[styles.deleteQuizBadgeTxt, { color: secondaryText }]}>
                     {quizToDelete.questions?.length || 0} Questions
                   </Text>
                 </View>
-                <View style={styles.deleteQuizBadge}>
-                  <Text style={styles.deleteQuizBadgeTxt}>
+                <View style={[styles.deleteQuizBadge, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#FFFFFF' }]}>
+                  <Text style={[styles.deleteQuizBadgeTxt, { color: secondaryText }]}>
                     {(quizToDelete.difficulty || 'MEDIUM').toUpperCase()}
                   </Text>
                 </View>
                 {Boolean(quizToDelete.category || quizToDelete.topic) && (
-                  <View style={styles.deleteQuizBadge}>
-                    <Text style={styles.deleteQuizBadgeTxt} numberOfLines={1}>
+                  <View style={[styles.deleteQuizBadge, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#FFFFFF' }]}>
+                    <Text style={[styles.deleteQuizBadgeTxt, { color: secondaryText }]} numberOfLines={1}>
                       {quizToDelete.category || quizToDelete.topic}
                     </Text>
                   </View>
@@ -388,12 +390,12 @@ export default function AdminQuizList() {
             {/* Actions */}
             <View style={styles.deleteActionsRow}>
               <TouchableOpacity
-                style={styles.deleteCancelBtn}
+                style={[styles.deleteCancelBtn, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F8FAFC', borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : '#CBD5E1' }]}
                 onPress={() => setQuizToDelete(null)}
                 disabled={isDeleting}
                 activeOpacity={0.7}
               >
-                <Text style={styles.deleteCancelBtnTxt}>Cancel</Text>
+                <Text style={[styles.deleteCancelBtnTxt, { color: secondaryText }]}>Cancel</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -425,23 +427,23 @@ export default function AdminQuizList() {
     return (
       <Modal visible={!!deleteSuccessTitle} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.deleteCard}>
+          <View style={[styles.deleteCard, { backgroundColor: cardSurface, borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#E2E8F0', borderWidth: 1 }]}>
             <View style={styles.deleteSuccessIconCircle}>
               <CheckCircle size={30} color="#059669" />
             </View>
 
-            <Text style={styles.deleteTitle}>Quiz Deleted</Text>
-            <Text style={styles.deleteSubtitle}>
+            <Text style={[styles.deleteTitle, { color: primaryText }]}>Quiz Deleted</Text>
+            <Text style={[styles.deleteSubtitle, { color: secondaryText }]}>
               "{deleteSuccessTitle}" has been removed from your church quiz library.
             </Text>
 
             <TouchableOpacity
-              style={styles.deleteSuccessBtn}
+              style={[styles.deleteSuccessBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
               onPress={() => setDeleteSuccessTitle(null)}
               activeOpacity={0.85}
             >
-              <Check size={16} color="#ffffff" />
-              <Text style={styles.deleteSuccessBtnTxt}>Got It</Text>
+              <Check size={16} color={isDark ? '#000000' : '#FFFFFF'} />
+              <Text style={[styles.deleteSuccessBtnTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>Got It</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -456,38 +458,38 @@ export default function AdminQuizList() {
     return (
       <Modal visible={!!attemptToDelete} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.deleteCard}>
+          <View style={[styles.deleteCard, { backgroundColor: cardSurface, borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#E2E8F0', borderWidth: 1 }]}>
             <TouchableOpacity
               onPress={() => !isDeletingAttempt && setAttemptToDelete(null)}
-              style={styles.deleteCloseBtn}
+              style={[styles.deleteCloseBtn, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#F1F5F9' }]}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               disabled={isDeletingAttempt}
             >
-              <X size={18} color="#64748B" />
+              <X size={18} color={secondaryText} />
             </TouchableOpacity>
 
             <View style={styles.deleteIconCircle}>
               <Trash2 size={24} color="#DC2626" />
             </View>
 
-            <Text style={styles.deleteTitle}>Delete Quiz Report?</Text>
-            <Text style={styles.deleteSubtitle}>
+            <Text style={[styles.deleteTitle, { color: primaryText }]}>Delete Quiz Report?</Text>
+            <Text style={[styles.deleteSubtitle, { color: secondaryText }]}>
               Are you sure you want to delete this member's quiz report?
             </Text>
 
-            <View style={styles.deleteQuizPreviewBox}>
-              <Text style={styles.deleteQuizPreviewTitle} numberOfLines={2}>
+            <View style={[styles.deleteQuizPreviewBox, { backgroundColor: secondarySurface, borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0' }]}>
+              <Text style={[styles.deleteQuizPreviewTitle, { color: primaryText }]} numberOfLines={2}>
                 {attemptToDelete.memberName || 'Member'}
               </Text>
               <View style={styles.deleteQuizBadgesRow}>
-                <View style={styles.deleteQuizBadge}>
-                  <BookOpen size={11} color="#1a2d5a" />
-                  <Text style={styles.deleteQuizBadgeTxt} numberOfLines={1}>
+                <View style={[styles.deleteQuizBadge, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#FFFFFF' }]}>
+                  <BookOpen size={11} color={primaryText} />
+                  <Text style={[styles.deleteQuizBadgeTxt, { color: secondaryText }]} numberOfLines={1}>
                     {attemptToDelete.quizTitle || 'Bible Quiz'}
                   </Text>
                 </View>
-                <View style={styles.deleteQuizBadge}>
-                  <Text style={styles.deleteQuizBadgeTxt}>
+                <View style={[styles.deleteQuizBadge, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#FFFFFF' }]}>
+                  <Text style={[styles.deleteQuizBadgeTxt, { color: secondaryText }]}>
                     {attemptToDelete.score}/{attemptToDelete.totalMarks} ({attemptToDelete.percentage}%)
                   </Text>
                 </View>
@@ -503,12 +505,12 @@ export default function AdminQuizList() {
 
             <View style={styles.deleteActionsRow}>
               <TouchableOpacity
-                style={styles.deleteCancelBtn}
+                style={[styles.deleteCancelBtn, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F8FAFC', borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : '#CBD5E1' }]}
                 onPress={() => setAttemptToDelete(null)}
                 disabled={isDeletingAttempt}
                 activeOpacity={0.7}
               >
-                <Text style={styles.deleteCancelBtnTxt}>Cancel</Text>
+                <Text style={[styles.deleteCancelBtnTxt, { color: secondaryText }]}>Cancel</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -540,23 +542,23 @@ export default function AdminQuizList() {
     return (
       <Modal visible={!!deleteAttemptSuccessName} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.deleteCard}>
+          <View style={[styles.deleteCard, { backgroundColor: cardSurface, borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#E2E8F0', borderWidth: 1 }]}>
             <View style={styles.deleteSuccessIconCircle}>
               <CheckCircle size={30} color="#059669" />
             </View>
 
-            <Text style={styles.deleteTitle}>Report Deleted</Text>
-            <Text style={styles.deleteSubtitle}>
+            <Text style={[styles.deleteTitle, { color: primaryText }]}>Report Deleted</Text>
+            <Text style={[styles.deleteSubtitle, { color: secondaryText }]}>
               The quiz attempt report for "{deleteAttemptSuccessName}" has been removed.
             </Text>
 
             <TouchableOpacity
-              style={styles.deleteSuccessBtn}
+              style={[styles.deleteSuccessBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
               onPress={() => setDeleteAttemptSuccessName(null)}
               activeOpacity={0.85}
             >
-              <Check size={16} color="#ffffff" />
-              <Text style={styles.deleteSuccessBtnTxt}>Got It</Text>
+              <Check size={16} color={isDark ? '#000000' : '#FFFFFF'} />
+              <Text style={[styles.deleteSuccessBtnTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>Got It</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -575,61 +577,93 @@ export default function AdminQuizList() {
     return (
       <View style={styles.reportsContainer}>
         {/* Reports Header Card & High-level Metrics */}
-        <View style={styles.reportsHeaderCard}>
+        <View style={[styles.reportsHeaderCard, { backgroundColor: cardSurface, borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : adminBorderColor, shadowColor: '#000000' }]}>
           <View style={styles.reportsHeaderTopRow}>
             <View style={{ flex: 1, paddingRight: 8 }}>
-              <Text style={styles.reportsHeaderTitle}>Quiz Results & Leaderboard</Text>
-              <Text style={styles.reportsHeaderSubtitle}>
+              <Text style={[styles.reportsHeaderTitle, { color: primaryText }]}>Quiz Results & Leaderboard</Text>
+              <Text style={[styles.reportsHeaderSubtitle, { color: secondaryText }]}>
                 Member participation, scores, and prize rankings
               </Text>
             </View>
-            <View style={styles.reportsCounterBadge}>
-              <Users size={13} color="#1a2d5a" />
-              <Text style={styles.reportsCounterBadgeTxt}>{uniqueParticipantsCount} Members</Text>
+            <View style={[styles.reportsCounterBadge, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#eff6ff', borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#dbeafe' }]}>
+              <Users size={13} color={primaryText} />
+              <Text style={[styles.reportsCounterBadgeTxt, { color: primaryText }]}>{uniqueParticipantsCount} Members</Text>
             </View>
           </View>
 
           {/* Mini Stats Grid */}
-          <View style={styles.reportsMiniStatsRow}>
+          <View style={[styles.reportsMiniStatsRow, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#f8fafc' }]}>
             <View style={styles.reportsMiniStat}>
-              <Text style={styles.reportsMiniStatNum}>{totalAttemptsCount}</Text>
-              <Text style={styles.reportsMiniStatLbl}>Total Attempts</Text>
+              <Text style={[styles.reportsMiniStatNum, { color: primaryText }]}>{totalAttemptsCount}</Text>
+              <Text style={[styles.reportsMiniStatLbl, { color: secondaryText }]}>Total Attempts</Text>
             </View>
-            <View style={styles.reportsMiniStatDivider} />
+            <View style={[styles.reportsMiniStatDivider, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#e2e8f0' }]} />
             <View style={styles.reportsMiniStat}>
               <Text style={[styles.reportsMiniStatNum, { color: '#059669' }]}>{avgScore}%</Text>
-              <Text style={styles.reportsMiniStatLbl}>Average Score</Text>
+              <Text style={[styles.reportsMiniStatLbl, { color: secondaryText }]}>Average Score</Text>
             </View>
-            <View style={styles.reportsMiniStatDivider} />
+            <View style={[styles.reportsMiniStatDivider, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#e2e8f0' }]} />
             <View style={styles.reportsMiniStat}>
               <Text style={[styles.reportsMiniStatNum, { color: '#C9A84C' }]}>
                 {filteredAndRankedAttempts[0] ? `${filteredAndRankedAttempts[0].percentage}%` : '0%'}
               </Text>
-              <Text style={styles.reportsMiniStatLbl}>Top Score</Text>
+              <Text style={[styles.reportsMiniStatLbl, { color: secondaryText }]}>Top Score</Text>
             </View>
           </View>
 
           {/* Sort Switcher (Rank vs Recent) */}
           <View style={styles.sortToggleRow}>
-            <Text style={styles.sortToggleLbl}>Sort by:</Text>
+            <Text style={[styles.sortToggleLbl, { color: primaryText }]}>Sort by:</Text>
             <View style={styles.sortToggleButtons}>
               <TouchableOpacity
-                style={[styles.sortBtn, reportSort === 'rank' && styles.sortBtnActive]}
+                style={[
+                  styles.sortBtn,
+                  {
+                    backgroundColor: reportSort === 'rank'
+                      ? (isDark ? '#FFFFFF' : '#000000')
+                      : (isDark ? 'rgba(255, 255, 255, 0.08)' : '#f1f5f9'),
+                    borderColor: reportSort === 'rank'
+                      ? (isDark ? '#FFFFFF' : '#000000')
+                      : (isDark ? 'rgba(255, 255, 255, 0.15)' : '#e2e8f0'),
+                  }
+                ]}
                 onPress={() => setReportSort('rank')}
                 activeOpacity={0.8}
               >
-                <Trophy size={13} color={reportSort === 'rank' ? '#ffffff' : '#475569'} />
-                <Text style={[styles.sortBtnTxt, reportSort === 'rank' && styles.sortBtnTxtActive]}>
+                <Trophy size={13} color={reportSort === 'rank' ? (isDark ? '#000000' : '#FFFFFF') : secondaryText} />
+                <Text style={[
+                  styles.sortBtnTxt,
+                  {
+                    color: reportSort === 'rank' ? (isDark ? '#000000' : '#FFFFFF') : secondaryText,
+                    fontWeight: reportSort === 'rank' ? '700' : '600',
+                  }
+                ]}>
                   Rank (Winners)
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.sortBtn, reportSort === 'recent' && styles.sortBtnActive]}
+                style={[
+                  styles.sortBtn,
+                  {
+                    backgroundColor: reportSort === 'recent'
+                      ? (isDark ? '#FFFFFF' : '#000000')
+                      : (isDark ? 'rgba(255, 255, 255, 0.08)' : '#f1f5f9'),
+                    borderColor: reportSort === 'recent'
+                      ? (isDark ? '#FFFFFF' : '#000000')
+                      : (isDark ? 'rgba(255, 255, 255, 0.15)' : '#e2e8f0'),
+                  }
+                ]}
                 onPress={() => setReportSort('recent')}
                 activeOpacity={0.8}
               >
-                <Clock size={13} color={reportSort === 'recent' ? '#ffffff' : '#475569'} />
-                <Text style={[styles.sortBtnTxt, reportSort === 'recent' && styles.sortBtnTxtActive]}>
+                <Clock size={13} color={reportSort === 'recent' ? (isDark ? '#000000' : '#FFFFFF') : secondaryText} />
+                <Text style={[
+                  styles.sortBtnTxt,
+                  {
+                    color: reportSort === 'recent' ? (isDark ? '#000000' : '#FFFFFF') : secondaryText,
+                    fontWeight: reportSort === 'recent' ? '700' : '600',
+                  }
+                ]}>
                   Recent
                 </Text>
               </TouchableOpacity>
@@ -641,10 +675,26 @@ export default function AdminQuizList() {
             <View style={{ marginTop: 12 }}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
                 <TouchableOpacity
-                  style={[styles.quizFilterChip, reportQuizFilter === 'All' && styles.quizFilterChipActive]}
+                  style={[
+                    styles.quizFilterChip,
+                    {
+                      backgroundColor: reportQuizFilter === 'All'
+                        ? (isDark ? '#FFFFFF' : '#000000')
+                        : (isDark ? 'rgba(255, 255, 255, 0.08)' : '#f8fafc'),
+                      borderColor: reportQuizFilter === 'All'
+                        ? (isDark ? '#FFFFFF' : '#000000')
+                        : (isDark ? 'rgba(255, 255, 255, 0.15)' : '#cbd5e1'),
+                    }
+                  ]}
                   onPress={() => setReportQuizFilter('All')}
                 >
-                  <Text style={[styles.quizFilterChipTxt, reportQuizFilter === 'All' && styles.quizFilterChipTxtActive]}>
+                  <Text style={[
+                    styles.quizFilterChipTxt,
+                    {
+                      color: reportQuizFilter === 'All' ? (isDark ? '#000000' : '#FFFFFF') : secondaryText,
+                      fontWeight: reportQuizFilter === 'All' ? '700' : '600',
+                    }
+                  ]}>
                     All Quizzes ({attempts.length})
                   </Text>
                 </TouchableOpacity>
@@ -654,10 +704,26 @@ export default function AdminQuizList() {
                   return (
                     <TouchableOpacity
                       key={q.id}
-                      style={[styles.quizFilterChip, isSelected && styles.quizFilterChipActive]}
+                      style={[
+                        styles.quizFilterChip,
+                        {
+                          backgroundColor: isSelected
+                            ? (isDark ? '#FFFFFF' : '#000000')
+                            : (isDark ? 'rgba(255, 255, 255, 0.08)' : '#f8fafc'),
+                          borderColor: isSelected
+                            ? (isDark ? '#FFFFFF' : '#000000')
+                            : (isDark ? 'rgba(255, 255, 255, 0.15)' : '#cbd5e1'),
+                        }
+                      ]}
                       onPress={() => setReportQuizFilter(q.id)}
                     >
-                      <Text style={[styles.quizFilterChipTxt, isSelected && styles.quizFilterChipTxtActive]} numberOfLines={1}>
+                      <Text style={[
+                        styles.quizFilterChipTxt,
+                        {
+                          color: isSelected ? (isDark ? '#000000' : '#FFFFFF') : secondaryText,
+                          fontWeight: isSelected ? '700' : '600',
+                        }
+                      ]} numberOfLines={1}>
                         {q.title} ({qCount})
                       </Text>
                     </TouchableOpacity>
@@ -670,7 +736,7 @@ export default function AdminQuizList() {
 
         {/* 🏆 Top 3 Winners Podium Banner (when sorted by rank & attempts exist) */}
         {reportSort === 'rank' && filteredAndRankedAttempts.length > 0 && (
-          <View style={styles.podiumCard}>
+          <View style={[styles.podiumCard, { backgroundColor: isDark ? '#1C1917' : '#fffbeb', borderColor: isDark ? '#78350F' : '#fde68a' }]}>
             <View style={styles.podiumHeaderRow}>
               <Trophy size={18} color="#C9A84C" />
               <Text style={styles.podiumHeaderTitle}>Top Performers & Prize Candidates</Text>
@@ -682,17 +748,17 @@ export default function AdminQuizList() {
                 const badgeBg = idx === 0 ? '#FEF3C7' : idx === 1 ? '#E2E8F0' : '#FED7AA';
                 const badgeBorder = idx === 0 ? '#F59E0B' : idx === 1 ? '#94A3B8' : '#F97316';
                 return (
-                  <View key={`winner-${item.id || idx}`} style={styles.podiumItemRow}>
+                  <View key={`winner-${item.id || idx}`} style={[styles.podiumItemRow, { backgroundColor: isDark ? '#292524' : '#ffffff', borderColor: isDark ? '#44403C' : '#fef3c7' }]}>
                     <View style={[styles.podiumMedalBadge, { backgroundColor: badgeBg, borderColor: badgeBorder }]}>
                       <Text style={styles.podiumMedalTxt}>{medalIcon} {prizeLabel}</Text>
                     </View>
                     <View style={{ flex: 1, marginHorizontal: 8 }}>
-                      <Text style={styles.podiumMemberName} numberOfLines={1}>{item.memberName || 'Member'}</Text>
-                      <Text style={styles.podiumQuizSub} numberOfLines={1}>{item.quizTitle}</Text>
+                      <Text style={[styles.podiumMemberName, { color: primaryText }]} numberOfLines={1}>{item.memberName || 'Member'}</Text>
+                      <Text style={[styles.podiumQuizSub, { color: secondaryText }]} numberOfLines={1}>{item.quizTitle}</Text>
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
                       <Text style={styles.podiumScoreTxt}>{item.percentage}%</Text>
-                      <Text style={styles.podiumTimeTxt}>⏱️ {formatCompletionTime(item.timeTakenSeconds)}</Text>
+                      <Text style={[styles.podiumTimeTxt, { color: secondaryText }]}>⏱️ {formatCompletionTime(item.timeTakenSeconds)}</Text>
                     </View>
                   </View>
                 );
@@ -704,14 +770,14 @@ export default function AdminQuizList() {
         {/* List of Member Attempt Results */}
         {loadingAttempts ? (
           <View style={styles.centerLoading}>
-            <ActivityIndicator size="large" color="#1a2d5a" />
-            <Text style={styles.loadingTxt}>Loading member attempt reports...</Text>
+            <ActivityIndicator size="large" color={isDark ? '#FFFFFF' : '#000000'} />
+            <Text style={[styles.loadingTxt, { color: secondaryText }]}>Loading member attempt reports...</Text>
           </View>
         ) : filteredAndRankedAttempts.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Award size={40} color="#cbd5e1" />
-            <Text style={styles.emptyTitle}>No Quiz Attempts Found</Text>
-            <Text style={styles.emptySubtitle}>
+          <View style={[styles.emptyState, { backgroundColor: cardSurface, borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : adminBorderColor, shadowColor: '#000000' }]}>
+            <Award size={40} color={secondaryText} />
+            <Text style={[styles.emptyTitle, { color: primaryText }]}>No Quiz Attempts Found</Text>
+            <Text style={[styles.emptySubtitle, { color: secondaryText }]}>
               {searchQuery || reportQuizFilter !== 'All'
                 ? 'No attempt results matched your filter criteria.'
                 : 'When church members attempt Bible Quizzes, their results, scores, completion times, and answer details will appear here.'}
@@ -723,9 +789,9 @@ export default function AdminQuizList() {
             const isRank1 = reportSort === 'rank' && rank === 1;
             const isRank2 = reportSort === 'rank' && rank === 2;
             const isRank3 = reportSort === 'rank' && rank === 3;
-            const rankBadgeColor = isRank1 ? '#FEF3C7' : isRank2 ? '#E2E8F0' : isRank3 ? '#FED7AA' : '#F1F5F9';
-            const rankTextColor = isRank1 ? '#B45309' : isRank2 ? '#334155' : isRank3 ? '#C2410C' : '#64748B';
-            const rankBorderColor = isRank1 ? '#FDE68A' : isRank2 ? '#CBD5E1' : isRank3 ? '#FDBA74' : '#E2E8F0';
+            const rankBadgeColor = isRank1 ? '#FEF3C7' : isRank2 ? '#E2E8F0' : isRank3 ? '#FED7AA' : (isDark ? 'rgba(255,255,255,0.1)' : '#F1F5F9');
+            const rankTextColor = isRank1 ? '#B45309' : isRank2 ? '#334155' : isRank3 ? '#C2410C' : secondaryText;
+            const rankBorderColor = isRank1 ? '#FDE68A' : isRank2 ? '#CBD5E1' : isRank3 ? '#FDBA74' : (isDark ? 'rgba(255,255,255,0.15)' : '#E2E8F0');
 
             const submittedDateStr = attempt.submittedAt?.toDate
               ? attempt.submittedAt.toDate().toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -734,7 +800,7 @@ export default function AdminQuizList() {
               : 'Recent';
 
             return (
-              <View key={attempt.id} style={styles.attemptCard}>
+              <View key={attempt.id} style={[styles.attemptCard, { backgroundColor: cardSurface, borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : adminBorderColor, shadowColor: '#000000' }]}>
                 {/* Top Row: Rank & Score */}
                 <View style={styles.attemptCardHeader}>
                   <View style={[styles.rankBadge, { backgroundColor: rankBadgeColor, borderColor: rankBorderColor }]}>
@@ -760,8 +826,8 @@ export default function AdminQuizList() {
                   </View>
 
                   <View style={styles.attemptScorePill}>
-                    <Text style={styles.attemptScoreTxt}>{attempt.percentage}%</Text>
-                    <Text style={styles.attemptScoreSub}>
+                    <Text style={[styles.attemptScoreTxt, { color: primaryText }]}>{attempt.percentage}%</Text>
+                    <Text style={[styles.attemptScoreSub, { color: secondaryText }]}>
                       ({attempt.score}/{attempt.totalMarks} pts)
                     </Text>
                   </View>
@@ -778,29 +844,29 @@ export default function AdminQuizList() {
 
                 {/* Member Profile Row */}
                 <View style={styles.attemptMemberRow}>
-                  <View style={styles.attemptAvatarCircle}>
-                    <Text style={styles.attemptAvatarTxt}>
+                  <View style={[styles.attemptAvatarCircle, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}>
+                    <Text style={[styles.attemptAvatarTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
                       {(attempt.memberName || 'M').charAt(0).toUpperCase()}
                     </Text>
                   </View>
                   <View style={{ flex: 1, marginLeft: 10 }}>
-                    <Text style={styles.attemptMemberName}>{attempt.memberName || 'Church Member'}</Text>
+                    <Text style={[styles.attemptMemberName, { color: primaryText }]}>{attempt.memberName || 'Church Member'}</Text>
                     <View style={styles.attemptMetaRow}>
                       {Boolean(attempt.memberPhone) && (
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginRight: 8 }}>
-                          <Phone size={10} color="#64748B" />
-                          <Text style={styles.attemptMetaTxt}>{attempt.memberPhone}</Text>
+                          <Phone size={10} color={secondaryText} />
+                          <Text style={[styles.attemptMetaTxt, { color: secondaryText }]}>{attempt.memberPhone}</Text>
                         </View>
                       )}
-                      <Text style={styles.attemptMetaTxt}>🕒 {submittedDateStr}</Text>
+                      <Text style={[styles.attemptMetaTxt, { color: secondaryText }]}>🕒 {submittedDateStr}</Text>
                     </View>
                   </View>
                 </View>
 
                 {/* Attempted Quiz Box */}
-                <View style={styles.attemptQuizBox}>
-                  <BookOpen size={13} color="#1a2d5a" />
-                  <Text style={styles.attemptQuizTitle} numberOfLines={1}>
+                <View style={[styles.attemptQuizBox, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#f8fafc', borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#f1f5f9' }]}>
+                  <BookOpen size={13} color={primaryText} />
+                  <Text style={[styles.attemptQuizTitle, { color: primaryText }]} numberOfLines={1}>
                     {attempt.quizTitle || 'Bible Quiz'}
                   </Text>
                 </View>
@@ -833,12 +899,12 @@ export default function AdminQuizList() {
                 <View style={styles.attemptActionsRow}>
                   {Array.isArray(attempt.answers) && attempt.answers.length > 0 ? (
                     <TouchableOpacity
-                      style={styles.reviewAnswersBtn}
+                      style={[styles.reviewAnswersBtn, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#eff6ff', borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : '#dbeafe' }]}
                       onPress={() => setInspectAttempt(attempt)}
                       activeOpacity={0.82}
                     >
-                      <FileText size={13} color="#1a2d5a" />
-                      <Text style={styles.reviewAnswersBtnTxt}>
+                      <FileText size={13} color={primaryText} />
+                      <Text style={[styles.reviewAnswersBtnTxt, { color: primaryText }]}>
                         Review Answers ({attempt.answers.length} Qs)
                       </Text>
                     </TouchableOpacity>
@@ -870,23 +936,23 @@ export default function AdminQuizList() {
     return (
       <Modal visible={!!inspectAttempt} transparent animationType="slide">
         <View style={styles.reviewModalOverlay}>
-          <View style={styles.reviewModalCard}>
+          <View style={[styles.reviewModalCard, { backgroundColor: cardSurface, borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#E2E8F0', borderWidth: 1 }]}>
             {/* Modal Header */}
             <View style={styles.reviewModalHeader}>
               <View style={{ flex: 1, paddingRight: 8 }}>
-                <Text style={styles.reviewModalTitle} numberOfLines={1}>
+                <Text style={[styles.reviewModalTitle, { color: primaryText }]} numberOfLines={1}>
                   {inspectAttempt.memberName}'s Answers
                 </Text>
-                <Text style={styles.reviewModalSubtitle} numberOfLines={1}>
+                <Text style={[styles.reviewModalSubtitle, { color: secondaryText }]} numberOfLines={1}>
                   {inspectAttempt.quizTitle} · Score: {inspectAttempt.percentage}% · Time: {formatCompletionTime(inspectAttempt.timeTakenSeconds)}
                 </Text>
               </View>
               <TouchableOpacity
                 onPress={() => setInspectAttempt(null)}
-                style={styles.reviewModalCloseBtn}
+                style={[styles.reviewModalCloseBtn, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#F1F5F9' }]}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               >
-                <X size={18} color="#64748B" />
+                <X size={18} color={secondaryText} />
               </TouchableOpacity>
             </View>
 
@@ -902,7 +968,7 @@ export default function AdminQuizList() {
                   : String(ans.correctAnswer || '');
 
                 return (
-                  <View key={ans.questionId || idx} style={styles.reviewQCard}>
+                  <View key={ans.questionId || idx} style={[styles.reviewQCard, { backgroundColor: secondarySurface, borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#E2E8F0' }]}>
                     <View style={styles.reviewQTopRow}>
                       <View style={styles.reviewQNumPill}>
                         <Text style={styles.reviewQNumPillTxt}>Q{idx + 1}</Text>
@@ -924,7 +990,7 @@ export default function AdminQuizList() {
                       </View>
                     </View>
 
-                    <Text style={styles.reviewQText}>{ans.question}</Text>
+                    <Text style={[styles.reviewQText, { color: primaryText }]}>{ans.question}</Text>
 
                     {/* Member's answer */}
                     <View
@@ -979,11 +1045,11 @@ export default function AdminQuizList() {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.reviewModalDoneBtn}
+                style={[styles.reviewModalDoneBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
                 onPress={() => setInspectAttempt(null)}
                 activeOpacity={0.85}
               >
-                <Text style={styles.reviewModalDoneBtnTxt}>Close Review</Text>
+                <Text style={[styles.reviewModalDoneBtnTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>Close Review</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -993,143 +1059,117 @@ export default function AdminQuizList() {
   };
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#1a2d5a" />
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
+      <StatusBar barStyle={barStyle} backgroundColor={isDark ? '#000000' : '#FFFFFF'} />
 
-      {/* ── Signature Admin Hero Header ── */}
-      <View style={styles.hero}>
-        <View style={styles.heroTitleRow}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1, paddingRight: 6 }}>
-            <TouchableOpacity onPress={handleGoBack} style={styles.circularBackBtn} activeOpacity={0.7}>
-              <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
+      {/* ── Signature Admin Pinned Header (Centered Title, Theme Colors) ── */}
+      <View
+        style={{
+          backgroundColor: isDark ? '#000000' : '#FFFFFF',
+          borderBottomWidth: 1.5,
+          borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#CBD5E1',
+          paddingTop: Platform.OS === 'ios' ? Math.max(insets.top, 20) : 12,
+          paddingBottom: 12,
+          paddingHorizontal: 16,
+        }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          {/* Left: Circular Back Button */}
+          <View style={{ minWidth: 64, alignItems: 'flex-start' }}>
+            <TouchableOpacity
+              onPress={handleGoBack}
+              style={[
+                styles.circularBackBtn,
+                {
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#FFFFFF',
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.3)' : '#CBD5E1',
+                  borderWidth: 1.5,
+                }
+              ]}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.4} />
             </TouchableOpacity>
-            <Text style={[styles.heroTitle, { marginLeft: 12 }]} numberOfLines={1}>Bible Quizzes</Text>
           </View>
 
-          <TouchableOpacity
-            style={styles.newBtn}
-            onPress={() => {
-              setSelectedQuiz(null);
-              setCurrentView('editor');
-            }}
-            activeOpacity={0.85}
-          >
-            <Plus size={15} color="#1a2d5a" strokeWidth={2.5} />
-            <Text style={styles.newBtnTxt}>New</Text>
-          </TouchableOpacity>
+          {/* Middle: Centered Heading Text */}
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 }}>
+            <Text
+              style={{
+                fontSize: 20,
+                fontWeight: '800',
+                color: isDark ? '#FFFFFF' : '#0F172A',
+                textAlign: 'center',
+                letterSpacing: -0.3,
+              }}
+              numberOfLines={1}
+            >
+              Bible Quizzes
+            </Text>
+          </View>
+
+          {/* Right: "New" Button with App Theme Colors */}
+          <View style={{ minWidth: 64, alignItems: 'flex-end' }}>
+            <TouchableOpacity
+              style={{
+                backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 5,
+                paddingHorizontal: 14,
+                paddingVertical: 7,
+                borderRadius: 10,
+                shadowColor: '#000000',
+                shadowOpacity: 0.15,
+                shadowRadius: 4,
+                shadowOffset: { width: 0, height: 2 },
+                elevation: 3,
+              }}
+              onPress={() => {
+                setSelectedQuiz(null);
+                setCurrentView('editor');
+              }}
+              activeOpacity={0.85}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Plus size={15} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.5} />
+              <Text
+                style={{
+                  color: isDark ? '#000000' : '#FFFFFF',
+                  fontSize: 13,
+                  fontWeight: '800',
+                  letterSpacing: 0.3,
+                }}
+              >
+                New
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
       <ScrollView
-        style={styles.contentArea}
-        contentContainerStyle={{ paddingBottom: 40 }}
+        style={[styles.contentArea, { backgroundColor: screenBg }]}
+        contentContainerStyle={{ paddingBottom: 40, paddingTop: 4 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
         showsVerticalScrollIndicator={false}
       >
-        {/* ── 3 Interactive Stats Cards ── */}
-        <View style={styles.stats}>
-          {/* 1. Total Card */}
-          <TouchableOpacity
-            style={[
-              styles.statBox,
-              statusFilter === 'All' && styles.statBoxActiveAll,
-            ]}
-            onPress={() => setStatusFilter('All')}
-            activeOpacity={0.75}
-          >
-            <View style={[styles.statNotch, { backgroundColor: '#1a2d5a' }]} />
-            <Text style={[styles.num, { color: '#1a2d5a' }]}>{totalCount}</Text>
-            <View style={styles.statLabelRow}>
-              <Text style={[styles.statLabel, statusFilter === 'All' && { color: '#1a2d5a' }]}>
-                Total
-              </Text>
-              {statusFilter === 'All' && (
-                <View style={[styles.activeIndicatorDot, { backgroundColor: '#1a2d5a' }]} />
-              )}
-            </View>
-            <Text style={styles.statHintTxt}>
-              {statusFilter === 'All' ? 'Active ✓' : 'Tap to view'}
-            </Text>
-          </TouchableOpacity>
-
-          {/* 2. Published Card */}
-          <TouchableOpacity
-            style={[
-              styles.statBox,
-              statusFilter === 'Published' && styles.statBoxActivePublished,
-            ]}
-            onPress={() => setStatusFilter(prev => prev === 'Published' ? 'All' : 'Published')}
-            activeOpacity={0.75}
-          >
-            <View style={[styles.statNotch, { backgroundColor: '#059669' }]} />
-            <Text style={[styles.num, { color: '#059669' }]}>{publishedCount}</Text>
-            <View style={styles.statLabelRow}>
-              <Text style={[styles.statLabel, statusFilter === 'Published' && { color: '#059669' }]}>
-                Published
-              </Text>
-              {statusFilter === 'Published' && (
-                <View style={[styles.activeIndicatorDot, { backgroundColor: '#059669' }]} />
-              )}
-            </View>
-            <Text style={styles.statHintTxt}>
-              {statusFilter === 'Published' ? 'Active ✓' : 'Tap to view'}
-            </Text>
-          </TouchableOpacity>
-
-          {/* 3. Scheduled Card */}
-          <TouchableOpacity
-            style={[
-              styles.statBox,
-              statusFilter === 'Scheduled' && styles.statBoxActiveScheduled,
-            ]}
-            onPress={() => setStatusFilter(prev => prev === 'Scheduled' ? 'All' : 'Scheduled')}
-            activeOpacity={0.75}
-          >
-            <View style={[styles.statNotch, { backgroundColor: '#2563eb' }]} />
-            <Text style={[styles.num, { color: '#2563eb' }]}>{scheduledCount}</Text>
-            <View style={styles.statLabelRow}>
-              <Text style={[styles.statLabel, statusFilter === 'Scheduled' && { color: '#2563eb' }]}>
-                Scheduled
-              </Text>
-              {statusFilter === 'Scheduled' && (
-                <View style={[styles.activeIndicatorDot, { backgroundColor: '#2563eb' }]} />
-              )}
-            </View>
-            <Text style={styles.statHintTxt}>
-              {statusFilter === 'Scheduled' ? 'Active ✓' : 'Tap to view'}
-            </Text>
-          </TouchableOpacity>
-
-          {/* 3. Drafts Card */}
-          <TouchableOpacity
-            style={[
-              styles.statBox,
-              statusFilter === 'Drafts' && styles.statBoxActiveDraft,
-            ]}
-            onPress={() => setStatusFilter(prev => prev === 'Drafts' ? 'All' : 'Drafts')}
-            activeOpacity={0.75}
-          >
-            <View style={[styles.statNotch, { backgroundColor: '#d97706' }]} />
-            <Text style={[styles.num, { color: '#d97706' }]}>{draftCount}</Text>
-            <View style={styles.statLabelRow}>
-              <Text style={[styles.statLabel, statusFilter === 'Drafts' && { color: '#d97706' }]}>
-                Drafts
-              </Text>
-              {statusFilter === 'Drafts' && (
-                <View style={[styles.activeIndicatorDot, { backgroundColor: '#d97706' }]} />
-              )}
-            </View>
-            <Text style={styles.statHintTxt}>
-              {statusFilter === 'Drafts' ? 'Active ✓' : 'Tap to view'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
         {/* Search Bar */}
-        <View style={styles.searchBarWrap}>
-          <Search size={16} color="#64748b" />
+        <View
+          style={[
+            styles.searchBarWrap,
+            {
+              backgroundColor: cardSurface,
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.14)' : adminBorderColor,
+              shadowColor: '#000000',
+              marginTop: 4,
+            }
+          ]}
+        >
+          <Search size={16} color={secondaryText} />
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, { color: primaryText }]}
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholder={
@@ -1137,31 +1177,85 @@ export default function AdminQuizList() {
                 ? "Search by member name, quiz title, phone..."
                 : "Search by title, book, category..."
             }
-            placeholderTextColor="#94a3b8"
+            placeholderTextColor={secondaryText}
           />
         </View>
 
-        {/* Filter Pills */}
+        {/* Filter Badges with Counts */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           style={styles.filterPillsScroll}
           contentContainerStyle={styles.filterPillsRow}
         >
-          {['All Quizzes', 'Published', 'Scheduled', 'Drafts', 'Reports'].map(filter => {
-            const isActive = (filter === 'All Quizzes' && statusFilter === 'All') || statusFilter === filter;
+          {[
+            { key: 'All', label: 'All Quizzes', count: totalCount },
+            { key: 'Published', label: 'Published', count: publishedCount },
+            { key: 'Scheduled', label: 'Scheduled', count: scheduledCount },
+            { key: 'Drafts', label: 'Drafts', count: draftCount },
+            { key: 'Reports', label: 'Reports', count: attempts.length },
+          ].map(item => {
+            const isActive = statusFilter === item.key;
             return (
               <TouchableOpacity
-                key={filter}
-                style={[styles.filterPill, isActive && styles.filterPillActive]}
-                onPress={() => setStatusFilter(filter === 'All Quizzes' ? 'All' : filter)}
+                key={item.key}
+                style={[
+                  styles.filterPill,
+                  {
+                    backgroundColor: isActive
+                      ? (isDark ? '#FFFFFF' : '#000000')
+                      : (isDark ? 'rgba(255, 255, 255, 0.06)' : cardSurface),
+                    borderColor: isActive
+                      ? (isDark ? '#FFFFFF' : '#000000')
+                      : (isDark ? 'rgba(255, 255, 255, 0.16)' : adminBorderColor),
+                    shadowColor: '#000000',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 6,
+                    paddingHorizontal: 12,
+                    paddingVertical: 7,
+                  }
+                ]}
+                onPress={() => setStatusFilter(item.key)}
                 activeOpacity={0.75}
               >
                 <Text
-                  style={[styles.filterPillTxt, isActive && styles.filterPillTxtActive]}
+                  style={[
+                    styles.filterPillTxt,
+                    {
+                      color: isActive
+                        ? (isDark ? '#000000' : '#FFFFFF')
+                        : secondaryText,
+                      fontWeight: isActive ? '800' : '600',
+                    }
+                  ]}
                 >
-                  {filter}
+                  {item.label}
                 </Text>
+
+                {/* Count Pill */}
+                <View
+                  style={{
+                    paddingHorizontal: 7,
+                    paddingVertical: 1,
+                    borderRadius: 10,
+                    backgroundColor: isActive
+                      ? (isDark ? '#000000' : '#FFFFFF')
+                      : (isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0'),
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      fontWeight: '800',
+                      color: isActive
+                        ? (isDark ? '#FFFFFF' : '#000000')
+                        : primaryText,
+                    }}
+                  >
+                    {item.count}
+                  </Text>
+                </View>
               </TouchableOpacity>
             );
           })}
@@ -1172,25 +1266,45 @@ export default function AdminQuizList() {
           renderReportsSection()
         ) : loading ? (
           <View style={styles.centerLoading}>
-            <ActivityIndicator size="large" color="#7c3aed" />
-            <Text style={styles.loadingTxt}>Loading quizzes...</Text>
+            <ActivityIndicator size="large" color={isDark ? '#FFFFFF' : '#000000'} />
+            <Text style={[styles.loadingTxt, { color: secondaryText }]}>Loading quizzes...</Text>
           </View>
         ) : filteredQuizzes.length === 0 ? (
-          <View style={styles.emptyState}>
-            <BookOpen size={40} color="#cbd5e1" />
-            <Text style={styles.emptyTitle}>No Bible Quizzes Found</Text>
-            <Text style={styles.emptySubtitle}>
+          <View
+            style={[
+              styles.emptyState,
+              {
+                backgroundColor: cardSurface,
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : adminBorderColor,
+                shadowColor: '#000000',
+              }
+            ]}
+          >
+            <BookOpen size={40} color={secondaryText} />
+            <Text style={[styles.emptyTitle, { color: primaryText }]}>No Bible Quizzes Found</Text>
+            <Text style={[styles.emptySubtitle, { color: secondaryText }]}>
               Create your first Bible Quiz with questions, scripture references, and explanations!
             </Text>
             <TouchableOpacity
-              style={styles.emptyCreateBtn}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                paddingHorizontal: 18,
+                paddingVertical: 10,
+                borderRadius: 12,
+                gap: 6,
+                marginTop: 10,
+              }}
               onPress={() => {
                 setSelectedQuiz(null);
                 setCurrentView('editor');
               }}
             >
-              <Plus size={16} color="#fff" />
-              <Text style={styles.emptyCreateBtnTxt}>Create New Quiz</Text>
+              <Plus size={16} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.5} />
+              <Text style={{ fontSize: 13, fontWeight: '800', color: isDark ? '#000000' : '#FFFFFF' }}>
+                Create New Quiz
+              </Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -1198,7 +1312,17 @@ export default function AdminQuizList() {
             const isPublished = quiz.status === 'published';
             const isScheduled = quiz.status === 'scheduled';
             return (
-              <View key={quiz.id} style={styles.quizCard}>
+              <View
+                key={quiz.id}
+                style={[
+                  styles.quizCard,
+                  {
+                    backgroundColor: cardSurface,
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : adminBorderColor,
+                    shadowColor: '#000000',
+                  }
+                ]}
+              >
                 {/* Top Row: Badges (Status, Medium) on Left & Edit/Delete on Right (straight in line with Medium) */}
                 <View style={styles.cardTopRow}>
                   <View style={styles.cardBadgesGroup}>
@@ -1208,7 +1332,7 @@ export default function AdminQuizList() {
                         isPublished
                           ? styles.statusBadgePub
                           : isScheduled
-                          ? { backgroundColor: '#DBEAFE', borderColor: '#93C5FD' }
+                          ? { backgroundColor: isDark ? 'rgba(37, 99, 235, 0.2)' : '#DBEAFE', borderColor: '#93C5FD' }
                           : styles.statusBadgeDraft,
                       ]}
                     >
@@ -1218,8 +1342,8 @@ export default function AdminQuizList() {
                           isPublished
                             ? { color: '#059669' }
                             : isScheduled
-                            ? { color: '#2563eb' }
-                            : { color: '#64748b' },
+                            ? { color: '#3B82F6' }
+                            : { color: secondaryText },
                         ]}
                       >
                         {isScheduled && quiz.scheduledDate
@@ -1229,18 +1353,18 @@ export default function AdminQuizList() {
                     </View>
 
                     {quiz.isDailyQuiz && (
-                      <View style={styles.dailyBadge}>
-                        <Text style={styles.dailyBadgeTxt}>☀️ DAILY</Text>
+                      <View style={[styles.dailyBadge, { backgroundColor: isDark ? 'rgba(124, 58, 237, 0.2)' : '#f5f3ff' }]}>
+                        <Text style={[styles.dailyBadgeTxt, { color: isDark ? '#A78BFA' : '#7c3aed' }]}>☀️ DAILY</Text>
                       </View>
                     )}
 
-                    <View style={styles.difficultyBadge}>
-                      <Text style={styles.difficultyBadgeTxt}>{quiz.difficulty.toUpperCase()}</Text>
+                    <View style={[styles.difficultyBadge, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#f8fafc' }]}>
+                      <Text style={[styles.difficultyBadgeTxt, { color: secondaryText }]}>{quiz.difficulty.toUpperCase()}</Text>
                     </View>
 
                     {quiz.level ? (
-                      <View style={styles.levelBadge}>
-                        <Text style={styles.levelBadgeTxt}>LEVEL {quiz.level}</Text>
+                      <View style={[styles.levelBadge, { backgroundColor: isDark ? 'rgba(37, 99, 235, 0.2)' : '#eff6ff' }]}>
+                        <Text style={[styles.levelBadgeTxt, { color: isDark ? '#60A5FA' : '#2563eb' }]}>LEVEL {quiz.level}</Text>
                       </View>
                     ) : null}
                   </View>
@@ -1248,19 +1372,31 @@ export default function AdminQuizList() {
                   {/* Top Right: Edit and Delete Buttons straight in line with Medium */}
                   <View style={styles.cardTopActions}>
                     <TouchableOpacity
-                      style={styles.cardEditBtn}
+                      style={[
+                        styles.cardEditBtn,
+                        {
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.10)' : '#F1F5F9',
+                          borderColor: isDark ? 'rgba(255, 255, 255, 0.20)' : '#E2E8F0',
+                        }
+                      ]}
                       onPress={() => {
                         setSelectedQuiz(quiz);
                         setCurrentView('editor');
                       }}
                       hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                     >
-                      <Edit2 size={13} color="#475569" />
-                      <Text style={styles.cardEditBtnTxt}>Edit</Text>
+                      <Edit2 size={13} color={isDark ? '#FFFFFF' : '#475569'} />
+                      <Text style={[styles.cardEditBtnTxt, { color: isDark ? '#FFFFFF' : '#475569' }]}>Edit</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      style={styles.cardDeleteBtn}
+                      style={[
+                        styles.cardDeleteBtn,
+                        {
+                          backgroundColor: isDark ? 'rgba(220, 38, 38, 0.18)' : '#FEF2F2',
+                          borderColor: isDark ? 'rgba(220, 38, 38, 0.35)' : '#FECACA',
+                        }
+                      ]}
                       onPress={() => handleDeleteQuiz(quiz)}
                       hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                     >
@@ -1280,28 +1416,28 @@ export default function AdminQuizList() {
                     });
                   }}
                 >
-                  <Text style={styles.cardTitle}>{quiz.title}</Text>
+                  <Text style={[styles.cardTitle, { color: primaryText }]}>{quiz.title}</Text>
 
                   {/* Sub details: Book / Category / Questions */}
                   <View style={styles.cardMetaRow}>
                     {quiz.book ? (
-                      <Text style={styles.cardMetaItem}>
+                      <Text style={[styles.cardMetaItem, { color: secondaryText }]}>
                         📖 {quiz.book} {quiz.chapterStart ? `Ch ${quiz.chapterStart}${quiz.chapterEnd ? `-${quiz.chapterEnd}` : ''}` : ''}
                       </Text>
                     ) : (
-                      <Text style={styles.cardMetaItem}>🏷️ {quiz.category || 'General'}</Text>
+                      <Text style={[styles.cardMetaItem, { color: secondaryText }]}>🏷️ {quiz.category || 'General'}</Text>
                     )}
-                    <Text style={styles.cardMetaDot}>·</Text>
-                    <Text style={styles.cardMetaItem}>{quiz.totalQuestions || quiz.questions?.length || 0} Questions</Text>
-                    <Text style={styles.cardMetaDot}>·</Text>
-                    <Text style={styles.cardMetaItem}>
-                      <Clock size={12} color="#64748b" /> {quiz.timeLimitMinutes > 0 ? `${quiz.timeLimitMinutes}m` : 'Untimed'}
+                    <Text style={[styles.cardMetaDot, { color: isDark ? 'rgba(255, 255, 255, 0.3)' : '#cbd5e1' }]}>·</Text>
+                    <Text style={[styles.cardMetaItem, { color: secondaryText }]}>{quiz.totalQuestions || quiz.questions?.length || 0} Questions</Text>
+                    <Text style={[styles.cardMetaDot, { color: isDark ? 'rgba(255, 255, 255, 0.3)' : '#cbd5e1' }]}>·</Text>
+                    <Text style={[styles.cardMetaItem, { color: secondaryText }]}>
+                      <Clock size={12} color={secondaryText} /> {quiz.timeLimitMinutes > 0 ? `${quiz.timeLimitMinutes}m` : 'Untimed'}
                     </Text>
                   </View>
                 </TouchableOpacity>
 
                 {/* Card Actions (Bottom row): View, Report, Move to Draft / Publish */}
-                <View style={styles.cardActionsRow}>
+                <View style={[styles.cardActionsRow, { borderTopColor: isDark ? 'rgba(255, 255, 255, 0.10)' : '#f1f5f9' }]}>
                   <TouchableOpacity
                     style={styles.cardActionBtn}
                     onPress={() => {
@@ -1442,7 +1578,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     elevation: 4,
   },
   newBtnTxt: {
-    color: '#1a2d5a',
+    color: '#000000',
     fontSize: 13,
     fontWeight: '800',
     letterSpacing: 0.3,
@@ -1464,20 +1600,20 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     paddingVertical: 14,
     alignItems: 'center',
     elevation: 3,
-    shadowColor: '#1a2d5a',
+    shadowColor: '#000000',
     shadowOpacity: 0.07,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
     borderWidth: 1.5,
-    borderColor: 'rgba(26, 45, 90, 0.08)',
+    borderColor: 'rgba(0, 0, 0, 0.08)',
     position: 'relative',
   },
   statBoxActiveAll: {
-    borderColor: '#1a2d5a',
+    borderColor: '#0F172A',
     borderWidth: 2,
     backgroundColor: '#f8fafc',
     elevation: 5,
-    shadowColor: '#1a2d5a',
+    shadowColor: '#000000',
     shadowOpacity: 0.15,
   },
   statBoxActivePublished: {
@@ -1547,13 +1683,13 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#ffffff',
     borderWidth: 1,
-    borderColor: 'rgba(26,45,90,0.1)',
+    borderColor: '#CBD5E1',
     borderRadius: 12,
     paddingHorizontal: 12,
     height: 44,
     marginBottom: 12,
     gap: 8,
-    shadowColor: '#1a2d5a',
+    shadowColor: '#000000',
     shadowOpacity: 0.04,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
@@ -1562,7 +1698,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 13,
-    color: '#1a2d5a',
+    color: '#0F172A',
   },
   filterPillsRow: {
     flexDirection: 'row',
@@ -1575,16 +1711,16 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     borderRadius: 20,
     backgroundColor: '#ffffff',
     borderWidth: 1.5,
-    borderColor: 'rgba(26,45,90,0.1)',
-    shadowColor: '#1a2d5a',
+    borderColor: '#CBD5E1',
+    shadowColor: '#000000',
     shadowOpacity: 0.04,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
     elevation: 1,
   },
   filterPillActive: {
-    backgroundColor: '#1a2d5a',
-    borderColor: '#1a2d5a',
+    backgroundColor: '#000000',
+    borderColor: '#000000',
   },
   filterPillTxt: {
     fontSize: 12,
@@ -1609,9 +1745,9 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     padding: 30,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(26,45,90,0.08)',
+    borderColor: '#CBD5E1',
     marginTop: 10,
-    shadowColor: '#1a2d5a',
+    shadowColor: '#000000',
     shadowOpacity: 0.04,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
@@ -1620,7 +1756,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   emptyTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#1a2d5a',
+    color: '#0F172A',
     marginTop: 12,
   },
   emptySubtitle: {
@@ -1633,7 +1769,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   emptyCreateBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1a2d5a',
+    backgroundColor: '#000000',
     paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: 12,
@@ -1651,8 +1787,8 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     padding: 14,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: 'rgba(26,45,90,0.08)',
-    shadowColor: '#1a2d5a',
+    borderColor: '#CBD5E1',
+    shadowColor: '#000000',
     shadowOpacity: 0.05,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
@@ -2012,7 +2148,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   reportsHeaderTitle: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#1a2d5a',
+    color: '#0F172A',
   },
   reportsHeaderSubtitle: {
     fontSize: 12,
@@ -2033,7 +2169,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   reportsCounterBadgeTxt: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#1a2d5a',
+    color: '#0F172A',
   },
   reportsMiniStatsRow: {
     flexDirection: 'row',
@@ -2051,7 +2187,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   reportsMiniStatNum: {
     fontSize: 17,
     fontWeight: '800',
-    color: '#1a2d5a',
+    color: '#0F172A',
   },
   reportsMiniStatLbl: {
     fontSize: 10.5,
@@ -2092,8 +2228,8 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     borderColor: '#e2e8f0',
   },
   sortBtnActive: {
-    backgroundColor: '#1a2d5a',
-    borderColor: '#1a2d5a',
+    backgroundColor: '#000000',
+    borderColor: '#000000',
   },
   sortBtnTxt: {
     fontSize: 11.5,
@@ -2114,8 +2250,8 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     maxWidth: 220,
   },
   quizFilterChipActive: {
-    backgroundColor: '#1a2d5a',
-    borderColor: '#1a2d5a',
+    backgroundColor: '#000000',
+    borderColor: '#000000',
   },
   quizFilterChipTxt: {
     fontSize: 11,
@@ -2246,7 +2382,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   attemptScoreTxt: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#1a2d5a',
+    color: '#0F172A',
   },
   attemptScoreSub: {
     fontSize: 10,
@@ -2262,7 +2398,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: '#1a2d5a',
+    backgroundColor: '#000000',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2300,7 +2436,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   attemptQuizTitle: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#1a2d5a',
+    color: '#0F172A',
     flex: 1,
   },
   attemptMetricsRow: {
@@ -2429,7 +2565,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     marginBottom: 6,
   },
   reviewQNumPill: {
-    backgroundColor: '#1a2d5a',
+    backgroundColor: '#000000',
     paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: 6,
@@ -2564,7 +2700,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   },
   reviewModalDoneBtn: {
     flex: 1.3,
-    backgroundColor: '#1a2d5a',
+    backgroundColor: '#000000',
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: 'center',

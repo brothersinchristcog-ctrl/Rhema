@@ -363,7 +363,16 @@ export default function BibleQuizPlayerScreen() {
             (member as any)?.MobilePhone ||
             user?.phoneNumber ||
             '',
-          avatar: (member as any)?.avatar || '',
+          avatar:
+            (member as any)?.profilePhoto ||
+            (member as any)?.photoURL ||
+            (member as any)?.photoUrl ||
+            (member as any)?.profileImageUrl ||
+            (member as any)?.PhotoUrl ||
+            (member as any)?.Photo ||
+            (member as any)?.avatar ||
+            user?.photoURL ||
+            '',
           churchId: activeChurch?.id || quizMeta?.churchId || RHEMA_CHURCH_ID,
         };
 
@@ -629,16 +638,19 @@ export default function BibleQuizPlayerScreen() {
                   style={[
                     styles.optionCard,
                     {
-                      backgroundColor: isDark
-                        ? isSelected
-                          ? 'rgba(59, 130, 246, 0.16)'
-                          : '#141d2e'
-                        : isSelected
-                        ? '#eff6ff'
-                        : '#ffffff',
+                      backgroundColor: isSelected
+                        ? isDark
+                          ? 'rgba(255, 255, 255, 0.12)'
+                          : 'rgba(0, 0, 0, 0.05)'
+                        : cardSurface,
                       borderColor: isSelected
-                        ? '#3b82f6'
-                        : adminBorderColor,
+                        ? isDark
+                          ? '#FFFFFF'
+                          : '#000000'
+                        : isDark
+                        ? 'rgba(255, 255, 255, 0.12)'
+                        : '#E2E8F0',
+                      borderWidth: isSelected ? 2 : 1,
                     },
                   ]}
                   onPress={() =>
@@ -654,13 +666,13 @@ export default function BibleQuizPlayerScreen() {
                     style={[
                       styles.optionPrefixCircle,
                       {
-                        backgroundColor: isDark
-                          ? isSelected
-                            ? '#3b82f6'
-                            : '#1e293b'
-                          : isSelected
-                          ? '#3b82f6'
-                          : '#f1f5f9',
+                        backgroundColor: isSelected
+                          ? isDark
+                            ? '#FFFFFF'
+                            : '#000000'
+                          : isDark
+                          ? 'rgba(255, 255, 255, 0.08)'
+                          : '#F1F5F9',
                       },
                     ]}
                   >
@@ -669,7 +681,9 @@ export default function BibleQuizPlayerScreen() {
                         styles.optionPrefixTxt,
                         {
                           color: isSelected
-                            ? '#ffffff'
+                            ? isDark
+                              ? '#000000'
+                              : '#FFFFFF'
                             : secondaryText,
                         },
                       ]}
@@ -682,13 +696,7 @@ export default function BibleQuizPlayerScreen() {
                     style={[
                       styles.optionText,
                       {
-                        color: isDark
-                          ? isSelected
-                            ? '#ffffff'
-                            : '#e2e8f0'
-                          : isSelected
-                          ? '#1e3a8a'
-                          : '#1e293b',
+                        color: primaryText,
                         fontWeight: isSelected ? '700' : '500',
                       },
                     ]}
@@ -697,8 +705,17 @@ export default function BibleQuizPlayerScreen() {
                   </Text>
 
                   {isSelected && (
-                    <View style={styles.optionCheckCircle}>
-                      <Check size={14} color="#ffffff" strokeWidth={3} />
+                    <View
+                      style={[
+                        styles.optionCheckCircle,
+                        { backgroundColor: isDark ? '#FFFFFF' : '#000000' },
+                      ]}
+                    >
+                      <Check
+                        size={14}
+                        color={isDark ? '#000000' : '#FFFFFF'}
+                        strokeWidth={3}
+                      />
                     </View>
                   )}
                 </TouchableOpacity>
@@ -712,7 +729,10 @@ export default function BibleQuizPlayerScreen() {
               style={[
                 styles.arrowNavBtn,
                 qIndex === 0 && styles.arrowNavBtnDisabled,
-                { backgroundColor: cardSurface },
+                {
+                  backgroundColor: cardSurface,
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#E2E8F0',
+                },
               ]}
               onPress={() => goToQuestion(qIndex - 1)}
               disabled={qIndex === 0}
@@ -720,13 +740,15 @@ export default function BibleQuizPlayerScreen() {
               activeOpacity={0.7}
             >
               <ChevronLeft
-                size={24}
+                size={22}
                 color={
                   qIndex === 0
                     ? isDark
                       ? '#334155'
                       : '#cbd5e1'
-                    : '#3B82F6'
+                    : isDark
+                    ? '#FFFFFF'
+                    : '#000000'
                 }
               />
             </TouchableOpacity>
@@ -736,7 +758,7 @@ export default function BibleQuizPlayerScreen() {
                 styles.navCounterPill,
                 {
                   backgroundColor: cardSurface,
-                  borderColor: adminBorderColor,
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#E2E8F0',
                 },
               ]}
             >
@@ -752,12 +774,20 @@ export default function BibleQuizPlayerScreen() {
 
             {isLastQuestion ? (
               <TouchableOpacity
-                style={styles.submitActionPill}
+                style={[
+                  styles.submitActionPill,
+                  { backgroundColor: isDark ? '#FFFFFF' : '#000000' },
+                ]}
                 onPress={() => submitQuiz(false)}
                 activeOpacity={0.85}
               >
-                <Check size={14} color="#ffffff" strokeWidth={3} />
-                <Text style={styles.submitActionPillTxt}>
+                <Check size={14} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={3} />
+                <Text
+                  style={[
+                    styles.submitActionPillTxt,
+                    { color: isDark ? '#000000' : '#FFFFFF' },
+                  ]}
+                >
                   {ui.completeQuiz}
                 </Text>
               </TouchableOpacity>
@@ -765,13 +795,16 @@ export default function BibleQuizPlayerScreen() {
               <TouchableOpacity
                 style={[
                   styles.arrowNavBtn,
-                  { backgroundColor: cardSurface },
+                  {
+                    backgroundColor: cardSurface,
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#E2E8F0',
+                  },
                 ]}
                 onPress={() => goToQuestion(qIndex + 1)}
                 hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
                 activeOpacity={0.7}
               >
-                <ChevronRight size={24} color="#3B82F6" />
+                <ChevronRight size={22} color={isDark ? '#FFFFFF' : '#000000'} />
               </TouchableOpacity>
             )}
           </View>
@@ -784,82 +817,100 @@ export default function BibleQuizPlayerScreen() {
     <View style={[styles.container, { backgroundColor: screenBg }]}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={screenBg} />
 
-      {/* Top Floating Header Card */}
+      {/* ── Screen Header: Circular Exit, Centered Title, Language & Timer ── */}
       <View
         style={[
-          styles.headerCardWrapper,
-          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 6 }
+          styles.headerRow,
+          {
+            paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8,
+            backgroundColor: isDark ? '#000000' : '#FFFFFF',
+            borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#CBD5E1',
+          },
         ]}
       >
-        <LinearGradient
-          colors={['#527C78', '#355B56']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.header}
+        <TouchableOpacity
+          onPress={handleExitAttempt}
+          style={[
+            styles.circularBtn,
+            {
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#E2E8F0',
+            },
+          ]}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          activeOpacity={0.8}
         >
-          <View style={styles.headerDecoCircle1} pointerEvents="none" />
-          <View style={styles.headerDecoCircle2} pointerEvents="none" />
+          <X size={20} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.4} />
+        </TouchableOpacity>
 
+        <View style={styles.headerTitleWrap}>
+          <Text
+            style={[
+              styles.headerTitleText,
+              { color: isDark ? '#FFFFFF' : '#0F172A' },
+            ]}
+            numberOfLines={1}
+          >
+            {quizLanguage === 'te' ? 'రోజువారీ బైబిల్ క్విజ్' : 'Daily Bible Quiz'}
+          </Text>
+        </View>
+
+        {/* Right Header: Member View Language Selector Pill */}
+        <View style={styles.headerRightCol}>
           <TouchableOpacity
-            onPress={handleExitAttempt}
-            style={styles.closeBtn}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            style={[
+              styles.langPillThemed,
+              {
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#E2E8F0',
+              },
+            ]}
+            onPress={() => setLangModalVisible(true)}
             activeOpacity={0.8}
           >
-            <X size={20} color="#355B56" />
-          </TouchableOpacity>
-
-          <View style={styles.headerCenter} pointerEvents="none">
-            <Text style={styles.headerTitle} numberOfLines={1} maxFontSizeMultiplier={1.15}>
-              {(() => {
-                const isDaily = Boolean(quizMeta?.isDailyQuiz || (quizMeta as any)?.id?.startsWith?.('daily_') || quizMeta?.category?.toLowerCase() === 'daily quiz');
-                const dStr = (quizMeta as any)?.dailyDate || (quizMeta as any)?.scheduledDate || ((quizMeta as any)?.id?.startsWith?.('daily_quiz_') ? (quizMeta as any).id.replace('daily_quiz_', '') : '') || ((quizMeta as any)?.id?.startsWith?.('daily_') ? (quizMeta as any).id.replace('daily_', '') : '');
-                if (isDaily && dStr) {
-                  return getLocalizedDailyQuizTitle(dStr, quizLanguage);
-                }
-                if (quizMeta?.title) {
-                  return quizMeta.translations?.[quizLanguage]?.title || quizMeta.title;
-                }
-                return `${categoryDisplayName} · ${difficulty.toUpperCase()} · L${level}`;
-              })()}
-            </Text>
-            <View style={styles.headerTitleAccentBar} />
-          </View>
-
-          {/* Right Header: Member View Language Selector Pill + Timer */}
-          <View style={styles.headerRightCol}>
-            <TouchableOpacity
-              style={styles.langPill}
-              onPress={() => setLangModalVisible(true)}
-              activeOpacity={0.8}
+            <Globe size={12} color={isDark ? '#FFFFFF' : '#0F172A'} />
+            <Text
+              style={[
+                styles.langPillTxtThemed,
+                { color: isDark ? '#FFFFFF' : '#0F172A' },
+              ]}
             >
-              <Globe size={11} color="#355B56" />
-              <Text style={styles.langPillTxt}>{quizLanguageOption.nativeName}</Text>
-            </TouchableOpacity>
-
-            {secondsRemaining !== null && (
-              <View style={styles.timerPill}>
-                <Clock size={11} color="#355B56" />
-                <Text style={styles.timerTxt}>{formatTimeRemaining()}</Text>
-              </View>
-            )}
-          </View>
-        </LinearGradient>
+              {quizLanguageOption.nativeName}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* Progress Bar Track */}
-      <View
-        style={[
-          styles.progressBarTrack,
-          { backgroundColor: secondarySurface },
-        ]}
-      >
-        <LinearGradient
-          colors={['#3B82F6', '#10B981']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={[styles.progressBarFill, { width: `${progressPercent}%` }]}
-        />
+      {/* Progress Bar & Timer Row */}
+      <View style={styles.progressTimerRow}>
+        <View
+          style={[
+            styles.progressBarTrackFlex,
+            { backgroundColor: secondarySurface },
+          ]}
+        >
+          <LinearGradient
+            colors={['#3B82F6', '#10B981']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={[styles.progressBarFill, { width: `${progressPercent}%` }]}
+          />
+        </View>
+
+        {secondsRemaining !== null && (
+          <View
+            style={[
+              styles.timerPillNextToProgress,
+              {
+                backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : '#FEF3C7',
+                borderColor: isDark ? 'rgba(245, 158, 11, 0.3)' : '#FDE68A',
+              },
+            ]}
+          >
+            <Clock size={12} color="#D97706" />
+            <Text style={styles.timerTxtThemed}>{formatTimeRemaining()}</Text>
+          </View>
+        )}
       </View>
 
       {/* 7. Swipeable Questions FlatList */}
@@ -922,6 +973,67 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     marginTop: 12,
     fontSize: 14,
     fontWeight: '600',
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1.5,
+    zIndex: 10,
+  },
+  circularBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
+  },
+  headerTitleWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  headerTitleText: {
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+    textAlign: 'center',
+  },
+  langPillThemed: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  langPillTxtThemed: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  timerPillThemed: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  timerTxtThemed: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#D97706',
   },
   headerCardWrapper: {
     paddingHorizontal: 16,
@@ -1019,6 +1131,28 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
     color: '#355B56',
+  },
+  progressTimerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginTop: 12,
+    gap: 10,
+  },
+  progressBarTrackFlex: {
+    flex: 1,
+    height: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  timerPillNextToProgress: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
   },
   progressBarTrack: {
     height: 6,

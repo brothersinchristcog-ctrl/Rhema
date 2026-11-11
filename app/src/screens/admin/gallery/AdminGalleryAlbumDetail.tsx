@@ -1,6 +1,7 @@
 // @ts-nocheck - Forced IDE refresh to clear false positive module error
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, Image, Dimensions, ActivityIndicator, Alert, Modal, SafeAreaView, Animated, TouchableWithoutFeedback, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, Image, Dimensions, ActivityIndicator, Alert, Modal, SafeAreaView, Animated, TouchableWithoutFeedback, Platform, StatusBar } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ArrowLeft, Share2, Download, Upload, Trash2, X, ChevronLeft, ChevronRight, CheckCircle } from 'lucide-react-native';
@@ -23,6 +24,7 @@ type RouteProps = RouteProp<AdminGalleryStackParamList, 'AdminGalleryAlbumDetail
 
 export default function AdminGalleryAlbumDetail() {
   const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RouteProps>();
   const { albumId, albumName, albumDescription } = route.params;
@@ -176,21 +178,49 @@ export default function AdminGalleryAlbumDetail() {
   };
 
   const renderHeader = () => (
-    <View style={styles.header}>
-      <TouchableOpacity style={styles.circularBackBtn} onPress={() => navigation.goBack()} activeOpacity={0.7}>
-        <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
-      </TouchableOpacity>
+    <View
+      style={[
+        styles.topbar,
+        {
+          backgroundColor: isDark ? '#000000' : '#FFFFFF',
+          borderBottomWidth: 1.5,
+          borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0',
+          paddingTop: Platform.OS === 'ios' ? Math.max(insets.top, 20) : 10,
+          paddingBottom: 10,
+          paddingHorizontal: 16,
+        }
+      ]}
+    >
+      <View style={styles.headerTopRow}>
+        <TouchableOpacity
+          style={[
+            styles.circularBackBtn,
+            {
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.10)' : '#F1F5F9',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.20)' : '#CBD5E1',
+            }
+          ]}
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.7}
+        >
+          <ArrowLeft size={20} color={primaryText} strokeWidth={2.4} />
+        </TouchableOpacity>
+        <Text style={[styles.headerTitleText, { color: primaryText }]} numberOfLines={1}>
+          {albumName}
+        </Text>
+        <View style={{ width: 40 }} />
+      </View>
     </View>
   );
 
   const renderTitleArea = () => (
     <View style={styles.titleArea}>
-      <Text style={styles.categoryText}>ALBUM</Text>
-      <Text style={styles.mainTitle}>{albumName}</Text>
+      <Text style={[styles.categoryText, { color: isDark ? '#FCD34D' : '#D97706' }]}>ALBUM</Text>
+      <Text style={[styles.mainTitle, { color: primaryText }]}>{albumName}</Text>
       {albumDescription ? (
-        <Text style={styles.descText}>{albumDescription}</Text>
+        <Text style={[styles.descText, { color: secondaryText }]}>{albumDescription}</Text>
       ) : null}
-      <Text style={styles.metaText}>{photos.length} photos · Recently updated</Text>
+      <Text style={[styles.metaText, { color: secondaryText }]}>{photos.length} photos · Recently updated</Text>
     </View>
   );
 
@@ -199,7 +229,7 @@ export default function AdminGalleryAlbumDetail() {
     
     return (
       <TouchableOpacity 
-        style={styles.photoContainer}
+        style={[styles.photoContainer, { borderColor: isDark ? 'rgba(255,255,255,0.12)' : adminBorderColor }]}
         activeOpacity={0.8}
         onPress={() => openViewer(index)}
       >
@@ -219,7 +249,8 @@ export default function AdminGalleryAlbumDetail() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
+      <StatusBar barStyle={barStyle} backgroundColor={isDark ? '#000000' : '#FFFFFF'} />
       {renderHeader()}
       
       <FlatList
@@ -233,7 +264,7 @@ export default function AdminGalleryAlbumDetail() {
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           !loading ? (
-            <Text style={styles.emptyText}>No photos yet. Start uploading!</Text>
+            <Text style={[styles.emptyText, { color: secondaryText }]}>No photos yet. Start uploading!</Text>
           ) : null
         }
       />
@@ -245,18 +276,23 @@ export default function AdminGalleryAlbumDetail() {
       )}
 
       {/* Upload Button overlay */}
-      <View style={styles.bottomOverlay}>
+      <View style={[styles.bottomOverlay, { bottom: Math.max(insets.bottom, 20) + 16 }]}>
         <TouchableOpacity 
-          style={[styles.uploadBtn, uploading && { opacity: 0.7 }]} 
+          style={[
+            styles.uploadBtn, 
+            { backgroundColor: isDark ? '#FFFFFF' : '#000000' },
+            uploading && { opacity: 0.7 }
+          ]} 
           onPress={handleUploadImages}
           disabled={uploading}
+          activeOpacity={0.85}
         >
           {uploading ? (
-            <ActivityIndicator color="#0b141a" size="small" style={{ marginRight: 8 }} />
+            <ActivityIndicator color={isDark ? '#000000' : '#FFFFFF'} size="small" style={{ marginRight: 8 }} />
           ) : (
-            <Upload size={18} color="#0b141a" style={{ marginRight: 8 }} />
+            <Upload size={18} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.4} style={{ marginRight: 8 }} />
           )}
-          <Text style={styles.uploadBtnText}>
+          <Text style={[styles.uploadBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}>
             {uploading ? 'Uploading...' : 'Upload Images'}
           </Text>
         </TouchableOpacity>
@@ -416,22 +452,25 @@ export default function AdminGalleryAlbumDetail() {
         onRequestClose={() => !isDeleting && setPhotoToDelete(null)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.confirmModal}>
+          <View style={[styles.confirmModal, {
+            backgroundColor: cardSurface,
+            borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : adminBorderColor,
+          }]}>
             <View style={styles.modalIconContainer}>
               <Trash2 size={32} color="#EF4444" />
             </View>
-            <Text style={styles.modalTitle}>Delete Photo?</Text>
-            <Text style={styles.modalMessage}>
+            <Text style={[styles.modalTitle, { color: primaryText }]}>Delete Photo?</Text>
+            <Text style={[styles.modalMessage, { color: secondaryText }]}>
               Are you sure you want to permanently delete this photo? This action cannot be undone.
             </Text>
             
             <View style={styles.modalActions}>
               <TouchableOpacity 
-                style={styles.cancelBtn} 
+                style={[styles.cancelBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#F1F5F9' }]} 
                 onPress={() => setPhotoToDelete(null)}
                 disabled={isDeleting}
               >
-                <Text style={styles.cancelBtnText}>Cancel</Text>
+                <Text style={[styles.cancelBtnText, { color: primaryText }]}>Cancel</Text>
               </TouchableOpacity>
               
               <TouchableOpacity 
@@ -454,94 +493,66 @@ export default function AdminGalleryAlbumDetail() {
 }
 
 const styles = createAdminThemedStyles(StyleSheet.create({
+  topbar: {
+    zIndex: 10,
+  },
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  headerTitleText: {
+    fontSize: 17,
+    fontWeight: '700',
+    maxWidth: width - 120,
+    textAlign: 'center',
+  },
   circularBackBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.08,
     shadowRadius: 2,
-    elevation: 1,
+    elevation: 2,
   },
   container: {
     flex: 1,
-    backgroundColor: '#070D15',
   },
   center: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 15,
-    paddingTop: 50,
-    paddingBottom: 15,
-  },
-  iconBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  backText: {
-    color: '#fff',
-    marginLeft: 6,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  headerRight: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  iconBtnRound: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   titleArea: {
-    paddingHorizontal: 15,
-    marginBottom: 20,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    marginBottom: 16,
   },
   categoryText: {
-    color: '#FCD34D',
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '800',
     letterSpacing: 1.5,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   mainTitle: {
-    color: '#fff',
-    fontSize: 32,
-    fontWeight: '700',
-    fontFamily: 'serif',
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: -0.3,
     marginBottom: 6,
   },
   descText: {
-    color: '#CBD5E1',
-    fontSize: 15,
-    marginBottom: 10,
-    lineHeight: 22,
+    fontSize: 14,
+    marginBottom: 8,
+    lineHeight: 20,
   },
   metaText: {
-    color: '#94A3B8',
-    fontSize: 14,
+    fontSize: 13,
+    fontWeight: '500',
   },
   listContent: {
     paddingHorizontal: SPACING,
@@ -556,6 +567,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     borderRadius: 16,
     overflow: 'hidden',
     position: 'relative',
+    borderWidth: 1,
   },
   photo: {
     width: '100%',
@@ -737,11 +749,11 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     padding: 20,
   },
   confirmModal: {
-    backgroundColor: '#1E293B',
-    borderRadius: 24,
-    padding: 24,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    padding: 22,
     width: '100%',
-    maxWidth: 400,
+    maxWidth: 380,
     alignItems: 'center',
   },
   modalIconContainer: {

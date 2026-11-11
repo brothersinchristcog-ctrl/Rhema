@@ -1,207 +1,125 @@
-import React, { useEffect, useState, useContext } from 'react';
+import React, { useContext, useMemo, useRef, useLayoutEffect } from 'react';
 import { 
   StyleSheet, 
   View, 
   Text, 
   ScrollView, 
   TouchableOpacity, 
-  ActivityIndicator,
-  Dimensions,
-  useWindowDimensions,
-  StatusBar,
-  Platform,
-  Animated,
-  Easing,
-  Image
+  useWindowDimensions, 
+  StatusBar, 
+  Platform, 
+  Image 
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Defs, LinearGradient as SvgLinearGradient, Stop, Text as SvgText } from 'react-native-svg';
 import { 
-  Users, 
-  BookOpen, 
-  Calendar, 
-  Bell, 
-  Settings,
-  DollarSign,
-  ChevronRight,
-  LogOut,
-  Smartphone,
-  Moon,
-  Video,
-  Headset
+  LogOut, 
+  Smartphone, 
+  Shield
 } from 'lucide-react-native';
 import { useChurch } from '../../context/ChurchContext';
-import HexagonDate from '../../components/HexagonDate';
 import { AdminTabContext } from '../../context/AdminTabContext';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme, FONT_STYLE_OPTIONS } from '../../context/ThemeContext';
 
+// ── Tab 3D Asset Icons (Matches Home Screen Quick Access 3D Style) ──
+const TAB_3D_ASSETS: Record<string, { icon: any }> = {
+  // Ministry & Word
+  'Promises': { icon: require('../../../assets/3d_daily_verse.png') },
+  'Daily Verses': { icon: require('../../../assets/3d_daily_verse.png') },
+  'Sermons': { icon: require('../../../assets/retro_mic_3d.png') },
+  'Songs': { icon: require('../../../assets/3d_sermons.png') },
+  'Bible Quiz': { icon: require('../../../assets/3d_bible_quiz.png') },
 
-const CARD_BACKGROUNDS: Record<string, any> = {
-  'Promises': require('../../../assets/admin_cards/promise.png'),
-  'Daily Verses': require('../../../assets/admin_cards/daily_verses.jpg'),
-  'New Promise': require('../../../assets/admin_cards/new_promise.jpg'),
-  'Sermons': require('../../../assets/admin_cards/sermons.png'),
-  'New Sermon': require('../../../assets/admin_cards/new_sermon.png'),
-  'Songs': require('../../../assets/admin_cards/songs.png'),
-  'Prayers': require('../../../assets/admin_cards/prayer.png'),
-  'Members': require('../../../assets/admin_cards/members.png'),
-  'Events': require('../../../assets/admin_cards/events.png'),
-  'New Event': require('../../../assets/admin_cards/new_event.png'),
-  'Pastor Event': require('../../../assets/admin_cards/pastor_event.png'),
-  'Gallery': require('../../../assets/admin_cards/gallery.png'),
-  'Celebrations': require('../../../assets/admin_cards/celebrations.png'),
-  'Notifications': require('../../../assets/admin_cards/notification.png'),
-  'WhatsApp': require('../../../assets/admin_cards/whatsapp.png'),
-  'Expense': require('../../../assets/admin_cards/expense.png'),
-  'Donations': require('../../../assets/admin_cards/donations.png'),
-  'Subscription': require('../../../assets/admin_cards/subscription.png'),
-  'Schedule': require('../../../assets/admin_cards/schedule.png'),
-  'About Us': require('../../../assets/admin_cards/about_us.png'),
-  'Contact Us': require('../../../assets/admin_cards/contact_us.png'),
-  'Support Team': require('../../../assets/support_bg.png'),
-  'Church Settings': require('../../../assets/admin_cards/church_settings.png'),
-  'Church Branches': require('../../../assets/admin_cards/church_branches.jpg'),
-  'Attendance': require('../../../assets/admin_cards/attendance.png'),
-  'Service Roster': require('../../../assets/admin_cards/schedule.png'),
-  'Care Cells': require('../../../assets/admin_cards/members.png'),
-  'Online Meetings': require('../../../assets/admin_cards/online_meetings.jpg'),
-  'New Online Meeting': require('../../../assets/admin_cards/new_online_meeting.png'),
-  'App Admin': require('../../../assets/admin_cards/app_admin.png'),
-  'Baptism': require('../../../assets/admin_cards/baptism.png'),
-  'Bible Quiz': require('../../../assets/admin_cards/bible_quiz.jpg'),
-  'Quiz': require('../../../assets/admin_cards/bible_quiz.jpg'),
+  // People & Fellowship
+  'Members': { icon: require('../../../assets/3d_members_family.png') },
+  'Attendance': { icon: require('../../../assets/3d_attendance.png') },
+  'Prayers': { icon: require('../../../assets/give_hand_heart.png') },
+  'Care Cells': { icon: require('../../../assets/gallery_3d_family.png') },
+  'Baptism': { icon: require('../../../assets/3d_give.png') },
+
+  // Services & Events
+  'Events': { icon: require('../../../assets/3d_events.png') },
+  'Schedule': { icon: require('../../../assets/3d_sermon_notes.png') },
+  'Service Roster': { icon: require('../../../assets/gallery_3d_stage.png') },
+  'Pastor Event': { icon: require('../../../assets/gallery_3d_stage.png') },
+
+  // Finance & Celebrations
+  'Donations': { icon: require('../../../assets/3d_give.png') },
+  'Expense': { icon: require('../../../assets/3d_give.png') },
+  'Celebrations': { icon: require('../../../assets/3d_party_popper.png') },
+
+  // Media & Communications
+  'Notifications': { icon: require('../../../assets/3d_contact_us.png') },
+  'WhatsApp': { icon: require('../../../assets/3d_contact_us.png') },
+  'Gallery': { icon: require('../../../assets/3d_gallery.png') },
+  'Online Meetings': { icon: require('../../../assets/3d_online_meetings.png') },
+
+  // Church Management
+  'Church Branches': { icon: require('../../../assets/gallery_3d_church.png') },
+  'Church Settings': { icon: require('../../../assets/3d_about_us.png') },
+  'Support Team': { icon: require('../../../assets/3d_contact_us.png') },
+  'App Admin': { icon: require('../../../assets/3d_about_us.png') },
 };
 
-const CATEGORIES = [
+// ── Categorized Sections (Grouped Cleanly like Home Screen Quick Access) ──
+const SECTIONS = [
   {
-    title: 'Content Management',
-    icon: BookOpen,
-    color: '#0F766E', // Teal
-    darkColor: '#2DD4BF',
-    keywords: ['Promise', 'Sermons', 'New Sermon', 'Song']
+    id: 'ministry',
+    title: 'Ministry & Word',
+    tabNames: ['Promises', 'Daily Verses', 'Sermons', 'Songs', 'Bible Quiz'],
   },
   {
-    title: 'Community & Members',
-    icon: Users,
-    color: '#581C87', // Deep Royal Purple/Eggplant for excellent contrast
-
-    darkColor: '#C084FC',
-
-
-    keywords: ['Member', 'Attendance', 'Prayer', 'Care Cell', 'Care Cells']
-
+    id: 'people',
+    title: 'People & Fellowship',
+    tabNames: ['Members', 'Attendance', 'Prayers', 'Care Cells', 'Baptism'],
   },
   {
-    title: 'Events & Celebrations',
-    icon: Calendar,
-    color: '#831843', // Deep Ruby/Berry for a festive, elegant look with high contrast
-    darkColor: '#F472B6',
-    keywords: ['Event', 'Celebration', 'Service Roster']
+    id: 'events',
+    title: 'Services & Events',
+    tabNames: ['Events', 'Schedule', 'Service Roster', 'Pastor Event'],
   },
   {
-    title: 'Communication',
-    icon: Bell,
-    color: '#78350F', // Rich Deep Bronze/Chocolate for excellent warm contrast
-    darkColor: '#FBBF24',
-    keywords: ['Notification', 'WhatsApp', 'Baptism']
+    id: 'finance',
+    title: 'Finance & Celebrations',
+    tabNames: ['Donations', 'Expense', 'Celebrations'],
   },
   {
-    title: 'Church Ledger',
-    icon: DollarSign,
-    color: '#206A5D', // Deep green
-    darkColor: '#34D399',
-    keywords: ['Expense', 'Donation', 'Subscription']
+    id: 'media',
+    title: 'Media & Communications',
+    tabNames: ['Notifications', 'WhatsApp', 'Gallery', 'Online Meetings'],
   },
   {
-    title: 'Online Meeting Management',
-    icon: Video,
-    color: '#4F46E5', // Indigo for a professional look
-    darkColor: '#818CF8',
-    keywords: ['Online Meeting', 'Gallery']
-  },
-  {
-    title: 'Administration',
-    icon: Settings,
-    color: '#1E3A8A', // Deep Navy for maximum contrast
-    darkColor: '#60A5FA',
-    keywords: ['Daily Verses', 'Verse', 'Church Setting', 'Church Branch', 'App Admin', 'About', 'Contact', 'Schedule', 'Quiz', 'Bible Quiz']
-  },
-  {
-    title: 'Support',
-    icon: Headset,
-    color: '#0284C7', // Sky blue for trust
-    darkColor: '#38BDF8',
-    keywords: ['Support']
+    id: 'system',
+    title: 'Church Management',
+    tabNames: ['Church Branches', 'Church Settings', 'Support Team', 'App Admin'],
   },
 ];
 
-const FULL_WIDTH_MODULES = ['Songs', 'Members', 'Subscription', 'Baptism', 'Celebrations'];
-
-const FONTS = {
-  serif: Platform.OS === 'ios' ? 'Georgia' : 'serif',
-  sans: Platform.OS === 'ios' ? 'System' : 'sans-serif',
-};
-
-const AnimatedParticle = ({ left, size, duration, delay, color, opacity }: any) => {
-  const translateY = React.useRef(new Animated.Value(0)).current;
-  const fadeAnim = React.useRef(new Animated.Value(0)).current;
-
-  React.useEffect(() => {
-    const anim = Animated.loop(
-      Animated.sequence([
-        Animated.parallel([
-          Animated.timing(translateY, { toValue: 20, duration: 0, useNativeDriver: true }),
-          Animated.timing(fadeAnim, { toValue: 0, duration: 0, useNativeDriver: true })
-        ]),
-        Animated.parallel([
-          Animated.timing(translateY, { toValue: -150, duration: duration, easing: Easing.linear, useNativeDriver: true }),
-          Animated.sequence([
-            Animated.timing(fadeAnim, { toValue: opacity, duration: duration * 0.3, useNativeDriver: true }),
-            Animated.timing(fadeAnim, { toValue: opacity, duration: duration * 0.4, useNativeDriver: true }),
-            Animated.timing(fadeAnim, { toValue: 0, duration: duration * 0.3, useNativeDriver: true })
-          ])
-        ])
-      ])
-    );
-    const timeout = setTimeout(() => {
-      anim.start();
-    }, delay || 0);
-    return () => { clearTimeout(timeout); anim.stop(); };
-  }, []);
-
-  return (
-    <Animated.View
-      style={[
-        {
-          position: 'absolute',
-          borderRadius: size / 2,
-          left: left,
-          width: size,
-          height: size,
-          backgroundColor: color || '#FCD34D',
-          opacity: fadeAnim,
-          transform: [{ translateY }],
-          bottom: '0%'
-        }
-      ]}
-    />
-  );
-};
+// Omit duplicate creation screens per user request
+const EXCLUDED_TAB_NAMES = [
+  'Dashboard', 
+  'New Promise', 
+  'New Sermon', 
+  'New Event', 
+  'New Online Meeting'
+];
 
 export default function AdminDashboard({ navigation, allTabs = [] }: any) {
   const { setActiveTab, dashboardScrollY, setDashboardScrollY } = useContext(AdminTabContext);
   const { member, user, signOut, setViewMode } = useAuth();
   const { activeChurch } = useChurch();
   const { isDark, colors, fontStyle, scaleFont } = useTheme();
-  const appFontFamily = FONT_STYLE_OPTIONS.find(o => o.id === fontStyle)?.family || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
-  const screenBg = isDark ? '#000000' : (colors.background || '#FAF7F2');
-  const cardSurface = isDark ? '#18181B' : (colors.surface || '#FFFFFF');
-  const primaryText = isDark ? '#FFFFFF' : (colors.text || '#1E293B');
-  
-  const scrollRef = React.useRef<ScrollView>(null);
 
-  React.useLayoutEffect(() => {
+  const appFontFamily = FONT_STYLE_OPTIONS.find(o => o.id === fontStyle)?.family || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
+  const screenBg = isDark ? '#09090B' : (colors.background || '#FAF7F2');
+  const cardBg = isDark ? '#1C1C22' : '#FFFFFF';
+  const cardBorder = isDark ? '#27272A' : '#E2E8F0';
+  const primaryText = isDark ? '#FFFFFF' : (colors.text || '#0F172A');
+  const secondaryText = isDark ? '#A1A1AA' : '#64748B';
+
+  const scrollRef = useRef<ScrollView>(null);
+
+  useLayoutEffect(() => {
     if (dashboardScrollY && scrollRef.current) {
       setTimeout(() => {
         scrollRef.current?.scrollTo({ y: dashboardScrollY, animated: false });
@@ -214,367 +132,337 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
     if (setDashboardScrollY) setDashboardScrollY(y);
   };
 
-  // Extract first name for greeting if possible
-  const fullName = member?.name || user?.displayName || 'Administrator';
-  const firstName = fullName.split(' ')[0];
-
-  // Helper to figure out which category a tab belongs to
-  const getCategoryForTab = (tabName: string) => {
-    for (const category of CATEGORIES) {
-      if (category.keywords.some(kw => tabName.includes(kw))) {
-        return category;
+  // Map every active tab by name
+  const validTabsMap = useMemo(() => {
+    const map = new Map<string, any>();
+    allTabs.forEach((tab: any, index: number) => {
+      if (!EXCLUDED_TAB_NAMES.includes(tab.name)) {
+        map.set(tab.name, { ...tab, index });
       }
-    }
-    return CATEGORIES.find(c => c.title === 'Administration') || CATEGORIES[CATEGORIES.length - 1]; // Default to Administration
-  };
+    });
+    return map;
+  }, [allTabs]);
 
-  const categorizedTabs: Record<string, any[]> = {};
-  CATEGORIES.forEach(cat => categorizedTabs[cat.title] = []);
-
-  allTabs.forEach((tab: any, index: number) => {
-    if (tab.name === 'Dashboard' || tab.name === 'New Online Meeting' || tab.name === 'New Promise' || tab.name === 'New Sermon' || tab.name === 'New Event') return;
-    const category = getCategoryForTab(tab.name);
-    categorizedTabs[category.title].push({ ...tab, index });
-  });
-
-  const hour = new Date().getHours();
-  let timeGreeting = 'Good evening,';
-  if (hour < 12) timeGreeting = 'Good morning,';
-  else if (hour < 17) timeGreeting = 'Good afternoon,';
-
-  // Responsive device measurements
   const { width: windowWidth } = useWindowDimensions();
   const isSmallDevice = windowWidth < 375;
   const isMediumDevice = windowWidth >= 375 && windowWidth < 415;
-
   const horizontalPadding = isSmallDevice ? 14 : isMediumDevice ? 16 : 18;
-  const cardGap = isSmallDevice ? 10 : 12;
-  const availableGridWidth = windowWidth - (horizontalPadding * 2);
-  const halfCardWidth = Math.floor((availableGridWidth - cardGap) / 2);
 
-  // Increased Topper Card height for a prominent, spacious executive look
-  const topperCardHeight = isSmallDevice ? 195 : isMediumDevice ? 215 : 230;
+  const fullName = member?.name || user?.displayName || 'Administrator';
 
-  // Slightly reduced dashboard card heights for a compact, balanced dashboard grid
-  const halfCardHeight = isSmallDevice ? 94 : isMediumDevice ? 102 : 108;
-  const fullCardHeight = isSmallDevice ? 122 : isMediumDevice ? 130 : 138;
-  const cardPadding = isSmallDevice ? 8 : 10;
-  const cardBorderRadius = isSmallDevice ? 16 : 18;
+  // Track all rendered tab names so no tab is EVER missed
+  const renderedTabNames = new Set<string>();
 
   return (
     <View style={[styles.container, { backgroundColor: screenBg }]}>
-      <StatusBar barStyle={colors.barStyle || (isDark ? 'light-content' : 'dark-content')} backgroundColor={screenBg} />
+      <StatusBar 
+        barStyle={isDark ? 'light-content' : 'dark-content'} 
+        backgroundColor={isDark ? '#2D180C' : '#FFC59E'} 
+      />
+
       <ScrollView 
         ref={scrollRef}
         onScroll={handleScroll}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false} 
         contentContainerStyle={styles.scroll}
+        bounces={true}
       >
-        {/* Responsive Admin Dashboard Top Hero / Topper Card */}
-        <View style={{ zIndex: 10, backgroundColor: screenBg, paddingHorizontal: horizontalPadding, paddingTop: 8, paddingBottom: 8 }}>
-          <View style={[styles.heroSection, { 
-            borderColor: isDark ? '#27272A' : '#000000', 
-            borderWidth: 1, 
-            paddingHorizontal: 0, 
-            paddingVertical: 0, 
-            overflow: 'hidden', 
-            backgroundColor: '#FDFBF7',
-            minHeight: topperCardHeight,
-          }]}>
-            <Image 
-              source={require('../../../assets/admin_hero_church_2.png')} 
-              style={[StyleSheet.absoluteFillObject, { width: '100%', height: '100%' }]} 
-              resizeMode="cover" 
-            />
-            
-            <View style={{ 
-              paddingHorizontal: isSmallDevice ? 16 : 22, 
-              paddingTop: isSmallDevice ? 18 : 24,
-              paddingBottom: isSmallDevice ? 18 : 24,
-              width: isSmallDevice ? '74%' : isMediumDevice ? '70%' : '66%', 
-              minHeight: topperCardHeight, 
-            }}>
-              {/* Top-left row: Church Logo & Church Name */}
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <View style={{ 
-                  width: isSmallDevice ? 40 : 46, 
-                  height: isSmallDevice ? 40 : 46, 
-                  borderRadius: isSmallDevice ? 20 : 23, 
-                  backgroundColor: '#ffffff', 
-                  justifyContent: 'center', 
-                  alignItems: 'center', 
-                  overflow: 'hidden', 
-                  borderWidth: 1, 
-                  borderColor: '#e2e8f0', 
-                  elevation: 2, 
-                  shadowColor: '#000', 
-                  shadowOpacity: 0.1, 
-                  shadowRadius: 4,
-                  flexShrink: 0,
-                }}>
-                  <Image 
-                    source={activeChurch?.theme?.logoUrl ? { uri: activeChurch.theme.logoUrl } : require('../../../assets/logo.png')} 
-                    style={{ width: '100%', height: '100%' }} 
-                    resizeMode="cover" 
-                  />
-                </View>
-                <View style={{ marginLeft: 10, flex: 1, justifyContent: 'center' }}>
-                  <Text 
-                    style={{ 
-                      color: '#1a2d5a', 
-                      fontSize: scaleFont(isSmallDevice ? 14.5 : 16.5), 
-                      fontWeight: '800',
-                      lineHeight: scaleFont(isSmallDevice ? 19 : 21),
-                      fontFamily: appFontFamily,
-                    }}
-                    numberOfLines={3}
-                  >
-                    {activeChurch?.name || 'Your Church'}
-                  </Text>
-                </View>
-              </View>
+        {/* Over-scroll cover above 0 */}
+        <View pointerEvents="none" style={{ position: 'absolute', top: -800, left: 0, right: 0, height: 800, backgroundColor: isDark ? '#2D180C' : '#FFC59E' }} />
 
-              {/* Middle group: Title & Separator centered in the space below the top row */}
-              <View style={{ flex: 1, justifyContent: 'center', paddingTop: 6 }}>
-                <Text 
-                  style={{ 
-                    color: '#b45309', 
-                    fontSize: scaleFont(isSmallDevice ? 22 : 26), 
-                    fontWeight: '600', 
-                    marginBottom: 6, 
-                    fontFamily: appFontFamily, 
-                    fontStyle: 'italic' 
-                  }}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.85}
-                >
-                  Admin Dashboard
-                </Text>
-                
-                {/* Short Separator */}
-                <View style={{ height: 2.5, width: 42, backgroundColor: '#b45309' }} />
-              </View>
+        {/* ── Top Hero Section: Gradient is self-contained so ALL cards start BELOW it ── */}
+        <LinearGradient
+          colors={isDark ? ['#2D180C', '#1A1008', '#09090B'] : ['#FFC59E', '#FFD1AF', '#FFDEC4', '#FFE9D7', '#FFF2E8']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={[styles.heroGradientSection, { paddingHorizontal: horizontalPadding }]}
+        >
+          {/* Top Row: Church Logo + Church Name + Member View Switcher */}
+          <View style={styles.heroTopRow}>
+            {/* Elevated Church Logo Ring */}
+            <View style={[
+              styles.heroLogoRing, 
+              { 
+                borderColor: isDark ? '#52525B' : '#FFFFFF',
+                backgroundColor: isDark ? '#27272A' : '#FFFFFF',
+              }
+            ]}>
+              {activeChurch?.theme?.logoUrl ? (
+                <Image 
+                  source={{ uri: activeChurch.theme.logoUrl }} 
+                  style={styles.heroLogoImg} 
+                  resizeMode="cover" 
+                />
+              ) : (
+                <Image 
+                  source={require('../../../assets/logo.png')} 
+                  style={styles.heroLogoImg} 
+                  resizeMode="cover" 
+                />
+              )}
             </View>
+
+            {/* Church Name & Tagline */}
+            <View style={styles.heroTextCol}>
+              <Text 
+                style={[
+                  styles.heroChurchName, 
+                  { 
+                    color: isDark ? '#FFFFFF' : '#0F172A', 
+                    fontSize: scaleFont(isSmallDevice ? 16 : 18),
+                    fontFamily: appFontFamily,
+                  }
+                ]} 
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+              >
+                {activeChurch?.name || 'Your Church'}
+              </Text>
+              <Text 
+                style={[
+                  styles.heroTagline, 
+                  { 
+                    color: isDark ? '#A1A1AA' : '#64748B', 
+                    fontSize: scaleFont(11.5),
+                    fontFamily: appFontFamily,
+                  }
+                ]}
+                numberOfLines={1}
+              >
+                {activeChurch?.tagline || 'Together in Christ'}
+              </Text>
+            </View>
+
+            {/* Quick Switch to Member View */}
+            <TouchableOpacity
+              style={[
+                styles.quickSwitchBtn,
+                { 
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#FFFFFF',
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.08)',
+                }
+              ]}
+              onPress={() => {
+                setViewMode('member');
+                try {
+                  if (navigation?.navigate) {
+                    navigation.navigate('Tabs');
+                  }
+                } catch (_) {}
+              }}
+              activeOpacity={0.75}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Smartphone size={18} color={isDark ? '#FCD34D' : '#0F172A'} strokeWidth={2.2} />
+            </TouchableOpacity>
           </View>
-        </View>
-        
-        <View style={[styles.content, { paddingHorizontal: horizontalPadding, paddingTop: isSmallDevice ? 16 : 22 }]}>
-          {CATEGORIES.map((category, catIdx) => {
-            const tabsInCategory = categorizedTabs[category.title];
-            if (!tabsInCategory || tabsInCategory.length === 0) return null;
-            const catColor = isDark ? category.darkColor : category.color;
+
+          {/* ── Centered Admin Dashboard Headline (NO icon, perfectly centered) ── */}
+          <View style={styles.adminCenterHeaderBlock}>
+            <Text 
+              style={[
+                styles.adminCenterTitle, 
+                { 
+                  color: isDark ? '#FFFFFF' : '#0F172A', 
+                  fontFamily: appFontFamily,
+                  fontSize: scaleFont(isSmallDevice ? 22 : 25),
+                }
+              ]}
+            >
+              Admin Dashboard
+            </Text>
+
+            {/* Centered Welcome Line */}
+            <Text style={[styles.welcomeCenterText, { color: isDark ? '#D4D4D8' : '#334155', fontFamily: appFontFamily }]}>
+              Welcome back, <Text style={[styles.welcomeCenterName, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>{fullName}</Text>
+            </Text>
+          </View>
+        </LinearGradient>
+
+        {/* ── Main Structured Sections: Completely BELOW the Orange Gradient (Home Screen Quick Access 3D Grid Style) ── */}
+        <View style={[styles.sectionsContainer, { paddingHorizontal: horizontalPadding }]}>
+          {SECTIONS.map((section) => {
+            const sectionTabs = section.tabNames
+              .map(name => {
+                const tab = validTabsMap.get(name);
+                if (tab) renderedTabNames.add(name);
+                return tab;
+              })
+              .filter(Boolean);
+
+            if (sectionTabs.length === 0) return null;
 
             return (
-              <View key={catIdx} style={[styles.categoryBlock, { marginBottom: isSmallDevice ? 18 : 24 }]}>
-                
-                {/* Elegant Category Header */}
-                <View style={[styles.categoryHeader, { marginBottom: isSmallDevice ? 12 : 15 }]}>
-                  <View style={[styles.categoryIconBg, { backgroundColor: `${catColor}20`, width: isSmallDevice ? 24 : 26, height: isSmallDevice ? 24 : 26 }]}>
-                    <category.icon size={isSmallDevice ? 15 : 17} color={catColor} strokeWidth={2.5} />
-                  </View>
-                  <Text 
-                    style={[
-                      styles.categoryTitle, 
-                      { 
-                        color: catColor,
-                        fontSize: scaleFont(isSmallDevice ? 15.5 : 17),
-                        fontFamily: appFontFamily,
-                        flexShrink: 1,
-                      }
-                    ]}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                    minimumFontScale={0.88}
-                  >
-                    {category.title}
+              <View key={`sec_3d_${section.id}`} style={styles.sectionBlock}>
+                {/* Section Header Row */}
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={[styles.sectionTitleTxt, { color: primaryText, fontFamily: appFontFamily }]}>
+                    {section.title}
                   </Text>
-                  <View style={[styles.categoryLine, { backgroundColor: `${catColor}40`, marginLeft: isSmallDevice ? 10 : 14 }]} />
+                  <Text style={[styles.sectionSubtitleTxt, { color: secondaryText }]}>
+                    {sectionTabs.length} items
+                  </Text>
                 </View>
 
-                {/* Hybrid Responsive Grid of Modules */}
-                <View style={[styles.grid, { gap: cardGap }]}>
-                  {tabsInCategory.map((tab, tabIdx) => {
-                    const isFullWidth = FULL_WIDTH_MODULES.includes(tab.name);
-                    
+                {/* 4-in-a-Row 3D Icon Grid (Exact Home Screen Quick Access Pattern) */}
+                <View style={styles.grid4Container}>
+                  {Array.from({ length: Math.ceil(sectionTabs.length / 4) }).map((_, rowIndex) => {
+                    const rowItems = sectionTabs.slice(rowIndex * 4, rowIndex * 4 + 4);
+                    if (rowItems.length === 0) return null;
+
                     return (
-                        <TouchableOpacity 
-                          key={`cat_${catIdx}_tab_${tab.name}_${tab.index}_${tabIdx}`} 
-                          style={[
-                            styles.moduleCard, 
-                            isFullWidth && styles.moduleCardFull,
-                            {
-                              width: isFullWidth ? '100%' : halfCardWidth,
-                              height: isFullWidth ? fullCardHeight : halfCardHeight,
-                              borderRadius: cardBorderRadius,
-                              shadowColor: catColor,
-                              borderColor: isDark ? '#27272A' : `${catColor}25`,
-                              overflow: CARD_BACKGROUNDS[tab.name] ? 'hidden' : 'visible',
-                              padding: CARD_BACKGROUNDS[tab.name] ? 0 : cardPadding,
-                              backgroundColor: tab.name === 'Subscription' ? '#F2EAE0' : (tab.name === 'Church Settings' ? 'rgb(202, 221, 236)' : (tab.name === 'Members' ? 'rgb(244, 224, 217)' : (tab.name === 'Promises' ? '#000000' : cardSurface))),
-                            }
-                          ]}
-                          onPress={() => setActiveTab(tab.index)}
-                          activeOpacity={0.7}
-                        >
-                          {CARD_BACKGROUNDS[tab.name] && (
-                            <>
-                              <Image 
-                                source={CARD_BACKGROUNDS[tab.name]} 
+                      <View 
+                        key={rowIndex} 
+                        style={[
+                          styles.grid4Row, 
+                          rowItems.length < 4 && { justifyContent: 'flex-start', gap: '2.93%' }
+                        ]}
+                      >
+                        {rowItems.map((tab: any) => {
+                          const asset = TAB_3D_ASSETS[tab.name] || { icon: require('../../../assets/3d_about_us.png') };
+
+                          return (
+                            <TouchableOpacity
+                              key={`tab_3d_${tab.name}_${tab.index}`}
+                              style={styles.grid4Item}
+                              activeOpacity={0.85}
+                              onPress={() => setActiveTab(tab.index)}
+                            >
+                              <View
                                 style={[
-                                  StyleSheet.absoluteFillObject, 
-                                  { width: '100%', height: '100%' },
-                                  tab.name === 'Promises' && { transform: [{ translateY: -15 }] },
-                                  tab.name === 'Members' && { transform: [{ scale: 1.35 }, { translateY: 15 }] }
-                                ]} 
-                                resizeMode={(tab.name === 'Prayers' || tab.name === 'Members' || tab.name === 'Subscription' || tab.name === 'Church Settings') ? "contain" : "cover"}
-                              />
-                              <LinearGradient
-                                colors={['rgba(0,0,0,0.1)', 'rgba(0,0,0,0.7)']}
-                                style={StyleSheet.absoluteFillObject}
-                              />
-                            </>
-                          )}
-                          {isFullWidth ? (
-                            CARD_BACKGROUNDS[tab.name] ? (
-                              <Text 
-                                style={{
-                                  position: 'absolute',
-                                  bottom: isSmallDevice ? 10 : 14,
-                                  left: isSmallDevice ? 12 : 14,
-                                  right: isSmallDevice ? 12 : 14,
-                                  color: '#ffffff',
-                                  fontSize: scaleFont(isSmallDevice ? 18 : isMediumDevice ? 20 : 21),
-                                  fontWeight: '800',
-                                  fontFamily: appFontFamily,
-                                  textShadowColor: 'rgba(0,0,0,0.85)',
-                                  textShadowOffset: { width: 0, height: 1 },
-                                  textShadowRadius: 4,
-                                }}
+                                  styles.grid4Card,
+                                  {
+                                    backgroundColor: cardBg,
+                                    borderColor: cardBorder,
+                                    shadowColor: '#000',
+                                    shadowOpacity: isDark ? 0.25 : 0.05,
+                                  }
+                                ]}
+                              >
+                                <Image
+                                  source={asset.icon}
+                                  style={styles.grid4Icon}
+                                  resizeMode="contain"
+                                />
+                              </View>
+                              <Text
+                                style={[
+                                  styles.grid4Label,
+                                  { color: primaryText, fontFamily: appFontFamily }
+                                ]}
                                 numberOfLines={1}
                                 adjustsFontSizeToFit
-                                minimumFontScale={0.85}
+                                minimumFontScale={0.78}
                               >
                                 {tab.name}
                               </Text>
-                            ) : (
-                            <View style={[
-                              { flexDirection: 'row', alignItems: 'center', width: '100%', justifyContent: 'space-between' },
-                              CARD_BACKGROUNDS[tab.name] ? { 
-                                padding: tab.name === 'Members' ? 0 : 14, 
-                                paddingLeft: tab.name === 'Members' ? 12 : 14,
-                                paddingBottom: tab.name === 'Members' ? 8 : 14,
-                                height: '100%', 
-                                alignItems: 'flex-end',
-                                justifyContent: 'space-between'
-                              } : { paddingVertical: 12, paddingHorizontal: 14 }
-                            ]}>
-                              <View style={[styles.moduleLeftRow, CARD_BACKGROUNDS[tab.name] && { alignItems: 'flex-end' }]}>
-                                {!CARD_BACKGROUNDS[tab.name] && (
-                                  <View style={[styles.moduleIconWrapperFull, { backgroundColor: `${catColor}15`, width: isSmallDevice ? 34 : 38, height: isSmallDevice ? 34 : 38, borderRadius: isSmallDevice ? 17 : 19 }]}>
-                                    <tab.icon size={isSmallDevice ? 18 : 20} color={catColor} strokeWidth={2.5} />
-                                  </View>
-                                )}
-                                <Text 
-                                  style={[
-                                    styles.moduleTitleFull,
-                                    { fontSize: scaleFont(isSmallDevice ? 13.5 : 14.5), color: primaryText, fontFamily: appFontFamily },
-                                    CARD_BACKGROUNDS[tab.name] && { color: '#ffffff', textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4, fontSize: scaleFont(isSmallDevice ? 18 : 21), marginLeft: CARD_BACKGROUNDS[tab.name] ? 0 : undefined }
-                                  ]}
-                                  numberOfLines={1}
-                                  adjustsFontSizeToFit
-                                  minimumFontScale={0.85}
-                                >
-                                  {tab.name}
-                                </Text>
-                              </View>
-                              {!CARD_BACKGROUNDS[tab.name] && (
-                                <View style={[styles.chevronWrapper, { backgroundColor: `${catColor}10` }]}>
-                                  <ChevronRight size={18} color={catColor} />
-                                </View>
-                              )}
-                            </View>
-                            )
-                          ) : (
-                            <View style={[
-                              styles.moduleColumn, 
-                              { width: '100%', height: '100%' },
-                              CARD_BACKGROUNDS[tab.name] && { padding: cardPadding, justifyContent: 'flex-end' }
-                            ]}>
-                              {!CARD_BACKGROUNDS[tab.name] && (
-                                <View style={[styles.moduleIconWrapper, { backgroundColor: `${catColor}15`, width: isSmallDevice ? 32 : 36, height: isSmallDevice ? 32 : 36, borderRadius: isSmallDevice ? 16 : 18, marginBottom: 6 }]}>
-                                  <tab.icon size={isSmallDevice ? 17 : 19} color={catColor} strokeWidth={2.5} />
-                                </View>
-                              )}
-                              <Text 
-                                style={[
-                                  styles.moduleTitle,
-                                  {
-                                    width: '100%',
-                                    fontSize: scaleFont(isSmallDevice ? 12.5 : isMediumDevice ? 13.5 : 14),
-                                    lineHeight: scaleFont(isSmallDevice ? 15.5 : isMediumDevice ? 16.5 : 17),
-                                    color: primaryText,
-                                    fontFamily: appFontFamily,
-                                  },
-                                  CARD_BACKGROUNDS[tab.name] && { color: '#ffffff', textShadowColor: 'rgba(0,0,0,0.85)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 }
-                                ]} 
-                                numberOfLines={2}
-                                adjustsFontSizeToFit
-                                minimumFontScale={0.80}
-                              >
-                                {tab.name === 'About Us' 
-                                  ? 'About\u00A0Us' 
-                                  : tab.name}
-                              </Text>
-                            </View>
-                          )}
-                        </TouchableOpacity>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
                     );
                   })}
                 </View>
-                
               </View>
             );
           })}
+
+          {/* Fallback Section: Guarantees NO active tab from allTabs is missed */}
+          {(() => {
+            const unrenderedTabs: any[] = [];
+            validTabsMap.forEach((tab, name) => {
+              if (!renderedTabNames.has(name)) {
+                unrenderedTabs.push(tab);
+              }
+            });
+
+            if (unrenderedTabs.length === 0) return null;
+
+            return (
+              <View style={styles.sectionBlock}>
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={[styles.sectionTitleTxt, { color: primaryText, fontFamily: appFontFamily }]}>
+                    Additional Modules
+                  </Text>
+                  <Text style={[styles.sectionSubtitleTxt, { color: secondaryText }]}>
+                    {unrenderedTabs.length} items
+                  </Text>
+                </View>
+
+                <View style={styles.grid4Container}>
+                  {Array.from({ length: Math.ceil(unrenderedTabs.length / 4) }).map((_, rowIndex) => {
+                    const rowItems = unrenderedTabs.slice(rowIndex * 4, rowIndex * 4 + 4);
+                    if (rowItems.length === 0) return null;
+
+                    return (
+                      <View 
+                        key={rowIndex} 
+                        style={[
+                          styles.grid4Row, 
+                          rowItems.length < 4 && { justifyContent: 'flex-start', gap: '2.93%' }
+                        ]}
+                      >
+                        {rowItems.map((tab: any) => {
+                          const asset = TAB_3D_ASSETS[tab.name] || { icon: require('../../../assets/3d_about_us.png') };
+
+                          return (
+                            <TouchableOpacity
+                              key={`tab_fallback_${tab.name}_${tab.index}`}
+                              style={styles.grid4Item}
+                              activeOpacity={0.85}
+                              onPress={() => setActiveTab(tab.index)}
+                            >
+                              <View
+                                style={[
+                                  styles.grid4Card,
+                                  {
+                                    backgroundColor: cardBg,
+                                    borderColor: cardBorder,
+                                    shadowColor: '#000',
+                                    shadowOpacity: isDark ? 0.25 : 0.05,
+                                  }
+                                ]}
+                              >
+                                <Image
+                                  source={asset.icon}
+                                  style={styles.grid4Icon}
+                                  resizeMode="contain"
+                                />
+                              </View>
+                              <Text
+                                style={[
+                                  styles.grid4Label,
+                                  { color: primaryText, fontFamily: appFontFamily }
+                                ]}
+                                numberOfLines={1}
+                                adjustsFontSizeToFit
+                                minimumFontScale={0.78}
+                              >
+                                {tab.name}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            );
+          })()}
         </View>
-        
-        {/* Actions Container at the bottom of the ScrollView */}
-        <View style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingHorizontal: horizontalPadding,
-          paddingTop: 10,
-          paddingBottom: isSmallDevice ? 28 : 36,
-          gap: 12,
-        }}>
+
+        {/* ── Bottom Action Buttons: Sign Out & Member View ── */}
+        <View style={[styles.bottomActions, { paddingHorizontal: horizontalPadding }]}>
           <TouchableOpacity
             onPress={signOut}
-            style={{
-              flex: 1,
-              backgroundColor: '#9C4325', // Terracotta Rust
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              paddingVertical: isSmallDevice ? 12 : 13,
-              borderRadius: 30,
-              elevation: 8,
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.25,
-              shadowRadius: 8,
-              gap: 7,
-            }}
+            style={[styles.actionBtn, styles.signOutActionBtn]}
             activeOpacity={0.8}
           >
-            <LogOut size={isSmallDevice ? 16 : 18} color="#fff" />
-            <Text 
-              style={{ color: '#fff', fontSize: scaleFont(isSmallDevice ? 12.5 : 13.5), fontWeight: '800', letterSpacing: 0.4, fontFamily: appFontFamily }}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.85}
-            >
+            <LogOut size={isSmallDevice ? 15 : 17} color="#FFFFFF" strokeWidth={2.2} />
+            <Text style={styles.actionBtnTxt}>
               Sign Out
             </Text>
           </TouchableOpacity>
@@ -588,178 +476,206 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
                 }
               } catch (_) {}
             }}
-            style={{
-              flex: 1,
-              backgroundColor: '#1a2d5a', // solid navy
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              paddingVertical: isSmallDevice ? 12 : 13,
-              borderRadius: 30,
-              borderWidth: 1,
-              borderColor: 'rgba(252, 211, 77, 0.5)', // golden border
-              elevation: 8,
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.25,
-              shadowRadius: 8,
-              gap: 7,
-            }}
+            style={[styles.actionBtn, styles.memberViewActionBtn]}
             activeOpacity={0.8}
           >
-            <Smartphone size={isSmallDevice ? 16 : 18} color="#FCD34D" />
-            <Text 
-              style={{ color: '#fff', fontSize: scaleFont(isSmallDevice ? 12.5 : 13.5), fontWeight: '800', letterSpacing: 0.4, fontFamily: appFontFamily }}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.85}
-            >
+            <Smartphone size={isSmallDevice ? 15 : 17} color="#FCD34D" strokeWidth={2.2} />
+            <Text style={[styles.actionBtnTxt, { color: '#FFFFFF' }]}>
               Member View
             </Text>
           </TouchableOpacity>
         </View>
-
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F4F0EA' }, // Warm beige backdrop
-  
-  // HERO SECTION
-  heroSection: {
-    paddingHorizontal: 24,
-    paddingVertical: 24,
-    borderRadius: 24,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
+  container: {
+    flex: 1,
   },
-  heroContent: {
-    paddingTop: Platform.OS === 'android' ? 10 : 0,
-  },
-  greetingText: {
-    color: '#cbd5e1',
-    fontSize: 20,
-    fontFamily: FONTS.serif,
-    fontStyle: 'italic',
-    marginBottom: 4,
-  },
-  nameText: {
-    color: '#ffffff',
-    fontSize: 34,
-    fontWeight: '800',
-    fontFamily: FONTS.serif,
+  scroll: {
+    paddingBottom: 36,
   },
 
-  scroll: { 
-    paddingBottom: 30,
+  // ── Hero Section (Self-contained LinearGradient) ──
+  heroGradientSection: {
+    paddingTop: Platform.OS === 'ios' ? 12 : 14,
+    paddingBottom: 22,
   },
-  
-  content: {
-    paddingHorizontal: 20,
-    paddingTop: 24,
-  },
-
-  // CATEGORIES
-  categoryBlock: {
-    marginBottom: 30,
-  },
-  categoryHeader: {
+  heroTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
   },
-  categoryIconBg: {
-    width: 26,
-    height: 26,
-    borderRadius: 6,
+  heroLogoRing: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 2,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  heroLogoImg: {
+    width: '100%',
+    height: '100%',
+  },
+  heroTextCol: {
+    flex: 1,
+    marginLeft: 12,
+    marginRight: 8,
+    justifyContent: 'center',
+  },
+  heroChurchName: {
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  heroTagline: {
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  quickSwitchBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1.2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+
+  // ── Centered Admin Header Block ──
+  adminCenterHeaderBlock: {
+    marginTop: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
   },
-  categoryTitle: {
-    fontSize: 17.5,
+  adminCenterTitle: {
+    fontWeight: '900',
+    letterSpacing: -0.3,
+    textAlign: 'center',
+  },
+  welcomeCenterText: {
+    fontSize: 14,
+    marginTop: 4,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  welcomeCenterName: {
+    fontWeight: '800',
+  },
+
+  // ── Sections Container: Positioned Below the Orange Gradient ──
+  sectionsContainer: {
+    marginTop: 18,
+    gap: 16,
+  },
+  sectionBlock: {
+    width: '100%',
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    paddingHorizontal: 2,
+  },
+  sectionTitleTxt: {
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.1,
+  },
+  sectionSubtitleTxt: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+
+  // ── 4-in-a-Row 3D Icon Grid (Exact Home Screen Pattern) ──
+  grid4Container: {
+    marginTop: 2,
+  },
+  grid4Row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  grid4Item: {
+    width: '22.8%',
+    alignItems: 'center',
+  },
+  grid4Card: {
+    width: '100%',
+    aspectRatio: 1.48,
+    minHeight: 46,
+    maxHeight: 54,
+    borderRadius: 15,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  grid4Icon: {
+    width: 38,
+    height: 38,
+  },
+  grid4Label: {
+    marginTop: 6,
+    fontSize: 11.5,
     fontWeight: '700',
-    color: '#1e293b',
-    fontFamily: FONTS.serif,
+    textAlign: 'center',
+    letterSpacing: -0.1,
+  },
+
+  // ── Bottom Action Buttons ──
+  bottomActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 18,
+    paddingBottom: 28,
+  },
+  actionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 13,
+    borderRadius: 24,
+    gap: 7,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+  },
+  signOutActionBtn: {
+    backgroundColor: '#9C4325',
+  },
+  memberViewActionBtn: {
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
+    borderColor: 'rgba(252, 211, 77, 0.4)',
+  },
+  actionBtnTxt: {
+    color: '#FFFFFF',
+    fontSize: 13.5,
+    fontWeight: '800',
     letterSpacing: 0.3,
   },
-  categoryLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#e2e8f0',
-    marginLeft: 14,
-  },
-
-  // HYBRID MODULE GRID
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'flex-start',
-  },
-  moduleCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 20, 
-    elevation: 5,
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    borderWidth: 1,
-  },
-  moduleCardFull: {
-    width: '100%', 
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  moduleColumn: {
-    flex: 1,
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-  },
-  moduleLeftRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  moduleIconWrapper: {
-    width: 40,
-    height: 40,
-    borderRadius: 20, // Perfect circle
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10, 
-  },
-  moduleIconWrapperFull: {
-    width: 40,
-    height: 40,
-    borderRadius: 20, // Perfect circle
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  chevronWrapper: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  moduleTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#1e293b',
-    fontFamily: FONTS.sans,
-    lineHeight: 18,
-  },
-  moduleTitleFull: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#1e293b',
-    fontFamily: FONTS.sans,
-  }
 });

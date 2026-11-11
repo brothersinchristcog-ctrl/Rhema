@@ -464,62 +464,108 @@ export default function AdminNotificationBroadcast() {
 
   if (loading) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={COLORS.ink} />
-        <Text style={{ marginTop: 10, color: COLORS.ink, fontWeight: '600' }}>Loading settings...</Text>
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', backgroundColor: isDark ? '#000000' : '#F8FAFC' }]}>
+        <ActivityIndicator size="large" color={isDark ? '#FFFFFF' : '#0F172A'} />
+        <Text style={{ marginTop: 10, color: isDark ? '#FFFFFF' : '#0F172A', fontWeight: '600' }}>Loading settings...</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
+    <View style={[styles.container, { backgroundColor: isDark ? '#000000' : '#F8FAFC' }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       
-      {/* ── Hero Section ── */}
-      <View style={styles.hero}>
-        <View style={styles.heroTitleRow}>
-          <TouchableOpacity
-            onPress={() => setActiveTab(0)}
-            style={styles.circularBackBtn}
-            activeOpacity={0.7}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
-          </TouchableOpacity>
-          <Text style={[styles.heroTitle, { marginLeft: 12 }]}>Notifications</Text>
+      {/* ── Header Section ── */}
+      <View style={[
+        styles.header,
+        {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingHorizontal: 16,
+          paddingTop: Platform.OS === 'ios' ? 12 : 14,
+          paddingBottom: 14,
+          borderBottomWidth: 1.5,
+          borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#CBD5E1',
+          backgroundColor: isDark ? '#000000' : '#FFFFFF',
+        }
+      ]}>
+        <TouchableOpacity
+          onPress={() => setActiveTab(0)}
+          style={[
+            styles.circularBackBtn,
+            {
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#FFFFFF',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.3)' : '#CBD5E1',
+              borderWidth: 1.5,
+            }
+          ]}
+          activeOpacity={0.7}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.2} />
+        </TouchableOpacity>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={[styles.headerTitle, { color: isDark ? '#FFFFFF' : '#0F172A', textAlign: 'center', fontSize: 20, fontWeight: '800' }]}>
+            Notifications
+          </Text>
+          <Text style={[styles.headerSub, { color: isDark ? '#A1A1AA' : '#64748B', textAlign: 'center', fontSize: 11, marginTop: 2 }]}>
+            Manage automated alerts & broadcasts
+          </Text>
         </View>
+        <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scroll, { paddingBottom: 40 }]}>
         
         {/* ── 1. Daily Promise Notification ── */}
-        <View style={styles.sectionHeader}>
-          <Layout size={16} color="#1a2d5a" />
-          <Text style={styles.sectionTitle}>Daily Promise Notification</Text>
+        <View style={[
+          styles.sectionHeader,
+          isDark && {
+            backgroundColor: '#1E1E22',
+            borderTopColor: 'rgba(255, 255, 255, 0.18)',
+            borderRightColor: 'rgba(255, 255, 255, 0.18)',
+            borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+          }
+        ]}>
+          <Layout size={16} color={isDark ? '#60A5FA' : '#1a2d5a'} />
+          <Text style={[styles.sectionTitle, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>Daily Promise Notification</Text>
         </View>
 
-        <View style={styles.card}>
+        <View style={[
+          styles.card,
+          isDark && {
+            backgroundColor: '#161618',
+            borderColor: 'rgba(255, 255, 255, 0.18)',
+          }
+        ]}>
           <View style={styles.row}>
-            <Text style={styles.fLabel}>Send daily promise notification</Text>
+            <Text style={[styles.fLabel, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>Send daily promise notification</Text>
             <Switch 
               value={dailyPromise.enabled} 
               onValueChange={(v) => setDailyPromise({...dailyPromise, enabled: v})} 
-              trackColor={{ false: COLORS.rule, true: COLORS.ink2 }}
+              trackColor={{ false: isDark ? '#3F3F46' : '#CBD5E1', true: isDark ? '#34D399' : '#10B981' }}
               thumbColor="#fff"
             />
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.fLabelSmall}>Send time (IST)</Text>
+            <Text style={[styles.fLabelSmall, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Send time (IST)</Text>
             <TouchableOpacity 
               activeOpacity={0.7} 
-              style={styles.inputBox}
+              style={[
+                styles.inputBox,
+                isDark && {
+                  backgroundColor: '#222226',
+                  borderColor: 'rgba(255, 255, 255, 0.2)',
+                }
+              ]}
               onPress={() => setShowTimePicker(true)}
             >
-              <Text style={[styles.textInput, { lineHeight: 44, textAlignVertical: 'center' }]}>
+              <Text style={[styles.textInput, { lineHeight: 44, textAlignVertical: 'center', color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>
                 {dailyPromise.sendTime}
               </Text>
-              <Clock size={16} color={COLORS.inkSoft} />
+              <Clock size={16} color={isDark ? '#A1A1AA' : COLORS.inkSoft} />
             </TouchableOpacity>
           </View>
 
@@ -541,80 +587,157 @@ export default function AdminNotificationBroadcast() {
         </View>
 
         {/* ── 2. Automated Birthdays & Anniversaries ── */}
-        <View style={[styles.sectionHeader, { borderLeftColor: '#C9A84C' }]}>
-          <Gift size={16} color="#C9A84C" />
-          <Text style={[styles.sectionTitle, { color: '#C9A84C' }]}>Automated Celebration Greetings</Text>
+        <View style={[
+          styles.sectionHeader, 
+          { borderLeftColor: '#F59E0B' },
+          isDark && {
+            backgroundColor: '#1E1E22',
+            borderTopColor: 'rgba(255, 255, 255, 0.18)',
+            borderRightColor: 'rgba(255, 255, 255, 0.18)',
+            borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+          }
+        ]}>
+          <Gift size={16} color={isDark ? '#FBBF24' : '#D97706'} />
+          <Text style={[styles.sectionTitle, { color: isDark ? '#FBBF24' : '#D97706' }]}>Automated Celebration Greetings</Text>
         </View>
 
-        <View style={styles.card}>
+        <View style={[
+          styles.card,
+          isDark && {
+            backgroundColor: '#161618',
+            borderColor: 'rgba(255, 255, 255, 0.18)',
+          }
+        ]}>
           {/* Birthday greeting toggle */}
           <View style={styles.row}>
-            <Text style={styles.fLabel}>Automated Daily Birthday Alerts</Text>
+            <Text style={[styles.fLabel, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>Automated Daily Birthday Alerts</Text>
             <Switch 
               value={birthdayNotif.enabled} 
               onValueChange={(v) => setBirthdayNotif({...birthdayNotif, enabled: v})} 
-              trackColor={{ false: COLORS.rule, true: COLORS.goldDeep }}
+              trackColor={{ false: isDark ? '#3F3F46' : '#CBD5E1', true: isDark ? '#F59E0B' : '#D97706' }}
               thumbColor="#fff"
             />
           </View>
 
           <View style={[styles.inputGroup, { marginTop: 10 }]}>
-            <Text style={styles.fLabelSmall}>Birthday greeting message</Text>
+            <Text style={[styles.fLabelSmall, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Birthday greeting message</Text>
             <TextInput 
-              style={[styles.inputBoxAlt, styles.textArea]} 
+              style={[
+                styles.inputBoxAlt, 
+                styles.textArea,
+                isDark && {
+                  backgroundColor: '#222226',
+                  borderColor: 'rgba(255, 255, 255, 0.2)',
+                  color: '#FFFFFF'
+                }
+              ]} 
+              placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
               multiline
               value={birthdayNotif.greeting}
               onChangeText={(v) => setBirthdayNotif({...birthdayNotif, greeting: v})}
             />
           </View>
 
-          <TouchableOpacity style={[styles.simulateBtn, { backgroundColor: '#FEFBF0', borderColor: '#F5DFA0' }]} onPress={handleSimulateBirthdays}>
-            <Gift size={16} color="#B76E00" />
-            <Text style={[styles.simulateBtnTxt, { color: '#B76E00' }]}>Search Today's Birthdays</Text>
+          <TouchableOpacity 
+            style={[
+              styles.simulateBtn, 
+              isDark ? {
+                backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                borderColor: 'rgba(245, 158, 11, 0.4)',
+              } : {
+                backgroundColor: '#FEFBF0',
+                borderColor: '#F5DFA0',
+              }
+            ]} 
+            onPress={handleSimulateBirthdays}
+          >
+            <Gift size={16} color={isDark ? '#FBBF24' : '#B76E00'} />
+            <Text style={[styles.simulateBtnTxt, { color: isDark ? '#FBBF24' : '#B76E00' }]}>Search Today's Birthdays</Text>
           </TouchableOpacity>
 
-          <View style={styles.divider} />
+          <View style={[styles.divider, isDark && { backgroundColor: 'rgba(255, 255, 255, 0.12)' }]} />
 
           {/* Anniversary greeting toggle */}
           <View style={[styles.row, { marginTop: 10 }]}>
-            <Text style={styles.fLabel}>Automated Daily Anniversary Alerts</Text>
+            <Text style={[styles.fLabel, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>Automated Daily Anniversary Alerts</Text>
             <Switch 
               value={anniversaryNotif.enabled} 
               onValueChange={(v) => setAnniversaryNotif({...anniversaryNotif, enabled: v})} 
-              trackColor={{ false: COLORS.rule, true: COLORS.moss }}
+              trackColor={{ false: isDark ? '#3F3F46' : '#CBD5E1', true: isDark ? '#34D399' : '#10B981' }}
               thumbColor="#fff"
             />
           </View>
 
           <View style={[styles.inputGroup, { marginTop: 10 }]}>
-            <Text style={styles.fLabelSmall}>Anniversary greeting message</Text>
+            <Text style={[styles.fLabelSmall, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Anniversary greeting message</Text>
             <TextInput 
-              style={[styles.inputBoxAlt, styles.textArea]} 
+              style={[
+                styles.inputBoxAlt, 
+                styles.textArea,
+                isDark && {
+                  backgroundColor: '#222226',
+                  borderColor: 'rgba(255, 255, 255, 0.2)',
+                  color: '#FFFFFF'
+                }
+              ]} 
+              placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
               multiline
               value={anniversaryNotif.greeting}
               onChangeText={(v) => setAnniversaryNotif({...anniversaryNotif, greeting: v})}
             />
           </View>
 
-          <TouchableOpacity style={[styles.simulateBtn, { backgroundColor: '#EDF7F1', borderColor: '#A3D9B8' }]} onPress={handleSimulateAnniversaries}>
-            <Heart size={16} color="#2E7D52" />
-            <Text style={[styles.simulateBtnTxt, { color: '#2E7D52' }]}>Search Today's Anniversaries</Text>
+          <TouchableOpacity 
+            style={[
+              styles.simulateBtn, 
+              isDark ? {
+                backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                borderColor: 'rgba(52, 211, 153, 0.4)',
+              } : {
+                backgroundColor: '#EDF7F1',
+                borderColor: '#A3D9B8',
+              }
+            ]} 
+            onPress={handleSimulateAnniversaries}
+          >
+            <Heart size={16} color={isDark ? '#34D399' : '#2E7D52'} />
+            <Text style={[styles.simulateBtnTxt, { color: isDark ? '#34D399' : '#2E7D52' }]}>Search Today's Anniversaries</Text>
           </TouchableOpacity>
         </View>
 
         {/* ── 3. Emergency Meeting Alerts ── */}
-        <View style={[styles.sectionHeader, { borderLeftColor: '#DC2626' }]}>
+        <View style={[
+          styles.sectionHeader, 
+          { borderLeftColor: '#DC2626' },
+          isDark && {
+            backgroundColor: '#1E1E22',
+            borderTopColor: 'rgba(255, 255, 255, 0.18)',
+            borderRightColor: 'rgba(255, 255, 255, 0.18)',
+            borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+          }
+        ]}>
           <AlertTriangle size={16} color="#DC2626" />
-          <Text style={[styles.sectionTitle, { color: '#DC2626' }]}>🚨 Emergency Meeting Broadcast</Text>
+          <Text style={[styles.sectionTitle, { color: isDark ? '#F87171' : '#DC2626' }]}>🚨 Emergency Meeting Broadcast</Text>
         </View>
 
-        <View style={[styles.card, { borderColor: 'rgba(220,38,38,0.2)' }]}>
+        <View style={[
+          styles.card, 
+          { borderColor: isDark ? 'rgba(248, 113, 113, 0.35)' : 'rgba(220,38,38,0.3)' },
+          isDark && { backgroundColor: '#161618' }
+        ]}>
           <View style={styles.inputGroup}>
-            <Text style={styles.fLabelSmall}>Meeting Title</Text>
+            <Text style={[styles.fLabelSmall, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Meeting Title</Text>
             <TextInput 
-              style={styles.inputBoxAlt} 
+              style={[
+                styles.inputBoxAlt,
+                isDark && {
+                  backgroundColor: '#222226',
+                  borderColor: 'rgba(255, 255, 255, 0.2)',
+                  color: '#FFFFFF'
+                }
+              ]} 
               placeholder="🚨 EMERGENCY MEETING NOTICE"
-              placeholderTextColor="#94A3B8"
+              placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
               value={emergencyAlert.title}
               onChangeText={(v) => setEmergencyAlert({...emergencyAlert, title: v})}
             />
@@ -622,26 +745,38 @@ export default function AdminNotificationBroadcast() {
 
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 12, width: '100%' }}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.fLabelSmall}>Meeting Date</Text>
+              <Text style={[styles.fLabelSmall, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Meeting Date</Text>
               <TouchableOpacity 
                 activeOpacity={0.7} 
-                style={styles.pickerBtn} 
+                style={[
+                  styles.pickerBtn,
+                  isDark && {
+                    backgroundColor: '#222226',
+                    borderColor: 'rgba(255, 255, 255, 0.2)',
+                  }
+                ]} 
                 onPress={() => setShowMeetingDatePicker(true)}
               >
-                <Text style={styles.pickerTxt} numberOfLines={1}>
+                <Text style={[styles.pickerTxt, { color: isDark ? '#FFFFFF' : '#0F172A' }]} numberOfLines={1}>
                   {new Date(meetingDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                 </Text>
-                <Calendar size={14} color="#64748B" style={{ marginLeft: 'auto' }} />
+                <Calendar size={14} color={isDark ? '#A1A1AA' : '#64748B'} style={{ marginLeft: 'auto' }} />
               </TouchableOpacity>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.fLabelSmall}>Meeting Time</Text>
+              <Text style={[styles.fLabelSmall, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Meeting Time</Text>
               <TouchableOpacity 
                 activeOpacity={0.7} 
-                style={styles.pickerBtn} 
+                style={[
+                  styles.pickerBtn,
+                  isDark && {
+                    backgroundColor: '#222226',
+                    borderColor: 'rgba(255, 255, 255, 0.2)',
+                  }
+                ]} 
                 onPress={() => setShowMeetingTimePicker(true)}
               >
-                <Text style={styles.pickerTxt} numberOfLines={1}>
+                <Text style={[styles.pickerTxt, { color: isDark ? '#FFFFFF' : '#0F172A' }]} numberOfLines={1}>
                   {(() => {
                     const [h, m] = meetingTime.split(':').map(Number);
                     const isPm = h >= 12;
@@ -649,35 +784,57 @@ export default function AdminNotificationBroadcast() {
                     return `${displayHour}:${m.toString().padStart(2, '0')} ${isPm ? 'PM' : 'AM'}`;
                   })()}
                 </Text>
-                <Clock size={14} color="#64748B" style={{ marginLeft: 'auto' }} />
+                <Clock size={14} color={isDark ? '#A1A1AA' : '#64748B'} style={{ marginLeft: 'auto' }} />
               </TouchableOpacity>
             </View>
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.fLabelSmall}>Location</Text>
+            <Text style={[styles.fLabelSmall, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Location</Text>
             <TextInput 
-              style={styles.inputBoxAlt} 
+              style={[
+                styles.inputBoxAlt,
+                isDark && {
+                  backgroundColor: '#222226',
+                  borderColor: 'rgba(255, 255, 255, 0.2)',
+                  color: '#FFFFFF'
+                }
+              ]} 
               placeholder="Main Sanctuary"
-              placeholderTextColor="#94A3B8"
+              placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
               value={emergencyAlert.location}
               onChangeText={(v) => setEmergencyAlert({...emergencyAlert, location: v})}
             />
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.fLabelSmall}>Emergency Message Details</Text>
+            <Text style={[styles.fLabelSmall, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Emergency Message Details</Text>
             <TextInput 
-              style={[styles.inputBoxAlt, styles.textArea]} 
+              style={[
+                styles.inputBoxAlt, 
+                styles.textArea,
+                isDark && {
+                  backgroundColor: '#222226',
+                  borderColor: 'rgba(255, 255, 255, 0.2)',
+                  color: '#FFFFFF'
+                }
+              ]} 
               multiline
               placeholder="URGENT: All church members are requested to join us for an emergency meeting regarding upcoming church events and building project updates."
-              placeholderTextColor="#94A3B8"
+              placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
               value={emergencyAlert.message}
               onChangeText={(v) => setEmergencyAlert({...emergencyAlert, message: v})}
             />
           </View>
 
-          <TouchableOpacity style={styles.emergencyBtn} onPress={handleSendEmergencyAlert}>
+          <TouchableOpacity 
+            style={[
+              styles.emergencyBtn,
+              { backgroundColor: '#DC2626' }
+            ]} 
+            onPress={handleSendEmergencyAlert}
+            activeOpacity={0.8}
+          >
             <Megaphone size={16} color="#fff" />
             <Text style={styles.emergencyBtnTxt}>Broadcast Emergency Meeting Alert</Text>
           </TouchableOpacity>
@@ -716,27 +873,59 @@ export default function AdminNotificationBroadcast() {
         </View>
 
         {/* ── 4. Manual Custom Broadcast ── */}
-        <View style={[styles.sectionHeader, { borderLeftColor: '#1a2d5a' }]}>
-          <Megaphone size={16} color="#1a2d5a" />
-          <Text style={[styles.sectionTitle, { color: '#1a2d5a' }]}>General Custom Broadcast</Text>
+        <View style={[
+          styles.sectionHeader, 
+          { borderLeftColor: isDark ? '#60A5FA' : '#1a2d5a' },
+          isDark && {
+            backgroundColor: '#1E1E22',
+            borderTopColor: 'rgba(255, 255, 255, 0.18)',
+            borderRightColor: 'rgba(255, 255, 255, 0.18)',
+            borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+          }
+        ]}>
+          <Megaphone size={16} color={isDark ? '#60A5FA' : '#1a2d5a'} />
+          <Text style={[styles.sectionTitle, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>General Custom Broadcast</Text>
         </View>
 
-        <View style={styles.card}>
+        <View style={[
+          styles.card,
+          isDark && {
+            backgroundColor: '#161618',
+            borderColor: 'rgba(255, 255, 255, 0.18)',
+          }
+        ]}>
           <View style={styles.inputGroup}>
-            <Text style={styles.fLabelSmall}>Title</Text>
+            <Text style={[styles.fLabelSmall, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Title</Text>
             <TextInput 
-              style={styles.inputBoxAlt} 
+              style={[
+                styles.inputBoxAlt,
+                isDark && {
+                  backgroundColor: '#222226',
+                  borderColor: 'rgba(255, 255, 255, 0.2)',
+                  color: '#FFFFFF'
+                }
+              ]} 
               placeholder="Special announcement title..."
+              placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
               value={manualBroadcast.title}
               onChangeText={(v) => setManualBroadcast({...manualBroadcast, title: v})}
             />
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.fLabelSmall}>Message</Text>
+            <Text style={[styles.fLabelSmall, { color: isDark ? '#A1A1AA' : '#64748B' }]}>Message</Text>
             <TextInput 
-              style={[styles.inputBoxAlt, styles.textArea]} 
+              style={[
+                styles.inputBoxAlt, 
+                styles.textArea,
+                isDark && {
+                  backgroundColor: '#222226',
+                  borderColor: 'rgba(255, 255, 255, 0.2)',
+                  color: '#FFFFFF'
+                }
+              ]} 
               placeholder="Type your message to members..."
+              placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
               multiline
               value={manualBroadcast.message}
               onChangeText={(v) => setManualBroadcast({...manualBroadcast, message: v})}
@@ -744,30 +933,58 @@ export default function AdminNotificationBroadcast() {
           </View>
 
           <View style={styles.actionRow}>
-            <TouchableOpacity style={styles.sendBtn} onPress={handleSendNow}>
+            <TouchableOpacity 
+              style={[
+                styles.sendBtn,
+                { backgroundColor: isDark ? '#2563EB' : '#1a2d5a' }
+              ]} 
+              onPress={handleSendNow}
+              activeOpacity={0.8}
+            >
               <Send size={14} color="#fff" />
               <Text style={styles.sendBtnTxt}>Broadcast Custom Alert</Text>
             </TouchableOpacity>
           </View>
 
-          <View style={styles.statusBox}>
-            <CheckCircle2 size={14} color={COLORS.moss} />
-            <Text style={styles.statusTxt}>
+          <View style={[
+            styles.statusBox,
+            isDark && {
+              backgroundColor: 'rgba(16, 185, 129, 0.12)',
+              borderColor: 'rgba(52, 211, 153, 0.35)',
+            }
+          ]}>
+            <CheckCircle2 size={14} color={isDark ? '#34D399' : COLORS.moss} />
+            <Text style={[styles.statusTxt, isDark && { color: '#6EE7B7' }]}>
               Last broadcast: <Text style={{ fontWeight: '700' }}>{lastBroadcast.date}</Text> — {lastBroadcast.text}. Delivered to {lastBroadcast.count.toLocaleString()} members.
             </Text>
           </View>
         </View>
 
-        <View style={{ height: 150 }} />
-      </ScrollView>
-
-      {/* ── Footer Save Button ── */}
-      <View style={styles.footer}>
-        <TouchableOpacity style={styles.saveBtn} onPress={handleSaveSettings}>
-          <Save size={18} color="#fff" />
-          <Text style={styles.saveBtnTxt}>Save Settings</Text>
+        {/* ── Save Settings Button (inline at the bottom of the screen) ── */}
+        <TouchableOpacity 
+          style={[
+            styles.saveBtn,
+            {
+              backgroundColor: isDark ? '#FFFFFF' : '#000000',
+              borderColor: isDark ? '#FFFFFF' : '#000000',
+              borderWidth: 1.5,
+              shadowColor: isDark ? '#FFFFFF' : '#000000',
+              shadowOpacity: isDark ? 0.25 : 0.15,
+              marginTop: 10,
+              marginBottom: Platform.OS === 'ios' ? 44 : 36,
+            }
+          ]} 
+          onPress={handleSaveSettings}
+          activeOpacity={0.8}
+        >
+          <Save size={18} color={isDark ? '#000000' : '#FFFFFF'} />
+          <Text style={[styles.saveBtnTxt, { color: isDark ? '#000000' : '#FFFFFF', fontWeight: '900' }]}>
+            Save Settings
+          </Text>
         </TouchableOpacity>
-      </View>
+
+        <View style={{ height: Platform.OS === 'ios' ? 30 : 20 }} />
+      </ScrollView>
 
       {showSaveSuccess && (
         <Modal transparent animationType="fade" visible>
@@ -821,8 +1038,8 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     height: 40,
     borderRadius: 20,
     backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
@@ -831,11 +1048,19 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     shadowRadius: 2,
     elevation: 1,
   },
-  container: { flex: 1, backgroundColor: '#EDE8DC' },
+  container: { flex: 1, backgroundColor: '#F8FAFC' },
+  header: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 14,
+    borderBottomWidth: 1.5,
+    borderBottomColor: '#CBD5E1',
+  },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: '#0F172A' },
+  headerSub: { fontSize: 11, color: '#64748B', marginTop: 2 },
   hero: {
     backgroundColor: 'transparent',
-    
-    
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 12,
@@ -844,9 +1069,9 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     marginBottom: 6,
   },
   heroTitleRow: { flexDirection: 'row', alignItems: 'center' },
-  heroTitle: { color: '#1a2d5a', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '600', letterSpacing: -0.5 },
+  heroTitle: { color: '#0F172A', fontSize: 20, fontWeight: '800', letterSpacing: -0.5 },
 
-  scroll: { padding: 14, paddingBottom: 150 },
+  scroll: { padding: 14, paddingBottom: 160 },
 
   sectionHeader: { 
     flexDirection: 'row', 
@@ -857,11 +1082,15 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     borderTopLeftRadius: 14, 
     borderTopRightRadius: 14,
     borderLeftWidth: 4,
-    borderLeftColor: '#1a2d5a',
+    borderLeftColor: '#3B82F6',
+    borderTopWidth: 1.5,
+    borderRightWidth: 1.5,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(26,45,90,0.05)'
+    borderTopColor: '#CBD5E1',
+    borderRightColor: '#CBD5E1',
+    borderBottomColor: '#E2E8F0',
   },
-  sectionTitle: { fontSize: 12, fontWeight: '800', color: '#1a2d5a', textTransform: 'uppercase', letterSpacing: 0.5 },
+  sectionTitle: { fontSize: 12, fontWeight: '800', color: '#0F172A', textTransform: 'uppercase', letterSpacing: 0.5 },
 
   card: { 
     backgroundColor: '#FFFFFF', 
@@ -870,16 +1099,17 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     borderBottomRightRadius: 14,
     marginBottom: 20,
     elevation: 2,
-    shadowColor: '#1a2d5a',
+    shadowColor: '#000',
     shadowOpacity: 0.05,
     shadowRadius: 5,
     shadowOffset: { width: 0, height: 2 },
-    borderWidth: 1,
-    borderColor: 'rgba(26,45,90,0.05)'
+    borderWidth: 1.5,
+    borderTopWidth: 0,
+    borderColor: '#CBD5E1'
   },
 
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  fLabel: { fontSize: 14, fontWeight: '700', color: '#1a2d5a' },
+  fLabel: { fontSize: 14, fontWeight: '700', color: '#0F172A' },
   fLabelSmall: { fontSize: 11, fontWeight: '800', color: '#64748B', textTransform: 'uppercase', marginBottom: 6, marginTop: 10, letterSpacing: 0.5 },
 
   inputGroup: { marginBottom: 12 },
@@ -887,21 +1117,21 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     flexDirection: 'row', 
     alignItems: 'center', 
     backgroundColor: '#FFFFFF', 
-    borderWidth: 1, 
-    borderColor: 'rgba(26,45,90,0.1)', 
+    borderWidth: 1.5, 
+    borderColor: '#CBD5E1', 
     borderRadius: 12, 
     paddingHorizontal: 16, 
     height: 48 
   },
   inputBoxAlt: {
     backgroundColor: '#F8FAFC', 
-    borderWidth: 1, 
-    borderColor: 'rgba(26,45,90,0.1)', 
+    borderWidth: 1.5, 
+    borderColor: '#CBD5E1', 
     borderRadius: 12, 
     paddingHorizontal: 16, 
     height: 48,
     fontSize: 14,
-    color: '#1a2d5a',
+    color: '#0F172A',
     fontWeight: '500',
   },
   textArea: {
@@ -909,66 +1139,67 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     textAlignVertical: 'top',
     paddingTop: 14,
   },
-  textInput: { flex: 1, fontSize: 14, fontWeight: '600', color: '#1a2d5a' },
+  textInput: { flex: 1, fontSize: 14, fontWeight: '600', color: '#0F172A' },
   
   pickerBtn: { 
     flexDirection: 'row', 
     alignItems: 'center', 
     justifyContent: 'space-between', 
     backgroundColor: '#F8FAFC', 
-    borderWidth: 1, 
-    borderColor: 'rgba(26,45,90,0.1)', 
+    borderWidth: 1.5, 
+    borderColor: '#CBD5E1', 
     borderRadius: 12, 
     paddingHorizontal: 16, 
     height: 48 
   },
-  pickerTxt: { fontSize: 13, color: '#1a2d5a', fontWeight: '600' },
+  pickerTxt: { fontSize: 13, color: '#0F172A', fontWeight: '600' },
   dropdown: { 
     position: 'absolute',
     top: 60,
     right: 0,
     left: 0,
     backgroundColor: '#FFFFFF', 
-    borderWidth: 1, 
-    borderColor: 'rgba(26,45,90,0.1)', 
+    borderWidth: 1.5, 
+    borderColor: '#CBD5E1', 
     borderRadius: 12, 
     zIndex: 1000,
     elevation: 5,
     overflow: 'hidden'
   },
-  dropItem: { padding: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(26,45,90,0.05)' },
-  dropTxt: { fontSize: 13, color: '#1a2d5a', fontWeight: '600' },
+  dropItem: { padding: 14, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
+  dropTxt: { fontSize: 13, color: '#0F172A', fontWeight: '600' },
 
-  divider: { height: 1, backgroundColor: 'rgba(26,45,90,0.05)', marginVertical: 18 },
+  divider: { height: 1.5, backgroundColor: '#E2E8F0', marginVertical: 18 },
   
   simulateBtn: { 
     flexDirection: 'row', 
     alignItems: 'center', 
     justifyContent: 'center', 
     gap: 8, 
-    borderWidth: 1,
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
     borderRadius: 12, 
     paddingVertical: 10,
     paddingHorizontal: 20,
     alignSelf: 'center',
     marginTop: 10 
   },
-  simulateBtnTxt: { fontSize: 13, fontWeight: '700', color: '#1a2d5a' },
+  simulateBtnTxt: { fontSize: 13, fontWeight: '700', color: '#0F172A' },
 
   emergencyBtn: {
-    backgroundColor: '#1a2d5a',
-    height: 40,
+    backgroundColor: '#DC2626',
+    height: 44,
     paddingHorizontal: 18,
     alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    borderRadius: 10,
+    borderRadius: 12,
     marginTop: 15,
     elevation: 2,
-    shadowColor: '#1a2d5a',
-    shadowOpacity: 0.2,
+    shadowColor: '#DC2626',
+    shadowOpacity: 0.25,
     shadowRadius: 5
   },
   emergencyBtnTxt: { color: '#fff', fontSize: 12, fontWeight: '800' },
@@ -996,9 +1227,9 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     backgroundColor: '#F0FDF4', 
     padding: 12, 
     borderRadius: 10, 
-    marginTop: 15,
-    borderWidth: 1,
-    borderColor: 'rgba(46,107,79,0.2)'
+    marginTop: 15, 
+    borderWidth: 1.5, 
+    borderColor: 'rgba(46,107,79,0.2)' 
   },
   statusTxt: { flex: 1, fontSize: 11, color: '#2E6B4F', lineHeight: 16 },
 
@@ -1008,34 +1239,36 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     left: 0, 
     right: 0, 
     backgroundColor: '#FFFFFF', 
-    padding: 16, 
-    borderTopWidth: 1, 
-    borderTopColor: 'rgba(26,45,90,0.05)',
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 10
+    paddingHorizontal: 16, 
+    paddingTop: 12, 
+    paddingBottom: 28, 
+    borderTopWidth: 1.5, 
+    borderTopColor: '#CBD5E1', 
+    elevation: 10, 
+    shadowColor: '#000', 
+    shadowOpacity: 0.08, 
+    shadowRadius: 10 
   },
   saveBtn: { 
-    backgroundColor: '#2E6B4F', 
+    backgroundColor: '#000000', 
     height: 52, 
-    borderRadius: 12, 
+    borderRadius: 14, 
     flexDirection: 'row', 
     alignItems: 'center', 
     justifyContent: 'center', 
-    gap: 10,
-    elevation: 3,
-    shadowColor: '#2E6B4F',
-    shadowOpacity: 0.2,
-    shadowRadius: 6
+    gap: 10, 
+    elevation: 3, 
+    shadowColor: '#000000', 
+    shadowOpacity: 0.2, 
+    shadowRadius: 6 
   },
-  saveBtnTxt: { color: '#fff', fontSize: 14, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1 },
+  saveBtnTxt: { color: '#fff', fontSize: 14, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 },
 
   // Success Modal
-  successBg: { flex: 1, backgroundColor: 'rgba(26,45,90, 0.75)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  successBg: { flex: 1, backgroundColor: 'rgba(15,23,42, 0.75)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   successCard: { backgroundColor: '#fff', borderRadius: 24, padding: 24, width: '92%', maxWidth: 400, alignItems: 'center', elevation: 10 },
   successIconOuter: { width: 80, height: 80, borderRadius: 40, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
   successIconInner: { width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center' },
-  successTitle: { fontSize: 22, fontWeight: '900', color: '#1a2d5a', marginBottom: 8, textAlign: 'center' },
+  successTitle: { fontSize: 22, fontWeight: '900', color: '#0F172A', marginBottom: 8, textAlign: 'center' },
   successDesc: { fontSize: 14, color: '#64748B', textAlign: 'center', lineHeight: 22 },
 }));

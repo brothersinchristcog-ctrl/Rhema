@@ -41,8 +41,10 @@ import {
   Check,
   Trash2,
   ChevronLeft,
-  RefreshCw
-, ArrowLeft } from 'lucide-react-native';
+  RefreshCw,
+  ArrowLeft
+} from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
 import { AdminTabContext } from '../../context/AdminTabContext';
@@ -311,115 +313,224 @@ export default function AdminBaptism({ navigation, route, routeParams }: any) {
     }
   };
 
-  return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
+  const statFilters: {
+    key: StatusType;
+    label: string;
+    count: number;
+    lightColor: string;
+    darkColor: string;
+    lightGradient: [string, string, string];
+    darkGradient: [string, string, string];
+  }[] = [
+    {
+      key: 'all',
+      label: 'All',
+      count: stats.total,
+      lightColor: '#1A2D5A',
+      darkColor: '#E4E4E7',
+      lightGradient: ['#FFFFFF', '#F8FAFC', '#F1F5F9'],
+      darkGradient: ['rgba(255, 255, 255, 0.12)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)'],
+    },
+    {
+      key: 'pending',
+      label: 'Pending',
+      count: stats.pending,
+      lightColor: '#D97706',
+      darkColor: '#FBBF24',
+      lightGradient: ['#FFFFFF', '#FFFBEB', '#FEF3C7'],
+      darkGradient: ['rgba(245, 158, 11, 0.16)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)'],
+    },
+    {
+      key: 'under_review',
+      label: 'Review',
+      count: stats.underReview,
+      lightColor: '#2563EB',
+      darkColor: '#60A5FA',
+      lightGradient: ['#FFFFFF', '#F8FAFC', '#EFF6FF'],
+      darkGradient: ['rgba(59, 130, 246, 0.16)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)'],
+    },
+    {
+      key: 'approved',
+      label: 'Approved',
+      count: stats.approved,
+      lightColor: '#059669',
+      darkColor: '#34D399',
+      lightGradient: ['#FFFFFF', '#F7FCF9', '#ECFDF5'],
+      darkGradient: ['rgba(52, 211, 153, 0.16)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)'],
+    },
+    {
+      key: 'completed',
+      label: 'Completed',
+      count: stats.completed,
+      lightColor: '#6366F1',
+      darkColor: '#818CF8',
+      lightGradient: ['#FFFFFF', '#F5F3FF', '#EDE9FE'],
+      darkGradient: ['rgba(99, 102, 241, 0.16)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)'],
+    },
+    {
+      key: 'rejected',
+      label: 'Declined',
+      count: stats.rejected,
+      lightColor: '#DC2626',
+      darkColor: '#F87171',
+      lightGradient: ['#FFFFFF', '#FEF2F2', '#FEE2E2'],
+      darkGradient: ['rgba(239, 68, 68, 0.16)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)'],
+    },
+  ];
 
-      {/* ── Hero Section ── */}
-      <View style={styles.hero}>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', flexShrink: 1 }}>
-            <TouchableOpacity
-              onPress={() => (setActiveTab ? setActiveTab(0) : navigation?.goBack?.())}
-              style={styles.circularBackBtn}
-              activeOpacity={0.7}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
-            </TouchableOpacity>
-            <View style={{ flexShrink: 1, marginLeft: 12 }}>
-              <Text style={styles.heroTitle} numberOfLines={1}>Baptism</Text>
-              <Text style={[styles.heroSub, { marginTop: 2 }]} numberOfLines={1}>
-                {requests.length} total · {stats.pending} pending
-              </Text>
-            </View>
-          </View>
+  return (
+    <View style={[styles.container, { backgroundColor: isDark ? '#000000' : '#F8FAFC' }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#000000' : '#FFFFFF'} />
+
+      {/* ── Modern Centered Header (Pure Black in Dark Mode) ── */}
+      <View
+        style={[
+          styles.hero,
+          {
+            backgroundColor: isDark ? '#000000' : '#FFFFFF',
+            borderBottomWidth: 1.5,
+            borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#CBD5E1',
+            paddingTop: Platform.OS === 'ios' ? 56 : 16,
+            paddingBottom: 16,
+            paddingHorizontal: 16,
+          },
+        ]}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <TouchableOpacity
-            style={styles.refreshHeroBtn}
-            onPress={() => fetchRequests(true)}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            onPress={() => (setActiveTab ? setActiveTab(0) : navigation?.goBack?.())}
+            style={[
+              styles.circularBackBtn,
+              {
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#FFFFFF',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.3)' : '#CBD5E1',
+                borderWidth: 1.5,
+              },
+            ]}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <RefreshCw size={15} color="#fff" />
+            <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.4} />
           </TouchableOpacity>
+
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 }}>
+            <Text
+              style={[
+                styles.heroTitle,
+                {
+                  fontSize: 20,
+                  fontWeight: '800',
+                  color: isDark ? '#FFFFFF' : '#0F172A',
+                  textAlign: 'center',
+                },
+              ]}
+              numberOfLines={1}
+            >
+              Baptism
+            </Text>
+            <Text
+              style={[
+                styles.heroSub,
+                {
+                  fontSize: 12,
+                  color: isDark ? '#94A3B8' : '#64748B',
+                  marginTop: 2,
+                  textAlign: 'center',
+                },
+              ]}
+              numberOfLines={1}
+            >
+              {requests.length} total · {stats.pending} pending
+            </Text>
+          </View>
+
+          {/* Spacer to keep title centered (refresh icon removed) */}
+          <View style={{ width: 40 }} />
         </View>
       </View>
 
-      {/* ── Stats Filter Row ── */}
-      <View style={{ marginBottom: 4 }}>
+      {/* ── Stats Filter Row (Event Screen Stat Cards Design) ── */}
+      <View style={{ marginVertical: 8 }}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.statsRow}
         >
-          <TouchableOpacity
-            style={[styles.statCard, statusFilter === 'all' && styles.activeStatCard]}
-            onPress={() => setStatusFilter('all')}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.statNum, { color: '#1a2d5a' }]}>{stats.total}</Text>
-            <Text style={styles.statLbl}>ALL</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.statCard, statusFilter === 'pending' && styles.activeStatCard]}
-            onPress={() => setStatusFilter('pending')}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.statNum, { color: '#D97706' }]}>{stats.pending}</Text>
-            <Text style={styles.statLbl}>PENDING</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.statCard, statusFilter === 'under_review' && styles.activeStatCard]}
-            onPress={() => setStatusFilter('under_review')}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.statNum, { color: '#2563EB' }]}>{stats.underReview}</Text>
-            <Text style={styles.statLbl}>REVIEW</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.statCard, statusFilter === 'approved' && styles.activeStatCard]}
-            onPress={() => setStatusFilter('approved')}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.statNum, { color: '#059669' }]}>{stats.approved}</Text>
-            <Text style={styles.statLbl}>APPROVED</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.statCard, statusFilter === 'completed' && styles.activeStatCard]}
-            onPress={() => setStatusFilter('completed')}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.statNum, { color: '#6366F1' }]}>{stats.completed}</Text>
-            <Text style={styles.statLbl}>COMPLETED</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.statCard, statusFilter === 'rejected' && styles.activeStatCard]}
-            onPress={() => setStatusFilter('rejected')}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.statNum, { color: '#DC2626' }]}>{stats.rejected}</Text>
-            <Text style={styles.statLbl}>DECLINED</Text>
-          </TouchableOpacity>
+          {statFilters.map((item) => {
+            const isSelected = statusFilter === item.key;
+            const accentColor = isDark ? item.darkColor : item.lightColor;
+            return (
+              <TouchableOpacity
+                key={item.key}
+                style={[
+                  styles.statBox,
+                  {
+                    backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                    borderColor: isSelected
+                      ? accentColor
+                      : isDark
+                      ? 'rgba(255, 255, 255, 0.15)'
+                      : '#CBD5E1',
+                    borderWidth: isSelected ? 2 : 1.5,
+                  },
+                ]}
+                onPress={() => setStatusFilter(item.key)}
+                activeOpacity={0.75}
+              >
+                <LinearGradient
+                  colors={isDark ? item.darkGradient : item.lightGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.statGlassInner}
+                >
+                  <View style={[styles.statNotch, { backgroundColor: accentColor }]} />
+                  <Text style={[styles.statNum, { color: accentColor }]}>{item.count}</Text>
+                  <View style={styles.statLabelRow}>
+                    <Text
+                      style={[
+                        styles.statLabel,
+                        { color: isDark ? '#E4E4E7' : '#475569' },
+                        isSelected && { color: accentColor },
+                      ]}
+                    >
+                      {item.label}
+                    </Text>
+                    {isSelected && (
+                      <View style={[styles.activeIndicatorDot, { backgroundColor: accentColor }]} />
+                    )}
+                  </View>
+                  <Text style={[styles.statHintTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+                    {isSelected ? 'Active ✓' : 'Tap to filter'}
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
       </View>
 
       {/* Search Input */}
-      <View style={styles.searchBar}>
-        <Search size={18} color="#94A3B8" style={{ marginRight: 8 }} />
+      <View
+        style={[
+          styles.searchBar,
+          {
+            backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+            borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : '#CBD5E1',
+            borderWidth: 1.5,
+          },
+        ]}
+      >
+        <Search size={18} color={isDark ? '#94A3B8' : '#64748B'} style={{ marginRight: 8 }} />
         <TextInput
           placeholder="Search by member name, mobile, address..."
-          placeholderTextColor="#94A3B8"
-          style={styles.searchInput}
+          placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
+          style={[styles.searchInput, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
         {searchQuery ? (
           <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <X size={16} color="#94A3B8" />
+            <X size={16} color={isDark ? '#A1A1AA' : '#64748B'} />
           </TouchableOpacity>
         ) : null}
       </View>
@@ -455,8 +566,17 @@ export default function AdminBaptism({ navigation, route, routeParams }: any) {
                   key={req.id + '_' + idx}
                   style={[
                     styles.memberCard,
+                    {
+                      backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                      borderColor: isExpanded
+                        ? '#C9A84C'
+                        : isDark
+                        ? 'rgba(255, 255, 255, 0.15)'
+                        : '#CBD5E1',
+                      borderWidth: 1.5,
+                    },
                     isExpanded && styles.memberCardExpanded,
-                    isTarget && { borderColor: '#0284c7', borderWidth: 2, backgroundColor: '#f0f9ff' }
+                    isTarget && { borderColor: '#0284c7', borderWidth: 2, backgroundColor: isDark ? 'rgba(2, 132, 199, 0.15)' : '#f0f9ff' }
                   ]}
                 >
                   {/* Card Header (Expand / Collapse) */}
@@ -471,7 +591,7 @@ export default function AdminBaptism({ navigation, route, routeParams }: any) {
                       </View>
                       <View style={styles.nameSection}>
                         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                          <Text style={styles.name}>{req.memberName}</Text>
+                          <Text style={[styles.name, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>{req.memberName}</Text>
                           {isTarget && (
                             <View style={{ marginLeft: 8, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: '#0284c7' }}>
                               <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800' }}>SUBMITTED</Text>
@@ -479,21 +599,10 @@ export default function AdminBaptism({ navigation, route, routeParams }: any) {
                           )}
                         </View>
                         {req.address ? (
-                          <Text style={{ fontSize: 12, color: '#6B7280', marginTop: 2, marginBottom: 4 }} numberOfLines={1}>
+                          <Text style={{ fontSize: 12, color: isDark ? '#A1A1AA' : '#6B7280', marginTop: 2 }} numberOfLines={1}>
                             📍 {req.address.trim()}
                           </Text>
                         ) : null}
-                        <View style={styles.badgeRow}>
-                          <View style={[styles.statusBadge, { backgroundColor: badge.bg, borderColor: badge.border }]}>
-                            <BadgeIcon size={11} color={badge.text} style={{ marginRight: 4 }} />
-                            <Text style={[styles.statusTxt, { color: badge.text }]}>{badge.label.toUpperCase()}</Text>
-                          </View>
-                          <View style={styles.roleBadge}>
-                            <Text style={styles.roleTxt}>
-                              {req.previousBaptism ? 'PREVIOUS BAPTISM' : 'FIRST TIME'}
-                            </Text>
-                          </View>
-                        </View>
                       </View>
                     </View>
 
@@ -506,7 +615,7 @@ export default function AdminBaptism({ navigation, route, routeParams }: any) {
                         style={{ padding: 4 }}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
-                        <Edit2 size={18} color="#2563EB" />
+                        <Edit2 size={18} color={isDark ? '#E4E4E7' : '#334155'} />
                       </TouchableOpacity>
                       <TouchableOpacity
                         onPress={(e) => {
@@ -520,13 +629,25 @@ export default function AdminBaptism({ navigation, route, routeParams }: any) {
                       </TouchableOpacity>
                       <View style={styles.chevronWrap}>
                         {isExpanded ? (
-                          <ChevronUp size={18} color="#6B7280" />
+                          <ChevronUp size={18} color={isDark ? '#A1A1AA' : '#6B7280'} />
                         ) : (
-                          <ChevronDown size={18} color="#6B7280" />
+                          <ChevronDown size={18} color={isDark ? '#A1A1AA' : '#6B7280'} />
                         )}
                       </View>
                     </View>
                   </TouchableOpacity>
+
+                  {/* Single Row: Status & Baptism Type (Normal Text - Full Width) */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, marginBottom: 2 }}>
+                    <BadgeIcon size={13} color={badge.text} style={{ marginRight: 5 }} />
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: badge.text }}>
+                      {badge.label}
+                    </Text>
+                    <Text style={{ color: isDark ? '#71717A' : '#94A3B8', marginHorizontal: 6, fontSize: 12 }}>•</Text>
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: isDark ? '#D4D4D8' : '#475569' }}>
+                      {req.previousBaptism ? 'Previous Baptism' : 'First Time'}
+                    </Text>
+                  </View>
 
                   {/* Contact Details Row */}
                   <View style={styles.contactDetails}>
@@ -629,12 +750,26 @@ export default function AdminBaptism({ navigation, route, routeParams }: any) {
                       {/* Action Buttons */}
                       <View style={styles.actionBtnRow}>
                         <TouchableOpacity
-                          style={styles.reviewBtn}
+                          style={[
+                            styles.reviewBtn,
+                            {
+                              backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                              borderColor: isDark ? '#FFFFFF' : '#000000',
+                              borderWidth: 1.5,
+                            },
+                          ]}
                           activeOpacity={0.7}
                           onPress={() => openRequestDetail(req)}
                         >
-                          <Edit2 size={14} color="#fff" />
-                          <Text style={styles.reviewBtnTxt}>Review & Update Status</Text>
+                          <Edit2 size={14} color={isDark ? '#000000' : '#FFFFFF'} />
+                          <Text
+                            style={[
+                              styles.reviewBtnTxt,
+                              { color: isDark ? '#000000' : '#FFFFFF', fontWeight: '800' },
+                            ]}
+                          >
+                            Review & Update Status
+                          </Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity
@@ -1009,10 +1144,68 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   },
   statsRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 10,
     paddingHorizontal: 16,
-    paddingVertical: 2,
+    paddingVertical: 4,
     marginBottom: 4
+  },
+  statBox: {
+    minWidth: 106,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    paddingVertical: 0,
+    overflow: 'hidden',
+  },
+  statGlassInner: {
+    width: '100%',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    position: 'relative',
+  },
+  statNotch: {
+    position: 'absolute',
+    top: -1,
+    width: 32,
+    height: 3.5,
+    borderBottomLeftRadius: 4,
+    borderBottomRightRadius: 4,
+  },
+  statNum: {
+    fontSize: 22,
+    fontWeight: '800',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    marginBottom: 4,
+  },
+  statLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  statLabel: {
+    fontSize: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    color: '#475569',
+    fontWeight: '700',
+  },
+  activeIndicatorDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  statHintTxt: {
+    fontSize: 8.5,
+    color: '#94A3B8',
+    fontWeight: '600',
+    marginTop: 2,
+    letterSpacing: 0.3,
   },
   statCard: {
     backgroundColor: '#FFFFFF',
@@ -1033,11 +1226,6 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     borderColor: '#1a2d5a',
     borderWidth: 1.5,
     backgroundColor: '#F8FAFC'
-  },
-  statNum: {
-    fontSize: 20,
-    fontWeight: '800',
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif'
   },
   statLbl: {
     fontSize: 10,
@@ -1084,8 +1272,8 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   memberCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(26,45,90,0.08)',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
     padding: 14,
     shadowColor: '#1a2d5a',
     shadowOpacity: 0.05,

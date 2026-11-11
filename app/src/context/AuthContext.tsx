@@ -18,6 +18,11 @@ interface AuthContextType {
   setViewMode: (mode: 'admin' | 'member') => void;
   isPlatformSuperAdmin: boolean;
   refreshSuperAdminStatus: () => Promise<boolean>;
+  isPendingApproval: boolean;
+  isRejected: boolean;
+  registrationRequest: any | null;
+  refreshApprovalStatus: () => Promise<boolean>;
+  setPendingApprovalState: (pending: boolean, rejected?: boolean, req?: any) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -28,6 +33,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'admin' | 'member'>('member');
   const [isPlatformSuperAdmin, setIsPlatformSuperAdmin] = useState(false);
+  const [isPendingApproval, setIsPendingApproval] = useState(false);
+  const [isRejected, setIsRejected] = useState(false);
+  const [registrationRequest, setRegistrationRequest] = useState<any | null>(null);
   const memberListenerRef = useRef<(() => void) | null>(null);
   const superAdminListenerRef = useRef<(() => void) | null>(null);
   const isSigningOutRef = useRef<boolean>(false);
@@ -105,10 +113,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       let cachedUserObj: any = null;
       let cachedMemberObj: AppMember | null = null;
       try {
-        const [cachedMemberStr, cachedUserStr, cachedSuperStr] = await Promise.all([
+        const [
+          cachedMemberStr, 
+          cachedUserStr, 
+          cachedSuperStr,
+          pendingFlagStr,
+          pendingPhoneStr,
+          pendingNameStr,
+          pendingCityStr,
+          pendingGenderStr,
+          pendingStatusStr,
+          pendingChurchStr,
+        ] = await Promise.all([
           AsyncStorage.getItem('@cached_member'),
           AsyncStorage.getItem('@cached_user'),
           AsyncStorage.getItem('@cached_is_super_admin'),
+          AsyncStorage.getItem('@is_pending_approval'),
+          AsyncStorage.getItem('@pending_registration_phone'),
+          AsyncStorage.getItem('@pending_registration_name'),
+          AsyncStorage.getItem('@pending_registration_city'),
+          AsyncStorage.getItem('@pending_registration_gender'),
+          AsyncStorage.getItem('@pending_registration_status'),
+          AsyncStorage.getItem('@pending_registration_church'),
         ]);
         if (cachedSuperStr) {
           try {
@@ -133,6 +159,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               setIsPlatformSuperAdmin(isSuper);
             }).catch(() => {});
           }
+        }
+
+        // Restore pending registration state if user is awaiting admin approval
+        if (!cachedMemberObj && pendingFlagStr === 'true') {
+          setIsPendingApproval(pendingStatusStr !== 'rejected');
+          setIsRejected(pendingStatusStr === 'rejected');
+          setRegistrationRequest({
+            phone: pendingPhoneStr || '',
+            fullName: pendingNameStr || '',
+            city: pendingCityStr || '',
+            gender: pendingGenderStr || '',
+            status: pendingStatusStr || 'pending',
+            churchId: pendingChurchStr || 'rhema',
+          });
         }
       } catch (e) {
         // Ignore cache read errors
@@ -179,6 +219,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             return;
           }
           setUser(null);
+          setMember(null);
+          setIsPendingApproval(false);
+          setIsRejected(false);
+          setRegistrationRequest(null);
           setLoading(false);
           return;
         }
@@ -259,7 +303,70 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             const targetChurchId = globalUser?.primaryChurchId || RHEMA_CHURCH_ID;
 
-            // FCM Setup
+            // Fetch nested member profile
+            let memberProfile = await FirestoreService.getMemberProfile(targetChurchId, userState.uid);
+
+            const searchPhone = userState.phoneNumber || globalUser?.phone || memberProfile?.phone || cachedMemberObj?.phone;
+            if (searchPhone) {
+              try {
+                const contactCheck = await FirestoreService.checkContactExists(searchPhone);
+                if (contactCheck?.exists && contactCheck.member) {
+                  if (contactCheck.member.id !== userState.uid) {
+                    await FirestoreService.syncMember(targetChurchId, contactCheck.member.id, userState.uid);
+                  }
+                  memberProfile = { ...memberProfile, ...contactCheck.member, id: userState.uid } as AppMember;
+                }
+              } catch (e) {
+                console.warn('⚠️ [Auth] checkContactExists failed during login:', e);
+              }
+            }
+
+            const hasValidMemberProfile = Boolean(
+              memberProfile && (
+                memberProfile.status === 'Active' ||
+                memberProfile.firstName ||
+                memberProfile.name ||
+                memberProfile.userType
+              )
+            );
+
+            if (!hasValidMemberProfile && !isPlatformSuperAdmin) {
+              // This is a registering user or applicant awaiting admin approval!
+              console.log('⏳ [Auth] User is not an active approved member yet. Checking registration request...');
+              setMember(null);
+              await AsyncStorage.removeItem('@cached_member').catch(() => {});
+
+              const phoneToCheck = userState.phoneNumber || searchPhone || '';
+              const reqData = await FirestoreService.getRegistrationRequest(targetChurchId, phoneToCheck);
+
+              if (reqData?.status === 'rejected') {
+                setIsPendingApproval(false);
+                setIsRejected(true);
+                setRegistrationRequest(reqData);
+              } else {
+                setIsPendingApproval(true);
+                setIsRejected(false);
+                setRegistrationRequest(reqData || { phone: phoneToCheck, status: 'pending' });
+              }
+              setLoading(false);
+              return;
+            }
+
+            // User is an approved active member!
+            setIsPendingApproval(false);
+            setIsRejected(false);
+            setRegistrationRequest(null);
+            await AsyncStorage.multiRemove([
+              '@is_pending_approval',
+              '@pending_registration_status',
+              '@pending_registration_phone',
+              '@pending_registration_name',
+              '@pending_registration_city',
+              '@pending_registration_gender',
+              '@pending_registration_church',
+            ]).catch(() => {});
+
+            // FCM Setup - ONLY for approved active members
             try {
               const NotificationService = require('../services/NotificationService').default;
               await NotificationService.requestUserPermission().catch(() => {});
@@ -285,24 +392,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               });
             } catch (err) {
               console.log('❌ [FCM] Error setting up notifications:', err);
-            }
-
-            // Fetch nested member profile
-            let memberProfile = await FirestoreService.getMemberProfile(targetChurchId, userState.uid);
-
-            const searchPhone = userState.phoneNumber || globalUser?.phone || memberProfile?.phone || cachedMemberObj?.phone;
-            if (searchPhone) {
-              try {
-                const contactCheck = await FirestoreService.checkContactExists(searchPhone);
-                if (contactCheck?.exists && contactCheck.member) {
-                  if (contactCheck.member.id !== userState.uid) {
-                    await FirestoreService.syncMember(targetChurchId, contactCheck.member.id, userState.uid);
-                  }
-                  memberProfile = { ...memberProfile, ...contactCheck.member, id: userState.uid } as AppMember;
-                }
-              } catch (e) {
-                console.warn('⚠️ [Auth] checkContactExists failed during login:', e);
-              }
             }
 
             if (memberProfile || globalUser) {
@@ -420,13 +509,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         superAdminListenerRef.current();
         superAdminListenerRef.current = null;
       }
-      await AsyncStorage.multiRemove(['@cached_member', '@cached_user', '@guest_intent', '@cached_is_super_admin']);
-      setMember(null);
-      setUser(null);
-      setIsPlatformSuperAdmin(false);
       if (auth().currentUser) {
-        await auth().signOut();
+        await auth().signOut().catch(() => {});
       }
+      await AsyncStorage.multiRemove([
+        '@cached_member', 
+        '@cached_user', 
+        '@guest_intent', 
+        '@cached_is_super_admin',
+        '@is_pending_approval',
+        '@pending_registration_phone',
+        '@pending_registration_name',
+        '@pending_registration_city',
+        '@pending_registration_gender',
+        '@pending_registration_status',
+        '@pending_registration_church',
+      ]).catch(() => {});
+      setUser(null);
+      setMember(null);
+      setIsPlatformSuperAdmin(false);
+      setIsPendingApproval(false);
+      setIsRejected(false);
+      setRegistrationRequest(null);
     } catch (error) {
       console.error('Sign out error:', error);
     } finally {
@@ -434,8 +538,97 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const refreshApprovalStatus = async (): Promise<boolean> => {
+    try {
+      const targetChurchId = RHEMA_CHURCH_ID;
+      const storedPhone = await AsyncStorage.getItem('@pending_registration_phone').catch(() => null);
+      const phoneToCheck = user?.phoneNumber || registrationRequest?.phone || storedPhone || '';
+      if (!phoneToCheck && !user?.uid) return false;
+
+      // 1. Check if member doc was created in members collection
+      let profile = user?.uid ? await FirestoreService.getMemberProfile(targetChurchId, user.uid) : null;
+      if (!profile && phoneToCheck) {
+        const check = await FirestoreService.checkContactExists(phoneToCheck);
+        if (check?.exists && check?.member) {
+          profile = check.member;
+        }
+      }
+      if (profile && (profile.status === 'Active' || profile.firstName || profile.name)) {
+        setIsPendingApproval(false);
+        setIsRejected(false);
+        setMember(profile);
+        await AsyncStorage.multiRemove([
+          '@is_pending_approval',
+          '@pending_registration_status',
+          '@pending_registration_phone',
+          '@pending_registration_name',
+          '@pending_registration_city',
+          '@pending_registration_gender',
+          '@pending_registration_church',
+        ]).catch(() => {});
+        await AsyncStorage.setItem('@cached_member', JSON.stringify(profile)).catch(() => {});
+        return true;
+      }
+
+      // 2. Check registration request status
+      const req = await FirestoreService.getRegistrationRequest(targetChurchId, phoneToCheck);
+      if (req?.status === 'approved') {
+        setIsPendingApproval(false);
+        setIsRejected(false);
+        setRegistrationRequest(req);
+        await AsyncStorage.multiRemove([
+          '@is_pending_approval',
+          '@pending_registration_status',
+          '@pending_registration_phone',
+          '@pending_registration_name',
+          '@pending_registration_city',
+          '@pending_registration_gender',
+          '@pending_registration_church',
+        ]).catch(() => {});
+        return true;
+      } else if (req?.status === 'rejected') {
+        setIsPendingApproval(false);
+        setIsRejected(true);
+        setRegistrationRequest(req);
+        await AsyncStorage.setItem('@pending_registration_status', 'rejected').catch(() => {});
+        return false;
+      } else {
+        setIsPendingApproval(true);
+        setIsRejected(false);
+        setRegistrationRequest(req);
+        await AsyncStorage.setItem('@pending_registration_status', 'pending').catch(() => {});
+        return false;
+      }
+    } catch (e) {
+      console.warn('refreshApprovalStatus error:', e);
+      return false;
+    }
+  };
+
+  const setPendingApprovalState = (pending: boolean, rejected = false, req: any = null) => {
+    setIsPendingApproval(pending);
+    setIsRejected(rejected);
+    setRegistrationRequest(req);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, member, loading, signInAnonymously, signOut, setMember: updateMember, viewMode, setViewMode, isPlatformSuperAdmin, refreshSuperAdminStatus }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      member, 
+      loading, 
+      signInAnonymously, 
+      signOut, 
+      setMember: updateMember, 
+      viewMode, 
+      setViewMode, 
+      isPlatformSuperAdmin, 
+      refreshSuperAdminStatus,
+      isPendingApproval,
+      isRejected,
+      registrationRequest,
+      refreshApprovalStatus,
+      setPendingApprovalState,
+    }}>
       {children}
     </AuthContext.Provider>
   );

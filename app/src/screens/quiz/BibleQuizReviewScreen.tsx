@@ -10,13 +10,11 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  ChevronLeft,
   ArrowLeft,
   CheckCircle,
   XCircle,
   BookOpen,
 } from 'lucide-react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { QuizAttempt, BibleQuiz } from '../../types/Quiz';
 import { useQuizLanguage } from '../../context/QuizLanguageContext';
@@ -53,10 +51,20 @@ export default function BibleQuizReviewScreen() {
           No review data found.
         </Text>
         <TouchableOpacity
-          style={styles.backBtn}
+          style={[
+            styles.backBtn,
+            { backgroundColor: isDark ? '#FFFFFF' : '#000000' },
+          ]}
           onPress={() => navigation.goBack()}
         >
-          <Text style={styles.backBtnTxt}>{ui.results}</Text>
+          <Text
+            style={[
+              styles.backBtnTxt,
+              { color: isDark ? '#000000' : '#FFFFFF' },
+            ]}
+          >
+            {ui.results}
+          </Text>
         </TouchableOpacity>
       </View>
     );
@@ -71,42 +79,57 @@ export default function BibleQuizReviewScreen() {
     <View style={[styles.container, { backgroundColor: screenBg }]}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={screenBg} />
 
-      {/* Top Floating Header Card */}
+      {/* Screen Header */}
       <View
         style={[
-          styles.headerCardWrapper,
-          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 6 }
+          styles.headerRow,
+          {
+            paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8,
+            backgroundColor: isDark ? '#000000' : '#FFFFFF',
+            borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#CBD5E1',
+          },
         ]}
       >
-        <LinearGradient
-          colors={['#527C78', '#355B56']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.header}
+        <TouchableOpacity
+          style={[
+            styles.circularBtn,
+            {
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#E2E8F0',
+            },
+          ]}
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          activeOpacity={0.8}
         >
-          <View style={styles.headerDecoCircle1} pointerEvents="none" />
-          <View style={styles.headerDecoCircle2} pointerEvents="none" />
+          <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.4} />
+        </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={styles.headerBackBtn}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            activeOpacity={0.8}
+        <View style={styles.headerTitleWrap}>
+          <Text
+            style={[
+              styles.headerTitleText,
+              { color: isDark ? '#FFFFFF' : '#0F172A' },
+            ]}
+            numberOfLines={1}
           >
-            <ArrowLeft size={20} color="#355B56" />
-          </TouchableOpacity>
+            {ui.questionReview}
+          </Text>
+        </View>
 
-          <View style={styles.headerCenterTitleWrap} pointerEvents="none">
-            <Text style={styles.headerTitle} numberOfLines={1} maxFontSizeMultiplier={1.15}>
-              {ui.questionReview}
-            </Text>
-            <View style={styles.headerTitleAccentBar} />
-          </View>
-
-          <View style={styles.scorePill}>
-            <Text style={styles.scorePillTxt}>{attempt.percentage}%</Text>
-          </View>
-        </LinearGradient>
+        <View
+          style={[
+            styles.scorePill,
+            {
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#F1F5F9',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1',
+            },
+          ]}
+        >
+          <Text style={[styles.scorePillTxt, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+            {attempt.percentage}%
+          </Text>
+        </View>
       </View>
 
       <ScrollView
@@ -294,16 +317,16 @@ export default function BibleQuizReviewScreen() {
                     styles.scriptureRefRow,
                     {
                       backgroundColor: isDark
-                        ? 'rgba(124, 58, 237, 0.18)'
-                        : '#f5f3ff',
+                        ? 'rgba(255, 255, 255, 0.08)'
+                        : '#F1F5F9',
                     },
                   ]}
                 >
-                  <BookOpen size={14} color={isDark ? '#c4b5fd' : '#7c3aed'} />
+                  <BookOpen size={14} color={primaryText} />
                   <Text
                     style={[
                       styles.scriptureRefTxt,
-                      { color: isDark ? '#c4b5fd' : '#7c3aed' },
+                      { color: primaryText },
                     ]}
                   >
                     {ui.scriptureReference}: {locRef}
@@ -318,16 +341,17 @@ export default function BibleQuizReviewScreen() {
                     styles.explanationBox,
                     {
                       backgroundColor: isDark
-                        ? 'rgba(30, 41, 59, 0.7)'
+                        ? 'rgba(255, 255, 255, 0.04)'
                         : '#F8FAFC',
                       borderColor: adminBorderColor,
+                      borderLeftColor: isDark ? '#FFFFFF' : '#000000',
                     },
                   ]}
                 >
                   <Text
                     style={[
                       styles.explanationTitle,
-                      { color: isDark ? '#60A5FA' : '#2563EB' },
+                      { color: primaryText },
                     ]}
                   >
                     {ui.biblicalInsight}:
@@ -373,84 +397,42 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     color: '#ffffff',
     fontWeight: '700',
   },
-  headerCardWrapper: {
-    paddingHorizontal: 16,
-    paddingBottom: 4,
-  },
-  header: {
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    borderRadius: 24,
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    overflow: 'hidden',
-    position: 'relative',
-    borderWidth: 1,
-    borderColor: 'rgba(228, 238, 234, 0.25)',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1.5,
   },
-  headerDecoCircle1: {
-    position: 'absolute',
-    width: 130,
-    height: 130,
-    borderRadius: 65,
-    backgroundColor: 'rgba(228, 238, 234, 0.10)',
-    top: -50,
-    right: -25,
-  },
-  headerDecoCircle2: {
-    position: 'absolute',
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: 'rgba(228, 238, 234, 0.08)',
-    bottom: -40,
-    left: 35,
-  },
-  headerBackBtn: {
+  circularBtn: {
     width: 40,
     height: 40,
-    borderRadius: 14,
-    backgroundColor: '#E4EEEA',
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 10,
+    borderWidth: 1,
   },
-  headerBackTxt: {
-    color: '#355B56',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  headerCenterTitleWrap: {
+  headerTitleWrap: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 12,
+    marginHorizontal: 10,
   },
-  headerTitle: {
-    color: '#FFFFFF',
-    fontSize: 20,
+  headerTitleText: {
+    fontSize: 18,
     fontWeight: '800',
-    letterSpacing: 0.5,
     textAlign: 'center',
   },
-  headerTitleAccentBar: {
-    width: 28,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: '#E4EEEA',
-    marginTop: 5,
-    opacity: 0.85,
-  },
   scorePill: {
-    backgroundColor: '#E4EEEA',
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 6,
     borderRadius: 14,
-    zIndex: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   scorePillTxt: {
-    color: '#355B56',
     fontSize: 13,
     fontWeight: '800',
   },
@@ -541,7 +523,6 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     padding: 12,
     borderRadius: 12,
     borderLeftWidth: 3,
-    borderLeftColor: '#2563EB',
     marginTop: 4,
   },
   explanationTitle: {

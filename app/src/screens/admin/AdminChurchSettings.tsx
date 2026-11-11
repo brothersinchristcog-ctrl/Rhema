@@ -16,7 +16,7 @@ import {
   Platform,
   Switch
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, Save, Palette, Image as ImageIcon, Link, DollarSign, Building2, Plus, Trash2, Info, Edit2, Clock, MapPin, Navigation , ArrowLeft } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
@@ -36,6 +36,7 @@ const PRESET_COLORS = [
 
 export default function AdminChurchSettings({ navigation }: any) {
   const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
+  const insets = useSafeAreaInsets();
   const { member } = useAuth();
   const { churchId, activeChurch, setActiveChurch } = useChurch();
   const { goBack } = React.useContext(AdminTabContext);
@@ -47,7 +48,7 @@ export default function AdminChurchSettings({ navigation }: any) {
   const [linkCode, setLinkCode] = useState('');
   const [linking, setLinking] = useState(false);
   const [secrets, setSecrets] = useState<{ razorpayKeyId?: string; razorpayKeySecret?: string; whatsappAccessToken?: string; whatsappPhoneId?: string; useWeChristianWhatsApp?: boolean }>({});
-  const [activeTab, setActiveTab] = useState<'info' | 'branding' | 'giving'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'giving'>('info');
   const [isEditing, setIsEditing] = useState(false);
   const [alertConfig, setAlertConfig] = useState<{
     visible: boolean;
@@ -311,8 +312,8 @@ export default function AdminChurchSettings({ navigation }: any) {
   const primaryColor = form.theme?.primaryColor || '#1a2d5a';
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
+      <StatusBar barStyle={barStyle} backgroundColor={isDark ? '#000000' : '#FFFFFF'} />
       <SafeAreaView style={{ flex: 1 }} edges={['bottom']}>
         <CustomAlert 
           visible={alertConfig.visible}
@@ -321,67 +322,123 @@ export default function AdminChurchSettings({ navigation }: any) {
           type={alertConfig.type}
           onClose={() => setAlertConfig(prev => ({ ...prev, visible: false }))}
         />
-        {/* ── Hero Section ── */}
-        <View style={styles.hero}>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start', flex: 1, paddingRight: 12 }}>
+        {/* ── Modern Centered Header Bar ── */}
+        <View
+          style={[
+            styles.topbar,
+            {
+              backgroundColor: isDark ? '#000000' : '#FFFFFF',
+              borderBottomWidth: 1.5,
+              borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#CBD5E1',
+              paddingTop: Platform.OS === 'ios' ? Math.max(insets.top, 20) : 12,
+              paddingBottom: 12,
+              paddingHorizontal: 16,
+            }
+          ]}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <TouchableOpacity
+              onPress={goBack}
+              style={[
+                styles.circularBackBtn,
+                {
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#FFFFFF',
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.3)' : '#CBD5E1',
+                  borderWidth: 1.5,
+                }
+              ]}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.4} />
+            </TouchableOpacity>
+
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 }}>
+              <Text
+                style={{
+                  fontSize: 20,
+                  fontWeight: '800',
+                  color: isDark ? '#B9C8BD' : '#98713D',
+                  textAlign: 'center',
+                  letterSpacing: -0.3,
+                }}
+                numberOfLines={1}
+              >
+                Settings
+              </Text>
+            </View>
+
+            {isEditing ? (
               <TouchableOpacity
-                onPress={goBack}
-                style={styles.circularBackBtn}
-                activeOpacity={0.7}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                  paddingHorizontal: 14,
+                  paddingVertical: 7,
+                  borderRadius: 10,
+                  gap: 5,
+                  minWidth: 64,
+                  justifyContent: 'center',
+                }}
+                onPress={handleSave}
+                disabled={saving}
+                activeOpacity={0.8}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
-              </TouchableOpacity>
-              <View style={{ flexShrink: 1, marginLeft: 12 }}>
-                <Text style={styles.heroTitle}>Settings</Text>
-                <Text style={[styles.heroSub, { marginTop: 2 }]} numberOfLines={1} adjustsFontSizeToFit>Church info, branding & APIs</Text>
-              </View>
-            </View>
-            {isEditing ? (
-              <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving}>
                 {saving ? (
-                  <ActivityIndicator color="#1a2d5a" size="small" />
+                  <ActivityIndicator color={isDark ? '#000000' : '#FFFFFF'} size="small" />
                 ) : (
                   <>
-                    <Save size={16} color="#1a2d5a" />
-                    <Text style={styles.saveBtnTxt}>Save</Text>
+                    <Save size={14} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.4} />
+                    <Text style={{ fontSize: 13, fontWeight: '800', color: isDark ? '#000000' : '#FFFFFF', letterSpacing: 0.3 }}>
+                      Save
+                    </Text>
                   </>
                 )}
               </TouchableOpacity>
             ) : (
-              <TouchableOpacity style={styles.editBtn} onPress={() => setIsEditing(true)}>
-                <Edit2 size={16} color="#1a2d5a" />
-                <Text style={styles.editBtnTxt}>Edit</Text>
+              <TouchableOpacity
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                  paddingHorizontal: 14,
+                  paddingVertical: 7,
+                  borderRadius: 10,
+                  gap: 5,
+                  minWidth: 64,
+                  justifyContent: 'center',
+                }}
+                onPress={() => setIsEditing(true)}
+                activeOpacity={0.8}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Edit2 size={14} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.4} />
+                <Text style={{ fontSize: 13, fontWeight: '800', color: isDark ? '#000000' : '#FFFFFF', letterSpacing: 0.3 }}>
+                  Edit
+                </Text>
               </TouchableOpacity>
             )}
           </View>
         </View>
 
         {/* Tabs */}
-        <View style={styles.tabs}>
+        <View style={[styles.tabs, { backgroundColor: isDark ? '#000000' : '#FFFFFF', borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0', borderBottomWidth: 1 }]}>
           <TouchableOpacity
-            style={[styles.tab, activeTab === 'info' && { borderBottomColor: primaryColor }]}
+            style={[styles.tab, activeTab === 'info' && { borderBottomColor: isDark ? '#FFFFFF' : primaryColor }]}
             onPress={() => setActiveTab('info')}
           >
-            <Building2 size={18} color={activeTab === 'info' ? primaryColor : '#64748b'} />
-            <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.tabTxt, activeTab === 'info' && { color: primaryColor, fontWeight: '700' }]}>Info</Text>
+            <Building2 size={18} color={activeTab === 'info' ? (isDark ? '#FFFFFF' : primaryColor) : secondaryText} />
+            <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.tabTxt, { color: activeTab === 'info' ? (isDark ? '#FFFFFF' : primaryColor) : secondaryText, fontWeight: activeTab === 'info' ? '700' : '600' }]}>Info</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.tab, activeTab === 'branding' && { borderBottomColor: primaryColor }]}
-            onPress={() => setActiveTab('branding')}
-          >
-            <Palette size={18} color={activeTab === 'branding' ? primaryColor : '#64748b'} />
-            <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.tabTxt, activeTab === 'branding' && { color: primaryColor, fontWeight: '700' }]}>Brand</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'giving' && { borderBottomColor: primaryColor }]}
+            style={[styles.tab, activeTab === 'giving' && { borderBottomColor: isDark ? '#FFFFFF' : primaryColor }]}
             onPress={() => setActiveTab('giving')}
           >
-            <DollarSign size={18} color={activeTab === 'giving' ? primaryColor : '#64748b'} />
-            <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.tabTxt, activeTab === 'giving' && { color: primaryColor, fontWeight: '700' }]}>Giving</Text>
+            <DollarSign size={18} color={activeTab === 'giving' ? (isDark ? '#FFFFFF' : primaryColor) : secondaryText} />
+            <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.tabTxt, { color: activeTab === 'giving' ? (isDark ? '#FFFFFF' : primaryColor) : secondaryText, fontWeight: activeTab === 'giving' ? '700' : '600' }]}>Giving</Text>
           </TouchableOpacity>
-          
         </View>
 
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -390,52 +447,236 @@ export default function AdminChurchSettings({ navigation }: any) {
           {/* INFO TAB */}
           {activeTab === 'info' && (
             <View>
-              {!isEditing && <Text style={styles.viewModeHint}>Tap 'Edit' in the top right to make changes.</Text>}
+              {!isEditing && (
+                <Text
+                  style={[
+                    styles.viewModeHint,
+                    {
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F0EBE0',
+                      color: isDark ? '#FFFFFF' : '#1a2d5a',
+                      borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#E2DDD5',
+                    }
+                  ]}
+                >
+                  Tap 'Edit' in the top right to make changes.
+                </Text>
+              )}
 
-              {/* Dedicated Church Badge */}
-              <View style={[styles.churchCodeCard, { borderColor: primaryColor }]}>
-                <Text style={styles.churchCodeLabel}>MINISTRY APP STATUS</Text>
-                <Text style={[styles.churchCodeValue, { color: primaryColor, fontSize: 18 }]}>
-                  {form.name || 'Rhema Global Ministries'}
-                </Text>
-                <Text style={styles.churchCodeHint}>
-                  Dedicated single-church app. All members automatically connect directly without requiring a join code.
-                </Text>
+              {/* Church Logo */}
+              <Text style={[styles.sectionLabel, { marginTop: 12, marginBottom: 10 }]}>Church Logo</Text>
+              <View
+                style={{
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  paddingVertical: 18,
+                  paddingHorizontal: 16,
+                  borderRadius: 16,
+                  borderWidth: 1.5,
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#CBD5E1',
+                  backgroundColor: isDark ? (cardSurface || '#18181B') : '#FFFFFF',
+                  marginBottom: 20,
+                  shadowColor: '#000000',
+                  shadowOffset: { width: 0, height: 1 },
+                  shadowOpacity: isDark ? 0 : 0.04,
+                  shadowRadius: 3,
+                  elevation: isDark ? 0 : 1,
+                }}
+              >
+                <TouchableOpacity
+                  style={{
+                    width: 120,
+                    height: 120,
+                    borderRadius: 60,
+                    borderWidth: 2.5,
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.25)' : '#CBD5E1',
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F8FAFC',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    overflow: 'hidden',
+                  }}
+                  onPress={() => isEditing && pickImage('logo')}
+                  disabled={!isEditing}
+                  activeOpacity={0.8}
+                >
+                  {uploadingImage === 'logo' ? (
+                    <ActivityIndicator color={isDark ? '#FFFFFF' : primaryColor} size="small" />
+                  ) : form.theme?.logoUrl ? (
+                    <Image source={{ uri: form.theme.logoUrl }} style={{ width: 115, height: 115, borderRadius: 57.5 }} resizeMode="cover" />
+                  ) : (
+                    <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+                      <ImageIcon size={34} color={isDark ? '#94A3B8' : '#64748B'} />
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#94A3B8' : '#64748B', marginTop: 4 }}>
+                        {isEditing ? 'Upload' : 'No Logo'}
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+
+                {isEditing && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 }}>
+                    <TouchableOpacity
+                      onPress={() => pickImage('logo')}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 4,
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: 8,
+                        backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#000000' : '#FFFFFF' }}>
+                        {form.theme?.logoUrl ? 'Change' : 'Upload'}
+                      </Text>
+                    </TouchableOpacity>
+
+                    {form.theme?.logoUrl ? (
+                      <TouchableOpacity
+                        onPress={() => updateField('theme', 'logoUrl', '')}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 4,
+                          paddingHorizontal: 12,
+                          paddingVertical: 6,
+                          borderRadius: 8,
+                          borderWidth: 1,
+                          borderColor: '#EF4444',
+                          backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEF2F2',
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <Trash2 size={12} color="#EF4444" />
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: '#EF4444' }}>
+                          Remove
+                        </Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                )}
               </View>
 
               <Text style={styles.sectionLabel}>Basic Information</Text>
 
               <Text style={styles.label}>Church Name</Text>
-              <TextInput style={[styles.input, !isEditing && styles.inputDisabled]} value={form.name} onChangeText={v => updateField('name' as any, '', v)} editable={isEditing} />
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : (isEditing ? '#FFFFFF' : '#F8FAFC'),
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#CBD5E1',
+                    color: isDark ? '#FFFFFF' : '#0F172A',
+                    borderWidth: 1.5,
+                  }
+                ]}
+                value={form.name}
+                onChangeText={v => updateField('name' as any, '', v)}
+                editable={isEditing}
+              />
 
               <Text style={styles.label}>Tagline / Motto</Text>
-              <TextInput style={[styles.input, !isEditing && styles.inputDisabled]} value={form.tagline} onChangeText={v => updateField('tagline' as any, '', v)} placeholder="e.g. A Gateway to Heaven" placeholderTextColor="#64748b" editable={isEditing} />
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : (isEditing ? '#FFFFFF' : '#F8FAFC'),
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#CBD5E1',
+                    color: isDark ? '#FFFFFF' : '#0F172A',
+                    borderWidth: 1.5,
+                  }
+                ]}
+                value={form.tagline}
+                onChangeText={v => updateField('tagline' as any, '', v)}
+                placeholder="e.g. A Gateway to Heaven"
+                placeholderTextColor={isDark ? '#64748B' : '#94a3b8'}
+                editable={isEditing}
+              />
 
               <Text style={styles.label}>About Us</Text>
-              <TextInput style={[styles.input, styles.textArea, !isEditing && styles.inputDisabled]} multiline numberOfLines={4} value={form.aboutUs} onChangeText={v => updateField('aboutUs' as any, '', v)} placeholder="Describe your church..." placeholderTextColor="#64748b" editable={isEditing} />
+              <TextInput
+                style={[
+                  styles.input,
+                  styles.textArea,
+                  {
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : (isEditing ? '#FFFFFF' : '#F8FAFC'),
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#CBD5E1',
+                    color: isDark ? '#FFFFFF' : '#0F172A',
+                    borderWidth: 1.5,
+                  }
+                ]}
+                multiline
+                numberOfLines={4}
+                value={form.aboutUs}
+                onChangeText={v => updateField('aboutUs' as any, '', v)}
+                placeholder="Describe your church..."
+                placeholderTextColor={isDark ? '#64748B' : '#94a3b8'}
+                editable={isEditing}
+              />
 
               <Text style={styles.label}>Address</Text>
-              <TextInput style={[styles.input, styles.textArea, !isEditing && styles.inputDisabled]} multiline numberOfLines={2} value={form.address} onChangeText={v => updateField('address' as any, '', v)} editable={isEditing} />
+              <TextInput
+                style={[
+                  styles.input,
+                  styles.textArea,
+                  {
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : (isEditing ? '#FFFFFF' : '#F8FAFC'),
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#CBD5E1',
+                    color: isDark ? '#FFFFFF' : '#0F172A',
+                    borderWidth: 1.5,
+                  }
+                ]}
+                multiline
+                numberOfLines={2}
+                value={form.address}
+                onChangeText={v => updateField('address' as any, '', v)}
+                editable={isEditing}
+              />
 
               {/* ── Church GPS Location & 100m Attendance Geofence ── */}
-              <View style={[styles.sectionHeaderRow, { marginTop: 18, marginBottom: 8 }]}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-                  <MapPin size={17} color={primaryColor} />
-                  <Text style={[styles.sectionLabel, { marginBottom: 0 }]}>Location (100m Radius)</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18, marginBottom: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, marginRight: 8 }}>
+                  <MapPin size={16} color={isDark ? '#B9C8BD' : '#315C50'} />
+                  <Text
+                    style={[
+                      styles.sectionLabel,
+                      {
+                        marginBottom: 0,
+                        marginTop: 0,
+                        fontSize: 13,
+                        color: isDark ? '#B9C8BD' : '#315C50',
+                      }
+                    ]}
+                    numberOfLines={1}
+                  >
+                    Location (100m)
+                  </Text>
                 </View>
                 {isEditing && (
                   <TouchableOpacity
                     onPress={handleUseCurrentLocation}
                     disabled={acquiringLocation}
-                    style={[styles.addBtn, { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }]}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      backgroundColor: isDark ? 'rgba(49, 92, 80, 0.25)' : '#F0FDF4',
+                      borderColor: isDark ? '#315C50' : '#BBF7D0',
+                      borderWidth: 1,
+                      paddingHorizontal: 6,
+                      paddingVertical: 3.5,
+                      borderRadius: 6,
+                      gap: 3,
+                      flexShrink: 0,
+                    }}
                     activeOpacity={0.75}
                   >
                     {acquiringLocation ? (
-                      <ActivityIndicator size="small" color="#16A34A" />
+                      <ActivityIndicator size="small" color={isDark ? '#B9C8BD' : '#16A34A'} />
                     ) : (
                       <>
-                        <Navigation size={13} color="#16A34A" />
-                        <Text style={[styles.addBtnTxt, { color: '#16A34A' }]}>Use Current Location</Text>
+                        <Navigation size={10} color={isDark ? '#B9C8BD' : '#16A34A'} />
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: isDark ? '#B9C8BD' : '#16A34A' }}>Locate</Text>
                       </>
                     )}
                   </TouchableOpacity>
@@ -450,11 +691,19 @@ export default function AdminChurchSettings({ navigation }: any) {
                 <View style={{ flex: 1, marginRight: 8 }}>
                   <Text style={styles.label}>Latitude</Text>
                   <TextInput
-                    style={[styles.input, !isEditing && styles.inputDisabled]}
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : (isEditing ? '#FFFFFF' : '#F8FAFC'),
+                        borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#CBD5E1',
+                        color: isDark ? '#FFFFFF' : '#0F172A',
+                        borderWidth: 1.5,
+                      }
+                    ]}
                     value={form.latitude !== undefined && form.latitude !== null ? String(form.latitude) : ''}
                     onChangeText={v => updateField('latitude' as any, '', v ? parseFloat(v) : undefined)}
                     placeholder="e.g. 15.208545"
-                    placeholderTextColor="#94a3b8"
+                    placeholderTextColor={isDark ? '#64748B' : '#94a3b8'}
                     keyboardType="numeric"
                     editable={isEditing}
                   />
@@ -462,11 +711,19 @@ export default function AdminChurchSettings({ navigation }: any) {
                 <View style={{ flex: 1, marginLeft: 8 }}>
                   <Text style={styles.label}>Longitude</Text>
                   <TextInput
-                    style={[styles.input, !isEditing && styles.inputDisabled]}
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : (isEditing ? '#FFFFFF' : '#F8FAFC'),
+                        borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#CBD5E1',
+                        color: isDark ? '#FFFFFF' : '#0F172A',
+                        borderWidth: 1.5,
+                      }
+                    ]}
                     value={form.longitude !== undefined && form.longitude !== null ? String(form.longitude) : ''}
                     onChangeText={v => updateField('longitude' as any, '', v ? parseFloat(v) : undefined)}
                     placeholder="e.g. 78.116505"
-                    placeholderTextColor="#94a3b8"
+                    placeholderTextColor={isDark ? '#64748B' : '#94a3b8'}
                     keyboardType="numeric"
                     editable={isEditing}
                   />
@@ -474,174 +731,398 @@ export default function AdminChurchSettings({ navigation }: any) {
               </View>
 
               <Text style={styles.label}>Contact Phone</Text>
-              <TextInput style={[styles.input, !isEditing && styles.inputDisabled]} value={form.contactPhone} onChangeText={v => updateField('contactPhone' as any, '', v)} keyboardType="phone-pad" editable={isEditing} />
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : (isEditing ? '#FFFFFF' : '#F8FAFC'),
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#CBD5E1',
+                    color: isDark ? '#FFFFFF' : '#0F172A',
+                    borderWidth: 1.5,
+                  }
+                ]}
+                value={form.contactPhone}
+                onChangeText={v => updateField('contactPhone' as any, '', v)}
+                keyboardType="phone-pad"
+                editable={isEditing}
+              />
 
               <Text style={styles.label}>Contact Email</Text>
-              <TextInput style={[styles.input, !isEditing && styles.inputDisabled]} value={form.contactEmail} onChangeText={v => updateField('contactEmail' as any, '', v)} keyboardType="email-address" autoCapitalize="none" editable={isEditing} />
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : (isEditing ? '#FFFFFF' : '#F8FAFC'),
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#CBD5E1',
+                    color: isDark ? '#FFFFFF' : '#0F172A',
+                    borderWidth: 1.5,
+                  }
+                ]}
+                value={form.contactEmail}
+                onChangeText={v => updateField('contactEmail' as any, '', v)}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                editable={isEditing}
+              />
 
-              <Text style={[styles.sectionLabel, { marginTop: 24 }]}>Social Links</Text>
+              {/* ── SOCIAL LINKS SECTION ── */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 24, marginBottom: 12 }}>
+                <Link size={16} color="#D99A8C" />
+                <Text style={[styles.sectionLabel, { marginBottom: 0, marginTop: 0, color: '#D99A8C' }]}>Social Links</Text>
+              </View>
 
-              <View style={[styles.inputRow, !isEditing && styles.inputDisabled]}>
-                <Link size={16} color="#64748b" />
-                <TextInput style={styles.inputFlex} placeholder="Website URL" placeholderTextColor="#94a3b8" value={form.socialLinks?.website} onChangeText={v => updateField('socialLinks', 'website', v)} editable={isEditing} />
+              <View
+                style={[
+                  styles.inputRow,
+                  {
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : (isEditing ? '#FFFFFF' : '#F8FAFC'),
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#CBD5E1',
+                    borderWidth: 1.5,
+                    marginBottom: 12,
+                  }
+                ]}
+              >
+                <Link size={15} color="#D99A8C" />
+                <TextInput
+                  style={[styles.inputFlex, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
+                  placeholder="Website URL"
+                  placeholderTextColor={isDark ? '#64748B' : '#94a3b8'}
+                  value={form.socialLinks?.website}
+                  onChangeText={v => updateField('socialLinks', 'website', v)}
+                  editable={isEditing}
+                />
               </View>
-              <View style={[styles.inputRow, !isEditing && styles.inputDisabled]}>
-                <Text style={styles.socialPrefix}>YouTube</Text>
-                <TextInput style={styles.inputFlex} placeholder="Channel or Live URL" placeholderTextColor="#94a3b8" value={form.socialLinks?.youtube} onChangeText={v => updateField('socialLinks', 'youtube', v)} editable={isEditing} />
+              <View
+                style={[
+                  styles.inputRow,
+                  {
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : (isEditing ? '#FFFFFF' : '#F8FAFC'),
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#CBD5E1',
+                    borderWidth: 1.5,
+                    marginBottom: 12,
+                  }
+                ]}
+              >
+                <Text style={[styles.socialPrefix, { color: '#D99A8C' }]}>YouTube</Text>
+                <TextInput
+                  style={[styles.inputFlex, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
+                  placeholder="Channel or Live URL"
+                  placeholderTextColor={isDark ? '#64748B' : '#94a3b8'}
+                  value={form.socialLinks?.youtube}
+                  onChangeText={v => updateField('socialLinks', 'youtube', v)}
+                  editable={isEditing}
+                />
               </View>
-              <View style={[styles.inputRow, !isEditing && styles.inputDisabled]}>
-                <Text style={styles.socialPrefix}>Facebook</Text>
-                <TextInput style={styles.inputFlex} placeholder="Page URL" placeholderTextColor="#94a3b8" value={form.socialLinks?.facebook} onChangeText={v => updateField('socialLinks', 'facebook', v)} editable={isEditing} />
+              <View
+                style={[
+                  styles.inputRow,
+                  {
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : (isEditing ? '#FFFFFF' : '#F8FAFC'),
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#CBD5E1',
+                    borderWidth: 1.5,
+                    marginBottom: 12,
+                  }
+                ]}
+              >
+                <Text style={[styles.socialPrefix, { color: '#D99A8C' }]}>Facebook</Text>
+                <TextInput
+                  style={[styles.inputFlex, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
+                  placeholder="Page URL"
+                  placeholderTextColor={isDark ? '#64748B' : '#94a3b8'}
+                  value={form.socialLinks?.facebook}
+                  onChangeText={v => updateField('socialLinks', 'facebook', v)}
+                  editable={isEditing}
+                />
               </View>
-              <View style={[styles.inputRow, !isEditing && styles.inputDisabled]}>
-                <Text style={styles.socialPrefix}>Instagram</Text>
-                <TextInput style={styles.inputFlex} placeholder="Profile URL" placeholderTextColor="#94a3b8" value={form.socialLinks?.instagram} onChangeText={v => updateField('socialLinks', 'instagram', v)} editable={isEditing} />
+              <View
+                style={[
+                  styles.inputRow,
+                  {
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : (isEditing ? '#FFFFFF' : '#F8FAFC'),
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#CBD5E1',
+                    borderWidth: 1.5,
+                    marginBottom: 16,
+                  }
+                ]}
+              >
+                <Text style={[styles.socialPrefix, { color: '#D99A8C' }]}>Instagram</Text>
+                <TextInput
+                  style={[styles.inputFlex, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
+                  placeholder="Profile URL"
+                  placeholderTextColor={isDark ? '#64748B' : '#94a3b8'}
+                  value={form.socialLinks?.instagram}
+                  onChangeText={v => updateField('socialLinks', 'instagram', v)}
+                  editable={isEditing}
+                />
               </View>
 
               {/* ── SERVICE TIMINGS SECTION ── */}
-              <View style={[styles.sectionHeaderRow, { marginTop: 24 }]}>
+              <View style={[styles.sectionHeaderRow, { marginTop: 24, marginBottom: 12, alignItems: 'center' }]}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Clock size={18} color={primaryColor} />
-                  <Text style={[styles.sectionLabel, { marginBottom: 0 }]}>Service Timings</Text>
+                  <Clock size={18} color="#B8A5D6" />
+                  <Text style={[styles.sectionLabel, { marginBottom: 0, color: '#B8A5D6' }]}>Service Timings</Text>
                 </View>
                 {isEditing && (
-                  <TouchableOpacity onPress={addServiceTiming} style={styles.addBtn}>
-                    <Plus size={16} color="#1a2d5a" />
-                    <Text style={styles.addBtnTxt}>Add Service</Text>
+                  <TouchableOpacity
+                    onPress={addServiceTiming}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      backgroundColor: isDark ? 'rgba(184, 165, 214, 0.16)' : '#F3EFFB',
+                      borderColor: '#B8A5D6',
+                      borderWidth: 1,
+                      paddingHorizontal: 10,
+                      paddingVertical: 5,
+                      borderRadius: 8,
+                      gap: 4,
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    <Plus size={14} color="#B8A5D6" />
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#B8A5D6' }}>Add Service</Text>
                   </TouchableOpacity>
                 )}
               </View>
 
               {(!form.serviceTimings || form.serviceTimings.length === 0) ? (
-                <View style={[styles.cardItem, { alignItems: 'center', paddingVertical: 24, backgroundColor: '#F9FAFB' }]}>
-                  <Clock size={32} color="#9CA3AF" style={{ marginBottom: 8 }} />
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#4B5563', marginBottom: 4 }}>No Service Timings Configured</Text>
-                  <Text style={{ fontSize: 12, color: '#6B7280', textAlign: 'center', lineHeight: 18 }}>
+                <View
+                  style={{
+                    alignItems: 'center',
+                    paddingVertical: 24,
+                    backgroundColor: isDark ? (cardSurface || '#18181B') : '#FFFFFF',
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : (adminBorderColor || '#E2DDD5'),
+                    borderWidth: 1.5,
+                    borderRadius: 14,
+                    marginBottom: 16,
+                    shadowColor: '#000000',
+                    shadowOffset: { width: 0, height: 1 },
+                    shadowOpacity: isDark ? 0 : 0.04,
+                    shadowRadius: 3,
+                    elevation: isDark ? 0 : 1,
+                  }}
+                >
+                  <Clock size={32} color="#B8A5D6" style={{ marginBottom: 8 }} />
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: isDark ? '#FFFFFF' : '#4B5563', marginBottom: 4 }}>
+                    No Service Timings Configured
+                  </Text>
+                  <Text style={{ fontSize: 12, color: isDark ? '#94A3B8' : '#6B7280', textAlign: 'center', lineHeight: 18 }}>
                     {isEditing ? "Tap 'Add Service' above to configure worship services for your congregation." : "Tap 'Edit' in the top right to add service schedules."}
                   </Text>
                   {isEditing && (
-                    <TouchableOpacity onPress={addServiceTiming} style={[styles.addBtn, { marginTop: 14 }]}>
-                      <Plus size={16} color="#1a2d5a" />
-                      <Text style={styles.addBtnTxt}>Add First Service</Text>
+                    <TouchableOpacity
+                      onPress={addServiceTiming}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        backgroundColor: isDark ? 'rgba(184, 165, 214, 0.16)' : '#F3EFFB',
+                        borderColor: '#B8A5D6',
+                        borderWidth: 1,
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: 8,
+                        gap: 4,
+                        marginTop: 14,
+                      }}
+                      activeOpacity={0.75}
+                    >
+                      <Plus size={14} color="#B8A5D6" />
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#B8A5D6' }}>Add First Service</Text>
                     </TouchableOpacity>
                   )}
                 </View>
               ) : (
-                form.serviceTimings.map((service, i) => (
-                  <View key={service.id || i} style={[styles.cardItem, !isEditing && styles.inputDisabled]}>
-                    <View style={styles.cardHeader}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Clock size={16} color={primaryColor} />
-                        <Text style={styles.cardTitle}>
-                          {service.name.trim() ? service.name : `Service #${i + 1}`}
-                        </Text>
+                form.serviceTimings.map((service, i) => {
+                  const cardBg = isDark ? (cardSurface || '#18181B') : '#FFFFFF';
+                  const cardBorder = isDark ? 'rgba(255, 255, 255, 0.12)' : (adminBorderColor || '#E2DDD5');
+                  const inputBg = isDark ? (secondarySurface || 'rgba(255, 255, 255, 0.05)') : (isEditing ? '#FFFFFF' : '#F8FAFC');
+                  const inputBorder = isDark ? 'rgba(255, 255, 255, 0.16)' : '#CBD5E1';
+                  const inputTextColor = isDark ? '#FFFFFF' : '#0F172A';
+
+                  return (
+                    <View
+                      key={service.id || i}
+                      style={{
+                        backgroundColor: cardBg,
+                        borderColor: cardBorder,
+                        borderWidth: 1.5,
+                        marginBottom: 16,
+                        padding: 16,
+                        borderRadius: 14,
+                        shadowColor: '#000000',
+                        shadowOffset: { width: 0, height: 1 },
+                        shadowOpacity: isDark ? 0 : 0.04,
+                        shadowRadius: 3,
+                        elevation: isDark ? 0 : 1,
+                      }}
+                    >
+                      <View style={styles.cardHeader}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Clock size={16} color="#B8A5D6" />
+                          <Text style={[styles.cardTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                            {service.name?.trim() ? service.name : `Service #${i + 1}`}
+                          </Text>
+                        </View>
+                        {isEditing && (
+                          <TouchableOpacity onPress={() => removeServiceTiming(i)} style={{ padding: 4 }}>
+                            <Trash2 size={16} color="#ef4444" />
+                          </TouchableOpacity>
+                        )}
                       </View>
-                      {isEditing && (
-                        <TouchableOpacity onPress={() => removeServiceTiming(i)} style={{ padding: 4 }}>
-                          <Trash2 size={16} color="#ef4444" />
-                        </TouchableOpacity>
+
+                      {/* Service Name Input */}
+                      <Text style={[styles.label, { color: isDark ? '#94A3B8' : '#64748B' }]}>Service Name</Text>
+                      <TextInput
+                        style={[
+                          styles.input,
+                          {
+                            backgroundColor: inputBg,
+                            borderColor: inputBorder,
+                            borderWidth: 1.5,
+                            color: inputTextColor,
+                            marginBottom: 12,
+                            paddingHorizontal: 14,
+                            paddingVertical: 10,
+                            borderRadius: 10,
+                          }
+                        ]}
+                        value={service.name}
+                        onChangeText={v => updateServiceTiming(i, 'name', v)}
+                        placeholder="e.g. Sunday Service / Special Meeting"
+                        placeholderTextColor={isDark ? '#64748B' : '#94A3B8'}
+                        editable={isEditing}
+                      />
+
+                      {/* Schedule Note Input (Optional) */}
+                      {(isEditing || service.note) && (
+                        <>
+                          <Text style={[styles.label, { color: isDark ? '#94A3B8' : '#64748B' }]}>Schedule Note / Subtext (Optional)</Text>
+                          <TextInput
+                            style={[
+                              styles.input,
+                              {
+                                backgroundColor: inputBg,
+                                borderColor: inputBorder,
+                                borderWidth: 1.5,
+                                color: inputTextColor,
+                                marginBottom: 12,
+                                paddingHorizontal: 14,
+                                paddingVertical: 10,
+                                borderRadius: 10,
+                              }
+                            ]}
+                            value={service.note || ''}
+                            onChangeText={v => updateServiceTiming(i, 'note', v)}
+                            placeholder="e.g. (2nd Saturday in every month)"
+                            placeholderTextColor={isDark ? '#64748B' : '#94A3B8'}
+                            editable={isEditing}
+                          />
+                        </>
+                      )}
+
+                      {/* Start Time & End Time Row */}
+                      <View style={{ flexDirection: 'row', gap: 12 }}>
+                        {/* Start Time */}
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.label, { color: isDark ? '#94A3B8' : '#64748B' }]}>Start Time</Text>
+                          <TouchableOpacity
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              gap: 8,
+                              backgroundColor: inputBg,
+                              borderColor: inputBorder,
+                              borderWidth: 1.5,
+                              borderRadius: 10,
+                              paddingHorizontal: 12,
+                              paddingVertical: 11,
+                              marginBottom: 0,
+                            }}
+                            onPress={() => {
+                              if (isEditing) {
+                                setTimePickerConfig({ visible: true, index: i, field: 'startTime' });
+                              }
+                            }}
+                            disabled={!isEditing}
+                            activeOpacity={0.7}
+                          >
+                            <Clock size={15} color="#B8A5D6" />
+                            <Text
+                              style={{
+                                flex: 1,
+                                fontSize: 14,
+                                fontWeight: '600',
+                                color: service.startTime ? inputTextColor : (isDark ? '#64748B' : '#94A3B8')
+                              }}
+                            >
+                              {service.startTime || 'Select Start Time'}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+
+                        {/* End Time */}
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.label, { color: isDark ? '#94A3B8' : '#64748B' }]}>End Time</Text>
+                          <TouchableOpacity
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              gap: 8,
+                              backgroundColor: inputBg,
+                              borderColor: inputBorder,
+                              borderWidth: 1.5,
+                              borderRadius: 10,
+                              paddingHorizontal: 12,
+                              paddingVertical: 11,
+                              marginBottom: 0,
+                            }}
+                            onPress={() => {
+                              if (isEditing) {
+                                setTimePickerConfig({ visible: true, index: i, field: 'endTime' });
+                              }
+                            }}
+                            disabled={!isEditing}
+                            activeOpacity={0.7}
+                          >
+                            <Clock size={15} color="#B8A5D6" />
+                            <Text
+                              style={{
+                                flex: 1,
+                                fontSize: 14,
+                                fontWeight: '600',
+                                color: service.endTime ? inputTextColor : (isDark ? '#64748B' : '#94A3B8')
+                              }}
+                            >
+                              {service.endTime || 'Select End Time'}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+
+                      {/* Formatted Preview in View Mode (NO blue! Lavender / #B8A5D6 badge) */}
+                      {!isEditing && (service.startTime || service.endTime) && (
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            marginTop: 10,
+                            gap: 6,
+                            backgroundColor: isDark ? 'rgba(184, 165, 214, 0.12)' : '#F3EFFB',
+                            borderColor: isDark ? 'rgba(184, 165, 214, 0.25)' : '#DDD6FE',
+                            borderWidth: 1,
+                            paddingHorizontal: 10,
+                            paddingVertical: 7,
+                            borderRadius: 8,
+                          }}
+                        >
+                          <Clock size={14} color="#B8A5D6" />
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? '#D8CCEE' : '#6D28D9' }}>
+                            {service.startTime} {service.endTime ? `– ${service.endTime}` : ''}
+                          </Text>
+                        </View>
                       )}
                     </View>
-
-                    {/* Service Name Input */}
-                    <Text style={styles.label}>Service Name</Text>
-                    <TextInput
-                      style={[styles.input, !isEditing && { backgroundColor: 'transparent', borderColor: 'transparent', paddingHorizontal: 0, height: 32, marginBottom: 8 }]}
-                      value={service.name}
-                      onChangeText={v => updateServiceTiming(i, 'name', v)}
-                      placeholder="e.g. Sunday Service / Special Meeting"
-                      placeholderTextColor="#64748b"
-                      editable={isEditing}
-                    />
-
-                    {/* Schedule Note Input (Optional) */}
-                    {(isEditing || service.note) && (
-                      <>
-                        <Text style={styles.label}>Schedule Note / Subtext (Optional)</Text>
-                        <TextInput
-                          style={[
-                            styles.input,
-                            !isEditing && { backgroundColor: 'transparent', borderColor: 'transparent', paddingHorizontal: 0, height: 30, marginBottom: 8, color: '#64748b' }
-                          ]}
-                          value={service.note || ''}
-                          onChangeText={v => updateServiceTiming(i, 'note', v)}
-                          placeholder="e.g. (2nd Saturday in every month)"
-                          placeholderTextColor="#94a3b8"
-                          editable={isEditing}
-                        />
-                      </>
-                    )}
-
-                    {/* Start Time & End Time Row */}
-                    <View style={{ flexDirection: 'row', gap: 12 }}>
-                      {/* Start Time */}
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.label}>Start Time</Text>
-                        <TouchableOpacity
-                          style={[
-                            styles.inputRow,
-                            { marginBottom: 0, paddingHorizontal: 12, paddingVertical: 10 },
-                            !isEditing && { backgroundColor: 'transparent', borderColor: 'transparent', paddingHorizontal: 0 }
-                          ]}
-                          onPress={() => {
-                            if (isEditing) {
-                              setTimePickerConfig({ visible: true, index: i, field: 'startTime' });
-                            }
-                          }}
-                          disabled={!isEditing}
-                        >
-                          <Clock size={15} color={isEditing ? primaryColor : '#64748b'} />
-                          <Text
-                            style={[
-                              styles.inputFlex,
-                              { color: service.startTime ? '#1a2d5a' : '#94a3b8' }
-                            ]}
-                          >
-                            {service.startTime || 'Select Start Time'}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-
-                      {/* End Time */}
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.label}>End Time</Text>
-                        <TouchableOpacity
-                          style={[
-                            styles.inputRow,
-                            { marginBottom: 0, paddingHorizontal: 12, paddingVertical: 10 },
-                            !isEditing && { backgroundColor: 'transparent', borderColor: 'transparent', paddingHorizontal: 0 }
-                          ]}
-                          onPress={() => {
-                            if (isEditing) {
-                              setTimePickerConfig({ visible: true, index: i, field: 'endTime' });
-                            }
-                          }}
-                          disabled={!isEditing}
-                        >
-                          <Clock size={15} color={isEditing ? primaryColor : '#64748b'} />
-                          <Text
-                            style={[
-                              styles.inputFlex,
-                              { color: service.endTime ? '#1a2d5a' : '#94a3b8' }
-                            ]}
-                          >
-                            {service.endTime || 'Select End Time'}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-
-                    {/* Formatted Preview in View Mode */}
-                    {!isEditing && (service.startTime || service.endTime) && (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 6, backgroundColor: '#EFF6FF', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}>
-                        <Clock size={13} color="#2563EB" />
-                        <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E40AF' }}>
-                          {service.startTime} {service.endTime ? `– ${service.endTime}` : ''}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                ))
+                  );
+                })
               )}
 
               {member?.userType === 'super_admin' && (
@@ -714,53 +1195,7 @@ export default function AdminChurchSettings({ navigation }: any) {
             </View>
           )}
 
-          {/* BRANDING TAB */}
-          {activeTab === 'branding' && (
-            <View>
-              {!isEditing && <Text style={styles.viewModeHint}>Tap 'Edit' in the top right to make changes.</Text>}
-              <Text style={styles.sectionLabel}>Church Logo</Text>
-              <TouchableOpacity style={[styles.imageUpload, !isEditing && styles.inputDisabled]} onPress={() => isEditing && pickImage('logo')} disabled={!isEditing}>
-                {uploadingImage === 'logo' ? (
-                  <ActivityIndicator color={primaryColor} />
-                ) : form.theme?.logoUrl ? (
-                  <Image source={{ uri: form.theme.logoUrl }} style={styles.logoPreview} />
-                ) : (
-                  <>
-                    <ImageIcon size={32} color="#64748b" />
-                    <Text style={styles.uploadTxt}>Tap to upload logo</Text>
-                  </>
-                )}
-              </TouchableOpacity>
 
-              <Text style={styles.sectionLabel}>Church Banner</Text>
-              <TouchableOpacity style={[styles.imageUpload, styles.bannerUpload, !isEditing && styles.inputDisabled]} onPress={() => isEditing && pickImage('banner')} disabled={!isEditing}>
-                {uploadingImage === 'banner' ? (
-                  <ActivityIndicator color={primaryColor} />
-                ) : form.theme?.bannerUrl ? (
-                  <Image source={{ uri: form.theme.bannerUrl }} style={styles.bannerPreview} />
-                ) : (
-                  <>
-                    <ImageIcon size={32} color="#64748b" />
-                    <Text style={styles.uploadTxt}>Tap to upload banner (16:9)</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-
-              <Text style={styles.sectionLabel}>Primary Color</Text>
-              <View style={styles.colorGrid}>
-                {PRESET_COLORS.map(c => (
-                  <TouchableOpacity key={c} style={[styles.colorSwatch, { backgroundColor: c }, form.theme?.primaryColor === c && styles.colorSwatchSelected, !isEditing && styles.colorSwatchDisabled]} onPress={() => isEditing && updateField('theme', 'primaryColor', c)} disabled={!isEditing} />
-                ))}
-              </View>
-
-              <Text style={styles.sectionLabel}>Accent Color</Text>
-              <View style={styles.colorGrid}>
-                {PRESET_COLORS.map(c => (
-                  <TouchableOpacity key={c} style={[styles.colorSwatch, { backgroundColor: c }, form.theme?.secondaryColor === c && styles.colorSwatchSelected, !isEditing && styles.colorSwatchDisabled]} onPress={() => isEditing && updateField('theme', 'secondaryColor', c)} disabled={!isEditing} />
-                ))}
-              </View>
-            </View>
-          )}
 
           {/* GIVING TAB */}
           {activeTab === 'giving' && (
@@ -797,32 +1232,120 @@ export default function AdminChurchSettings({ navigation }: any) {
               <Text style={styles.label}>PhonePe Number</Text>
               <TextInput style={[styles.input, !isEditing && styles.inputDisabled]} value={form.givingDetails?.phonepeNumber} onChangeText={v => updateField('givingDetails', 'phonepeNumber', v)} placeholder="e.g. 9876543210" placeholderTextColor="#64748b" keyboardType="phone-pad" editable={isEditing} />
 
-              <View style={styles.sectionHeaderRow}>
-                <Text style={[styles.sectionLabel, { marginBottom: 0 }]}>Additional UPI Accounts</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18, marginBottom: 8 }}>
+                <Text style={[styles.sectionLabel, { marginBottom: 0, marginTop: 0, flex: 1, marginRight: 8 }]} numberOfLines={1}>
+                  Additional UPI Accounts
+                </Text>
                 {isEditing && (
-                  <TouchableOpacity onPress={addUpi} style={styles.addBtn}>
-                    <Plus size={16} color="#1a2d5a" />
-                    <Text style={styles.addBtnTxt}>Add</Text>
+                  <TouchableOpacity
+                    onPress={addUpi}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                      paddingHorizontal: 10,
+                      paddingVertical: 5,
+                      borderRadius: 8,
+                      gap: 4,
+                      flexShrink: 0,
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Plus size={14} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.4} />
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#000000' : '#FFFFFF' }}>Add</Text>
                   </TouchableOpacity>
                 )}
               </View>
 
               {form.givingDetails?.upis?.map((upi, i) => (
-                <View key={upi.id} style={[styles.cardItem, !isEditing && styles.inputDisabled]}>
+                <View
+                  key={upi.id}
+                  style={{
+                    backgroundColor: isDark ? (cardSurface || '#18181B') : '#FFFFFF',
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : (adminBorderColor || '#CBD5E1'),
+                    borderWidth: 1.5,
+                    borderRadius: 14,
+                    padding: 16,
+                    marginBottom: 16,
+                    shadowColor: '#000000',
+                    shadowOffset: { width: 0, height: 1 },
+                    shadowOpacity: isDark ? 0 : 0.04,
+                    shadowRadius: 3,
+                    elevation: isDark ? 0 : 1,
+                  }}
+                >
                   <View style={styles.cardHeader}>
-                    <Text style={styles.cardTitle}>UPI Account #{i + 1}</Text>
+                    <Text style={[styles.cardTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>UPI Account #{i + 1}</Text>
                     {isEditing && (
                       <TouchableOpacity onPress={() => removeUpi(i)}>
                         <Trash2 size={16} color="#ef4444" />
                       </TouchableOpacity>
                     )}
                   </View>
-                  <Text style={styles.label}>Label (e.g. Building Fund)</Text>
-                  <TextInput style={[styles.input, !isEditing && { backgroundColor: 'transparent', borderColor: 'transparent', paddingHorizontal: 0, height: 30 }]} value={upi.name} onChangeText={v => updateUpi(i, 'name', v)} placeholder="Fund Name" placeholderTextColor="#64748b" editable={isEditing} />
-                  <Text style={styles.label}>UPI ID</Text>
-                  <TextInput style={[styles.input, !isEditing && { backgroundColor: 'transparent', borderColor: 'transparent', paddingHorizontal: 0, height: 30 }]} value={upi.upiId} onChangeText={v => updateUpi(i, 'upiId', v)} placeholder="church@okicici" placeholderTextColor="#64748b" editable={isEditing} />
-                  <Text style={styles.label}>PhonePe Number</Text>
-                  <TextInput style={[styles.input, !isEditing && { backgroundColor: 'transparent', borderColor: 'transparent', paddingHorizontal: 0, height: 30 }]} value={upi.phonepeNumber} onChangeText={v => updateUpi(i, 'phonepeNumber', v)} placeholder="Optional" placeholderTextColor="#64748b" keyboardType="phone-pad" editable={isEditing} />
+                  <Text style={[styles.label, { color: isDark ? '#94A3B8' : '#64748B' }]}>Label (e.g. Building Fund)</Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: isDark ? (secondarySurface || 'rgba(255, 255, 255, 0.05)') : (isEditing ? '#FFFFFF' : '#F8FAFC'),
+                        borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#CBD5E1',
+                        borderWidth: 1.5,
+                        color: isDark ? '#FFFFFF' : '#0F172A',
+                        marginBottom: 10,
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        borderRadius: 8,
+                      }
+                    ]}
+                    value={upi.name}
+                    onChangeText={v => updateUpi(i, 'name', v)}
+                    placeholder="Fund Name"
+                    placeholderTextColor={isDark ? '#64748B' : '#94a3b8'}
+                    editable={isEditing}
+                  />
+                  <Text style={[styles.label, { color: isDark ? '#94A3B8' : '#64748B' }]}>UPI ID</Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: isDark ? (secondarySurface || 'rgba(255, 255, 255, 0.05)') : (isEditing ? '#FFFFFF' : '#F8FAFC'),
+                        borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#CBD5E1',
+                        borderWidth: 1.5,
+                        color: isDark ? '#FFFFFF' : '#0F172A',
+                        marginBottom: 10,
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        borderRadius: 8,
+                      }
+                    ]}
+                    value={upi.upiId}
+                    onChangeText={v => updateUpi(i, 'upiId', v)}
+                    placeholder="church@okicici"
+                    placeholderTextColor={isDark ? '#64748B' : '#94a3b8'}
+                    editable={isEditing}
+                  />
+                  <Text style={[styles.label, { color: isDark ? '#94A3B8' : '#64748B' }]}>PhonePe Number</Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: isDark ? (secondarySurface || 'rgba(255, 255, 255, 0.05)') : (isEditing ? '#FFFFFF' : '#F8FAFC'),
+                        borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#CBD5E1',
+                        borderWidth: 1.5,
+                        color: isDark ? '#FFFFFF' : '#0F172A',
+                        marginBottom: 0,
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        borderRadius: 8,
+                      }
+                    ]}
+                    value={upi.phonepeNumber}
+                    onChangeText={v => updateUpi(i, 'phonepeNumber', v)}
+                    placeholder="Optional"
+                    placeholderTextColor={isDark ? '#64748B' : '#94a3b8'}
+                    keyboardType="phone-pad"
+                    editable={isEditing}
+                  />
                 </View>
               ))}
 
@@ -840,36 +1363,163 @@ export default function AdminChurchSettings({ navigation }: any) {
               <Text style={styles.label}>IFSC Code</Text>
               <TextInput style={[styles.input, !isEditing && styles.inputDisabled]} value={form.givingDetails?.ifscCode} onChangeText={v => updateField('givingDetails', 'ifscCode', v)} placeholder="HDFC0001234" placeholderTextColor="#64748b" autoCapitalize="characters" editable={isEditing} />
 
-              <View style={[styles.sectionHeaderRow, { marginTop: 24 }]}>
-                <Text style={[styles.sectionLabel, { marginBottom: 0 }]}>Additional Bank Accounts</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 24, marginBottom: 8 }}>
+                <Text style={[styles.sectionLabel, { marginBottom: 0, marginTop: 0, flex: 1, marginRight: 8 }]} numberOfLines={1}>
+                  Additional Bank Accounts
+                </Text>
                 {isEditing && (
-                  <TouchableOpacity onPress={addBank} style={styles.addBtn}>
-                    <Plus size={16} color="#1a2d5a" />
-                    <Text style={styles.addBtnTxt}>Add</Text>
+                  <TouchableOpacity
+                    onPress={addBank}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                      paddingHorizontal: 10,
+                      paddingVertical: 5,
+                      borderRadius: 8,
+                      gap: 4,
+                      flexShrink: 0,
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Plus size={14} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.4} />
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#000000' : '#FFFFFF' }}>Add</Text>
                   </TouchableOpacity>
                 )}
               </View>
 
               {form.givingDetails?.banks?.map((bank, i) => (
-                <View key={bank.id} style={[styles.cardItem, !isEditing && styles.inputDisabled]}>
+                <View
+                  key={bank.id}
+                  style={{
+                    backgroundColor: isDark ? (cardSurface || '#18181B') : '#FFFFFF',
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : (adminBorderColor || '#CBD5E1'),
+                    borderWidth: 1.5,
+                    borderRadius: 14,
+                    padding: 16,
+                    marginBottom: 16,
+                    shadowColor: '#000000',
+                    shadowOffset: { width: 0, height: 1 },
+                    shadowOpacity: isDark ? 0 : 0.04,
+                    shadowRadius: 3,
+                    elevation: isDark ? 0 : 1,
+                  }}
+                >
                   <View style={styles.cardHeader}>
-                    <Text style={styles.cardTitle}>Bank Account #{i + 1}</Text>
+                    <Text style={[styles.cardTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>Bank Account #{i + 1}</Text>
                     {isEditing && (
                       <TouchableOpacity onPress={() => removeBank(i)}>
                         <Trash2 size={16} color="#ef4444" />
                       </TouchableOpacity>
                     )}
                   </View>
-                  <Text style={styles.label}>Label (e.g. Charity Fund)</Text>
-                  <TextInput style={[styles.input, !isEditing && { backgroundColor: 'transparent', borderColor: 'transparent', paddingHorizontal: 0, height: 30 }]} value={bank.name} onChangeText={v => updateBank(i, 'name', v)} placeholder="Fund Name" placeholderTextColor="#64748b" editable={isEditing} />
-                  <Text style={styles.label}>Account Name</Text>
-                  <TextInput style={[styles.input, !isEditing && { backgroundColor: 'transparent', borderColor: 'transparent', paddingHorizontal: 0, height: 30 }]} value={bank.accountName} onChangeText={v => updateBank(i, 'accountName', v)} placeholder="Brothers in Christ" placeholderTextColor="#64748b" editable={isEditing} />
-                  <Text style={styles.label}>Bank Name</Text>
-                  <TextInput style={[styles.input, !isEditing && { backgroundColor: 'transparent', borderColor: 'transparent', paddingHorizontal: 0, height: 30 }]} value={bank.bankName} onChangeText={v => updateBank(i, 'bankName', v)} placeholder="HDFC Bank" placeholderTextColor="#64748b" editable={isEditing} />
-                  <Text style={styles.label}>Account Number</Text>
-                  <TextInput style={[styles.input, !isEditing && { backgroundColor: 'transparent', borderColor: 'transparent', paddingHorizontal: 0, height: 30 }]} value={bank.accountNumber} onChangeText={v => updateBank(i, 'accountNumber', v)} placeholder="50100XXXXXXX" placeholderTextColor="#64748b" keyboardType="numeric" editable={isEditing} />
-                  <Text style={styles.label}>IFSC Code</Text>
-                  <TextInput style={[styles.input, !isEditing && { backgroundColor: 'transparent', borderColor: 'transparent', paddingHorizontal: 0, height: 30 }]} value={bank.ifscCode} onChangeText={v => updateBank(i, 'ifscCode', v)} placeholder="HDFC0001234" placeholderTextColor="#64748b" autoCapitalize="characters" editable={isEditing} />
+                  <Text style={[styles.label, { color: isDark ? '#94A3B8' : '#64748B' }]}>Label (e.g. Charity Fund)</Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: isDark ? (secondarySurface || 'rgba(255, 255, 255, 0.05)') : (isEditing ? '#FFFFFF' : '#F8FAFC'),
+                        borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#CBD5E1',
+                        borderWidth: 1.5,
+                        color: isDark ? '#FFFFFF' : '#0F172A',
+                        marginBottom: 10,
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        borderRadius: 8,
+                      }
+                    ]}
+                    value={bank.name}
+                    onChangeText={v => updateBank(i, 'name', v)}
+                    placeholder="Fund Name"
+                    placeholderTextColor={isDark ? '#64748B' : '#94a3b8'}
+                    editable={isEditing}
+                  />
+                  <Text style={[styles.label, { color: isDark ? '#94A3B8' : '#64748B' }]}>Account Name</Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: isDark ? (secondarySurface || 'rgba(255, 255, 255, 0.05)') : (isEditing ? '#FFFFFF' : '#F8FAFC'),
+                        borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#CBD5E1',
+                        borderWidth: 1.5,
+                        color: isDark ? '#FFFFFF' : '#0F172A',
+                        marginBottom: 10,
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        borderRadius: 8,
+                      }
+                    ]}
+                    value={bank.accountName}
+                    onChangeText={v => updateBank(i, 'accountName', v)}
+                    placeholder="Brothers in Christ"
+                    placeholderTextColor={isDark ? '#64748B' : '#94a3b8'}
+                    editable={isEditing}
+                  />
+                  <Text style={[styles.label, { color: isDark ? '#94A3B8' : '#64748B' }]}>Bank Name</Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: isDark ? (secondarySurface || 'rgba(255, 255, 255, 0.05)') : (isEditing ? '#FFFFFF' : '#F8FAFC'),
+                        borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#CBD5E1',
+                        borderWidth: 1.5,
+                        color: isDark ? '#FFFFFF' : '#0F172A',
+                        marginBottom: 10,
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        borderRadius: 8,
+                      }
+                    ]}
+                    value={bank.bankName}
+                    onChangeText={v => updateBank(i, 'bankName', v)}
+                    placeholder="HDFC Bank"
+                    placeholderTextColor={isDark ? '#64748B' : '#94a3b8'}
+                    editable={isEditing}
+                  />
+                  <Text style={[styles.label, { color: isDark ? '#94A3B8' : '#64748B' }]}>Account Number</Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: isDark ? (secondarySurface || 'rgba(255, 255, 255, 0.05)') : (isEditing ? '#FFFFFF' : '#F8FAFC'),
+                        borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#CBD5E1',
+                        borderWidth: 1.5,
+                        color: isDark ? '#FFFFFF' : '#0F172A',
+                        marginBottom: 10,
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        borderRadius: 8,
+                      }
+                    ]}
+                    value={bank.accountNumber}
+                    onChangeText={v => updateBank(i, 'accountNumber', v)}
+                    placeholder="50100XXXXXXX"
+                    placeholderTextColor={isDark ? '#64748B' : '#94a3b8'}
+                    keyboardType="numeric"
+                    editable={isEditing}
+                  />
+                  <Text style={[styles.label, { color: isDark ? '#94A3B8' : '#64748B' }]}>IFSC Code</Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: isDark ? (secondarySurface || 'rgba(255, 255, 255, 0.05)') : (isEditing ? '#FFFFFF' : '#F8FAFC'),
+                        borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#CBD5E1',
+                        borderWidth: 1.5,
+                        color: isDark ? '#FFFFFF' : '#0F172A',
+                        marginBottom: 0,
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        borderRadius: 8,
+                      }
+                    ]}
+                    value={bank.ifscCode}
+                    onChangeText={v => updateBank(i, 'ifscCode', v)}
+                    placeholder="HDFC0001234"
+                    placeholderTextColor={isDark ? '#64748B' : '#94a3b8'}
+                    autoCapitalize="characters"
+                    editable={isEditing}
+                  />
                 </View>
               ))}
 
@@ -892,20 +1542,23 @@ export default function AdminChurchSettings({ navigation }: any) {
 }
 
 const styles = createAdminThemedStyles(StyleSheet.create({
+  topbar: {
+    zIndex: 10,
+  },
   circularBackBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
     backgroundColor: '#FFFFFF',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#E2E8F0',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.08,
     shadowRadius: 2,
-    elevation: 1,
+    elevation: 2,
   },
   container: { flex: 1, backgroundColor: '#EDE8DC' },
   hero: {
@@ -971,22 +1624,22 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   content: { padding: 20, paddingBottom: 60 },
   sectionLabel: { fontSize: 14, fontWeight: '800', color: '#374151', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 16, marginTop: 8, paddingLeft: 4 },
 
-  label: { fontSize: 11, fontWeight: '800', color: '#374151', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
+  label: { fontSize: 11, fontWeight: '800', color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
   input: {
     backgroundColor: '#FFFFFF', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14,
-    fontSize: 15, color: '#1a2d5a', fontWeight: '600', borderWidth: 1.5, borderColor: 'rgba(26,45,90,0.1)', marginBottom: 16,
+    fontSize: 15, color: '#0F172A', fontWeight: '600', borderWidth: 1.5, borderColor: '#CBD5E1', marginBottom: 16,
   },
   textArea: { height: 100, textAlignVertical: 'top' },
 
   inputRow: {
     flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10,
     backgroundColor: '#FFFFFF', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14,
-    borderWidth: 1.5, borderColor: 'rgba(26,45,90,0.1)', marginBottom: 16,
+    borderWidth: 1.5, borderColor: '#CBD5E1', marginBottom: 16,
   },
-  socialPrefix: { fontSize: 13, color: '#6B7280', fontWeight: '700', width: 70 },
-  inputFlex: { flex: 1, fontSize: 15, color: '#1a2d5a', fontWeight: '600' },
+  socialPrefix: { fontSize: 13, color: '#D99A8C', fontWeight: '700', width: 70 },
+  inputFlex: { flex: 1, fontSize: 15, color: '#0F172A', fontWeight: '600' },
 
-  inputDisabled: { backgroundColor: '#F9F6F0', borderColor: '#E2DDD5', color: '#6B7280', opacity: 0.9 },
+  inputDisabled: { backgroundColor: '#F8FAFC', borderColor: '#CBD5E1', color: '#6B7280', opacity: 0.95 },
 
   imageUpload: {
     backgroundColor: '#F9F6F0', borderRadius: 16, borderWidth: 1.5, borderColor: 'rgba(26,45,90,0.2)', borderStyle: 'dashed',
@@ -1035,7 +1688,7 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, marginTop: 8 },
   addBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#C9A84C', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12, shadowColor: '#C9A84C', shadowOpacity: 0.4, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 4 },
   addBtnTxt: { fontSize: 12, fontWeight: '800', color: '#1a2d5a', marginLeft: 6, letterSpacing: 0.3 },
-  cardItem: { backgroundColor: '#FFFFFF', padding: 18, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(26,45,90,0.08)', marginBottom: 16, shadowColor: '#1a2d5a', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  cardItem: { backgroundColor: '#FFFFFF', padding: 16, borderRadius: 14, borderWidth: 1.5, borderColor: '#E2DDD5', marginBottom: 16, shadowColor: '#000000', shadowOpacity: 0.03, shadowRadius: 3, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   cardTitle: { fontSize: 15, fontWeight: '800', color: '#1a2d5a' },
 

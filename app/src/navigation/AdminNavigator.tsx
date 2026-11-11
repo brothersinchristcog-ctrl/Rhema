@@ -36,13 +36,13 @@ import {
   Crown,
   CalendarClock,
   Building2,
-  PhoneCall,
   Sliders,
   ChevronLeft,
   Eye,
   X,
   Image as ImageIcon,
-  Award
+  Award,
+  UserCheck
 } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
 import { useChurch } from '../context/ChurchContext';
@@ -63,10 +63,9 @@ import AdminEventEditor from '../screens/admin/AdminEventEditor';
 import AdminPrayerModeration from '../screens/admin/AdminPrayerModeration';
 import AdminSongEditor from '../screens/admin/AdminSongEditor';
 import AdminMembers from '../screens/admin/AdminMembers';
+import AdminRegistrationApprovals from '../screens/admin/AdminRegistrationApprovals';
 import AdminCelebrations from '../screens/admin/AdminCelebrations';
 import AdminOrganization from '../screens/admin/AdminOrganization'; // Re-evaluating import
-import AdminAboutUsEditor from '../screens/admin/AdminAboutUsEditor';
-import AdminContactUsEditor from '../screens/admin/AdminContactUsEditor';
 import AdminChurchSettings from '../screens/admin/AdminChurchSettings';
 import AdminAttendance from '../screens/admin/AdminAttendance';
 import PastorEventDashboard from '../screens/admin/pastor_events/PastorEventDashboard';
@@ -293,11 +292,10 @@ export default function AdminNavigator({ navigation, route }: any) {
     ...(isSuperAdminUser || hasCareCellAccess ? [{ name: 'Care Cells', icon: HeartHandshake, component: AdminCareCellsHub }] : []),
     { name: 'Service Roster', icon: CalendarDays, component: AdminServicePlanner },
     { name: 'Members', icon: Users, component: AdminMembers },
+    { name: 'Approvals', icon: UserCheck, component: AdminRegistrationApprovals },
     { name: 'Celebrations', icon: Gift, component: AdminCelebrations },
     { name: 'Gallery', icon: ImageIcon, component: AdminGalleryNavigator },
     ...(String(member?.userType || '').toUpperCase().includes('ADMIN') || String(member?.userType || '').toUpperCase().includes('SUPER') ? [{ name: 'WhatsApp', icon: MessageCircle, component: AdminWhatsAppInbox }] : []),
-    { name: 'About Us', icon: Building2, component: AdminAboutUsEditor },
-    { name: 'Contact Us', icon: PhoneCall, component: AdminContactUsEditor },
     { name: 'Support Team', icon: Headset, component: AdminSupportTeam },
     { name: 'Church Settings', icon: Sliders, component: AdminChurchSettings },
     ...(isSuperAdminUser ? [
@@ -358,7 +356,7 @@ export default function AdminNavigator({ navigation, route }: any) {
     <AdminTabContext.Provider value={{ activeTab, setActiveTab: handleSetTab, editingData, setEditingData, goBack: handleBack, setTabByName, dashboardScrollY, setDashboardScrollY }}>
       <View style={[styles.container, { backgroundColor: isSuperAdminTab ? '#0a0f1e' : screenBg }]}>
         {!isSuperAdminTab && (
-          <SafeAreaView edges={['top']} style={{ backgroundColor: isSuperAdminTab ? '#0a0f1e' : screenBg }} />
+          <SafeAreaView edges={['top']} style={{ backgroundColor: isSuperAdminTab ? '#0a0f1e' : (isHomeActive ? (isDark ? '#2D180C' : '#FFC59E') : screenBg) }} />
         )}
         
         {isImpersonating && (

@@ -61,6 +61,10 @@ service cloud.firestore {
       allow read, write: if isAuthenticated();
     }
 
+    match /{path=**}/registration_requests/{requestId} {
+      allow read, write: if true;
+    }
+
     match /unmappedWhatsappMessages/{messageId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
@@ -204,6 +208,21 @@ service cloud.firestore {
 
     // 16. Quiz Attempts
     match /quizAttempts/{attemptId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // 17. Ledger Donations (Offline / Admin recorded)
+    match /ledger_donations/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // 17b. Ledger Expenses
+    match /ledger_expenses/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // 18. Church Donations (Online member donations)
+    match /church_donations/{docId} {
       allow read, write: if isAuthenticated();
     }
 
@@ -432,8 +451,19 @@ service cloud.firestore {
       }
 
       match /donations/{donationId} {
-        allow read: if isSuperAdmin() || (isAuthenticated() && (resource.data.phone == request.auth.token.phone_number || resource.data.donorPhone == request.auth.token.phone_number));
-        allow write: if isSuperAdmin();
+        allow read, write: if isAuthenticated();
+      }
+
+      match /ledger_donations/{docId} {
+        allow read, write: if isAuthenticated();
+      }
+
+      match /ledger_expenses/{docId} {
+        allow read, write: if isAuthenticated();
+      }
+
+      match /church_donations/{docId} {
+        allow read, write: if isAuthenticated();
       }
 
       // Care Cells Management Module
@@ -530,6 +560,10 @@ service cloud.firestore {
       match /memberAvailability/{availabilityId} {
         allow read: if isAuthenticated();
         allow write: if isAuthenticated() && (request.resource.data.memberId == request.auth.uid || isChurchAdmin());
+      }
+
+      match /registration_requests/{requestId} {
+        allow read, write: if true;
       }
 
       // Any other church subcollection: authenticated members can read, admins can write

@@ -12,7 +12,9 @@ import {
   Platform,
   Keyboard,
   KeyboardAvoidingView,
+  StatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Plus,
   Trash2,
@@ -85,6 +87,7 @@ export default function AdminQuizEditor({
   onSaved,
 }: Props) {
   const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
+  const insets = useSafeAreaInsets();
   const [quizId] = useState<string | undefined>(initialQuiz?.id);
   const [title, setTitle] = useState<string>(initialQuiz?.title || '');
   const [topic, setTopic] = useState<string>(initialQuiz?.topic || initialQuiz?.category || '');
@@ -477,11 +480,11 @@ export default function AdminQuizEditor({
     return (
       <Modal visible={showDatePicker} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.calendarCard}>
+          <View style={[styles.calendarCard, { backgroundColor: cardSurface, borderColor: isDark ? 'rgba(255,255,255,0.15)' : '#E2E8F0', borderWidth: 1 }]}>
             <View style={styles.calHeader}>
-              <Text style={styles.calTitle}>Select Schedule Date</Text>
+              <Text style={[styles.calTitle, { color: primaryText }]}>Select Schedule Date</Text>
               <TouchableOpacity onPress={() => setShowDatePicker(false)}>
-                <X size={20} color="#64748b" />
+                <X size={20} color={secondaryText} />
               </TouchableOpacity>
             </View>
 
@@ -495,12 +498,12 @@ export default function AdminQuizEditor({
                     setPickerMonth(m => m - 1);
                   }
                 }}
-                style={styles.calNavBtn}
+                style={[styles.calNavBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#F1F5F9' }]}
               >
-                <ChevronLeft size={20} color="#1a2d5a" />
+                <ChevronLeft size={20} color={primaryText} />
               </TouchableOpacity>
 
-              <Text style={styles.calMonthYearTxt}>
+              <Text style={[styles.calMonthYearTxt, { color: primaryText }]}>
                 {MONTH_NAMES[pickerMonth]} {pickerYear}
               </Text>
 
@@ -513,15 +516,15 @@ export default function AdminQuizEditor({
                     setPickerMonth(m => m + 1);
                   }
                 }}
-                style={styles.calNavBtn}
+                style={[styles.calNavBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#F1F5F9' }]}
               >
-                <ChevronRight size={20} color="#1a2d5a" />
+                <ChevronRight size={20} color={primaryText} />
               </TouchableOpacity>
             </View>
 
             <View style={styles.weekdaysRow}>
               {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, i) => (
-                <Text key={d} style={[styles.weekdayTxt, (i === 0 || i === 6) && { color: '#c0392b' }]}>{d}</Text>
+                <Text key={d} style={[styles.weekdayTxt, { color: (i === 0 || i === 6) ? '#c0392b' : secondaryText }]}>{d}</Text>
               ))}
             </View>
 
@@ -536,13 +539,22 @@ export default function AdminQuizEditor({
                 return (
                   <TouchableOpacity
                     key={`d_${dayNum}`}
-                    style={[styles.dayCell, isSelected && styles.dayCellSelected]}
+                    style={[
+                      styles.dayCell,
+                      isSelected && { backgroundColor: isDark ? '#FFFFFF' : '#000000' }
+                    ]}
                     onPress={() => {
                       setScheduledDate(dStr);
                       setShowDatePicker(false);
                     }}
                   >
-                    <Text style={[styles.dayCellTxt, isSelected && styles.dayCellTxtSelected]}>
+                    <Text
+                      style={[
+                        styles.dayCellTxt,
+                        { color: isSelected ? (isDark ? '#000000' : '#FFFFFF') : primaryText },
+                        isSelected && { fontWeight: '800' }
+                      ]}
+                    >
                       {dayNum}
                     </Text>
                   </TouchableOpacity>
@@ -551,7 +563,7 @@ export default function AdminQuizEditor({
             </View>
 
             <TouchableOpacity
-              style={styles.todayShortcutBtn}
+              style={[styles.todayShortcutBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
               onPress={() => {
                 const now = new Date();
                 setPickerYear(now.getFullYear());
@@ -560,7 +572,7 @@ export default function AdminQuizEditor({
                 setShowDatePicker(false);
               }}
             >
-              <Text style={styles.todayShortcutTxt}>Today</Text>
+              <Text style={[styles.todayShortcutTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>Today</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -572,40 +584,40 @@ export default function AdminQuizEditor({
   const renderScheduleModal = () => (
     <Modal visible={showScheduleModal} transparent animationType="slide">
       <View style={styles.modalOverlay}>
-        <View style={styles.scheduleModalCard}>
+        <View style={[styles.scheduleModalCard, { backgroundColor: cardSurface, borderColor: isDark ? 'rgba(255,255,255,0.15)' : '#E2E8F0', borderWidth: 1 }]}>
           <View style={styles.modalHeaderRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <CalendarIcon size={20} color="#1a2d5a" />
-              <Text style={styles.modalTitle}>Schedule Bible Quiz</Text>
+              <CalendarIcon size={20} color={primaryText} />
+              <Text style={[styles.modalTitle, { color: primaryText }]}>Schedule Bible Quiz</Text>
             </View>
             <TouchableOpacity onPress={() => setShowScheduleModal(false)}>
-              <X size={20} color="#64748b" />
+              <X size={20} color={secondaryText} />
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.modalSubtitle}>
+          <Text style={[styles.modalSubtitle, { color: secondaryText }]}>
             Choose the release date and time for this quiz to automatically unlock for church members.
           </Text>
 
           {/* Date Picker trigger */}
-          <Text style={styles.inputLabel}>Release Date</Text>
+          <Text style={[styles.inputLabel, { color: primaryText }]}>Release Date</Text>
           <TouchableOpacity
-            style={styles.datePickerTrigger}
+            style={[styles.datePickerTrigger, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F8FAFC', borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1' }]}
             onPress={() => {
               setShowScheduleModal(false);
               setTimeout(() => setShowDatePicker(true), 150);
             }}
             activeOpacity={0.8}
           >
-            <CalendarIcon size={18} color="#1a2d5a" />
-            <Text style={styles.datePickerTriggerTxt}>{scheduledDate}</Text>
-            <Text style={{ marginLeft: 'auto', fontSize: 12, color: '#1a2d5a', fontWeight: '700' }}>Change Date 📅</Text>
+            <CalendarIcon size={18} color={primaryText} />
+            <Text style={[styles.datePickerTriggerTxt, { color: primaryText }]}>{scheduledDate}</Text>
+            <Text style={{ marginLeft: 'auto', fontSize: 12, color: primaryText, fontWeight: '700' }}>Change Date 📅</Text>
           </TouchableOpacity>
 
           {/* Clock Picker Trigger (Interactive Native Clock / Wheel) */}
-          <Text style={styles.inputLabel}>Release Time (Clock Picker)</Text>
+          <Text style={[styles.inputLabel, { color: primaryText }]}>Release Time (Clock Picker)</Text>
           <TouchableOpacity
-            style={styles.timePickerTrigger}
+            style={[styles.timePickerTrigger, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F8FAFC', borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1' }]}
             onPress={() => {
               setShowScheduleModal(false);
               setTimeout(() => setShowTimePicker(true), 150);
@@ -613,18 +625,18 @@ export default function AdminQuizEditor({
             activeOpacity={0.8}
           >
             <View style={styles.timePickerLeft}>
-              <View style={styles.timePickerIconCircle}>
-                <Clock size={18} color="#1a2d5a" />
+              <View style={[styles.timePickerIconCircle, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#EFF6FF' }]}>
+                <Clock size={18} color={primaryText} />
               </View>
               <View>
-                <Text style={styles.timePickerLabel}>SCHEDULED TIME</Text>
-                <Text style={styles.timePickerValueTxt}>
-                  {formatTimeDisplay(scheduledTime)} <Text style={{ fontSize: 12, fontWeight: '500', color: '#64748B' }}>({scheduledTime})</Text>
+                <Text style={[styles.timePickerLabel, { color: secondaryText }]}>SCHEDULED TIME</Text>
+                <Text style={[styles.timePickerValueTxt, { color: primaryText }]}>
+                  {formatTimeDisplay(scheduledTime)} <Text style={{ fontSize: 12, fontWeight: '500', color: secondaryText }}>({scheduledTime})</Text>
                 </Text>
               </View>
             </View>
-            <View style={styles.timePickerChangeBtn}>
-              <Text style={styles.timePickerChangeBtnTxt}>Pick Clock ⏰</Text>
+            <View style={[styles.timePickerChangeBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}>
+              <Text style={[styles.timePickerChangeBtnTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>Pick Clock ⏰</Text>
             </View>
           </TouchableOpacity>
 
@@ -636,9 +648,13 @@ export default function AdminQuizEditor({
                 paddingVertical: 8,
                 borderRadius: 8,
                 alignItems: 'center',
-                backgroundColor: parseInt(scheduledTime.split(':')[0], 10) < 12 ? '#1a2d5a' : '#F1F5F9',
+                backgroundColor: parseInt(scheduledTime.split(':')[0], 10) < 12
+                  ? (isDark ? '#FFFFFF' : '#000000')
+                  : (isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9'),
                 borderWidth: 1,
-                borderColor: parseInt(scheduledTime.split(':')[0], 10) < 12 ? '#1a2d5a' : '#CBD5E1',
+                borderColor: parseInt(scheduledTime.split(':')[0], 10) < 12
+                  ? (isDark ? '#FFFFFF' : '#000000')
+                  : (isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1'),
               }}
               onPress={() => {
                 const [h, m] = scheduledTime.split(':');
@@ -651,7 +667,9 @@ export default function AdminQuizEditor({
               <Text style={{
                 fontSize: 12,
                 fontWeight: '700',
-                color: parseInt(scheduledTime.split(':')[0], 10) < 12 ? '#ffffff' : '#475569',
+                color: parseInt(scheduledTime.split(':')[0], 10) < 12
+                  ? (isDark ? '#000000' : '#FFFFFF')
+                  : secondaryText,
               }}>
                 🌅 AM (Morning)
               </Text>
@@ -663,9 +681,13 @@ export default function AdminQuizEditor({
                 paddingVertical: 8,
                 borderRadius: 8,
                 alignItems: 'center',
-                backgroundColor: parseInt(scheduledTime.split(':')[0], 10) >= 12 ? '#1a2d5a' : '#F1F5F9',
+                backgroundColor: parseInt(scheduledTime.split(':')[0], 10) >= 12
+                  ? (isDark ? '#FFFFFF' : '#000000')
+                  : (isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9'),
                 borderWidth: 1,
-                borderColor: parseInt(scheduledTime.split(':')[0], 10) >= 12 ? '#1a2d5a' : '#CBD5E1',
+                borderColor: parseInt(scheduledTime.split(':')[0], 10) >= 12
+                  ? (isDark ? '#FFFFFF' : '#000000')
+                  : (isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1'),
               }}
               onPress={() => {
                 const [h, m] = scheduledTime.split(':');
@@ -678,7 +700,9 @@ export default function AdminQuizEditor({
               <Text style={{
                 fontSize: 12,
                 fontWeight: '700',
-                color: parseInt(scheduledTime.split(':')[0], 10) >= 12 ? '#ffffff' : '#475569',
+                color: parseInt(scheduledTime.split(':')[0], 10) >= 12
+                  ? (isDark ? '#000000' : '#FFFFFF')
+                  : secondaryText,
               }}>
                 🌆 PM (Afternoon/Evening)
               </Text>
@@ -686,7 +710,7 @@ export default function AdminQuizEditor({
           </View>
 
           {/* Quick Time Presets */}
-          <Text style={[styles.inputLabel, { marginTop: 4 }]}>Quick Presets</Text>
+          <Text style={[styles.inputLabel, { marginTop: 4, color: primaryText }]}>Quick Presets</Text>
           <View style={styles.timePresetsRow}>
             {[
               { time: '09:00', label: '9:00 AM' },
@@ -700,11 +724,29 @@ export default function AdminQuizEditor({
               return (
                 <TouchableOpacity
                   key={p.time}
-                  style={[styles.timeChip, isSelected && styles.timeChipActive]}
+                  style={[
+                    styles.timeChip,
+                    {
+                      backgroundColor: isSelected
+                        ? (isDark ? '#FFFFFF' : '#000000')
+                        : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F8FAFC'),
+                      borderColor: isSelected
+                        ? (isDark ? '#FFFFFF' : '#000000')
+                        : (isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1'),
+                    }
+                  ]}
                   onPress={() => setScheduledTime(p.time)}
                   activeOpacity={0.7}
                 >
-                  <Text style={[styles.timeChipTxt, isSelected && styles.timeChipTxtActive]}>
+                  <Text
+                    style={[
+                      styles.timeChipTxt,
+                      {
+                        color: isSelected ? (isDark ? '#000000' : '#FFFFFF') : secondaryText,
+                        fontWeight: isSelected ? '700' : '500',
+                      }
+                    ]}
+                  >
                     {p.label}
                   </Text>
                 </TouchableOpacity>
@@ -713,7 +755,7 @@ export default function AdminQuizEditor({
           </View>
 
           {/* Time Limit Setting in Schedule Modal */}
-          <Text style={[styles.inputLabel, { marginTop: 12 }]}>Time Limit</Text>
+          <Text style={[styles.inputLabel, { marginTop: 12, color: primaryText }]}>Time Limit</Text>
           <View style={styles.timePresetsRow}>
             {[
               { label: 'Untimed', value: 0 },
@@ -728,11 +770,29 @@ export default function AdminQuizEditor({
               return (
                 <TouchableOpacity
                   key={item.value}
-                  style={[styles.timeChip, isSelected && styles.timeChipActive]}
+                  style={[
+                    styles.timeChip,
+                    {
+                      backgroundColor: isSelected
+                        ? (isDark ? '#FFFFFF' : '#000000')
+                        : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F8FAFC'),
+                      borderColor: isSelected
+                        ? (isDark ? '#FFFFFF' : '#000000')
+                        : (isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1'),
+                    }
+                  ]}
                   onPress={() => setTimeLimitMinutes(item.value)}
                   activeOpacity={0.7}
                 >
-                  <Text style={[styles.timeChipTxt, isSelected && styles.timeChipTxtActive]}>
+                  <Text
+                    style={[
+                      styles.timeChipTxt,
+                      {
+                        color: isSelected ? (isDark ? '#000000' : '#FFFFFF') : secondaryText,
+                        fontWeight: isSelected ? '700' : '500',
+                      }
+                    ]}
+                  >
                     {item.label}
                   </Text>
                 </TouchableOpacity>
@@ -740,23 +800,23 @@ export default function AdminQuizEditor({
             })}
           </View>
 
-          <View style={styles.scheduleInfoBox}>
-            <Clock size={16} color="#1a2d5a" />
-            <Text style={styles.scheduleInfoTxt}>
+          <View style={[styles.scheduleInfoBox, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F8FAFC', borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0' }]}>
+            <Clock size={16} color={primaryText} />
+            <Text style={[styles.scheduleInfoTxt, { color: primaryText }]}>
               Members will automatically see this quiz in Church Quizzes on <Text style={{ fontWeight: '700' }}>{scheduledDate}</Text> at <Text style={{ fontWeight: '700' }}>{formatTimeDisplay(scheduledTime)}</Text>.
             </Text>
           </View>
 
           <View style={styles.modalActionsRow}>
             <TouchableOpacity
-              style={styles.modalCancelBtn}
+              style={[styles.modalCancelBtn, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F8FAFC', borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : '#CBD5E1' }]}
               onPress={() => setShowScheduleModal(false)}
             >
-              <Text style={styles.modalCancelBtnTxt}>Close</Text>
+              <Text style={[styles.modalCancelBtnTxt, { color: secondaryText }]}>Close</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.modalConfirmBtn}
+              style={[styles.modalConfirmBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
               onPress={() => {
                 setPublishStatus('scheduled');
                 setShowScheduleModal(false);
@@ -772,9 +832,9 @@ export default function AdminQuizEditor({
               disabled={isSaving}
             >
               {isSaving ? (
-                <ActivityIndicator size="small" color="#ffffff" />
+                <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
               ) : (
-                <Text style={styles.modalConfirmBtnTxt}>Confirm Schedule</Text>
+                <Text style={[styles.modalConfirmBtnTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>Confirm Schedule</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -990,7 +1050,7 @@ export default function AdminQuizEditor({
     return (
       <Modal visible={saveSuccessData.visible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.celebrationCard}>
+          <View style={[styles.celebrationCard, { backgroundColor: cardSurface, borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#E2E8F0', borderWidth: 1 }]}>
             {/* Top Close Button */}
             <TouchableOpacity
               onPress={() => {
@@ -998,10 +1058,10 @@ export default function AdminQuizEditor({
                 setSaveSuccessData(null);
                 onSaved(sId);
               }}
-              style={styles.celebrationCloseBtn}
+              style={[styles.celebrationCloseBtn, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#F1F5F9' }]}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             >
-              <X size={18} color="#64748B" />
+              <X size={18} color={secondaryText} />
             </TouchableOpacity>
 
             {/* Top Decorative Icon */}
@@ -1012,20 +1072,20 @@ export default function AdminQuizEditor({
                   ? { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }
                   : isSched
                   ? { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }
-                  : { backgroundColor: '#F1F5F9', borderColor: '#CBD5E1' },
+                  : { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#F1F5F9', borderColor: isDark ? 'rgba(255,255,255,0.15)' : '#CBD5E1' },
               ]}
             >
               {isPub ? (
                 <CheckCircle size={32} color="#059669" strokeWidth={2.5} />
               ) : isSched ? (
-                <Clock size={30} color="#1a2d5a" strokeWidth={2.5} />
+                <Clock size={30} color={primaryText} strokeWidth={2.5} />
               ) : (
-                <Save size={28} color="#475569" strokeWidth={2.5} />
+                <Save size={28} color={primaryText} strokeWidth={2.5} />
               )}
             </View>
 
             {/* Title & Status */}
-            <Text style={styles.celebrationTitle}>
+            <Text style={[styles.celebrationTitle, { color: primaryText }]}>
               {isPub
                 ? 'Quiz Published Live!'
                 : isSched
@@ -1034,14 +1094,14 @@ export default function AdminQuizEditor({
             </Text>
 
             {/* Quiz Title Box */}
-            <View style={styles.cleanQuizTitleBox}>
-              <Text style={styles.cleanQuizTitleTxt} numberOfLines={2}>
+            <View style={[styles.cleanQuizTitleBox, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F8FAFC', borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0' }]}>
+              <Text style={[styles.cleanQuizTitleTxt, { color: primaryText }]} numberOfLines={2}>
                 {saveSuccessData.title}
               </Text>
             </View>
 
             {/* Subtitle / Context Note */}
-            <Text style={styles.celebrationSubtitle}>
+            <Text style={[styles.celebrationSubtitle, { color: secondaryText }]}>
               {isPub
                 ? 'This quiz is now active and accessible to your congregation.'
                 : isSched
@@ -1051,7 +1111,7 @@ export default function AdminQuizEditor({
 
             {/* Push Notification Banner (Compact & Neat) */}
             {isPub && (
-              <View style={styles.saveSuccessNotificationBox}>
+              <View style={[styles.saveSuccessNotificationBox, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
                 <View style={styles.saveSuccessBellCircle}>
                   <Bell size={13} color="#059669" />
                 </View>
@@ -1074,9 +1134,9 @@ export default function AdminQuizEditor({
 
             {/* Summary Info Chips (3 Clean Symmetrical Pills) */}
             <View style={styles.celebrationBadgeRow}>
-              <View style={styles.celebrationCountBadge}>
-                <BookOpen size={12} color="#1a2d5a" />
-                <Text style={styles.celebrationCountBadgeTxt}>
+              <View style={[styles.celebrationCountBadge, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9', borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#E2E8F0' }]}>
+                <BookOpen size={12} color={primaryText} />
+                <Text style={[styles.celebrationCountBadgeTxt, { color: primaryText }]}>
                   {saveSuccessData.questionCount} Questions
                 </Text>
               </View>
@@ -1096,7 +1156,7 @@ export default function AdminQuizEditor({
             {/* Action Buttons */}
             <View style={styles.celebrationActionsCol}>
               <TouchableOpacity
-                style={styles.celebrationPrimaryBtn}
+                style={[styles.celebrationPrimaryBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
                 onPress={() => {
                   const sId = saveSuccessData.savedId;
                   setSaveSuccessData(null);
@@ -1104,21 +1164,21 @@ export default function AdminQuizEditor({
                 }}
                 activeOpacity={0.85}
               >
-                <Check size={16} color="#ffffff" />
-                <Text style={styles.celebrationPrimaryBtnTxt}>Done · View Quiz Library</Text>
+                <Check size={16} color={isDark ? '#000000' : '#FFFFFF'} />
+                <Text style={[styles.celebrationPrimaryBtnTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>Done · View Quiz Library</Text>
               </TouchableOpacity>
 
               {isPub && (
                 <TouchableOpacity
-                  style={styles.celebrationSecondaryBtn}
+                  style={[styles.celebrationSecondaryBtn, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F8FAFC', borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1' }]}
                   onPress={() => {
                     setSaveSuccessData(null);
                     setPreviewVisible(true);
                   }}
                   activeOpacity={0.7}
                 >
-                  <Eye size={15} color="#1a2d5a" />
-                  <Text style={styles.celebrationSecondaryBtnTxt}>Preview Member Experience</Text>
+                  <Eye size={15} color={primaryText} />
+                  <Text style={[styles.celebrationSecondaryBtnTxt, { color: primaryText }]}>Preview Member Experience</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -1129,33 +1189,99 @@ export default function AdminQuizEditor({
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
+      <StatusBar barStyle={barStyle} backgroundColor={isDark ? '#000000' : '#FFFFFF'} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        {/* ── Signature Navy Hero (Matching Daily Promise Header) ── */}
-        <View style={styles.hero}>
-          <View style={styles.heroTitleRow}>
-            <TouchableOpacity onPress={onBack} style={styles.circularBackBtn} activeOpacity={0.7}>
-              <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
-            </TouchableOpacity>
-            <Text style={[styles.heroTitle, { marginLeft: 12 }]}>{quizId ? 'Edit Bible Quiz' : 'New Bible Quiz'}</Text>
-          </View>
+        {/* ── Signature Admin Pinned Header (Centered Title, Theme Colors) ── */}
+        <View
+          style={{
+            backgroundColor: isDark ? '#000000' : '#FFFFFF',
+            borderBottomWidth: 1.5,
+            borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#CBD5E1',
+            paddingTop: Platform.OS === 'ios' ? Math.max(insets.top, 20) : 12,
+            paddingBottom: 12,
+            paddingHorizontal: 16,
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            {/* Left: Circular Back Button */}
+            <View style={{ minWidth: 70, alignItems: 'flex-start' }}>
+              <TouchableOpacity
+                onPress={onBack}
+                style={[
+                  styles.circularBackBtn,
+                  {
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#FFFFFF',
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.3)' : '#CBD5E1',
+                    borderWidth: 1.5,
+                  }
+                ]}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.4} />
+              </TouchableOpacity>
+            </View>
 
-          <TouchableOpacity
-            style={styles.heroPreviewPill}
-            onPress={() => setPreviewVisible(true)}
-            activeOpacity={0.8}
-          >
-            <Eye size={15} color="#fff" />
-            <Text style={styles.heroPreviewPillTxt}>Preview</Text>
-          </TouchableOpacity>
+            {/* Middle: Centered Heading Text */}
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 }}>
+              <Text
+                style={{
+                  fontSize: 20,
+                  fontWeight: '800',
+                  color: isDark ? '#FFFFFF' : '#0F172A',
+                  textAlign: 'center',
+                  letterSpacing: -0.3,
+                }}
+                numberOfLines={1}
+              >
+                {quizId ? 'Edit Bible Quiz' : 'New Bible Quiz'}
+              </Text>
+            </View>
+
+            {/* Right: Preview Button with App Theme Colors */}
+            <View style={{ minWidth: 70, alignItems: 'flex-end' }}>
+              <TouchableOpacity
+                style={{
+                  backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 5,
+                  paddingHorizontal: 14,
+                  paddingVertical: 7,
+                  borderRadius: 10,
+                  shadowColor: '#000000',
+                  shadowOpacity: 0.15,
+                  shadowRadius: 4,
+                  shadowOffset: { width: 0, height: 2 },
+                  elevation: 3,
+                }}
+                onPress={() => setPreviewVisible(true)}
+                activeOpacity={0.85}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Eye size={15} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.2} />
+                <Text
+                  style={{
+                    color: isDark ? '#000000' : '#FFFFFF',
+                    fontSize: 13,
+                    fontWeight: '800',
+                    letterSpacing: 0.3,
+                  }}
+                >
+                  Preview
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
 
         <ScrollView
           ref={scrollViewRef}
-          style={styles.scrollArea}
+          style={[styles.scrollArea, { backgroundColor: screenBg }]}
           contentContainerStyle={[
             styles.scrollContent,
             { paddingBottom: Math.max(keyboardHeight + 100, 420) },
@@ -1167,34 +1293,34 @@ export default function AdminQuizEditor({
           bounces={true}
         >
         {/* ── 1. Create Quiz from Uploaded Document (Up to 10 Questions) ── */}
-        <View style={[styles.sectionCard, styles.topperCard]}>
+        <View style={[styles.sectionCard, styles.topperCard, { backgroundColor: cardSurface, borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : adminBorderColor }]}>
           <View style={styles.secHeader}>
-            <View style={styles.secHdPill}>
-              <FileText size={14} color="#fff" />
+            <View style={[styles.secHdPill, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}>
+              <FileText size={14} color={isDark ? '#000000' : '#FFFFFF'} />
             </View>
             <View>
-              <Text style={styles.secHeadingText}>Upload Document</Text>
+              <Text style={[styles.secHeadingText, { color: primaryText }]}>Upload Document</Text>
               <Text style={styles.topperSubHint}>Auto-extracts up to 10 questions</Text>
             </View>
           </View>
 
           {Boolean(sourceFile) && (
-            <View style={styles.docAttachedBanner}>
-              <FileText size={16} color="#1a2d5a" />
-              <Text style={styles.docAttachedBannerTxt} numberOfLines={1}>{sourceFile}</Text>
+            <View style={[styles.docAttachedBanner, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#EFF6FF', borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#DBEAFE' }]}>
+              <FileText size={16} color={primaryText} />
+              <Text style={[styles.docAttachedBannerTxt, { color: primaryText }]} numberOfLines={1}>{sourceFile}</Text>
               <TouchableOpacity onPress={() => setSourceFile('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.docAttachedRemoveBtn}>
                 <X size={12} color="#dc2626" />
               </TouchableOpacity>
             </View>
           )}
 
-          <Text style={styles.docUploadSub}>
+          <Text style={[styles.docUploadSub, { color: secondaryText }]}>
             Supports PDF, Word (DOC/DOCX), Excel (XLSX), CSV, or Notepad (TXT) study notes. Automatically extracts and generates up to 10 questions.
           </Text>
 
           {/* Quick Language Target Selector (Symmetrical 2x2 Grid) */}
           <View style={styles.docLangContainer}>
-            <Text style={styles.docLangLabel}>DOCUMENT / TARGET LANGUAGE:</Text>
+            <Text style={[styles.docLangLabel, { color: secondaryText }]}>DOCUMENT / TARGET LANGUAGE:</Text>
             <View style={styles.docLangGrid}>
               {[
                 { code: 'te', label: 'Telugu (తెలుగు)' },
@@ -1206,11 +1332,29 @@ export default function AdminQuizEditor({
                 return (
                   <TouchableOpacity
                     key={l.code}
-                    style={[styles.docLangPill, isSel && styles.docLangPillActive]}
+                    style={[
+                      styles.docLangPill,
+                      {
+                        backgroundColor: isSel
+                          ? (isDark ? '#FFFFFF' : '#000000')
+                          : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9'),
+                        borderColor: isSel
+                          ? (isDark ? '#FFFFFF' : '#000000')
+                          : (isDark ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0'),
+                      }
+                    ]}
                     onPress={() => setLanguage(l.code)}
                     activeOpacity={0.7}
                   >
-                    <Text style={[styles.docLangPillTxt, isSel && styles.docLangPillTxtActive]}>
+                    <Text
+                      style={[
+                        styles.docLangPillTxt,
+                        {
+                          color: isSel ? (isDark ? '#000000' : '#FFFFFF') : secondaryText,
+                          fontWeight: isSel ? '800' : '600',
+                        }
+                      ]}
+                    >
                       {l.label}
                     </Text>
                   </TouchableOpacity>
@@ -1220,33 +1364,39 @@ export default function AdminQuizEditor({
           </View>
 
           {isGeneratingFromFile ? (
-            <View style={styles.docLoadingRow}>
-              <ActivityIndicator size="small" color="#1a2d5a" />
-              <Text style={styles.docLoadingTxt}>{generatingStatus}</Text>
+            <View style={[styles.docLoadingRow, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9' }]}>
+              <ActivityIndicator size="small" color={primaryText} />
+              <Text style={[styles.docLoadingTxt, { color: primaryText }]}>{generatingStatus}</Text>
             </View>
           ) : (
             <TouchableOpacity
-              style={styles.docUploadActionBtn}
+              style={[
+                styles.docUploadActionBtn,
+                {
+                  backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                  shadowColor: '#000000',
+                }
+              ]}
               onPress={handlePickDocument}
               activeOpacity={0.85}
             >
-              <Upload size={16} color="#ffffff" />
-              <Text style={styles.docUploadActionTxt}>Choose Document & Generate Quiz</Text>
+              <Upload size={16} color={isDark ? '#000000' : '#FFFFFF'} />
+              <Text style={[styles.docUploadActionTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>Choose Document & Generate Quiz</Text>
             </TouchableOpacity>
           )}
         </View>
 
-        {/* ── 2. Schedule & Publication Section (Matching Daily Promise secNavy) ── */}
-        <View style={styles.sectionCard}>
+        {/* ── 2. Schedule & Publication Section ── */}
+        <View style={[styles.sectionCard, { backgroundColor: cardSurface, borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : adminBorderColor }]}>
           <View style={styles.secHeader}>
-            <View style={styles.secHdPill}>
-              <CalendarIcon size={14} color="#fff" />
+            <View style={[styles.secHdPill, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}>
+              <CalendarIcon size={14} color={isDark ? '#000000' : '#FFFFFF'} />
             </View>
-            <Text style={styles.secHeadingText}>Schedule & Availability</Text>
+            <Text style={[styles.secHeadingText, { color: primaryText }]}>Schedule & Availability</Text>
           </View>
 
           {/* Status Segment Control: Draft | Scheduled | Publish Now */}
-          <View style={styles.statusSegmentRow}>
+          <View style={[styles.statusSegmentRow, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9' }]}>
             {(
               [
                 { key: 'draft', label: 'Save Draft' },
@@ -1258,7 +1408,13 @@ export default function AdminQuizEditor({
               return (
                 <TouchableOpacity
                   key={opt.key}
-                  style={[styles.statusSegmentBtn, isSelected && styles.statusSegmentBtnActive]}
+                  style={[
+                    styles.statusSegmentBtn,
+                    isSelected && {
+                      backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                      shadowColor: '#000000',
+                    }
+                  ]}
                   onPress={() => {
                     setPublishStatus(opt.key);
                     if (opt.key === 'scheduled') {
@@ -1267,7 +1423,15 @@ export default function AdminQuizEditor({
                   }}
                   activeOpacity={0.8}
                 >
-                  <Text style={[styles.statusSegmentTxt, isSelected && styles.statusSegmentTxtActive]}>
+                  <Text
+                    style={[
+                      styles.statusSegmentTxt,
+                      {
+                        color: isSelected ? (isDark ? '#000000' : '#FFFFFF') : secondaryText,
+                        fontWeight: isSelected ? '800' : '600',
+                      }
+                    ]}
+                  >
                     {opt.label}
                   </Text>
                 </TouchableOpacity>
@@ -1278,9 +1442,9 @@ export default function AdminQuizEditor({
           {/* Inline Schedule Controls when Scheduled */}
           {publishStatus === 'scheduled' && (
             <View style={{ marginTop: 14 }}>
-              <View style={styles.scheduleInfoBox}>
-                <Clock size={16} color="#1a2d5a" />
-                <Text style={styles.scheduleInfoTxt}>
+              <View style={[styles.scheduleInfoBox, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F8FAFC', borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0' }]}>
+                <Clock size={16} color={primaryText} />
+                <Text style={[styles.scheduleInfoTxt, { color: primaryText }]}>
                   Members will automatically unlock this quiz on{' '}
                   <Text style={{ fontWeight: '700' }}>{scheduledDate}</Text> at{' '}
                   <Text style={{ fontWeight: '700' }}>{formatTimeDisplay(scheduledTime)}</Text>.
@@ -1288,47 +1452,47 @@ export default function AdminQuizEditor({
               </View>
 
               {/* Release Date Trigger */}
-              <Text style={styles.inputLabel}>Release Date</Text>
+              <Text style={[styles.inputLabel, { color: primaryText }]}>Release Date</Text>
               <TouchableOpacity
-                style={styles.datePickerTrigger}
+                style={[styles.datePickerTrigger, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F8FAFC', borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1' }]}
                 onPress={() => setShowDatePicker(true)}
                 activeOpacity={0.8}
               >
-                <CalendarIcon size={18} color="#1a2d5a" />
-                <Text style={styles.datePickerTriggerTxt}>{scheduledDate}</Text>
-                <Text style={{ marginLeft: 'auto', fontSize: 12, color: '#1a2d5a', fontWeight: '700' }}>
+                <CalendarIcon size={18} color={primaryText} />
+                <Text style={[styles.datePickerTriggerTxt, { color: primaryText }]}>{scheduledDate}</Text>
+                <Text style={{ marginLeft: 'auto', fontSize: 12, color: primaryText, fontWeight: '700' }}>
                   Pick Date 📅
                 </Text>
               </TouchableOpacity>
 
               {/* Clock Picker Trigger */}
-              <Text style={styles.inputLabel}>Release Time (Interactive Clock)</Text>
+              <Text style={[styles.inputLabel, { color: primaryText }]}>Release Time (Interactive Clock)</Text>
               <TouchableOpacity
-                style={styles.timePickerTrigger}
+                style={[styles.timePickerTrigger, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F8FAFC', borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1' }]}
                 onPress={() => setShowTimePicker(true)}
                 activeOpacity={0.8}
               >
                 <View style={styles.timePickerLeft}>
-                  <View style={styles.timePickerIconCircle}>
-                    <Clock size={18} color="#1a2d5a" />
+                  <View style={[styles.timePickerIconCircle, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#EFF6FF' }]}>
+                    <Clock size={18} color={primaryText} />
                   </View>
                   <View>
-                    <Text style={styles.timePickerLabel}>SCHEDULED TIME</Text>
-                    <Text style={styles.timePickerValueTxt}>
+                    <Text style={[styles.timePickerLabel, { color: secondaryText }]}>SCHEDULED TIME</Text>
+                    <Text style={[styles.timePickerValueTxt, { color: primaryText }]}>
                       {formatTimeDisplay(scheduledTime)}{' '}
-                      <Text style={{ fontSize: 12, fontWeight: '500', color: '#64748B' }}>
+                      <Text style={{ fontSize: 12, fontWeight: '500', color: secondaryText }}>
                         ({scheduledTime})
                       </Text>
                     </Text>
                   </View>
                 </View>
-                <View style={styles.timePickerChangeBtn}>
-                  <Text style={styles.timePickerChangeBtnTxt}>Pick Clock ⏰</Text>
+                <View style={[styles.timePickerChangeBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}>
+                  <Text style={[styles.timePickerChangeBtnTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>Pick Clock ⏰</Text>
                 </View>
               </TouchableOpacity>
 
               {/* Quick Time Presets */}
-              <Text style={[styles.inputLabel, { marginTop: 4 }]}>Quick Presets</Text>
+              <Text style={[styles.inputLabel, { marginTop: 4, color: primaryText }]}>Quick Presets</Text>
               <View style={styles.timePresetsRow}>
                 {[
                   { time: '05:00', label: '5:00 AM' },
@@ -1342,11 +1506,29 @@ export default function AdminQuizEditor({
                   return (
                     <TouchableOpacity
                       key={p.time}
-                      style={[styles.timeChip, isSelected && styles.timeChipActive]}
+                      style={[
+                        styles.timeChip,
+                        {
+                          backgroundColor: isSelected
+                            ? (isDark ? '#FFFFFF' : '#000000')
+                            : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F8FAFC'),
+                          borderColor: isSelected
+                            ? (isDark ? '#FFFFFF' : '#000000')
+                            : (isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1'),
+                        }
+                      ]}
                       onPress={() => setScheduledTime(p.time)}
                       activeOpacity={0.7}
                     >
-                      <Text style={[styles.timeChipTxt, isSelected && styles.timeChipTxtActive]}>
+                      <Text
+                        style={[
+                          styles.timeChipTxt,
+                          {
+                            color: isSelected ? (isDark ? '#000000' : '#FFFFFF') : secondaryText,
+                            fontWeight: isSelected ? '700' : '500',
+                          }
+                        ]}
+                      >
                         {p.label}
                       </Text>
                     </TouchableOpacity>
@@ -1357,37 +1539,37 @@ export default function AdminQuizEditor({
           )}
         </View>
 
-        {/* ── 3. Quiz Details (Clean, Simple, No confusing category chips) ── */}
-        <View style={styles.sectionCard}>
+        {/* ── 3. Quiz Details ── */}
+        <View style={[styles.sectionCard, { backgroundColor: cardSurface, borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : adminBorderColor }]}>
           <View style={styles.secHeader}>
-            <View style={styles.secHdPill}>
-              <BookOpen size={14} color="#fff" />
+            <View style={[styles.secHdPill, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}>
+              <BookOpen size={14} color={isDark ? '#000000' : '#FFFFFF'} />
             </View>
-            <Text style={styles.secHeadingText}>Quiz Information</Text>
+            <Text style={[styles.secHeadingText, { color: primaryText }]}>Quiz Information</Text>
           </View>
 
           {/* Quiz Title */}
-          <Text style={styles.fieldLabel}>Quiz Title <Text style={{ color: '#c0392b' }}>*</Text></Text>
+          <Text style={[styles.fieldLabel, { color: primaryText }]}>Quiz Title <Text style={{ color: '#c0392b' }}>*</Text></Text>
           <TextInput
-            style={styles.textInput}
+            style={[styles.textInput, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1', color: primaryText }]}
             value={title}
             onChangeText={setTitle}
             placeholder="e.g. Sunday Fellowship Bible Challenge"
-            placeholderTextColor="#94A3B8"
+            placeholderTextColor={secondaryText}
           />
 
           {/* Bible Topic / Series */}
-          <Text style={styles.fieldLabel}>Topic / Series (Optional)</Text>
+          <Text style={[styles.fieldLabel, { color: primaryText }]}>Topic / Series (Optional)</Text>
           <TextInput
-            style={styles.textInput}
+            style={[styles.textInput, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1', color: primaryText }]}
             value={topic}
             onChangeText={setTopic}
             placeholder="e.g. Gospel of John, Life of David, Parables..."
-            placeholderTextColor="#94A3B8"
+            placeholderTextColor={secondaryText}
           />
 
           {/* Difficulty Segment */}
-          <Text style={styles.fieldLabel}>Difficulty</Text>
+          <Text style={[styles.fieldLabel, { color: primaryText }]}>Difficulty</Text>
           <View style={styles.diffSegmentRow}>
             {(['easy', 'medium', 'hard'] as QuizDifficulty[]).map(d => {
               const isSelected = difficulty === d;
@@ -1396,18 +1578,27 @@ export default function AdminQuizEditor({
                   key={d}
                   style={[
                     styles.diffSegmentBtn,
-                    isSelected && (
-                      d === 'easy'
-                        ? styles.diffSegmentBtnEasyActive
-                        : d === 'medium'
-                        ? styles.diffSegmentBtnMediumActive
-                        : styles.diffSegmentBtnHardActive
-                    ),
+                    {
+                      backgroundColor: isSelected
+                        ? (isDark ? '#FFFFFF' : '#000000')
+                        : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9'),
+                      borderColor: isSelected
+                        ? (isDark ? '#FFFFFF' : '#000000')
+                        : (isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1'),
+                    }
                   ]}
                   onPress={() => setDifficulty(d)}
                   activeOpacity={0.8}
                 >
-                  <Text style={[styles.diffSegmentTxt, isSelected && styles.diffSegmentTxtActive]}>
+                  <Text
+                    style={[
+                      styles.diffSegmentTxt,
+                      {
+                        color: isSelected ? (isDark ? '#000000' : '#FFFFFF') : secondaryText,
+                        fontWeight: isSelected ? '800' : '600',
+                      }
+                    ]}
+                  >
                     {d.toUpperCase()}
                   </Text>
                 </TouchableOpacity>
@@ -1416,17 +1607,35 @@ export default function AdminQuizEditor({
           </View>
 
           {/* Language Selector */}
-          <Text style={styles.fieldLabel}>Language</Text>
+          <Text style={[styles.fieldLabel, { color: primaryText }]}>Language</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.langChipsScroll}>
             {SUPPORTED_LANGUAGES.map(lang => {
               const isSelected = language === lang.code;
               return (
                 <TouchableOpacity
                   key={lang.code}
-                  style={[styles.langChip, isSelected && styles.langChipActive]}
+                  style={[
+                    styles.langChip,
+                    {
+                      backgroundColor: isSelected
+                        ? (isDark ? '#FFFFFF' : '#000000')
+                        : (isDark ? 'rgba(255, 255, 255, 0.06)' : cardSurface),
+                      borderColor: isSelected
+                        ? (isDark ? '#FFFFFF' : '#000000')
+                        : (isDark ? 'rgba(255, 255, 255, 0.15)' : adminBorderColor),
+                    }
+                  ]}
                   onPress={() => setLanguage(lang.code)}
                 >
-                  <Text style={[styles.langChipTxt, isSelected && styles.langChipTxtActive]}>
+                  <Text
+                    style={[
+                      styles.langChipTxt,
+                      {
+                        color: isSelected ? (isDark ? '#000000' : '#FFFFFF') : secondaryText,
+                        fontWeight: isSelected ? '700' : '500',
+                      }
+                    ]}
+                  >
                     {lang.name} ({lang.native})
                   </Text>
                 </TouchableOpacity>
@@ -1435,8 +1644,8 @@ export default function AdminQuizEditor({
           </ScrollView>
 
           {/* Time Limit Selector */}
-          <Text style={styles.fieldLabel}>Time Limit (Per Attempt)</Text>
-          <Text style={styles.fieldHelpTxt}>
+          <Text style={[styles.fieldLabel, { color: primaryText }]}>Time Limit (Per Attempt)</Text>
+          <Text style={[styles.fieldHelpTxt, { color: secondaryText }]}>
             A live countdown timer will be displayed during the quiz. Choose "No Limit" for relaxed untimed study.
           </Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.langChipsScroll}>
@@ -1454,12 +1663,30 @@ export default function AdminQuizEditor({
               return (
                 <TouchableOpacity
                   key={item.value}
-                  style={[styles.timeLimitChip, isSelected && styles.timeLimitChipActive]}
+                  style={[
+                    styles.timeLimitChip,
+                    {
+                      backgroundColor: isSelected
+                        ? (isDark ? '#FFFFFF' : '#000000')
+                        : (isDark ? 'rgba(255, 255, 255, 0.06)' : cardSurface),
+                      borderColor: isSelected
+                        ? (isDark ? '#FFFFFF' : '#000000')
+                        : (isDark ? 'rgba(255, 255, 255, 0.15)' : adminBorderColor),
+                    }
+                  ]}
                   onPress={() => setTimeLimitMinutes(item.value)}
                   activeOpacity={0.75}
                 >
-                  <Clock size={12} color={isSelected ? '#ffffff' : '#475569'} />
-                  <Text style={[styles.timeLimitChipTxt, isSelected && styles.timeLimitChipTxtActive]}>
+                  <Clock size={12} color={isSelected ? (isDark ? '#000000' : '#FFFFFF') : secondaryText} />
+                  <Text
+                    style={[
+                      styles.timeLimitChipTxt,
+                      {
+                        color: isSelected ? (isDark ? '#000000' : '#FFFFFF') : secondaryText,
+                        fontWeight: isSelected ? '700' : '500',
+                      }
+                    ]}
+                  >
                     {item.label}
                   </Text>
                 </TouchableOpacity>
@@ -1468,44 +1695,70 @@ export default function AdminQuizEditor({
           </ScrollView>
         </View>
 
-        {/* ── 4. Questions Builder (Google Forms style with premium styling) ── */}
-        <View style={styles.sectionCard}>
+        {/* ── 4. Questions Builder ── */}
+        <View style={[styles.sectionCard, { backgroundColor: cardSurface, borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : adminBorderColor }]}>
           <View style={styles.secHeader}>
-            <View style={styles.secHdPill}>
-              <HelpCircle size={14} color="#fff" />
+            <View style={[styles.secHdPill, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}>
+              <HelpCircle size={14} color={isDark ? '#000000' : '#FFFFFF'} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.secHeadingText}>Quiz Questions ({questions.length})</Text>
-              <Text style={styles.secSubheadingText}>
+              <Text style={[styles.secHeadingText, { color: primaryText }]}>Quiz Questions ({questions.length})</Text>
+              <Text style={[styles.secSubheadingText, { color: secondaryText }]}>
                 Tap the circle (○) to mark the correct answer
               </Text>
             </View>
           </View>
 
           {questions.map((q, qIdx) => (
-            <View key={q.id || qIdx} style={styles.questionCard}>
+            <View key={q.id || qIdx} style={[styles.questionCard, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC', borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0' }]}>
               {/* Question Header */}
               <View style={styles.qCardHeader}>
-                <View style={styles.qNumberPill}>
-                  <Text style={styles.qNumberTxt}>Q{qIdx + 1}</Text>
+                <View style={[styles.qNumberPill, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}>
+                  <Text style={[styles.qNumberTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>Q{qIdx + 1}</Text>
                 </View>
 
                 {/* Type toggle */}
-                <View style={styles.qTypeToggleRow}>
+                <View style={[styles.qTypeToggleRow, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9' }]}>
                   <TouchableOpacity
-                    style={[styles.qTypeBtn, q.questionType === 'single_choice' && styles.qTypeBtnActive]}
+                    style={[
+                      styles.qTypeBtn,
+                      q.questionType === 'single_choice' && {
+                        backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                      }
+                    ]}
                     onPress={() => handleQuestionTypeChange(qIdx, 'single_choice')}
                   >
-                    <Text style={[styles.qTypeBtnTxt, q.questionType === 'single_choice' && styles.qTypeBtnTxtActive]}>
+                    <Text
+                      style={[
+                        styles.qTypeBtnTxt,
+                        {
+                          color: q.questionType === 'single_choice' ? (isDark ? '#000000' : '#FFFFFF') : secondaryText,
+                          fontWeight: q.questionType === 'single_choice' ? '700' : '500',
+                        }
+                      ]}
+                    >
                       Multiple Choice
                     </Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.qTypeBtn, q.questionType === 'true_false' && styles.qTypeBtnActive]}
+                    style={[
+                      styles.qTypeBtn,
+                      q.questionType === 'true_false' && {
+                        backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                      }
+                    ]}
                     onPress={() => handleQuestionTypeChange(qIdx, 'true_false')}
                   >
-                    <Text style={[styles.qTypeBtnTxt, q.questionType === 'true_false' && styles.qTypeBtnTxtActive]}>
+                    <Text
+                      style={[
+                        styles.qTypeBtnTxt,
+                        {
+                          color: q.questionType === 'true_false' ? (isDark ? '#000000' : '#FFFFFF') : secondaryText,
+                          fontWeight: q.questionType === 'true_false' ? '700' : '500',
+                        }
+                      ]}
+                    >
                       True / False
                     </Text>
                   </TouchableOpacity>
@@ -1523,11 +1776,11 @@ export default function AdminQuizEditor({
 
               {/* Question Text */}
               <TextInput
-                style={styles.qInput}
+                style={[styles.qInput, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1', color: primaryText }]}
                 value={q.question}
                 onChangeText={text => handleUpdateQuestion(qIdx, 'question', text)}
                 placeholder="Type the question text here..."
-                placeholderTextColor="#94A3B8"
+                placeholderTextColor={secondaryText}
                 multiline
               />
 
@@ -1539,21 +1792,45 @@ export default function AdminQuizEditor({
                   return (
                     <View key={optIdx} style={styles.optionRow}>
                       <TouchableOpacity
-                        style={[styles.radioCircle, isCorrect && styles.radioCircleActive]}
+                        style={[
+                          styles.radioCircle,
+                          {
+                            borderColor: isCorrect
+                              ? (isDark ? '#FFFFFF' : '#000000')
+                              : (isDark ? 'rgba(255, 255, 255, 0.3)' : '#CBD5E1'),
+                          }
+                        ]}
                         onPress={() => handleSetCorrectAnswer(qIdx, optVal)}
                         activeOpacity={0.7}
                       >
-                        {isCorrect ? <View style={styles.radioDot} /> : null}
+                        {isCorrect ? (
+                          <View
+                            style={[
+                              styles.radioDot,
+                              { backgroundColor: isDark ? '#FFFFFF' : '#000000' }
+                            ]}
+                          />
+                        ) : null}
                       </TouchableOpacity>
 
-                      <View style={[styles.optionInputWrap, isCorrect && styles.optionInputWrapCorrect]}>
-                        <Text style={styles.optLetter}>{String.fromCharCode(65 + optIdx)}.</Text>
+                      <View
+                        style={[
+                          styles.optionInputWrap,
+                          {
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#FFFFFF',
+                            borderColor: isCorrect
+                              ? '#10B981'
+                              : (isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1'),
+                          }
+                        ]}
+                      >
+                        <Text style={[styles.optLetter, { color: primaryText }]}>{String.fromCharCode(65 + optIdx)}.</Text>
                         <TextInput
-                          style={styles.optionTextInput}
+                          style={[styles.optionTextInput, { color: primaryText }]}
                           value={optVal}
                           onChangeText={text => handleUpdateOption(qIdx, optIdx, text)}
                           placeholder={`Option ${String.fromCharCode(65 + optIdx)}`}
-                          placeholderTextColor="#94A3B8"
+                          placeholderTextColor={secondaryText}
                         />
                         {isCorrect ? (
                           <CheckCircle size={16} color="#10B981" style={{ marginLeft: 6 }} />
@@ -1565,86 +1842,101 @@ export default function AdminQuizEditor({
               </View>
 
               {/* Bible Reference with Pick button */}
-              <View style={styles.refRow}>
-                <BookOpen size={16} color="#1a2d5a" />
+              <View style={[styles.refRow, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1' }]}>
+                <BookOpen size={16} color={primaryText} />
                 <TextInput
-                  style={styles.refInput}
+                  style={[styles.refInput, { color: primaryText }]}
                   value={q.bibleReference || ''}
                   onChangeText={ref => handleUpdateQuestion(qIdx, 'bibleReference', ref)}
                   placeholder="Bible Reference (e.g. John 3:16)"
-                  placeholderTextColor="#94A3B8"
+                  placeholderTextColor={secondaryText}
                 />
                 <TouchableOpacity
-                  style={styles.refPickBtn}
+                  style={[styles.refPickBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
                   onPress={() => {
                     setActiveQuestionIndex(qIdx);
                     setPickerVisible(true);
                   }}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.refPickBtnTxt}>Pick Verse</Text>
+                  <Text style={[styles.refPickBtnTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>Pick Verse</Text>
                 </TouchableOpacity>
               </View>
 
               {/* Explanation Input */}
               <TextInput
-                style={styles.explanationInput}
+                style={[styles.explanationInput, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#FFFFFF', borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1', color: primaryText }]}
                 value={q.explanation || ''}
                 onChangeText={exp => handleUpdateQuestion(qIdx, 'explanation', exp)}
                 placeholder="Scripture Explanation / Devotional Insight (optional)"
-                placeholderTextColor="#94A3B8"
+                placeholderTextColor={secondaryText}
               />
             </View>
           ))}
 
           {/* Add Question Button */}
           <TouchableOpacity
-            style={styles.addQuestionBtn}
+            style={[
+              styles.addQuestionBtn,
+              {
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : '#CBD5E1',
+              }
+            ]}
             onPress={handleAddQuestion}
             activeOpacity={0.75}
           >
-            <Plus size={18} color="#1a2d5a" />
-            <Text style={styles.addQuestionBtnTxt}>Add Another Question</Text>
+            <Plus size={18} color={primaryText} />
+            <Text style={[styles.addQuestionBtnTxt, { color: primaryText }]}>Add Another Question</Text>
           </TouchableOpacity>
         </View>
 
-        {/* ── 5. Footer Buttons (Matching Daily Promise Footer) ── */}
+        {/* ── 5. Footer Buttons ── */}
         <View style={styles.footerBtnRow}>
           <TouchableOpacity
-            style={styles.btnDraft}
+            style={[
+              styles.btnDraft,
+              {
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F8FAFC',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : '#CBD5E1',
+              }
+            ]}
             onPress={() => handleSave('draft')}
             disabled={isSaving}
             activeOpacity={0.8}
           >
-            <Save size={16} color="#1a2d5a" />
-            <Text style={styles.btnDraftTxt}>Save as Draft</Text>
+            <Save size={16} color={primaryText} />
+            <Text style={[styles.btnDraftTxt, { color: primaryText }]}>Save as Draft</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={[
               styles.btnPublish,
-              publishStatus === 'scheduled' && styles.btnScheduled,
+              {
+                backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                shadowColor: '#000000',
+              }
             ]}
             onPress={() => handleSave(publishStatus)}
             disabled={isSaving}
             activeOpacity={0.85}
           >
             {isSaving ? (
-              <ActivityIndicator size="small" color="#ffffff" />
+              <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
             ) : publishStatus === 'scheduled' ? (
               <>
-                <Clock size={16} color="#ffffff" />
-                <Text style={styles.btnPublishTxt}>Schedule Quiz</Text>
+                <Clock size={16} color={isDark ? '#000000' : '#FFFFFF'} />
+                <Text style={[styles.btnPublishTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>Schedule Quiz</Text>
               </>
             ) : publishStatus === 'draft' ? (
               <>
-                <Save size={16} color="#ffffff" />
-                <Text style={styles.btnPublishTxt}>Save Draft</Text>
+                <Save size={16} color={isDark ? '#000000' : '#FFFFFF'} />
+                <Text style={[styles.btnPublishTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>Save Draft</Text>
               </>
             ) : (
               <>
-                <Send size={16} color="#ffffff" />
-                <Text style={styles.btnPublishTxt}>Publish Quiz Live</Text>
+                <Send size={16} color={isDark ? '#000000' : '#FFFFFF'} />
+                <Text style={[styles.btnPublishTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>Publish Quiz Live</Text>
               </>
             )}
           </TouchableOpacity>
