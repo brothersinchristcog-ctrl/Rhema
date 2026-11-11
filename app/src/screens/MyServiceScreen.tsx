@@ -50,6 +50,7 @@ import {
   MemberAvailabilityRecord,
   ServicePlan,
   RunSheetItem,
+  ActivityCategoryDef,
 } from '../types/serviceRoster';
 import { formatDateMonthYear, formatTimeTo12Hour } from '../utils/DateUtils';
 
@@ -82,7 +83,21 @@ const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
   other: { bg: '#F1F5F9', text: '#334155' }
 };
 
-const getCategoryStyle = (category: string, isDark: boolean) => {
+const getCategoryStyle = (
+  category: string,
+  isDark: boolean,
+  customCategories: ActivityCategoryDef[] = []
+) => {
+  const custom = customCategories.find(
+    c => c.id === category || c.label.toLowerCase() === category.toLowerCase()
+  );
+  if (custom) {
+    if (!isDark) return { bg: custom.bg, text: custom.text };
+    return {
+      bg: custom.text.startsWith('#') && custom.text.length === 7 ? `${custom.text}40` : 'rgba(255,255,255,0.10)',
+      text: custom.bg.startsWith('#') ? custom.bg : '#E2E8F0',
+    };
+  }
   const base = CATEGORY_COLORS[category] || CATEGORY_COLORS['other'];
   if (!isDark) return base;
   const darkMap: Record<string, { bg: string; text: string }> = {
@@ -151,6 +166,7 @@ const resolveActivityAssignment = (
       isMyServing: Boolean(isMyServing),
       myRoleName: activeBand.find(b => b.isYou)?.role || 'Worship Musician',
       bandMusicians: activeBand,
+      prepTeamSlots: [] as Array<{ role: string; name: string; emoji: string; key: string; isYou: boolean; isAssigned: boolean }>,
     };
   }
 
@@ -175,26 +191,104 @@ const resolveActivityAssignment = (
       isMyServing,
       myRoleName: 'Preacher / Speaker',
       bandMusicians: [],
+      prepTeamSlots: [] as Array<{ role: string; name: string; emoji: string; key: string; isYou: boolean; isAssigned: boolean }>,
     };
   }
 
   // Preparation & Sound Check
   if (isPrep) {
-    const soundEng = plan.assignments?.['role_sound'] || plan.assignments?.['sound'];
-    const assigned = (item.responsibleMemberId ? item.responsiblePerson : null) || soundEng || null;
-    const isAssigned = Boolean(assigned && assigned.trim().length > 0);
-    const isMyServing = Boolean(
-      (memberName && assigned && memberName.toLowerCase().trim() === assigned.toLowerCase().trim()) ||
-      (item.responsibleMemberId && item.responsibleMemberId === memberId)
-    );
+    const prepPlaceholders = [
+      'sound & media team',
+      'sound team',
+      'media team',
+      'unassigned',
+    ];
+    const soundName = (plan.assignments?.['role_sound'] || plan.assignments?.['sound'] || '').trim();
+    const soundId = plan.assignmentMemberIds?.['role_sound'] || plan.assignmentMemberIds?.['sound'];
+    const mediaName = (plan.assignments?.['role_media'] || plan.assignments?.['media'] || '').trim();
+    const mediaId = plan.assignmentMemberIds?.['role_media'] || plan.assignmentMemberIds?.['media'];
+
+    const directActName = (
+      plan.assignments?.[item.id] ||
+      plan.assignments?.[item.id.replace('act_', '')] ||
+      plan.assignments?.[`act_${item.id}`] ||
+      ''
+    ).trim();
+    const directActId =
+      plan.assignmentMemberIds?.[item.id] ||
+      plan.assignmentMemberIds?.[item.id.replace('act_', '')] ||
+      plan.assignmentMemberIds?.[`act_${item.id}`] ||
+      item.responsibleMemberId;
+    const itemPersonClean = (item.responsiblePerson || '').trim();
+    const fallbackLead =
+      item.responsibleMemberId ||
+      (itemPersonClean && !prepPlaceholders.includes(itemPersonClean.toLowerCase()))
+        ? itemPersonClean
+        : '';
+    const leadName = directActName || fallbackLead;
+
+    const isPersonYou = (id?: string, name?: string) =>
+      Boolean(
+        (id && memberId && id === memberId) ||
+          (name && memberName && name.toLowerCase().trim() === memberName.toLowerCase().trim())
+      );
+
+    const prepTeamSlots = [
+      {
+        role: 'Sound Check',
+        name: soundName || 'Not Assigned',
+        emoji: '🎧',
+        key: 'role_sound',
+        isAssigned: Boolean(soundName),
+        isYou: isPersonYou(soundId, soundName),
+      },
+      {
+        role: 'Media / Slides',
+        name: mediaName || 'Not Assigned',
+        emoji: '📽️',
+        key: 'role_media',
+        isAssigned: Boolean(mediaName),
+        isYou: isPersonYou(mediaId, mediaName),
+      },
+    ];
+
+    if (
+      leadName &&
+      leadName.toLowerCase() !== soundName.toLowerCase() &&
+      leadName.toLowerCase() !== mediaName.toLowerCase()
+    ) {
+      prepTeamSlots.unshift({
+        role: 'Prep Lead',
+        name: leadName,
+        emoji: '🎛️',
+        key: item.id || 'prep_lead',
+        isAssigned: true,
+        isYou: isPersonYou(directActId, leadName),
+      });
+    }
+
+    const uniqueAssignedNames: string[] = [];
+    for (const candidate of [leadName, soundName, mediaName]) {
+      if (candidate && !uniqueAssignedNames.some(n => n.toLowerCase() === candidate.toLowerCase())) {
+        uniqueAssignedNames.push(candidate);
+      }
+    }
+
+    const isAssigned = uniqueAssignedNames.length > 0;
+    const mySlots = prepTeamSlots.filter(s => s.isYou);
+    const isMyServing = mySlots.length > 0;
+    const myRoleName = mySlots.length > 0
+      ? mySlots.map(s => s.role).join(' & ')
+      : 'Sound & Preparation Team';
 
     return {
       roleTitle: 'Sound & Media Team',
-      assignedName: isAssigned ? assigned!.trim() : 'Not Assigned',
+      assignedName: isAssigned ? uniqueAssignedNames.join(', ') : 'Not Assigned',
       isAssigned,
       isMyServing,
-      myRoleName: 'Sound & Preparation Team',
+      myRoleName,
       bandMusicians: [],
+      prepTeamSlots,
     };
   }
 
@@ -242,6 +336,7 @@ const resolveActivityAssignment = (
     isMyServing,
     myRoleName: roleTitle,
     bandMusicians: [],
+    prepTeamSlots: [] as Array<{ role: string; name: string; emoji: string; key: string; isYou: boolean; isAssigned: boolean }>,
   };
 };
 
@@ -269,6 +364,7 @@ export default function MyServiceScreen({ navigation, route }: any) {
   const [selectedPlanId, setSelectedPlanId] = useState<string>(route?.params?.serviceId || '');
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [customCategories, setCustomCategories] = useState<ActivityCategoryDef[]>([]);
 
   // Decline Modal state
   const [selectedDutyForDecline, setSelectedDutyForDecline] = useState<MemberServiceDuty | null>(
@@ -320,6 +416,10 @@ export default function MyServiceScreen({ navigation, route }: any) {
         avail?.blockouts ||
           (avail?.unavailableDates || []).map((d: string) => ({ date: d, reason: 'Unavailable' }))
       );
+
+      // Load church custom activity categories so timeline badges render custom labels/colors
+      const customCats = await ServiceRosterService.getCustomActivityCategories(churchId);
+      setCustomCategories(customCats);
     } catch (err) {
       console.error('[MyServiceScreen] fetchDuties error:', err);
     } finally {
@@ -1102,7 +1202,7 @@ export default function MyServiceScreen({ navigation, route }: any) {
                           selectedPlan.runSheet.map((item, idx) => {
                             const isFirst = idx === 0;
                             const isLast = idx === (selectedPlan.runSheet.length - 1);
-                            const catStyle = getCategoryStyle(item.category, isDark);
+                            const catStyle = getCategoryStyle(item.category, isDark, customCategories);
 
                             const assignment = resolveActivityAssignment(
                               item,
@@ -1167,7 +1267,10 @@ export default function MyServiceScreen({ navigation, route }: any) {
                                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                                       <View style={[styles.categoryBadge, { backgroundColor: catStyle.bg }]}>
                                         <Text style={[styles.categoryBadgeTxt, { color: catStyle.text }]}>
-                                          {item.category.replace(/_/g, ' ').toUpperCase()}
+                                          {(
+                                            customCategories.find(c => c.id === item.category)?.label ||
+                                            item.category.replace(/_/g, ' ')
+                                          ).toUpperCase()}
                                         </Text>
                                       </View>
                                       {isHighlighted && (
@@ -1268,6 +1371,71 @@ export default function MyServiceScreen({ navigation, route }: any) {
                                           <Sparkles size={11} color="#10B981" />
                                           <Text style={{ fontSize: 10.5, fontWeight: '700', color: isDark ? '#34D399' : '#059669' }}>
                                             You are actively serving on {assignment.myRoleName} for this worship segment
+                                          </Text>
+                                        </View>
+                                      )}
+                                    </View>
+                                  )}
+
+                                  {/* Multi-slot details for Preparation & Sound Check (Sound & Media Teams) */}
+                                  {assignment.prepTeamSlots && assignment.prepTeamSlots.length > 0 && assignment.isAssigned && (
+                                    <View style={{
+                                      marginTop: 8,
+                                      padding: 8,
+                                      borderRadius: 8,
+                                      backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : '#FFFFFF',
+                                      borderWidth: 1,
+                                      borderColor: isDark ? 'rgba(255,255,255,0.07)' : '#E2E8F0',
+                                    }}>
+                                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+                                        <Users size={11} color={isDark ? '#34D399' : '#059669'} />
+                                        <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? '#34D399' : '#059669', letterSpacing: 0.4 }}>
+                                          SOUND & MEDIA PREP TEAM
+                                        </Text>
+                                      </View>
+                                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+                                        {assignment.prepTeamSlots.map(slot => (
+                                          <View
+                                            key={slot.key}
+                                            style={{
+                                              flexDirection: 'row',
+                                              alignItems: 'center',
+                                              gap: 4,
+                                              backgroundColor: slot.isYou
+                                                ? (isDark ? 'rgba(16, 185, 129, 0.2)' : '#DCFCE7')
+                                                : (isDark ? '#27272A' : '#F1F5F9'),
+                                              borderColor: slot.isYou ? '#10B981' : (isDark ? '#3F3F46' : '#E2E8F0'),
+                                              borderWidth: slot.isYou ? 1.5 : 1,
+                                              paddingHorizontal: 7,
+                                              paddingVertical: 3.5,
+                                              borderRadius: 6,
+                                            }}
+                                          >
+                                            <Text style={{ fontSize: 11 }}>{slot.emoji}</Text>
+                                            <Text style={{
+                                              fontSize: 11,
+                                              fontWeight: '700',
+                                              color: slot.isYou
+                                                ? (isDark ? '#34D399' : '#059669')
+                                                : (slot.isAssigned ? primaryText : '#94A3B8'),
+                                              fontStyle: slot.isAssigned ? 'normal' : 'italic',
+                                            }}>
+                                              {slot.role}: {slot.name}
+                                            </Text>
+                                            {slot.isYou && (
+                                              <View style={{ backgroundColor: '#10B981', paddingHorizontal: 4, paddingVertical: 1, borderRadius: 3 }}>
+                                                <Text style={{ fontSize: 8, color: '#FFFFFF', fontWeight: '800' }}>YOU</Text>
+                                              </View>
+                                            )}
+                                          </View>
+                                        ))}
+                                      </View>
+
+                                      {isHighlighted && (
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 }}>
+                                          <Sparkles size={11} color="#10B981" />
+                                          <Text style={{ fontSize: 10.5, fontWeight: '700', color: isDark ? '#34D399' : '#059669' }}>
+                                            You are serving in {assignment.myRoleName}
                                           </Text>
                                         </View>
                                       )}

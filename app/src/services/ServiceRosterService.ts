@@ -14,6 +14,7 @@ import {
   ServiceTemplate, 
   ServiceRecurrenceRule,
   ActivityCategory,
+  ActivityCategoryDef,
   MinistryTeam,
   MinistryRole,
   MemberSkillRecord,
@@ -29,6 +30,15 @@ import {
   VolunteerServingStat,
   SongUsageStat
 } from '../types/serviceRoster';
+
+export const CUSTOM_ACTIVITY_CATEGORY_PRESETS: Array<{ bg: string; text: string }> = [
+  { bg: '#EDE9FE', text: '#5B21B6' }, // Violet
+  { bg: '#CCFBF1', text: '#0F766E' }, // Teal
+  { bg: '#FFE4E6', text: '#BE123C' }, // Rose
+  { bg: '#FEF3C7', text: '#B45309' }, // Amber
+  { bg: '#DCFCE7', text: '#15803D' }, // Emerald
+  { bg: '#E0F2FE', text: '#0369A1' }, // Sky
+];
 
 /**
  * Built-in Service Templates tailored for Rhema Church services
@@ -397,6 +407,13 @@ class ServiceRosterService {
       .collection(RHEMA_ROOT_COLLECTION)
       .doc(churchId || 'rhema')
       .collection('memberAvailability');
+  }
+
+  private getActivityCategoriesCol(churchId: string) {
+    return firestore()
+      .collection(RHEMA_ROOT_COLLECTION)
+      .doc(churchId || 'rhema')
+      .collection('activityCategories');
   }
 
   private getAssignmentQueuesCol(churchId: string, serviceId: string) {
@@ -2328,6 +2345,78 @@ class ServiceRosterService {
   }
 
   /**
+   * Default ministry team IDs suggested for each Order of Service activity category.
+   */
+  getDefaultTeamIdsForActivity(category?: string, program?: string): string[] {
+    const pLower = (program || '').toLowerCase();
+    const cat = (category || '').toLowerCase();
+
+    if (cat === 'preparation' || pLower.includes('sound check') || pLower.includes('preparation')) {
+      return ['team_sound', 'team_media'];
+    }
+    if (cat === 'worship_songs' || cat === 'opening_song' || pLower.includes('worship') || pLower.includes('praise')) {
+      return ['team_worship', 'team_music'];
+    }
+    if (cat === 'music' || cat === 'special_performance') {
+      return ['team_music', 'team_worship'];
+    }
+    if (cat === 'starting_prayer' || cat === 'closing_prayer' || pLower.includes('prayer')) {
+      return ['team_prayer'];
+    }
+    if (cat === 'offering' || pLower.includes('offering') || pLower.includes('tithe')) {
+      return ['team_offering'];
+    }
+    if (cat === 'communion' || pLower.includes('communion')) {
+      return ['team_communion'];
+    }
+    if (cat === 'announcements' || pLower.includes('welcome') || pLower.includes('greeting')) {
+      return ['team_media', 'team_hospitality'];
+    }
+    return [];
+  }
+
+  /**
+   * Resolve MinistryTeam records from team IDs, display names, or composite labels
+   * (e.g. "Sound & Media Team" -> [Sound Team, Media Team]).
+   */
+  resolveMatchingTeams(teams: MinistryTeam[], refs?: string | string[]): MinistryTeam[] {
+    if (!teams || teams.length === 0 || !refs) return [];
+    const refList = (Array.isArray(refs) ? refs : [refs])
+      .map(r => (r || '').trim())
+      .filter(Boolean);
+    if (refList.length === 0) return [];
+
+    const matchedIds = new Set<string>();
+    for (const rawRef of refList) {
+      const refLower = rawRef.toLowerCase();
+      const tokens = refLower
+        .split(/\s*(?:&|,|\+|\/|\band\b)\s*/i)
+        .map(t => t.trim().replace(/\s+team$/i, '').trim())
+        .filter(t => t.length >= 3);
+
+      for (const team of teams) {
+        if (!team?.id) continue;
+        if (team.id === rawRef) {
+          matchedIds.add(team.id);
+          continue;
+        }
+        const tNameLower = (team.name || '').toLowerCase().trim();
+        if (!tNameLower) continue;
+        if (tNameLower === refLower) {
+          matchedIds.add(team.id);
+          continue;
+        }
+        const tBase = tNameLower.replace(/\s+team$/i, '').trim();
+        if (tBase.length >= 3 && tokens.some(tok => tok === tBase || tok === tNameLower)) {
+          matchedIds.add(team.id);
+        }
+      }
+    }
+
+    return teams.filter(t => matchedIds.has(t.id));
+  }
+
+  /**
    * Intelligent candidate recommendation engine for a specific role
    */
   async getEligibleCandidatesForRole(
@@ -2335,6 +2424,7 @@ class ServiceRosterService {
     serviceDate: string,
     params: {
       teamId?: string;
+      teamIds?: string[];
       requiredSkill?: string;
       roleTitle?: string;
     }
@@ -2359,13 +2449,31 @@ class ServiceRosterService {
         .map((doc: any) => ({ id: doc.id, ...doc.data() }))
         .filter((m: any) => m.status !== 'Left');
 
-      // 2. Fetch team if specified
-      let teamMemberIds = new Set<string>();
-      if (params.teamId) {
-        const teamDoc = await this.getMinistryTeamsCol(churchId).doc(params.teamId).get();
-        if (teamDoc.exists) {
-          const tData = teamDoc.data() as MinistryTeam;
-          (tData.memberIds || []).forEach(id => teamMemberIds.add(id));
+      // 2. Resolve single or multiple ministry teams by ID, name, or composite label
+      const teamMemberIds = new Set<string>();
+      const memberTeamNames = new Map<string, string[]>();
+      const requestedTeamRefs = Array.from(
+        new Set(
+          [...(params.teamIds || []), ...(params.teamId ? [params.teamId] : [])]
+            .map(r => (r || '').trim())
+            .filter(Boolean)
+        )
+      );
+      if (requestedTeamRefs.length > 0) {
+        const allTeams = await this.getMinistryTeams(churchId);
+        const matchedTeams = this.resolveMatchingTeams(allTeams, requestedTeamRefs);
+        for (const tData of matchedTeams) {
+          const teamPeople = Array.from(
+            new Set([...(tData.memberIds || []), ...(tData.leaderId ? [tData.leaderId] : [])].filter(Boolean))
+          );
+          for (const id of teamPeople) {
+            teamMemberIds.add(id);
+            const names = memberTeamNames.get(id) || [];
+            if (tData.name && !names.includes(tData.name)) {
+              names.push(tData.name);
+              memberTeamNames.set(id, names);
+            }
+          }
         }
       }
 
@@ -2401,10 +2509,11 @@ class ServiceRosterService {
         let score = 10;
         const reasons: string[] = [];
 
-        // Check team membership
-        if (params.teamId && teamMemberIds.has(m.id)) {
+        // Check team membership (single or multiple teams, deduplicated)
+        if (requestedTeamRefs.length > 0 && teamMemberIds.has(m.id)) {
           score += 50;
-          reasons.push('Team Member');
+          const tNames = memberTeamNames.get(m.id) || [];
+          reasons.push(tNames.length > 0 ? `Team: ${tNames.join(' · ')}` : 'Team Member');
         }
 
         // Check verified skills
@@ -2958,6 +3067,12 @@ class ServiceRosterService {
           role_acoustic: 'Acoustic Guitarist',
           role_electric: 'Electric Guitarist',
           role_sound: 'Sound & Audio Engineer',
+          role_media: 'Media & Projector',
+          role_livestream: 'Livestream Operator',
+          role_preacher: 'Preacher / Speaker',
+          role_greeter: 'Main Door Greeter',
+          role_usher: 'Sanctuary Usher',
+          role_offering: 'Offering Coordinator',
           role_worship_leader: 'Worship Leader'
         };
 
@@ -3876,6 +3991,119 @@ class ServiceRosterService {
 
   formatTimeTo12Hour(timeVal: any): string {
     return formatTimeTo12Hour(timeVal);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 13. CUSTOM ACTIVITY CATEGORIES
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Fetch church custom activity categories stored in Firestore (with AsyncStorage offline cache).
+   */
+  async getCustomActivityCategories(churchId: string): Promise<ActivityCategoryDef[]> {
+    const targetChurch = churchId || 'rhema';
+    const cacheKey = `@rhema_activity_categories_${targetChurch}`;
+    try {
+      const snap = await this.getActivityCategoriesCol(targetChurch).get();
+      const categories: ActivityCategoryDef[] = snap.docs
+        .map((doc: any) => {
+          const d = doc.data() || {};
+          return {
+            id: d.id || doc.id,
+            label: d.label || doc.id.replace(/_/g, ' '),
+            bg: d.bg || '#EDE9FE',
+            text: d.text || '#5B21B6',
+            isCustom: true,
+          };
+        })
+        .sort((a: ActivityCategoryDef, b: ActivityCategoryDef) =>
+          (a.label || '').localeCompare(b.label || '')
+        );
+      try {
+        await AsyncStorage.setItem(cacheKey, JSON.stringify(categories));
+      } catch (_) {}
+      return categories;
+    } catch (err) {
+      console.error('[ServiceRosterService] getCustomActivityCategories error:', err);
+      try {
+        const cached = await AsyncStorage.getItem(cacheKey);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) return parsed;
+        }
+      } catch (_) {}
+      return [];
+    }
+  }
+
+  /**
+   * Create (or update) a church-scoped custom activity category for the Order Builder.
+   */
+  async addCustomActivityCategory(
+    churchId: string,
+    label: string,
+    colorPreset?: { bg: string; text: string }
+  ): Promise<ActivityCategoryDef> {
+    const targetChurch = churchId || 'rhema';
+    const cleanLabel = (label || '').trim();
+    if (!cleanLabel) {
+      throw new Error('Please enter a category name.');
+    }
+
+    const slug = cleanLabel
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    const id = slug || `custom_${Date.now()}`;
+    const chosenColor = colorPreset || CUSTOM_ACTIVITY_CATEGORY_PRESETS[0];
+
+    const record: ActivityCategoryDef = {
+      id,
+      label: cleanLabel,
+      bg: chosenColor.bg,
+      text: chosenColor.text,
+      isCustom: true,
+    };
+
+    await this.getActivityCategoriesCol(targetChurch).doc(id).set(
+      this.sanitizeForFirestore({
+        ...record,
+        churchId: targetChurch,
+        createdAt: firestore.FieldValue.serverTimestamp(),
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+      }),
+      { merge: true }
+    );
+
+    try {
+      const cacheKey = `@rhema_activity_categories_${targetChurch}`;
+      const existing = await this.getCustomActivityCategories(targetChurch);
+      const updated = [record, ...existing.filter(c => c.id !== id)];
+      await AsyncStorage.setItem(cacheKey, JSON.stringify(updated));
+    } catch (_) {}
+
+    return record;
+  }
+
+  /**
+   * Remove a custom activity category from the church list.
+   */
+  async deleteCustomActivityCategory(churchId: string, categoryId: string): Promise<void> {
+    const targetChurch = churchId || 'rhema';
+    await this.getActivityCategoriesCol(targetChurch).doc(categoryId).delete();
+    try {
+      const cacheKey = `@rhema_activity_categories_${targetChurch}`;
+      const cached = await AsyncStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          await AsyncStorage.setItem(
+            cacheKey,
+            JSON.stringify(parsed.filter((c: ActivityCategoryDef) => c.id !== categoryId))
+          );
+        }
+      }
+    } catch (_) {}
   }
 }
 
