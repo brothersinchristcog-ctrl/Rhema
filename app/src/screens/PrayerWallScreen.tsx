@@ -78,13 +78,13 @@ const PrayerForm = ({
   setIsPublic
 }: PrayerFormProps) => {
   const { t } = useLanguage();
-  const { colors } = useTheme();
+  const { isDark, colors } = useTheme();
 
   return (
     <View style={[styles.composeCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      <View style={[styles.composeHeader, { backgroundColor: colors.accent }]}>
-        <CheckCircle size={16} color="#fff" />
-        <Text style={styles.composeHeaderText}>{t('prayer.submitPrayerRequestHeader')}</Text>
+      <View style={[styles.composeHeader, { borderBottomWidth: 1, borderBottomColor: colors.border }]}>
+        <CheckCircle size={16} color={colors.textSecondary} />
+        <Text style={[styles.composeHeaderText, { color: colors.text }]}>{t('prayer.submitPrayerRequestHeader')}</Text>
       </View>
       <View style={styles.composeBody}>
         <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>{t('prayer.selectCategory')}</Text>
@@ -93,18 +93,28 @@ const PrayerForm = ({
           showsHorizontalScrollIndicator={false} 
           contentContainerStyle={styles.catList}
         >
-          {categories.map((cat) => (
-            <TouchableOpacity 
-              key={cat.label}
-              style={[styles.catBtn, { backgroundColor: category === cat.label ? colors.accent : colors.background, borderColor: category === cat.label ? colors.accent : colors.border }]}
-              onPress={() => setCategory(cat.label)}
-            >
-              <Text style={styles.catIcon}>{cat.icon}</Text>
-              <Text style={[styles.catLabel, { color: category === cat.label ? "#FFFFFF" : colors.textSecondary }]}>
-                {getPrayerCategoryLabel(cat.label, t)}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {categories.map((cat) => {
+            const isCatSelected = category === cat.label;
+            return (
+              <TouchableOpacity 
+                key={cat.label}
+                style={[
+                  styles.catBtn, 
+                  { 
+                    backgroundColor: isCatSelected ? (isDark ? '#FFFFFF' : '#0F172A') : colors.background, 
+                    borderColor: isCatSelected ? (isDark ? '#FFFFFF' : '#0F172A') : colors.border 
+                  }
+                ]}
+                onPress={() => setCategory(cat.label)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.catIcon}>{cat.icon}</Text>
+                <Text style={[styles.catLabel, { color: isCatSelected ? (isDark ? '#000000' : '#FFFFFF') : colors.textSecondary, fontWeight: isCatSelected ? '800' : '600' }]}>
+                  {getPrayerCategoryLabel(cat.label, t)}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
 
         <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>{t('prayer.detailedRequest')}</Text>
@@ -130,22 +140,22 @@ const PrayerForm = ({
             activeOpacity={0.7}
           >
             <Text style={[styles.toggleLabel, { color: colors.text }]}>{t('prayer.publicToggle')}</Text>
-            <View style={[styles.toggleSwitch, isPublic && { backgroundColor: colors.accent }]}>
-              <View style={[styles.toggleThumb, isPublic && styles.toggleThumbActive]} />
+            <View style={[styles.toggleSwitch, isPublic && { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' }]}>
+              <View style={[styles.toggleThumb, isPublic && [styles.toggleThumbActive, { backgroundColor: isDark ? '#000000' : '#FFFFFF' }]]} />
             </View>
           </TouchableOpacity>
 
           <TouchableOpacity 
-            style={[styles.submitBtn, { backgroundColor: colors.accent }, isSubmitting && { opacity: 0.7 }]}
+            style={[styles.submitBtn, { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' }, isSubmitting && { opacity: 0.7 }]}
             onPress={handleSubmit}
             disabled={isSubmitting}
             activeOpacity={0.85}
           >
             {isSubmitting ? (
-              <ActivityIndicator size="small" color="#fff" />
+              <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
             ) : (
               <Text 
-                style={styles.submitBtnText}
+                style={[styles.submitBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}
                 numberOfLines={1}
                 adjustsFontSizeToFit
                 minimumFontScale={0.75}
@@ -661,18 +671,75 @@ export default function PrayerWallScreen({ navigation, route }: any) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1a2d5a" />}
         ListHeaderComponent={
           <View>
-            <View style={[styles.tabsContainer, { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, marginTop: 20 }]}>
+            <View style={[
+              styles.tabsContainer, 
+              { 
+                backgroundColor: isDark ? '#18181B' : '#F1F5F9', 
+                borderColor: isDark ? '#27272A' : '#E2E8F0', 
+                borderWidth: 1, 
+                marginTop: 18 
+              }
+            ]}>
+              {/* My Prayers Button */}
               <TouchableOpacity 
-                style={[styles.tabBtn, activeTab === 'my_requests' && { backgroundColor: colors.accent }]}
+                style={[
+                  styles.tabBtn, 
+                  activeTab === 'my_requests' && [
+                    styles.tabBtnActive,
+                    { 
+                      backgroundColor: isDark ? '#FFFFFF' : '#0F172A',
+                      shadowColor: '#000',
+                      shadowOpacity: isDark ? 0.3 : 0.12,
+                      shadowRadius: 4,
+                      elevation: 3,
+                    }
+                  ]
+                ]}
                 onPress={() => setActiveTab('my_requests')}
+                activeOpacity={0.8}
               >
-                <Text style={[styles.tabBtnText, { color: activeTab === 'my_requests' ? '#FFFFFF' : colors.textSecondary }]}>{t('prayer.myPrayers')}</Text>
+                <Text style={[
+                  styles.tabBtnText, 
+                  { 
+                    color: activeTab === 'my_requests' 
+                      ? (isDark ? '#000000' : '#FFFFFF') 
+                      : (isDark ? '#A1A1AA' : '#64748B'),
+                    fontWeight: activeTab === 'my_requests' ? '800' : '600',
+                  }
+                ]}>
+                  {t('prayer.myPrayers')}
+                </Text>
               </TouchableOpacity>
+
+              {/* All Prayers Button */}
               <TouchableOpacity 
-                style={[styles.tabBtn, activeTab === 'public_requests' && { backgroundColor: colors.accent }]}
+                style={[
+                  styles.tabBtn, 
+                  activeTab === 'public_requests' && [
+                    styles.tabBtnActive,
+                    { 
+                      backgroundColor: isDark ? '#FFFFFF' : '#0F172A',
+                      shadowColor: '#000',
+                      shadowOpacity: isDark ? 0.3 : 0.12,
+                      shadowRadius: 4,
+                      elevation: 3,
+                    }
+                  ]
+                ]}
                 onPress={() => setActiveTab('public_requests')}
+                activeOpacity={0.8}
               >
-                <Text style={[styles.tabBtnText, { color: activeTab === 'public_requests' ? '#FFFFFF' : colors.textSecondary }]}>{t('prayer.allPrayers')}</Text>
+                <Text style={[
+                  styles.tabBtnText, 
+                  { 
+                    color: activeTab === 'public_requests' 
+                      ? (isDark ? '#000000' : '#FFFFFF') 
+                      : (isDark ? '#A1A1AA' : '#64748B'),
+                    fontWeight: activeTab === 'public_requests' ? '800' : '600',
+                  }
+                ]}>
+                  {t('prayer.allPrayers')}
+                </Text>
               </TouchableOpacity>
             </View>
             {activeTab === 'my_requests' && (
@@ -851,14 +918,14 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0'
   },
   composeHeader: { 
-    backgroundColor: '#1a2d5a', 
+    backgroundColor: 'transparent', 
     paddingVertical: 14, 
     paddingHorizontal: 20, 
     flexDirection: 'row', 
     alignItems: 'center', 
-    gap: 12 
+    gap: 10 
   },
-  composeHeaderText: { fontSize: 13, fontWeight: '800', color: '#fff', letterSpacing: 1, textTransform: 'uppercase' },
+  composeHeaderText: { fontSize: 13, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' },
   composeBody: { padding: 16 },
   inputLabel: { fontSize: 12, fontWeight: '800', color: '#1e293b', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 },
   
@@ -939,25 +1006,21 @@ const styles = StyleSheet.create({
   tabsContainer: {
     flexDirection: 'row',
     marginHorizontal: 20,
-    marginBottom: 10,
-    backgroundColor: '#e2e8f0',
-    borderRadius: 16,
-    padding: 6,
+    marginBottom: 12,
+    borderRadius: 14,
+    padding: 4,
   },
   tabBtn: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 10,
     alignItems: 'center',
-    borderRadius: 12,
+    justifyContent: 'center',
+    borderRadius: 10,
   },
   tabBtnActive: { 
-    backgroundColor: '#1a2d5a', 
-    shadowColor: '#1a2d5a', 
-    shadowOpacity: 0.2, 
-    shadowRadius: 5, 
-    elevation: 4 
+    elevation: 3,
   },
-  tabBtnText: { fontSize: 14, fontWeight: '700', color: '#64748b' },
+  tabBtnText: { fontSize: 13.5, fontWeight: '700' },
   tabBtnTextActive: { color: '#fff', fontWeight: '800' },
 
   quickReplyBtn: {

@@ -15,10 +15,12 @@ import {
   TextInput,
   Alert,
   Image,
+  ImageBackground,
   Switch,
   Share,
   Animated,
   KeyboardAvoidingView,
+  Easing,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { 
@@ -27,6 +29,9 @@ import {
   Camera,
   Palette,
   ChevronRight, 
+  ChevronUp,
+  ChevronDown,
+  Pencil,
   LogOut, 
   User, 
   Bell, 
@@ -48,13 +53,15 @@ import {
   Sparkles,
   Search,
   Info,
-  Phone
+  Phone,
+  UserCheck
 } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import FirestoreService, { AppMember } from '../services/FirestoreService';
 import { useChurch } from '../context/ChurchContext';
+import { RHEMA_CHURCH_ID } from '../constants/ChurchConfig';
 import SecurityService from '../services/SecurityService';
 import * as ImagePicker from 'expo-image-picker';
 import * as Application from 'expo-application';
@@ -64,6 +71,7 @@ import storage from '@react-native-firebase/storage';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import { formatDateDisplay } from '../utils/DateUtils';
 import { CHURCH_SKILL_CATEGORIES, ALL_PREDEFINED_SKILLS } from '../constants/churchSkills';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');
 
@@ -77,14 +85,16 @@ const parseSkillsList = (val: any): string[] => {
 };
 
 export default function ProfileScreen({ navigation }: any) {
-  const { user, signOut, member: authMember, setViewMode, setMember: setGlobalMember } = useAuth();
+  const { user, signOut, member: authMember, setViewMode, setMember: setGlobalMember, isPlatformSuperAdmin } = useAuth();
   const { activeChurch, isImpersonating, impersonatedBranchName, stopImpersonation } = useChurch();
   const { isDark, toggleTheme, colors, currentThemeOption } = useTheme();
   const { language, setLanguage, languages, currentLanguageOption, t } = useLanguage();
+  const insets = useSafeAreaInsets();
   
   const [member, setMember] = useState<AppMember | null>(authMember as AppMember | null);
   const [loading, setLoading] = useState(!authMember);
   const [refreshing, setRefreshing] = useState(false);
+  const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [isLanguageModalVisible, setIsLanguageModalVisible] = useState(false);
   const [isNotifyModalVisible, setIsNotifyModalVisible] = useState(false);
@@ -126,6 +136,21 @@ export default function ProfileScreen({ navigation }: any) {
   });
   const [updating, setUpdating] = useState(false);
 
+  // Collapsible background image card state & animation (COLLAPSED BY DEFAULT)
+  const [isBannerExpanded, setIsBannerExpanded] = useState(false);
+  const bannerAnim = useRef(new Animated.Value(0)).current; // 0 = collapsed by default
+
+  const toggleBanner = () => {
+    const nextState = !isBannerExpanded;
+    setIsBannerExpanded(nextState);
+    Animated.timing(bannerAnim, {
+      toValue: nextState ? 1 : 0,
+      duration: 350,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  };
+
   // Animated 3-card profile photo banner (Boy card in center + two girl cards reveal slightly after 1.5s)
   const fanAnim = useRef(new Animated.Value(0)).current;
 
@@ -151,6 +176,23 @@ export default function ProfileScreen({ navigation }: any) {
       if (animTimer) clearTimeout(animTimer);
     };
   }, [isEditModalVisible, localPhotoUrl]);
+
+  const isSuperOrAdmin =
+    isPlatformSuperAdmin ||
+    String(member?.userType || '').toUpperCase().includes('ADMIN') ||
+    String(member?.userType || '').toUpperCase().includes('SUPER') ||
+    Boolean((member as any)?.isSuperAdmin);
+
+  useEffect(() => {
+    if (!isSuperOrAdmin) return;
+    const churchId = activeChurch?.id || RHEMA_CHURCH_ID;
+    const unsub = FirestoreService.subscribeToPendingRegistrationsCount(churchId, (cnt) => {
+      setPendingApprovalsCount(cnt);
+    });
+    return () => {
+      if (unsub) unsub();
+    };
+  }, [isSuperOrAdmin, activeChurch?.id]);
   const [isDatePickerVisible, setDatePickerVisibility] = useState(false);
   const [activeDateField, setActiveDateField] = useState<'dob' | 'baptismDate' | 'anniversaryDate' | null>(null);
 
@@ -423,7 +465,11 @@ export default function ProfileScreen({ navigation }: any) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.headerGradient ? colors.headerGradient[0] : (isDark ? '#000000' : '#1a2d5a')} />
+      <StatusBar 
+        barStyle={isBannerExpanded ? "light-content" : (isDark ? "light-content" : "dark-content")} 
+        translucent 
+        backgroundColor="transparent" 
+      />
 
       {isImpersonating ? (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
@@ -449,144 +495,164 @@ export default function ProfileScreen({ navigation }: any) {
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? "#FFFFFF" : "#1a2d5a"} />}
             bounces={true}
           >
-          {/* ── Hero Section (Navy) ── */}
-      <LinearGradient 
-        colors={colors.headerGradient || (isDark ? ['#18181B', '#000000'] : ['#1E293B', '#0F172A'])}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.heroSection}
-      >
-        <View style={styles.headerTop}>
-          <View style={{ width: 40 }} />
-          <TouchableOpacity style={styles.themeToggle} onPress={() => navigation.navigate('Appearance')}>
-            <Palette size={18} color="#fff" />
-          </TouchableOpacity>
-        </View>
-
-        {/* ── Hero Content ── */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, marginTop: 14, width: '100%' }}>
-          {/* Avatar */}
-          <View style={[styles.avatarContainer, { marginTop: 0, marginRight: 18 }]}>
-            {localPhotoUrl ? (
-              <Image source={{ uri: localPhotoUrl }} style={styles.avatarImg} />
-            ) : (
-              <View style={styles.avatarCircle}>
-                <User size={42} color="#fff" strokeWidth={1.5} />
-              </View>
-            )}
+          {/* ── Top Cover Banner Container (Collapsible) ── */}
+          <View style={[styles.headerContainer, { backgroundColor: colors.background }]}>
+            {/* Collapsible Background Image (Original clean style, no blur, no blue tint) */}
+            <Animated.View
+              style={[
+                styles.collapsibleBanner,
+                {
+                  height: bannerAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, 310],
+                  }),
+                  opacity: bannerAnim.interpolate({
+                    inputRange: [0, 0.2, 1],
+                    outputRange: [0, 0.4, 1],
+                  }),
+                },
+              ]}
+            >
+              {localPhotoUrl ? (
+                <View style={StyleSheet.absoluteFillObject}>
+                  {/* Clean, unblurred original photo */}
+                  <Image
+                    source={{ uri: localPhotoUrl }}
+                    style={styles.bannerImgFullTop}
+                    resizeMode="cover"
+                  />
+                  {/* Clean subtle dark gradient overlay (preserves natural photo colors, no blue tint) */}
+                  <LinearGradient
+                    colors={[
+                      'rgba(0, 0, 0, 0.12)',
+                      'rgba(0, 0, 0, 0.58)',
+                    ]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 0, y: 1 }}
+                    style={StyleSheet.absoluteFillObject}
+                  />
+                </View>
+              ) : (
+                <LinearGradient
+                  colors={colors.headerGradient || (isDark ? ['#18181B', '#000000'] : ['#1E293B', '#0F172A'])}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={StyleSheet.absoluteFillObject}
+                />
+              )}
+            </Animated.View>
           </View>
 
-          {/* Name + Greeting */}
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 22, fontWeight: '800', color: '#fff', lineHeight: 28 }}>
-              {(member?.name && member.name.trim()) || ((member as any)?.displayName && (member as any).displayName.trim()) || (`${member?.firstName || ''} ${member?.lastName || ''}`.trim()) || user?.displayName || 'Beloved Member'}
+          {/* ── Circular Profile Avatar Overlapping & Member Name ── */}
+          <Animated.View 
+            style={[
+              styles.avatarAndNameSection, 
+              { 
+                backgroundColor: colors.background,
+                marginTop: bannerAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [Platform.OS === 'ios' ? 95 : 82, -52],
+                }),
+              }
+            ]}
+          >
+            {/* Avatar Circle with Pencil Badge on Circle Line */}
+            <View style={styles.avatarWrapper}>
+              <TouchableOpacity
+                style={[
+                  styles.avatarOverlapCircle,
+                  {
+                    borderColor: isDark ? colors.surface : '#FFFFFF',
+                    backgroundColor: isDark ? '#27272A' : '#E2E8F0',
+                  }
+                ]}
+                onPress={pickImage}
+                activeOpacity={0.9}
+              >
+                {localPhotoUrl ? (
+                  <Image source={{ uri: localPhotoUrl }} style={styles.avatarOverlapImg} />
+                ) : (
+                  <View style={[styles.avatarFallbackCircle, { backgroundColor: colors.accent || '#2563EB' }]}>
+                    <User size={46} color="#FFFFFF" strokeWidth={1.8} />
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              {/* Pencil icon badge directly on the avatar circle line */}
+              <TouchableOpacity
+                style={[
+                  styles.avatarPencilBadge,
+                  {
+                    backgroundColor: colors.accent || '#2563EB',
+                    borderColor: isDark ? colors.surface : '#FFFFFF',
+                  }
+                ]}
+                onPress={pickImage}
+                activeOpacity={0.85}
+              >
+                <Pencil size={13} color="#FFFFFF" strokeWidth={2.5} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Member Name */}
+            <Text style={[styles.profileNameText, { color: colors.text }]}>
+              {(member?.name && member.name.trim()) || ((member as any)?.displayName && (member as any).displayName.trim()) || (member?.firstName ? `${member.firstName} ${member.lastName || ''}`.trim() : user?.displayName || 'Beloved Member')}
             </Text>
-            {/* Member Since Pill */}
-            <View style={{ marginTop: 8, alignSelf: 'flex-start', backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 }}>
-              <Text style={{ color: '#e2e8f0', fontSize: 12, fontWeight: '500' }}>
-                {t('profile.memberSince', { year: member?.joinDate ? new Date(member.joinDate).getFullYear() : '2026' })}
-              </Text>
-            </View>
-          </View>
-        </View>
+          </Animated.View>
 
-        {/* ── Stats Row ── */}
-        <View style={{ paddingHorizontal: 16, width: '100%', marginTop: 20 }}>
-          <View style={styles.statsCard}>
-            <View style={styles.statItem}>
-              <View style={[styles.statIconContainer, { backgroundColor: '#3b82f6' }]}>
-                <MapPin size={14} color="#fff" strokeWidth={2.5} />
-              </View>
-              <View style={styles.statTextCol}>
-                <Text style={styles.statLabel} numberOfLines={1} adjustsFontSizeToFit>{t('profile.village')}</Text>
-                <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>{member?.mailingCity || 'N/A'}</Text>
-              </View>
-            </View>
-
-            <View style={styles.statDivider} />
-
-            <View style={styles.statItem}>
-              <View style={[styles.statIconContainer, { backgroundColor: '#10b981' }]}>
-                <Globe size={14} color="#fff" strokeWidth={2.5} />
-              </View>
-              <View style={styles.statTextCol}>
-                <Text style={styles.statLabel} numberOfLines={1} adjustsFontSizeToFit>{t('profile.language')}</Text>
-                <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>{currentLanguageOption.nativeName}</Text>
-              </View>
-            </View>
-
-            <View style={styles.statDivider} />
-
-            <View style={styles.statItem}>
-              <View style={[styles.statIconContainer, { backgroundColor: '#8b5cf6' }]}>
-                <Crown size={14} color="#fff" strokeWidth={2.5} />
-              </View>
-              <View style={styles.statTextCol}>
-                <Text style={styles.statLabel} numberOfLines={1} adjustsFontSizeToFit>{t('profile.role')}</Text>
-                <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>
-                  {(member?.userType || 'MEMBER').toUpperCase()}
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Member Skills Badges in Hero */}
-          {(member?.primarySkill || member?.secondarySkill) ? (
-            <View style={{ marginTop: 12, width: '100%', flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
-              {parseSkillsList(member?.primarySkill).map((sk, idx) => (
-                <View key={'p-' + idx} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' }}>
-                  <Award size={12} color="#FDE68A" style={{ marginRight: 5 }} />
-                  <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>
-                    {sk}
-                  </Text>
-                </View>
-              ))}
-              {parseSkillsList(member?.secondarySkill).map((sk, idx) => (
-                <View key={'s-' + idx} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)' }}>
-                  <Sparkles size={12} color="#C7D2FE" style={{ marginRight: 5 }} />
-                  <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>
-                    {sk}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          ) : null}
-        </View>
-      </LinearGradient>
-
-        {/* Stats removed for accuracy */}
-
-        {/* ── All Buttons "n-shaped" Card overlapping the Top Card ── */}
-        <View 
-          style={[
-            styles.buttonsCard, 
-            { 
-              backgroundColor: colors.background,
-            }
-          ]}
-        >
+          {/* ── All Buttons / Options Card ── */}
+          <View 
+            style={[
+              styles.buttonsCard, 
+              { 
+                backgroundColor: colors.background,
+              }
+            ]}
+          >
         {/* ── Account Section (Instagram-Style Flat, Borderless) ── */}
         <View style={styles.igSection}>
           <Text style={[styles.igSectionHeader, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
             {t('profile.accountSection') || 'Account'}
           </Text>
 
-          {(String(member?.userType || '').toUpperCase().includes('ADMIN') || String(member?.userType || '').toUpperCase().includes('SUPER')) && (
-            <MenuItem 
-              icon={<Shield size={22} color={colors.text} strokeWidth={1.8} />} 
-              title={t('profile.adminDashboard')} 
-              sub={t('profile.adminDashboardSub')} 
-              onPress={() => {
-                setViewMode('admin');
-                try {
-                  if (navigation?.navigate) {
-                    navigation.navigate('AdminRoot');
-                  }
-                } catch (_) {}
-              }}
-              textColor={colors.text}
-              subColor={colors.textSecondary}
-            />
+          {isSuperOrAdmin && (
+            <>
+              <MenuItem 
+                icon={<Shield size={22} color={colors.text} strokeWidth={1.8} />} 
+                title={t('profile.adminDashboard')} 
+                sub={t('profile.adminDashboardSub')} 
+                onPress={() => {
+                  setViewMode('admin');
+                  try {
+                    if (navigation?.navigate) {
+                      navigation.navigate('AdminRoot');
+                    }
+                  } catch (_) {}
+                }}
+                textColor={colors.text}
+                subColor={colors.textSecondary}
+              />
+              <MenuItem 
+                icon={<UserCheck size={22} color="#10B981" strokeWidth={1.8} />} 
+                title="Registration Approvals" 
+                sub={
+                  pendingApprovalsCount > 0
+                    ? `${pendingApprovalsCount} new registration request${pendingApprovalsCount > 1 ? 's' : ''} awaiting review`
+                    : "Review and approve new member sign-ups"
+                }
+                badge={pendingApprovalsCount > 0 ? `${pendingApprovalsCount}` : undefined}
+                badgeColor="#EF4444"
+                onPress={() => {
+                  try {
+                    if (navigation?.navigate) {
+                      navigation.navigate('AdminRegistrationApprovals');
+                    }
+                  } catch (_) {}
+                }}
+                textColor={colors.text}
+                subColor={colors.textSecondary}
+              />
+            </>
           )}
           <MenuItem 
             icon={<User size={22} color={colors.text} strokeWidth={1.8} />} 
@@ -753,6 +819,70 @@ export default function ProfileScreen({ navigation }: any) {
         </View>
       </ScrollView>
 
+      {/* ── Floating Top Bar: Always fixed on top of screen & ScrollView (Never occluded!) ── */}
+      <View style={styles.floatingTopBar} pointerEvents="box-none">
+        <View style={{ flex: 1 }} />
+
+        <View style={styles.topBarRightButtons} pointerEvents="box-none">
+          {/* Drop Down / Collapse Arrow Button */}
+          <TouchableOpacity
+            style={[
+              styles.topBarBtn,
+              {
+                backgroundColor: isBannerExpanded 
+                  ? 'rgba(0, 0, 0, 0.45)' 
+                  : (isDark ? 'rgba(39, 39, 42, 0.95)' : '#FFFFFF'),
+                borderWidth: 1.5,
+                borderColor: isBannerExpanded 
+                  ? 'rgba(255, 255, 255, 0.35)' 
+                  : (isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.12)'),
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: isBannerExpanded ? 0.3 : 0.15,
+                shadowRadius: 4,
+                elevation: 6,
+              }
+            ]}
+            onPress={toggleBanner}
+            activeOpacity={0.75}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            {isBannerExpanded ? (
+              <ChevronUp size={22} color="#FFFFFF" strokeWidth={2.4} />
+            ) : (
+              <ChevronDown size={22} color={colors.text} strokeWidth={2.4} />
+            )}
+          </TouchableOpacity>
+
+          {/* Palette / Theme Appearance Button */}
+          <TouchableOpacity
+            style={[
+              styles.topBarBtn,
+              {
+                backgroundColor: isBannerExpanded 
+                  ? 'rgba(0, 0, 0, 0.45)' 
+                  : (isDark ? 'rgba(39, 39, 42, 0.95)' : '#FFFFFF'),
+                borderWidth: 1.5,
+                borderColor: isBannerExpanded 
+                  ? 'rgba(255, 255, 255, 0.35)' 
+                  : (isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.12)'),
+                marginLeft: 10,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: isBannerExpanded ? 0.3 : 0.15,
+                shadowRadius: 4,
+                elevation: 6,
+              }
+            ]}
+            onPress={() => navigation.navigate('Appearance')}
+            activeOpacity={0.75}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Palette size={18} color={isBannerExpanded ? "#FFFFFF" : colors.text} strokeWidth={2} />
+          </TouchableOpacity>
+        </View>
+      </View>
+
       {/* ── Edit Profile Screen (Full Screen, Theme-Styled) ── */}
       <Modal
         visible={isEditModalVisible}
@@ -805,50 +935,62 @@ export default function ProfileScreen({ navigation }: any) {
             contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: 60 }}
             style={{ flex: 1, backgroundColor: colors.background }}
           >
-            {/* ── Profile Image Section: 3-Cards Fan Animation OR Single User Card ── */}
+            {/* ── Profile Image Section: Circular Avatar ── */}
             {localPhotoUrl ? (
-              <View style={{ alignItems: 'center', marginBottom: 28, marginTop: 6 }}>
-                {/* Single Card with User Image */}
-                <TouchableOpacity 
-                  activeOpacity={0.9} 
-                  onPress={pickImage}
-                  style={{
-                    width: 154,
-                    height: 204,
-                    borderRadius: 24,
-                    overflow: 'hidden',
-                    backgroundColor: isDark ? '#18181B' : '#FFFFFF',
-                    borderWidth: 2,
-                    borderColor: colors.accent || (isDark ? '#38BDF8' : '#0F766E'),
-                    shadowColor: '#000',
-                    shadowOffset: { width: 0, height: 6 },
-                    shadowOpacity: isDark ? 0.3 : 0.12,
-                    shadowRadius: 12,
-                    elevation: 6,
-                  }}
-                >
-                  <Image 
-                    source={{ uri: localPhotoUrl }} 
-                    style={{ width: '100%', height: '100%' }} 
-                    resizeMode="cover" 
-                  />
-                  {/* Camera Badge Overlay */}
-                  <View style={{
-                    position: 'absolute',
-                    bottom: 10,
-                    right: 10,
-                    width: 32,
-                    height: 32,
-                    borderRadius: 16,
-                    backgroundColor: colors.accent || (isDark ? '#38BDF8' : '#0F766E'),
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    borderWidth: 2,
-                    borderColor: '#FFFFFF',
-                  }}>
-                    <Camera size={16} color="#FFFFFF" strokeWidth={2.2} />
-                  </View>
-                </TouchableOpacity>
+              <View style={{ alignItems: 'center', marginBottom: 24, marginTop: 10 }}>
+                {/* Circular User Avatar */}
+                <View style={{ width: 130, height: 130, position: 'relative' }}>
+                  <TouchableOpacity 
+                    activeOpacity={0.9} 
+                    onPress={pickImage}
+                    style={{
+                      width: 130,
+                      height: 130,
+                      borderRadius: 65,
+                      overflow: 'hidden',
+                      backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                      borderWidth: 3.5,
+                      borderColor: colors.accent || (isDark ? '#38BDF8' : '#0F766E'),
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 4 },
+                      shadowOpacity: isDark ? 0.3 : 0.15,
+                      shadowRadius: 8,
+                      elevation: 6,
+                    }}
+                  >
+                    <Image 
+                      source={{ uri: localPhotoUrl }} 
+                      style={{ width: '100%', height: '100%', borderRadius: 65 }} 
+                      resizeMode="cover" 
+                    />
+                  </TouchableOpacity>
+
+                  {/* Camera Badge on Circle Border */}
+                  <TouchableOpacity
+                    onPress={pickImage}
+                    activeOpacity={0.85}
+                    style={{
+                      position: 'absolute',
+                      bottom: 2,
+                      right: 2,
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      backgroundColor: colors.accent || (isDark ? '#38BDF8' : '#0F766E'),
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      borderWidth: 2.5,
+                      borderColor: isDark ? colors.background : '#FFFFFF',
+                      elevation: 4,
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.25,
+                      shadowRadius: 3,
+                    }}
+                  >
+                    <Camera size={17} color="#FFFFFF" strokeWidth={2.2} />
+                  </TouchableOpacity>
+                </View>
 
                 {/* Action Buttons for user image */}
                 <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
@@ -894,88 +1036,58 @@ export default function ProfileScreen({ navigation }: any) {
                 </View>
               </View>
             ) : (
-              <View style={{ alignItems: 'center', marginBottom: 20, marginTop: -6 }}>
-                {/* 3 Animated Cards: Boy card in middle, two girl cards reveal more after 1.5s */}
-                <TouchableOpacity 
-                  activeOpacity={0.92} 
-                  onPress={pickImage}
-                  style={{
-                    width: width - 40,
-                    height: 196,
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                  }}
-                >
-                  {/* Behind Left Card: Girl in white dress (reveals more to left after 1.5s) */}
-                  <Animated.View style={{
-                    position: 'absolute',
-                    width: 138,
-                    height: 172,
-                    zIndex: 1,
-                    transform: [
-                      { translateX: fanAnim.interpolate({ inputRange: [0, 1], outputRange: [0, -68] }) },
-                      { translateY: fanAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 8] }) },
-                      { rotate: fanAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '-9deg'] }) },
-                      { scale: fanAnim.interpolate({ inputRange: [0, 1], outputRange: [0.92, 0.96] }) },
-                    ],
-                    opacity: fanAnim.interpolate({ inputRange: [0, 0.25, 1], outputRange: [0, 0.7, 1] }),
-                    shadowColor: isDark ? '#000' : 'transparent',
-                    shadowOffset: { width: 0, height: 4 },
-                    shadowOpacity: isDark ? 0.2 : 0,
-                    shadowRadius: isDark ? 8 : 0,
-                    elevation: isDark ? 2 : 0,
-                  }}>
-                    <Image 
-                      source={require('../../assets/profile_card_center.png')} 
-                      style={{ width: '100%', height: '100%' }} 
-                      resizeMode="contain" 
-                    />
-                  </Animated.View>
+              <View style={{ alignItems: 'center', marginBottom: 24, marginTop: 10 }}>
+                {/* Circular Placeholder Avatar */}
+                <View style={{ width: 130, height: 130, position: 'relative' }}>
+                  <TouchableOpacity 
+                    activeOpacity={0.9} 
+                    onPress={pickImage}
+                    style={{
+                      width: 130,
+                      height: 130,
+                      borderRadius: 65,
+                      overflow: 'hidden',
+                      backgroundColor: isDark ? '#27272A' : '#E2E8F0',
+                      borderWidth: 3.5,
+                      borderColor: colors.accent || (isDark ? '#38BDF8' : '#0F766E'),
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 4 },
+                      shadowOpacity: isDark ? 0.3 : 0.15,
+                      shadowRadius: 8,
+                      elevation: 6,
+                    }}
+                  >
+                    <User size={56} color={colors.accent || (isDark ? '#38BDF8' : '#0F766E')} strokeWidth={1.8} />
+                  </TouchableOpacity>
 
-                  {/* Behind Right Card: Denim Girl card (reveals more to right after 1.5s) */}
-                  <Animated.View style={{
-                    position: 'absolute',
-                    width: 138,
-                    height: 172,
-                    zIndex: 2,
-                    transform: [
-                      { translateX: fanAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 68] }) },
-                      { translateY: fanAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 8] }) },
-                      { rotate: fanAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '9deg'] }) },
-                      { scale: fanAnim.interpolate({ inputRange: [0, 1], outputRange: [0.92, 0.96] }) },
-                    ],
-                    opacity: fanAnim.interpolate({ inputRange: [0, 0.25, 1], outputRange: [0, 0.7, 1] }),
-                    shadowColor: isDark ? '#000' : 'transparent',
-                    shadowOffset: { width: 0, height: 4 },
-                    shadowOpacity: isDark ? 0.2 : 0,
-                    shadowRadius: isDark ? 8 : 0,
-                    elevation: isDark ? 2 : 0,
-                  }}>
-                    <Image 
-                      source={require('../../assets/profile_card_right.png')} 
-                      style={{ width: '100%', height: '100%' }} 
-                      resizeMode="contain" 
-                    />
-                  </Animated.View>
-
-                  {/* Front Center Card: Boy card in middle (upright and crisp, zero shadow on light themes) */}
-                  <View style={{
-                    width: 142,
-                    height: 182,
-                    zIndex: 3,
-                    shadowColor: isDark ? '#000' : 'transparent',
-                    shadowOffset: { width: 0, height: 6 },
-                    shadowOpacity: isDark ? 0.25 : 0,
-                    shadowRadius: isDark ? 10 : 0,
-                    elevation: isDark ? 3 : 0,
-                  }}>
-                    <Image 
-                      source={require('../../assets/profile_card_boy_center.png')} 
-                      style={{ width: '100%', height: '100%' }} 
-                      resizeMode="contain" 
-                    />
-                  </View>
-                </TouchableOpacity>
+                  {/* Camera Badge on Circle Border */}
+                  <TouchableOpacity
+                    onPress={pickImage}
+                    activeOpacity={0.85}
+                    style={{
+                      position: 'absolute',
+                      bottom: 2,
+                      right: 2,
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      backgroundColor: colors.accent || (isDark ? '#38BDF8' : '#0F766E'),
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      borderWidth: 2.5,
+                      borderColor: isDark ? colors.background : '#FFFFFF',
+                      elevation: 4,
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.25,
+                      shadowRadius: 3,
+                    }}
+                  >
+                    <Camera size={17} color="#FFFFFF" strokeWidth={2.2} />
+                  </TouchableOpacity>
+                </View>
 
                 {/* Below cards: Display text matching user reference */}
                 <Text style={{
@@ -1259,10 +1371,10 @@ export default function ProfileScreen({ navigation }: any) {
             onRequestClose={() => setSkillPickerVisible(false)}
           >
             <KeyboardAvoidingView
-              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
               style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' }}
             >
-              <View style={{ width: '100%', backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, height: skillSearchText.trim().length > 0 ? '90%' : '78%', paddingBottom: 24 }}>
+              <View style={{ width: '100%', backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, height: skillSearchText.trim().length > 0 ? '90%' : '82%' }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 18, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                     {activeSkillField === 'primarySkill' ? (
@@ -1367,21 +1479,45 @@ export default function ProfileScreen({ navigation }: any) {
                   })}
                 </ScrollView>
 
-                {/* Custom Skill Input */}
-                <View style={{ paddingHorizontal: 16, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.border, marginTop: 4 }}>
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary, marginBottom: 6, textTransform: 'uppercase' }}>
+                {/* Custom Skill Input & Apply Button (Moved up safely above device navigation buttons) */}
+                <View style={{ 
+                  paddingHorizontal: 16, 
+                  paddingTop: 12, 
+                  paddingBottom: Math.max(insets.bottom, Platform.OS === 'android' ? 36 : 24) + 12, 
+                  borderTopWidth: 1, 
+                  borderTopColor: colors.border, 
+                  backgroundColor: colors.surface 
+                }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary, marginBottom: 8, textTransform: 'uppercase' }}>
                     Or Add Custom Skill
                   </Text>
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
                     <TextInput
-                      style={{ flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 12, height: 42, color: colors.text, backgroundColor: isDark ? '#18181B' : '#FFFFFF', fontSize: 13 }}
+                      style={{ 
+                        flex: 1, 
+                        borderWidth: 1, 
+                        borderColor: colors.border, 
+                        borderRadius: 12, 
+                        paddingHorizontal: 14, 
+                        height: 44, 
+                        color: colors.text, 
+                        backgroundColor: isDark ? '#18181B' : '#FFFFFF', 
+                        fontSize: 13 
+                      }}
                       placeholder="Type custom skill..."
                       placeholderTextColor={isDark ? '#71717A' : '#94a3b8'}
                       value={customSkillInput}
                       onChangeText={setCustomSkillInput}
                     />
                     <TouchableOpacity
-                      style={{ backgroundColor: colors.accent || (isDark ? '#38BDF8' : '#0F766E'), paddingHorizontal: 14, borderRadius: 10, justifyContent: 'center', alignItems: 'center' }}
+                      style={{ 
+                        backgroundColor: colors.accent || (isDark ? '#38BDF8' : '#0F766E'), 
+                        paddingHorizontal: 18, 
+                        height: 44,
+                        borderRadius: 12, 
+                        justifyContent: 'center', 
+                        alignItems: 'center' 
+                      }}
                       onPress={() => {
                         if (customSkillInput.trim() && activeSkillField) {
                           const trimmed = customSkillInput.trim();
@@ -1392,8 +1528,9 @@ export default function ProfileScreen({ navigation }: any) {
                           setCustomSkillInput('');
                         }
                       }}
+                      activeOpacity={0.8}
                     >
-                      <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>Apply</Text>
+                      <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>Apply</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -1608,7 +1745,7 @@ export default function ProfileScreen({ navigation }: any) {
   );
 }
 
-function MenuItem({ icon, title, sub, value, onPress, textColor, subColor }: any) {
+function MenuItem({ icon, title, sub, value, badge, badgeColor, onPress, textColor, subColor }: any) {
   return (
     <TouchableOpacity 
       style={styles.igRow} 
@@ -1622,6 +1759,11 @@ function MenuItem({ icon, title, sub, value, onPress, textColor, subColor }: any
         <Text style={[styles.igTitle, { color: textColor || '#0F172A' }]}>{title}</Text>
         {sub ? <Text style={[styles.igSub, { color: subColor || '#64748B' }]}>{sub}</Text> : null}
       </View>
+      {badge ? (
+        <View style={[styles.menuBadgePill, { backgroundColor: badgeColor || '#EF4444' }]}>
+          <Text style={styles.menuBadgePillTxt}>{badge}</Text>
+        </View>
+      ) : null}
       {value ? (
         <Text style={[styles.igValue, { color: subColor || '#64748B' }]} numberOfLines={1}>
           {value}
@@ -1636,24 +1778,128 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
-  // Hero Section - Normal flat bottom (no U shape)
-  heroSection: { 
-    backgroundColor: 'transparent', 
-    paddingTop: Platform.OS === 'ios' ? 60 : (StatusBar.currentHeight ? StatusBar.currentHeight + 10 : 45), 
-    paddingBottom: 44,
-    borderBottomLeftRadius: 0,
-    borderBottomRightRadius: 0,
-    alignItems: 'center'
-  },
-  // All Buttons Card - "n-shaped" card with rounded top corners overlapping top card (no top line)
-  buttonsCard: {
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    marginTop: -24,
-    paddingTop: 14,
-    paddingBottom: 20,
+  // Top Cover Banner (Collapsible with Background Image)
+  headerContainer: {
+    width: '100%',
+    position: 'relative',
     overflow: 'hidden',
-    zIndex: 2,
+  },
+  collapsibleBanner: {
+    width: '100%',
+    overflow: 'hidden',
+  },
+  bannerImgFullTop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
+  },
+  floatingTopBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 9999,
+    elevation: 25,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 52 : (StatusBar.currentHeight ? StatusBar.currentHeight + 8 : 40),
+  },
+  persistentTopBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 9999,
+    elevation: 25,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 52 : (StatusBar.currentHeight ? StatusBar.currentHeight + 8 : 40),
+  },
+  topBarRightButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  topBarBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarAndNameSection: {
+    alignItems: 'center',
+    width: '100%',
+    paddingBottom: 16,
+  },
+  avatarWrapper: {
+    width: 104,
+    height: 104,
+    position: 'relative',
+  },
+  avatarOverlapCircle: {
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    borderWidth: 4,
+    overflow: 'hidden',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarOverlapImg: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 50,
+  },
+  avatarFallbackCircle: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarPencilBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 2.5,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+  },
+  profileNameText: {
+    fontSize: 22,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginTop: 12,
+    letterSpacing: 0.3,
+  },
+
+  // All Buttons Card
+  buttonsCard: {
+    marginTop: 4,
+    paddingTop: 8,
+    paddingBottom: 24,
+    overflow: 'hidden',
   },
   headerTop: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20, alignItems: 'center', alignSelf: 'stretch' },
   themeToggle: { backgroundColor: 'rgba(255,255,255,0.15)', width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
@@ -1925,5 +2171,18 @@ const styles = StyleSheet.create({
   catTabTxtActive: {
     color: '#ffffff',
     fontWeight: '700',
+  },
+  menuBadgePill: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
+    marginRight: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuBadgePillTxt: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '800',
   },
 });

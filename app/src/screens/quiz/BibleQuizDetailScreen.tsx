@@ -273,52 +273,67 @@ export default function BibleQuizDetailScreen() {
     <View style={[styles.container, { backgroundColor: screenBg }]}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={screenBg} />
 
-      {/* Top Floating Header Card */}
+      {/* ── Screen Header: Circular Back, Centered Title, Language Selector ── */}
       <View
         style={[
-          styles.headerCardWrapper,
-          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 6 }
+          styles.headerRow,
+          {
+            paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8,
+            backgroundColor: isDark ? '#000000' : '#FFFFFF',
+            borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#CBD5E1',
+          },
         ]}
       >
-        <LinearGradient
-          colors={['#527C78', '#355B56']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.header}
+        <TouchableOpacity
+          style={[
+            styles.circularBtn,
+            {
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#E2E8F0',
+            },
+          ]}
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          activeOpacity={0.8}
         >
-          <View style={styles.headerDecoCircle1} pointerEvents="none" />
-          <View style={styles.headerDecoCircle2} pointerEvents="none" />
+          <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.4} />
+        </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={styles.backBtn}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            activeOpacity={0.8}
+        <View style={styles.headerTitleWrap}>
+          <Text
+            style={[
+              styles.headerTitleText,
+              { color: isDark ? '#FFFFFF' : '#0F172A' },
+            ]}
+            numberOfLines={1}
           >
-            <ArrowLeft size={20} color="#355B56" />
-          </TouchableOpacity>
+            Quiz Details
+          </Text>
+        </View>
 
-          <View style={styles.headerCenterTitleWrap} pointerEvents="none">
-            <Text style={styles.headerTitle} numberOfLines={1} maxFontSizeMultiplier={1.15}>
-              Quiz Details
-            </Text>
-            <View style={styles.headerTitleAccentBar} />
-          </View>
-
-          <TouchableOpacity
-            style={styles.langPill}
-            onPress={() => setLangModalVisible(true)}
-            activeOpacity={0.8}
-          >
-            <Globe size={13} color="#355B56" />
-            <Text style={styles.langPillTxt}>{quizLanguageOption.nativeName}</Text>
-          </TouchableOpacity>
-        </LinearGradient>
+        <TouchableOpacity
+          style={[
+            styles.circularBtn,
+            {
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#E2E8F0',
+            },
+          ]}
+          onPress={() => setLangModalVisible(true)}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          activeOpacity={0.8}
+        >
+          <Globe size={18} color={isDark ? '#FFFFFF' : '#000000'} />
+        </TouchableOpacity>
       </View>
 
       <ScrollView
         style={styles.scrollArea}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 130 }}
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingTop: 16,
+          paddingBottom: Math.max(insets.bottom, 24) + 24,
+        }}
         showsVerticalScrollIndicator={false}
       >
         {/* ─── Hero Overview Card ─────────────────────────────────── */}
@@ -600,92 +615,83 @@ export default function BibleQuizDetailScreen() {
             </View>
           </View>
         </View>
-      </ScrollView>
 
-      {/* ─── Modern Floating Bottom Bar ─────────────────────────── */}
-      <View
-        style={[
-          styles.bottomBar,
-          {
-            backgroundColor: secondarySurface,
-            borderTopColor: secondarySurface,
-            paddingBottom: Math.max(insets.bottom, 14),
-          },
-        ]}
-      >
-        {priorAttempt ? (
-          <View style={styles.dualActionRow}>
-            {/* Secondary Action: View Results */}
+        {/* ── Action Button(s) directly in screen below card ── */}
+        <View style={styles.inlineActionContainer}>
+          {priorAttempt ? (
+            <View style={styles.dualActionRow}>
+              {/* Secondary Action: View Results */}
+              <TouchableOpacity
+                style={[
+                  styles.resultsSecondaryBtn,
+                  {
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : '#cbd5e1',
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F8FAFC',
+                  },
+                ]}
+                onPress={handleViewResults}
+                activeOpacity={0.85}
+              >
+                <Award size={16} color={isDark ? '#93c5fd' : '#2563eb'} />
+                <Text style={[styles.resultsSecondaryBtnTxt, { color: isDark ? '#93c5fd' : '#1d4ed8' }]}>
+                  View Results
+                </Text>
+              </TouchableOpacity>
+
+              {/* Primary Action: Retry Quiz */}
+              <TouchableOpacity
+                style={[
+                  styles.retryPrimaryBtn,
+                  { backgroundColor: isDark ? '#FFFFFF' : '#000000' },
+                ]}
+                onPress={handleStartQuiz}
+                activeOpacity={0.88}
+              >
+                <View style={styles.primaryGradientInner}>
+                  <RotateCcw size={16} color={isDark ? '#000000' : '#FFFFFF'} />
+                  <Text style={[styles.primaryActionTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
+                    Retry Quiz
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          ) : isScheduledLocked ? (
             <TouchableOpacity
-              style={[
-                styles.resultsSecondaryBtn,
-                {
-                  borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : '#cbd5e1',
-                  backgroundColor: secondarySurface,
-                },
-              ]}
-              onPress={handleViewResults}
+              style={styles.startSingleBtn}
+              onPress={() => setLockedAlertVisible(true)}
               activeOpacity={0.85}
             >
-              <Award size={16} color={isDark ? '#93c5fd' : '#2563eb'} />
-              <Text style={[styles.resultsSecondaryBtnTxt, { color: isDark ? '#93c5fd' : '#1d4ed8' }]}>
-                View Results
-              </Text>
+              <View
+                style={[
+                  styles.primaryGradientInner,
+                  { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#475569' },
+                ]}
+              >
+                <Lock size={16} color="#ffffff" />
+                <Text style={styles.primaryActionTxt}>
+                  {getQuizUnlockStatusText(quiz?.scheduledDate, quiz?.scheduledTime, now)}
+                </Text>
+              </View>
             </TouchableOpacity>
-
-            {/* Primary Action: Retry Quiz */}
+          ) : (
             <TouchableOpacity
-              style={styles.retryPrimaryBtn}
+              style={[
+                styles.startSingleBtn,
+                { backgroundColor: isDark ? '#FFFFFF' : '#000000' },
+              ]}
               onPress={handleStartQuiz}
               activeOpacity={0.88}
             >
-              <LinearGradient
-                colors={['#2563eb', '#1d4ed8']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.primaryGradientInner}
-              >
-                <RotateCcw size={16} color="#ffffff" />
-                <Text style={styles.primaryActionTxt}>Retry Quiz</Text>
-              </LinearGradient>
+              <View style={styles.primaryGradientInner}>
+                <Play size={16} color={isDark ? '#000000' : '#FFFFFF'} fill={isDark ? '#000000' : '#FFFFFF'} />
+                <Text style={[styles.primaryActionTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
+                  Start Bible Quiz
+                </Text>
+              </View>
             </TouchableOpacity>
-          </View>
-        ) : isScheduledLocked ? (
-          <TouchableOpacity
-            style={styles.startSingleBtn}
-            onPress={() => setLockedAlertVisible(true)}
-            activeOpacity={0.85}
-          >
-            <LinearGradient
-              colors={['#475569', '#334155']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.primaryGradientInner}
-            >
-              <Lock size={16} color="#ffffff" />
-              <Text style={styles.primaryActionTxt}>
-                {getQuizUnlockStatusText(quiz?.scheduledDate, quiz?.scheduledTime, now)}
-              </Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={styles.startSingleBtn}
-            onPress={handleStartQuiz}
-            activeOpacity={0.88}
-          >
-            <LinearGradient
-              colors={['#2563eb', '#1d4ed8']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.primaryGradientInner}
-            >
-              <Play size={16} color="#ffffff" fill="#ffffff" />
-              <Text style={styles.primaryActionTxt}>Start Bible Quiz</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        )}
-      </View>
+          )}
+        </View>
+      </ScrollView>
 
       <QuizLanguageModal
         visible={langModalVisible}
@@ -721,6 +727,40 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     marginTop: 12,
     fontSize: 14,
     fontWeight: '600',
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1.5,
+    zIndex: 10,
+  },
+  circularBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
+  },
+  headerTitleWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  headerTitleText: {
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+    textAlign: 'center',
   },
   headerCardWrapper: {
     paddingHorizontal: 16,
@@ -1024,6 +1064,10 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   },
 
   // ── Bottom Action Bar ──────────────────────────────────────────────────────
+  inlineActionContainer: {
+    marginTop: 20,
+    width: '100%',
+  },
   bottomBar: {
     position: 'absolute',
     bottom: 0,

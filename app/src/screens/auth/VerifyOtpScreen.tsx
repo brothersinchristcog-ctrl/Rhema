@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -7,39 +7,90 @@ import {
   TouchableOpacity, 
   KeyboardAvoidingView, 
   Platform,
-  ActivityIndicator,
-  Alert,
-  StatusBar,
-  ScrollView
+  ActivityIndicator, 
+  Alert, 
+  StatusBar, 
+  ScrollView,
+  Image
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import auth from '@react-native-firebase/auth';
 import { AuthStackParamList } from '../../navigation/AuthNavigator';
-import Theme from '../../theme/Theme';
 import FirestoreService from '../../services/FirestoreService';
 import InviteLinkService from '../../services/InviteLinkService';
 import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
-import { ChevronLeft, ShieldCheck, RefreshCw } from 'lucide-react-native';
+import { ChevronLeft } from 'lucide-react-native';
 
 type VerifyOtpScreenProps = NativeStackScreenProps<AuthStackParamList, 'VerifyOtp'>;
 
 export default function VerifyOtpScreen({ route, navigation }: VerifyOtpScreenProps) {
   const insets = useSafeAreaInsets();
   const { confirmation, phoneNumber, contactId, memberName, formData, isSignUp, invitedChurchId, isGuestInvite } = route.params;
-  const { member, setMember } = useAuth();
+  const { member, setMember, setPendingApprovalState } = useAuth();
   const { churchId: activeChurchId, setChurchId } = useChurch();
+  
+  const [currConfirmation, setCurrConfirmation] = useState(confirmation);
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
+  const [resendCountdown, setResendCountdown] = useState(30);
+  const [canResend, setCanResend] = useState(false);
+  
+  const inputRef = useRef<TextInput>(null);
 
-  // Automatically trigger verification when 6 digits are detected
-  React.useEffect(() => {
+  // Countdown timer for Resend Code
+  useEffect(() => {
+    let timer: any;
+    if (resendCountdown > 0) {
+      timer = setTimeout(() => setResendCountdown(prev => prev - 1), 1000);
+    } else {
+      setCanResend(true);
+    }
+    return () => clearTimeout(timer);
+  }, [resendCountdown]);
+
+  // Format phone number e.g. +91 98765 43210
+  const formatDisplayPhone = (num?: string) => {
+    if (!num) return '';
+    const clean = num.replace(/[^0-9+]/g, '');
+    if (clean.startsWith('+91') && clean.length === 13) {
+      return `+91 ${clean.slice(3, 8)} ${clean.slice(8)}`;
+    }
+    if (!clean.startsWith('+') && clean.length === 10) {
+      return `+91 ${clean.slice(0, 5)} ${clean.slice(5)}`;
+    }
+    return num;
+  };
+
+  // Automatically trigger verification when 6 digits are entered
+  useEffect(() => {
     if (code.length === 6 && !loading) {
       handleVerify();
     }
   }, [code]);
+
+  const handleResend = async () => {
+    if (!canResend || loading) return;
+    setLoading(true);
+    try {
+      let cleanNum = (phoneNumber || '').replace(/[^0-9+]/g, '');
+      if (cleanNum.length === 10 && !cleanNum.startsWith('+')) {
+        cleanNum = `+91${cleanNum}`;
+      }
+      const newConfirmation = await auth().signInWithPhoneNumber(cleanNum);
+      setCurrConfirmation(newConfirmation);
+      setResendCountdown(30);
+      setCanResend(false);
+      setCode('');
+      Alert.alert('Code Resent', 'A new 6-digit verification code has been sent.');
+    } catch (err: any) {
+      Alert.alert('Resend Failed', err.message || 'Unable to resend verification code right now.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleVerify = async () => {
     if (code.length !== 6) {
@@ -51,8 +102,63 @@ export default function VerifyOtpScreen({ route, navigation }: VerifyOtpScreenPr
     setStatus('Verifying your code...');
     
     try {
-      const result = await confirmation.confirm(code);
+      const result = await currConfirmation.confirm(code);
       const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+
+      // ── Handle Sign Up Flow: Store details and send for Admin Approval ──
+      if (result?.user && isSignUp && formData) {
+        setStatus('Submitting registration for approval...');
+
+        const targetChurch = activeChurchId || 'rhema';
+        const cleanPhone = (formData.phone || phoneNumber || '').replace(/[^0-9+]/g, '');
+        const fullName = (formData.fullName || `${formData.firstName || ''} ${formData.lastName || ''}`).trim() || formData.firstName;
+
+        const requestData = {
+          ...formData,
+          fullName,
+          phone: cleanPhone,
+          authUid: result.user.uid,
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          churchId: targetChurch,
+        };
+
+        // 1. Immediately store in AsyncStorage and in AuthContext state
+        await AsyncStorage.removeItem('@cached_member').catch(() => {});
+        await AsyncStorage.multiSet([
+          ['@pending_registration_phone', cleanPhone],
+          ['@pending_registration_church', targetChurch],
+          ['@pending_registration_name', fullName],
+          ['@pending_registration_city', formData.city || ''],
+          ['@pending_registration_gender', formData.gender || ''],
+          ['@pending_registration_status', 'pending'],
+          ['@is_pending_approval', 'true'],
+        ]).catch(() => {});
+
+        if (setPendingApprovalState) {
+          setPendingApprovalState(true, false, requestData);
+        }
+
+        // 2. Persist to Firestore registration_requests collection
+        const reqResult = await FirestoreService.createOrUpdateRegistrationRequest(targetChurch, requestData);
+
+        if (!reqResult.success) {
+          Alert.alert('Registration Error', reqResult.error || 'Failed to submit registration for approval.');
+          setLoading(false);
+          return;
+        }
+
+        navigation.replace('ApprovalPending', {
+          phoneNumber: cleanPhone,
+          churchId: targetChurch,
+          applicantName: fullName,
+          city: formData.city,
+          gender: formData.gender,
+          applicantData: requestData,
+        });
+        return;
+      }
+
       if (result?.user) {
         await AsyncStorage.removeItem('@guest_intent').catch(() => {});
         await AsyncStorage.setItem('@cached_user', JSON.stringify({
@@ -69,60 +175,6 @@ export default function VerifyOtpScreen({ route, navigation }: VerifyOtpScreenPr
         await setChurchId(effectiveChurchId).catch(() => {});
       }
       const { firestore, FieldValue } = require('../../services/firebaseConfig');
-
-      if (result?.user && isSignUp && formData && activeChurchId) {
-        setStatus('Checking existing memberships...');
-        
-        // Prevent duplicate active memberships
-        const globalCheck = await FirestoreService.getGlobalUser(result.user.uid);
-        if (globalCheck && globalCheck.primaryChurchId && globalCheck.primaryChurchId !== activeChurchId) {
-          Alert.alert(
-            'Membership Active', 
-            'You are currently an active member of another church. You must leave or be removed from your previous church before joining a new one.'
-          );
-          setLoading(false);
-          return;
-        }
-
-        setStatus('Creating your member profile...');
-        
-        // Global users collection is no longer used. Members are strictly stored in the church.
-
-        // 2. Create nested member profile
-        const createResult = await FirestoreService.createMember(activeChurchId, { 
-          ...formData, 
-          id: result.user.uid, 
-          userType: 'Member', 
-          joinDate: new Date().toISOString() 
-        }, result.user.uid);
-        
-        if (createResult.success) {
-          try {
-            await result.user.updateProfile({ displayName: formData.firstName });
-          } catch (profileErr) {
-            console.warn('Profile name sync failed:', profileErr);
-          }
-
-          // Force update AuthContext so it doesn't get stuck on old cached data
-          const updatedMember = {
-            ...(member || {}),
-            ...formData,
-            id: result.user.uid,
-            name: `${formData.firstName} ${formData.lastName}`.trim(),
-            phone: formData.phone,
-            churchId: activeChurchId,
-            primaryChurchId: activeChurchId,
-            userType: 'Member'
-          };
-          setMember(updatedMember as any);
-          
-          const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-          await AsyncStorage.setItem('@cached_member', JSON.stringify(updatedMember));
-
-          navigation.replace('RegistrationSuccess');
-          return; // Stop execution, we are done
-        }
-      }
 
       let hasLinked = false;
       if (result?.user && contactId && !isSignUp) {
@@ -170,23 +222,62 @@ export default function VerifyOtpScreen({ route, navigation }: VerifyOtpScreenPr
         }
       }
 
-      // After OTP confirmed: if user still has no record in this church
+      // If not linked, check if this user has a pending or rejected registration request
+      if (result?.user && !hasLinked && !isSignUp) {
+        const userPhone = result.user.phoneNumber || phoneNumber;
+        if (userPhone) {
+          try {
+            const reqCheck = await FirestoreService.getRegistrationRequest(activeChurchId || 'rhema', userPhone);
+            if (reqCheck && (reqCheck.status === 'pending' || reqCheck.status === 'rejected')) {
+              await auth().signOut();
+              const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+              await AsyncStorage.setItem('@pending_registration_phone', userPhone).catch(() => {});
+              await AsyncStorage.setItem('@pending_registration_church', activeChurchId || 'rhema').catch(() => {});
+              await AsyncStorage.setItem('@pending_registration_name', reqCheck.fullName || `${reqCheck.firstName || ''} ${reqCheck.lastName || ''}`.trim() || '').catch(() => {});
+              await AsyncStorage.setItem('@pending_registration_city', reqCheck.city || '').catch(() => {});
+              await AsyncStorage.setItem('@pending_registration_gender', reqCheck.gender || '').catch(() => {});
+              await AsyncStorage.setItem('@pending_registration_status', reqCheck.status).catch(() => {});
+              await AsyncStorage.setItem('@is_pending_approval', reqCheck.status === 'pending' ? 'true' : 'false').catch(() => {});
+
+              navigation.replace('ApprovalPending', {
+                phoneNumber: userPhone,
+                churchId: activeChurchId || 'rhema',
+                applicantName: reqCheck.fullName || `${reqCheck.firstName || ''} ${reqCheck.lastName || ''}`.trim() || reqCheck.firstName,
+                city: reqCheck.city,
+                gender: reqCheck.gender,
+              });
+              return;
+            }
+          } catch (reqErr) {
+            console.warn('Error checking pending status in VerifyOtp:', reqErr);
+          }
+        }
+      }
       if (result?.user && !hasLinked) {
         const globalUser = await FirestoreService.getGlobalUser(result.user.uid);
         
         if (!globalUser?.primaryChurchId) {
           navigation.replace('SignUp');
+          return;
         }
-        // If primaryChurchId exists, AuthContext will detect the signed-in user and navigate to Main automatically
       }
       
       if (hasLinked) {
-        // Keep loading state active while AuthContext processes the login
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        await AsyncStorage.multiRemove([
+          '@is_pending_approval',
+          '@pending_registration_status',
+          '@pending_registration_phone',
+          '@pending_registration_name',
+          '@pending_registration_city',
+          '@pending_registration_gender',
+          '@pending_registration_church',
+        ]).catch(() => {});
         setStatus('Loading dashboard...');
-        return; // Return here, finally block will run but that's okay.
+        return;
       }
     } catch (error: any) {
-      console.error('❌ Error:', error.code);
+      console.error('❌ Error:', error?.code);
       Alert.alert('Verification Failed', 'The code entered is incorrect or expired.');
     } finally {
       setLoading(false);
@@ -195,195 +286,295 @@ export default function VerifyOtpScreen({ route, navigation }: VerifyOtpScreenPr
   };
 
   return (
-    <KeyboardAvoidingView 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
-    >
-      <StatusBar barStyle="light-content" backgroundColor="#1a2d5a" />
-        
-      {/* ── Page Header ── */}
-      <View style={[styles.pageHeader, { paddingTop: Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight || 28) : 20) }]}>
-        <View style={styles.pageHeaderInner}>
+    <SafeAreaView edges={['top', 'bottom']} style={styles.rootContainer}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
+      {/* ── Top Header with Back Arrow & Title ── */}
+      <View style={styles.headerRow}>
+        <TouchableOpacity 
+          style={styles.backBtn}
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          activeOpacity={0.7}
+        >
+          <ChevronLeft size={26} color="#0F172A" strokeWidth={2.4} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Verify Your Mobile Number</Text>
+      </View>
+
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
+        style={styles.keyboardAvoid}
+      >
+        <ScrollView 
+          contentContainerStyle={styles.scrollContent} 
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* ── Soft Warm Circle Graphic with 3D Phone Icon ── */}
+          <View style={styles.circleGraphic}>
+            <Image 
+              source={require('../../../assets/otp_phone_icon.png')}
+              style={styles.phoneIcon}
+              resizeMode="contain"
+            />
+          </View>
+
+          {/* ── Instructions & User Mobile Number ── */}
+          <Text style={styles.instructionText}>
+            Please enter the 6-digit code sent to
+          </Text>
+          <Text style={styles.phoneNumberText}>
+            {formatDisplayPhone(phoneNumber)}
+          </Text>
+
+          {/* ── 6 OTP Input Boxes with Yellow Accent Underline ── */}
           <TouchableOpacity 
-            style={styles.backBtn} 
-            onPress={() => navigation.goBack()}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            activeOpacity={0.7}
+            activeOpacity={1} 
+            onPress={() => inputRef.current?.focus()}
+            style={styles.otpContainer}
           >
-            <ChevronLeft size={24} color="#ffffff" />
+            <View style={styles.otpBoxesRow}>
+              {[0, 1, 2, 3, 4, 5].map((idx) => {
+                const digit = code[idx] || '';
+                const isFocused = idx === code.length && code.length < 6;
+                return (
+                  <View key={idx} style={styles.otpBoxWrapper}>
+                    <View style={[styles.otpDigitBox, isFocused && styles.otpDigitBoxFocused]}>
+                      <Text style={styles.otpDigitText}>{digit}</Text>
+                    </View>
+                    <View style={[styles.otpUnderline, digit ? styles.otpUnderlineActive : null]} />
+                  </View>
+                );
+              })}
+            </View>
+
+            {/* Hidden Input that captures keyboard typing */}
+            <TextInput
+              ref={inputRef}
+              style={styles.hiddenInput}
+              keyboardType="number-pad"
+              maxLength={6}
+              value={code}
+              onChangeText={setCode}
+              autoFocus
+              textContentType="oneTimeCode"
+              autoComplete="sms-otp"
+            />
           </TouchableOpacity>
 
-          <View style={styles.titleCol}>
-            <Text style={styles.pageTitle} numberOfLines={1}>OTP Verification</Text>
-            <Text style={styles.pageSub} numberOfLines={1}>ధృవీకరణ</Text>
-          </View>
-
-          <View style={styles.headerRightSpacer} />
-        </View>
-      </View>
-
-      <View style={[styles.safeArea, { paddingBottom: Math.max(insets.bottom, 16) }]}>
-
-        <ScrollView 
-          showsVerticalScrollIndicator={false} 
-          contentContainerStyle={styles.scrollContent}
-        >
-          <View style={styles.content}>
-            <View style={styles.infoSection}>
-              <View style={styles.iconCircle}>
-                <ShieldCheck size={32} color="#1a2d5a" />
-              </View>
-              <Text style={styles.authTitle}>Verify your phone</Text>
-              <Text style={styles.authSub}>We sent a 6-digit code to</Text>
-              <Text style={styles.phoneTxt}>{phoneNumber}</Text>
-
-              {memberName ? (
-                <View style={styles.memberBanner}>
-                  <Text style={styles.memberBannerTxt}>Welcome, {memberName} 🙏</Text>
-                  <Text style={styles.memberBannerSub}>Please verify your identity.</Text>
-                </View>
-              ) : null}
-            </View>
-
-            <View style={styles.inputSection}>
-              <Text style={styles.inputLabel}>ENTER 6-DIGIT CODE</Text>
-              <View style={styles.codeContainer}>
-                <TextInput
-                  style={styles.codeInput}
-                  placeholder="000 000"
-                  placeholderTextColor="#D1D5DB"
-                  keyboardType="number-pad"
-                  maxLength={6}
-                  value={code}
-                  onChangeText={setCode}
-                  autoFocus
-                  textContentType="oneTimeCode"
-                  autoComplete="sms-otp"
-                />
-              </View>
-            </View>
-
+          {/* ── Resend Code Link ── */}
+          <View style={styles.resendContainer}>
             <TouchableOpacity 
-              style={[styles.submitBtn, loading && styles.submitBtnDisabled]}
-              onPress={handleVerify}
-              disabled={loading}
+              onPress={handleResend} 
+              disabled={!canResend || loading}
+              activeOpacity={0.7}
             >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.submitBtnTxt}>Verify & Sign In</Text>
-              )}
-            </TouchableOpacity>
-
-            {status ? <Text style={styles.statusTxt}>{status}</Text> : null}
-
-            <TouchableOpacity style={styles.resendBtn} disabled={loading}>
-              <RefreshCw size={16} color="#6B7280" />
-              <Text style={styles.resendTxt}>Resend Code</Text>
+              <Text style={[styles.resendText, !canResend && styles.resendTextDisabled]}>
+                {canResend ? 'Resend Code' : `Resend Code in ${resendCountdown}s`}
+              </Text>
             </TouchableOpacity>
           </View>
+
+          {status ? (
+            <Text style={styles.statusInlineText}>{status}</Text>
+          ) : null}
+
+          {/* Spacer to push Verify button toward bottom on taller screens */}
+          <View style={styles.spacer} />
+
+          {/* ── Verify Button (Black Pill) ── */}
+          <TouchableOpacity 
+            style={[styles.verifyBtn, (loading || code.length !== 6) && styles.verifyBtnDisabled]}
+            onPress={handleVerify}
+            disabled={loading}
+            activeOpacity={0.88}
+          >
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.verifyBtnText}>Verify</Text>
+            )}
+          </TouchableOpacity>
         </ScrollView>
-      </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  safeArea: { flex: 1 },
+  rootContainer: { 
+    flex: 1, 
+    backgroundColor: '#FFFFFF',
+  },
+  keyboardAvoid: { 
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
   
   // Header
-  pageHeader: {
-    backgroundColor: '#1a2d5a',
-    borderBottomLeftRadius: 26,
-    borderBottomRightRadius: 26,
-    shadowColor: '#1a2d5a',
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 8,
-    zIndex: 10,
-  },
-  pageHeaderInner: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
-    paddingTop: 8,
-    paddingBottom: 20,
     paddingHorizontal: 16,
-    minHeight: 56,
+    paddingTop: Platform.OS === 'android' ? 10 : 4,
+    paddingBottom: 12,
+    backgroundColor: '#FFFFFF',
   },
   backBtn: { 
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    alignItems: 'center', 
-    justifyContent: 'center',
+    padding: 6,
+    marginRight: 6,
   },
-  headerRightSpacer: {
-    width: 40,
-  },
-  titleCol: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 8,
-  },
-  pageTitle: { 
-    color: '#fff', 
-    fontSize: 20, 
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', 
+  headerTitle: { 
+    color: '#0F172A', 
+    fontSize: 18, 
     fontWeight: '700', 
-    letterSpacing: -0.4, 
-    textAlign: 'center' 
-  },
-  pageSub: { 
-    color: '#aac4e8', 
-    fontSize: 12, 
-    marginTop: 2, 
-    fontWeight: '500', 
-    textAlign: 'center' 
+    letterSpacing: -0.2,
   },
 
-  content: { width: '100%', paddingHorizontal: 25, paddingTop: 40, alignItems: 'center', paddingBottom: 40 },
-  scrollContent: { flexGrow: 1 },
-  
-  infoSection: { alignItems: 'center', marginBottom: 40 },
-  iconCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#f0f2f7', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
-  authTitle: { fontSize: 24, fontWeight: '800', color: '#1a2d5a', marginBottom: 8 },
-  authSub: { fontSize: 14, color: '#6B7280' },
-  phoneTxt: { fontSize: 16, fontWeight: '700', color: '#111827', marginTop: 4 },
-
-  inputSection: { width: '100%', marginBottom: 30 },
-  inputLabel: { fontSize: 10, fontWeight: '800', color: '#1a2d5a', letterSpacing: 1, marginBottom: 12, textAlign: 'center' },
-  codeContainer: { 
-    backgroundColor: '#f9fafb', borderRadius: 16, borderWidth: 1, borderColor: '#e5e7eb',
-    height: 70, justifyContent: 'center', alignItems: 'center'
+  scrollContent: { 
+    flexGrow: 1,
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 14,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 44,
   },
-  codeInput: { fontSize: 32, fontWeight: '700', color: '#111827', letterSpacing: 10, textAlign: 'center', width: '100%' },
 
-  submitBtn: { backgroundColor: '#1a2d5a', width: '100%', borderRadius: 16, paddingVertical: 18, alignItems: 'center', elevation: 2 },
-  submitBtnDisabled: { opacity: 0.5 },
-  submitBtnTxt: { color: '#fff', fontSize: 16, fontWeight: '700' },
-
-  statusTxt: { fontSize: 12, color: '#1a2d5a', fontWeight: '600', marginTop: 15 },
-
-  resendBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 30 },
-  resendTxt: { fontSize: 14, color: '#6B7280', fontWeight: '600' },
-  
-  memberBanner: { 
-    backgroundColor: '#f8fafc', 
-    padding: 18, 
-    borderRadius: 16, 
-    marginTop: 25, 
-    borderWidth: 1, 
-    borderColor: '#e2e8f0',
-    borderLeftWidth: 4,
-    borderLeftColor: '#c0392b',
-    width: '100%'
+  // Circle graphic
+  circleGraphic: {
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: '#FEF3E7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 32,
   },
-  memberBannerTxt: { color: '#1a2d5a', fontSize: 16, fontWeight: '800' },
-  memberBannerSub: { color: '#64748b', fontSize: 12, marginTop: 4 },
+  phoneIcon: {
+    width: 155,
+    height: 155,
+  },
+
+  // Instruction & phone
+  instructionText: {
+    fontSize: 14.5,
+    color: '#334155',
+    textAlign: 'center',
+    fontWeight: '400',
+    marginBottom: 6,
+  },
+  phoneNumberText: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+    marginBottom: 36,
+    letterSpacing: 0.3,
+  },
+
+  // 6 OTP boxes
+  otpContainer: {
+    width: '100%',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  otpBoxesRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    maxWidth: 320,
+  },
+  otpBoxWrapper: {
+    alignItems: 'center',
+    width: 44,
+  },
+  otpDigitBox: {
+    width: 44,
+    height: 52,
+    backgroundColor: '#FEF7F0',
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  otpDigitBoxFocused: {
+    backgroundColor: '#FFF1E2',
+    borderWidth: 1.2,
+    borderColor: '#F59E0B',
+  },
+  otpDigitText: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  otpUnderline: {
+    width: 42,
+    height: 3.5,
+    backgroundColor: '#FDE68A',
+    borderRadius: 2,
+    marginTop: 7,
+  },
+  otpUnderlineActive: {
+    backgroundColor: '#F59E0B',
+  },
+  hiddenInput: {
+    position: 'absolute',
+    width: 1,
+    height: 1,
+    opacity: 0,
+  },
+
+  // Resend code
+  resendContainer: {
+    marginTop: 34,
+    alignItems: 'center',
+  },
+  resendText: {
+    fontSize: 14.5,
+    fontWeight: '600',
+    color: '#EA580C',
+    textDecorationLine: 'underline',
+  },
+  resendTextDisabled: {
+    color: '#94A3B8',
+    textDecorationLine: 'none',
+  },
+  statusInlineText: {
+    fontSize: 12.5,
+    color: '#0F172A',
+    fontWeight: '600',
+    marginTop: 14,
+    textAlign: 'center',
+  },
+
+  spacer: {
+    flex: 1,
+    minHeight: 40,
+  },
+
+  // Verify button
+  verifyBtn: {
+    backgroundColor: '#0F172A',
+    width: '100%',
+    height: 54,
+    borderRadius: 27,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 3,
+    marginTop: 20,
+  },
+  verifyBtnDisabled: {
+    opacity: 0.5,
+  },
+  verifyBtnText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
 });

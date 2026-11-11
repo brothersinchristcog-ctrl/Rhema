@@ -4,6 +4,7 @@ import LoginScreen from '../screens/auth/LoginScreen';
 import VerifyOtpScreen from '../screens/auth/VerifyOtpScreen';
 import SignUpScreen from '../screens/auth/SignUpScreen';
 import RegistrationSuccessScreen from '../screens/auth/RegistrationSuccessScreen';
+import ApprovalPendingScreen from '../screens/auth/ApprovalPendingScreen';
 import ChurchSelectionScreen from '../screens/auth/ChurchSelectionScreen';
 import JoinSuccessScreen from '../screens/auth/JoinSuccessScreen';
 import Theme from '../theme/Theme';
@@ -22,6 +23,15 @@ export type AuthStackParamList = {
   } | undefined;
   SignUp: undefined;
   RegistrationSuccess: undefined;
+  ApprovalPending: { 
+    phoneNumber: string; 
+    churchId?: string; 
+    applicantName?: string;
+    city?: string;
+    gender?: string;
+    dob?: string;
+    applicantData?: any;
+  };
   VerifyOtp: {
     confirmation: any;
     phoneNumber: string;
@@ -66,6 +76,11 @@ export default function AuthNavigator() {
       <Stack.Screen
         name="RegistrationSuccess"
         component={RegistrationSuccessScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="ApprovalPending"
+        component={ApprovalPendingScreen}
         options={{ headerShown: false }}
       />
       <Stack.Screen

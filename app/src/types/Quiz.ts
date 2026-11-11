@@ -141,6 +141,20 @@ export interface QuizAttempt {
   isDaily: boolean;
 }
 
+export interface LeaderboardEntry {
+  userId: string;
+  memberName: string;
+  memberPhone?: string;
+  memberAvatar?: string;
+  totalPoints: number;
+  percentage: number;
+  quizzesCompleted: number;
+  correctCount: number;
+  timeTakenSeconds: number;
+  rank: number;
+  isCurrentUser?: boolean;
+}
+
 export interface QuizAnalyticsReport {
   quizId: string;
   totalAttempts: number;

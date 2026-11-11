@@ -22,7 +22,6 @@ import {
   ChevronRight,
   LayoutGrid,
 } from 'lucide-react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { QuizAttempt, BibleQuiz, QuizDifficulty } from '../../types/Quiz';
 import { useQuizLanguage } from '../../context/QuizLanguageContext';
@@ -192,42 +191,61 @@ export default function BibleQuizResultScreen() {
     <View style={[styles.container, { backgroundColor: bg }]}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={bg} />
 
-      {/* Top Floating Header Card */}
+      {/* ── Screen Header: Circular Back, Centered Title, Right Status Badge ── */}
       <View
         style={[
-          styles.headerCardWrapper,
-          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 6 }
+          styles.headerRow,
+          {
+            paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8,
+            backgroundColor: isDark ? '#000000' : '#FFFFFF',
+            borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#CBD5E1',
+          },
         ]}
       >
-        <LinearGradient
-          colors={['#527C78', '#355B56']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.headerHero}
+        <TouchableOpacity
+          style={[
+            styles.circularBtn,
+            {
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#E2E8F0',
+            },
+          ]}
+          onPress={handleBackToLevels}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          activeOpacity={0.8}
         >
-          <View style={styles.headerDecoCircle1} pointerEvents="none" />
-          <View style={styles.headerDecoCircle2} pointerEvents="none" />
+          <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.4} />
+        </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={handleBackToLevels}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            activeOpacity={0.8}
+        <View style={styles.headerTitleWrap}>
+          <Text
+            style={[
+              styles.headerTitleText,
+              { color: isDark ? '#FFFFFF' : '#0F172A' },
+            ]}
+            numberOfLines={1}
           >
-            <ArrowLeft size={20} color="#355B56" />
-          </TouchableOpacity>
+            {level ? `${categoryDisplayName} · ${ui.level} ${level}` : ui.quizCompleted}
+          </Text>
+        </View>
 
-          <View style={styles.headerCenter} pointerEvents="none">
-            <Text style={styles.headerTitle} numberOfLines={1} maxFontSizeMultiplier={1.15}>
-              {level ? `${categoryDisplayName} · ${ui.level} ${level}` : ui.quizCompleted}
-            </Text>
-            <View style={styles.headerTitleAccentBar} />
-          </View>
-
-          <View style={styles.headerRightIconBadge}>
-            <CheckCircle size={18} color="#355B56" />
-          </View>
-        </LinearGradient>
+        <View
+          style={[
+            styles.circularBtn,
+            {
+              backgroundColor: isDark
+                ? isPassed
+                  ? 'rgba(16, 185, 129, 0.2)'
+                  : 'rgba(239, 68, 68, 0.2)'
+                : isPassed
+                ? '#DCFCE7'
+                : '#FEE2E2',
+              borderColor: isPassed ? '#10B981' : '#EF4444',
+            },
+          ]}
+        >
+          <CheckCircle size={18} color={isPassed ? '#10B981' : '#EF4444'} />
+        </View>
       </View>
 
       {/* Scrollable Content */}
@@ -330,10 +348,10 @@ export default function BibleQuizResultScreen() {
             <View
               style={[
                 styles.statIconWrap,
-                { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.16)' : '#EFF6FF' },
+                { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9' },
               ]}
             >
-              <Clock size={18} color="#3B82F6" />
+              <Clock size={18} color={isDark ? '#E2E8F0' : '#475569'} />
             </View>
             <Text style={[styles.statVal, { color: textPrimary }]}>
               {formatTime(attempt.timeTakenSeconds)}
@@ -346,8 +364,8 @@ export default function BibleQuizResultScreen() {
 
         {/* 3. Encouraging Scripture Card */}
         <View style={[styles.verseCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-          <View style={styles.verseAccent} />
-          <Text style={[styles.verseTxt, { color: isDark ? '#93c5fd' : '#1e40af' }]}>
+          <View style={[styles.verseAccent, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]} />
+          <Text style={[styles.verseTxt, { color: textPrimary }]}>
             {ui.scriptureQuote}
           </Text>
         </View>
@@ -356,28 +374,32 @@ export default function BibleQuizResultScreen() {
         <View style={styles.actionsStack}>
           {/* Primary CTA: Continue or Retry */}
           <TouchableOpacity
-            style={styles.primaryBtnWrap}
+            style={[
+              styles.primaryBtn,
+              {
+                backgroundColor: isDark ? '#FFFFFF' : '#000000',
+              },
+            ]}
             onPress={handlePrimary}
             activeOpacity={0.88}
           >
-            <LinearGradient
-              colors={hasNextLevel ? ['#10B981', '#059669'] : ['#2563EB', '#1D4ED8']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.primaryBtnGradient}
+            {hasNextLevel ? null : <RotateCcw size={19} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.4} />}
+            <Text
+              style={[
+                styles.primaryBtnTxt,
+                { color: isDark ? '#000000' : '#FFFFFF' },
+              ]}
+              numberOfLines={1}
             >
-              {hasNextLevel ? null : <RotateCcw size={19} color="#ffffff" strokeWidth={2.4} />}
-              <Text style={styles.primaryBtnTxt} numberOfLines={1}>
-                {hasNextLevel
-                  ? ui.continueToLevel(nextLevel)
-                  : isChurchQuiz
-                  ? quizLanguage === 'te'
-                    ? 'క్విజ్ మళ్ళీ ప్రయత్నించండి'
-                    : 'Retry Quiz'
-                  : ui.retryLevel}
-              </Text>
-              {hasNextLevel ? <ArrowRight size={19} color="#ffffff" strokeWidth={2.4} /> : null}
-            </LinearGradient>
+              {hasNextLevel
+                ? ui.continueToLevel(nextLevel)
+                : isChurchQuiz
+                ? quizLanguage === 'te'
+                  ? 'క్విజ్ మళ్ళీ ప్రయత్నించండి'
+                  : 'Retry Quiz'
+                : ui.retryLevel}
+            </Text>
+            {hasNextLevel ? <ArrowRight size={19} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.4} /> : null}
           </TouchableOpacity>
 
           {/* Secondary CTA: Review Answers */}
@@ -390,16 +412,20 @@ export default function BibleQuizResultScreen() {
               <View
                 style={[
                   styles.actionIconBubble,
-                  { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.16)' : '#EFF6FF' },
+                  {
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9',
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0',
+                    borderWidth: 1,
+                  },
                 ]}
               >
-                <BookOpen size={19} color="#3B82F6" strokeWidth={2.2} />
+                <BookOpen size={19} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.2} />
               </View>
               <Text style={[styles.actionCardTxt, { color: textPrimary }]} numberOfLines={1}>
                 {ui.reviewAnswers}
               </Text>
             </View>
-            <ChevronRight size={18} color={isDark ? '#64748b' : '#94a3b8'} strokeWidth={2.2} />
+            <ChevronRight size={18} color={isDark ? '#94A3B8' : '#64748B'} strokeWidth={2.2} />
           </TouchableOpacity>
 
           {/* Tertiary CTA: View All Levels (Only shown for multi-level category quizzes) */}
@@ -413,16 +439,20 @@ export default function BibleQuizResultScreen() {
                 <View
                   style={[
                     styles.actionIconBubble,
-                    { backgroundColor: isDark ? 'rgba(139, 92, 246, 0.16)' : '#F5F3FF' },
+                    {
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9',
+                      borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0',
+                      borderWidth: 1,
+                    },
                   ]}
                 >
-                  <LayoutGrid size={19} color="#8B5CF6" strokeWidth={2.2} />
+                  <LayoutGrid size={19} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.2} />
                 </View>
                 <Text style={[styles.actionCardTxt, { color: textPrimary }]} numberOfLines={1}>
                   {ui.viewAllLevels}
                 </Text>
               </View>
-              <ChevronRight size={18} color={isDark ? '#64748b' : '#94a3b8'} strokeWidth={2.2} />
+              <ChevronRight size={18} color={isDark ? '#94A3B8' : '#64748B'} strokeWidth={2.2} />
             </TouchableOpacity>
           )}
         </View>
@@ -445,78 +475,32 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   backHomeBtnTxt: { color: '#fff', fontWeight: '700', fontSize: 14 },
 
   // Header
-  headerCardWrapper: {
-    paddingHorizontal: 16,
-    paddingBottom: 4,
-  },
-  headerHero: {
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    borderRadius: 24,
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    overflow: 'hidden',
-    position: 'relative',
-    borderWidth: 1,
-    borderColor: 'rgba(228, 238, 234, 0.25)',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1.5,
   },
-  headerDecoCircle1: {
-    position: 'absolute',
-    width: 130,
-    height: 130,
-    borderRadius: 65,
-    backgroundColor: 'rgba(228, 238, 234, 0.10)',
-    top: -50,
-    right: -25,
-  },
-  headerDecoCircle2: {
-    position: 'absolute',
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: 'rgba(228, 238, 234, 0.08)',
-    bottom: -40,
-    left: 35,
-  },
-  backBtn: {
+  circularBtn: {
     width: 40,
     height: 40,
-    borderRadius: 14,
-    backgroundColor: '#E4EEEA',
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 10,
+    borderWidth: 1,
   },
-  headerCenter: {
+  headerTitleWrap: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     marginHorizontal: 10,
   },
-  headerTitle: {
-    color: '#FFFFFF',
-    fontSize: 20,
+  headerTitleText: {
+    fontSize: 18,
     fontWeight: '800',
-    letterSpacing: 0.5,
     textAlign: 'center',
-  },
-  headerTitleAccentBar: {
-    width: 28,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: '#E4EEEA',
-    marginTop: 5,
-    opacity: 0.85,
-  },
-  headerRightIconBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    backgroundColor: '#E4EEEA',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 10,
   },
 
   scrollContent: {
@@ -636,7 +620,6 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   },
   verseAccent: {
     width: 4,
-    backgroundColor: '#3B82F6',
   },
   verseTxt: {
     flex: 1,
@@ -652,25 +635,21 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     gap: 12,
     marginBottom: 8,
   },
-  primaryBtnWrap: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.22,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  primaryBtnGradient: {
+  primaryBtn: {
     height: 54,
+    borderRadius: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 20,
     gap: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 3,
   },
   primaryBtnTxt: {
-    color: '#ffffff',
     fontSize: 16,
     fontWeight: '800',
     letterSpacing: 0.2,

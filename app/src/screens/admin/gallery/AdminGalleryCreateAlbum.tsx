@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, Image, ActivityIndicator, DeviceEventEmitter, Platform } from 'react-native';
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, Image, ActivityIndicator, DeviceEventEmitter, Platform, StatusBar } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { X, UploadCloud, ImageIcon } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AdminGalleryStackParamList } from './AdminGalleryNavigator';
 import GalleryService from '../../../services/GalleryService';
 import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
@@ -12,6 +13,7 @@ type NavigationProp = NativeStackNavigationProp<AdminGalleryStackParamList, 'Adm
 
 export default function AdminGalleryCreateAlbum() {
   const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -56,38 +58,64 @@ export default function AdminGalleryCreateAlbum() {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.newBadge}>NEW</Text>
-          <Text style={styles.headerTitle}>Create album</Text>
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
+      <StatusBar barStyle={barStyle} backgroundColor={isDark ? '#000000' : '#FFFFFF'} />
+      <View style={[
+        styles.header,
+        {
+          backgroundColor: isDark ? '#000000' : '#FFFFFF',
+          borderBottomWidth: 1.5,
+          borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0',
+          paddingTop: Platform.OS === 'ios' ? Math.max(insets.top, 20) : 10,
+          paddingBottom: 12,
+          paddingHorizontal: 16,
+        }
+      ]}>
+        <View style={styles.headerLeft}>
+          <Text style={[styles.newBadge, { color: isDark ? '#FCD34D' : '#D97706' }]}>NEW</Text>
+          <Text style={[styles.headerTitle, { color: primaryText }]}>Create album</Text>
         </View>
         <TouchableOpacity 
-          style={styles.closeBtn}
+          style={[
+            styles.closeBtn,
+            {
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.10)' : '#F1F5F9',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.20)' : '#CBD5E1',
+            }
+          ]}
           onPress={() => navigation.goBack()}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <X size={20} color="#fff" />
+          <X size={20} color={primaryText} strokeWidth={2.4} />
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>ALBUM NAME</Text>
+          <Text style={[styles.label, { color: secondaryText }]}>ALBUM NAME</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, {
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : adminBorderColor,
+              color: primaryText,
+            }]}
             placeholder="e.g. Christmas Eve Service"
-            placeholderTextColor="#475569"
+            placeholderTextColor={isDark ? '#64748B' : '#94A3B8'}
             value={name}
             onChangeText={setName}
           />
         </View>
 
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>DESCRIPTION</Text>
+          <Text style={[styles.label, { color: secondaryText }]}>DESCRIPTION</Text>
           <TextInput
-            style={[styles.input, styles.textArea]}
+            style={[styles.input, styles.textArea, {
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : adminBorderColor,
+              color: primaryText,
+            }]}
             placeholder="A short note about this album..."
-            placeholderTextColor="#475569"
+            placeholderTextColor={isDark ? '#64748B' : '#94A3B8'}
             multiline
             numberOfLines={4}
             value={description}
@@ -97,33 +125,43 @@ export default function AdminGalleryCreateAlbum() {
         </View>
 
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>COVER PHOTO</Text>
-          <TouchableOpacity style={styles.uploadArea} onPress={pickImage}>
+          <Text style={[styles.label, { color: secondaryText }]}>COVER PHOTO</Text>
+          <TouchableOpacity 
+            style={[styles.uploadArea, {
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#CBD5E1',
+            }]} 
+            onPress={pickImage}
+          >
             {coverUri ? (
               <Image source={{ uri: coverUri }} style={styles.coverPreview} />
             ) : (
               <View style={styles.uploadPlaceholder}>
-                <View style={styles.uploadIconContainer}>
-                  <UploadCloud size={24} color="#fff" />
+                <View style={[styles.uploadIconContainer, { backgroundColor: isDark ? '#F59E0B' : '#0F172A' }]}>
+                  <UploadCloud size={24} color={isDark ? '#000000' : '#FFFFFF'} />
                 </View>
-                <Text style={styles.uploadMainText}>Tap to select image</Text>
-                <Text style={styles.uploadSubText}>JPG, PNG up to 20MB</Text>
+                <Text style={[styles.uploadMainText, { color: primaryText }]}>Tap to select image</Text>
+                <Text style={[styles.uploadSubText, { color: secondaryText }]}>JPG, PNG up to 20MB</Text>
               </View>
             )}
           </TouchableOpacity>
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, {
+        backgroundColor: isDark ? '#000000' : '#FFFFFF',
+        borderTopColor: isDark ? 'rgba(255, 255, 255, 0.10)' : '#E2E8F0',
+        paddingBottom: Math.max(insets.bottom, Platform.OS === 'android' ? 28 : 20) + 24,
+      }]}>
         <TouchableOpacity 
-          style={[styles.submitBtn, (!name.trim() || loading) && { opacity: 0.5 }]} 
+          style={[styles.submitBtn, { backgroundColor: isDark ? '#FCD34D' : '#0F172A' }, (!name.trim() || loading) && { opacity: 0.5 }]} 
           disabled={!name.trim() || loading}
           onPress={handleCreate}
         >
           {loading ? (
-            <ActivityIndicator color="#0b141a" />
+            <ActivityIndicator color={isDark ? '#0b141a' : '#FFFFFF'} />
           ) : (
-            <Text style={styles.submitBtnText}>Create Album</Text>
+            <Text style={[styles.submitBtnText, { color: isDark ? '#0b141a' : '#FFFFFF' }]}>Create Album</Text>
           )}
         </TouchableOpacity>
       </View>
@@ -134,115 +172,118 @@ export default function AdminGalleryCreateAlbum() {
 const styles = createAdminThemedStyles(StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#070D15',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    padding: 20,
-    paddingTop: 30,
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  headerLeft: {
+    flex: 1,
   },
   newBadge: {
-    color: '#FCD34D',
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 1,
-    marginBottom: 4,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    marginBottom: 2,
   },
   headerTitle: {
-    color: '#fff',
-    fontSize: 32,
-    fontWeight: '700',
-    fontFamily: 'serif',
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: -0.3,
   },
   closeBtn: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
     width: 40,
     height: 40,
     borderRadius: 20,
+    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 2,
   },
   content: {
-    padding: 20,
+    padding: 16,
     paddingBottom: 40,
   },
   inputGroup: {
-    marginBottom: 25,
+    marginBottom: 22,
   },
   label: {
-    color: '#94A3B8',
     fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 1,
+    fontWeight: '700',
+    letterSpacing: 0.8,
     marginBottom: 8,
   },
   input: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderWidth: 1.5,
     borderRadius: 12,
-    color: '#fff',
-    padding: 15,
-    fontSize: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 15,
+    fontWeight: '500',
   },
   textArea: {
-    height: 120,
+    height: 110,
+    paddingTop: 14,
   },
   uploadArea: {
-    backgroundColor: 'rgba(255,255,255,0.02)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderWidth: 1.5,
     borderStyle: 'dashed',
-    borderRadius: 20,
-    height: 200,
+    borderRadius: 18,
+    height: 180,
     overflow: 'hidden',
   },
   uploadPlaceholder: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 20,
   },
   uploadIconContainer: {
-    backgroundColor: '#3B82F6',
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 15,
+    marginBottom: 12,
   },
   uploadMainText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 5,
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 4,
   },
   uploadSubText: {
-    color: '#94A3B8',
-    fontSize: 14,
+    fontSize: 13,
   },
   coverPreview: {
     width: '100%',
     height: '100%',
   },
   footer: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: Platform.OS === 'ios' ? 68 : 58,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.05)',
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: Platform.OS === 'ios' ? 44 : 20,
+    borderTopWidth: 1.5,
   },
   submitBtn: {
-    backgroundColor: '#FCD34D',
-    paddingVertical: 16,
-    borderRadius: 12,
+    paddingVertical: 15,
+    borderRadius: 14,
     alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 2,
   },
   submitBtnText: {
-    color: '#0b141a',
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
 }));

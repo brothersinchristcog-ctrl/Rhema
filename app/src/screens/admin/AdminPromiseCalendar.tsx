@@ -11,7 +11,8 @@ import {
   TextInput,
   ActivityIndicator
 } from 'react-native';
-import { ChevronLeft , ArrowLeft } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ChevronLeft, ArrowLeft } from 'lucide-react-native';
 import { AdminTabContext } from '../../context/AdminTabContext';
 
 import FirestoreService from '../../services/FirestoreService';
@@ -21,6 +22,7 @@ const { width } = Dimensions.get('window');
 
 export default function AdminPromiseCalendar() {
   const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
+  const insets = useSafeAreaInsets();
   const { setActiveTab, setTabByName, setEditingData } = useContext(AdminTabContext);
   const [loading, setLoading] = useState(true);
   const [promises, setPromises] = useState<any[]>([]);
@@ -61,23 +63,48 @@ export default function AdminPromiseCalendar() {
   };
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
+      <StatusBar barStyle={barStyle} backgroundColor={isDark ? '#000000' : '#FFFFFF'} />
       
-      <View style={styles.hero}>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+      {/* ── Top Header Bar (Centered Text, Theme Aligned) ── */}
+      <View style={[
+        styles.hero,
+        {
+          backgroundColor: isDark ? '#000000' : '#FFFFFF',
+          borderBottomWidth: 1.5,
+          borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0',
+          paddingTop: Platform.OS === 'ios' ? Math.max(insets.top, 20) : 10,
+          paddingBottom: 10,
+          paddingHorizontal: 16,
+        }
+      ]}>
+        <View style={styles.headerTopRow}>
           <TouchableOpacity
             onPress={() => setActiveTab(0)}
-            style={styles.circularBackBtn}
+            style={[
+              styles.circularBackBtn,
+              {
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.10)' : '#F1F5F9',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.20)' : '#CBD5E1',
+              }
+            ]}
             activeOpacity={0.7}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
+            <ArrowLeft size={20} color={primaryText} strokeWidth={2.4} />
           </TouchableOpacity>
-          <View style={{ marginLeft: 12 }}>
-            <Text style={styles.heroTitle}>Promise Calendar</Text>
-            <Text style={[styles.heroSub, { marginTop: 2 }]}>{getMonthName(month)} {year}</Text>
+
+          <View style={styles.headerTitleWrapper}>
+            <Text style={[styles.heroTitle, { color: primaryText }]} numberOfLines={1}>
+              Promise Calendar
+            </Text>
+            <Text style={[styles.heroSub, { color: secondaryText }]} numberOfLines={1}>
+              {getMonthName(month)} {year}
+            </Text>
           </View>
+
+          {/* Symmetrical Spacer to keep text dead-center */}
+          <View style={{ width: 40 }} />
         </View>
       </View>
 
@@ -200,27 +227,44 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     shadowRadius: 2,
     elevation: 1,
   },
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  headerTitleWrapper: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
   // ─── Layout ──────────────────────────────────────────────────────────────
   container: { flex: 1, backgroundColor: '#EDE8DC' },
   scroll: { padding: 14, paddingBottom: 100 },
 
   // ─── Hero ─────────────────────────────────────────────────────────────────
   hero: {
-    backgroundColor: 'transparent',
-    
-    
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 12,
-    overflow: 'visible',
-    position: 'relative',
-    marginBottom: 6,
+    width: '100%',
   },
   backBtn: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, marginLeft: -6 },
   backBtnTxt: { fontSize: 13, fontWeight: '700', color: '#fff', marginLeft: 4 },
-  heroTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', marginBottom: 0 },
-  heroTitle: { color: '#1a2d5a', fontSize: 20, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontWeight: '600', letterSpacing: -0.5 },
-  heroSub: { color: '#64748b', fontSize: 13 },
+  heroTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 0 },
+  heroTitle: { 
+    color: '#1a2d5a', 
+    fontSize: 22, 
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', 
+    fontWeight: '700', 
+    letterSpacing: -0.3,
+    textAlign: 'center',
+  },
+  heroSub: { 
+    color: '#64748b', 
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 2,
+    textAlign: 'center',
+  },
 
   alertAmber: { backgroundColor: '#FFFBEB', borderRadius: 10, padding: 12, marginBottom: 12, flexDirection: 'row', flexWrap: 'wrap', gap: 8, borderWidth: 0.5, borderColor: '#FDE68A' },
   alertIcon: { fontSize: 16 },

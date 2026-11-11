@@ -602,17 +602,14 @@ const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig =>
         appearance: 'warm_white',
         bg: '#FAF7F2',
         gradient: [
-          '#2265FA',
-          '#2B70F7',
-          '#4285F5',
-          '#6B98F5',
-          '#97B8F7',
-          '#C4D6F9',
-          '#E4ECFB',
-          '#FAF7F2',
+          '#FFC59E',
+          '#FFD1AF',
+          '#FFDEC4',
+          '#FFE9D7',
+          '#FFF2E8',
         ],
-        gradientHeight: 520,
-        overscrollTop: '#2265FA',
+        gradientHeight: 180,
+        overscrollTop: '#FFC59E',
         overscrollBottom: '#FAF7F2',
         text: '#0B1938',
         textMuted: '#5A708E',
@@ -623,7 +620,7 @@ const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig =>
         heroGreet: '#0F172A',
         cardBg: '#F1F5F9', // Lightish ash color
         cardBorder: '#E2E8F0',
-        barStyle: 'light-content' as const,
+        barStyle: 'dark-content' as const,
         isDark: false,
         accent: '#2563EB',
         btnPrimaryBg: '#F1F5F9',
@@ -819,19 +816,26 @@ const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig =>
       return {
         appearance: 'pure_dark',
         bg: '#000000',
-        gradient: ['#000000', '#000000', '#000000'],
-        overscrollTop: '#000000',
+        gradient: [
+          '#FFC59E',
+          '#FFD1AF',
+          '#FFDEC4',
+          '#FFE9D7',
+          '#FFF2E8',
+        ],
+        gradientHeight: 180,
+        overscrollTop: '#FFC59E',
         overscrollBottom: '#000000',
         text: '#FFFFFF',
         textMuted: '#A1A1AA',
-        heroText: '#FFFFFF',
-        heroTagline: '#38BDF8',
-        heroDateNum: '#FFFFFF',
-        heroDateMonth: '#38BDF8',
-        heroGreet: '#A1A1AA',
+        heroText: '#0F172A',
+        heroTagline: '#334155',
+        heroDateNum: '#0F172A',
+        heroDateMonth: '#C2410C',
+        heroGreet: '#0F172A',
         cardBg: '#121212',
         cardBorder: '#27272A',
-        barStyle: 'light-content' as const,
+        barStyle: 'dark-content' as const,
         isDark: true,
         accent: '#38BDF8',
         btnPrimaryBg: '#18181B',
@@ -924,17 +928,14 @@ const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig =>
         appearance: 'pure_white',
         bg: '#FFFFFF',
         gradient: [
-          '#2265FA',
-          '#2B70F7',
-          '#4285F5',
-          '#6B98F5',
-          '#97B8F7',
-          '#C4D6F9',
-          '#E4ECFB',
-          '#FFFFFF',
+          '#FFC59E',
+          '#FFD1AF',
+          '#FFDEC4',
+          '#FFE9D7',
+          '#FFF2E8',
         ],
-        gradientHeight: 520,
-        overscrollTop: '#2265FA',
+        gradientHeight: 180,
+        overscrollTop: '#FFC59E',
         overscrollBottom: '#FFFFFF',
         text: '#0B1938',
         textMuted: '#5A708E',
@@ -945,7 +946,7 @@ const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig =>
         heroGreet: '#0F172A',
         cardBg: '#F1F5F9', // Lightish ash color
         cardBorder: '#E2E8F0',
-        barStyle: 'light-content' as const,
+        barStyle: 'dark-content' as const,
         isDark: false,
         accent: '#2563EB',
         btnPrimaryBg: '#F8FAFC',
@@ -1132,12 +1133,11 @@ const PremiumHero = ({
               {churchName}
             </Text>
             <View style={hStyles.taglineRow}>
-              <Cross w={7} h={9} color={theme.isDark ? C.gold : theme.accent} />
               <Text 
                 style={[hStyles.tagline, { color: theme.heroTagline }]} 
                 numberOfLines={1} 
                 adjustsFontSizeToFit 
-                minimumFontScale={0.7} 
+                minimumFontScale={0.75} 
                 maxFontSizeMultiplier={1.1}
               >
                 {tagline}
@@ -1150,17 +1150,17 @@ const PremiumHero = ({
               hStyles.bellBtn, 
               isCompactPhone && { width: bellSize, height: bellSize, borderRadius: bellSize / 2, marginLeft: 6 },
               { 
-                backgroundColor: theme.isDark ? 'rgba(255,255,255,0.08)' : '#FFFFFF',
-                borderColor: theme.isDark ? 'rgba(232,196,110,0.55)' : 'rgba(255,255,255,0.8)' 
+                backgroundColor: '#FFFFFF',
+                borderColor: 'rgba(255,255,255,0.8)' 
               }
             ]} 
             onPress={onBellPress} 
             activeOpacity={0.75}
           >
             <Animated.View style={{ transform: [{ rotate: bellRotate }] }}>
-              <Bell color={theme.isDark ? C.gold : '#2563EB'} size={isSmallPhone ? 17 : isCompactPhone ? 18 : 20} strokeWidth={2} />
+              <Bell color={theme.isDark ? '#EA580C' : '#2563EB'} size={isSmallPhone ? 17 : isCompactPhone ? 18 : 20} strokeWidth={2} />
             </Animated.View>
-            <View style={[hStyles.bellDot, { borderColor: theme.isDark ? theme.bg : '#FFFFFF' }]} />
+            <View style={[hStyles.bellDot, { borderColor: '#FFFFFF' }]} />
           </TouchableOpacity>
         </View>
 
@@ -1169,7 +1169,6 @@ const PremiumHero = ({
           {/* Left Column: Greeting with Sun/Moon Icon + Bold Serif User Name */}
           <View style={{ flex: 1, minWidth: 0, paddingRight: isCompactPhone ? 8 : 12, justifyContent: 'center' }}>
             <View style={gStyles.greetRow}>
-              {Icon ? <Icon size={18} color={theme.isDark ? '#FCD34D' : '#D97706'} /> : null}
               <Text 
                 {...({ fixedFontSize: true, allowFontScaling: false } as any)}
                 style={[
@@ -1218,10 +1217,10 @@ const PremiumHero = ({
               {
                 width: dateCardWidth,
                 borderRadius: 12,
-                backgroundColor: theme.isDark ? '#18181B' : '#FFFFFF',
+                backgroundColor: '#FFFFFF',
                 borderWidth: 1,
-                borderColor: theme.isDark ? '#27272A' : 'rgba(255,255,255,0.7)',
-                shadowOpacity: theme.isDark ? 0.25 : 0.08,
+                borderColor: 'rgba(255,255,255,0.7)',
+                shadowOpacity: 0.08,
                 shadowRadius: 4,
                 shadowOffset: { width: 0, height: 2 },
                 elevation: 2.5,
@@ -1229,18 +1228,18 @@ const PremiumHero = ({
             ]}
           >
             <LinearGradient 
-              colors={theme.isDark ? ['#3F2615', '#2C1B10'] : ['#FFE5CD', '#FFD9B8']} 
+              colors={['#FFE5CD', '#FFD9B8']} 
               style={[gStyles.calMonthBox, { paddingTop: 3, paddingBottom: 2 }]}
             >
-              <Text style={[gStyles.calMonth, { fontSize: 9, letterSpacing: 1.1, color: theme.isDark ? '#FB923C' : '#C2410C' }]}>
+              <Text style={[gStyles.calMonth, { fontSize: 9, letterSpacing: 1.1, color: '#C2410C' }]}>
                 {MONS_LIST[now.getMonth()]}
               </Text>
             </LinearGradient>
-            <Text style={[gStyles.calDay, { fontSize: 20, lineHeight: 24, paddingTop: 1, color: theme.isDark ? '#FFFFFF' : (theme.heroDateNum || '#0F172A') }]}>
+            <Text style={[gStyles.calDay, { fontSize: 20, lineHeight: 24, paddingTop: 1, color: '#0F172A' }]}>
               {now.getDate()}
             </Text>
             <Text 
-              style={[gStyles.calWeek, { fontSize: 8.5, paddingTop: 0, paddingBottom: 3.5, color: theme.isDark ? '#A1A1AA' : '#5A708E' }]} 
+              style={[gStyles.calWeek, { fontSize: 8.5, paddingTop: 0, paddingBottom: 3.5, color: '#5A708E' }]} 
               numberOfLines={1} 
               adjustsFontSizeToFit 
               minimumFontScale={0.7}
@@ -1256,7 +1255,7 @@ const PremiumHero = ({
 };
 
 const hStyles = StyleSheet.create({
-  hero: { paddingHorizontal: 16, paddingBottom: 4, backgroundColor: 'transparent' },
+  hero: { paddingHorizontal: 16, paddingBottom: 0, backgroundColor: 'transparent' },
   identityRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
   logoRing: { width: 52, height: 52, borderRadius: 26, padding: 2, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 5 },
   logoInner: { flex: 1, borderRadius: 24, overflow: 'hidden', backgroundColor: '#15302c' },
@@ -1265,10 +1264,10 @@ const hStyles = StyleSheet.create({
   logoInitials: { color: C.gold, fontSize: 17, fontWeight: '800', fontFamily: SERIF, letterSpacing: 0.5 },
   churchName: { fontSize: 18, fontWeight: '800', fontFamily: SERIF, letterSpacing: 0 },
   taglineRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2, gap: 5 },
-  tagline: { flexShrink: 1, fontSize: 12.5, fontStyle: 'italic', fontFamily: SERIF, letterSpacing: 0.5 },
+  tagline: { flexShrink: 1, fontSize: 14, fontStyle: 'italic', fontFamily: SERIF, letterSpacing: 0.4 },
   bellBtn: { width: 42, height: 42, borderRadius: 21, marginLeft: 8, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
   bellDot: { position: 'absolute', top: 8, right: 9, width: 8, height: 8, borderRadius: 4, backgroundColor: '#F95738', borderWidth: 1.5 },
-  greetingRowDirect: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 4, paddingBottom: 10 },
+  greetingRowDirect: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 4, paddingBottom: 4 },
   cardWrap: { borderRadius: 24, overflow: 'hidden', marginBottom: 6 },
   greetingCard: { borderRadius: 24, paddingVertical: 18, paddingHorizontal: 18, borderWidth: 1, overflow: 'hidden', position: 'relative' },
   cardInnerFrame: { position: 'absolute', top: 6, left: 6, right: 6, bottom: 6, borderRadius: 18, borderWidth: 1 },
@@ -1318,6 +1317,8 @@ const cleanTimeText = (timeStr?: string): string => {
     .replace(/ఉదయం|మధ్యాహ్నం|సాయంత్రం|రాత్రి/g, '')
     .replace(/\b(am|pm)\s+(am|pm)\b/gi, '$1')
     .replace(/\s+/g, ' ')
+    .replace(/(\d+:\d+)\s+(am|pm)/gi, '$1\u00A0$2')
+    .replace(/(\s*-\s*)/g, '\u00A0-\u00A0')
     .trim();
 };
 
@@ -1406,6 +1407,48 @@ const ChurchEventBadge = () => (
   </View>
 );
 
+// 38 Designer Palette Colors provided by user for each event card
+const EVENT_CARD_PALETTE = [
+  { name: 'Cove', bg: '#1B3B48', isLight: false },
+  { name: 'Velours Noir', bg: '#141416', isLight: false },
+  { name: 'Cognac', bg: '#9A4B1C', isLight: false },
+  { name: 'Charcoal', bg: '#26282B', isLight: false },
+  { name: 'Cashmere', bg: '#E6DDD3', isLight: true },
+  { name: 'Truffle', bg: '#46342E', isLight: false },
+  { name: 'Forest', bg: '#1E3A2B', isLight: false },
+  { name: 'Gunmetal', bg: '#2A2F35', isLight: false },
+  { name: 'Moss', bg: '#4A583B', isLight: false },
+  { name: 'Deep Burgundy', bg: '#4E1424', isLight: false },
+  { name: 'Ocean Blue', bg: '#154360', isLight: false },
+  { name: 'Pumpkin', bg: '#C85A17', isLight: false },
+  { name: 'Ultra Violet', bg: '#3E2069', isLight: false },
+  { name: 'Deep Olive', bg: '#3D4228', isLight: false },
+  { name: 'Soft Sage', bg: '#9EB39F', isLight: true },
+  { name: 'Lavender Pink', bg: '#E4C1D9', isLight: true },
+  { name: 'Mint Green', bg: '#88C9A1', isLight: true },
+  { name: 'Golden Yellow', bg: '#D99B00', isLight: true },
+  { name: 'Sage Green', bg: '#778D73', isLight: false },
+  { name: 'Peach Pink', bg: '#F4A694', isLight: true },
+  { name: 'Dark Emerald', bg: '#0B4734', isLight: false },
+  { name: 'Alabaster', bg: '#EDE8DF', isLight: true },
+  { name: 'Slate Green', bg: '#415852', isLight: false },
+  { name: 'Ivory', bg: '#F7F4EB', isLight: true },
+  { name: 'Natural', bg: '#D9CEBE', isLight: true },
+  { name: 'Apricot', bg: '#F89868', isLight: true },
+  { name: 'Organic', bg: '#8C7867', isLight: false },
+  { name: 'Candle', bg: '#E29D38', isLight: true },
+  { name: 'Coral', bg: '#E05A47', isLight: false },
+  { name: 'Leaf', bg: '#3B7A32', isLight: false },
+  { name: 'Juniper', bg: '#224D50', isLight: false },
+  { name: 'Orange', bg: '#EA580C', isLight: false },
+  { name: 'Olive Grove', bg: '#556B2F', isLight: false },
+  { name: 'Warm Sand', bg: '#CDB296', isLight: true },
+  { name: 'Merlot Bliss', bg: '#54142B', isLight: false },
+  { name: 'Creamy Taupe', bg: '#C2B2A3', isLight: true },
+  { name: 'Midnight Luxe', bg: '#121324', isLight: false },
+  { name: 'Soft Ivory', bg: '#FAF6ED', isLight: true },
+];
+
 export const EventsTicker = ({
   events = [],
   onSeeAll,
@@ -1417,163 +1460,269 @@ export const EventsTicker = ({
   onEventPress?: (event: any) => void;
   theme?: any;
 }) => {
-  const x = useRef(new Animated.Value(0)).current;
-  const [setW, setSetW] = useState(0);
-  const animRef = useRef<Animated.CompositeAnimation | null>(null);
+  const { width: windowWidth } = useWindowDimensions();
+  const [cardWidth, setCardWidth] = useState(windowWidth || Dimensions.get('window').width);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const currentIndexRef = useRef(0);
+  currentIndexRef.current = currentIndex;
 
-  // English Card and dedicated Telugu Card with timings next to event name (no 'ఉదయం')
-  const marqueeItems = useMemo(() => {
+  const scrollRef = useRef<ScrollView>(null);
+  const timerAnimRef = useRef<Animated.CompositeAnimation | null>(null);
+  const progressAnim = useRef(new Animated.Value(0)).current;
+  const isDraggingRef = useRef(false);
+  const cardWidthRef = useRef(cardWidth);
+  cardWidthRef.current = cardWidth;
+
+  // Both English and Telugu cards generated with 38 designer colors
+  const items = useMemo(() => {
     const evList = (events && events.length > 0) ? events : [
-      { title: 'Sunday Service', titleTelugu: 'ఆదివారపు ఆరాధన', time: '10:00 AM - 12:30 PM' },
-      { title: 'Bible Study', titleTelugu: 'బైబిల్ స్టడీ', time: '7:00 PM - 8:30 PM' },
-      { title: 'Morning Prayer', titleTelugu: 'ఉదయ కాల ప్రార్థన', time: '6:00 AM - 7:30 AM' },
+      { title: 'Sunday Worship Service', titleTelugu: 'ఆదివారపు ఆరాధన', time: '10:00 AM - 12:30 PM' },
+      { title: 'Midweek Bible Study', titleTelugu: 'బైబిల్ స్టడీ', time: '7:00 PM - 8:30 PM' },
+      { title: 'Early Morning Prayer', titleTelugu: 'ఉదయ కాల ప్రార్థన', time: '6:00 AM - 7:30 AM' },
+      { title: 'Youth Revival Fellowship', titleTelugu: 'యూత్ కూడిక', time: '6:30 PM - 8:30 PM' },
     ];
 
-    const items: any[] = [];
+    const result: any[] = [];
     evList.forEach((ev: any, idx: number) => {
       const enTitle = cleanEnglishTitle(ev.title);
       const teTitle = getTeluguServiceTitle(ev.title, ev.titleTelugu);
-      const cleanTime = cleanTimeText(ev.time || '10:00 AM');
+      const cleanTime = cleanTimeText(ev.time || '');
 
-      // 1. English Event Card: Category on top, timing next to event name
-      items.push({
+      // 1. English Event Card
+      const enColor = EVENT_CARD_PALETTE[(idx * 2) % EVENT_CARD_PALETTE.length];
+      result.push({
         id: `ev-en-${idx}`,
-        type: idx % 2 === 0 ? 'medal' : 'star',
         category: 'UPCOMING EVENT',
+        eventName: enTitle,
+        time: cleanTime,
         title: cleanTime ? `${enTitle}  •  ${cleanTime}` : enTitle,
         raw: ev,
+        colorConfig: enColor,
       });
 
-      // 2. Dedicated Telugu Event Card: Category on top, timing next to event name (no 'ఉదయం')
-      items.push({
+      // 2. Dedicated Telugu Event Card
+      const teColor = EVENT_CARD_PALETTE[(idx * 2 + 1) % EVENT_CARD_PALETTE.length];
+      result.push({
         id: `ev-te-${idx}`,
-        type: 'church',
         category: 'రాబోవు కూడిక',
+        eventName: teTitle,
+        time: cleanTime,
         title: cleanTime ? `${teTitle}  •  ${cleanTime}` : teTitle,
         raw: ev,
+        colorConfig: teColor,
       });
     });
 
-    return items;
+    return result;
   }, [events]);
 
-  useEffect(() => {
-    if (setW > 0) {
-      animRef.current?.stop();
-      x.setValue(0);
-      const duration = (setW / TICKER_SPEED) * 1000;
-      animRef.current = Animated.loop(
-        Animated.timing(x, {
-          toValue: -setW,
-          duration: Math.max(4000, duration),
-          easing: Easing.linear,
-          useNativeDriver: true,
-        })
-      );
-      animRef.current.start();
-    }
-    return () => {
-      animRef.current?.stop();
-    };
-  }, [setW, marqueeItems]);
+  const itemsCount = Math.max(1, items.length);
 
-  // User requested: Keep Cross symbol only for all cards
-  const renderBadge = () => {
-    return <ChurchEventBadge />;
+  // Timer runner: fills over 5500ms; restarts from 0 whenever index changes
+  const startTimer = (index: number) => {
+    timerAnimRef.current?.stop();
+    progressAnim.setValue(0);
+
+    timerAnimRef.current = Animated.timing(progressAnim, {
+      toValue: 1,
+      duration: 5500,
+      easing: Easing.linear,
+      useNativeDriver: false,
+    });
+
+    timerAnimRef.current.start(({ finished }) => {
+      if (finished) {
+        const nextIndex = (index + 1) % itemsCount;
+        scrollRef.current?.scrollTo({
+          x: nextIndex * cardWidthRef.current,
+          animated: true,
+        });
+        setCurrentIndex(nextIndex);
+        startTimer(nextIndex);
+      }
+    });
   };
 
-  const renderSet = (key: string, measure?: boolean) => (
-    <View 
-      key={key} 
-      style={mqStyles.setRow} 
-      onLayout={measure ? (e) => setSetW(e.nativeEvent.layout.width) : undefined}
-    >
-      {marqueeItems.map((item, idx) => (
-        <TouchableOpacity
-          key={`${key}-${item.id || idx}`}
-          style={[
-            mqStyles.card,
-            {
-              backgroundColor: theme?.isDark ? '#18181B' : '#FFFFFF',
-              borderColor: theme?.isDark ? '#27272A' : '#D9E1EC',
-            }
-          ]}
-          onPress={() => {
-            if (item.raw) {
-              onEventPress ? onEventPress(item.raw) : onSeeAll?.();
-            } else {
-              onSeeAll?.();
-            }
-          }}
-          activeOpacity={0.8}
-        >
-          {renderBadge()}
-          <View style={mqStyles.textCol}>
-            {/* Category highlighted with sky blue, exact same 11px font size */}
-            <Text 
-              style={[
-                mqStyles.categoryText, 
-                { color: theme?.isDark ? '#38BDF8' : '#0284C7' }
-              ]} 
-              numberOfLines={1}
-            >
-              {item.category}
-            </Text>
-            <Text 
-              style={[
-                mqStyles.titleText, 
-                { color: theme?.isDark ? '#FFFFFF' : '#2C3A5A' }
-              ]} 
-              numberOfLines={1}
-            >
-              {item.title}
-            </Text>
-          </View>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
+  useEffect(() => {
+    startTimer(0);
+    return () => {
+      timerAnimRef.current?.stop();
+    };
+  }, [itemsCount]);
+
+  // Handle manual scroll/swipe gestures smoothly (no blinking, restarts line from 0)
+  const onScrollBeginDrag = () => {
+    isDraggingRef.current = true;
+    timerAnimRef.current?.stop();
+  };
+
+  const onMomentumScrollEnd = (e: any) => {
+    // Only handle user drag momentum end, ignore programmatic auto-scrolls!
+    if (!isDraggingRef.current) return;
+    isDraggingRef.current = false;
+
+    const offsetX = e.nativeEvent.contentOffset.x;
+    const newIndex = Math.round(offsetX / cardWidthRef.current);
+    const clampedIndex = Math.max(0, Math.min(newIndex, itemsCount - 1));
+    setCurrentIndex(clampedIndex);
+    // When user scrolls back or forward, timer immediately restarts from the starting point
+    startTimer(clampedIndex);
+  };
+
+  const onScrollEndDrag = (e: any) => {
+    // If user released with low velocity and momentum scroll will not trigger
+    const velocity = Math.abs(e.nativeEvent.velocity?.x || 0);
+    if (velocity < 0.05 && isDraggingRef.current) {
+      isDraggingRef.current = false;
+      const offsetX = e.nativeEvent.contentOffset.x;
+      const newIndex = Math.round(offsetX / cardWidthRef.current);
+      const clampedIndex = Math.max(0, Math.min(newIndex, itemsCount - 1));
+      scrollRef.current?.scrollTo({
+        x: clampedIndex * cardWidthRef.current,
+        animated: true,
+      });
+      setCurrentIndex(clampedIndex);
+      startTimer(clampedIndex);
+    }
+  };
+
+  const activeItem = items[currentIndex] || items[0];
+  const activeColorConfig = activeItem?.colorConfig || EVENT_CARD_PALETTE[0];
+  const timerTrackColor = activeColorConfig.isLight ? 'rgba(0, 0, 0, 0.15)' : 'rgba(255, 255, 255, 0.25)';
+  const timerFillColor = activeColorConfig.isLight ? '#111827' : '#FFFFFF';
 
   return (
-    <View style={mqStyles.container}>
-      <Animated.View style={[mqStyles.track, { transform: [{ translateX: x }] }]}>
-        {renderSet('a', true)}
-        {renderSet('b', false)}
-      </Animated.View>
+    <View
+      style={mqCardStyles.containerWrap}
+      onLayout={(e) => {
+        const w = e.nativeEvent.layout.width;
+        if (w > 0 && Math.abs(w - cardWidth) > 1) {
+          setCardWidth(w);
+        }
+      }}
+    >
+      {/* Horizontally scrollable smooth carousel */}
+      <ScrollView
+        ref={scrollRef}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        bounces={false}
+        scrollEventThrottle={16}
+        onScrollBeginDrag={onScrollBeginDrag}
+        onScrollEndDrag={onScrollEndDrag}
+        onMomentumScrollEnd={onMomentumScrollEnd}
+        style={{ width: cardWidth }}
+      >
+        {items.map((item, idx) => {
+          const cfg = item.colorConfig || EVENT_CARD_PALETTE[idx % EVENT_CARD_PALETTE.length];
+          const textColor = cfg.isLight ? '#111827' : '#FFFFFF';
+          const kickerColor = cfg.isLight ? '#4B5563' : 'rgba(255, 255, 255, 0.78)';
+          // Normal event names fit on single row; only split into 2 rows if massive (> 55 chars)
+          const isHugeTitle = Boolean(item.time && (item.eventName?.length || 0) > 55);
+
+          return (
+            <TouchableOpacity
+              key={item.id}
+              activeOpacity={0.92}
+              style={[
+                mqCardStyles.cardContainer,
+                { width: cardWidth, backgroundColor: cfg.bg }
+              ]}
+              onPress={() => {
+                if (item.raw) {
+                  onEventPress ? onEventPress(item.raw) : onSeeAll?.();
+                } else {
+                  onSeeAll?.();
+                }
+              }}
+            >
+              <View style={mqCardStyles.contentRow}>
+                <View style={mqCardStyles.textColumn}>
+                  <Text style={[mqCardStyles.kickerText, { color: kickerColor }]} numberOfLines={1}>
+                    {item.category || 'Upcoming Event'}
+                  </Text>
+                  {isHugeTitle ? (
+                    <View style={mqCardStyles.twoRowWrap}>
+                      <Text
+                        style={[mqCardStyles.titleText, { color: textColor }]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.85}
+                      >
+                        {item.eventName}
+                      </Text>
+                      <View style={mqCardStyles.timeRow}>
+                        <Clock size={11} color={kickerColor} strokeWidth={2.2} style={{ marginRight: 4 }} />
+                        <Text style={[mqCardStyles.timeRowText, { color: kickerColor }]} numberOfLines={1}>
+                          {item.time}
+                        </Text>
+                      </View>
+                    </View>
+                  ) : (
+                    <Text
+                      style={[mqCardStyles.titleText, { color: textColor }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.82}
+                    >
+                      {item.title}
+                    </Text>
+                  )}
+                </View>
+
+                {/* Calendar / Event 3D Icon */}
+                <View style={mqCardStyles.imageWrap}>
+                  <Image
+                    source={
+                      item.raw?.imageUrl
+                        ? { uri: item.raw.imageUrl }
+                        : require('../../assets/3d_events.png')
+                    }
+                    style={mqCardStyles.eventGraphic}
+                    resizeMode="contain"
+                  />
+                </View>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      {/* Bottom Segmented Progress Timer Lines (always stable, smooth restart on scroll) */}
+      <View style={mqCardStyles.timerRowAbsolute} pointerEvents="none">
+        {items.map((_, idx) => {
+          return (
+            <View key={idx} style={[mqCardStyles.timerTrack, { backgroundColor: timerTrackColor }]}>
+              {idx < currentIndex ? (
+                <View style={[mqCardStyles.timerFillFull, { backgroundColor: timerFillColor }]} />
+              ) : idx === currentIndex ? (
+                <Animated.View
+                  style={[
+                    mqCardStyles.timerFillAnimated,
+                    {
+                      backgroundColor: timerFillColor,
+                      width: progressAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['0%', '100%'],
+                      }),
+                    },
+                  ]}
+                />
+              ) : null}
+            </View>
+          );
+        })}
+      </View>
     </View>
   );
 };
 
-const mqStyles = StyleSheet.create({
-  container: {
-    height: 70,
+const mqCardStyles = StyleSheet.create({
+  containerWrap: {
+    width: '100%',
     overflow: 'hidden',
-    justifyContent: 'center',
-    marginVertical: 4,
-  },
-  track: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  setRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-    paddingRight: 16,
-  },
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 60,
-    paddingHorizontal: 18,
-    borderRadius: 20,
-    borderWidth: 1.2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 5,
-    elevation: 2,
+    position: 'relative',
   },
   iconWrap: {
     width: 32,
@@ -1582,22 +1731,89 @@ const mqStyles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 12,
   },
-  textCol: {
+  cardContainer: {
+    paddingTop: 12,
+    paddingBottom: 22, // Space for the timer bar
+    paddingHorizontal: 16,
+    overflow: 'hidden',
     justifyContent: 'center',
   },
-  categoryText: {
+  contentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 44,
+  },
+  textColumn: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: 8,
+    justifyContent: 'center',
+  },
+  twoRowWrap: {
+    flexShrink: 1,
+  },
+  kickerText: {
     fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.6,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+    marginBottom: 2.5,
     textTransform: 'uppercase',
-    marginBottom: 2,
   },
   titleText: {
-    fontSize: 15,
-    fontWeight: '800',
-    letterSpacing: -0.2,
+    fontSize: 14.5,
+    lineHeight: 19,
+    fontWeight: '700',
+    letterSpacing: 0.1,
+  },
+  timeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  timeRowText: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '600',
+    letterSpacing: 0.1,
+  },
+  imageWrap: {
+    width: 36,
+    height: 36, // Compact calendar icon size
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    marginLeft: 6,
+  },
+  eventGraphic: {
+    width: '100%',
+    height: '100%',
+  },
+  timerRowAbsolute: {
+    position: 'absolute',
+    bottom: 8,
+    left: 16,
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  timerTrack: {
+    flex: 1,
+    height: 2.5,
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  timerFillFull: {
+    width: '100%',
+    height: '100%',
+  },
+  timerFillAnimated: {
+    height: '100%',
   },
 });
+
+const mqStyles = mqCardStyles;
 
 /* ───────────── styles for greeting card & ticker ───────────── */
 const gStyles = StyleSheet.create({
@@ -2688,7 +2904,7 @@ export default function HomeScreen() {
     Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0,
     Platform.OS === 'ios' ? 54 : 50
   ) + 2;
-  const [heroHeight, setHeroHeight] = useState(300);
+  const [heroHeight, setHeroHeight] = useState(180);
   const HEADER_SCROLL_DISTANCE = 85;
   const headerTranslateY = scrollY.interpolate({
     inputRange: [0, HEADER_SCROLL_DISTANCE],
@@ -3709,16 +3925,18 @@ export default function HomeScreen() {
           {/* Over-scroll covers for pull-down & pull-up */}
           <View pointerEvents="none" style={{ position: 'absolute', top: -800, left: 0, right: 0, height: 800, backgroundColor: screenTheme.overscrollTop }} />
           <View pointerEvents="none" style={{ position: 'absolute', bottom: -800, left: 0, right: 0, height: 800, backgroundColor: screenTheme.overscrollBottom }} />
-          {/* Continuous linear gradient covering the top section and fading into white */}
+          {/* Continuous linear gradient covering the top section down to member name */}
           <LinearGradient
             colors={screenTheme.gradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 0, y: 1 }}
-            style={
-              screenTheme.gradientHeight
-                ? { position: 'absolute', top: 0, left: 0, right: 0, height: screenTheme.gradientHeight }
-                : StyleSheet.absoluteFill
-            }
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              height: heroHeight > 0 ? heroHeight : (screenTheme.gradientHeight || 180),
+            }}
             pointerEvents="none"
           />
 
@@ -3736,8 +3954,8 @@ export default function HomeScreen() {
             theme={screenTheme}
           />
 
-          {/* Product Hunt Award & Events Marquee: Edge-to-edge floating pill cards */}
-          <View style={{ paddingHorizontal: 0, paddingTop: 4, paddingBottom: 6 }}>
+          {/* Upcoming Events Carousel Card: Full width edge-to-edge, flush with hero section */}
+          <View style={{ width: '100%', paddingHorizontal: 0, marginTop: 0, marginBottom: 12 }}>
             <EventsTicker 
               events={tickerEvents} 
               theme={screenTheme}

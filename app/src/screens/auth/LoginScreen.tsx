@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -10,8 +10,10 @@ import {
   Image,
   ActivityIndicator,
   Alert,
-  StatusBar
+  StatusBar,
+  ScrollView
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import auth from '@react-native-firebase/auth';
 import { RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -22,9 +24,8 @@ import InviteLinkService from '../../services/InviteLinkService';
 import { isGuestMemberDoc, normalizePhone10, stripGuestSuffix } from '../../utils/phoneUtils';
 import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { ChevronLeft, Phone, User, LogIn, ArrowRight } from 'lucide-react-native';
-import StarBackground from '../../components/StarBackground';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ChevronLeft, Phone, User, LogIn, ArrowRight, Clock, AlertTriangle } from 'lucide-react-native';
 
 type LoginScreenProps = {
   navigation: NativeStackNavigationProp<AuthStackParamList, 'Login'>;
@@ -34,9 +35,11 @@ type LoginScreenProps = {
 export default function LoginScreen({ navigation, route }: LoginScreenProps) {
   const { signInAnonymously } = useAuth();
   const { activeChurch, setChurchId } = useChurch();
+  const insets = useSafeAreaInsets();
   const [showPhoneInput, setShowPhoneInput] = useState(
     Boolean(route.params?.showPhoneInput || route.params?.invitedPhone)
   );
+  const scrollViewRef = useRef<ScrollView>(null);
 
   const [phoneNumber, setPhoneNumber] = useState(() =>
     route.params?.invitedPhone ? normalizePhone10(route.params.invitedPhone) : ''
@@ -46,6 +49,10 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
   const [memberName, setMemberName] = useState(route.params?.invitedName || '');
   const [contactId, setContactId] = useState<string | undefined>(undefined);
   const [isMember, setIsMember] = useState(false);
+  const [isPendingApproval, setIsPendingApproval] = useState(false);
+  const [pendingReqData, setPendingReqData] = useState<any>(null);
+  const [isRejected, setIsRejected] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState('');
   const [isGuestInviteRecord, setIsGuestInviteRecord] = useState(
     Boolean(route.params?.invitedPhone)
   );
@@ -129,7 +136,6 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
     route.params?.invitedName,
   ]);
 
-
   // ── Auto-lookup member or invited guest as user types ──
   useEffect(() => {
     const checkMembership = async () => {
@@ -149,6 +155,9 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
             setMemberName(displayName);
             setContactId(result.member?.id);
             setIsMember(true);
+            setIsPendingApproval(false);
+            setIsRejected(false);
+            setRejectionReason('');
             setIsGuestInviteRecord(guestFlag || Boolean(inviteContext?.phone10 === cleanNum));
             if (guestFlag && result.member?.invitedByMemberName && !inviteContext?.invitedByMemberName) {
               setInviteContext((prev) => ({
@@ -161,6 +170,25 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
               }));
             }
             setVerifyingStatus('');
+          } else if (result && result.isPending) {
+            const req = result.registrationRequest;
+            const full = req?.fullName || `${req?.firstName || ''} ${req?.lastName || ''}`.trim() || req?.firstName || '';
+            setMemberName(full);
+            setPendingReqData(req);
+            setContactId(undefined);
+            setIsMember(false);
+            setIsPendingApproval(true);
+            setIsRejected(false);
+            setRejectionReason('');
+            setVerifyingStatus('');
+          } else if (result && result.isRejected) {
+            setMemberName('');
+            setContactId(undefined);
+            setIsMember(false);
+            setIsPendingApproval(false);
+            setIsRejected(true);
+            setRejectionReason(result.registrationRequest?.rejectionReason || '');
+            setVerifyingStatus('Registration was not approved. You can register again.');
           } else {
             if (!inviteContext?.phone10 || inviteContext.phone10 !== cleanNum) {
               setMemberName('');
@@ -168,6 +196,9 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
             }
             setContactId(undefined);
             setIsMember(false);
+            setIsPendingApproval(false);
+            setIsRejected(false);
+            setRejectionReason('');
             setVerifyingStatus('Number not found in church records.');
           }
         } catch (err) {
@@ -177,11 +208,41 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
         setMemberName('');
         setContactId(undefined);
         setIsMember(false);
+        setIsPendingApproval(false);
+        setIsRejected(false);
+        setRejectionReason('');
         setVerifyingStatus('');
       }
     };
     checkMembership();
   }, [phoneNumber, activeChurch?.id, inviteContext?.churchId]);
+
+  const handleViewApprovalStatus = async () => {
+    let formattedNumber = phoneNumber.trim();
+    if (formattedNumber.length === 10 && !formattedNumber.startsWith('+')) {
+      formattedNumber = `+91${formattedNumber}`;
+    }
+    const cleanPhone = formattedNumber.replace(/[^0-9+]/g, '');
+    const fullName = memberName || pendingReqData?.fullName || `${pendingReqData?.firstName || ''} ${pendingReqData?.lastName || ''}`.trim() || pendingReqData?.firstName || '';
+    const city = pendingReqData?.city || (pendingReqData as any)?.village || '';
+    const gender = pendingReqData?.gender || '';
+
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    await AsyncStorage.setItem('@pending_registration_phone', cleanPhone).catch(() => {});
+    if (fullName) await AsyncStorage.setItem('@pending_registration_name', fullName).catch(() => {});
+    if (city) await AsyncStorage.setItem('@pending_registration_city', city).catch(() => {});
+    if (gender) await AsyncStorage.setItem('@pending_registration_gender', gender).catch(() => {});
+    await AsyncStorage.setItem('@is_pending_approval', 'true').catch(() => {});
+
+    navigation.navigate('ApprovalPending', {
+      phoneNumber: cleanPhone,
+      churchId: activeChurch?.id,
+      applicantName: fullName,
+      city,
+      gender,
+      applicantData: pendingReqData,
+    });
+  };
 
   const handleSendCode = async () => {
     let formattedNumber = phoneNumber.trim();
@@ -191,6 +252,30 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
 
     if (!formattedNumber.startsWith('+') || formattedNumber.length < 12) {
       Alert.alert('Invalid Number', 'Please enter a valid 10-digit phone number.');
+      return;
+    }
+
+    // If pending approval - DIRECTLY VIEW STATUS WITHOUT SENDING OTP!
+    if (isPendingApproval) {
+      await handleViewApprovalStatus();
+      return;
+    }
+
+    // If rejected
+    if (isRejected) {
+      Alert.alert(
+        'Registration Not Approved',
+        rejectionReason
+          ? `Your previous registration was not approved.\nReason: ${rejectionReason}\n\nWould you like to register again?`
+          : 'Your previous registration was not approved. Would you like to submit a new registration?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Register Again',
+            onPress: () => navigation.navigate('SignUp'),
+          },
+        ]
+      );
       return;
     }
 
@@ -259,264 +344,559 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
   if (!showPhoneInput) {
     return (
       <View style={styles.landingContainer}>
-        <StatusBar barStyle="light-content" />
-        <StarBackground />
+        <StatusBar barStyle="dark-content" backgroundColor="#FEF5EE" translucent={false} />
         
-        <View style={styles.landingTop}>
-          <Text 
-            style={styles.welcomePrefix}
+        {/* Full Image: Proper aspect ratio with contain so 100% of image is displayed with no spreading */}
+        <Image 
+          source={require('../../../assets/welcome_hero.jpg')}
+          style={styles.landingHeroImg}
+          resizeMode="contain"
+        />
+        
+        <SafeAreaView edges={['bottom']} style={styles.landingBottom}>
+          <TouchableOpacity 
+            style={styles.mainActionBtn}
+            onPress={() => {
+              setShowPhoneInput(true);
+            }}
+            activeOpacity={0.88}
           >
-            Welcome to
-          </Text>
-          <Text 
-            style={styles.churchTitleLarge}
-            numberOfLines={2}
-            adjustsFontSizeToFit={true}
-            minimumFontScale={0.6}
+            <Text style={styles.mainActionBtnTxt}>Sign In</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.signUpBtn}
+            onPress={() => {
+              navigation.navigate('SignUp');
+            }}
+            activeOpacity={0.88}
           >
-            {activeChurch?.name || 'Rhema Global Ministries'}
-          </Text>
-          <Text style={[styles.bibleQuote, { marginTop: 40, marginBottom: 0, fontSize: 15, fontStyle: 'normal', opacity: 0.9, paddingHorizontal: 20 }]}>
-            A place to connect, pray, and walk together in faith as one church family.
-          </Text>
-          <Text style={[styles.bibleQuote, { marginTop: 25, paddingHorizontal: 20, lineHeight: 26 }]}>
-            "But those who hope in the Lord will renew their strength. They will soar on wings like eagles; they will run and not grow weary, they will walk and not be faint."{'\n'}— Isaiah 40:31
-          </Text>
-        </View>
-
-        <View style={styles.landingBottom}>
-          <View style={styles.actionRow}>
-            <TouchableOpacity 
-              style={[styles.mainActionBtn, { flex: 1 }]}
-              onPress={() => {
-                setShowPhoneInput(true);
-              }}
-            >
-              <Text style={styles.mainActionBtnTxt}>Sign In</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={[styles.signUpBtn, { flex: 1, marginLeft: 12 }]}
-              onPress={() => {
-                navigation.navigate('SignUp');
-              }}
-            >
-              <Text style={styles.signUpBtnTxt}>Register</Text>
-            </TouchableOpacity>
-          </View>
+            <Text style={styles.signUpBtnTxt}>Register</Text>
+          </TouchableOpacity>
 
           <TouchableOpacity 
             style={styles.guestLink}
             onPress={handleGuestLogin}
+            activeOpacity={0.7}
           >
             <Text style={styles.guestLinkTxt}>Guest mode — browse without login</Text>
           </TouchableOpacity>
-        </View>
+        </SafeAreaView>
       </View>
     );
   }
 
   return (
-    <KeyboardAvoidingView 
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={styles.authContainer}
-    >
-      <StatusBar barStyle="light-content" backgroundColor="#0A1128" />
-      
-      {/* ── Page Header ── */}
-      <View style={styles.pageHeader}>
-        <SafeAreaView style={{ flexDirection: 'row', alignItems: 'center', width: '100%', paddingTop: Platform.OS === 'ios' ? 10 : 30, paddingBottom: 24, paddingHorizontal: 22, justifyContent: 'space-between' }}>
-          <TouchableOpacity 
-            style={styles.backBtn}
-            onPress={() => {
-              if (route.params?.fromJoinSuccess || route.params?.showPhoneInput) {
-                if (navigation.canGoBack()) {
-                  navigation.goBack();
-                } else {
-                  setShowPhoneInput(false);
-                }
+    <SafeAreaView edges={['top']} style={styles.loginRootContainer}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FDF6F2" />
+      <LinearGradient 
+        colors={['#FDF6F2', '#FEF7F3', '#FDF4ED']} 
+        style={StyleSheet.absoluteFillObject} 
+      />
+
+      {/* ── Top Bar with Clean Back Arrow (No Circle) ── */}
+      <View style={styles.loginTopBar}>
+        <TouchableOpacity 
+          style={styles.backArrowBtn}
+          onPress={() => {
+            if (route.params?.fromJoinSuccess || route.params?.showPhoneInput) {
+              if (navigation.canGoBack()) {
+                navigation.goBack();
               } else {
                 setShowPhoneInput(false);
               }
-            }}
-          >
-            <ChevronLeft size={20} color="#aac4e8" />
-            <Text style={styles.backBtnTxt}>Back</Text>
-          </TouchableOpacity>
-          <View style={styles.titleCol}>
-            <Text style={styles.pageTitle} numberOfLines={1} adjustsFontSizeToFit>
-              Welcome Back
-            </Text>
-            <Text style={styles.pageSub} numberOfLines={1} adjustsFontSizeToFit>
-              Sign in to your member account
-            </Text>
-          </View>
-          <View style={{ width: 60 }} />
-        </SafeAreaView>
+            } else {
+              setShowPhoneInput(false);
+            }
+          }}
+          activeOpacity={0.7}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        >
+          <ChevronLeft size={28} color="#0F172A" strokeWidth={2.4} />
+        </TouchableOpacity>
       </View>
 
-      <SafeAreaView style={{ flex: 1, paddingTop: 10 }}>
-        <View style={styles.authContent}>
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
+      >
+        <ScrollView 
+          ref={scrollViewRef}
+          contentContainerStyle={styles.loginScrollContent}
+          bounces={false}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* ── 3D Character Illustration Area with Semi-Circle Arch ── */}
+          <View style={styles.characterContainer}>
+            <View style={styles.semiCircleArch} />
+            <Image 
+              source={require('../../../assets/login_character.png')}
+              style={styles.characterImg}
+              resizeMode="contain"
+            />
+          </View>
 
-          <View style={[styles.cardContainer, isMember && styles.cardContainerSuccess]}>
-            <View style={styles.inputSection}>
-              <Text style={styles.inputLabel}>PHONE NUMBER</Text>
-              <View style={[styles.inputWrapper, isMember && styles.inputWrapperSuccess]}>
-                <Phone size={20} color={isMember ? "#15803D" : "#9CA3AF"} />
-                <TextInput 
-                  style={styles.textInput}
-                  placeholder="99887 76655"
-                  placeholderTextColor="#9CA3AF"
-                  keyboardType="phone-pad"
-                  value={phoneNumber}
-                  onChangeText={setPhoneNumber}
-                  maxLength={10}
-                />
-                {isMember && <User size={20} color="#15803D" />}
+          {/* ── White Curved Sheet Card ── */}
+          <View style={styles.bottomSheetCard}>
+            <Text style={styles.cardHeading}>Welcome Back!</Text>
+            <Text style={styles.cardSubheading}>Let's get you signed in</Text>
+
+            {/* ── Pill Input Container ── */}
+            <View style={[styles.pillInputWrapper, isMember && styles.pillInputWrapperSuccess]}>
+              <View style={styles.phoneIconWrap}>
+                <Phone size={19} color="#FA6203" strokeWidth={2.4} />
               </View>
-
-              {verifyingStatus ? (
-                <Text style={[styles.statusText, isMember && styles.statusTextSuccess]}>
-                  {verifyingStatus}
-                </Text>
-              ) : null}
+              <Text style={styles.countryCodeTxt}>+91</Text>
+              <View style={styles.pillDivider} />
+              <TextInput 
+                style={styles.pillTextInput}
+                placeholder="Phone number"
+                placeholderTextColor="#94A3B8"
+                keyboardType="phone-pad"
+                value={phoneNumber}
+                onChangeText={setPhoneNumber}
+                maxLength={10}
+                onFocus={() => {
+                  setTimeout(() => {
+                    scrollViewRef.current?.scrollTo({ y: 150, animated: true });
+                  }, 150);
+                }}
+              />
+              {isMember && <User size={18} color="#15803D" />}
             </View>
 
+            {verifyingStatus ? (
+              <Text style={[styles.statusInlineTxt, isMember && styles.statusInlineTxtSuccess]}>
+                {verifyingStatus}
+              </Text>
+            ) : null}
+
             {(isMember || isGuestInviteRecord) && (
-              <View style={styles.memberBanner}>
-                <Text style={styles.memberBannerTxt}>
-                  Welcome{memberName ? `, ${memberName}` : ''} 🙏
-                </Text>
-                <Text style={styles.memberBannerSub}>
+              <View style={styles.memberBannerBox}>
+                <Text style={styles.memberBannerBoxTitle}>Welcome{memberName ? `, ${memberName}` : ''}! 🙏</Text>
+                <Text style={styles.memberBannerBoxSub}>
                   {isGuestInviteRecord
                     ? `${inviteContext?.invitedByMemberName ? `Invited by ${inviteContext.invitedByMemberName} • ` : ''}No registration needed — verify OTP to enter.`
-                    : 'We found your church record.'}
+                    : 'Verified church record found.'}
                 </Text>
               </View>
             )}
 
-            <TouchableOpacity 
-              style={[styles.submitBtn, loading && styles.submitBtnDisabled]}
-              onPress={handleSendCode}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#0A1128" />
-              ) : (
-                <Text style={styles.submitBtnTxt}>Send Verification Code</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-
-          {!isGuestInviteRecord && (
-            <View style={styles.footerInfo}>
-              <Text style={styles.footerTxt}>Not a member yet? </Text>
-              <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
-                <Text style={styles.footerLink}>Register Here</Text>
+            {isPendingApproval && (
+              <TouchableOpacity 
+                style={styles.pendingBannerBox}
+                activeOpacity={0.8}
+                onPress={handleViewApprovalStatus}
+              >
+                <Clock size={18} color="#D97706" />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={styles.pendingBannerBoxTitle}>Application Under Review</Text>
+                  <Text style={styles.pendingBannerBoxSub}>
+                    Your registration request is currently under review by church leaders. Tap here to view status.
+                  </Text>
+                </View>
+                <ArrowRight size={16} color="#D97706" />
               </TouchableOpacity>
-            </View>
-          )}
-        </View>
-      </SafeAreaView>
-    </KeyboardAvoidingView>
+            )}
+
+            {isRejected && (
+              <View style={styles.rejectedBannerBox}>
+                <AlertTriangle size={18} color="#DC2626" />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={styles.rejectedBannerBoxTitle}>Registration Not Approved</Text>
+                  <Text style={styles.rejectedBannerBoxSub}>
+                    {rejectionReason || 'You can review your details and submit a new registration.'}
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* ── Send Verification Button (Disabled by default, enabled only if member found) ── */}
+            {(() => {
+              const isButtonDisabled = loading || (!isMember && !isGuestInviteRecord && !isPendingApproval && !isRejected);
+              return (
+                <TouchableOpacity 
+                  style={[
+                    styles.verificationBtn,
+                    isButtonDisabled && styles.verificationBtnDisabled,
+                    isPendingApproval && { shadowColor: '#F59E0B' },
+                    isRejected && { shadowColor: '#2563EB' }
+                  ]}
+                  onPress={handleSendCode}
+                  disabled={isButtonDisabled}
+                  activeOpacity={0.88}
+                >
+                  <LinearGradient
+                    colors={
+                      isButtonDisabled
+                        ? ['#64748B', '#475569']
+                        : isPendingApproval 
+                        ? ['#F59E0B', '#D97706'] 
+                        : isRejected 
+                        ? ['#3B82F6', '#2563EB'] 
+                        : ['#18181B', '#000000']
+                    }
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.verificationBtnGradient}
+                  >
+                    {loading ? (
+                      <ActivityIndicator color="#FFFFFF" />
+                    ) : isPendingApproval ? (
+                      <Text style={styles.verificationBtnTxt}>View Approval Status</Text>
+                    ) : isRejected ? (
+                      <Text style={styles.verificationBtnTxt}>Submit New Registration</Text>
+                    ) : (
+                      <Text style={[styles.verificationBtnTxt, isButtonDisabled && styles.verificationBtnTxtDisabled]}>
+                        Send Verification
+                      </Text>
+                    )}
+                  </LinearGradient>
+                </TouchableOpacity>
+              );
+            })()}
+
+            {/* Flexible spacer to push the footer to the bottom of the card */}
+            <View style={styles.footerPushSpacer} />
+
+            {/* ── Bottom Link (Safely positioned at bottom, completely clearing device navigation buttons) ── */}
+            {!isGuestInviteRecord && (
+              <View 
+                style={[
+                  styles.bottomFooterRow, 
+                  { paddingBottom: (insets.bottom > 0 ? insets.bottom : (Platform.OS === 'android' ? 26 : 14)) + 14 }
+                ]}
+              >
+                <Text style={styles.bottomFooterPrefix}>Not a member yet? </Text>
+                <TouchableOpacity 
+                  onPress={() => navigation.navigate('SignUp')} 
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Text style={styles.bottomFooterLink}>Register here.</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  // Landing Styles
-  landingContainer: { flex: 1, backgroundColor: '#090a0f' },
-  landingTop: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  welcomePrefix: { 
-    color: '#F4D389', 
-    fontSize: 56, 
-    fontFamily: Platform.OS === 'ios' ? 'Snell Roundhand' : 'cursive', 
-    fontStyle: 'italic', 
-    fontWeight: '600', 
-    marginBottom: 8, 
-    textAlign: 'center'
+  // Landing / Welcome Styles
+  landingContainer: { 
+    flex: 1, 
+    backgroundColor: '#FEF5EE',
+    position: 'relative',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  churchTitleLarge: { color: '#fff', fontSize: 22, fontWeight: '800', marginBottom: 10, textAlign: 'center', letterSpacing: 1, textTransform: 'uppercase' },
-  bibleQuote: { color: '#aac4e8', fontSize: 16, fontStyle: 'italic', fontWeight: '500', marginTop: 40, textAlign: 'center', lineHeight: 24 },
-  
-  landingBottom: { padding: 40, paddingBottom: 60, gap: 16 },
-  actionRow: { flexDirection: 'row', width: '100%', justifyContent: 'space-between', marginBottom: 10 },
+  landingHeroImg: {
+    width: '100%',
+    height: '100%',
+  },
+  landingBottom: { 
+    position: 'absolute',
+    bottom: Platform.OS === 'ios' ? 48 : 65,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 28, 
+  },
   mainActionBtn: { 
-    backgroundColor: '#F4D389', borderRadius: 30, paddingVertical: 14, 
-    justifyContent: 'center', alignItems: 'center',
-    elevation: 5, shadowColor: '#F4D389', shadowOpacity: 0.2, shadowRadius: 10
+    width: '100%',
+    backgroundColor: '#0F172A', 
+    borderRadius: 26, 
+    height: 52, 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    elevation: 4, 
+    shadowColor: '#000000', 
+    shadowOffset: { width: 0, height: 4 }, 
+    shadowOpacity: 0.18, 
+    shadowRadius: 8,
+    overflow: 'hidden',
   },
-  mainActionBtnTxt: { color: '#0A1128', fontSize: 16, fontWeight: '700' },
-  
+  mainActionBtnTxt: { 
+    color: '#FFFFFF', 
+    fontSize: 16, 
+    fontWeight: '700',
+  },
   signUpBtn: { 
-    backgroundColor: '#1a2d5a', borderRadius: 30, paddingVertical: 14, 
-    justifyContent: 'center', alignItems: 'center',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)'
+    width: '100%',
+    backgroundColor: '#991B1B', 
+    borderRadius: 26, 
+    height: 52, 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    marginTop: 12,
+    elevation: 4,
+    shadowColor: '#991B1B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    overflow: 'hidden',
   },
-  signUpBtnTxt: { color: '#fff', fontSize: 16, fontWeight: '500' },
+  signUpBtnTxt: { 
+    color: '#FFFFFF', 
+    fontSize: 16, 
+    fontWeight: '700',
+  },
+  guestLink: { 
+    marginTop: 14, 
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  guestLinkTxt: { 
+    color: '#334155', 
+    fontSize: 13, 
+    fontWeight: '600',
+  },
 
-  guestLink: { marginTop: 10, alignItems: 'center' },
-  guestLinkTxt: { color: '#6B7280', fontSize: 12, fontWeight: '500' },
-
-  // Auth Styles
-  authContainer: { flex: 1, backgroundColor: '#0A1128' },
-  
-  pageHeader: {
+  // ── Matching Image Login Design Styles ──
+  loginRootContainer: {
+    flex: 1,
+    backgroundColor: '#FDF6F2',
+  },
+  loginTopBar: {
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'android' ? 10 : 4,
+    paddingBottom: 4,
+    zIndex: 20,
+  },
+  backArrowBtn: {
+    padding: 8,
+    alignSelf: 'flex-start',
+  },
+  loginScrollContent: {
+    flexGrow: 1,
+    justifyContent: 'space-between',
+    paddingBottom: 0,
+  },
+  characterContainer: {
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingTop: 6,
+    paddingBottom: 0,
+    position: 'relative',
+  },
+  semiCircleArch: {
+    position: 'absolute',
+    bottom: 0,
+    width: 290,
+    height: 195,
+    borderTopLeftRadius: 145,
+    borderTopRightRadius: 145,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    backgroundColor: '#FCEEE2',
+    alignSelf: 'center',
+  },
+  characterImg: {
+    width: '100%',
+    height: 200,
+  },
+  bottomSheetCard: {
+    flex: 1,
+    flexGrow: 1,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 36,
+    borderTopRightRadius: 36,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 0,
+    marginTop: -16,
+    shadowColor: '#8C6D58',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    elevation: 10,
+    justifyContent: 'space-between',
+  },
+  cardHeading: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#0A1629',
+    textAlign: 'center',
+    letterSpacing: -0.4,
+  },
+  cardSubheading: {
+    fontSize: 14,
+    fontWeight: '400',
+    color: '#5E6F88',
+    textAlign: 'center',
+    marginTop: 4,
     marginBottom: 20,
-    zIndex: 10,
-    backgroundColor: 'transparent'
   },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, minWidth: 60 },
-  backBtnTxt: { color: '#aac4e8', fontSize: 16, fontWeight: '500' },
-  titleCol: { flex: 1, alignItems: 'center', paddingHorizontal: 16 },
-  pageTitle: { 
-    color: '#F4D389', 
-    fontSize: 40, 
-    fontFamily: Platform.OS === 'ios' ? 'Snell Roundhand' : 'cursive', 
-    fontStyle: 'italic',
-    fontWeight: '600' 
+  pillInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    height: 56,
+    paddingHorizontal: 18,
+    borderWidth: 1.2,
+    borderColor: '#EDF2F6',
+    shadowColor: '#718096',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  pageSub: { color: '#aac4e8', fontSize: 14, marginTop: -5, fontStyle: 'italic' },
+  pillInputWrapperSuccess: {
+    borderColor: '#10B981',
+  },
+  phoneIconWrap: {
+    marginRight: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  countryCodeTxt: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0A1629',
+    marginLeft: 2,
+  },
+  pillDivider: {
+    width: 1,
+    height: 20,
+    backgroundColor: '#CBD5E1',
+    marginHorizontal: 12,
+  },
+  pillTextInput: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#0A1629',
+    paddingVertical: 0,
+  },
+  statusInlineTxt: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 8,
+    marginHorizontal: 8,
+    fontWeight: '500',
+  },
+  statusInlineTxtSuccess: {
+    color: '#15803D',
+  },
 
-  authContent: { paddingHorizontal: 25, flex: 1, paddingTop: 10 },
-
-  cardContainer: {
-    backgroundColor: '#111827',
-    borderRadius: 24,
-    padding: 24,
+  memberBannerBox: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
     borderWidth: 1,
-    borderColor: 'rgba(244, 211, 137, 0.4)',
+    padding: 12,
+    borderRadius: 14,
+    marginTop: 14,
   },
-  cardContainerSuccess: {
-    borderColor: '#F4D389',
+  memberBannerBoxTitle: {
+    color: '#15803D',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  memberBannerBoxSub: {
+    color: '#166534',
+    fontSize: 12,
+    marginTop: 2,
   },
 
-  inputSection: { marginBottom: 25 },
-  inputLabel: { fontSize: 10, fontWeight: '800', color: '#aac4e8', letterSpacing: 1, marginBottom: 10 },
-  inputWrapper: { 
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#090a0f', 
-    borderRadius: 14, paddingHorizontal: 16, height: 56, borderWidth: 1, borderColor: 'transparent' 
+  pendingBannerBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
+    borderWidth: 1,
+    padding: 12,
+    borderRadius: 14,
+    marginTop: 14,
   },
-  inputWrapperSuccess: { borderColor: '#BBF7D0', backgroundColor: '#0A1622' },
-  textInput: { flex: 1, marginLeft: 12, fontSize: 16, fontWeight: '600', color: '#fff' },
-  statusText: { fontSize: 11, color: '#F87171', marginTop: 8, fontWeight: '500' },
-  statusTextSuccess: { color: '#BBF7D0' },
-
-  memberBanner: { 
-    backgroundColor: '#1E293B', 
-    padding: 18, 
-    borderRadius: 16, 
-    marginBottom: 25, 
-    borderLeftWidth: 4,
-    borderLeftColor: '#F4D389' 
+  pendingBannerBoxTitle: {
+    color: '#B45309',
+    fontSize: 13,
+    fontWeight: '700',
   },
-  memberBannerTxt: { color: '#fff', fontSize: 16, fontWeight: '800' },
-  memberBannerSub: { color: '#aac4e8', fontSize: 12, marginTop: 4 },
+  pendingBannerBoxSub: {
+    color: '#92400E',
+    fontSize: 11,
+    marginTop: 2,
+    lineHeight: 15,
+  },
 
-  submitBtn: { backgroundColor: '#F4D389', borderRadius: 30, paddingVertical: 16, alignItems: 'center', elevation: 2 },
-  submitBtnDisabled: { opacity: 0.5, backgroundColor: '#9CA3AF' },
-  submitBtnTxt: { color: '#0A1128', fontSize: 16, fontWeight: '800' },
+  rejectedBannerBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+    borderWidth: 1,
+    padding: 12,
+    borderRadius: 14,
+    marginTop: 14,
+  },
+  rejectedBannerBoxTitle: {
+    color: '#B91C1C',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  rejectedBannerBoxSub: {
+    color: '#991B1B',
+    fontSize: 11,
+    marginTop: 2,
+    lineHeight: 15,
+  },
 
-  footerInfo: { flexDirection: 'row', justifyContent: 'center', marginTop: 30 },
-  footerTxt: { color: '#aac4e8', fontSize: 14 },
-  footerLink: { color: '#F4D389', fontSize: 14, fontWeight: '800' },
+  verificationBtn: {
+    borderRadius: 22,
+    height: 54,
+    marginTop: 26,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    elevation: 4,
+    overflow: 'hidden',
+  },
+  verificationBtnGradient: {
+    flex: 1,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  verificationBtnDisabled: {
+    elevation: 0,
+    shadowOpacity: 0,
+  },
+  verificationBtnTxtDisabled: {
+    color: '#FFFFFF',
+  },
+  verificationBtnTxt: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+
+  footerPushSpacer: {
+    flex: 1,
+    minHeight: 28,
+  },
+  bottomFooterRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 16,
+  },
+  bottomFooterPrefix: {
+    color: '#475569',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  bottomFooterLink: {
+    color: '#FA6203',
+    fontSize: 13,
+    fontWeight: '700',
+  },
 });

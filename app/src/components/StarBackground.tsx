@@ -51,12 +51,12 @@ const StarLayer = ({ stars, size, duration }: { stars: any[], size: number, dura
 
 export default function StarBackground() {
   return (
-    <View style={StyleSheet.absoluteFill}>
+    <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000000' }]}>
       <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
         <Defs>
           <RadialGradient id="grad" cx="50%" cy="100%" rx="100%" ry="100%" fx="50%" fy="100%">
-            <Stop offset="0" stopColor="#1a2d5a" />
-            <Stop offset="1" stopColor="#0A1128" />
+            <Stop offset="0" stopColor="#141414" />
+            <Stop offset="1" stopColor="#000000" />
           </RadialGradient>
         </Defs>
         <Rect width="100%" height="100%" fill="url(#grad)" />

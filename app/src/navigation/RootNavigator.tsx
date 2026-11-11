@@ -33,6 +33,9 @@ import { phonesMatch } from '../utils/phoneUtils';
 import AuthNavigator from './AuthNavigator';
 import SplashScreen from '../screens/auth/SplashScreen';
 import OnboardingScreen from '../screens/auth/OnboardingScreen';
+import ApprovalPendingScreen from '../screens/auth/ApprovalPendingScreen';
+import LoginScreen from '../screens/auth/LoginScreen';
+import SignUpScreen from '../screens/auth/SignUpScreen';
 
 // Member Screens
 import CelebrationScreen from '../screens/CelebrationScreen';
@@ -66,6 +69,7 @@ import ContactUsScreen from '../screens/ContactUsScreen';
 import AttendanceScreen from '../screens/AttendanceScreen';
 import CareCellScreen from '../screens/care_cells/CareCellScreen';
 import EventAttendeesScreen from '../screens/admin/EventAttendeesScreen';
+import AdminRegistrationApprovals from '../screens/admin/AdminRegistrationApprovals';
 import PastorEventDetail from '../screens/admin/pastor_events/PastorEventDetail';
 import CreatePastorEvent from '../screens/admin/pastor_events/CreatePastorEvent';
 import PastorEventRoutePlanner from '../screens/admin/pastor_events/PastorEventRoutePlanner';
@@ -89,6 +93,7 @@ import BibleQuizDetailScreen from '../screens/quiz/BibleQuizDetailScreen';
 import BibleQuizPlayerScreen from '../screens/quiz/BibleQuizPlayerScreen';
 import BibleQuizResultScreen from '../screens/quiz/BibleQuizResultScreen';
 import BibleQuizReviewScreen from '../screens/quiz/BibleQuizReviewScreen';
+import BibleQuizLeaderboardScreen from '../screens/quiz/BibleQuizLeaderboardScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -648,7 +653,18 @@ function TabNavigator() {
 }
 
 function Navigation() {
-  const { user, member, loading, viewMode, setViewMode, signOut } = useAuth();
+  const { 
+    user, 
+    member, 
+    loading, 
+    viewMode, 
+    setViewMode, 
+    signOut,
+    isPlatformSuperAdmin,
+    isPendingApproval,
+    isRejected,
+    registrationRequest,
+  } = useAuth();
   const { activeChurch, setChurchId } = useChurch();
   const navigation = useNavigation();
   const [onboardingComplete, setOnboardingComplete] = React.useState<boolean | null>(null);
@@ -661,6 +677,41 @@ function Navigation() {
   const showAdminView = isAdmin && viewMode === 'admin';
   
   const [pendingNotification, setPendingNotification] = useState<any>(null);
+  const [hasPendingStored, setHasPendingStored] = useState(false);
+  const [storedPendingData, setStoredPendingData] = useState<any>(null);
+
+  // 0. Persistent Pending Registration Check
+  useEffect(() => {
+    let isMounted = true;
+    const checkPendingStorage = async () => {
+      try {
+        const flag = await AsyncStorage.getItem('@is_pending_approval');
+        if (flag === 'true') {
+          const [phone, name, city, gender, church] = await Promise.all([
+            AsyncStorage.getItem('@pending_registration_phone'),
+            AsyncStorage.getItem('@pending_registration_name'),
+            AsyncStorage.getItem('@pending_registration_city'),
+            AsyncStorage.getItem('@pending_registration_gender'),
+            AsyncStorage.getItem('@pending_registration_church'),
+          ]);
+          if (isMounted) {
+            setStoredPendingData({ phone, name, city, gender, church });
+            setHasPendingStored(true);
+          }
+        } else if (isMounted) {
+          setHasPendingStored(false);
+          setStoredPendingData(null);
+        }
+      } catch (e) {}
+    };
+    if (user && !user.isAnonymous) {
+      checkPendingStorage();
+    } else {
+      setHasPendingStored(false);
+      setStoredPendingData(null);
+    }
+    return () => { isMounted = false; };
+  }, [user, isPendingApproval, isRejected]);
 
   // 1. Initial Security Check & App State Listener
   useEffect(() => {
@@ -1187,6 +1238,43 @@ function Navigation() {
     return isChurchExpired ? LockedFeatureScreen : Component;
   };
 
+  // ── Approval Pending Check: If user is awaiting admin approval, block access to all auth & member screens ──
+  const isApprovedMember = Boolean(
+    user?.isAnonymous || 
+    isPlatformSuperAdmin || 
+    (member && (member.status === 'Active' || member.firstName || member.name))
+  );
+
+  // ONLY block on approval pending if a non-anonymous user is currently authenticated with Firebase
+  // but has NOT been approved as a member yet (awaiting admin review or rejected).
+  // If the user has signed out (!user), they must NEVER be blocked — they must see the Auth screens (Login / SignUp)!
+  const shouldBlockOnApproval = Boolean(
+    user && 
+    !user.isAnonymous && 
+    !isApprovedMember && 
+    (isPendingApproval || isRejected || !member)
+  );
+
+  if (shouldBlockOnApproval) {
+    return (
+      <Stack.Navigator id="approval-pending-navigator" screenOptions={{ headerShown: false, animation: 'none' }}>
+        <Stack.Screen 
+          name="ApprovalPending" 
+          component={ApprovalPendingScreen} 
+          initialParams={{
+            phoneNumber: user?.phoneNumber || registrationRequest?.phone || storedPendingData?.phone,
+            churchId: activeChurch?.id || registrationRequest?.churchId || storedPendingData?.church,
+            applicantName: registrationRequest?.fullName || registrationRequest?.firstName || storedPendingData?.name,
+            city: registrationRequest?.city || storedPendingData?.city,
+            gender: registrationRequest?.gender || storedPendingData?.gender,
+          }}
+        />
+        <Stack.Screen name="Login" component={LoginScreen} />
+        <Stack.Screen name="SignUp" component={SignUpScreen} />
+      </Stack.Navigator>
+    );
+  }
+
   const initialRouteName = !user 
     ? "Auth" 
     : !onboardingComplete 
@@ -1257,6 +1345,7 @@ function Navigation() {
             <Stack.Screen name="BibleQuizPlayer" component={BibleQuizPlayerScreen} />
             <Stack.Screen name="BibleQuizResult" component={BibleQuizResultScreen} />
             <Stack.Screen name="BibleQuizReview" component={BibleQuizReviewScreen} />
+            <Stack.Screen name="BibleQuizLeaderboard" component={BibleQuizLeaderboardScreen} />
             {/* Pastor / Admin Specific Screens */}
             <Stack.Screen name="EventDetail" component={renderPremium(PastorEventDetail)} />
             <Stack.Screen name="CreateEvent" component={renderPremium(CreatePastorEvent)} />
@@ -1264,6 +1353,7 @@ function Navigation() {
             <Stack.Screen name="EventMap" component={renderPremium(PastorEventMap)} />
             <Stack.Screen name="AIAssistant" component={renderPremium(AIAssistantModal)} options={{ presentation: 'modal' }} />
             <Stack.Screen name="EventAttendees" component={EventAttendeesScreen} />
+            <Stack.Screen name="AdminRegistrationApprovals" component={AdminRegistrationApprovals} />
           </>
         ) : (
           <Stack.Screen name="Onboarding" component={OnboardingScreen} />
