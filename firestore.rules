@@ -323,6 +323,20 @@ service cloud.firestore {
         allow write: if isChurchAdmin();
       }
 
+      // Normalized Phone Index & Guest Invites (per-church anti-duplication & deep-link lookup)
+      match /memberPhoneIndex/{phoneKey} {
+        allow read, create, update: if isAuthenticated();
+        allow delete: if isChurchAdmin() || (
+          isAuthenticated() &&
+          resource.data.get('memberDocId', '') == request.auth.uid
+        );
+      }
+
+      match /guestInvites/{inviteId} {
+        allow read, create, update: if isAuthenticated();
+        allow delete: if isChurchAdmin();
+      }
+
       // Members subcollection
       match /members/{memberId} {
         allow read: if isAuthenticated();

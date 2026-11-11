@@ -1797,3 +1797,5 @@ export {
   bookResponsibilitySlotHttp,
   declineResponsibilitySlotHttp,
 } from './rosterNotifications.js';
+
+export { guestInviteLanding } from './guestInvite.js';

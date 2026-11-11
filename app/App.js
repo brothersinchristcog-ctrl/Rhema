@@ -195,7 +195,14 @@ export default function App() {
   }, [slideAnim]);
 
   const linking = {
-    prefixes: ['rhemaglobal://', 'https://rhemaglobalministries.org', 'wechristian://', 'https://wechristian.app'],
+    prefixes: [
+      'rhema://',
+      'rhemaglobal://',
+      'https://rhema-global-ministries.web.app',
+      'https://rhemaglobalministries.org',
+      'wechristian://',
+      'https://wechristian.app',
+    ],
     config: {
       screens: {
         Auth: {

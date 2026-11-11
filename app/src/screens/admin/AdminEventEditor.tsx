@@ -2004,7 +2004,7 @@ export default function AdminEventEditor() {
                     <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? '#FFFFFF' : '#0F172A' }}>
                       {role.name}
                     </Text>
-                    <Text style={{ fontSize: 11, color: '#64748B' }}>
+                    <Text style={{ fontSize: 11, color: isDark ? '#A1A1AA' : '#64748B' }}>
                       {role.slotsNeeded} {role.slotsNeeded === 1 ? 'volunteer needed' : 'volunteers needed'}
                     </Text>
                   </View>
@@ -2022,16 +2022,45 @@ export default function AdminEventEditor() {
               {/* Add New Role Row */}
               <View style={{ marginTop: 8, flexDirection: 'row', gap: 6, alignItems: 'center' }}>
                 <TextInput
-                  style={[styles.inputWrap, { flex: 2, paddingHorizontal: 12, fontSize: 12, height: 40 }]}
+                  style={[
+                    styles.input,
+                    isDark && styles.inputDark,
+                    {
+                      flex: 2,
+                      paddingHorizontal: 12,
+                      paddingVertical: 0,
+                      fontSize: 13,
+                      height: 42,
+                      textAlignVertical: 'center',
+                      color: isDark ? '#FFFFFF' : '#0F172A',
+                      backgroundColor: isDark ? '#27272A' : '#FFFFFF',
+                      borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+                    },
+                  ]}
                   placeholder="e.g. Stage Setup & Welcome"
-                  placeholderTextColor="#94A3B8"
+                  placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                   value={newRoleName}
                   onChangeText={setNewRoleName}
                 />
                 <TextInput
-                  style={[styles.inputWrap, { width: 55, paddingHorizontal: 8, fontSize: 12, height: 40, textAlign: 'center' }]}
+                  style={[
+                    styles.input,
+                    isDark && styles.inputDark,
+                    {
+                      width: 60,
+                      paddingHorizontal: 8,
+                      paddingVertical: 0,
+                      fontSize: 13,
+                      height: 42,
+                      textAlign: 'center',
+                      textAlignVertical: 'center',
+                      color: isDark ? '#FFFFFF' : '#0F172A',
+                      backgroundColor: isDark ? '#27272A' : '#FFFFFF',
+                      borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+                    },
+                  ]}
                   placeholder="Qty"
-                  placeholderTextColor="#94A3B8"
+                  placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                   keyboardType="numeric"
                   value={newRoleSlots}
                   onChangeText={setNewRoleSlots}

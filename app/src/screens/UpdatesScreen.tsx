@@ -892,9 +892,9 @@ export default function UpdatesScreen({ navigation, route }: any) {
 
           {visibleUpdates.length === 0 && !loading && (
             <View style={styles.emptyContainer}>
-              <Bell size={48} color="#94a3b8" style={{ marginBottom: 12 }} />
-              <Text style={styles.emptyText}>{t('updates.allCaughtUp')}</Text>
-              <Text style={styles.emptySubText}>{t('updates.emptySub')}</Text>
+              <Bell size={48} color={isDark ? '#64748B' : '#94a3b8'} style={{ marginBottom: 12 }} />
+              <Text style={[styles.emptyText, { color: colors.text }]}>{t('updates.allCaughtUp')}</Text>
+              <Text style={[styles.emptySubText, { color: colors.textSecondary }]}>{t('updates.emptySub')}</Text>
             </View>
           )}
         </View>
@@ -916,6 +916,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
             activeOpacity={1} 
             style={[
               styles.modalCard,
+              isDark && { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
               selectedUpdate?.type === 'birthday' && styles.modalCardBirthday,
               selectedUpdate?.type === 'anniversary' && styles.modalCardAnniversary,
               selectedUpdate?.type === 'celebration' && styles.modalCardCelebration,
@@ -926,13 +927,16 @@ export default function UpdatesScreen({ navigation, route }: any) {
             <TouchableOpacity 
               style={[
                 styles.modalCloseBtn,
+                isDark &&
+                  selectedUpdate?.type !== 'birthday' &&
+                  selectedUpdate?.type !== 'anniversary' && { backgroundColor: colors.background },
                 (selectedUpdate?.type === 'birthday' || selectedUpdate?.type === 'anniversary') && styles.modalCloseBtnGold
               ]} 
               onPress={() => setSelectedUpdate(null)}
             >
               <X size={20} color={
                 selectedUpdate?.type === 'birthday' ? '#b45309' :
-                selectedUpdate?.type === 'anniversary' ? '#be185d' : '#475569'
+                selectedUpdate?.type === 'anniversary' ? '#be185d' : (isDark ? colors.textSecondary : '#475569')
               } />
             </TouchableOpacity>
 
@@ -1047,6 +1051,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
                   <View style={styles.stdHeaderMeta}>
                     <Text style={[
                       styles.stdTypeTag,
+                      isDark && { color: colors.accent },
                       (selectedUpdate?.type === 'emergency' || selectedUpdate?.title?.includes('🚨') || selectedUpdate?.type === 'youtube_live') && { color: '#ef4444' },
                       selectedUpdate?.type === 'admin_roster_alert' && { color: '#DC2626' },
                       (selectedUpdate?.type === 'service_roster' || selectedUpdate?.type === 'service_reminder') && { color: '#059669' },
@@ -1056,24 +1061,25 @@ export default function UpdatesScreen({ navigation, route }: any) {
                     ]}>
                       {getTypeName(selectedUpdate?.type || 'announcement')}
                     </Text>
-                    <Text style={styles.stdDateTxt}>{selectedUpdate?.date}</Text>
+                    <Text style={[styles.stdDateTxt, isDark && { color: colors.textSecondary }]}>{selectedUpdate?.date}</Text>
                   </View>
                 </View>
 
                 <Text style={[
                   styles.stdModalTitle,
-                  (selectedUpdate?.type === 'emergency' || selectedUpdate?.title?.includes('🚨') || selectedUpdate?.type === 'youtube_live') && { color: '#b91c1c' }
+                  isDark && { color: colors.text },
+                  (selectedUpdate?.type === 'emergency' || selectedUpdate?.title?.includes('🚨') || selectedUpdate?.type === 'youtube_live') && { color: isDark ? '#F87171' : '#b91c1c' }
                 ]}>
                   {selectedUpdate?.title}
                 </Text>
 
-                <View style={styles.dividerStd} />
+                <View style={[styles.dividerStd, isDark && { backgroundColor: colors.border }]} />
 
                 <ScrollView style={[styles.modalScroll, { maxHeight: 400 }]} showsVerticalScrollIndicator={false}>
                   {selectedUpdate?.imageUrl && (
                     <Image source={{ uri: selectedUpdate.imageUrl }} style={styles.modalImage} resizeMode="cover" />
                   )}
-                  <Text style={styles.stdModalContent}>
+                  <Text style={[styles.stdModalContent, isDark && { color: colors.textSecondary }]}>
                     {selectedUpdate?.content}
                   </Text>
                 </ScrollView>

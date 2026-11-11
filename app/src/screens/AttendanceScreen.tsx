@@ -49,7 +49,10 @@ import {
   Users,
   UserPlus,
   Plus,
-  Trash2
+  Trash2,
+  Phone,
+  MessageSquare,
+  Send
 } from 'lucide-react-native';
 import { CameraView, useCameraPermissions, type BarcodeScanningResult, type BarcodeType } from 'expo-camera';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -63,6 +66,13 @@ import AttendanceService, { AttendanceRecord } from '../services/AttendanceServi
 import LocationService, { Coordinates } from '../services/LocationService';
 import QRDecoderService from '../services/QRDecoderService';
 import FirestoreService from '../services/FirestoreService';
+import InviteLinkService from '../services/InviteLinkService';
+import {
+  formatPhoneE164,
+  isValidPhone10,
+  normalizePhone10,
+  stripGuestSuffix,
+} from '../utils/phoneUtils';
 import { useAuth } from '../context/AuthContext';
 import { useChurch } from '../context/ChurchContext';
 import { useTheme } from '../context/ThemeContext';
@@ -100,6 +110,8 @@ interface UnifiedMember {
   lastName?: string;
   isGuest?: boolean;
   guestOf?: string;
+  guestRelation?: string;
+  inviteStatus?: string;
   phone?: string;
   accountId?: string;
 }
@@ -119,6 +131,10 @@ interface FamilyMemberItem {
 interface GuestItem {
   id: string;
   name: string;
+  phone?: string;
+  relation?: string;
+  inviteStatus?: string;
+  inviteLink?: string;
   invitedByName?: string;
   loading?: boolean;
 }
@@ -227,6 +243,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
     date: string;
     time: string;
     alreadyMarked?: boolean;
+    allowGuestManagement?: boolean;
     scannedMemberId?: string;
     scannedMemberName?: string;
     familyMembers: FamilyMemberItem[];
@@ -239,6 +256,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
     eventId: '',
     date: '',
     time: '',
+    allowGuestManagement: false,
     scannedMemberId: '',
     scannedMemberName: '',
     familyMembers: [],
@@ -246,8 +264,20 @@ export default function AttendanceScreen({ navigation, route }: any) {
     guests: [],
   });
 
-  // Guest Attendance States
+  // Guest Attendance & Invitation States
+  const GUEST_RELATIONS = [
+    'Friend',
+    'Relative',
+    'Spiritual Partner',
+    'Family',
+    'Neighbor',
+    'Colleague',
+    'Other',
+  ] as const;
   const [guestNameInput, setGuestNameInput] = useState('');
+  const [guestPhoneInput, setGuestPhoneInput] = useState('');
+  const [guestRelationInput, setGuestRelationInput] = useState<string>('Friend');
+  const [guestCustomRelationInput, setGuestCustomRelationInput] = useState('');
   const [isAddingGuest, setIsAddingGuest] = useState(false);
   const [showRosterGuestInput, setShowRosterGuestInput] = useState(false);
   const [rosterGuestNameInput, setRosterGuestNameInput] = useState('');
@@ -1216,18 +1246,30 @@ export default function AttendanceScreen({ navigation, route }: any) {
         }
       });
 
-      // Add attendees not in roster (including guests and visitors)
+      // Add attendees not in roster (including guests and visitors), deduplicating by ID or canonical phone
       attendees.forEach(a => {
         const mId = a.memberId || a.id;
-        if (mId && !unified.some(u => u.id === mId)) {
+        const rawPhoneToCheck = a.memberPhone || '';
+        const cleanPhone10 = normalizePhone10(rawPhoneToCheck);
+        const alreadyInUnified = unified.find(
+          u => u.id === mId || (cleanPhone10 && normalizePhone10(u.phone) === cleanPhone10)
+        );
+        if (alreadyInUnified) {
+          if (alreadyInUnified.status !== 'Present') {
+            alreadyInUnified.status = 'Present';
+            alreadyInUnified.timestamp = a.timestamp || alreadyInUnified.timestamp;
+          }
+          return;
+        }
+        if (mId) {
           const isMe = mId === memberId || (user?.uid && mId === user.uid);
           const isGuest = Boolean(
             (a as any).isGuest || 
             mId.startsWith('guest_') || 
-            (a.memberName && a.memberName.includes('(Guest)'))
+            (a.memberName && /\(guest\)\s*$/i.test(a.memberName))
           );
           const phoneToUse = a.memberPhone || (isMe ? (user?.phoneNumber || member?.phone) : '');
-          const cleanPhone = phoneToUse ? String(phoneToUse).replace(/\D/g, '').slice(-10) : '';
+          const cleanPhone = phoneToUse ? normalizePhone10(String(phoneToUse)) : '';
 
           const possiblePhotos = [
             a.photoUrl,
@@ -1242,7 +1284,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
             p => typeof p === 'string' && p.trim() !== '' && p !== 'null' && p !== 'undefined'
           );
 
-          const rawName = (a.memberName || 'Member').trim();
+          const rawName = stripGuestSuffix(a.guestName || a.memberName || 'Member');
           const cleanName = rawName.replace(/\s+/g, ' ') || 'Member';
 
           unified.push({
@@ -1253,6 +1295,8 @@ export default function AttendanceScreen({ navigation, route }: any) {
             profilePicture: isGuest ? undefined : resolvedPhoto,
             isGuest,
             guestOf: (a as any).invitedByMemberName,
+            guestRelation: (a as any).guestRelation || (a as any).relation || '',
+            inviteStatus: (a as any).inviteStatus || '',
             phone: phoneToUse,
             accountId: (a as any).accountId || (a as any)?.AccountId || mId,
           });
@@ -1732,12 +1776,23 @@ export default function AttendanceScreen({ navigation, route }: any) {
       const guests: GuestItem[] = [];
       snap.forEach(d => {
         const data = d.data();
-        const isGuest = Boolean(data.isGuest || d.id.startsWith('guest_') || (data.memberName && data.memberName.includes('(Guest)')));
+        const isGuest = Boolean(data.isGuest || d.id.startsWith('guest_') || (data.memberName && /\(guest\)\s*$/i.test(data.memberName)));
         const isMyGuest = data.invitedByMemberId === hostMemberId || !data.invitedByMemberId;
         if (isGuest && (isMyGuest || !hostMemberId)) {
+          const phoneStr = data.memberPhone || '';
           guests.push({
             id: d.id,
-            name: data.guestName || (data.memberName ? data.memberName.replace(' (Guest)', '').trim() : 'Guest'),
+            name: stripGuestSuffix(data.guestName || data.memberName || 'Guest') || 'Guest',
+            phone: phoneStr,
+            relation: data.guestRelation || data.relation || '',
+            inviteStatus: data.inviteStatus || 'invited',
+            inviteLink: phoneStr
+              ? InviteLinkService.buildGuestInviteUrl({
+                  churchId: targetChurchId,
+                  phone: phoneStr,
+                  eventId: targetEventId,
+                })
+              : undefined,
             invitedByName: data.invitedByMemberName || memberName,
           });
         }
@@ -1749,137 +1804,308 @@ export default function AttendanceScreen({ navigation, route }: any) {
     }
   };
 
-  // ─── Add Guest Check-in Handler ───────────────────────────────────────────
-  const handleAddGuest = async (customGuestName?: string, overrideEventId?: string, overrideEventName?: string) => {
-    const rawName = (customGuestName || guestNameInput).trim();
+  // ─── Re-share Personalized Invitation for Existing Guest (Zero Duplicate) ─
+  const handleShareGuestInvite = async (
+    guest: GuestItem,
+    channel: 'whatsapp' | 'sms' | 'share'
+  ) => {
+    const targetChurchId = churchId || activeChurch?.id || '';
+    const targetEventId =
+      scanResultModal.eventId ||
+      selectedEventForList?.id ||
+      activeEvent?.id ||
+      todayEvents[0]?.id ||
+      'general_service';
+    const targetEventName =
+      scanResultModal.eventName ||
+      selectedEventForList?.title ||
+      'Church Service';
+
+    const phoneToUse = guest.phone || '';
+    if (!isValidPhone10(phoneToUse)) {
+      Alert.alert(
+        'Mobile Number Required',
+        'A valid 10-digit mobile number is required to share a personal invitation link.'
+      );
+      return;
+    }
+
+    try {
+      // Ensure canonical member record & invite doc exist without duplicating
+      const ensured = await FirestoreService.ensureGuestMemberRecord({
+        churchId: targetChurchId,
+        name: guest.name,
+        phone: phoneToUse,
+        relation: guest.relation || 'Friend',
+        invitedByMemberId: memberId || user?.uid || '',
+        invitedByMemberName: guest.invitedByName || memberName || 'Member',
+        eventId: targetEventId,
+        eventName: targetEventName,
+        shareMethod: channel,
+      });
+
+      const inviteUrl = InviteLinkService.buildGuestInviteUrl({
+        churchId: targetChurchId,
+        inviteId: ensured.inviteId,
+        phone: ensured.canonicalPhone,
+        eventId: targetEventId,
+      });
+
+      const text = InviteLinkService.buildInviteShareText({
+        guestName: ensured.memberData.name || guest.name,
+        churchName,
+        inviteLink: inviteUrl,
+        phone: ensured.canonicalPhone,
+        invitedByName: guest.invitedByName || memberName || '',
+      });
+
+      if (channel === 'whatsapp') {
+        const res = await InviteLinkService.shareViaWhatsApp({
+          phone: ensured.canonicalPhone,
+          text,
+        });
+        if (!res.ok) Alert.alert('WhatsApp Unavailable', res.error || 'Could not open WhatsApp.');
+      } else if (channel === 'sms') {
+        const res = await InviteLinkService.shareViaSMS({
+          phone: ensured.canonicalPhone,
+          text,
+        });
+        if (!res.ok) Alert.alert('SMS Unavailable', res.error || 'Could not open SMS.');
+      } else {
+        await InviteLinkService.shareViaSystem({
+          title: `Invitation to ${churchName}`,
+          text,
+        });
+      }
+    } catch (err: any) {
+      Alert.alert('Invite Error', err?.message || 'Unable to prepare invitation link.');
+    }
+  };
+
+  // ─── Add Guest Check-in & Invitation Handler ──────────────────────────────
+  const handleAddGuest = async (
+    shareMode: 'whatsapp' | 'sms' | 'share' | 'save' = 'save',
+    customGuestName?: string,
+    overrideEventId?: string,
+    overrideEventName?: string
+  ) => {
+    const rawName = stripGuestSuffix(customGuestName || guestNameInput);
     if (!rawName) {
       Alert.alert('Guest Name Required', 'Please enter your guest\'s full name.');
       return;
     }
 
-    if (scanResultModal.alreadyMarked) {
-      Alert.alert('Session Finalized', 'Attendance for this event has already been recorded.');
+    const last10 = normalizePhone10(guestPhoneInput);
+    if (!last10 || !isValidPhone10(guestPhoneInput)) {
+      Alert.alert(
+        'Mobile Number Required',
+        'Please enter a valid 10-digit mobile number for the guest.'
+      );
       return;
     }
 
-    const isDuplicate = scanResultModal.guests.some(
-      g => g.name.trim().toLowerCase() === rawName.toLowerCase()
-    );
-    if (isDuplicate) {
-      Alert.alert('Guest Already Added', `"${rawName}" has already been added to this attendance session.`);
-      return;
-    }
+    const resolvedRelation =
+      guestRelationInput === 'Other'
+        ? (guestCustomRelationInput.trim() || 'Guest')
+        : (guestRelationInput || 'Friend');
 
     const targetChurchId = churchId || activeChurch?.id || '';
     const targetEventId = overrideEventId || scanResultModal.eventId || selectedEventForList?.id || activeEvent?.id || todayEvents[0]?.id || 'general_service';
     const targetEventName = overrideEventName || scanResultModal.eventName || selectedEventForList?.title || 'Church Service';
     const hostMemberId = memberId || user?.uid || 'guest_host';
     const hostMemberName = memberName || 'Member';
-
-    const guestId = `guest_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const guestDisplayName = `${rawName} (Guest)`;
+    const canonicalPhone = formatPhoneE164(guestPhoneInput);
 
     setIsAddingGuest(true);
-    setGuestNameInput('');
-    setRosterGuestNameInput('');
-    setShowRosterGuestInput(false);
-
-    // 1. Optimistically update modal guest list
-    setScanResultModal(prev => ({
-      ...prev,
-      guests: [
-        ...prev.guests,
-        {
-          id: guestId,
-          name: rawName,
-          invitedByName: hostMemberName,
-        }
-      ]
-    }));
-
-    // 2. Optimistically update total present count across events
-    setAllEvents(prev =>
-      prev.map(ev => {
-        if (ev.id === targetEventId) {
-          const curr = ev.presentCount || 0;
-          return {
-            ...ev,
-            presentCount: curr + 1,
-          };
-        }
-        return ev;
-      })
-    );
-
-    // 3. Optimistically add to attendanceRecords
-    setAttendanceRecords(prev => [
-      {
-        id: guestId,
-        memberId: guestId,
-        memberName: guestDisplayName,
-        churchId: targetChurchId,
-        eventId: targetEventId,
-        eventName: targetEventName,
-        status: 'Present',
-        timestamp: new Date(),
-        method: 'GUEST_CHECKIN',
-        isGuest: true,
-        guestName: rawName,
-        invitedByMemberId: hostMemberId,
-        invitedByMemberName: hostMemberName,
-      },
-      ...prev,
-    ]);
-
-    // 4. Optimistically add to attendeesList if attendees modal is open
-    setAttendeesList(prev => [
-      {
-        id: guestId,
-        name: guestDisplayName,
-        status: 'Present',
-        timestamp: new Date(),
-        isGuest: true,
-        guestOf: hostMemberName,
-      },
-      ...prev,
-    ]);
 
     try {
-      await AttendanceService.recordAttendance({
+      // 1. Strictly deduplicated transaction-backed member/guest resolution & invite record creation
+      const ensured = await FirestoreService.ensureGuestMemberRecord({
+        churchId: targetChurchId,
+        name: rawName,
+        phone: canonicalPhone,
+        relation: resolvedRelation,
+        invitedByMemberId: hostMemberId,
+        invitedByMemberName: hostMemberName,
+        eventId: targetEventId,
+        eventName: targetEventName,
+        shareMethod: shareMode === 'save' ? 'direct' : shareMode,
+      });
+
+      const resolvedMemberId = ensured.memberDocId;
+      const effectiveGuestName = stripGuestSuffix(ensured.memberData?.name || rawName) || rawName;
+      const effectiveRelation = ensured.memberData?.relation || resolvedRelation;
+      const effectiveInviteStatus =
+        ensured.wasAlreadyFullMember || ensured.memberData?.inviteStatus === 'joined'
+          ? 'joined'
+          : 'invited';
+
+      const inviteLink = InviteLinkService.buildGuestInviteUrl({
+        churchId: targetChurchId,
+        inviteId: ensured.inviteId,
+        phone: ensured.canonicalPhone,
+        eventId: targetEventId,
+      });
+
+      // 2. Mark event attendance using the canonical memberDocId (duplicate-safe per member & phone)
+      const attResult = await AttendanceService.recordAttendance({
         churchId: targetChurchId,
         eventId: targetEventId,
         eventName: targetEventName,
-        memberId: guestId,
-        memberName: guestDisplayName,
+        memberId: resolvedMemberId,
+        memberName: effectiveGuestName,
+        memberPhone: ensured.canonicalPhone,
         method: 'GUEST_CHECKIN',
-        isGuest: true,
-        guestName: rawName,
+        isGuest: !ensured.wasAlreadyFullMember,
+        guestName: effectiveGuestName,
+        guestRelation: effectiveRelation,
+        inviteStatus: effectiveInviteStatus,
         invitedByMemberId: hostMemberId,
         invitedByMemberName: hostMemberName,
       });
 
-      showChurchToast(`Guest "${rawName}" added to attendance!`);
-    } catch (err) {
-      console.warn('[AttendanceScreen] Error recording guest attendance:', err);
-      // Revert optimistic updates
-      setScanResultModal(prev => ({
-        ...prev,
-        guests: prev.guests.filter(g => g.id !== guestId)
-      }));
-      setAllEvents(prev =>
-        prev.map(ev => {
-          if (ev.id === targetEventId) {
-            const curr = ev.presentCount || 0;
-            return {
-              ...ev,
-              presentCount: Math.max(0, curr - 1),
-            };
+      const newGuestEntry: GuestItem = {
+        id: attResult.existingAttendeeId || resolvedMemberId,
+        name: effectiveGuestName,
+        phone: ensured.canonicalPhone,
+        relation: effectiveRelation,
+        inviteStatus: effectiveInviteStatus,
+        inviteLink,
+        invitedByName: hostMemberName,
+      };
+
+      // Update local UI lists idempotently without creating duplicate entries
+      setScanResultModal(prev => {
+        const idx = prev.guests.findIndex(
+          g =>
+            g.id === newGuestEntry.id ||
+            (g.phone && normalizePhone10(g.phone) === last10)
+        );
+        if (idx >= 0) {
+          const updated = [...prev.guests];
+          updated[idx] = { ...updated[idx], ...newGuestEntry };
+          return { ...prev, guests: updated };
+        }
+        return { ...prev, guests: [...prev.guests, newGuestEntry] };
+      });
+
+      if (!attResult.alreadyMarked) {
+        setAllEvents(prev =>
+          prev.map(ev =>
+            ev.id === targetEventId
+              ? { ...ev, presentCount: (ev.presentCount || 0) + 1 }
+              : ev
+          )
+        );
+
+        setAttendanceRecords(prev => {
+          if (
+            prev.some(
+              r =>
+                r.memberId === resolvedMemberId ||
+                (r.memberPhone && normalizePhone10(r.memberPhone) === last10 && r.eventId === targetEventId)
+            )
+          ) {
+            return prev;
           }
-          return ev;
-        })
-      );
-      setAttendeesList(prev => prev.filter(a => a.id !== guestId));
-      Alert.alert('Error', 'Unable to add guest. Please try again.');
+          return [
+            {
+              id: resolvedMemberId,
+              memberId: resolvedMemberId,
+              memberName: effectiveGuestName,
+              memberPhone: ensured.canonicalPhone,
+              normalizedPhone10: last10,
+              churchId: targetChurchId,
+              eventId: targetEventId,
+              eventName: targetEventName,
+              status: 'Present',
+              timestamp: new Date(),
+              method: 'GUEST_CHECKIN',
+              isGuest: !ensured.wasAlreadyFullMember,
+              guestName: effectiveGuestName,
+              guestRelation: effectiveRelation,
+              inviteStatus: effectiveInviteStatus,
+              invitedByMemberId: hostMemberId,
+              invitedByMemberName: hostMemberName,
+            },
+            ...prev,
+          ];
+        });
+
+        setAttendeesList(prev => {
+          if (
+            prev.some(
+              a =>
+                a.id === resolvedMemberId ||
+                (a.phone && normalizePhone10(a.phone) === last10)
+            )
+          ) {
+            return prev;
+          }
+          return [
+            {
+              id: resolvedMemberId,
+              name: effectiveGuestName,
+              phone: ensured.canonicalPhone,
+              status: 'Present',
+              timestamp: new Date(),
+              isGuest: !ensured.wasAlreadyFullMember,
+              guestOf: hostMemberName,
+              guestRelation: effectiveRelation,
+              inviteStatus: effectiveInviteStatus,
+            },
+            ...prev,
+          ];
+        });
+      }
+
+      // Clear inputs after saving
+      setGuestNameInput('');
+      setGuestPhoneInput('');
+      setGuestCustomRelationInput('');
+      setRosterGuestNameInput('');
+      setShowRosterGuestInput(false);
+
+      // 3. Share personalized invitation link if requested
+      if (shareMode !== 'save') {
+        const shareText = InviteLinkService.buildInviteShareText({
+          guestName: effectiveGuestName,
+          churchName,
+          inviteLink,
+          phone: ensured.canonicalPhone,
+          invitedByName: hostMemberName,
+        });
+
+        if (shareMode === 'whatsapp') {
+          const res = await InviteLinkService.shareViaWhatsApp({
+            phone: ensured.canonicalPhone,
+            text: shareText,
+          });
+          if (!res.ok) Alert.alert('WhatsApp Unavailable', res.error || 'Could not open WhatsApp.');
+        } else if (shareMode === 'sms') {
+          const res = await InviteLinkService.shareViaSMS({
+            phone: ensured.canonicalPhone,
+            text: shareText,
+          });
+          if (!res.ok) Alert.alert('SMS Unavailable', res.error || 'Could not open SMS.');
+        } else if (shareMode === 'share') {
+          await InviteLinkService.shareViaSystem({
+            title: `Invitation to ${churchName}`,
+            text: shareText,
+          });
+        }
+      }
+
+      if (ensured.wasAlreadyFullMember) {
+        showChurchToast(`${effectiveGuestName} is already a church member — reused existing record!`);
+      } else if (ensured.isExistingRecord) {
+        showChurchToast(`Reused existing guest profile for ${effectiveGuestName}!`);
+      } else {
+        showChurchToast(`Guest "${effectiveGuestName}" added & church record created!`);
+      }
+    } catch (err: any) {
+      console.warn('[AttendanceScreen] Error adding/inviting guest:', err);
+      Alert.alert('Error', err?.message || 'Unable to add guest. Please try again.');
     } finally {
       setIsAddingGuest(false);
     }
@@ -1937,6 +2163,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
       date: formattedDate,
       time: formattedTime,
       alreadyMarked: true,
+      allowGuestManagement: true,
       scannedMemberId: memberId,
       scannedMemberName: memberName,
       familyMembers: [],
@@ -2225,6 +2452,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
         date: formattedDate,
         time: formattedTime,
         alreadyMarked: false,
+        allowGuestManagement: true,
         scannedMemberId,
         scannedMemberName,
         familyMembers: [],
@@ -2430,6 +2658,43 @@ export default function AttendanceScreen({ navigation, route }: any) {
     );
   }, [churchId, churchName, churchCode, activeEvent]);
 
+  // Adaptive dark / light theme tokens for Attendance & nested modals
+  const att = {
+    bg: colors.background,
+    surface: isDark ? '#14161D' : colors.surface || '#FFFFFF',
+    surfaceAlt: isDark ? '#1C202B' : '#F8FAFC',
+    trackBg: isDark ? '#14161D' : '#EAEFF5',
+    tabActiveBg: isDark ? '#252A38' : '#FFFFFF',
+    pillActiveBg: isDark ? '#F8FAFC' : '#0F172A',
+    pillActiveTxt: isDark ? '#0F172A' : '#FFFFFF',
+    border: isDark ? 'rgba(255, 255, 255, 0.10)' : colors.border || '#E2E8F0',
+    borderSubtle: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+    text: colors.text,
+    textMuted: isDark ? '#94A3B8' : colors.textSecondary || '#64748B',
+    accent: colors.accent || (isDark ? '#38BDF8' : '#2563EB'),
+    amber: isDark ? '#FBBF24' : '#B45309',
+    amberDot: isDark ? '#FBBF24' : '#D97706',
+    amberBg: isDark ? 'rgba(245, 158, 11, 0.15)' : '#FEF3C7',
+    amberBorder: isDark ? 'rgba(245, 158, 11, 0.45)' : 'rgba(226, 169, 37, 0.65)',
+    green: isDark ? '#4ADE80' : '#15803D',
+    greenSub: isDark ? '#86EFAC' : '#166534',
+    greenBg: isDark ? 'rgba(34, 197, 94, 0.16)' : '#DCFCE7',
+    greenRowBg: isDark ? 'rgba(34, 197, 94, 0.10)' : '#F0FDF4',
+    greenBorder: isDark ? 'rgba(74, 222, 128, 0.35)' : '#86EFAC',
+    red: isDark ? '#F87171' : '#DC2626',
+    redBg: isDark ? 'rgba(239, 68, 68, 0.16)' : '#FEE2E2',
+    redBorder: isDark ? 'rgba(248, 113, 113, 0.35)' : '#FECACA',
+    purple: isDark ? '#C4B5FD' : '#6D28D9',
+    purpleBg: isDark ? 'rgba(139, 92, 246, 0.16)' : '#F5F3FF',
+    purpleBorder: isDark ? 'rgba(167, 139, 250, 0.35)' : '#DDD6FE',
+    blue: isDark ? '#60A5FA' : '#1D4ED8',
+    blueBg: isDark ? 'rgba(59, 130, 246, 0.16)' : '#EFF6FF',
+    blueBorder: isDark ? 'rgba(96, 165, 250, 0.35)' : '#BFDBFE',
+    trackRing: isDark ? '#27272A' : '#E2E8F0',
+    progressRing: isDark ? '#2DD4BF' : '#0D9488',
+    goldCtaBg: isDark ? '#F59E0B' : '#E2A925',
+  };
+
   // Circular Progress Ring Component
   const renderCircularProgress = (percent: number) => {
     const size = 68;
@@ -2445,7 +2710,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
             cx={size / 2}
             cy={size / 2}
             r={radius}
-            stroke="#E2E8F0"
+            stroke={att.trackRing}
             strokeWidth={strokeWidth}
             fill="transparent"
           />
@@ -2453,7 +2718,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
             cx={size / 2}
             cy={size / 2}
             r={radius}
-            stroke="#0D9488"
+            stroke={att.progressRing}
             strokeWidth={strokeWidth}
             strokeDasharray={`${circumference}`}
             strokeDashoffset={strokeDashoffset}
@@ -2463,7 +2728,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
           />
         </Svg>
         <View style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={styles.circlePercentTxt}>{percent}%</Text>
+          <Text style={[styles.circlePercentTxt, { color: att.text }]}>{percent}%</Text>
         </View>
       </View>
     );
@@ -2504,15 +2769,15 @@ export default function AttendanceScreen({ navigation, route }: any) {
       return (
         <Image
           source={{ uri: profilePicture }}
-          style={styles.avatarImg}
+          style={[styles.avatarImg, { backgroundColor: att.surfaceAlt }]}
           onError={() => setImgError(true)}
         />
       );
     }
 
     return (
-      <View style={styles.avatarInitials}>
-        <Text style={styles.avatarInitialsTxt}>{initials}</Text>
+      <View style={[styles.avatarInitials, { backgroundColor: att.blueBg }]}>
+        <Text style={[styles.avatarInitialsTxt, { color: att.blue }]}>{initials}</Text>
       </View>
     );
   };
@@ -2527,35 +2792,40 @@ export default function AttendanceScreen({ navigation, route }: any) {
         style={[
           styles.featuredCard, 
           isCarousel && { width: width - 40, marginBottom: 0 },
-          !isMarked && styles.featuredCardPendingBorder
+          {
+            backgroundColor: att.surface,
+            borderColor: isMarked ? att.greenBorder : att.amberBorder,
+            borderWidth: isMarked ? 1.2 : 1.5,
+          },
+          isDark && { shadowOpacity: 0.35 },
         ]}
       >
         {/* Top row badge */}
         <View style={styles.cardBadgeRow}>
           {isMarked ? (
-            <View style={styles.attendanceCompletedBadge}>
-              <CheckCircle2 size={13} color="#15803D" strokeWidth={2.5} />
-              <Text style={styles.attendanceCompletedBadgeTxt}>Attendance Marked</Text>
+            <View style={[styles.attendanceCompletedBadge, { backgroundColor: att.greenBg, borderWidth: 1, borderColor: att.greenBorder }]}>
+              <CheckCircle2 size={13} color={att.green} strokeWidth={2.5} />
+              <Text style={[styles.attendanceCompletedBadgeTxt, { color: att.green }]}>Attendance Marked</Text>
             </View>
           ) : (
-            <View style={styles.attendanceOpenBadge}>
-              <View style={styles.orangeDot} />
-              <Text style={styles.attendanceOpenTxt}>Attendance open · Pending</Text>
+            <View style={[styles.attendanceOpenBadge, { backgroundColor: att.amberBg, borderWidth: 1, borderColor: att.amberBorder }]}>
+              <View style={[styles.orangeDot, { backgroundColor: att.amberDot }]} />
+              <Text style={[styles.attendanceOpenTxt, { color: att.amber }]}>Attendance open · Pending</Text>
             </View>
           )}
         </View>
 
         {/* Title & Info */}
-        <Text style={styles.featuredCardTitle} numberOfLines={2}>{eventItem.title}</Text>
-        <Text style={styles.featuredCardTime}>
+        <Text style={[styles.featuredCardTitle, { color: att.text }]} numberOfLines={2}>{eventItem.title}</Text>
+        <Text style={[styles.featuredCardTime, { color: att.textMuted }]}>
           {formatFullDate(eventItem.dateObj)}
         </Text>
 
         {/* Location Row */}
         {Boolean(eventLocation) && (
           <View style={styles.featuredCardChurch}>
-            <MapPin size={13.5} color="#64748B" strokeWidth={2} style={{ marginRight: 5 }} />
-            <Text style={styles.featuredCardChurchTxt} numberOfLines={1}>{eventLocation}</Text>
+            <MapPin size={13.5} color={att.textMuted} strokeWidth={2} style={{ marginRight: 5 }} />
+            <Text style={[styles.featuredCardChurchTxt, { color: att.textMuted }]} numberOfLines={1}>{eventLocation}</Text>
           </View>
         )}
 
@@ -2563,23 +2833,23 @@ export default function AttendanceScreen({ navigation, route }: any) {
         <View style={styles.featuredCardActions}>
           {isMarked ? (
             <>
-              <View style={styles.attendanceCompletedBtn}>
-                <CheckCircle2 size={17} color="#15803D" strokeWidth={2.5} />
-                <Text style={styles.attendanceCompletedBtnTxt}>Attended</Text>
+              <View style={[styles.attendanceCompletedBtn, { backgroundColor: att.greenBg, borderColor: att.greenBorder }]}>
+                <CheckCircle2 size={17} color={att.green} strokeWidth={2.5} />
+                <Text style={[styles.attendanceCompletedBtnTxt, { color: att.green }]}>Attended</Text>
               </View>
 
               <TouchableOpacity
-                style={styles.eyeBtn}
+                style={[styles.eyeBtn, { backgroundColor: att.surfaceAlt, borderColor: att.border, borderWidth: 1 }]}
                 onPress={() => handleOpenAttendeesList(eventItem)}
                 activeOpacity={0.75}
               >
-                <Eye size={20} color="#64748B" />
+                <Eye size={20} color={att.textMuted} />
               </TouchableOpacity>
             </>
           ) : (
             <>
               <TouchableOpacity
-                style={styles.scanAttendanceBtn}
+                style={[styles.scanAttendanceBtn, { backgroundColor: att.goldCtaBg }]}
                 onPress={() => {
                   setSelectedEventForScan(eventItem);
                   setHasScanned(false);
@@ -2587,16 +2857,18 @@ export default function AttendanceScreen({ navigation, route }: any) {
                 }}
                 activeOpacity={0.85}
               >
-                <QrCode size={18} color="#0f172a" strokeWidth={2.4} />
-                <Text style={styles.scanAttendanceBtnTxt}>Scan QR to mark attendance</Text>
+                <QrCode size={18} color="#0F172A" strokeWidth={2.4} />
+                <Text style={styles.scanAttendanceBtnTxt} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                  Scan QR to mark attendance
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.eyeBtn}
+                style={[styles.eyeBtn, { backgroundColor: att.surfaceAlt, borderColor: att.border, borderWidth: 1 }]}
                 onPress={() => handleOpenAttendeesList(eventItem)}
                 activeOpacity={0.75}
               >
-                <Eye size={20} color="#64748B" />
+                <Eye size={20} color={att.textMuted} />
               </TouchableOpacity>
             </>
           )}
@@ -2634,17 +2906,33 @@ export default function AttendanceScreen({ navigation, route }: any) {
       </View>
 
       {/* ── Segmented Navigation Pill Bar: Home | My attendance | Events ── */}
-      <View style={styles.tabTrack}>
+      <View style={[styles.tabTrack, { backgroundColor: att.trackBg, borderWidth: 1, borderColor: att.border }]}>
         {(['Home', 'My attendance', 'Events'] as MainTab[]).map(tabKey => {
           const isActive = activeTab === tabKey;
           return (
             <TouchableOpacity
               key={tabKey}
-              style={[styles.tabPill, isActive && styles.tabPillActive]}
+              style={[
+                styles.tabPill,
+                isActive && [
+                  styles.tabPillActive,
+                  {
+                    backgroundColor: att.tabActiveBg,
+                    borderWidth: 1,
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(15, 23, 42, 0.06)',
+                  },
+                ],
+              ]}
               onPress={() => setActiveTab(tabKey)}
               activeOpacity={0.8}
             >
-              <Text style={[styles.tabPillTxt, isActive && styles.tabPillTxtActive]}>
+              <Text
+                style={[
+                  styles.tabPillTxt,
+                  { color: isActive ? att.text : att.textMuted },
+                  isActive && styles.tabPillTxtActive,
+                ]}
+              >
                 {tabKey}
               </Text>
             </TouchableOpacity>
@@ -2660,18 +2948,24 @@ export default function AttendanceScreen({ navigation, route }: any) {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadScreenData(); }} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => { setRefreshing(true); loadScreenData(); }}
+              tintColor={att.accent}
+              colors={[att.accent]}
+              progressBackgroundColor={att.surface}
+            />
           }
         >
           {/* Today's Events Section */}
           {todayEvents.length === 0 ? (
             /* No Events Scheduled for Today Card */
-            <View style={styles.noEventsTodayCard}>
-              <View style={styles.noEventsIconCircle}>
-                <Calendar size={22} color="#1E3A8A" />
+            <View style={[styles.noEventsTodayCard, { backgroundColor: att.surface, borderColor: att.border }]}>
+              <View style={[styles.noEventsIconCircle, { backgroundColor: att.blueBg }]}>
+                <Calendar size={22} color={att.blue} />
               </View>
-              <Text style={styles.noEventsTitle}>No Events Today</Text>
-              <Text style={styles.noEventsSub}>
+              <Text style={[styles.noEventsTitle, { color: att.text }]}>No Events Today</Text>
+              <Text style={[styles.noEventsSub, { color: att.textMuted }]}>
                 {nextUpcomingEvent 
                   ? `Next event: "${nextUpcomingEvent.title}" on ${nextUpcomingEvent.dateStr} (${nextUpcomingEvent.timeStr})`
                   : 'There are no church services or events scheduled for today.'}
@@ -2683,7 +2977,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
             <View style={styles.carouselContainer}>
               <View style={styles.carouselHeaderRow}>
                 <View style={styles.carouselTitleWrap}>
-                  <Text style={styles.carouselSectionTitle}>Today's Event</Text>
+                  <Text style={[styles.carouselSectionTitle, { color: att.text }]}>Today's Event</Text>
                 </View>
               </View>
 
@@ -2694,9 +2988,9 @@ export default function AttendanceScreen({ navigation, route }: any) {
             <View style={styles.carouselContainer}>
               <View style={styles.carouselHeaderRow}>
                 <View style={styles.carouselTitleWrap}>
-                  <Text style={styles.carouselSectionTitle}>Today's Events</Text>
-                  <View style={styles.eventCountBadge}>
-                    <Text style={styles.eventCountBadgeTxt}>{todayEvents.length}</Text>
+                  <Text style={[styles.carouselSectionTitle, { color: att.text }]}>Today's Events</Text>
+                  <View style={[styles.eventCountBadge, { backgroundColor: att.blueBg, borderColor: att.blueBorder }]}>
+                    <Text style={[styles.eventCountBadgeTxt, { color: att.blue }]}>{todayEvents.length}</Text>
                   </View>
                 </View>
               </View>
@@ -2730,8 +3024,8 @@ export default function AttendanceScreen({ navigation, route }: any) {
                   const isActive = idx === activeCarouselIndex;
                   const isMarked = isEventAttendanceMarked(item);
                   const lineColor = isActive
-                    ? (isMarked ? '#16A34A' : '#2563EB')
-                    : (isMarked ? '#86EFAC' : '#93C5FD');
+                    ? (isDark ? (isMarked ? '#4ADE80' : '#38BDF8') : (isMarked ? '#16A34A' : '#2563EB'))
+                    : (isDark ? (isMarked ? 'rgba(74, 222, 128, 0.35)' : 'rgba(56, 189, 248, 0.35)') : (isMarked ? '#86EFAC' : '#93C5FD'));
 
                   return (
                     <TouchableOpacity
@@ -2758,51 +3052,57 @@ export default function AttendanceScreen({ navigation, route }: any) {
           )}
 
           {/* Your Monthly Progress */}
-          <Text style={styles.sectionHeaderTitle}>Your Monthly Progress</Text>
-          <View style={styles.progressCard}>
+          <Text style={[styles.sectionHeaderTitle, { color: att.text }]}>Your Monthly Progress</Text>
+          <View style={[styles.progressCard, { backgroundColor: att.surface, borderColor: att.border }]}>
             {renderCircularProgress(monthlyStats.percentage)}
             <View style={{ flex: 1 }}>
-              <Text style={styles.progressEventCountTxt}>
+              <Text style={[styles.progressEventCountTxt, { color: att.text }]}>
                 {monthlyStats.totalAttended} of {monthlyStats.totalEvents} events
               </Text>
-              <Text style={styles.progressSubTxt}>Total attended</Text>
+              <Text style={[styles.progressSubTxt, { color: att.textMuted }]}>Total attended</Text>
             </View>
           </View>
 
           {/* This Week Section */}
           <View style={styles.thisWeekHeaderRow}>
-            <Text style={styles.thisWeekTitle}>This Week</Text>
+            <Text style={[styles.thisWeekTitle, { color: att.text }]}>This Week</Text>
             <TouchableOpacity onPress={() => setActiveTab('My attendance')} activeOpacity={0.7}>
-              <Text style={styles.seeAllTxt}>See all</Text>
+              <Text style={[styles.seeAllTxt, { color: att.accent }]}>See all</Text>
             </TouchableOpacity>
           </View>
 
           {thisWeekEvents.length === 0 ? (
-            <View style={styles.emptyListWrap}>
-              <Text style={styles.emptyListTxt}>No events scheduled for this week</Text>
+            <View style={[styles.emptyListWrap, { backgroundColor: att.surface, borderColor: att.border, borderWidth: 1 }]}>
+              <Text style={[styles.emptyListTxt, { color: att.textMuted }]}>No events scheduled for this week</Text>
             </View>
           ) : (
-            <View style={styles.eventsListWrap}>
+            <View style={[styles.eventsListWrap, { backgroundColor: att.surface, borderColor: att.border }]}>
               {thisWeekEvents.map((item, idx) => {
                 const isPast = item.dateObj < new Date();
                 const isPresent = item.myStatus === 'Present' || isEventAttendanceMarked(item);
                 const startsIn = !isPast ? getStartsInText(item.dateObj) : null;
 
                 return (
-                  <View key={item.id || idx} style={[styles.eventRowItem, idx < thisWeekEvents.length - 1 && styles.eventRowBorder]}>
+                  <View
+                    key={item.id || idx}
+                    style={[
+                      styles.eventRowItem,
+                      idx < thisWeekEvents.length - 1 && [styles.eventRowBorder, { borderBottomColor: att.borderSubtle }],
+                    ]}
+                  >
                     <View style={{ flex: 1, paddingRight: 10 }}>
-                      <Text style={styles.eventRowTitle}>{item.title}</Text>
-                      <Text style={styles.eventRowSubtitle}>{formatShortDateTime(item.dateObj)}</Text>
+                      <Text style={[styles.eventRowTitle, { color: att.text }]}>{item.title}</Text>
+                      <Text style={[styles.eventRowSubtitle, { color: att.textMuted }]}>{formatShortDateTime(item.dateObj)}</Text>
                     </View>
 
                     {isPast || isPresent ? (
-                      <View style={[styles.statusBadge, isPresent ? styles.presentBadge : styles.absentBadge]}>
-                        <Text style={[styles.statusBadgeTxt, isPresent ? styles.presentBadgeTxt : styles.absentBadgeTxt]}>
+                      <View style={[styles.statusBadge, { backgroundColor: isPresent ? att.greenBg : att.redBg }]}>
+                        <Text style={[styles.statusBadgeTxt, { color: isPresent ? att.green : att.red }]}>
                           {isPresent ? 'Present' : 'Absent'}
                         </Text>
                       </View>
                     ) : (
-                      <Text style={styles.startsInTxt}>{startsIn}</Text>
+                      <Text style={[styles.startsInTxt, { color: att.accent }]}>{startsIn}</Text>
                     )}
                   </View>
                 );
@@ -2822,7 +3122,13 @@ export default function AttendanceScreen({ navigation, route }: any) {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadScreenData(); }} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => { setRefreshing(true); loadScreenData(); }}
+              tintColor={att.accent}
+              colors={[att.accent]}
+              progressBackgroundColor={att.surface}
+            />
           }
         >
           {/* Time Filter Pills: This month | 3 months | This year */}
@@ -2832,11 +3138,20 @@ export default function AttendanceScreen({ navigation, route }: any) {
               return (
                 <TouchableOpacity
                   key={p}
-                  style={[styles.periodPill, isSelected && styles.periodPillActive]}
+                  style={[
+                    styles.periodPill,
+                    { backgroundColor: att.surface, borderColor: att.border },
+                    isSelected && { backgroundColor: att.pillActiveBg, borderColor: att.pillActiveBg },
+                  ]}
                   onPress={() => setPeriodFilter(p)}
                   activeOpacity={0.75}
                 >
-                  <Text style={[styles.periodPillTxt, isSelected && styles.periodPillTxtActive]}>
+                  <Text
+                    style={[
+                      styles.periodPillTxt,
+                      { color: isSelected ? att.pillActiveTxt : att.textMuted },
+                    ]}
+                  >
                     {p}
                   </Text>
                 </TouchableOpacity>
@@ -2845,43 +3160,49 @@ export default function AttendanceScreen({ navigation, route }: any) {
           </View>
 
           {/* Progress Card (Dynamically computed for selected period) */}
-          <View style={[styles.progressCard, { marginTop: 4, marginBottom: 20 }]}>
+          <View style={[styles.progressCard, { marginTop: 4, marginBottom: 20, backgroundColor: att.surface, borderColor: att.border }]}>
             {renderCircularProgress(periodData.percentage)}
             <View style={{ flex: 1 }}>
-              <Text style={styles.progressEventCountTxt}>
+              <Text style={[styles.progressEventCountTxt, { color: att.text }]}>
                 {periodData.totalAttended} of {periodData.totalEvents} events
               </Text>
-              <Text style={styles.progressSubTxt}>Total attended</Text>
+              <Text style={[styles.progressSubTxt, { color: att.textMuted }]}>Total attended</Text>
             </View>
           </View>
 
           {/* Full Attendance Event List (Dynamically filtered by selected period) */}
           {periodData.list.length === 0 ? (
-            <View style={styles.emptyListWrap}>
-              <Text style={styles.emptyListTxt}>No attendance records found for this period</Text>
+            <View style={[styles.emptyListWrap, { backgroundColor: att.surface, borderColor: att.border, borderWidth: 1 }]}>
+              <Text style={[styles.emptyListTxt, { color: att.textMuted }]}>No attendance records found for this period</Text>
             </View>
           ) : (
-            <View style={styles.eventsListWrap}>
+            <View style={[styles.eventsListWrap, { backgroundColor: att.surface, borderColor: att.border }]}>
               {periodData.list.map((item, idx) => {
                 const isPast = item.dateObj < new Date();
                 const isPresent = item.myStatus === 'Present';
                 const startsIn = !isPast ? getStartsInText(item.dateObj) : null;
 
                 return (
-                  <View key={item.id || idx} style={[styles.eventRowItem, idx < periodData.list.length - 1 && styles.eventRowBorder]}>
+                  <View
+                    key={item.id || idx}
+                    style={[
+                      styles.eventRowItem,
+                      idx < periodData.list.length - 1 && [styles.eventRowBorder, { borderBottomColor: att.borderSubtle }],
+                    ]}
+                  >
                     <View style={{ flex: 1, paddingRight: 10 }}>
-                      <Text style={styles.eventRowTitle}>{item.title}</Text>
-                      <Text style={styles.eventRowSubtitle}>{formatShortDateTime(item.dateObj)}</Text>
+                      <Text style={[styles.eventRowTitle, { color: att.text }]}>{item.title}</Text>
+                      <Text style={[styles.eventRowSubtitle, { color: att.textMuted }]}>{formatShortDateTime(item.dateObj)}</Text>
                     </View>
 
                     {isPast ? (
-                      <View style={[styles.statusBadge, isPresent ? styles.presentBadge : styles.absentBadge]}>
-                        <Text style={[styles.statusBadgeTxt, isPresent ? styles.presentBadgeTxt : styles.absentBadgeTxt]}>
+                      <View style={[styles.statusBadge, { backgroundColor: isPresent ? att.greenBg : att.redBg }]}>
+                        <Text style={[styles.statusBadgeTxt, { color: isPresent ? att.green : att.red }]}>
                           {isPresent ? 'Present' : 'Absent'}
                         </Text>
                       </View>
                     ) : (
-                      <Text style={styles.startsInTxt}>{startsIn}</Text>
+                      <Text style={[styles.startsInTxt, { color: att.accent }]}>{startsIn}</Text>
                     )}
                   </View>
                 );
@@ -2901,7 +3222,13 @@ export default function AttendanceScreen({ navigation, route }: any) {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadScreenData(); }} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => { setRefreshing(true); loadScreenData(); }}
+              tintColor={att.accent}
+              colors={[att.accent]}
+              progressBackgroundColor={att.surface}
+            />
           }
         >
           {/* Filter Pills: Upcoming | Past */}
@@ -2911,11 +3238,20 @@ export default function AttendanceScreen({ navigation, route }: any) {
               return (
                 <TouchableOpacity
                   key={tf}
-                  style={[styles.periodPill, isSelected && styles.periodPillActive]}
+                  style={[
+                    styles.periodPill,
+                    { backgroundColor: att.surface, borderColor: att.border },
+                    isSelected && { backgroundColor: att.pillActiveBg, borderColor: att.pillActiveBg },
+                  ]}
                   onPress={() => setTimelineFilter(tf)}
                   activeOpacity={0.75}
                 >
-                  <Text style={[styles.periodPillTxt, isSelected && styles.periodPillTxtActive]}>
+                  <Text
+                    style={[
+                      styles.periodPillTxt,
+                      { color: isSelected ? att.pillActiveTxt : att.textMuted },
+                    ]}
+                  >
                     {tf}
                   </Text>
                 </TouchableOpacity>
@@ -2925,8 +3261,8 @@ export default function AttendanceScreen({ navigation, route }: any) {
 
           {/* List of Event Cards */}
           {filteredEventsList.length === 0 ? (
-            <View style={styles.emptyListWrap}>
-              <Text style={styles.emptyListTxt}>
+            <View style={[styles.emptyListWrap, { backgroundColor: att.surface, borderColor: att.border, borderWidth: 1 }]}>
+              <Text style={[styles.emptyListTxt, { color: att.textMuted }]}>
                 {timelineFilter === 'Upcoming' ? 'No upcoming events scheduled' : 'No past events found'}
               </Text>
             </View>
@@ -2934,28 +3270,28 @@ export default function AttendanceScreen({ navigation, route }: any) {
             <View style={{ gap: 14 }}>
               {filteredEventsList.map(ev => {
                 return (
-                  <View key={ev.id} style={styles.eventCardItem}>
+                  <View key={ev.id} style={[styles.eventCardItem, { backgroundColor: att.surface, borderColor: att.border }]}>
                     {/* Top row: Open badge & Date */}
                     <View style={styles.eventCardTopRow}>
-                      <View style={styles.openBadge}>
-                        <Text style={styles.openBadgeTxt}>Open</Text>
+                      <View style={[styles.openBadge, { backgroundColor: att.blueBg, borderWidth: 1, borderColor: att.blueBorder }]}>
+                        <Text style={[styles.openBadgeTxt, { color: att.blue }]}>Open</Text>
                       </View>
-                      <Text style={styles.eventCardDateTxt}>{ev.dateStr}</Text>
+                      <Text style={[styles.eventCardDateTxt, { color: att.textMuted }]}>{ev.dateStr}</Text>
                     </View>
 
                     {/* Title & Time */}
-                    <Text style={styles.eventCardTitle}>{ev.title}</Text>
-                    <Text style={styles.eventCardTime}>{ev.timeStr}</Text>
+                    <Text style={[styles.eventCardTitle, { color: att.text }]}>{ev.title}</Text>
+                    <Text style={[styles.eventCardTime, { color: att.textMuted }]}>{ev.timeStr}</Text>
 
                     {/* Bottom Row: X present & View list button */}
                     <View style={styles.eventCardBottomRow}>
-                      <Text style={styles.presentCountTxt}>{ev.presentCount || 0} present</Text>
+                      <Text style={[styles.presentCountTxt, { color: att.text }]}>{ev.presentCount || 0} present</Text>
                       <TouchableOpacity
-                        style={styles.viewListBtn}
+                        style={[styles.viewListBtn, { backgroundColor: att.surfaceAlt, borderColor: att.border }]}
                         onPress={() => handleOpenAttendeesList(ev)}
                         activeOpacity={0.75}
                       >
-                        <Text style={styles.viewListBtnTxt}>View list</Text>
+                        <Text style={[styles.viewListBtnTxt, { color: att.text }]}>View list</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -2972,50 +3308,52 @@ export default function AttendanceScreen({ navigation, route }: any) {
           ATTENDEES ROSTER MODAL ("View list")
           ──────────────────────────────────────────────────────────────────────── */}
       <Modal visible={showAttendeesModal} animationType="slide" onRequestClose={() => setShowAttendeesModal(false)}>
-        <View style={styles.modalContainer}>
-          <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+        <View style={[styles.modalContainer, { backgroundColor: att.bg }]}>
+          <StatusBar barStyle={colors.barStyle || (isDark ? 'light-content' : 'dark-content')} backgroundColor={att.bg} />
           
           {/* Header */}
-          <View style={styles.rosterHeader}>
+          <View style={[styles.rosterHeader, { borderBottomColor: att.borderSubtle }]}>
             <TouchableOpacity 
-              style={styles.backCircleBtn} 
+              style={[styles.backCircleBtn, { backgroundColor: att.surfaceAlt, borderWidth: 1, borderColor: att.border }]} 
               onPress={() => setShowAttendeesModal(false)}
             >
-              <ArrowLeft size={20} color="#0f172a" />
+              <ArrowLeft size={20} color={att.text} />
             </TouchableOpacity>
 
             <View style={styles.rosterHeaderInfo}>
-              <Text style={styles.rosterHeaderTitle} numberOfLines={1}>
+              <Text style={[styles.rosterHeaderTitle, { color: att.text }]} numberOfLines={1}>
                 {selectedEventForList?.title || 'Attendees'}
               </Text>
-              <Text style={styles.rosterHeaderSub}>
+              <Text style={[styles.rosterHeaderSub, { color: att.textMuted }]}>
                 {selectedEventForList?.dateStr || ''}
               </Text>
             </View>
 
-            {!(selectedEventForList && isEventAttendanceMarked(selectedEventForList)) && (
-              <TouchableOpacity 
-                style={styles.rosterQrBtn}
-                onPress={() => {
-                  setShowAttendeesModal(false);
-                  setSelectedEventForScan(selectedEventForList);
-                  setHasScanned(false);
-                  setShowLiveScanner(true);
-                }}
-              >
-                <QrCode size={22} color="#0f172a" />
-              </TouchableOpacity>
-            )}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              {!(selectedEventForList && isEventAttendanceMarked(selectedEventForList)) && (
+                <TouchableOpacity 
+                  style={[styles.rosterQrBtn, { backgroundColor: att.surface, borderColor: att.border }]}
+                  onPress={() => {
+                    setShowAttendeesModal(false);
+                    setSelectedEventForScan(selectedEventForList);
+                    setHasScanned(false);
+                    setShowLiveScanner(true);
+                  }}
+                >
+                  <QrCode size={22} color={att.text} />
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
 
           {/* Search bar */}
           <View style={styles.rosterSearchWrap}>
-            <View style={styles.searchBox}>
-              <Search size={18} color="#64748B" style={{ marginRight: 10 }} />
+            <View style={[styles.searchBox, { backgroundColor: att.surface, borderColor: att.border }]}>
+              <Search size={18} color={att.textMuted} style={{ marginRight: 10 }} />
               <TextInput
-                style={styles.searchInput}
+                style={[styles.searchInput, { color: att.text }]}
                 placeholder="Search attendees"
-                placeholderTextColor="#94a3b8"
+                placeholderTextColor={att.textMuted}
                 value={attendeesSearch}
                 onChangeText={setAttendeesSearch}
               />
@@ -3033,10 +3371,19 @@ export default function AttendanceScreen({ navigation, route }: any) {
               return (
                 <TouchableOpacity
                   key={f}
-                  style={[styles.rosterPill, isActive && styles.rosterPillActive]}
+                  style={[
+                    styles.rosterPill,
+                    { backgroundColor: att.surface, borderColor: att.border, borderWidth: 1 },
+                    isActive && { backgroundColor: att.pillActiveBg, borderColor: att.pillActiveBg },
+                  ]}
                   onPress={() => setAttendeesFilter(f)}
                 >
-                  <Text style={[styles.rosterPillTxt, isActive && styles.rosterPillTxtActive]}>
+                  <Text
+                    style={[
+                      styles.rosterPillTxt,
+                      { color: isActive ? att.pillActiveTxt : att.textMuted },
+                    ]}
+                  >
                     {f} {count}
                   </Text>
                 </TouchableOpacity>
@@ -3047,14 +3394,14 @@ export default function AttendanceScreen({ navigation, route }: any) {
           {/* Attendees List */}
           {attendeesLoading ? (
             <View style={styles.loaderWrap}>
-              <ActivityIndicator size="large" color="#1a2d5a" />
+              <ActivityIndicator size="large" color={att.accent} />
             </View>
           ) : (
             <FlatList
               data={filteredAttendees}
               keyExtractor={item => item.id}
               contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}
-              ItemSeparatorComponent={() => <View style={styles.divider} />}
+              ItemSeparatorComponent={() => <View style={[styles.divider, { backgroundColor: att.borderSubtle }]} />}
               renderItem={({ item }) => {
                 const isMe = item.id === memberId;
                 const isPresent = item.status === 'Present';
@@ -3077,39 +3424,45 @@ export default function AttendanceScreen({ navigation, route }: any) {
 
                     <View style={{ flex: 1 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-                        <Text style={styles.attendeeName} numberOfLines={1}>{item.name}</Text>
+                        <Text style={[styles.attendeeName, { color: att.text }]} numberOfLines={1}>
+                          {stripGuestSuffix(item.name)}
+                        </Text>
                         {isMe && (
-                          <View style={styles.youBadge}>
-                            <Text style={styles.youBadgeTxt}>You</Text>
+                          <View style={[styles.youBadge, { backgroundColor: att.blueBg }]}>
+                            <Text style={[styles.youBadgeTxt, { color: att.blue }]}>You</Text>
                           </View>
                         )}
                         {item.isGuest && (
-                          <View style={styles.guestPillBadge}>
-                            <Text style={styles.guestPillBadgeTxt}>Guest</Text>
+                          <View style={[styles.guestPillBadge, { backgroundColor: att.purpleBg, borderColor: att.purpleBorder }]}>
+                            <Text style={[styles.guestPillBadgeTxt, { color: att.purple }]}>Guest</Text>
                           </View>
                         )}
                       </View>
-                      {item.isGuest && item.guestOf ? (
-                        <Text style={styles.guestOfTxt}>Brought by {item.guestOf}</Text>
+                      {item.isGuest && (item.guestRelation || item.guestOf) ? (
+                        <Text style={[styles.guestOfTxt, { color: att.purple }]}>
+                          {item.guestRelation ? `${item.guestRelation}` : ''}
+                          {item.guestRelation && item.guestOf ? ' · ' : ''}
+                          {item.guestOf ? `Brought by ${item.guestOf}` : ''}
+                        </Text>
                       ) : null}
                       {isPresent && time ? (
-                        <Text style={styles.attendeeTime}>{time}</Text>
+                        <Text style={[styles.attendeeTime, { color: att.textMuted }]}>{time}</Text>
                       ) : null}
                     </View>
 
                     {item.isGuest ? (
-                      <View style={[styles.statusBadge, styles.guestStatusBadge]}>
-                        <Check size={11} color="#6D28D9" strokeWidth={2.5} style={{ marginRight: 3 }} />
-                        <Text style={[styles.statusBadgeTxt, styles.guestStatusBadgeTxt]}>Present</Text>
+                      <View style={[styles.statusBadge, styles.guestStatusBadge, { backgroundColor: att.purpleBg, borderColor: att.purpleBorder }]}>
+                        <Check size={11} color={att.purple} strokeWidth={2.5} style={{ marginRight: 3 }} />
+                        <Text style={[styles.statusBadgeTxt, { color: att.purple }]}>Present</Text>
                       </View>
                     ) : (
-                      <View style={[styles.statusBadge, isPresent ? styles.presentBadge : styles.absentBadge]}>
-                        <Text style={[styles.statusBadgeTxt, isPresent ? styles.presentBadgeTxt : styles.absentBadgeTxt]}>
+                      <View style={[styles.statusBadge, { backgroundColor: isPresent ? att.greenBg : att.redBg }]}>
+                        <Text style={[styles.statusBadgeTxt, { color: isPresent ? att.green : att.red }]}>
                           {item.status}
                         </Text>
                       </View>
                     )}
-                    <ChevronRight size={16} color="#94A3B8" style={{ marginLeft: 6 }} />
+                    <ChevronRight size={16} color={att.textMuted} style={{ marginLeft: 6 }} />
                   </TouchableOpacity>
                 );
               }}
@@ -3135,11 +3488,19 @@ export default function AttendanceScreen({ navigation, route }: any) {
         >
           <TouchableOpacity 
             activeOpacity={1} 
-            style={[styles.familyPopupCard, { paddingBottom: Math.max(insets.bottom, 16) + 12 }]}
+            style={[
+              styles.familyPopupCard,
+              {
+                backgroundColor: att.surface,
+                borderTopWidth: 1,
+                borderColor: att.border,
+                paddingBottom: Math.max(insets.bottom, 16) + 12,
+              },
+            ]}
             onPress={e => e.stopPropagation()}
           >
             {/* Top Handle bar */}
-            <View style={styles.modalHandle} />
+            <View style={[styles.modalHandle, { backgroundColor: att.border }]} />
 
             {/* Header with Member Info & Close button */}
             <View style={styles.familyPopupHeader}>
@@ -3150,28 +3511,28 @@ export default function AttendanceScreen({ navigation, route }: any) {
                 lastName={familyModalMember?.lastName}
               />
               <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={styles.familyPopupTitle} numberOfLines={1}>
+                <Text style={[styles.familyPopupTitle, { color: att.text }]} numberOfLines={1}>
                   {familyModalMember?.name}
                 </Text>
-                <Text style={styles.familyPopupSub}>
+                <Text style={[styles.familyPopupSub, { color: att.textMuted }]}>
                   {familyModalMember?.isGuest 
                     ? `Guest Attendee · ${familyModalMember.status}`
                     : `Family Members · ${familyModalMember?.status || 'Member'}`}
                 </Text>
               </View>
               <TouchableOpacity
-                style={styles.familyPopupCloseBtn}
+                style={[styles.familyPopupCloseBtn, { backgroundColor: att.surfaceAlt }]}
                 onPress={() => setFamilyModalMember(null)}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <X size={18} color="#475569" />
+                <X size={18} color={att.textMuted} />
               </TouchableOpacity>
             </View>
 
             {/* Event Name Tag */}
-            <View style={styles.familyPopupEventBadge}>
-              <Calendar size={13} color="#1E293B" style={{ marginRight: 6 }} />
-              <Text style={styles.familyPopupEventText} numberOfLines={1}>
+            <View style={[styles.familyPopupEventBadge, { backgroundColor: att.surfaceAlt, borderColor: att.border }]}>
+              <Calendar size={13} color={att.text} style={{ marginRight: 6 }} />
+              <Text style={[styles.familyPopupEventText, { color: att.text }]} numberOfLines={1}>
                 {selectedEventForList?.title || 'Event'} Attendance
               </Text>
             </View>
@@ -3179,16 +3540,16 @@ export default function AttendanceScreen({ navigation, route }: any) {
             {/* Content: Loading / Empty / List */}
             {familyModalLoading ? (
               <View style={styles.familyPopupLoadingWrap}>
-                <ActivityIndicator size="large" color="#1a2d5a" />
-                <Text style={styles.familyPopupLoadingTxt}>Loading family members...</Text>
+                <ActivityIndicator size="large" color={att.accent} />
+                <Text style={[styles.familyPopupLoadingTxt, { color: att.textMuted }]}>Loading family members...</Text>
               </View>
             ) : familyModalMember?.isGuest ? (
               <View style={styles.familyPopupEmptyWrap}>
-                <View style={styles.familyPopupEmptyIconCircle}>
-                  <Users size={28} color="#6D28D9" />
+                <View style={[styles.familyPopupEmptyIconCircle, { backgroundColor: att.purpleBg }]}>
+                  <Users size={28} color={att.purple} />
                 </View>
-                <Text style={styles.familyPopupEmptyTitle}>Guest Attendee</Text>
-                <Text style={styles.familyPopupEmptySub}>
+                <Text style={[styles.familyPopupEmptyTitle, { color: att.text }]}>Guest Attendee</Text>
+                <Text style={[styles.familyPopupEmptySub, { color: att.textMuted }]}>
                   {familyModalMember?.guestOf 
                     ? `Invited to this event by ${familyModalMember.guestOf}.` 
                     : 'Registered as a guest attendee for this church event.'}
@@ -3196,11 +3557,11 @@ export default function AttendanceScreen({ navigation, route }: any) {
               </View>
             ) : familyModalList.length === 0 ? (
               <View style={styles.familyPopupEmptyWrap}>
-                <View style={styles.familyPopupEmptyIconCircle}>
-                  <Users size={28} color="#94A3B8" />
+                <View style={[styles.familyPopupEmptyIconCircle, { backgroundColor: att.surfaceAlt }]}>
+                  <Users size={28} color={att.textMuted} />
                 </View>
-                <Text style={styles.familyPopupEmptyTitle}>No Family Members Found</Text>
-                <Text style={styles.familyPopupEmptySub}>
+                <Text style={[styles.familyPopupEmptyTitle, { color: att.text }]}>No Family Members Found</Text>
+                <Text style={[styles.familyPopupEmptySub, { color: att.textMuted }]}>
                   No other household or family members are currently linked to {familyModalMember?.name}'s church account.
                 </Text>
               </View>
@@ -3210,11 +3571,11 @@ export default function AttendanceScreen({ navigation, route }: any) {
                 contentContainerStyle={{ paddingVertical: 8 }}
                 showsVerticalScrollIndicator={false}
               >
-                <View style={styles.familyPopupCountRow}>
-                  <Text style={styles.familyPopupCountTxt}>
+                <View style={[styles.familyPopupCountRow, { borderBottomColor: att.borderSubtle }]}>
+                  <Text style={[styles.familyPopupCountTxt, { color: att.text }]}>
                     {familyModalList.length} {familyModalList.length === 1 ? 'Family Member' : 'Family Members'}
                   </Text>
-                  <Text style={styles.familyPopupPresentRatio}>
+                  <Text style={[styles.familyPopupPresentRatio, { color: att.green }]}>
                     {familyModalList.filter(f => f.checked || f.alreadyMarked).length} Present · {familyModalList.filter(f => !f.checked && !f.alreadyMarked).length} Absent
                   </Text>
                 </View>
@@ -3226,32 +3587,32 @@ export default function AttendanceScreen({ navigation, route }: any) {
                     : '';
 
                   return (
-                    <View key={fam.id || idx} style={styles.familyPopupMemberCard}>
+                    <View key={fam.id || idx} style={[styles.familyPopupMemberCard, { backgroundColor: att.surfaceAlt, borderColor: att.border }]}>
                       <AttendeeAvatar
                         profilePicture={fam.profilePicture}
                         name={fam.name}
                       />
                       <View style={{ flex: 1, marginLeft: 12, marginRight: 8 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-                          <Text style={styles.familyPopupMemberName} numberOfLines={1}>{fam.name}</Text>
+                          <Text style={[styles.familyPopupMemberName, { color: att.text }]} numberOfLines={1}>{fam.name}</Text>
                           {Boolean(fam.relation) && (
-                            <View style={styles.familyRelationPill}>
-                              <Text style={styles.familyRelationPillTxt}>{fam.relation}</Text>
+                            <View style={[styles.familyRelationPill, { backgroundColor: att.blueBg }]}>
+                              <Text style={[styles.familyRelationPillTxt, { color: att.blue }]}>{fam.relation}</Text>
                             </View>
                           )}
                         </View>
                         {Boolean(fam.phone) && (
-                          <Text style={styles.familyPopupMemberPhone}>{fam.phone}</Text>
+                          <Text style={[styles.familyPopupMemberPhone, { color: att.textMuted }]}>{fam.phone}</Text>
                         )}
                         {isPresent && Boolean(timeStr) && (
-                          <Text style={styles.familyPopupMemberTime}>Marked at {timeStr}</Text>
+                          <Text style={[styles.familyPopupMemberTime, { color: att.green }]}>Marked at {timeStr}</Text>
                         )}
                       </View>
 
                       {/* Status Badge */}
-                      <View style={[styles.statusBadge, isPresent ? styles.presentBadge : styles.absentBadge]}>
-                        {isPresent && <Check size={11} color="#15803D" strokeWidth={2.5} style={{ marginRight: 3 }} />}
-                        <Text style={[styles.statusBadgeTxt, isPresent ? styles.presentBadgeTxt : styles.absentBadgeTxt]}>
+                      <View style={[styles.statusBadge, { backgroundColor: isPresent ? att.greenBg : att.redBg }]}>
+                        {isPresent && <Check size={11} color={att.green} strokeWidth={2.5} style={{ marginRight: 3 }} />}
+                        <Text style={[styles.statusBadgeTxt, { color: isPresent ? att.green : att.red }]}>
                           {isPresent ? 'Present' : 'Absent'}
                         </Text>
                       </View>
@@ -3263,11 +3624,11 @@ export default function AttendanceScreen({ navigation, route }: any) {
 
             {/* Bottom Close Button */}
             <TouchableOpacity
-              style={styles.familyPopupDoneBtn}
+              style={[styles.familyPopupDoneBtn, { backgroundColor: isDark ? '#F8FAFC' : '#1a2d5a' }]}
               onPress={() => setFamilyModalMember(null)}
               activeOpacity={0.85}
             >
-              <Text style={styles.familyPopupDoneBtnTxt}>Close</Text>
+              <Text style={[styles.familyPopupDoneBtnTxt, { color: isDark ? '#0F172A' : '#ffffff' }]}>Close</Text>
             </TouchableOpacity>
           </TouchableOpacity>
         </TouchableOpacity>
@@ -3476,33 +3837,33 @@ export default function AttendanceScreen({ navigation, route }: any) {
         }}
       >
         <View style={styles.invalidQrOverlay}>
-          <View style={styles.invalidQrCard}>
+          <View style={[styles.invalidQrCard, { backgroundColor: att.surface, borderWidth: 1, borderColor: att.border }]}>
             {/* Amber/Red Circular Icon with MapPinOff */}
-            <View style={[styles.invalidQrIconWrap, { backgroundColor: '#FEF2F2' }]}>
-              <MapPinOff size={34} color="#EF4444" strokeWidth={2.4} />
+            <View style={[styles.invalidQrIconWrap, { backgroundColor: att.redBg }]}>
+              <MapPinOff size={34} color={att.red} strokeWidth={2.4} />
             </View>
 
             {/* Title */}
-            <Text style={styles.invalidQrTitle}>{locationErrorModal.title}</Text>
+            <Text style={[styles.invalidQrTitle, { color: att.text }]}>{locationErrorModal.title}</Text>
 
             {/* Distance badge if outside radius */}
             {Boolean(locationErrorModal.distanceText) && (
-              <View style={styles.geofenceDistanceBadge}>
-                <MapPin size={13} color="#DC2626" strokeWidth={2.4} style={{ marginRight: 5 }} />
-                <Text style={styles.geofenceDistanceBadgeTxt}>
+              <View style={[styles.geofenceDistanceBadge, { backgroundColor: att.redBg, borderColor: att.redBorder }]}>
+                <MapPin size={13} color={att.red} strokeWidth={2.4} style={{ marginRight: 5 }} />
+                <Text style={[styles.geofenceDistanceBadgeTxt, { color: att.red }]}>
                   {locationErrorModal.distanceText} from church
                 </Text>
               </View>
             )}
 
             {/* Description */}
-            <Text style={styles.invalidQrMsg}>
+            <Text style={[styles.invalidQrMsg, { color: att.textMuted }]}>
               {locationErrorModal.message}
             </Text>
 
             {/* Geofence Rule Notice */}
-            <View style={styles.geofenceRuleBox}>
-              <Text style={styles.geofenceRuleTxt}>
+            <View style={[styles.geofenceRuleBox, { backgroundColor: att.amberBg, borderColor: att.amberBorder }]}>
+              <Text style={[styles.geofenceRuleTxt, { color: att.amber }]}>
                 ⚠️ Scanning Rule: Attendance can only be marked when you are physically within 100 meters of the registered church location.
               </Text>
             </View>
@@ -3538,17 +3899,17 @@ export default function AttendanceScreen({ navigation, route }: any) {
         }}
       >
         <View style={styles.invalidQrOverlay}>
-          <View style={styles.invalidQrCard}>
+          <View style={[styles.invalidQrCard, { backgroundColor: att.surface, borderWidth: 1, borderColor: att.border }]}>
             {/* Red Circular Icon with Exclamation */}
-            <View style={styles.invalidQrIconWrap}>
-              <AlertCircle size={36} color="#EF4444" strokeWidth={2.4} />
+            <View style={[styles.invalidQrIconWrap, { backgroundColor: att.redBg }]}>
+              <AlertCircle size={36} color={att.red} strokeWidth={2.4} />
             </View>
 
             {/* Title */}
-            <Text style={styles.invalidQrTitle}>Invalid QR Code</Text>
+            <Text style={[styles.invalidQrTitle, { color: att.text }]}>Invalid QR Code</Text>
 
             {/* Description */}
-            <Text style={styles.invalidQrMsg}>
+            <Text style={[styles.invalidQrMsg, { color: att.textMuted }]}>
               {invalidQrMessage || `Please scan the official ${churchName || 'Church of God'} attendance QR code.`}
             </Text>
 
@@ -3576,7 +3937,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
               }}
               activeOpacity={0.7}
             >
-              <Text style={styles.invalidQrCancelBtnTxt}>Cancel</Text>
+              <Text style={[styles.invalidQrCancelBtnTxt, { color: att.textMuted }]}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -3587,48 +3948,48 @@ export default function AttendanceScreen({ navigation, route }: any) {
           ──────────────────────────────────────────────────────────────────────── */}
       <Modal visible={showScanOptionsModal} transparent animationType="slide">
         <View style={styles.optionsModalOverlay}>
-          <View style={styles.optionsModalCard}>
+          <View style={[styles.optionsModalCard, { backgroundColor: att.surface, borderTopWidth: 1, borderColor: att.border }]}>
             <View style={styles.optionsModalHeader}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.optionsModalTitle}>Record Attendance</Text>
-                <Text style={styles.optionsModalSub}>{selectedEventForScan?.title || activeEvent.title}</Text>
+                <Text style={[styles.optionsModalTitle, { color: att.text }]}>Record Attendance</Text>
+                <Text style={[styles.optionsModalSub, { color: att.textMuted }]}>{selectedEventForScan?.title || activeEvent.title}</Text>
               </View>
               <TouchableOpacity 
-                style={styles.optionsCloseBtn}
+                style={[styles.optionsCloseBtn, { backgroundColor: att.surfaceAlt }]}
                 onPress={() => setShowScanOptionsModal(false)}
               >
-                <X size={20} color="#64748B" />
+                <X size={20} color={att.textMuted} />
               </TouchableOpacity>
             </View>
 
             <View style={styles.optionsList}>
               {/* Option 1: Native Camera QR Scan */}
               <TouchableOpacity 
-                style={styles.optionItem}
+                style={[styles.optionItem, { backgroundColor: att.surfaceAlt, borderColor: att.border }]}
                 onPress={handleLaunchCamera}
                 activeOpacity={0.75}
               >
-                <View style={[styles.optionIconBox, { backgroundColor: '#EEF2FF', borderColor: '#C7D2FE' }]}>
-                  <Camera size={22} color="#1E3A8A" strokeWidth={2.2} />
+                <View style={[styles.optionIconBox, { backgroundColor: att.blueBg, borderColor: att.blueBorder }]}>
+                  <Camera size={22} color={att.blue} strokeWidth={2.2} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.optionItemTitle}>Scan QR with Camera</Text>
-                  <Text style={styles.optionItemSub}>Capture the QR code displayed at church</Text>
+                  <Text style={[styles.optionItemTitle, { color: att.text }]}>Scan QR with Camera</Text>
+                  <Text style={[styles.optionItemSub, { color: att.textMuted }]}>Capture the QR code displayed at church</Text>
                 </View>
               </TouchableOpacity>
 
               {/* Option 2: Gallery Image QR */}
               <TouchableOpacity 
-                style={styles.optionItem}
+                style={[styles.optionItem, { backgroundColor: att.surfaceAlt, borderColor: att.border }]}
                 onPress={handleLaunchGallery}
                 activeOpacity={0.75}
               >
-                <View style={[styles.optionIconBox, { backgroundColor: '#F3E8FF', borderColor: '#DDD6FE' }]}>
-                  <ImageIcon size={22} color="#7C3AED" strokeWidth={2.2} />
+                <View style={[styles.optionIconBox, { backgroundColor: att.purpleBg, borderColor: att.purpleBorder }]}>
+                  <ImageIcon size={22} color={att.purple} strokeWidth={2.2} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.optionItemTitle}>Choose from Gallery</Text>
-                  <Text style={styles.optionItemSub}>Select a saved church QR image or photo</Text>
+                  <Text style={[styles.optionItemTitle, { color: att.text }]}>Choose from Gallery</Text>
+                  <Text style={[styles.optionItemSub, { color: att.textMuted }]}>Select a saved church QR image or photo</Text>
                 </View>
               </TouchableOpacity>
 
@@ -3643,19 +4004,19 @@ export default function AttendanceScreen({ navigation, route }: any) {
           ──────────────────────────────────────────────────────────────────────── */}
       <Modal visible={manualCodeModal} transparent animationType="fade">
         <View style={styles.manualModalOverlay}>
-          <View style={styles.manualModalCard}>
-            <View style={styles.manualIconCircle}>
-              <QrCode size={28} color="#1E3A8A" strokeWidth={2.2} />
+          <View style={[styles.manualModalCard, { backgroundColor: att.surface, borderWidth: 1, borderColor: att.border }]}>
+            <View style={[styles.manualIconCircle, { backgroundColor: att.blueBg }]}>
+              <QrCode size={28} color={att.blue} strokeWidth={2.2} />
             </View>
-            <Text style={styles.manualModalTitle}>Enter Attendance Code</Text>
-            <Text style={styles.manualModalSub}>
+            <Text style={[styles.manualModalTitle, { color: att.text }]}>Enter Attendance Code</Text>
+            <Text style={[styles.manualModalSub, { color: att.textMuted }]}>
               Enter attendance check-in code or event PIN to mark your attendance.
             </Text>
 
             <TextInput
-              style={styles.manualInput}
+              style={[styles.manualInput, { backgroundColor: att.surfaceAlt, borderColor: att.border, color: att.text }]}
               placeholder="Enter attendance code..."
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={att.textMuted}
               value={manualCodeInput}
               onChangeText={setManualCodeInput}
               autoCapitalize="characters"
@@ -3663,10 +4024,10 @@ export default function AttendanceScreen({ navigation, route }: any) {
 
             <View style={styles.manualBtnRow}>
               <TouchableOpacity 
-                style={styles.manualCancelBtn}
+                style={[styles.manualCancelBtn, { backgroundColor: att.surfaceAlt, borderWidth: 1, borderColor: att.border }]}
                 onPress={() => { setManualCodeModal(false); setManualCodeInput(''); }}
               >
-                <Text style={styles.manualCancelTxt}>Cancel</Text>
+                <Text style={[styles.manualCancelTxt, { color: att.text }]}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity 
                 style={styles.manualConfirmBtn}
@@ -3684,10 +4045,10 @@ export default function AttendanceScreen({ navigation, route }: any) {
           ──────────────────────────────────────────────────────────────────────── */}
       <Modal visible={isDecoding} transparent animationType="fade">
         <View style={styles.decodingOverlay}>
-          <View style={styles.decodingCard}>
-            <ActivityIndicator size="large" color="#059669" />
-            <Text style={styles.decodingTxt}>{decodingMessage}</Text>
-            <Text style={styles.decodingSubTxt}>Please wait a moment...</Text>
+          <View style={[styles.decodingCard, { backgroundColor: att.surface, borderWidth: 1, borderColor: att.border }]}>
+            <ActivityIndicator size="large" color={att.green} />
+            <Text style={[styles.decodingTxt, { color: att.text }]}>{decodingMessage}</Text>
+            <Text style={[styles.decodingSubTxt, { color: att.textMuted }]}>Please wait a moment...</Text>
           </View>
         </View>
       </Modal>
@@ -3702,10 +4063,10 @@ export default function AttendanceScreen({ navigation, route }: any) {
         onRequestClose={() => setScanResultModal(prev => ({ ...prev, visible: false }))}
       >
         <KeyboardAvoidingView 
-          style={styles.confirmScreenContainer}
+          style={[styles.confirmScreenContainer, { backgroundColor: att.bg }]}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" translucent />
+          <StatusBar barStyle={colors.barStyle || (isDark ? 'light-content' : 'dark-content')} backgroundColor={att.bg} translucent />
 
           <ScrollView 
             style={styles.confirmScrollView}
@@ -3725,82 +4086,82 @@ export default function AttendanceScreen({ navigation, route }: any) {
             overScrollMode="always"
           >
             {/* Big Green Circle with Checkmark */}
-            <View style={styles.confirmIconCircle}>
-              <Check size={42} color="#16A34A" strokeWidth={3} />
+            <View style={[styles.confirmIconCircle, { backgroundColor: att.greenBg }]}>
+              <Check size={42} color={att.green} strokeWidth={3} />
             </View>
 
             {/* Title & Subtitle */}
-            <Text style={styles.confirmMainTitle}>
+            <Text style={[styles.confirmMainTitle, { color: att.text }]}>
               {scanResultModal.scannedMemberName && scanResultModal.scannedMemberName !== memberName
                 ? `${scanResultModal.scannedMemberName} is marked present`
                 : "You're marked present"}
             </Text>
-            <Text style={styles.confirmSubTitle}>
+            <Text style={[styles.confirmSubTitle, { color: att.textMuted }]}>
               {scanResultModal.alreadyMarked 
                 ? 'Thank you! Attendance was already recorded.'
                 : 'Thank you! Attendance has been recorded.'}
             </Text>
 
             {/* Details Card */}
-            <View style={styles.confirmDetailsCard}>
+            <View style={[styles.confirmDetailsCard, { backgroundColor: att.surface, borderColor: att.border }]}>
               <View style={styles.confirmDetailRow}>
-                <Text style={styles.confirmDetailLabel}>Event</Text>
-                <Text style={styles.confirmDetailValue} numberOfLines={1}>{scanResultModal.eventName}</Text>
+                <Text style={[styles.confirmDetailLabel, { color: att.textMuted }]}>Event</Text>
+                <Text style={[styles.confirmDetailValue, { color: att.text }]} numberOfLines={1}>{scanResultModal.eventName}</Text>
               </View>
 
-              <View style={styles.confirmDivider} />
+              <View style={[styles.confirmDivider, { backgroundColor: att.borderSubtle }]} />
 
               <View style={styles.confirmDetailRow}>
-                <Text style={styles.confirmDetailLabel}>Date</Text>
-                <Text style={styles.confirmDetailValue}>{scanResultModal.date}</Text>
+                <Text style={[styles.confirmDetailLabel, { color: att.textMuted }]}>Date</Text>
+                <Text style={[styles.confirmDetailValue, { color: att.text }]}>{scanResultModal.date}</Text>
               </View>
 
-              <View style={styles.confirmDivider} />
+              <View style={[styles.confirmDivider, { backgroundColor: att.borderSubtle }]} />
 
               <View style={styles.confirmDetailRow}>
-                <Text style={styles.confirmDetailLabel}>Time</Text>
-                <Text style={styles.confirmDetailValue}>{scanResultModal.time}</Text>
+                <Text style={[styles.confirmDetailLabel, { color: att.textMuted }]}>Time</Text>
+                <Text style={[styles.confirmDetailValue, { color: att.text }]}>{scanResultModal.time}</Text>
               </View>
             </View>
 
             {/* Household & Family Members Attendance Card */}
-            <View style={styles.confirmFamilyCard}>
+            <View style={[styles.confirmFamilyCard, { backgroundColor: att.surface, borderColor: att.border }]}>
               <View style={styles.confirmFamilyHeaderRow}>
-                <View style={styles.confirmFamilyIconWrap}>
-                  <Users size={18} color="#1E3A8A" strokeWidth={2.2} />
+                <View style={[styles.confirmFamilyIconWrap, { backgroundColor: att.blueBg }]}>
+                  <Users size={18} color={att.blue} strokeWidth={2.2} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.confirmFamilyTitle}>Household Attendance</Text>
-                  <Text style={styles.confirmFamilySub}>Select family members to mark present</Text>
+                  <Text style={[styles.confirmFamilyTitle, { color: att.text }]}>Household Attendance</Text>
+                  <Text style={[styles.confirmFamilySub, { color: att.textMuted }]}>Select family members to mark present</Text>
                 </View>
               </View>
 
               {/* Scanned Member */}
-              <Text style={styles.confirmSectionLabel}>SCANNED MEMBER</Text>
-              <View style={styles.scannedMemberRow}>
+              <Text style={[styles.confirmSectionLabel, { color: att.textMuted }]}>SCANNED MEMBER</Text>
+              <View style={[styles.scannedMemberRow, { backgroundColor: att.greenRowBg, borderColor: att.greenBorder }]}>
                 <View style={styles.scannedMemberLeft}>
                   <View style={styles.famCheckboxChecked}>
                     <Check size={13} color="#FFFFFF" strokeWidth={3} />
                   </View>
                   <View style={{ marginLeft: 10, flex: 1 }}>
-                    <Text style={styles.scannedMemberNameTxt} numberOfLines={1}>
+                    <Text style={[styles.scannedMemberNameTxt, { color: att.text }]} numberOfLines={1}>
                       {scanResultModal.scannedMemberName || memberName}
                     </Text>
-                    <Text style={styles.scannedMemberTag}>Present · Checked In</Text>
+                    <Text style={[styles.scannedMemberTag, { color: att.green }]}>Present · Checked In</Text>
                   </View>
                 </View>
-                <View style={styles.famPresentBadge}>
-                  <Check size={11} color="#15803D" strokeWidth={2.5} style={{ marginRight: 3 }} />
-                  <Text style={styles.famPresentBadgeTxt}>Present</Text>
+                <View style={[styles.famPresentBadge, { backgroundColor: att.greenBg }]}>
+                  <Check size={11} color={att.green} strokeWidth={2.5} style={{ marginRight: 3 }} />
+                  <Text style={[styles.famPresentBadgeTxt, { color: att.green }]}>Present</Text>
                 </View>
               </View>
 
               {/* Family Members Section */}
-              <View style={styles.confirmDivider} />
+              <View style={[styles.confirmDivider, { backgroundColor: att.borderSubtle }]} />
               <View style={styles.confirmFamilyHeaderRow}>
-                <Text style={styles.confirmSectionLabel}>FAMILY MEMBERS</Text>
+                <Text style={[styles.confirmSectionLabel, { color: att.textMuted }]}>FAMILY MEMBERS</Text>
                 {scanResultModal.familyMembers.length > 0 && (
-                  <Text style={styles.confirmFamilyCountTxt}>
+                  <Text style={[styles.confirmFamilyCountTxt, { color: att.green }]}>
                     {scanResultModal.familyMembers.filter(f => f.checked).length} of {scanResultModal.familyMembers.length} present
                   </Text>
                 )}
@@ -3808,19 +4169,19 @@ export default function AttendanceScreen({ navigation, route }: any) {
 
               {scanResultModal.familyLoading ? (
                 <View style={styles.famLoadingWrap}>
-                  <ActivityIndicator size="small" color="#059669" />
-                  <Text style={styles.famLoadingTxt}>Checking for family members...</Text>
+                  <ActivityIndicator size="small" color={att.green} />
+                  <Text style={[styles.famLoadingTxt, { color: att.textMuted }]}>Checking for family members...</Text>
                 </View>
               ) : scanResultModal.familyMembers.length === 0 ? (
                 <View style={styles.famEmptyWrap}>
-                  <Text style={styles.famEmptyTxt}>No registered family members for this household.</Text>
+                  <Text style={[styles.famEmptyTxt, { color: att.textMuted }]}>No registered family members for this household.</Text>
                 </View>
               ) : scanResultModal.alreadyMarked ? (
                 /* Locked / Read-Only View Once Attendance Recorded */
                 <View style={styles.famListWrap}>
                   {scanResultModal.familyMembers.filter(f => f.checked).length === 0 ? (
                     <View style={styles.famEmptyWrap}>
-                      <Text style={styles.famEmptyTxt}>No family members were added for this attendance session.</Text>
+                      <Text style={[styles.famEmptyTxt, { color: att.textMuted }]}>No family members were added for this attendance session.</Text>
                     </View>
                   ) : (
                     scanResultModal.familyMembers
@@ -3828,24 +4189,27 @@ export default function AttendanceScreen({ navigation, route }: any) {
                       .map((fam) => (
                         <View
                           key={fam.id}
-                          style={[styles.famRowItem, styles.famRowItemChecked]}
+                          style={[
+                            styles.famRowItem,
+                            { backgroundColor: att.greenRowBg, borderColor: att.greenBorder },
+                          ]}
                         >
                           <View style={styles.famRowLeft}>
                             <View style={styles.famCheckboxChecked}>
                               <Check size={13} color="#FFFFFF" strokeWidth={3} />
                             </View>
                             <View style={{ marginLeft: 10, flex: 1 }}>
-                              <Text style={[styles.famNameTxt, styles.famNameTxtChecked]} numberOfLines={1}>
+                              <Text style={[styles.famNameTxt, styles.famNameTxtChecked, { color: att.text }]} numberOfLines={1}>
                                 {fam.name}
                               </Text>
-                              <Text style={styles.famRelationTxt}>
+                              <Text style={[styles.famRelationTxt, { color: att.textMuted }]}>
                                 {fam.relation ? `${fam.relation} · Family Member` : 'Family Member'}
                               </Text>
                             </View>
                           </View>
-                          <View style={styles.famPresentBadge}>
-                            <Check size={11} color="#15803D" strokeWidth={2.5} style={{ marginRight: 3 }} />
-                            <Text style={styles.famPresentBadgeTxt}>Present</Text>
+                          <View style={[styles.famPresentBadge, { backgroundColor: att.greenBg }]}>
+                            <Check size={11} color={att.green} strokeWidth={2.5} style={{ marginRight: 3 }} />
+                            <Text style={[styles.famPresentBadgeTxt, { color: att.green }]}>Present</Text>
                           </View>
                         </View>
                       ))
@@ -3857,7 +4221,11 @@ export default function AttendanceScreen({ navigation, route }: any) {
                   {scanResultModal.familyMembers.map((fam) => (
                     <TouchableOpacity
                       key={fam.id}
-                      style={[styles.famRowItem, fam.checked && styles.famRowItemChecked]}
+                      style={[
+                        styles.famRowItem,
+                        { backgroundColor: att.surfaceAlt, borderColor: att.border },
+                        fam.checked && { backgroundColor: att.greenRowBg, borderColor: att.greenBorder },
+                      ]}
                       onPress={() => handleToggleFamilyAttendance(fam.id)}
                       activeOpacity={0.75}
                     >
@@ -3867,28 +4235,28 @@ export default function AttendanceScreen({ navigation, route }: any) {
                             <Check size={13} color="#FFFFFF" strokeWidth={3} />
                           </View>
                         ) : (
-                          <View style={styles.famCheckboxUnchecked} />
+                          <View style={[styles.famCheckboxUnchecked, { backgroundColor: att.surface, borderColor: att.textMuted }]} />
                         )}
                         <View style={{ marginLeft: 10, flex: 1 }}>
-                          <Text style={[styles.famNameTxt, fam.checked && styles.famNameTxtChecked]} numberOfLines={1}>
+                          <Text style={[styles.famNameTxt, { color: att.text }, fam.checked && styles.famNameTxtChecked]} numberOfLines={1}>
                             {fam.name}
                           </Text>
-                          <Text style={styles.famRelationTxt}>
+                          <Text style={[styles.famRelationTxt, { color: att.textMuted }]}>
                             {fam.relation ? `${fam.relation} · Family Member` : 'Family Member'}
                           </Text>
                         </View>
                       </View>
 
                       {fam.loading ? (
-                        <ActivityIndicator size="small" color="#059669" />
+                        <ActivityIndicator size="small" color={att.green} />
                       ) : fam.checked ? (
-                        <View style={styles.famPresentBadge}>
-                          <Check size={11} color="#15803D" strokeWidth={2.5} style={{ marginRight: 3 }} />
-                          <Text style={styles.famPresentBadgeTxt}>Present</Text>
+                        <View style={[styles.famPresentBadge, { backgroundColor: att.greenBg }]}>
+                          <Check size={11} color={att.green} strokeWidth={2.5} style={{ marginRight: 3 }} />
+                          <Text style={[styles.famPresentBadgeTxt, { color: att.green }]}>Present</Text>
                         </View>
                       ) : (
-                        <View style={styles.famAbsentBadge}>
-                          <Text style={styles.famAbsentBadgeTxt}>Tap to mark</Text>
+                        <View style={[styles.famAbsentBadge, { backgroundColor: att.surface, borderWidth: 1, borderColor: att.border }]}>
+                          <Text style={[styles.famAbsentBadgeTxt, { color: att.textMuted }]}>Tap to mark</Text>
                         </View>
                       )}
                     </TouchableOpacity>
@@ -3897,111 +4265,335 @@ export default function AttendanceScreen({ navigation, route }: any) {
               )}
             </View>
 
-            {/* ── Guest & Visitor Attendance Card ── */}
-            <View style={styles.confirmGuestCard}>
+            {/* ── Guest & Visitor Attendance + Invitation Card ── */}
+            <View style={[styles.confirmGuestCard, { backgroundColor: att.surface, borderColor: att.border }]}>
               <View style={styles.confirmFamilyHeaderRow}>
-                <View style={styles.confirmGuestIconWrap}>
-                  <UserPlus size={18} color="#6D28D9" strokeWidth={2.2} />
+                <View style={[styles.confirmGuestIconWrap, { backgroundColor: att.purpleBg }]}>
+                  <UserPlus size={18} color={att.purple} strokeWidth={2.2} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.confirmGuestTitle}>Guests & Visitors</Text>
-                  <Text style={styles.confirmFamilySub}>
-                    {scanResultModal.alreadyMarked ? 'Guests recorded for this session' : 'Add friends or family visiting with you'}
+                  <Text style={[styles.confirmGuestTitle, { color: att.text }]}>Guests & App Invitations</Text>
+                  <Text style={[styles.confirmFamilySub, { color: att.textMuted }]}>
+                    Invite visitors & share a personal sign-in link
                   </Text>
                 </View>
                 {scanResultModal.guests && scanResultModal.guests.length > 0 && (
-                  <View style={styles.guestCountBadge}>
-                    <Text style={styles.guestCountBadgeTxt}>
+                  <View style={[styles.guestCountBadge, { backgroundColor: att.purpleBg, borderColor: att.purpleBorder }]}>
+                    <Text style={[styles.guestCountBadgeTxt, { color: att.purple }]}>
                       {scanResultModal.guests.length} {scanResultModal.guests.length === 1 ? 'Guest' : 'Guests'}
                     </Text>
                   </View>
                 )}
               </View>
 
-              {/* Add Guest Input Row: ONLY available during initial scan session */}
-              {!scanResultModal.alreadyMarked && (
-                <View style={styles.addGuestInputRow}>
-                  <View style={styles.addGuestInputWrap}>
-                    <UserPlus size={16} color="#94A3B8" style={{ marginRight: 8 }} />
+              {/* Add Guest & Share Invite Form */}
+              <View style={[styles.guestInviteFormBox, { backgroundColor: att.surfaceAlt, borderColor: att.border }]}>
+                <View style={styles.guestFieldGroup}>
+                  <Text style={[styles.guestFieldLabel, { color: att.textMuted }]}>Guest Full Name *</Text>
+                  <View style={[styles.guestFormInputWrap, { backgroundColor: att.surface, borderColor: att.border }]}>
+                    <UserPlus size={16} color={att.purple} style={{ marginRight: 10 }} />
                     <TextInput
-                      style={styles.addGuestInput}
-                      placeholder="Enter guest's full name..."
-                      placeholderTextColor="#94A3B8"
+                      style={[styles.addGuestInput, { color: att.text }]}
+                      placeholder="Enter guest's full name"
+                      placeholderTextColor={att.textMuted}
                       value={guestNameInput}
                       onChangeText={setGuestNameInput}
-                      returnKeyType="done"
-                      onSubmitEditing={() => handleAddGuest()}
                       editable={!isAddingGuest}
                     />
                     {guestNameInput.length > 0 && (
                       <TouchableOpacity onPress={() => setGuestNameInput('')} style={{ padding: 4 }}>
-                        <X size={14} color="#94A3B8" />
+                        <X size={15} color={att.textMuted} />
                       </TouchableOpacity>
                     )}
                   </View>
+                </View>
+
+                <View style={styles.guestFieldGroup}>
+                  <View style={styles.guestFieldLabelRow}>
+                    <Text style={[styles.guestFieldLabel, { marginBottom: 0, color: att.textMuted }]}>Mobile Number *</Text>
+                    {isValidPhone10(guestPhoneInput) && (
+                      <View style={[styles.guestPhoneValidPill, { backgroundColor: att.greenBg }]}>
+                        <Check size={11} color={att.green} strokeWidth={2.8} />
+                        <Text style={[styles.guestPhoneValidTxt, { color: att.green }]}>
+                          +91 {normalizePhone10(guestPhoneInput).slice(0, 5)}{' '}
+                          {normalizePhone10(guestPhoneInput).slice(5)}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  <View
+                    style={[
+                      styles.guestFormInputWrap,
+                      {
+                        backgroundColor: att.surface,
+                        borderColor: isValidPhone10(guestPhoneInput) ? att.greenBorder : att.border,
+                      },
+                    ]}
+                  >
+                    <Phone size={15} color={att.purple} style={{ marginRight: 10 }} />
+                    <TextInput
+                      style={[styles.addGuestInput, { color: att.text }]}
+                      placeholder="Enter 10-digit mobile number"
+                      placeholderTextColor={att.textMuted}
+                      keyboardType="phone-pad"
+                      maxLength={18}
+                      value={guestPhoneInput}
+                      onChangeText={(txt) => setGuestPhoneInput(txt.replace(/[^\d+\s-]/g, ''))}
+                      editable={!isAddingGuest}
+                    />
+                    {guestPhoneInput.length > 0 && (
+                      <TouchableOpacity onPress={() => setGuestPhoneInput('')} style={{ padding: 4 }}>
+                        <X size={15} color={att.textMuted} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+
+                <View style={styles.guestFieldGroup}>
+                  <Text style={[styles.guestFieldLabel, { color: att.textMuted }]}>Relation</Text>
+                  <View style={styles.guestRelationGrid}>
+                    {GUEST_RELATIONS.map((rel) => {
+                      const selected = guestRelationInput === rel;
+                      return (
+                        <TouchableOpacity
+                          key={rel}
+                          style={[
+                            styles.guestRelationChip,
+                            { backgroundColor: att.surface, borderColor: att.border },
+                            selected && styles.guestRelationChipActive,
+                          ]}
+                          onPress={() => setGuestRelationInput(rel)}
+                          disabled={isAddingGuest}
+                          activeOpacity={0.75}
+                        >
+                          {selected && (
+                            <Check size={12} color="#FFFFFF" strokeWidth={2.8} style={{ marginRight: 4 }} />
+                          )}
+                          <Text
+                            style={[
+                              styles.guestRelationChipTxt,
+                              { color: selected ? '#FFFFFF' : att.textMuted },
+                              selected && styles.guestRelationChipTxtActive,
+                            ]}
+                          >
+                            {rel}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  {guestRelationInput === 'Other' && (
+                    <View style={[styles.guestFormInputWrap, { marginTop: 8, backgroundColor: att.surface, borderColor: att.border }]}>
+                      <TextInput
+                        style={[styles.addGuestInput, { color: att.text }]}
+                        placeholder="Specify relation (e.g. Cousin, Classmate)"
+                        placeholderTextColor={att.textMuted}
+                        value={guestCustomRelationInput}
+                        onChangeText={setGuestCustomRelationInput}
+                        editable={!isAddingGuest}
+                      />
+                    </View>
+                  )}
+                </View>
+
+                <View style={styles.guestActionsStack}>
                   <TouchableOpacity
                     style={[
-                      styles.addGuestBtn,
-                      (!guestNameInput.trim() || isAddingGuest) && styles.addGuestBtnDisabled
+                      styles.inviteWhatsAppPrimaryBtn,
+                      (!guestNameInput.trim() || !isValidPhone10(guestPhoneInput) || isAddingGuest) && {
+                        backgroundColor: isDark ? '#27272A' : '#E2E8F0',
+                      },
                     ]}
-                    onPress={() => handleAddGuest()}
-                    disabled={!guestNameInput.trim() || isAddingGuest}
-                    activeOpacity={0.8}
+                    onPress={() => handleAddGuest('whatsapp')}
+                    disabled={!guestNameInput.trim() || !isValidPhone10(guestPhoneInput) || isAddingGuest}
+                    activeOpacity={0.85}
                   >
                     {isAddingGuest ? (
                       <ActivityIndicator size="small" color="#FFFFFF" />
                     ) : (
                       <>
-                        <Plus size={15} color="#FFFFFF" strokeWidth={2.5} style={{ marginRight: 4 }} />
-                        <Text style={styles.addGuestBtnTxt}>Add</Text>
+                        <MessageSquare
+                          size={17}
+                          color={
+                            !guestNameInput.trim() || !isValidPhone10(guestPhoneInput)
+                              ? att.textMuted
+                              : '#FFFFFF'
+                          }
+                          strokeWidth={2.2}
+                        />
+                        <Text
+                          style={[
+                            styles.invitePrimaryBtnTxt,
+                            (!guestNameInput.trim() || !isValidPhone10(guestPhoneInput)) && {
+                              color: att.textMuted,
+                            },
+                          ]}
+                        >
+                          Invite via WhatsApp
+                        </Text>
                       </>
                     )}
                   </TouchableOpacity>
+
+                  <View style={styles.guestSecondaryActionsRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.inviteSecondarySmsBtn,
+                        { backgroundColor: att.blueBg, borderColor: att.blueBorder },
+                        (!guestNameInput.trim() || !isValidPhone10(guestPhoneInput) || isAddingGuest) && {
+                          backgroundColor: att.surface,
+                          borderColor: att.border,
+                        },
+                      ]}
+                      onPress={() => handleAddGuest('sms')}
+                      disabled={!guestNameInput.trim() || !isValidPhone10(guestPhoneInput) || isAddingGuest}
+                      activeOpacity={0.8}
+                    >
+                      <Send
+                        size={14}
+                        color={
+                          !guestNameInput.trim() || !isValidPhone10(guestPhoneInput)
+                            ? att.textMuted
+                            : att.blue
+                        }
+                        strokeWidth={2.2}
+                      />
+                      <Text
+                        style={[
+                          styles.inviteSecondarySmsTxt,
+                          { color: att.blue },
+                          (!guestNameInput.trim() || !isValidPhone10(guestPhoneInput)) && {
+                            color: att.textMuted,
+                          },
+                        ]}
+                      >
+                        Send SMS
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.inviteSecondaryShareBtn,
+                        { backgroundColor: att.purpleBg, borderColor: att.purpleBorder },
+                        (!guestNameInput.trim() || !isValidPhone10(guestPhoneInput) || isAddingGuest) && {
+                          backgroundColor: att.surface,
+                          borderColor: att.border,
+                        },
+                      ]}
+                      onPress={() => handleAddGuest('share')}
+                      disabled={!guestNameInput.trim() || !isValidPhone10(guestPhoneInput) || isAddingGuest}
+                      activeOpacity={0.8}
+                    >
+                      <Share2
+                        size={14}
+                        color={
+                          !guestNameInput.trim() || !isValidPhone10(guestPhoneInput)
+                            ? att.textMuted
+                            : att.purple
+                        }
+                        strokeWidth={2.2}
+                      />
+                      <Text
+                        style={[
+                          styles.inviteSecondaryShareTxt,
+                          { color: att.purple },
+                          (!guestNameInput.trim() || !isValidPhone10(guestPhoneInput)) && {
+                            color: att.textMuted,
+                          },
+                        ]}
+                      >
+                        Share Link
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.addGuestSaveLaterCleanLink}
+                    onPress={() => handleAddGuest('save')}
+                    disabled={!guestNameInput.trim() || !isValidPhone10(guestPhoneInput) || isAddingGuest}
+                    activeOpacity={0.7}
+                  >
+                    <Plus
+                      size={14}
+                      color={
+                        !guestNameInput.trim() || !isValidPhone10(guestPhoneInput) || isAddingGuest
+                          ? att.textMuted
+                          : att.purple
+                      }
+                      strokeWidth={2.4}
+                    />
+                    <Text
+                      style={[
+                        styles.addGuestSaveLaterTxt,
+                        {
+                          color:
+                            !guestNameInput.trim() || !isValidPhone10(guestPhoneInput) || isAddingGuest
+                              ? att.textMuted
+                              : att.purple,
+                        },
+                      ]}
+                    >
+                      Save Guest Without Sharing
+                    </Text>
+                  </TouchableOpacity>
                 </View>
-              )}
+              </View>
 
               {/* List of Added Guests */}
               {scanResultModal.guests && scanResultModal.guests.length > 0 ? (
-                <View style={styles.guestListWrap}>
-                  {scanResultModal.guests.map((g) => (
-                    <View key={g.id} style={styles.guestRowItem}>
-                      <View style={styles.guestRowLeft}>
-                        <View style={styles.guestAvatar}>
-                          <Text style={styles.guestAvatarTxt}>
-                            {g.name?.charAt(0)?.toUpperCase() || 'G'}
-                          </Text>
-                        </View>
-                        <View style={{ marginLeft: 10, flex: 1 }}>
-                          <Text style={styles.guestNameTxt} numberOfLines={1}>
-                            {g.name} (Guest)
-                          </Text>
-                          <Text style={styles.guestSubTxt}>
-                            Present · Guest of {scanResultModal.scannedMemberName || memberName}
-                          </Text>
-                        </View>
-                      </View>
-
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <View style={styles.guestPresentBadge}>
-                          <Check size={11} color="#059669" strokeWidth={2.5} style={{ marginRight: 3 }} />
-                          <Text style={styles.guestPresentBadgeTxt}>Present</Text>
-                        </View>
-                        {!scanResultModal.alreadyMarked && (
+                <View style={[styles.guestSectionListWrap, { borderTopColor: att.borderSubtle }]}>
+                  <Text style={[styles.guestSectionHeading, { color: att.textMuted }]}>
+                    Added Guests ({scanResultModal.guests.length})
+                  </Text>
+                  {scanResultModal.guests.map((g) => {
+                    const p10 = normalizePhone10(g.phone);
+                    const formattedGuestPhone = p10
+                      ? `+91 ${p10.slice(0, 5)} ${p10.slice(5)}`
+                      : g.phone || '';
+                    return (
+                      <View key={g.id} style={[styles.guestCardItem, { backgroundColor: att.surfaceAlt, borderColor: att.border }]}>
+                        <View style={styles.guestCardTopRow}>
+                          <View style={[styles.guestAvatar, { backgroundColor: att.purpleBg, borderColor: att.purpleBorder, borderWidth: 1 }]}>
+                            <Text style={[styles.guestAvatarTxt, { color: att.purple }]}>
+                              {stripGuestSuffix(g.name)?.charAt(0)?.toUpperCase() || 'G'}
+                            </Text>
+                          </View>
+                          <View style={{ marginLeft: 10, flex: 1 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              <Text style={[styles.guestNameTxt, { color: att.text }]} numberOfLines={1}>
+                                {stripGuestSuffix(g.name)}
+                              </Text>
+                              <View style={[styles.guestPillBadge, { backgroundColor: att.purpleBg, borderColor: att.purpleBorder }]}>
+                                <Text style={[styles.guestPillBadgeTxt, { color: att.purple }]}>Guest</Text>
+                              </View>
+                            </View>
+                            <Text style={[styles.guestSubTxt, { color: att.textMuted }]} numberOfLines={1}>
+                              {g.relation || 'Visitor'}
+                              {formattedGuestPhone ? ` · ${formattedGuestPhone}` : ''}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.guestInlineStatusTxt,
+                                { color: g.inviteStatus === 'joined' ? att.green : att.purple },
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {g.inviteStatus === 'joined' ? '✓ Joined App' : '✓ Invited'} · By{' '}
+                              {g.invitedByName || scanResultModal.scannedMemberName || memberName}
+                            </Text>
+                          </View>
                           <TouchableOpacity
-                            style={styles.guestRemoveBtn}
-                            onPress={() => handleRemoveGuest(g.id, g.name)}
+                            style={[styles.guestCardDeleteBtn, { backgroundColor: att.redBg, borderColor: att.redBorder }]}
+                            onPress={() => handleRemoveGuest(g.id, stripGuestSuffix(g.name))}
                             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                           >
-                            <Trash2 size={14} color="#EF4444" />
+                            <Trash2 size={14} color={att.red} />
                           </TouchableOpacity>
-                        )}
+                        </View>
                       </View>
-                    </View>
-                  ))}
-                </View>
-              ) : scanResultModal.alreadyMarked ? (
-                <View style={styles.famEmptyWrap}>
-                  <Text style={styles.famEmptyTxt}>No guests were added for this session.</Text>
+                    );
+                  })}
                 </View>
               ) : null}
             </View>
@@ -4009,7 +4601,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
             {/* Action Buttons */}
             <View style={styles.confirmButtonsWrap}>
               <TouchableOpacity 
-                style={styles.confirmDoneBtn}
+                style={[styles.confirmDoneBtn, { backgroundColor: isDark ? '#F8FAFC' : '#1E293B' }]}
                 onPress={() => {
                   if (scanResultModal.eventId) {
                     markEventAsAttendedLocally(scanResultModal.eventId);
@@ -4018,18 +4610,18 @@ export default function AttendanceScreen({ navigation, route }: any) {
                 }}
                 activeOpacity={0.85}
               >
-                <Text style={styles.confirmDoneBtnTxt}>Done</Text>
+                <Text style={[styles.confirmDoneBtnTxt, { color: isDark ? '#0F172A' : '#FFFFFF' }]}>Done</Text>
               </TouchableOpacity>
 
               <TouchableOpacity 
-                style={styles.confirmViewBtn}
+                style={[styles.confirmViewBtn, { backgroundColor: att.surface, borderColor: att.border }]}
                 onPress={() => {
                   setScanResultModal(prev => ({ ...prev, visible: false }));
                   setActiveTab('My attendance');
                 }}
                 activeOpacity={0.85}
               >
-                <Text style={styles.confirmViewBtnTxt}>View my attendance</Text>
+                <Text style={[styles.confirmViewBtnTxt, { color: att.text }]}>View my attendance</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
@@ -6126,6 +6718,359 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 24,
     marginBottom: 12,
+  },
+  guestInviteCompactBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    backgroundColor: '#F5F3FF',
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+  },
+  guestInviteCompactBtnTxt: {
+    color: '#6D28D9',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  guestInviteFormBox: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    padding: 14,
+    gap: 12,
+    marginTop: 14,
+    marginBottom: 4,
+  },
+  guestFieldGroup: {
+    width: '100%',
+  },
+  guestFieldLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  guestFieldLabel: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#475569',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  guestPhoneValidPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  guestPhoneValidTxt: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  guestFormInputWrap: {
+    width: '100%',
+    height: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+  },
+  guestFormInputValid: {
+    borderColor: '#86EFAC',
+  },
+  guestRelationGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  guestRelationChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+  },
+  guestRelationChipActive: {
+    backgroundColor: '#6D28D9',
+    borderColor: '#6D28D9',
+  },
+  guestRelationChipTxt: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  guestRelationChipTxtActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  guestActionsStack: {
+    gap: 8,
+    marginTop: 4,
+  },
+  inviteWhatsAppPrimaryBtn: {
+    width: '100%',
+    height: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#16A34A',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+  },
+  invitePrimaryBtnDisabled: {
+    backgroundColor: '#E2E8F0',
+  },
+  invitePrimaryBtnTxt: {
+    color: '#FFFFFF',
+    fontSize: 14.5,
+    fontWeight: '700',
+  },
+  inviteBtnTxtDisabled: {
+    color: '#94A3B8',
+  },
+  guestSecondaryActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  inviteSecondarySmsBtn: {
+    flex: 1,
+    height: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 11,
+  },
+  inviteSecondarySmsTxt: {
+    color: '#1D4ED8',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  inviteSecondaryShareBtn: {
+    flex: 1,
+    height: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#F5F3FF',
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+    borderRadius: 11,
+  },
+  inviteSecondaryShareTxt: {
+    color: '#6D28D9',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  inviteSecondaryBtnDisabled: {
+    backgroundColor: '#F1F5F9',
+    borderColor: '#E2E8F0',
+  },
+  addGuestSaveLaterCleanLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 6,
+  },
+  guestInlineStatusTxt: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#6D28D9',
+    marginTop: 3,
+  },
+  guestInlineStatusJoinedTxt: {
+    color: '#15803D',
+  },
+  guestInviteActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 2,
+  },
+  inviteWhatsAppBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#16A34A',
+    borderRadius: 12,
+    height: 44,
+    paddingHorizontal: 12,
+  },
+  inviteSmsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    backgroundColor: '#2563EB',
+    borderRadius: 12,
+    height: 44,
+    paddingHorizontal: 14,
+  },
+  addGuestSaveOnlyBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guestBtnDisabled: {
+    opacity: 0.45,
+  },
+  inviteActionBtnTxt: {
+    color: '#FFFFFF',
+    fontSize: 13.5,
+    fontWeight: '700',
+  },
+  guestSectionListWrap: {
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    gap: 10,
+  },
+  guestSectionHeading: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#64748B',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  guestCardItem: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    padding: 12,
+  },
+  guestCardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  guestCardDeleteBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  guestCardBottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginTop: 10,
+    paddingTop: 9,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  guestInviteStatusPill: {
+    flex: 1,
+    backgroundColor: '#F5F3FF',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  guestInviteStatusPillJoined: {
+    backgroundColor: '#DCFCE7',
+  },
+  guestInviteStatusPillTxt: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#6D28D9',
+  },
+  guestInviteStatusPillJoinedTxt: {
+    color: '#15803D',
+  },
+  guestCardReshareRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  guestCardWaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 8,
+    paddingHorizontal: 9,
+    height: 28,
+  },
+  guestCardWaPillTxt: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  guestMetaStatusTxt: {
+    fontSize: 10.5,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  guestReshareWaBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guestReshareShareBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: '#EDE9FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addGuestSaveLaterLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 11,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  addGuestSaveLaterTxt: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6D28D9',
   },
 
   // ── Invalid QR Modal (matches Screenshot 2) ──

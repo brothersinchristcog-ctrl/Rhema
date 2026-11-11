@@ -18,6 +18,7 @@ import auth from '@react-native-firebase/auth';
 import { AuthStackParamList } from '../../navigation/AuthNavigator';
 import Theme from '../../theme/Theme';
 import FirestoreService from '../../services/FirestoreService';
+import InviteLinkService from '../../services/InviteLinkService';
 import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
 import { ChevronLeft, ShieldCheck, RefreshCw } from 'lucide-react-native';
@@ -26,9 +27,9 @@ type VerifyOtpScreenProps = NativeStackScreenProps<AuthStackParamList, 'VerifyOt
 
 export default function VerifyOtpScreen({ route, navigation }: VerifyOtpScreenProps) {
   const insets = useSafeAreaInsets();
-  const { confirmation, phoneNumber, contactId, memberName, formData, isSignUp } = route.params;
+  const { confirmation, phoneNumber, contactId, memberName, formData, isSignUp, invitedChurchId, isGuestInvite } = route.params;
   const { member, setMember } = useAuth();
-  const { churchId: activeChurchId } = useChurch();
+  const { churchId: activeChurchId, setChurchId } = useChurch();
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
@@ -51,14 +52,21 @@ export default function VerifyOtpScreen({ route, navigation }: VerifyOtpScreenPr
     
     try {
       const result = await confirmation.confirm(code);
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
       if (result?.user) {
-        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        await AsyncStorage.removeItem('@guest_intent').catch(() => {});
         await AsyncStorage.setItem('@cached_user', JSON.stringify({
           uid: result.user.uid,
           phoneNumber: result.user.phoneNumber || phoneNumber || '',
           displayName: result.user.displayName || memberName || formData?.firstName || '',
           isAnonymous: false,
         })).catch(() => {});
+      }
+
+      const pendingInvite = await InviteLinkService.getPendingInvite().catch(() => null);
+      const effectiveChurchId = invitedChurchId || pendingInvite?.churchId || activeChurchId || 'rhema';
+      if (effectiveChurchId && effectiveChurchId !== activeChurchId) {
+        await setChurchId(effectiveChurchId).catch(() => {});
       }
       const { firestore, FieldValue } = require('../../services/firebaseConfig');
 
@@ -120,21 +128,21 @@ export default function VerifyOtpScreen({ route, navigation }: VerifyOtpScreenPr
       if (result?.user && contactId && !isSignUp) {
         setStatus('Linking church profile...');
         try {
-          await FirestoreService.syncMember(activeChurchId || '', contactId, result.user.uid);
+          await FirestoreService.syncMember(effectiveChurchId, contactId, result.user.uid);
           hasLinked = true;
         } catch (syncError) {
           console.error('❌ Sync failed:', syncError);
         }
       }
 
-      // Safety fallback: if contactId was not passed but this phone matches an invited member
+      // Safety fallback: check church records by phone if contactId was not passed or match already existed under UID
       if (result?.user && !hasLinked && !isSignUp) {
         const userPhone = result.user.phoneNumber || phoneNumber;
         if (userPhone) {
           try {
-            const contactCheck = await FirestoreService.checkContactExists(userPhone, activeChurchId || 'rhema', true);
+            const contactCheck = await FirestoreService.checkContactExists(userPhone, effectiveChurchId, true);
             if (contactCheck?.exists && contactCheck.member) {
-              const targetChurch = contactCheck.member.churchId || activeChurchId || 'rhema';
+              const targetChurch = contactCheck.member.churchId || effectiveChurchId;
               setStatus('Linking church profile...');
               await FirestoreService.syncMember(targetChurch, contactCheck.member.id, result.user.uid);
               hasLinked = true;
@@ -145,7 +153,24 @@ export default function VerifyOtpScreen({ route, navigation }: VerifyOtpScreenPr
         }
       }
 
-      // After OTP confirmed: if user has no primaryChurchId yet
+      if (result?.user && !hasLinked && !isSignUp) {
+        const existingUidProfile = await FirestoreService.getMemberProfile(result.user.uid, effectiveChurchId).catch(() => null);
+        if (existingUidProfile) {
+          await FirestoreService.syncMember(effectiveChurchId, result.user.uid, result.user.uid);
+          hasLinked = true;
+        }
+      }
+
+      if (result?.user && hasLinked) {
+        await InviteLinkService.clearPendingInvite().catch(() => {});
+        const linkedProfile = await FirestoreService.getMemberProfile(result.user.uid, effectiveChurchId).catch(() => null);
+        if (linkedProfile) {
+          setMember(linkedProfile as any);
+          await AsyncStorage.setItem('@cached_member', JSON.stringify(linkedProfile)).catch(() => {});
+        }
+      }
+
+      // After OTP confirmed: if user still has no record in this church
       if (result?.user && !hasLinked) {
         const globalUser = await FirestoreService.getGlobalUser(result.user.uid);
         
