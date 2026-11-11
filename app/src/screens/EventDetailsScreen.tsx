@@ -63,6 +63,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FirestoreService, { WorshipSong, EventServiceItem } from '../services/FirestoreService';
 import SongDetailModal from '../components/SongDetailModal';
+import { formatTimeTo12Hour } from '../utils/DateUtils';
 
 const { width, height } = Dimensions.get('window');
 
@@ -313,7 +314,7 @@ export default function EventDetailsScreen({ route, navigation }: any) {
           id: event.id,
           title: event.title || event.name || 'Church Event',
           date: event.date,
-          time: event.time || event.startTime,
+          time: formatTimeTo12Hour(event.time || event.startTime) || event.time || event.startTime,
           location: event.location,
         },
         { preferredRole: selectedVolunteerRole, availabilityNotes: volunteerNotes.trim() }
@@ -1107,29 +1108,33 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                         : '#F59E0B',
                   }}
                 >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                    <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <HeartHandshake
                         size={18}
                         color={
                           volunteerApp.status === 'approved'
-                            ? '#059669'
+                            ? (isDark ? '#34D399' : '#059669')
                             : volunteerApp.status === 'rejected'
-                            ? '#DC2626'
-                            : '#D97706'
+                            ? (isDark ? '#F87171' : '#DC2626')
+                            : (isDark ? '#FBBF24' : '#D97706')
                         }
                       />
                       <Text
                         style={{
-                          fontSize: 13,
+                          flex: 1,
+                          fontSize: 12.5,
                           fontWeight: '800',
+                          letterSpacing: 0.3,
+                          lineHeight: 17,
                           color:
                             volunteerApp.status === 'approved'
-                              ? '#047857'
+                              ? (isDark ? '#34D399' : '#047857')
                               : volunteerApp.status === 'rejected'
-                              ? '#B91C1C'
-                              : '#B45309',
+                              ? (isDark ? '#FCA5A5' : '#B91C1C')
+                              : (isDark ? '#FDE68A' : '#B45309'),
                         }}
+                        numberOfLines={2}
                       >
                         {volunteerApp.status === 'approved'
                           ? 'YOU ARE SERVING AT THIS EVENT'
@@ -1140,30 +1145,39 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                     </View>
                     <View
                       style={{
-                        paddingHorizontal: 8,
-                        paddingVertical: 2,
-                        borderRadius: 6,
+                        flexShrink: 0,
+                        paddingHorizontal: 10,
+                        paddingVertical: 4,
+                        borderRadius: 999,
+                        borderWidth: 1,
                         backgroundColor:
                           volunteerApp.status === 'approved'
-                            ? '#DCFCE7'
+                            ? (isDark ? 'rgba(16, 185, 129, 0.2)' : '#DCFCE7')
                             : volunteerApp.status === 'rejected'
-                            ? '#FEE2E2'
-                            : '#FEF3C7',
+                            ? (isDark ? 'rgba(239, 68, 68, 0.2)' : '#FEE2E2')
+                            : (isDark ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7'),
+                        borderColor:
+                          volunteerApp.status === 'approved'
+                            ? (isDark ? 'rgba(52, 211, 153, 0.5)' : '#86EFAC')
+                            : volunteerApp.status === 'rejected'
+                            ? (isDark ? 'rgba(248, 113, 113, 0.5)' : '#FCA5A5')
+                            : (isDark ? 'rgba(251, 191, 36, 0.5)' : '#FCD34D'),
                       }}
                     >
                       <Text
                         style={{
                           fontSize: 10,
                           fontWeight: '800',
+                          letterSpacing: 0.4,
                           color:
                             volunteerApp.status === 'approved'
-                              ? '#15803D'
+                              ? (isDark ? '#6EE7B7' : '#15803D')
                               : volunteerApp.status === 'rejected'
-                              ? '#991B1B'
-                              : '#B45309',
+                              ? (isDark ? '#FCA5A5' : '#991B1B')
+                              : (isDark ? '#FDE68A' : '#B45309'),
                         }}
                       >
-                        {volunteerApp.status.toUpperCase()}
+                        {volunteerApp.status === 'rejected' ? 'NOT APPROVED' : volunteerApp.status.toUpperCase()}
                       </Text>
                     </View>
                   </View>
@@ -1174,8 +1188,8 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                         Assigned Role: {volunteerApp.assignedRole || volunteerApp.preferredRole || 'Event Volunteer'}
                       </Text>
                       {!!volunteerApp.assignedTimeSlot && (
-                        <Text style={{ fontSize: 12, color: isDark ? '#A1A1AA' : '#64748B', marginTop: 3 }}>
-                          ⏰ Reporting Time: {volunteerApp.assignedTimeSlot}
+                        <Text style={{ fontSize: 12, color: isDark ? '#D4D4D8' : '#475569', marginTop: 4 }}>
+                          ⏰ Reporting Time: {formatTimeTo12Hour(volunteerApp.assignedTimeSlot)}
                         </Text>
                       )}
                       {!!volunteerApp.assignedLocation && (

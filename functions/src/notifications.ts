@@ -3796,6 +3796,78 @@ async function sendHighPriorityTopicPush(
   }
 }
 
+function computeVolunteerAssignmentKey(data: {
+  assignedRole?: string;
+  assignedDate?: string;
+  assignedTimeSlot?: string;
+  assignedLocation?: string;
+  assignedResponsibility?: string;
+}): string {
+  const raw = [
+    data.assignedRole || '',
+    data.assignedDate || '',
+    data.assignedTimeSlot || '',
+    data.assignedLocation || '',
+    data.assignedResponsibility || '',
+  ].join('|');
+  let hash = 5381;
+  for (let i = 0; i < raw.length; i++) {
+    hash = ((hash << 5) + hash + raw.charCodeAt(i)) >>> 0;
+  }
+  return hash.toString(36);
+}
+
+/**
+ * Persist volunteer in-app notification deterministically across notifications,
+ * silent broadcasts (prevents duplicate FCM push), and personal member subcollection.
+ */
+async function writeVolunteerInAppNotifications(
+  db: any,
+  churchId: string,
+  docId: string,
+  payload: Record<string, any>,
+  targetMemberIds?: string | string[]
+): Promise<void> {
+  const cid = churchId || 'rhema';
+  const docData = {
+    ...payload,
+    churchId: cid,
+    read: false,
+    createdAt: FieldValue.serverTimestamp(),
+  };
+
+  const writes: Promise<any>[] = [
+    db.collection('Rhema Church').doc(cid).collection('notifications').doc(docId).set(docData, { merge: true }),
+    db.collection('Rhema Church').doc(cid).collection('broadcasts').doc(docId).set({ ...docData, silent: true }, { merge: true }),
+  ];
+
+  const memberIds = Array.isArray(targetMemberIds)
+    ? Array.from(new Set(targetMemberIds.map((id) => String(id || '').trim()).filter(Boolean)))
+    : targetMemberIds
+      ? [String(targetMemberIds).trim()].filter(Boolean)
+      : [];
+
+  for (const memberId of memberIds) {
+    writes.push(
+      db
+        .collection('Rhema Church')
+        .doc(cid)
+        .collection('members')
+        .doc(memberId)
+        .collection('notifications')
+        .doc(docId)
+        .set(docData, { merge: true })
+    );
+  }
+
+  const results = await Promise.allSettled(writes);
+  for (const res of results) {
+    if (res.status === 'rejected') {
+      console.error('Error writing volunteer in-app notification document:', res.reason);
+    }
+  }
+}
+
 /**
  * 🤝 HELPER: Notify Authorized Church Admins of a New Volunteer Application
  */
@@ -3847,7 +3919,7 @@ async function handleVolunteerApplicationAdminCreatedPush(
     : `${memberName} has submitted a new General Volunteer application. Please review the application.`;
 
   // 3. Query authorized Admins for this church
-  const { tokens: adminTokens } = await resolveVolunteerAdminTokens(db, cid);
+  const { tokens: adminTokens, adminUids } = await resolveVolunteerAdminTokens(db, cid);
 
   const notificationData: Record<string, string> = {
     type: 'volunteer_application_admin',
@@ -3877,13 +3949,17 @@ async function handleVolunteerApplicationAdminCreatedPush(
     await sendHighPriorityTopicPush(messaging, 'church_rhema_admin', title, body, notificationData, 'church_alerts');
   }
 
-  // 6. Write in-app notification doc for admins
-  try {
-    const notifPayload = {
+  // 6. Write in-app notification doc for admins (notifications, silent broadcast, and admin member feeds)
+  await writeVolunteerInAppNotifications(
+    db,
+    cid,
+    `vol_admin_${applicationId}`,
+    {
       type: 'volunteer_application_admin',
       targetRole: 'admin',
       title,
       body,
+      content: body,
       memberName,
       volunteerType: appData.volunteerType || 'general',
       eventId: appData.eventId || '',
@@ -3891,14 +3967,9 @@ async function handleVolunteerApplicationAdminCreatedPush(
       applicationId,
       referenceId: applicationId,
       referenceType: isEventVolunteer ? 'event_volunteer' : 'general_volunteer',
-      churchId: cid,
-      read: false,
-      createdAt: FieldValue.serverTimestamp(),
-    };
-    await db.collection('Rhema Church').doc(cid).collection('notifications').add(notifPayload);
-  } catch (dbErr) {
-    console.error('Error writing volunteer in-app notification document:', dbErr);
-  }
+    },
+    adminUids
+  );
 
   // 7. Atomic update on document to prevent duplicates
   if (snapRef) {
@@ -3999,25 +4070,32 @@ async function handleVolunteerApplicationWorkflowUpdatedPush(
     }
 
     // In-app notification record for the member
-    try {
-      const inAppDoc = {
-        type: 'volunteer_application_member',
-        recipientId: memberId,
-        recipientRole: 'member',
-        targetMemberId: memberId,
-        title,
-        body,
-        status: currentStatus,
-        volunteerType: after.volunteerType || 'general',
-        eventId: after.eventId || '',
-        referenceId: applicationId,
-        referenceType: isEventVolunteer ? 'event_volunteer' : 'general_volunteer',
-        churchId: cid,
-        read: false,
-        createdAt: FieldValue.serverTimestamp(),
-      };
-      await db.collection('Rhema Church').doc(cid).collection('notifications').add(inAppDoc);
-    } catch (_) {}
+    if (memberId) {
+      const normalizedKeyStatus = currentStatus === 'declined' ? 'rejected' : currentStatus;
+      await writeVolunteerInAppNotifications(
+        db,
+        cid,
+        `vol_status_${applicationId}_${normalizedKeyStatus}`,
+        {
+          type: 'volunteer_application_member',
+          recipientId: memberId,
+          recipientRole: 'member',
+          targetMemberId: memberId,
+          targetPhone: after.memberPhone || '',
+          title,
+          body,
+          content: body,
+          status: currentStatus,
+          volunteerType: after.volunteerType || 'general',
+          eventId: after.eventId || '',
+          eventTitle: isEventVolunteer ? eventName : '',
+          applicationId,
+          referenceId: applicationId,
+          referenceType: isEventVolunteer ? 'event_volunteer' : 'general_volunteer',
+        },
+        memberId
+      );
+    }
 
     // Atomic update to mark status notification delivered and initialize assignment hash
     if (snapRef) {
@@ -4072,23 +4150,37 @@ async function handleVolunteerApplicationWorkflowUpdatedPush(
       console.log(`✅ Sent volunteer assignment push to member ${memberId}: ${sendRes.successCount} delivered.`);
     }
 
-    try {
-      const inAppDoc = {
-        type: 'volunteer_assignment',
-        recipientId: memberId,
-        recipientRole: 'member',
-        targetMemberId: memberId,
-        title,
-        body,
-        eventId: after.eventId || '',
-        referenceId: applicationId,
-        referenceType: 'event_volunteer',
-        churchId: cid,
-        read: false,
-        createdAt: FieldValue.serverTimestamp(),
-      };
-      await db.collection('Rhema Church').doc(cid).collection('notifications').add(inAppDoc);
-    } catch (_) {}
+    if (memberId) {
+      const assignKey = computeVolunteerAssignmentKey({
+        assignedRole: after.assignedRole,
+        assignedDate: after.assignedDate,
+        assignedTimeSlot: after.assignedTimeSlot,
+        assignedLocation: after.assignedLocation,
+        assignedResponsibility: after.assignedResponsibility,
+      });
+      await writeVolunteerInAppNotifications(
+        db,
+        cid,
+        `vol_assign_${applicationId}_${assignKey}`,
+        {
+          type: 'volunteer_assignment',
+          recipientId: memberId,
+          recipientRole: 'member',
+          targetMemberId: memberId,
+          targetPhone: after.memberPhone || '',
+          title,
+          body,
+          content: body,
+          volunteerType: after.volunteerType || 'event',
+          eventId: after.eventId || '',
+          eventTitle: eventName,
+          applicationId,
+          referenceId: applicationId,
+          referenceType: 'event_volunteer',
+        },
+        memberId
+      );
+    }
 
     if (snapRef) {
       try {
@@ -4152,7 +4244,6 @@ async function handleEventChangesForVolunteersPush(
       body = `Details for "${eventName}" have changed (${changeParts.join(', ')}). Please check your updated volunteer assignment.`;
     }
 
-    const volunteerMemberIds = volSnap.docs.map((d) => d.data().memberId).filter(Boolean);
     const allTokens: string[] = [];
 
     for (const vDoc of volSnap.docs) {
@@ -4182,21 +4273,30 @@ async function handleEventChangesForVolunteersPush(
     }
 
     // Write in-app notification doc for each approved volunteer
-    for (const mId of volunteerMemberIds) {
-      try {
-        await db.collection('Rhema Church').doc(cid).collection('notifications').add({
+    for (const vDoc of volSnap.docs) {
+      const vd = vDoc.data();
+      const mId = vd.memberId;
+      if (!mId) continue;
+      await writeVolunteerInAppNotifications(
+        db,
+        cid,
+        `vol_event_${eventId}_${mId}`,
+        {
           type: 'volunteer_event_change',
           recipientId: mId,
           recipientRole: 'member',
           targetMemberId: mId,
+          targetPhone: vd.memberPhone || '',
           title,
           body,
+          content: body,
           eventId,
-          churchId: cid,
-          read: false,
-          createdAt: FieldValue.serverTimestamp(),
-        });
-      } catch (_) {}
+          eventTitle: eventName,
+          referenceId: vDoc.id,
+          referenceType: 'event_volunteer',
+        },
+        mId
+      );
     }
   } catch (err) {
     console.error('Error dispatching event volunteer change pushes:', err);
@@ -4402,6 +4502,27 @@ export const scheduledVolunteerReminders = onSchedule(
                 );
                 console.log(`✅ Sent ${reminderType} reminder to volunteer member: ${memberId}`);
               }
+
+              await writeVolunteerInAppNotifications(
+                db,
+                churchId,
+                `vol_rem_${reminderType}_${eDoc.id}_${memberId}`,
+                {
+                  type: 'volunteer_reminder',
+                  recipientId: memberId,
+                  recipientRole: 'member',
+                  targetMemberId: memberId,
+                  targetPhone: vData.memberPhone || '',
+                  title,
+                  body,
+                  content: body,
+                  eventId: eDoc.id,
+                  eventTitle: ev.title || 'Church Event',
+                  referenceId: vDoc.id,
+                  referenceType: 'event_volunteer',
+                },
+                memberId
+              );
             }
           }
         }
