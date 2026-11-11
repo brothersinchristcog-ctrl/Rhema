@@ -591,6 +591,22 @@ class VolunteerService {
         console.warn('[VolunteerService] In-app broadcast write warning:', err);
       }
     }
+
+    const targetMemberId = String(payload?.targetMemberId || payload?.recipientId || '').trim();
+    if (targetMemberId) {
+      try {
+        await firestore()
+          .collection('Rhema Church')
+          .doc(cid)
+          .collection('members')
+          .doc(targetMemberId)
+          .collection('notifications')
+          .doc(docId)
+          .set(docData, { merge: true });
+      } catch (err) {
+        console.warn('[VolunteerService] Member notification subcollection write warning:', err);
+      }
+    }
   }
 }
 

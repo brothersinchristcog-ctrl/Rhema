@@ -3554,7 +3554,7 @@ function computeVolunteerAssignmentKey(data) {
  * Persist volunteer in-app notification deterministically across notifications,
  * silent broadcasts (prevents duplicate FCM push), and personal member subcollection.
  */
-async function writeVolunteerInAppNotifications(db, churchId, docId, payload, targetMemberId) {
+async function writeVolunteerInAppNotifications(db, churchId, docId, payload, targetMemberIds) {
     const cid = churchId || 'rhema';
     const docData = {
         ...payload,
@@ -3566,12 +3566,17 @@ async function writeVolunteerInAppNotifications(db, churchId, docId, payload, ta
         db.collection('Rhema Church').doc(cid).collection('notifications').doc(docId).set(docData, { merge: true }),
         db.collection('Rhema Church').doc(cid).collection('broadcasts').doc(docId).set({ ...docData, silent: true }, { merge: true }),
     ];
-    if (targetMemberId) {
+    const memberIds = Array.isArray(targetMemberIds)
+        ? Array.from(new Set(targetMemberIds.map((id) => String(id || '').trim()).filter(Boolean)))
+        : targetMemberIds
+            ? [String(targetMemberIds).trim()].filter(Boolean)
+            : [];
+    for (const memberId of memberIds) {
         writes.push(db
             .collection('Rhema Church')
             .doc(cid)
             .collection('members')
-            .doc(targetMemberId)
+            .doc(memberId)
             .collection('notifications')
             .doc(docId)
             .set(docData, { merge: true }));
@@ -3626,7 +3631,7 @@ async function handleVolunteerApplicationAdminCreatedPush(appData, churchId, app
         ? `${memberName} has applied to volunteer for ${eventName}. Please review the application.`
         : `${memberName} has submitted a new General Volunteer application. Please review the application.`;
     // 3. Query authorized Admins for this church
-    const { tokens: adminTokens } = await resolveVolunteerAdminTokens(db, cid);
+    const { tokens: adminTokens, adminUids } = await resolveVolunteerAdminTokens(db, cid);
     const notificationData = {
         type: 'volunteer_application_admin',
         churchId: cid,
@@ -3653,7 +3658,7 @@ async function handleVolunteerApplicationAdminCreatedPush(appData, churchId, app
     if (cid !== 'rhema') {
         await sendHighPriorityTopicPush(messaging, 'church_rhema_admin', title, body, notificationData, 'church_alerts');
     }
-    // 6. Write in-app notification doc for admins (notifications + silent broadcast)
+    // 6. Write in-app notification doc for admins (notifications, silent broadcast, and admin member feeds)
     await writeVolunteerInAppNotifications(db, cid, `vol_admin_${applicationId}`, {
         type: 'volunteer_application_admin',
         targetRole: 'admin',
@@ -3667,7 +3672,7 @@ async function handleVolunteerApplicationAdminCreatedPush(appData, churchId, app
         applicationId,
         referenceId: applicationId,
         referenceType: isEventVolunteer ? 'event_volunteer' : 'general_volunteer',
-    });
+    }, adminUids);
     // 7. Atomic update on document to prevent duplicates
     if (snapRef) {
         try {

@@ -3826,7 +3826,7 @@ async function writeVolunteerInAppNotifications(
   churchId: string,
   docId: string,
   payload: Record<string, any>,
-  targetMemberId?: string
+  targetMemberIds?: string | string[]
 ): Promise<void> {
   const cid = churchId || 'rhema';
   const docData = {
@@ -3841,13 +3841,19 @@ async function writeVolunteerInAppNotifications(
     db.collection('Rhema Church').doc(cid).collection('broadcasts').doc(docId).set({ ...docData, silent: true }, { merge: true }),
   ];
 
-  if (targetMemberId) {
+  const memberIds = Array.isArray(targetMemberIds)
+    ? Array.from(new Set(targetMemberIds.map((id) => String(id || '').trim()).filter(Boolean)))
+    : targetMemberIds
+      ? [String(targetMemberIds).trim()].filter(Boolean)
+      : [];
+
+  for (const memberId of memberIds) {
     writes.push(
       db
         .collection('Rhema Church')
         .doc(cid)
         .collection('members')
-        .doc(targetMemberId)
+        .doc(memberId)
         .collection('notifications')
         .doc(docId)
         .set(docData, { merge: true })
@@ -3913,7 +3919,7 @@ async function handleVolunteerApplicationAdminCreatedPush(
     : `${memberName} has submitted a new General Volunteer application. Please review the application.`;
 
   // 3. Query authorized Admins for this church
-  const { tokens: adminTokens } = await resolveVolunteerAdminTokens(db, cid);
+  const { tokens: adminTokens, adminUids } = await resolveVolunteerAdminTokens(db, cid);
 
   const notificationData: Record<string, string> = {
     type: 'volunteer_application_admin',
@@ -3943,7 +3949,7 @@ async function handleVolunteerApplicationAdminCreatedPush(
     await sendHighPriorityTopicPush(messaging, 'church_rhema_admin', title, body, notificationData, 'church_alerts');
   }
 
-  // 6. Write in-app notification doc for admins (notifications + silent broadcast)
+  // 6. Write in-app notification doc for admins (notifications, silent broadcast, and admin member feeds)
   await writeVolunteerInAppNotifications(
     db,
     cid,
@@ -3961,7 +3967,8 @@ async function handleVolunteerApplicationAdminCreatedPush(
       applicationId,
       referenceId: applicationId,
       referenceType: isEventVolunteer ? 'event_volunteer' : 'general_volunteer',
-    }
+    },
+    adminUids
   );
 
   // 7. Atomic update on document to prevent duplicates
