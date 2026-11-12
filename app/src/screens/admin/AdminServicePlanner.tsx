@@ -3654,18 +3654,18 @@ export default function AdminServicePlanner({ navigation, routeParams }: any) {
       {/* ─── Top Header (Matching Daily Promises, Events, Sermons) ─── */}
       <View style={[styles.header, { paddingTop: insets.top + 8, backgroundColor: cardSurface, borderBottomColor: borderColor }]}>
         <View style={styles.headerRow}>
-          {/* Circular Back Button (identical to Promises, Sermons, Events) */}
+          {/* Back Button */}
           <TouchableOpacity
             onPress={() => { if (setTabByName) setTabByName('Dashboard'); else if (navigation?.canGoBack?.()) navigation.goBack(); else setActiveTab(0); }}
-            style={[styles.circularBackBtn, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? '#3F3F46' : '#E2E8F0' }]}
+            style={styles.circularBackBtn}
             activeOpacity={0.7}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.2} />
+            <ArrowLeft size={22} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.4} />
           </TouchableOpacity>
 
-          <View style={{ flex: 1, paddingHorizontal: 12, justifyContent: 'center' }}>
-            <Text style={[styles.headerTitle, { color: primaryText }]} numberOfLines={1}>
+          <View style={{ flex: 1, paddingHorizontal: 12, justifyContent: 'center', alignItems: 'center' }}>
+            <Text style={[styles.headerTitle, { color: primaryText, textAlign: 'center' }]} numberOfLines={1}>
               {activePlannerTab === 'setlist' ? 'Worship Setlist' :
                 activePlannerTab === 'queue' ? 'Assignments' :
                   activePlannerTab === 'attendance' ? 'Volunteer Attendance' :
@@ -8883,10 +8883,6 @@ const styles = StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1.5,
-    borderColor: '#CBD5E1',
     justifyContent: 'center',
     alignItems: 'center',
   },

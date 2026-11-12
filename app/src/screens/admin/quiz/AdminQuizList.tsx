@@ -1078,18 +1078,11 @@ export default function AdminQuizList() {
           <View style={{ minWidth: 64, alignItems: 'flex-start' }}>
             <TouchableOpacity
               onPress={handleGoBack}
-              style={[
-                styles.circularBackBtn,
-                {
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#FFFFFF',
-                  borderColor: isDark ? 'rgba(255, 255, 255, 0.3)' : '#CBD5E1',
-                  borderWidth: 1.5,
-                }
-              ]}
+              style={styles.circularBackBtn}
               activeOpacity={0.7}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.4} />
+              <ArrowLeft size={22} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.4} />
             </TouchableOpacity>
           </View>
 
@@ -1501,17 +1494,8 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
   },
   container: {
     flex: 1,

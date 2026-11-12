@@ -71,22 +71,21 @@ export default function AdminSupportTeam({ navigation }: any) {
   };
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#1a2d5a" />
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
+      <StatusBar barStyle={barStyle} backgroundColor={screenBg} />
       <SafeAreaView style={{ flex: 1 }} edges={['bottom']}>
         
         {/* ── Hero Section ── */}
-        <View style={styles.hero}>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-              <TouchableOpacity onPress={goBack} style={styles.circularBackBtn} activeOpacity={0.7}>
-                <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
-              </TouchableOpacity>
-              <View style={{ marginLeft: 12 }}>
-                <Text style={styles.topbarTitle}>Contact Support</Text>
-                <Text style={[styles.heroSub, { marginTop: 2 }]}>Rhema app assistance</Text>
-              </View>
+        <View style={[styles.hero, { backgroundColor: screenBg, borderBottomWidth: 1.2, borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1' }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <TouchableOpacity onPress={goBack} style={styles.circularBackBtn} activeOpacity={0.7}>
+              <ArrowLeft size={22} color={primaryText} strokeWidth={2.2} />
+            </TouchableOpacity>
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 }}>
+              <Text style={[styles.topbarTitle, { color: primaryText, textAlign: 'center' }]}>Contact Support</Text>
+              <Text style={[styles.heroSub, { marginTop: 2, color: secondaryText, textAlign: 'center' }]}>Rhema app assistance</Text>
             </View>
+            <View style={{ width: 40 }} />
           </View>
         </View>
 
@@ -236,17 +235,8 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
   },
   container: {
     flex: 1,

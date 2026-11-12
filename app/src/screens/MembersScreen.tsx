@@ -326,16 +326,18 @@ export default function MembersScreen({ navigation }: any) {
     <View style={[styles.container, { backgroundColor: screenBg }]}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={screenBg} />
 
-      {/* ── Page Header ── */}
-            {/* ── Screen Header (Clean circular back button & title) ── */}
+      {/* ── Screen Header ── */}
       <View
         style={[
           styles.headerRow,
-          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8 }
+          {
+            paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8,
+            borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1',
+          }
         ]}
       >
         <TouchableOpacity
-          style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          style={styles.circularBackBtn}
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           activeOpacity={0.8}
@@ -348,7 +350,7 @@ export default function MembersScreen({ navigation }: any) {
         </Text>
 
         <TouchableOpacity
-          style={[styles.circularBackBtn, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}
+          style={[styles.headerActionBtn, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}
           onPress={() => {
             setEditingMemberId(null);
             setNewMember({
@@ -925,14 +927,22 @@ export default function MembersScreen({ navigation }: any) {
 
 const styles = createAdminThemedStyles(StyleSheet.create({
   container: { flex: 1 },
-    headerRow: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingBottom: 14,
+    borderBottomWidth: 1.2,
   },
   circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerActionBtn: {
     width: 44,
     height: 44,
     borderRadius: 22,

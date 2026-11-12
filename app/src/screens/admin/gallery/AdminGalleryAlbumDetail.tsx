@@ -193,17 +193,12 @@ export default function AdminGalleryAlbumDetail() {
     >
       <View style={styles.headerTopRow}>
         <TouchableOpacity
-          style={[
-            styles.circularBackBtn,
-            {
-              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.10)' : '#F1F5F9',
-              borderColor: isDark ? 'rgba(255, 255, 255, 0.20)' : '#CBD5E1',
-            }
-          ]}
+          style={styles.circularBackBtn}
           onPress={() => navigation.goBack()}
           activeOpacity={0.7}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <ArrowLeft size={20} color={primaryText} strokeWidth={2.4} />
+          <ArrowLeft size={22} color={primaryText} strokeWidth={2.4} />
         </TouchableOpacity>
         <Text style={[styles.headerTitleText, { color: primaryText }]} numberOfLines={1}>
           {albumName}
@@ -510,15 +505,8 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 2,
-    elevation: 2,
   },
   container: {
     flex: 1,

@@ -476,18 +476,11 @@ export default function AdminVolunteerManagement({ navigation, route, routeParam
           {/* Back Button */}
           <TouchableOpacity
             onPress={() => (setActiveTab ? setActiveTab(0) : navigation?.goBack?.())}
-            style={[
-              styles.circularBackBtn,
-              {
-                backgroundColor: isDark ? '#18181B' : '#FFFFFF',
-                borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : '#E2E8F0',
-                borderWidth: 1.5,
-              },
-            ]}
+            style={styles.circularBackBtn}
             activeOpacity={0.7}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.2} />
+            <ArrowLeft size={22} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.2} />
           </TouchableOpacity>
 
           {/* Centered Clean Title (No sub-counter text) */}
@@ -1571,14 +1564,8 @@ const styles = createAdminThemedStyles(
     circularBackBtn: {
       width: 40,
       height: 40,
-      borderRadius: 20,
       justifyContent: 'center',
       alignItems: 'center',
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.05,
-      shadowRadius: 2,
-      elevation: 1,
     },
     hero: {
       paddingHorizontal: 16,

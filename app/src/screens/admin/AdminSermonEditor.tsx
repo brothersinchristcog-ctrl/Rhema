@@ -580,18 +580,11 @@ export default function AdminSermonEditor() {
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <TouchableOpacity
             onPress={() => setTabByName?.('Sermons')}
-            style={[
-              styles.circularBackBtn,
-              {
-                backgroundColor: isDark ? '#000000' : '#FFFFFF',
-                borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : '#E2E8F0',
-                borderWidth: 1.5,
-              }
-            ]}
+            style={styles.circularBackBtn}
             activeOpacity={0.7}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#0F172A'} strokeWidth={2.2} />
+            <ArrowLeft size={22} color={isDark ? '#FFFFFF' : '#0F172A'} strokeWidth={2.2} />
           </TouchableOpacity>
 
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 }}>
@@ -1714,17 +1707,8 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1.5,
-    borderColor: '#CBD5E1',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
   },
   // ─── Layout ──────────────────────────────────────────────────────────────
   container: { flex: 1, backgroundColor: '#EDE8DC' },

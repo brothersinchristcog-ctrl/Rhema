@@ -47,6 +47,7 @@ import {
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import VerseNotificationService from '../../services/VerseNotificationService';
+import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const PERIOD_NAMES = ['Morning', 'Afternoon', 'Evening', 'Night'];
@@ -63,6 +64,15 @@ let allVersesHasMore: boolean = true;
 
 export default function SuperAdminVersesManager({ searchQuery: externalQuery = '' }: { searchQuery?: string }) {
   const navigation = useNavigation<any>();
+  const {
+    isDark,
+    screenBg,
+    cardSurface,
+    secondarySurface,
+    primaryText,
+    secondaryText,
+    borderColor: adminBorderColor,
+  } = useAdminTheme();
 
   const [upcomingVerses, setUpcomingVerses] = useState<any[]>(cachedUpcomingVerses || []);
   const [allVerses, setAllVerses] = useState<any[]>(cachedAllVerses);
@@ -753,47 +763,66 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
   // Render a Single Verse Card
   const renderVerseItem = useCallback(({ item }: { item: any }) => {
     const schedule = getFastSchedule(item.index);
-    const periodColor = PERIOD_COLORS[schedule.periodIndex] || '#3B82F6';
+    const periodColor = PERIOD_COLORS[schedule.periodIndex] || (isDark ? '#FFFFFF' : '#0F172A');
     const bgUrl = getVerseBackgroundUrl(item, schedule.period, item.index);
 
     return (
-      <View style={[styles.verseCard, { borderLeftColor: periodColor, overflow: 'hidden' }]}>
+      <View
+        style={[
+          styles.verseCard,
+          {
+            backgroundColor: '#141414',
+            borderColor: adminBorderColor,
+            borderLeftColor: periodColor,
+            overflow: 'hidden',
+          },
+        ]}
+      >
         <ImageBackground
           source={{ uri: bgUrl }}
           style={StyleSheet.absoluteFillObject}
-          imageStyle={{ borderRadius: 14, opacity: 0.45 }}
+          imageStyle={{ borderRadius: 14, opacity: 0.65 }}
           resizeMode="cover"
         />
         <LinearGradient
-          colors={['rgba(15, 23, 42, 0.60)', 'rgba(15, 23, 42, 0.90)']}
+          colors={['rgba(0, 0, 0, 0.45)', 'rgba(0, 0, 0, 0.78)']}
           style={StyleSheet.absoluteFillObject}
         />
         {/* Card Header Badge Row */}
         <View style={styles.cardHeaderRow}>
-          <View style={[
-            styles.schedulePill,
-            schedule.isToday && styles.schedulePillToday,
-            schedule.isTomorrow && styles.schedulePillTomorrow,
-          ]}>
-            <Text style={[
-              styles.schedulePillText,
-              schedule.isToday && { color: '#F59E0B' },
-              schedule.isTomorrow && { color: '#38BDF8' },
-            ]}>
+          <View
+            style={[
+              styles.schedulePill,
+              {
+                backgroundColor: 'rgba(0, 0, 0, 0.55)',
+                borderColor: 'rgba(255, 255, 255, 0.2)',
+              },
+              schedule.isToday && styles.schedulePillToday,
+              schedule.isTomorrow && styles.schedulePillTomorrow,
+            ]}
+          >
+            <Text
+              style={[
+                styles.schedulePillText,
+                { color: '#FFFFFF' },
+                schedule.isToday && { color: '#FBBF24' },
+                schedule.isTomorrow && { color: '#38BDF8' },
+              ]}
+            >
               {schedule.isToday ? '🌟 ' : '📅 '}{schedule.label}
             </Text>
           </View>
 
           <View style={styles.cardHeaderRight}>
-            <View style={styles.indexPill}>
-              <Text style={styles.indexPillText}>Idx #{item.index}</Text>
+            <View style={[styles.indexPill, { backgroundColor: 'rgba(0, 0, 0, 0.55)' }]}>
+              <Text style={[styles.indexPillText, { color: '#E2E8F0' }]}>Idx #{item.index}</Text>
             </View>
             <TouchableOpacity
               onPress={() => setEditingVerse({ ...item })}
-              style={styles.cardActionBtn}
+              style={[styles.cardActionBtn, { backgroundColor: 'rgba(255, 255, 255, 0.18)' }]}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Pencil size={15} color="#94A3B8" />
+              <Pencil size={15} color="#FFFFFF" />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => handleDeleteVerse(item.id, item.referenceEn || item.referenceTe)}
@@ -807,20 +836,20 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
 
         {/* Scripture Content */}
         <View style={styles.cardScriptureBody}>
-          <Text style={styles.verseEn}>"{item.verseEn}"</Text>
-          <Text style={styles.refEn}>— {item.referenceEn}</Text>
+          <Text style={[styles.verseEn, { color: '#FFFFFF' }]}>"{item.verseEn}"</Text>
+          <Text style={[styles.refEn, { color: '#FBBF24' }]}>— {item.referenceEn}</Text>
 
-          <View style={styles.verseDivider} />
+          <View style={[styles.verseDivider, { backgroundColor: 'rgba(255, 255, 255, 0.15)' }]} />
 
-          <Text style={styles.verseTe}>"{item.verseTe}"</Text>
-          <Text style={styles.refTe}>— {item.referenceTe}</Text>
+          <Text style={[styles.verseTe, { color: '#F8FAFC' }]}>"{item.verseTe}"</Text>
+          <Text style={[styles.refTe, { color: '#FBBF24' }]}>— {item.referenceTe}</Text>
         </View>
 
         {/* Card Footer Info */}
-        <View style={styles.cardFooter}>
+        <View style={[styles.cardFooter, { borderTopColor: 'rgba(255, 255, 255, 0.15)' }]}>
           <View style={styles.slotTag}>
-            <Clock size={12} color="#64748B" />
-            <Text style={styles.slotTagText}>
+            <Clock size={12} color="#CBD5E1" />
+            <Text style={[styles.slotTagText, { color: '#CBD5E1' }]}>
               Slot {schedule.periodIndex + 1} · {schedule.periodTime}
             </Text>
           </View>
@@ -832,20 +861,20 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
         </View>
       </View>
     );
-  }, [getFastSchedule]);
+  }, [getFastSchedule, isDark, adminBorderColor]);
 
   // ListHeaderComponent: Everything at the top scrolls seamlessly with the verses
   const renderListHeader = () => (
     <View style={styles.scrollableHeaderContainer}>
       {/* ── 1. Hero Stats Grid ── */}
-      <View style={styles.statsCard}>
+      <View style={[styles.statsCard, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}>
         <View style={styles.statsTopRow}>
-          <View style={styles.statsIconWrap}>
-            <Sparkles size={20} color="#10B981" />
+          <View style={[styles.statsIconWrap, { backgroundColor: secondarySurface }]}>
+            <Sparkles size={20} color={primaryText} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.statsHeading}>Daily Verses Master Schedule</Text>
-            <Text style={styles.statsSubheading}>Deterministic 4-Slot Multi-Year Rotation</Text>
+            <Text style={[styles.statsHeading, { color: primaryText }]}>Daily Verses Master Schedule</Text>
+            <Text style={[styles.statsSubheading, { color: secondaryText }]}>Deterministic 4-Slot Multi-Year Rotation</Text>
           </View>
           <View style={styles.activeBadge}>
             <View style={styles.activeDot} />
@@ -853,88 +882,116 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
           </View>
         </View>
 
-        <View style={styles.statsGrid}>
+        <View style={[styles.statsGrid, { backgroundColor: secondarySurface, borderColor: adminBorderColor }]}>
           <View style={styles.statTile}>
-            <Text style={styles.statNumber}>5,863</Text>
-            <Text style={styles.statLabel}>Total Verses</Text>
+            <Text style={[styles.statNumber, { color: primaryText }]}>5,863</Text>
+            <Text style={[styles.statLabel, { color: secondaryText }]}>Total Verses</Text>
           </View>
           <View style={styles.statTile}>
-            <Text style={styles.statNumber}>4 / Day</Text>
-            <Text style={styles.statLabel}>Time Slots</Text>
+            <Text style={[styles.statNumber, { color: primaryText }]}>4 / Day</Text>
+            <Text style={[styles.statLabel, { color: secondaryText }]}>Time Slots</Text>
           </View>
           <View style={styles.statTile}>
-            <Text style={styles.statNumber}>1,466</Text>
-            <Text style={styles.statLabel}>Days Covered</Text>
+            <Text style={[styles.statNumber, { color: primaryText }]}>1,466</Text>
+            <Text style={[styles.statLabel, { color: secondaryText }]}>Days Covered</Text>
           </View>
           <View style={styles.statTile}>
             <Text style={[styles.statNumber, { color: '#10B981' }]}>0</Text>
-            <Text style={styles.statLabel}>Past Dates</Text>
+            <Text style={[styles.statLabel, { color: secondaryText }]}>Past Dates</Text>
           </View>
         </View>
       </View>
 
       {/* ── 2. Schedule Reassign Action Banner ── */}
-      <View style={styles.reassignBanner}>
+      <View style={[styles.reassignBanner, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}>
         <View style={styles.reassignLeft}>
-          <Calendar size={20} color="#F59E0B" />
+          <Calendar size={20} color={primaryText} />
           <View style={{ flex: 1 }}>
-            <Text style={styles.reassignTitle}>Schedule Starting Today</Text>
-            <Text style={styles.reassignSub}>
+            <Text style={[styles.reassignTitle, { color: primaryText }]}>Schedule Starting Today</Text>
+            <Text style={[styles.reassignSub, { color: secondaryText }]}>
               All 5,863 verses are scheduled into future dates (through late 2030) with zero past dates.
             </Text>
           </View>
         </View>
         <TouchableOpacity
-          style={styles.reassignBtn}
+          style={[styles.reassignBtn, { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' }]}
           onPress={handleReassignSchedule}
           disabled={isUpdating}
           activeOpacity={0.8}
         >
           {isUpdating ? (
-            <ActivityIndicator size="small" color="#0F172A" />
+            <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
           ) : (
             <>
-              <CheckCircle2 size={14} color="#0F172A" />
-              <Text style={styles.reassignBtnText}>Reassign</Text>
+              <CheckCircle2 size={14} color={isDark ? '#000000' : '#FFFFFF'} />
+              <Text style={[styles.reassignBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}>Reassign</Text>
             </>
           )}
         </TouchableOpacity>
       </View>
 
       {/* ── 3. Search Bar ── */}
-      <View style={styles.searchBar}>
-        <Search size={16} color="#94A3B8" />
+      <View style={[styles.searchBar, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}>
+        <Search size={16} color={secondaryText} />
         <TextInput
-          style={styles.searchInput}
+          style={[styles.searchInput, { color: primaryText }]}
           placeholder="Search verses by scripture text or reference..."
-          placeholderTextColor="#64748B"
+          placeholderTextColor={secondaryText}
           value={localSearchQuery}
           onChangeText={setLocalSearchQuery}
         />
         {localSearchQuery.length > 0 && (
           <TouchableOpacity onPress={() => setLocalSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <X size={16} color="#94A3B8" />
+            <X size={16} color={secondaryText} />
           </TouchableOpacity>
         )}
       </View>
 
       {/* ── 4. Timeline Tab Toggle (Upcoming vs All) ── */}
-      <View style={styles.tabToggleRow}>
+      <View style={[styles.tabToggleRow, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}>
         <TouchableOpacity
-          style={[styles.tabToggleBtn, timelineTab === 'upcoming' && styles.tabToggleBtnActive]}
+          style={[
+            styles.tabToggleBtn,
+            timelineTab === 'upcoming' && {
+              backgroundColor: isDark ? '#FFFFFF' : '#0F172A',
+            },
+          ]}
           onPress={() => handleTabSwitch('upcoming')}
           activeOpacity={0.8}
         >
-          <Text style={[styles.tabToggleTxt, timelineTab === 'upcoming' && styles.tabToggleTxtActive]}>
+          <Text
+            style={[
+              styles.tabToggleTxt,
+              { color: secondaryText },
+              timelineTab === 'upcoming' && {
+                color: isDark ? '#000000' : '#FFFFFF',
+                fontWeight: '800',
+              },
+            ]}
+          >
             🌟 Today & Upcoming (30 Days)
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tabToggleBtn, timelineTab === 'all' && styles.tabToggleBtnActive]}
+          style={[
+            styles.tabToggleBtn,
+            timelineTab === 'all' && {
+              backgroundColor: isDark ? '#FFFFFF' : '#0F172A',
+            },
+          ]}
           onPress={() => handleTabSwitch('all')}
           activeOpacity={0.8}
         >
-          <Text style={[styles.tabToggleTxt, timelineTab === 'all' && styles.tabToggleTxtActive]}>
+          <Text
+            style={[
+              styles.tabToggleTxt,
+              { color: secondaryText },
+              timelineTab === 'all' && {
+                color: isDark ? '#000000' : '#FFFFFF',
+                fontWeight: '800',
+              },
+            ]}
+          >
             📚 All Verses ({totalVerses || 5863})
           </Text>
         </TouchableOpacity>
@@ -948,45 +1005,56 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
           data={PERIOD_OPTIONS}
           keyExtractor={item => item.period}
           contentContainerStyle={{ paddingHorizontal: 2 }}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={[
-                styles.periodChip,
-                selectedPeriod === item.period && styles.periodChipActive,
-              ]}
-              onPress={() => setSelectedPeriod(item.period)}
-              activeOpacity={0.8}
-            >
-              <Text style={[
-                styles.periodChipText,
-                selectedPeriod === item.period && styles.periodChipTextActive,
-              ]}>
-                {item.label}
-              </Text>
-            </TouchableOpacity>
-          )}
+          renderItem={({ item }) => {
+            const isActive = selectedPeriod === item.period;
+            return (
+              <TouchableOpacity
+                style={[
+                  styles.periodChip,
+                  {
+                    backgroundColor: isActive ? (isDark ? '#FFFFFF' : '#0F172A') : cardSurface,
+                    borderColor: isActive ? (isDark ? '#FFFFFF' : '#0F172A') : adminBorderColor,
+                  },
+                ]}
+                onPress={() => setSelectedPeriod(item.period)}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.periodChipText,
+                    {
+                      color: isActive ? (isDark ? '#000000' : '#FFFFFF') : secondaryText,
+                      fontWeight: isActive ? '800' : '600',
+                    },
+                  ]}
+                >
+                  {item.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          }}
         />
       </View>
 
       {/* ── 6. Admin Tools Collapsible Accordion ── */}
-      <View style={styles.toolsCard}>
+      <View style={[styles.toolsCard, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}>
         <TouchableOpacity
           style={styles.toolsHeader}
           onPress={() => setShowTools(!showTools)}
           activeOpacity={0.8}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Database size={16} color="#38BDF8" />
-            <Text style={styles.toolsTitle}>Admin Controls & Quick Tools</Text>
+            <Database size={16} color={primaryText} />
+            <Text style={[styles.toolsTitle, { color: primaryText }]}>Admin Controls & Quick Tools</Text>
           </View>
-          {showTools ? <ChevronUp size={18} color="#94A3B8" /> : <ChevronDown size={18} color="#94A3B8" />}
+          {showTools ? <ChevronUp size={18} color={secondaryText} /> : <ChevronDown size={18} color={secondaryText} />}
         </TouchableOpacity>
 
         {showTools && (
           <View style={styles.toolsBody}>
             <View style={styles.toolBtnRow}>
               <TouchableOpacity
-                style={[styles.toolBtn, { backgroundColor: '#10B981' }]}
+                style={[styles.toolBtn, { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' }]}
                 onPress={() => {
                   const firstVerse = upcomingVerses[0] || allVerses[0];
                   if (firstVerse) {
@@ -997,54 +1065,54 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
                 }}
                 activeOpacity={0.8}
               >
-                <Eye size={15} color="#FFF" />
-                <Text style={styles.toolBtnText}>Test Verse UI</Text>
+                <Eye size={15} color={isDark ? '#000000' : '#FFFFFF'} />
+                <Text style={[styles.toolBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}>Test Verse UI</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.toolBtn, { backgroundColor: '#0284C7' }]}
+                style={[styles.toolBtn, { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' }]}
                 onPress={handleTestNotifications}
                 activeOpacity={0.8}
               >
-                <Bell size={15} color="#FFF" />
-                <Text style={styles.toolBtnText}>Test Verse Push</Text>
+                <Bell size={15} color={isDark ? '#000000' : '#FFFFFF'} />
+                <Text style={[styles.toolBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}>Test Verse Push</Text>
               </TouchableOpacity>
             </View>
 
             <View style={styles.toolBtnRow}>
               <TouchableOpacity
-                style={[styles.toolBtn, { backgroundColor: '#6366F1' }]}
+                style={[styles.toolBtn, { backgroundColor: secondarySurface, borderWidth: 1, borderColor: adminBorderColor }]}
                 onPress={handleLoadBundledVerses}
                 disabled={isUploading}
                 activeOpacity={0.8}
               >
-                <Database size={15} color="#FFF" />
-                <Text style={styles.toolBtnText}>Seed 5,863 Verses</Text>
+                <Database size={15} color={primaryText} />
+                <Text style={[styles.toolBtnText, { color: primaryText }]}>Seed 5,863 Verses</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.toolBtn, { backgroundColor: '#8B5CF6' }]}
+                style={[styles.toolBtn, { backgroundColor: secondarySurface, borderWidth: 1, borderColor: adminBorderColor }]}
                 onPress={handleFetchUnsplashBackgrounds}
                 disabled={isUpdating}
                 activeOpacity={0.8}
               >
-                <ImageIcon size={15} color="#FFF" />
-                <Text style={styles.toolBtnText}>Fetch Images</Text>
+                <ImageIcon size={15} color={primaryText} />
+                <Text style={[styles.toolBtnText, { color: primaryText }]}>Fetch Images</Text>
               </TouchableOpacity>
             </View>
 
             <View style={styles.toolBtnRow}>
               <TouchableOpacity
-                style={[styles.toolBtn, { backgroundColor: '#334155' }]}
+                style={[styles.toolBtn, { backgroundColor: secondarySurface, borderWidth: 1, borderColor: adminBorderColor }]}
                 onPress={() => setShowInput(!showInput)}
                 activeOpacity={0.8}
               >
-                <UploadCloud size={15} color="#FFF" />
-                <Text style={styles.toolBtnText}>{showInput ? 'Hide JSON' : 'Upload JSON'}</Text>
+                <UploadCloud size={15} color={primaryText} />
+                <Text style={[styles.toolBtnText, { color: primaryText }]}>{showInput ? 'Hide JSON' : 'Upload JSON'}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.toolBtn, { backgroundColor: '#475569' }]}
+                style={[styles.toolBtn, { backgroundColor: secondarySurface, borderWidth: 1, borderColor: adminBorderColor }]}
                 onPress={() => {
                   cachedUpcomingVerses = null;
                   cachedAllVerses = [];
@@ -1052,8 +1120,8 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
                 }}
                 activeOpacity={0.8}
               >
-                <RefreshCw size={15} color="#FFF" />
-                <Text style={styles.toolBtnText}>Refresh List</Text>
+                <RefreshCw size={15} color={primaryText} />
+                <Text style={[styles.toolBtnText, { color: primaryText }]}>Refresh List</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -1068,28 +1136,28 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
 
             {/* JSON Bulk Upload Section */}
             {showInput && (
-              <View style={styles.jsonUploadBox}>
-                <Text style={styles.jsonLabel}>Paste JSON Array of Verses:</Text>
-                <Text style={styles.jsonHelper}>
+              <View style={[styles.jsonUploadBox, { backgroundColor: secondarySurface, borderColor: adminBorderColor }]}>
+                <Text style={[styles.jsonLabel, { color: primaryText }]}>Paste JSON Array of Verses:</Text>
+                <Text style={[styles.jsonHelper, { color: secondaryText }]}>
                   Format: [{`{ "verseEn": "...", "referenceEn": "...", "verseTe": "...", "referenceTe": "..." }`}]
                 </Text>
                 <TextInput
-                  style={styles.jsonInput}
+                  style={[styles.jsonInput, { backgroundColor: cardSurface, color: primaryText, borderColor: adminBorderColor, borderWidth: 1 }]}
                   multiline
                   value={jsonInput}
                   onChangeText={setJsonInput}
                   placeholder="[ { ... } ]"
-                  placeholderTextColor="#64748B"
+                  placeholderTextColor={secondaryText}
                 />
                 <TouchableOpacity
-                  style={styles.jsonSubmitBtn}
+                  style={[styles.jsonSubmitBtn, { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' }]}
                   onPress={() => handleBulkUpload()}
                   disabled={isUploading}
                 >
                   {isUploading ? (
-                    <ActivityIndicator color="#FFF" size="small" />
+                    <ActivityIndicator color={isDark ? '#000000' : '#FFFFFF'} size="small" />
                   ) : (
-                    <Text style={styles.jsonSubmitBtnText}>Upload to Database</Text>
+                    <Text style={[styles.jsonSubmitBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}>Upload to Database</Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -1100,10 +1168,10 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
 
       {/* ── 7. Result Header Label ── */}
       <View style={styles.resultsHeaderRow}>
-        <Text style={styles.resultsTitle}>
+        <Text style={[styles.resultsTitle, { color: primaryText }]}>
           {timelineTab === 'upcoming' ? 'Upcoming 30-Day Schedule' : 'Complete Scripture Catalog'}
         </Text>
-        <Text style={styles.resultsCount}>
+        <Text style={[styles.resultsCount, { color: secondaryText }]}>
           Showing {filteredVerses.length} verses
         </Text>
       </View>
@@ -1111,11 +1179,11 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
   );
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
       {loading ? (
         <View style={styles.loadingWrap}>
-          <ActivityIndicator size="large" color="#38BDF8" />
-          <Text style={styles.loadingText}>Loading future verse schedule...</Text>
+          <ActivityIndicator size="large" color={primaryText} />
+          <Text style={[styles.loadingText, { color: secondaryText }]}>Loading future verse schedule...</Text>
         </View>
       ) : (
         <FlatList
@@ -1139,22 +1207,22 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
                 cachedAllVerses = [];
                 fetchUpcomingVerses(true);
               }}
-              tintColor="#38BDF8"
-              colors={['#38BDF8', '#10B981']}
+              tintColor={primaryText}
+              colors={[primaryText]}
             />
           }
           ListFooterComponent={
             loadingMore ? (
               <View style={{ paddingVertical: 20 }}>
-                <ActivityIndicator size="small" color="#38BDF8" />
+                <ActivityIndicator size="small" color={primaryText} />
               </View>
             ) : null
           }
           ListEmptyComponent={
             <View style={styles.emptyWrap}>
-              <BookOpen size={40} color="#475569" />
-              <Text style={styles.emptyTitle}>No Verses Found</Text>
-              <Text style={styles.emptySub}>
+              <BookOpen size={40} color={secondaryText} />
+              <Text style={[styles.emptyTitle, { color: primaryText }]}>No Verses Found</Text>
+              <Text style={[styles.emptySub, { color: secondaryText }]}>
                 {localSearchQuery.trim()
                   ? `No verses matched "${localSearchQuery}". Try another keyword or reference.`
                   : 'No scheduled verses for this filter.'}
@@ -1167,68 +1235,68 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
       {/* ── Edit Modal ── */}
       {editingVerse && (
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}>
             <View style={styles.modalHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Pencil size={18} color="#38BDF8" />
-                <Text style={styles.modalTitle}>Edit Scripture Verse</Text>
+                <Pencil size={18} color={primaryText} />
+                <Text style={[styles.modalTitle, { color: primaryText }]}>Edit Scripture Verse</Text>
               </View>
               <TouchableOpacity onPress={() => setEditingVerse(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <X size={20} color="#94A3B8" />
+                <X size={20} color={secondaryText} />
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.inputLabel}>Verse Text (English)</Text>
+            <Text style={[styles.inputLabel, { color: secondaryText }]}>Verse Text (English)</Text>
             <TextInput
-              style={[styles.modalInput, { height: 75 }]}
+              style={[styles.modalInput, { height: 75, backgroundColor: secondarySurface, color: primaryText, borderColor: adminBorderColor }]}
               multiline
               value={editingVerse.verseEn}
               onChangeText={t => setEditingVerse({ ...editingVerse, verseEn: t })}
-              placeholderTextColor="#64748B"
+              placeholderTextColor={secondaryText}
             />
 
-            <Text style={styles.inputLabel}>Reference (English)</Text>
+            <Text style={[styles.inputLabel, { color: secondaryText }]}>Reference (English)</Text>
             <TextInput
-              style={[styles.modalInput, { height: 42 }]}
+              style={[styles.modalInput, { height: 42, backgroundColor: secondarySurface, color: primaryText, borderColor: adminBorderColor }]}
               value={editingVerse.referenceEn}
               onChangeText={t => setEditingVerse({ ...editingVerse, referenceEn: t })}
-              placeholderTextColor="#64748B"
+              placeholderTextColor={secondaryText}
             />
 
-            <Text style={styles.inputLabel}>Verse Text (Telugu)</Text>
+            <Text style={[styles.inputLabel, { color: secondaryText }]}>Verse Text (Telugu)</Text>
             <TextInput
-              style={[styles.modalInput, { height: 75 }]}
+              style={[styles.modalInput, { height: 75, backgroundColor: secondarySurface, color: primaryText, borderColor: adminBorderColor }]}
               multiline
               value={editingVerse.verseTe}
               onChangeText={t => setEditingVerse({ ...editingVerse, verseTe: t })}
-              placeholderTextColor="#64748B"
+              placeholderTextColor={secondaryText}
             />
 
-            <Text style={styles.inputLabel}>Reference (Telugu)</Text>
+            <Text style={[styles.inputLabel, { color: secondaryText }]}>Reference (Telugu)</Text>
             <TextInput
-              style={[styles.modalInput, { height: 42 }]}
+              style={[styles.modalInput, { height: 42, backgroundColor: secondarySurface, color: primaryText, borderColor: adminBorderColor }]}
               value={editingVerse.referenceTe}
               onChangeText={t => setEditingVerse({ ...editingVerse, referenceTe: t })}
-              placeholderTextColor="#64748B"
+              placeholderTextColor={secondaryText}
             />
 
             <View style={styles.modalBtnRow}>
               <TouchableOpacity
-                style={styles.modalCancelBtn}
+                style={[styles.modalCancelBtn, { backgroundColor: secondarySurface }]}
                 onPress={() => setEditingVerse(null)}
               >
-                <Text style={styles.modalCancelBtnText}>Cancel</Text>
+                <Text style={[styles.modalCancelBtnText, { color: primaryText }]}>Cancel</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.modalSaveBtn}
+                style={[styles.modalSaveBtn, { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' }]}
                 onPress={handleUpdateVerse}
                 disabled={isUpdating}
               >
                 {isUpdating ? (
-                  <ActivityIndicator color="#0F172A" size="small" />
+                  <ActivityIndicator color={isDark ? '#000000' : '#FFFFFF'} size="small" />
                 ) : (
-                  <Text style={styles.modalSaveBtnText}>Save Changes</Text>
+                  <Text style={[styles.modalSaveBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}>Save Changes</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -1239,28 +1307,28 @@ export default function SuperAdminVersesManager({ searchQuery: externalQuery = '
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createAdminThemedStyles(StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0B1120',
+    backgroundColor: '#FAF7F2',
   },
   listContentContainer: {
     paddingHorizontal: 16,
     paddingBottom: 40,
   },
   scrollableHeaderContainer: {
-    paddingTop: 12,
-    paddingBottom: 10,
+    paddingTop: 10,
+    paddingBottom: 8,
   },
 
   // 1. Stats Card
   statsCard: {
-    backgroundColor: '#1E293B',
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#E2E8F0',
   },
   statsTopRow: {
     flexDirection: 'row',
@@ -1272,19 +1340,19 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
   },
   statsHeading: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#F8FAFC',
+    color: '#0F172A',
     letterSpacing: 0.2,
   },
   statsSubheading: {
     fontSize: 11,
-    color: '#94A3B8',
+    color: '#64748B',
     marginTop: 2,
   },
   activeBadge: {
@@ -1309,12 +1377,12 @@ const styles = StyleSheet.create({
   },
   statsGrid: {
     flexDirection: 'row',
-    backgroundColor: '#0F172A',
+    backgroundColor: '#F1F5F9',
     borderRadius: 12,
     paddingVertical: 10,
     paddingHorizontal: 6,
     borderWidth: 1,
-    borderColor: '#1E293B',
+    borderColor: '#E2E8F0',
   },
   statTile: {
     flex: 1,
@@ -1323,11 +1391,11 @@ const styles = StyleSheet.create({
   statNumber: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#F8FAFC',
+    color: '#0F172A',
   },
   statLabel: {
     fontSize: 10,
-    color: '#94A3B8',
+    color: '#64748B',
     marginTop: 2,
     fontWeight: '500',
   },
@@ -1337,12 +1405,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(245, 158, 11, 0.08)',
+    backgroundColor: '#FFFFFF',
     borderRadius: 14,
     padding: 14,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.3)',
+    borderColor: '#E2E8F0',
     gap: 12,
   },
   reassignLeft: {
@@ -1354,18 +1422,18 @@ const styles = StyleSheet.create({
   reassignTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#F59E0B',
+    color: '#0F172A',
   },
   reassignSub: {
     fontSize: 11,
-    color: '#CBD5E1',
+    color: '#64748B',
     marginTop: 2,
     lineHeight: 15,
   },
   reassignBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F59E0B',
+    backgroundColor: '#0F172A',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 10,
@@ -1374,25 +1442,25 @@ const styles = StyleSheet.create({
   reassignBtnText: {
     fontSize: 12,
     fontWeight: '800',
-    color: '#0F172A',
+    color: '#FFFFFF',
   },
 
   // 3. Search Bar
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1E293B',
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 9,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#E2E8F0',
     gap: 8,
   },
   searchInput: {
     flex: 1,
-    color: '#F8FAFC',
+    color: '#0F172A',
     fontSize: 13,
     padding: 0,
   },
@@ -1400,13 +1468,13 @@ const styles = StyleSheet.create({
   // 4. Tab Toggle Row
   tabToggleRow: {
     flexDirection: 'row',
-    backgroundColor: '#1E293B',
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 4,
     marginBottom: 12,
     gap: 6,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#E2E8F0',
   },
   tabToggleBtn: {
     flex: 1,
@@ -1416,16 +1484,14 @@ const styles = StyleSheet.create({
   },
   tabToggleBtnActive: {
     backgroundColor: '#0F172A',
-    borderWidth: 1,
-    borderColor: '#38BDF8',
   },
   tabToggleTxt: {
-    color: '#94A3B8',
+    color: '#64748B',
     fontSize: 12,
     fontWeight: '600',
   },
   tabToggleTxtActive: {
-    color: '#38BDF8',
+    color: '#FFFFFF',
     fontWeight: '800',
   },
 
@@ -1437,17 +1503,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
-    backgroundColor: '#1E293B',
+    backgroundColor: '#FFFFFF',
     marginRight: 6,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#E2E8F0',
   },
   periodChipActive: {
-    backgroundColor: '#0284C7',
-    borderColor: '#38BDF8',
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
   },
   periodChipText: {
-    color: '#94A3B8',
+    color: '#64748B',
     fontWeight: '600',
     fontSize: 11,
   },
@@ -1458,11 +1524,11 @@ const styles = StyleSheet.create({
 
   // 6. Tools Card
   toolsCard: {
-    backgroundColor: '#1E293B',
+    backgroundColor: '#FFFFFF',
     borderRadius: 14,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#E2E8F0',
     overflow: 'hidden',
   },
   toolsHeader: {
@@ -1475,7 +1541,7 @@ const styles = StyleSheet.create({
   toolsTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#F8FAFC',
+    color: '#0F172A',
   },
   toolsBody: {
     padding: 12,
@@ -1502,27 +1568,27 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   jsonUploadBox: {
-    backgroundColor: '#0F172A',
+    backgroundColor: '#F1F5F9',
     borderRadius: 10,
     padding: 12,
     marginTop: 6,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#E2E8F0',
   },
   jsonLabel: {
-    color: '#F8FAFC',
+    color: '#0F172A',
     fontSize: 12,
     fontWeight: '700',
     marginBottom: 4,
   },
   jsonHelper: {
-    color: '#94A3B8',
+    color: '#64748B',
     fontSize: 10,
     marginBottom: 8,
   },
   jsonInput: {
-    backgroundColor: '#1E293B',
-    color: '#F8FAFC',
+    backgroundColor: '#FFFFFF',
+    color: '#0F172A',
     height: 110,
     borderRadius: 8,
     padding: 10,
@@ -1531,7 +1597,7 @@ const styles = StyleSheet.create({
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
   jsonSubmitBtn: {
-    backgroundColor: '#10B981',
+    backgroundColor: '#0F172A',
     borderRadius: 8,
     paddingVertical: 8,
     alignItems: 'center',
@@ -1554,22 +1620,22 @@ const styles = StyleSheet.create({
   resultsTitle: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#F8FAFC',
+    color: '#0F172A',
   },
   resultsCount: {
     fontSize: 11,
-    color: '#94A3B8',
+    color: '#64748B',
     fontWeight: '600',
   },
 
   // Verse Card
   verseCard: {
-    backgroundColor: '#1E293B',
+    backgroundColor: '#FFFFFF',
     borderRadius: 14,
     padding: 14,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#E2E8F0',
     borderLeftWidth: 4,
   },
   cardHeaderRow: {
@@ -1579,12 +1645,12 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   schedulePill: {
-    backgroundColor: '#0F172A',
+    backgroundColor: '#F1F5F9',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#E2E8F0',
   },
   schedulePillToday: {
     backgroundColor: 'rgba(245, 158, 11, 0.15)',
@@ -1597,7 +1663,7 @@ const styles = StyleSheet.create({
   schedulePillText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#CBD5E1',
+    color: '#0F172A',
   },
   cardHeaderRight: {
     flexDirection: 'row',
@@ -1605,21 +1671,21 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   indexPill: {
-    backgroundColor: '#0F172A',
+    backgroundColor: '#F1F5F9',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
   },
   indexPillText: {
     fontSize: 10,
-    color: '#94A3B8',
+    color: '#64748B',
     fontWeight: '600',
   },
   cardActionBtn: {
     width: 28,
     height: 28,
     borderRadius: 7,
-    backgroundColor: '#334155',
+    backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1632,14 +1698,14 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   verseEn: {
-    color: '#F8FAFC',
+    color: '#0F172A',
     fontSize: 14,
     fontStyle: 'italic',
     lineHeight: 20,
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
   },
   refEn: {
-    color: '#F59E0B',
+    color: '#B45309',
     fontSize: 12,
     fontWeight: '700',
     marginTop: 4,
@@ -1647,16 +1713,16 @@ const styles = StyleSheet.create({
   },
   verseDivider: {
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: '#E2E8F0',
     marginVertical: 8,
   },
   verseTe: {
-    color: '#E2E8F0',
+    color: '#0F172A',
     fontSize: 14,
     lineHeight: 21,
   },
   refTe: {
-    color: '#F59E0B',
+    color: '#B45309',
     fontSize: 12,
     fontWeight: '700',
     marginTop: 4,
@@ -1669,7 +1735,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     borderTopWidth: 1,
-    borderTopColor: '#0F172A',
+    borderTopColor: '#E2E8F0',
     paddingTop: 8,
   },
   slotTag: {
@@ -1700,7 +1766,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#F1F5F9',
   },
   noImageTagText: {
     fontSize: 10,
@@ -1716,7 +1782,7 @@ const styles = StyleSheet.create({
     paddingVertical: 60,
   },
   loadingText: {
-    color: '#94A3B8',
+    color: '#64748B',
     fontSize: 13,
     marginTop: 12,
     fontWeight: '500',
@@ -1727,14 +1793,14 @@ const styles = StyleSheet.create({
     paddingVertical: 50,
   },
   emptyTitle: {
-    color: '#F8FAFC',
+    color: '#0F172A',
     fontSize: 15,
     fontWeight: '700',
     marginTop: 10,
     marginBottom: 4,
   },
   emptySub: {
-    color: '#94A3B8',
+    color: '#64748B',
     fontSize: 12,
     textAlign: 'center',
     maxWidth: 280,
@@ -1745,13 +1811,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#10B981',
+    backgroundColor: '#0F172A',
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 12,
   },
   addVerseHeaderBtnText: {
-    color: '#0F172A',
+    color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '700',
   },
@@ -1763,23 +1829,23 @@ const styles = StyleSheet.create({
   createPeriodChip: {
     flex: 1,
     paddingVertical: 6,
-    backgroundColor: '#1E293B',
+    backgroundColor: '#FFFFFF',
     borderRadius: 8,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#E2E8F0',
   },
   createPeriodChipActive: {
-    backgroundColor: 'rgba(16, 185, 129, 0.2)',
-    borderColor: '#10B981',
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
   },
   createPeriodChipText: {
-    color: '#94A3B8',
+    color: '#64748B',
     fontSize: 12,
     fontWeight: '600',
   },
   createPeriodChipTextActive: {
-    color: '#10B981',
+    color: '#FFFFFF',
     fontWeight: '700',
   },
   autoImageToggleRow: {
@@ -1799,11 +1865,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   checkboxBoxActive: {
-    backgroundColor: '#10B981',
-    borderColor: '#10B981',
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
   },
   autoImageToggleText: {
-    color: '#E2E8F0',
+    color: '#0F172A',
     fontSize: 12,
     fontWeight: '500',
   },
@@ -1826,11 +1892,11 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     maxHeight: '100%',
-    backgroundColor: '#1E293B',
+    backgroundColor: '#FFFFFF',
     borderRadius: 18,
     padding: 18,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#E2E8F0',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1839,12 +1905,12 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   modalTitle: {
-    color: '#F8FAFC',
+    color: '#0F172A',
     fontSize: 16,
     fontWeight: '800',
   },
   inputLabel: {
-    color: '#94A3B8',
+    color: '#64748B',
     fontSize: 11,
     fontWeight: '700',
     marginBottom: 4,
@@ -1852,15 +1918,15 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   modalInput: {
-    backgroundColor: '#0F172A',
-    color: '#F8FAFC',
+    backgroundColor: '#F1F5F9',
+    color: '#0F172A',
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
     fontSize: 13,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#E2E8F0',
     textAlignVertical: 'top',
   },
   modalBtnRow: {
@@ -1870,26 +1936,26 @@ const styles = StyleSheet.create({
   },
   modalCancelBtn: {
     flex: 1,
-    backgroundColor: '#334155',
+    backgroundColor: '#F1F5F9',
     borderRadius: 10,
     paddingVertical: 11,
     alignItems: 'center',
   },
   modalCancelBtnText: {
-    color: '#F8FAFC',
+    color: '#0F172A',
     fontSize: 13,
     fontWeight: '700',
   },
   modalSaveBtn: {
     flex: 1,
-    backgroundColor: '#38BDF8',
+    backgroundColor: '#0F172A',
     borderRadius: 10,
     paddingVertical: 11,
     alignItems: 'center',
   },
   modalSaveBtnText: {
-    color: '#0F172A',
+    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '800',
   },
-});
+}));

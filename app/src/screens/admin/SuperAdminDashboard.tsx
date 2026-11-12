@@ -4,13 +4,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Shield, X, Search, ChevronLeft } from 'lucide-react-native';
+import { Shield, X, Search, ArrowLeft } from 'lucide-react-native';
 import SuperAdminVersesManager from './SuperAdminVersesManager';
 import SuperAdminDailyQuizManager from './SuperAdminDailyQuizManager';
 import SuperAdminRoleManager from './SuperAdminRoleManager';
 import { AdminTabContext } from '../../context/AdminTabContext';
+import { useAdminTheme } from '../../utils/adminThemeHelper';
 
 export default function SuperAdminDashboard({ navigation }: any) {
+  const { isDark, screenBg, cardSurface, primaryText, secondaryText, borderColor } = useAdminTheme();
   const { setTabByName, goBack } = React.useContext(AdminTabContext) || {};
   const insets = useSafeAreaInsets();
   const { member, isPlatformSuperAdmin, user } = useAuth();
@@ -49,34 +51,36 @@ export default function SuperAdminDashboard({ navigation }: any) {
   }, [isSuper]);
 
   return (
-    <View style={styles.container}>
-      <StatusBar style="light" backgroundColor="transparent" translucent={true} />
-      <View style={styles.content}>
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
+      <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor="transparent" translucent={true} />
+      <View style={[styles.content, { backgroundColor: screenBg }]}>
         <View style={{ paddingTop: insets.top }}>
           {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.headerLeft}>
-              <TouchableOpacity
-                onPress={handleAdminBack}
-                style={{ marginRight: 8 }}
-              >
-                <ChevronLeft size={28} color="#f4f6fb" />
-              </TouchableOpacity>
+          <View style={[styles.header, { borderBottomWidth: 1.2, borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1', marginHorizontal: -16 }]}>
+            <TouchableOpacity
+              onPress={handleAdminBack}
+              style={styles.backBtn}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <ArrowLeft size={22} color={primaryText} strokeWidth={2.4} />
+            </TouchableOpacity>
+            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
               <LinearGradient colors={['#f0b429', '#b8860b']} style={styles.headerEmblem}>
                 <Shield size={17} color="#1a1200" />
               </LinearGradient>
-              <Text style={styles.headerTitle}>Platform Admin</Text>
+              <Text style={[styles.headerTitle, { color: primaryText, textAlign: 'center' }]}>Platform Admin</Text>
             </View>
+            <View style={{ width: 40 }} />
           </View>
 
           {/* Tab Bar: Daily Verse, Church Quiz & Super Admins */}
-          <View style={styles.tabBar}>
+          <View style={[styles.tabBar, { backgroundColor: screenBg, borderBottomColor: borderColor }]}>
             <TouchableOpacity
               style={[styles.tab, activeTab === 'verses' && styles.tabActive]}
               onPress={() => setActiveTab('verses')}
             >
               <Text
-                style={[styles.tabText, activeTab === 'verses' && styles.tabTextActive]}
+                style={[styles.tabText, { color: secondaryText }, activeTab === 'verses' && styles.tabTextActive]}
                 numberOfLines={1}
                 adjustsFontSizeToFit
                 minimumFontScale={0.85}
@@ -90,7 +94,7 @@ export default function SuperAdminDashboard({ navigation }: any) {
               onPress={() => setActiveTab('daily_quiz')}
             >
               <Text
-                style={[styles.tabText, activeTab === 'daily_quiz' && styles.tabTextActive]}
+                style={[styles.tabText, { color: secondaryText }, activeTab === 'daily_quiz' && styles.tabTextActive]}
                 numberOfLines={1}
                 adjustsFontSizeToFit
                 minimumFontScale={0.85}
@@ -104,7 +108,7 @@ export default function SuperAdminDashboard({ navigation }: any) {
               onPress={() => setActiveTab('super_admins')}
             >
               <Text
-                style={[styles.tabText, activeTab === 'super_admins' && styles.tabTextActive]}
+                style={[styles.tabText, { color: secondaryText }, activeTab === 'super_admins' && styles.tabTextActive]}
                 numberOfLines={1}
                 adjustsFontSizeToFit
                 minimumFontScale={0.85}
@@ -115,10 +119,10 @@ export default function SuperAdminDashboard({ navigation }: any) {
           </View>
 
           {/* Search Bar */}
-          <View style={styles.searchBar}>
-            <Search size={18} color="#64748b" />
+          <View style={[styles.searchBar, { backgroundColor: cardSurface, borderColor }]}>
+            <Search size={18} color={secondaryText} />
             <TextInput
-              style={[styles.searchInput, { flex: 1 }]}
+              style={[styles.searchInput, { flex: 1, color: primaryText }]}
               placeholder={
                 activeTab === 'verses'
                   ? 'Search daily verses...'
@@ -126,13 +130,13 @@ export default function SuperAdminDashboard({ navigation }: any) {
                   ? 'Search church quizzes, date, scripture...'
                   : 'Search super admins by name or phone...'
               }
-              placeholderTextColor="#64748b"
+              placeholderTextColor={secondaryText}
               value={searchQuery}
               onChangeText={setSearchQuery}
             />
             {searchQuery.length > 0 && (
               <TouchableOpacity onPress={() => setSearchQuery('')} style={{ padding: 4 }}>
-                <X size={16} color="#94a3b8" />
+                <X size={16} color={secondaryText} />
               </TouchableOpacity>
             )}
           </View>
@@ -154,12 +158,18 @@ export default function SuperAdminDashboard({ navigation }: any) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0f1e' },
   header: {
-    paddingVertical: 16,
+    paddingVertical: 12,
     paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 8,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerEmblem: {

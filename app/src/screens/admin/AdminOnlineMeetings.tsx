@@ -407,17 +407,11 @@ export default function AdminOnlineMeetings() {
         <View style={styles.headerTopRow}>
           <TouchableOpacity 
             onPress={handleBackNavigation}
-            style={[
-              styles.circularBackBtn,
-              {
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.10)' : '#F1F5F9',
-                borderColor: isDark ? 'rgba(255, 255, 255, 0.20)' : '#CBD5E1',
-              }
-            ]} 
+            style={styles.circularBackBtn} 
             activeOpacity={0.7}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <ArrowLeft color={primaryText} size={20} strokeWidth={2.4} />
+            <ArrowLeft color={primaryText} size={22} strokeWidth={2.4} />
           </TouchableOpacity>
 
           <Text style={[styles.headerTitle, { color: primaryText }]} numberOfLines={1}>
@@ -514,15 +508,8 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 2,
-    elevation: 2,
   },
   headerTitle: {
     fontSize: 18,

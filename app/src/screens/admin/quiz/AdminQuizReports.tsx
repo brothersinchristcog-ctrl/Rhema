@@ -103,13 +103,13 @@ export default function AdminQuizReports({ quizId, onBack }: Props) {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.circularBackBtn} activeOpacity={0.7}>
-          <ArrowLeft size={20} color="#1e293b" strokeWidth={2.2} />
+      <View style={[styles.header, { backgroundColor: cardSurface, borderBottomWidth: 1.2, borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1' }]}>
+        <TouchableOpacity onPress={onBack} style={styles.circularBackBtn} activeOpacity={0.7} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <ArrowLeft size={22} color={primaryText} strokeWidth={2.4} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Quiz Analytics & Report</Text>
+        <Text style={[styles.headerTitle, { color: primaryText, textAlign: 'center', flex: 1 }]}>Quiz Analytics & Report</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -356,17 +356,8 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
   },
   container: {
     flex: 1,

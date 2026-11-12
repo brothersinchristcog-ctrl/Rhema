@@ -371,14 +371,12 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
                 Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 28
               ) + 12,
             backgroundColor: screenBg,
+            borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1',
           },
         ]}
       >
         <TouchableOpacity
-          style={[
-            styles.backButton,
-            { backgroundColor: cardSurface, borderColor: adminBorderColor, borderWidth: 1 },
-          ]}
+          style={styles.backButton}
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           activeOpacity={0.8}
@@ -712,21 +710,17 @@ const styles = createAdminThemedStyles({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 18,
-    paddingBottom: 12,
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+    borderBottomWidth: 1.2,
     zIndex: 10,
   },
   backButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
   },
   headerTitle: {
     flex: 1,
@@ -737,8 +731,8 @@ const styles = createAdminThemedStyles({
     paddingHorizontal: 12,
   },
   headerRightSpacer: {
-    width: 42,
-    height: 42,
+    width: 40,
+    height: 40,
   },
   scroll: {
     flex: 1,

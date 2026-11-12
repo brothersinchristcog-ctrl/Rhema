@@ -322,13 +322,7 @@ export default function BibleQuizHomeScreen() {
         ]}
       >
         <TouchableOpacity
-          style={[
-            styles.circularBtn,
-            {
-              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9',
-              borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#E2E8F0',
-            },
-          ]}
+          style={styles.backBtn}
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           activeOpacity={0.8}
@@ -1129,6 +1123,13 @@ const styles = createAdminThemedStyles(
       paddingBottom: 12,
       borderBottomWidth: 1.5,
       zIndex: 10,
+    },
+    backBtn: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      justifyContent: 'center',
+      alignItems: 'center',
     },
     circularBtn: {
       width: 40,

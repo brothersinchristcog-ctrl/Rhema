@@ -80,15 +80,15 @@ export default function MemberGalleryDashboard() {
       <View
         style={[
           styles.headerRow,
-          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8 },
+          {
+            paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8,
+            borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1',
+          },
         ]}
       >
         <TouchableOpacity
           onPress={() => navigation.goBack()}
-          style={[
-            styles.circularBackBtn,
-            { backgroundColor: cardSurface, borderColor: adminBorderColor },
-          ]}
+          style={styles.circularBackBtn}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           activeOpacity={0.8}
         >
@@ -301,21 +301,16 @@ const styles = createAdminThemedStyles({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 18,
-    paddingBottom: 12,
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+    borderBottomWidth: 1.2,
   },
   circularBackBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
   },
   headerTitleText: {
     flex: 1,
@@ -326,12 +321,12 @@ const styles = createAdminThemedStyles({
     paddingHorizontal: 12,
   },
   headerRightSpacer: {
-    width: 42,
-    height: 42,
+    width: 40,
+    height: 40,
   },
   statsContainer: {
     paddingHorizontal: 16,
-    marginTop: 6,
+    marginTop: 14,
     marginBottom: 20,
   },
   statsRow: {
