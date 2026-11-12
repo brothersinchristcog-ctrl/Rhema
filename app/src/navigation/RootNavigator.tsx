@@ -1178,29 +1178,20 @@ function Navigation() {
     }
   }, [user, loading]);
 
+  // Ensure splash screen always dismisses after a fixed duration and never resets on user state updates
+  useEffect(() => {
+    const timer = setTimeout(() => setShowSplash(false), 2600);
+    return () => clearTimeout(timer);
+  }, []);
+
   // Existing auth effect
   useEffect(() => {
-    const timer = setTimeout(() => setShowSplash(false), 3500);
-    
-    let unsub: any;
-
-    const checkOnboarding = async () => {
-      if (!user) {
-        setOnboardingComplete(null);
-        return;
-      }
-
-      // ── Skip Onboarding directly for all users ──
-      setOnboardingComplete(true);
+    if (!user) {
+      setOnboardingComplete(null);
       return;
-    };
-
-    checkOnboarding();
-    
-    return () => {
-      if (unsub) unsub();
-      clearTimeout(timer);
-    };
+    }
+    // ── Skip Onboarding directly for all users ──
+    setOnboardingComplete(true);
   }, [user]);
 
   if (showSplash || loading) {

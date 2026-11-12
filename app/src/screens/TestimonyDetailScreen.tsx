@@ -339,16 +339,16 @@ export default function TestimonyDetailScreen({ route, navigation }: any) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: themeBg }]} edges={['top']}>
         <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={themeBg} />
-        <View style={[styles.headerRow, { borderBottomColor: borderColor }]}>
+        <View style={[styles.headerRow, { borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1' }]}>
           <TouchableOpacity
             onPress={() => navigation.goBack()}
-            style={[styles.circularBackBtn, { backgroundColor: cardBg, borderColor }]}
+            style={styles.circularBackBtn}
             activeOpacity={0.8}
           >
             <ArrowLeft size={20} color={primaryTextColor} strokeWidth={2.4} />
           </TouchableOpacity>
           <Text style={[styles.headerTitleText, { color: primaryTextColor }]}>Testimony</Text>
-          <View style={{ width: 44 }} />
+          <View style={{ width: 40 }} />
         </View>
         <View style={styles.centerLoading}>
           <ActivityIndicator size="large" color={accentColor} />
@@ -364,16 +364,16 @@ export default function TestimonyDetailScreen({ route, navigation }: any) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: themeBg }]} edges={['top']}>
         <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={themeBg} />
-        <View style={[styles.headerRow, { borderBottomColor: borderColor }]}>
+        <View style={[styles.headerRow, { borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1' }]}>
           <TouchableOpacity
             onPress={() => navigation.goBack()}
-            style={[styles.circularBackBtn, { backgroundColor: cardBg, borderColor }]}
+            style={styles.circularBackBtn}
             activeOpacity={0.8}
           >
             <ArrowLeft size={20} color={primaryTextColor} strokeWidth={2.4} />
           </TouchableOpacity>
           <Text style={[styles.headerTitleText, { color: primaryTextColor }]}>Testimony</Text>
-          <View style={{ width: 44 }} />
+          <View style={{ width: 40 }} />
         </View>
         <View style={styles.centerLoading}>
           <View
@@ -413,10 +413,10 @@ export default function TestimonyDetailScreen({ route, navigation }: any) {
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={themeBg} />
 
       {/* Screen Header */}
-      <View style={[styles.headerRow, { borderBottomColor: borderColor }]}>
+      <View style={[styles.headerRow, { borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1' }]}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
-          style={[styles.circularBackBtn, { backgroundColor: cardBg, borderColor }]}
+          style={styles.circularBackBtn}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           activeOpacity={0.8}
         >
@@ -425,7 +425,7 @@ export default function TestimonyDetailScreen({ route, navigation }: any) {
         <Text style={[styles.headerTitleText, { color: primaryTextColor }]} numberOfLines={1}>
           Testimony Details
         </Text>
-        <View style={{ width: 44 }} />
+        <View style={{ width: 40 }} />
       </View>
 
       <ScrollView
@@ -767,23 +767,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: 1.2,
   },
   circularBackBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
   },
   headerTitleText: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 20,
+    fontWeight: '800',
     flex: 1,
     textAlign: 'center',
+    letterSpacing: -0.2,
   },
   centerLoading: {
     flex: 1,

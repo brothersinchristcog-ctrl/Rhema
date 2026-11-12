@@ -609,7 +609,7 @@ export default function AdminRegistrationApprovals({ navigation }: any) {
         {/* Top Header */}
         <View style={[styles.header, { backgroundColor: screenBg, borderBottomColor: borderColor }]}>
           <TouchableOpacity
-            style={[styles.backBtn, { backgroundColor: isDark ? '#1F2937' : 'rgba(0,0,0,0.05)' }]}
+            style={styles.backBtn}
             onPress={() => navigation.goBack()}
             activeOpacity={0.7}
           >
@@ -925,7 +925,6 @@ const styles = StyleSheet.create({
   backBtn: {
     width: 38,
     height: 38,
-    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
   },

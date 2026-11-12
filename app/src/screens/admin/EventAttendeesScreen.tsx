@@ -334,21 +334,21 @@ export default function EventAttendeesScreen({ navigation, route }: any) {
   };
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
+      <StatusBar barStyle={barStyle} backgroundColor="transparent" translucent />
       
       {/* ── Page Header ── */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <ArrowLeft size={24} color="#0f172a" />
-        </TouchableOpacity>
-        
-        <View style={styles.headerTopRow}>
-          <View style={{ flex: 1, paddingRight: 10 }}>
-            <Text style={styles.headerTitle} numberOfLines={1} adjustsFontSizeToFit>{eventName || 'Event Attendees'}</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-              <Building2 size={13} color="#64748b" />
-              <Text style={styles.headerSub} numberOfLines={1}>{churchName}</Text>
+      <View style={[styles.header, { backgroundColor: screenBg, borderBottomWidth: 1.2, borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1' }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.7}>
+            <ArrowLeft size={22} color={primaryText} />
+          </TouchableOpacity>
+          
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 }}>
+            <Text style={[styles.headerTitle, { color: primaryText, textAlign: 'center' }]} numberOfLines={1} adjustsFontSizeToFit>{eventName || 'Event Attendees'}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 2 }}>
+              <Building2 size={13} color={secondaryText} />
+              <Text style={[styles.headerSub, { color: secondaryText }]} numberOfLines={1}>{churchName}</Text>
               {churchCode ? (
                 <View style={styles.churchCodeBadge}>
                   <Text style={styles.churchCodeBadgeTxt}>{churchCode}</Text>
@@ -359,11 +359,11 @@ export default function EventAttendeesScreen({ navigation, route }: any) {
           
           <View style={{ flexDirection: 'row', gap: 12 }}>
             <TouchableOpacity 
-              style={styles.iconBtn} 
+              style={[styles.iconBtn, { backgroundColor: cardSurface, borderColor: adminBorderColor }]} 
               onPress={() => setShowQRModal(true)}
               accessibilityLabel="Show QR Code"
             >
-              <QrCode size={26} color="#0f172a" />
+              <QrCode size={22} color={primaryText} />
             </TouchableOpacity>
           </View>
         </View>
@@ -481,13 +481,14 @@ export default function EventAttendeesScreen({ navigation, route }: any) {
 const styles = createAdminThemedStyles(StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f4f6f8' },
   header: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 16,
     paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 10 : 50,
-    paddingBottom: 16,
+    paddingBottom: 14,
+    marginBottom: 14,
   },
   backBtn: {
-    width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.05)',
-    alignItems: 'center', justifyContent: 'center', marginBottom: 12,
+    width: 40, height: 40,
+    alignItems: 'center', justifyContent: 'center',
   },
   headerTopRow: {
     flexDirection: 'row',
@@ -495,11 +496,10 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     alignItems: 'flex-start'
   },
   headerTitle: {
-    fontSize: 28,
-    fontWeight: '700',
+    fontSize: 20,
+    fontWeight: '800',
     color: '#0f172a',
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
-    marginBottom: 4
   },
   headerSub: {
     fontSize: 14,

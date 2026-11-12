@@ -52,6 +52,8 @@ const DiamondDivider: React.FC<DiamondDividerProps> = ({ id }) => (
 export default function SplashScreen({ onFinish }: SplashScreenProps) {
   const bgFade = useRef(new Animated.Value(0)).current;
   const contentFade = useRef(new Animated.Value(0)).current;
+  const onFinishRef = useRef(onFinish);
+  onFinishRef.current = onFinish;
 
   useEffect(() => {
     // Staggered smooth native fade for an ultra-crisp vector reveal
@@ -70,11 +72,11 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
     ]).start();
 
     const timer = setTimeout(() => {
-      onFinish?.();
-    }, 2900);
+      onFinishRef.current?.();
+    }, 2500);
 
     return () => clearTimeout(timer);
-  }, [bgFade, contentFade, onFinish]);
+  }, [bgFade, contentFade]);
 
   return (
     <View style={styles.container}>

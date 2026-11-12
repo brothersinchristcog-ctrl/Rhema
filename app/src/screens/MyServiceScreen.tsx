@@ -647,27 +647,30 @@ export default function MyServiceScreen({ navigation, route }: any) {
   return (
     <View style={[styles.root, { backgroundColor: screenBg, paddingTop: insets.top }]}>
       {/* ── HEADER BAR ── */}
-      <View style={[styles.header, { borderBottomColor: borderColor }]}>
+      <View style={[styles.header, { borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1' }]}>
         <TouchableOpacity
-          style={[styles.backBtn, { backgroundColor: cardSurface }]}
+          style={styles.backBtn}
           onPress={() => navigation.goBack()}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           activeOpacity={0.8}
         >
-          <ArrowLeft size={20} color={primaryText} />
+          <ArrowLeft size={20} color={primaryText} strokeWidth={2.4} />
         </TouchableOpacity>
 
-        <View style={{ flex: 1, paddingHorizontal: 12 }}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 }}>
           <Text style={[styles.headerTitle, { color: primaryText }]} numberOfLines={1}>
             Service Roster
           </Text>
         </View>
 
-        {pendingInvitations.length > 0 && (
+        {pendingInvitations.length > 0 ? (
           <View style={styles.pendingBadgeHeader}>
             <Text style={styles.pendingBadgeHeaderTxt}>
               {pendingInvitations.length} Pending
             </Text>
           </View>
+        ) : (
+          <View style={{ width: 40, height: 40 }} />
         )}
       </View>
 
@@ -2043,30 +2046,27 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
     paddingVertical: 12,
-    borderBottomWidth: 1,
+    borderBottomWidth: 1.2,
   },
   backBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
   },
   headerSub: {
     fontSize: 11,
     fontWeight: '600',
   },
   headerTitle: {
-    fontSize: 16,
+    fontSize: 20,
     fontWeight: '800',
     letterSpacing: -0.2,
+    textAlign: 'center',
   },
   pendingBadgeHeader: {
     backgroundColor: '#D97706',

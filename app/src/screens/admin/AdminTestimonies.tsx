@@ -701,7 +701,7 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
       <View
         style={[
           styles.header,
-          { backgroundColor: cardSurface, borderBottomColor: adminBorderColor },
+          { backgroundColor: cardSurface, borderBottomWidth: 1.2, borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1' },
         ]}
       >
         <TouchableOpacity
@@ -714,18 +714,21 @@ export default function AdminTestimonies({ navigation, route, routeParams }: any
               navigation.goBack();
             }
           }}
-          style={[styles.backBtn, { backgroundColor: secondarySurface }]}
+          style={styles.backBtn}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          activeOpacity={0.7}
         >
-          <ArrowLeft size={20} color={primaryText} />
+          <ArrowLeft size={22} color={primaryText} strokeWidth={2.2} />
         </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.headerTitle, { color: primaryText }]}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 }}>
+          <Text style={[styles.headerTitle, { color: primaryText, textAlign: 'center' }]} numberOfLines={1}>
             Testimony Management
           </Text>
-          <Text style={[styles.headerSubtitle, { color: secondaryText }]}>
+          <Text style={[styles.headerSubtitle, { color: secondaryText, textAlign: 'center' }]} numberOfLines={1}>
             Review, approve, publish & safeguard member testimonies
           </Text>
         </View>
+        <View style={{ width: 40, height: 40 }} />
       </View>
 
       {/* Search Bar */}
@@ -1687,7 +1690,6 @@ const styles = StyleSheet.create({
   backBtn: {
     width: 40,
     height: 40,
-    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },

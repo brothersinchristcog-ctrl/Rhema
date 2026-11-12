@@ -326,14 +326,13 @@ export default function MemberNotesScreen({ navigation, route }: any) {
         styles.noteCard, 
         { 
           backgroundColor: isDark ? '#18181B' : '#FFFFFF',
-          borderColor: isSelectionMode && isSelected ? (isDark ? '#FFFFFF' : '#0F172A') : (isDark ? '#27272A' : '#E2E8F0'),
-          borderWidth: isSelectionMode && isSelected ? 2 : 1,
+          borderColor: isSelectionMode && isSelected ? (isDark ? '#FFFFFF' : '#0F172A') : (isDark ? '#3F3F46' : '#CBD5E1'),
+          borderWidth: isSelectionMode && isSelected ? 2 : 1.2,
         }
       ]}>
         <TouchableOpacity 
           style={[
             styles.noteCardBody, 
-            { borderBottomColor: isDark ? '#27272A' : '#F1F5F9' },
             isSelectionMode && { flexDirection: 'row', alignItems: 'center' }
           ]} 
           activeOpacity={0.7}
@@ -360,9 +359,9 @@ export default function MemberNotesScreen({ navigation, route }: any) {
               <Text style={[styles.noteCardTitle, { color: colors.text }]} numberOfLines={1}>
                 {displayTitle}
               </Text>
-              <View style={[styles.dateBadge, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
-                <Calendar size={11} color={colors.textSecondary} />
-                <Text style={[styles.dateText, { color: colors.textSecondary }]}>{item.timestamp}</Text>
+              <View style={styles.dateBadge}>
+                <Calendar size={12} color={isDark ? '#E4E4E7' : '#334155'} />
+                <Text style={[styles.dateText, { color: isDark ? '#E4E4E7' : '#334155' }]}>{item.timestamp}</Text>
               </View>
             </View>
             
@@ -374,7 +373,7 @@ export default function MemberNotesScreen({ navigation, route }: any) {
               </View>
             ) : null}
 
-            <Text style={[styles.noteCardSnippet, { color: colors.textSecondary }]} numberOfLines={3}>
+            <Text style={[styles.noteCardSnippet, { color: isDark ? '#F4F4F5' : '#1E293B' }]} numberOfLines={3}>
               {displayContent || t('memberNotes.noAdditionalText')}
             </Text>
           </View>
@@ -385,8 +384,8 @@ export default function MemberNotesScreen({ navigation, route }: any) {
             styles.cardActionsRow, 
             { 
               backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)',
-              borderTopWidth: 1,
-              borderTopColor: isDark ? '#27272A' : '#F1F5F9'
+              borderTopWidth: 1.2,
+              borderTopColor: isDark ? '#3F3F46' : '#CBD5E1'
             }
           ]}>
             <TouchableOpacity style={styles.actionBtn} onPress={() => openViewMode(item)}>
@@ -422,11 +421,14 @@ export default function MemberNotesScreen({ navigation, route }: any) {
       <View
         style={[
           styles.headerRow,
-          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8 }
+          {
+            paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8,
+            borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1',
+          }
         ]}
       >
         <TouchableOpacity
-          style={[styles.circularBackBtn, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? '#27272A' : '#E2E8F0' }]}
+          style={styles.circularBackBtn}
           onPress={() => {
             if (isSelectionMode) {
               setIsSelectionMode(false);
@@ -476,27 +478,14 @@ export default function MemberNotesScreen({ navigation, route }: any) {
               </Text>
             </TouchableOpacity>
           ) : (
-            <>
-              <TouchableOpacity
-                style={[styles.circularBackBtn, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? '#27272A' : '#E2E8F0' }]}
-                onPress={openCreateForm}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                activeOpacity={0.8}
-              >
-                <Plus size={20} color={colors.text} strokeWidth={2.4} />
-              </TouchableOpacity>
-
-              {notes.length > 0 && (
-                <TouchableOpacity
-                  style={[styles.circularBackBtn, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', borderColor: isDark ? '#27272A' : '#E2E8F0' }]}
-                  onPress={() => setIsMenuOpen(true)}
-                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                  activeOpacity={0.8}
-                >
-                  <MoreVertical size={18} color={colors.text} />
-                </TouchableOpacity>
-              )}
-            </>
+            <TouchableOpacity
+              style={styles.circularBackBtn}
+              onPress={() => setIsMenuOpen(true)}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              activeOpacity={0.8}
+            >
+              <MoreVertical size={20} color={colors.text} />
+            </TouchableOpacity>
           )}
         </View>
       </View>
@@ -592,20 +581,6 @@ export default function MemberNotesScreen({ navigation, route }: any) {
           </View>
         }
       />
-
-      {/* Floating Action Button (FAB) for Add Note */}
-      {!isSelectionMode && (
-        <TouchableOpacity
-          style={[
-            styles.fabBtn,
-            { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' }
-          ]}
-          onPress={openCreateForm}
-          activeOpacity={0.85}
-        >
-          <Plus size={26} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.4} />
-        </TouchableOpacity>
-      )}
 
       {/* Floating Merge Button */}
       {isSelectionMode && selectedNoteIds.length > 1 && (
@@ -888,19 +863,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingBottom: 14,
+    borderBottomWidth: 1.2,
   },
   circularBackBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 5,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
   },
   selectionToggleBtn: {
     paddingHorizontal: 14,
@@ -1000,7 +970,6 @@ const styles = StyleSheet.create({
   },
   noteCardBody: {
     padding: 16,
-    borderBottomWidth: 1,
   },
   cardHeaderRow: {
     flexDirection: 'row',
@@ -1017,14 +986,11 @@ const styles = StyleSheet.create({
   dateBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    gap: 4
+    gap: 5
   },
   dateText: { 
-    fontSize: 10, 
-    fontWeight: '600' 
+    fontSize: 11, 
+    fontWeight: '700' 
   },
   categoryBadge: {
     alignSelf: 'flex-start',
@@ -1044,9 +1010,9 @@ const styles = StyleSheet.create({
     borderWidth: 1
   },
   noteCardSnippet: { 
-    fontSize: 13, 
-    lineHeight: 19, 
-    fontWeight: '500' 
+    fontSize: 13.5, 
+    lineHeight: 20, 
+    fontWeight: '600' 
   },
   cardActionsRow: {
     flexDirection: 'row',
@@ -1100,23 +1066,6 @@ const styles = StyleSheet.create({
   createFirstBtnTxt: { 
     fontSize: 13, 
     fontWeight: '800' 
-  },
-
-  // FAB
-  fabBtn: {
-    position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 36 : 28,
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 4 },
   },
 
   // Floating Merge

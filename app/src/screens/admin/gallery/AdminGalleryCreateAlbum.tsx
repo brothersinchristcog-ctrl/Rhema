@@ -71,23 +71,17 @@ export default function AdminGalleryCreateAlbum() {
           paddingHorizontal: 16,
         }
       ]}>
-        <View style={styles.headerLeft}>
-          <Text style={[styles.newBadge, { color: isDark ? '#FCD34D' : '#D97706' }]}>NEW</Text>
-          <Text style={[styles.headerTitle, { color: primaryText }]}>Create album</Text>
-        </View>
         <TouchableOpacity 
-          style={[
-            styles.closeBtn,
-            {
-              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.10)' : '#F1F5F9',
-              borderColor: isDark ? 'rgba(255, 255, 255, 0.20)' : '#CBD5E1',
-            }
-          ]}
+          style={styles.closeBtn}
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <X size={20} color={primaryText} strokeWidth={2.4} />
+          <X size={22} color={primaryText} strokeWidth={2.4} />
         </TouchableOpacity>
+        <View style={styles.headerCenter}>
+          <Text style={[styles.headerTitle, { color: primaryText }]} numberOfLines={1}>Create Album</Text>
+        </View>
+        <View style={{ width: 40 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
@@ -137,7 +131,7 @@ export default function AdminGalleryCreateAlbum() {
               <Image source={{ uri: coverUri }} style={styles.coverPreview} />
             ) : (
               <View style={styles.uploadPlaceholder}>
-                <View style={[styles.uploadIconContainer, { backgroundColor: isDark ? '#F59E0B' : '#0F172A' }]}>
+                <View style={[styles.uploadIconContainer, { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' }]}>
                   <UploadCloud size={24} color={isDark ? '#000000' : '#FFFFFF'} />
                 </View>
                 <Text style={[styles.uploadMainText, { color: primaryText }]}>Tap to select image</Text>
@@ -154,14 +148,14 @@ export default function AdminGalleryCreateAlbum() {
         paddingBottom: Math.max(insets.bottom, Platform.OS === 'android' ? 28 : 20) + 24,
       }]}>
         <TouchableOpacity 
-          style={[styles.submitBtn, { backgroundColor: isDark ? '#FCD34D' : '#0F172A' }, (!name.trim() || loading) && { opacity: 0.5 }]} 
+          style={[styles.submitBtn, { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' }, (!name.trim() || loading) && { opacity: 0.5 }]} 
           disabled={!name.trim() || loading}
           onPress={handleCreate}
         >
           {loading ? (
-            <ActivityIndicator color={isDark ? '#0b141a' : '#FFFFFF'} />
+            <ActivityIndicator color={isDark ? '#000000' : '#FFFFFF'} />
           ) : (
-            <Text style={[styles.submitBtnText, { color: isDark ? '#0b141a' : '#FFFFFF' }]}>Create Album</Text>
+            <Text style={[styles.submitBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}>Create Album</Text>
           )}
         </TouchableOpacity>
       </View>
@@ -179,8 +173,10 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     alignItems: 'center',
     zIndex: 10,
   },
-  headerLeft: {
+  headerCenter: {
     flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   newBadge: {
     fontSize: 11,
@@ -189,22 +185,16 @@ const styles = createAdminThemedStyles(StyleSheet.create({
     marginBottom: 2,
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '800',
     letterSpacing: -0.3,
+    textAlign: 'center',
   },
   closeBtn: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 2,
-    elevation: 2,
   },
   content: {
     padding: 16,

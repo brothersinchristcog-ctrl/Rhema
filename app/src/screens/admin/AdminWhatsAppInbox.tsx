@@ -214,16 +214,17 @@ export default function AdminWhatsAppInbox() {
   });
 
     const renderInbox = () => (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
       {/* ── Fixed Header ── */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: screenBg, borderBottomWidth: 1.2, borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1' }]}>
         <TouchableOpacity style={styles.circularBackBtn} onPress={() => { if(goBack) { goBack(); } }} activeOpacity={0.7}>
-          <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
+          <ArrowLeft size={22} color={primaryText} strokeWidth={2.2} />
         </TouchableOpacity>
-        <View style={[styles.heroTitles, { marginLeft: 12 }]}>
-          <Text style={styles.headerTitle}>WhatsApp</Text>
-          <Text style={styles.headerSub}>INBOX</Text>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 }}>
+          <Text style={[styles.headerTitle, { color: primaryText, textAlign: 'center' }]}>WhatsApp</Text>
+          <Text style={[styles.headerSub, { color: secondaryText, textAlign: 'center' }]}>INBOX</Text>
         </View>
+        <View style={{ width: 40 }} />
       </View>
       
       <View style={styles.searchContainer}>
@@ -296,20 +297,20 @@ export default function AdminWhatsAppInbox() {
   const renderChat = () => {
     if (!selectedConversation) return null;
         return (
-      <View style={styles.container}>
-        <View style={[styles.header, { paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 16 }]}>
+      <View style={[styles.container, { backgroundColor: screenBg }]}>
+        <View style={[styles.header, { paddingTop: Platform.OS === 'ios' ? 50 : 30, paddingBottom: 14, backgroundColor: screenBg, borderBottomWidth: 1.2, borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1' }]}>
           <TouchableOpacity onPress={() => setSelectedConversation(null)} style={styles.circularBackBtn} activeOpacity={0.7}>
-            <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
+            <ArrowLeft size={22} color={primaryText} strokeWidth={2.2} />
           </TouchableOpacity>
-          <View style={[styles.heroTitles, { marginLeft: 12 }]}>
-            <Text style={[styles.headerTitle, { fontSize: 20 }]} numberOfLines={1}>
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 }}>
+            <Text style={[styles.headerTitle, { fontSize: 19, color: primaryText, textAlign: 'center' }]} numberOfLines={1}>
               {selectedConversation.member ? selectedConversation.member.name : selectedConversation.phone}
             </Text>
-            <Text style={styles.headerSub}>CHAT</Text>
+            <Text style={[styles.headerSub, { color: secondaryText, textAlign: 'center' }]}>CHAT</Text>
           </View>
           <View style={styles.chatHeaderIcons}>
-            <TouchableOpacity><PhoneIcon size={20} color="#fff" style={styles.iconSpaced} /></TouchableOpacity>
-            <TouchableOpacity><MoreVertical size={20} color="#fff" /></TouchableOpacity>
+            <TouchableOpacity><PhoneIcon size={20} color={primaryText} style={styles.iconSpaced} /></TouchableOpacity>
+            <TouchableOpacity><MoreVertical size={20} color={primaryText} /></TouchableOpacity>
           </View>
         </View>
 
@@ -384,17 +385,8 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
   },
   container: {
     flex: 1,
@@ -407,14 +399,12 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   },
   header: { 
     backgroundColor: 'transparent', 
-    paddingTop: Platform.OS === 'ios' ? 50 : 30,
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
+    paddingTop: Platform.OS === 'ios' ? 14 : 12,
+    paddingHorizontal: 16,
+    paddingBottom: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    justifyContent: 'space-between',
     position: 'relative',
     zIndex: 10,
     marginBottom: 0,
@@ -422,8 +412,8 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   backBtn: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 2, paddingVertical: 4, paddingHorizontal: 2 },
   backBtnTxt: { fontSize: 13, fontWeight: '700', color: '#fff' },
   heroTitles: { flex: 1, paddingLeft: 4 },
-  headerTitle: { fontSize: 24, fontWeight: '800', color: '#fff' },
-  headerSub: { fontSize: 11, color: '#F3EAD9', marginTop: 2, letterSpacing: 1.5, fontWeight: '800' },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: '#0F172A', fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif' },
+  headerSub: { fontSize: 11, color: '#64748B', marginTop: 2, letterSpacing: 1.5, fontWeight: '800' },
   inboxHeaderIcons: {
     flexDirection: 'row',
     alignItems: 'center',

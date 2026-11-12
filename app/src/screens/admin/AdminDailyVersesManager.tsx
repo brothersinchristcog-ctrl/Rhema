@@ -1,96 +1,83 @@
 import React, { useContext } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Platform } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { ChevronLeft , ArrowLeft } from 'lucide-react-native';
+import { ArrowLeft } from 'lucide-react-native';
 import { AdminTabContext } from '../../context/AdminTabContext';
 import SuperAdminVersesManager from './SuperAdminVersesManager';
 import { useAdminTheme, createAdminThemedStyles } from '../../utils/adminThemeHelper';
 
 export default function AdminDailyVersesManager() {
-  const { isDark, colors: adminColors, screenBg, cardSurface, secondarySurface, primaryText, secondaryText, borderColor: adminBorderColor, appFontFamily, barStyle, scaleFont } = useAdminTheme();
+  const { isDark, screenBg, primaryText, secondaryText, barStyle } = useAdminTheme();
   const { goBack, setTabByName } = useContext(AdminTabContext);
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B1120" />
+    <View style={[styles.safeArea, { backgroundColor: screenBg }]}>
+      <StatusBar barStyle={barStyle} backgroundColor={screenBg} />
       {/* Top Header Bar */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: screenBg, borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1' }]}>
         <TouchableOpacity
           onPress={() => (goBack ? goBack() : setTabByName?.('Dashboard'))}
           style={styles.backBtn}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           activeOpacity={0.8}
         >
-          <ArrowLeft size={20} color="#F8FAFC" strokeWidth={2.2} />
+          <ArrowLeft size={22} color={primaryText} strokeWidth={2.2} />
         </TouchableOpacity>
         <View style={styles.headerTitleWrap}>
-          <Text style={styles.headerTitle}>Daily Verses Manager</Text>
-          <Text style={styles.headerSubtitle}>5,863 Automated Scripture Verses · 4 Slots/Day</Text>
+          <Text style={[styles.headerTitle, { color: primaryText }]} numberOfLines={1}>Daily Verses Manager</Text>
+          <Text style={[styles.headerSubtitle, { color: secondaryText }]} numberOfLines={1}>5,863 Automated Scripture Verses · 4 Slots/Day</Text>
         </View>
+        <View style={{ width: 40, height: 40 }} />
       </View>
 
       {/* Main Fully-Scrollable Verses Manager */}
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, backgroundColor: screenBg }}>
         <SuperAdminVersesManager />
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = createAdminThemedStyles(StyleSheet.create({
-  circularBackBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
   safeArea: {
     flex: 1,
-    backgroundColor: '#0B1120',
+    backgroundColor: '#FFFFFF',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1E293B',
-    backgroundColor: '#0B1120',
+    paddingTop: 4,
+    paddingBottom: 10,
+    borderBottomWidth: 1.2,
+    borderBottomColor: '#CBD5E1',
+    backgroundColor: 'transparent',
   },
   backBtn: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: '#1E293B',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
-    borderWidth: 1,
-    borderColor: '#334155',
   },
   headerTitleWrap: {
     flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '800',
-    color: '#F8FAFC',
+    color: '#0F172A',
     letterSpacing: 0.3,
+    textAlign: 'center',
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
   },
   headerSubtitle: {
     fontSize: 11,
-    color: '#94A3B8',
+    color: '#64748B',
     marginTop: 2,
     fontWeight: '500',
+    textAlign: 'center',
   },
 }));

@@ -339,18 +339,11 @@ export default function AdminChurchSettings({ navigation }: any) {
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <TouchableOpacity
               onPress={goBack}
-              style={[
-                styles.circularBackBtn,
-                {
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#FFFFFF',
-                  borderColor: isDark ? 'rgba(255, 255, 255, 0.3)' : '#CBD5E1',
-                  borderWidth: 1.5,
-                }
-              ]}
+              style={styles.circularBackBtn}
               activeOpacity={0.7}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.4} />
+              <ArrowLeft size={22} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.4} />
             </TouchableOpacity>
 
             <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 }}>
@@ -1548,17 +1541,8 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 2,
-    elevation: 2,
   },
   container: { flex: 1, backgroundColor: '#EDE8DC' },
   hero: {

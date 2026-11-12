@@ -449,20 +449,24 @@ export default function EventsScreen({ navigation }: any) {
       <StatusBar barStyle={colors.barStyle || (isDark ? 'light-content' : 'dark-content')} backgroundColor={colors.background} />
       
       {/* ── Page Header ── */}
-            {/* ── Screen Header (Clean circular back button & title) ── */}
+            {/* ── Screen Header ── */}
       <View
         style={[
           styles.headerRow,
-          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8 }
+          {
+            paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8,
+            borderBottomWidth: 1.2,
+            borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1',
+          }
         ]}
       >
         <TouchableOpacity
-          style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          style={styles.circularBackBtn}
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          activeOpacity={0.8}
+          activeOpacity={0.7}
         >
-          <ArrowLeft size={20} color={colors.text} strokeWidth={2.4} />
+          <ArrowLeft size={22} color={colors.text} strokeWidth={2.4} />
         </TouchableOpacity>
 
         <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
@@ -577,15 +581,9 @@ const styles = StyleSheet.create({
   circularBackBtn: {
     width: 44,
     height: 44,
-    borderRadius: 22,
     justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
+    alignItems: 'flex-start',
+    backgroundColor: 'transparent',
   },
   headerTitleText: {
     fontSize: 20,

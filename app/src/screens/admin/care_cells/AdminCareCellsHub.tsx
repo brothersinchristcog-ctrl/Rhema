@@ -122,28 +122,26 @@ export default function AdminCareCellsHub() {
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={screenBg} />
 
-      {/* Hero Header (Transparent with Standard Circular Back Button) */}
-      <View style={styles.heroHeader}>
-        <View style={styles.headerLeft}>
-          <TouchableOpacity
-            onPress={handleBack}
-            style={[styles.circularBackBtn, { backgroundColor: cardSurface, borderColor }]}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            activeOpacity={0.7}
-          >
-            <ArrowLeft size={20} color={primaryText} strokeWidth={2.2} />
-          </TouchableOpacity>
+      {/* Hero Header */}
+      <View style={[styles.heroHeader, { borderBottomWidth: 1.2, borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1' }]}>
+        <TouchableOpacity
+          onPress={handleBack}
+          style={styles.circularBackBtn}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          activeOpacity={0.7}
+        >
+          <ArrowLeft size={22} color={primaryText} strokeWidth={2.2} />
+        </TouchableOpacity>
 
-          <View style={styles.headerTitleWrap}>
-            <Text style={styles.headerTitle}>Care Cells</Text>
-            <Text style={styles.headerSubtitle}>
-              {activeCellsCount} active fellowship {activeCellsCount === 1 ? 'group' : 'groups'}
-            </Text>
-          </View>
+        <View style={styles.headerTitleWrap}>
+          <Text style={[styles.headerTitle, { color: primaryText, textAlign: 'center' }]}>Care Cells</Text>
+          <Text style={[styles.headerSubtitle, { color: secondaryText, textAlign: 'center' }]}>
+            {activeCellsCount} active fellowship {activeCellsCount === 1 ? 'group' : 'groups'}
+          </Text>
         </View>
 
         {/* Quick Add Button (Super Admin Only) */}
-        {isPlatformSuperAdmin && (
+        {isPlatformSuperAdmin ? (
           <TouchableOpacity
             style={[styles.quickAddHeaderBtn, { backgroundColor: primaryBtnBg }]}
             onPress={() => {
@@ -155,6 +153,8 @@ export default function AdminCareCellsHub() {
             <Plus size={16} color={primaryBtnText} strokeWidth={2.5} style={{ marginRight: 5 }} />
             <Text style={[styles.quickAddHeaderBtnTxt, { color: primaryBtnText }]}>New Cell</Text>
           </TouchableOpacity>
+        ) : (
+          <View style={{ width: 42, height: 42 }} />
         )}
       </View>
 
@@ -344,21 +344,14 @@ const styles = createAdminThemedStyles({
   circularBackBtn: {
     width: 42,
     height: 42,
-    borderRadius: 21,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
   },
   headerTitleWrap: {
+    flex: 1,
+    alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 8,
   },
   headerTitle: {
     fontSize: 22,

@@ -1115,10 +1115,10 @@ export default function TestimoniesScreen({ route, navigation }: any) {
         backgroundColor={themeBg}
       />
 
-      {/* ── Screen Header (Clean circular back button & title matching other Member tabs) ── */}
-      <View style={[styles.headerRow, { borderBottomColor: borderColor }]}>
+      {/* ── Screen Header ── */}
+      <View style={[styles.headerRow, { borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1' }]}>
         <TouchableOpacity
-          style={[styles.circularBackBtn, { backgroundColor: cardBg, borderColor }]}
+          style={styles.circularBackBtn}
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           activeOpacity={0.8}
@@ -1956,28 +1956,28 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderBottomWidth: 1.2,
   },
   circularBackBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
   },
   headerTitleText: {
     flex: 1,
     textAlign: 'center',
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '800',
     letterSpacing: -0.2,
   },
   headerRightSpacer: {
-    width: 42,
-    height: 42,
+    width: 40,
+    height: 40,
   },
   // Segmented Tabs Container (Matches Prayer & Care Cell Tabs)
   tabsContainer: {

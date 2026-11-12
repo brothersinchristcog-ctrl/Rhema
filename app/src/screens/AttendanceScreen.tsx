@@ -19,10 +19,11 @@ import {
   RefreshControl,
   Animated,
   Easing,
+  PanResponder,
   Vibration,
   KeyboardAvoidingView
 } from 'react-native';
-import Svg, { Circle } from 'react-native-svg';
+import Svg, { Circle, Path } from 'react-native-svg';
 import { 
   ArrowLeft, 
   Search, 
@@ -181,6 +182,45 @@ export default function AttendanceScreen({ navigation, route }: any) {
   const [familyModalList, setFamilyModalList] = useState<FamilyMemberItem[]>([]);
   const [familyModalLoading, setFamilyModalLoading] = useState(false);
   const cachedChurchMembersRef = useRef<any[]>([]);
+  const familySheetTranslateY = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (familyModalMember) {
+      familySheetTranslateY.setValue(0);
+    }
+  }, [familyModalMember, familySheetTranslateY]);
+
+  const familySheetPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) =>
+        gestureState.dy > 4 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx),
+      onPanResponderMove: (_, gestureState) => {
+        if (gestureState.dy > 0) {
+          familySheetTranslateY.setValue(gestureState.dy);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dy > 70 || gestureState.vy > 0.6) {
+          Animated.timing(familySheetTranslateY, {
+            toValue: 480,
+            duration: 180,
+            easing: Easing.out(Easing.quad),
+            useNativeDriver: true,
+          }).start(() => {
+            setFamilyModalMember(null);
+            familySheetTranslateY.setValue(0);
+          });
+        } else {
+          Animated.spring(familySheetTranslateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            bounciness: 4,
+          }).start();
+        }
+      },
+    })
+  ).current;
 
   // QR Scanning State
   const insets = useSafeAreaInsets();
@@ -191,7 +231,14 @@ export default function AttendanceScreen({ navigation, route }: any) {
   const [hasScanned, setHasScanned] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const scanAnim = useRef(new Animated.Value(0)).current;
-  const SCAN_FRAME_SIZE = Math.min(width * 0.72, 270);
+  const reticlePulseAnim = useRef(new Animated.Value(0)).current;
+  const greenDotBlinkAnim = useRef(new Animated.Value(1)).current;
+  const SCAN_FRAME_SIZE = Math.round(Math.min(width * 0.78, 300));
+  const [scannerScreenSize, setScannerScreenSize] = useState(() => {
+    const win = Dimensions.get('window');
+    return { w: win.width, h: win.height };
+  });
+  const [scannerMiddleY, setScannerMiddleY] = useState<number | null>(null);
   const [isDecoding, setIsDecoding] = useState(false);
   const [decodingMessage, setDecodingMessage] = useState('Analyzing QR Code...');
   const [manualCodeModal, setManualCodeModal] = useState(false);
@@ -320,12 +367,36 @@ export default function AttendanceScreen({ navigation, route }: any) {
     }, 3200);
   };
 
-  // Scanner laser line animation
+  // Blinking green dot animation for "Attendance open · Pending"
+  useEffect(() => {
+    const blinkLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(greenDotBlinkAnim, {
+          toValue: 0.3,
+          duration: 650,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(greenDotBlinkAnim, {
+          toValue: 1,
+          duration: 650,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    blinkLoop.start();
+    return () => blinkLoop.stop();
+  }, [greenDotBlinkAnim]);
+
+  // Scanner laser line & corner reticle pulse animation
   useEffect(() => {
     if (showLiveScanner) {
       setHasScanned(false);
       setIsTorchOn(false);
       scanAnim.setValue(0);
+      reticlePulseAnim.setValue(0);
+
       const loop = Animated.loop(
         Animated.sequence([
           Animated.timing(scanAnim, {
@@ -342,10 +413,32 @@ export default function AttendanceScreen({ navigation, route }: any) {
           }),
         ])
       );
+
+      const pulseLoop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(reticlePulseAnim, {
+            toValue: 1,
+            duration: 850,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(reticlePulseAnim, {
+            toValue: 0,
+            duration: 850,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ])
+      );
+
       loop.start();
-      return () => loop.stop();
+      pulseLoop.start();
+      return () => {
+        loop.stop();
+        pulseLoop.stop();
+      };
     }
-  }, [showLiveScanner]);
+  }, [showLiveScanner, scanAnim, reticlePulseAnim]);
 
   // Warm up device GPS location when scanner is opened
   useEffect(() => {
@@ -2658,19 +2751,19 @@ export default function AttendanceScreen({ navigation, route }: any) {
     );
   }, [churchId, churchName, churchCode, activeEvent]);
 
-  // Adaptive dark / light theme tokens for Attendance & nested modals
+  // Adaptive dark / light theme tokens for Attendance & nested modals (pure neutral darks in dark mode, no blue tint)
   const att = {
-    bg: colors.background,
-    surface: isDark ? '#14161D' : colors.surface || '#FFFFFF',
-    surfaceAlt: isDark ? '#1C202B' : '#F8FAFC',
-    trackBg: isDark ? '#14161D' : '#EAEFF5',
-    tabActiveBg: isDark ? '#252A38' : '#FFFFFF',
-    pillActiveBg: isDark ? '#F8FAFC' : '#0F172A',
-    pillActiveTxt: isDark ? '#0F172A' : '#FFFFFF',
-    border: isDark ? 'rgba(255, 255, 255, 0.10)' : colors.border || '#E2E8F0',
-    borderSubtle: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
-    text: colors.text,
-    textMuted: isDark ? '#94A3B8' : colors.textSecondary || '#64748B',
+    bg: isDark ? '#000000' : colors.background,
+    surface: isDark ? '#141414' : '#FFFFFF',
+    surfaceAlt: isDark ? '#1F1F1F' : '#F8FAFC',
+    trackBg: isDark ? '#27272A' : '#27272A',
+    tabActiveBg: isDark ? '#141414' : '#FFFFFF',
+    pillActiveBg: isDark ? '#FFFFFF' : '#0F172A',
+    pillActiveTxt: isDark ? '#000000' : '#FFFFFF',
+    border: isDark ? '#262626' : '#CBD5E1',
+    borderSubtle: isDark ? '#1F1F1F' : '#E2E8F0',
+    text: isDark ? '#FFFFFF' : colors.text || '#0F172A',
+    textMuted: isDark ? '#A1A1AA' : colors.textSecondary || '#64748B',
     accent: colors.accent || (isDark ? '#38BDF8' : '#2563EB'),
     amber: isDark ? '#FBBF24' : '#B45309',
     amberDot: isDark ? '#FBBF24' : '#D97706',
@@ -2688,9 +2781,9 @@ export default function AttendanceScreen({ navigation, route }: any) {
     purpleBg: isDark ? 'rgba(139, 92, 246, 0.16)' : '#F5F3FF',
     purpleBorder: isDark ? 'rgba(167, 139, 250, 0.35)' : '#DDD6FE',
     blue: isDark ? '#60A5FA' : '#1D4ED8',
-    blueBg: isDark ? 'rgba(59, 130, 246, 0.16)' : '#EFF6FF',
-    blueBorder: isDark ? 'rgba(96, 165, 250, 0.35)' : '#BFDBFE',
-    trackRing: isDark ? '#27272A' : '#E2E8F0',
+    blueBg: isDark ? 'rgba(255, 255, 255, 0.08)' : '#EFF6FF',
+    blueBorder: isDark ? '#2E2E2E' : '#BFDBFE',
+    trackRing: isDark ? '#262626' : '#D4D4D8',
     progressRing: isDark ? '#2DD4BF' : '#0D9488',
     goldCtaBg: isDark ? '#F59E0B' : '#E2A925',
   };
@@ -2785,6 +2878,9 @@ export default function AttendanceScreen({ navigation, route }: any) {
   const renderEventCard = (eventItem: EventItem, isCarousel = false) => {
     const isMarked = isEventAttendanceMarked(eventItem);
     const eventLocation = eventItem.location || (eventItem as any).venueEn || (eventItem as any).venue || (eventItem as any).address || churchName;
+    const ashBorderColor = isDark ? '#3F3F46' : '#CBD5E1';
+    const scanBtnBg = isDark ? '#F5F5F4' : '#09090B';
+    const scanBtnFg = isDark ? '#09090B' : '#FFFFFF';
 
     return (
       <View 
@@ -2794,13 +2890,13 @@ export default function AttendanceScreen({ navigation, route }: any) {
           isCarousel && { width: width - 40, marginBottom: 0 },
           {
             backgroundColor: att.surface,
-            borderColor: isMarked ? att.greenBorder : att.amberBorder,
-            borderWidth: isMarked ? 1.2 : 1.5,
+            borderColor: isMarked ? att.greenBorder : ashBorderColor,
+            borderWidth: 1.2,
           },
           isDark && { shadowOpacity: 0.35 },
         ]}
       >
-        {/* Top row badge */}
+        {/* Top row status */}
         <View style={styles.cardBadgeRow}>
           {isMarked ? (
             <View style={[styles.attendanceCompletedBadge, { backgroundColor: att.greenBg, borderWidth: 1, borderColor: att.greenBorder }]}>
@@ -2808,9 +2904,20 @@ export default function AttendanceScreen({ navigation, route }: any) {
               <Text style={[styles.attendanceCompletedBadgeTxt, { color: att.green }]}>Attendance Marked</Text>
             </View>
           ) : (
-            <View style={[styles.attendanceOpenBadge, { backgroundColor: att.amberBg, borderWidth: 1, borderColor: att.amberBorder }]}>
-              <View style={[styles.orangeDot, { backgroundColor: att.amberDot }]} />
-              <Text style={[styles.attendanceOpenTxt, { color: att.amber }]}>Attendance open · Pending</Text>
+            <View style={styles.attendanceOpenInlineRow}>
+              <Animated.View
+                style={[
+                  styles.blinkingGreenDot,
+                  {
+                    backgroundColor: isDark ? '#22C55E' : '#16A34A',
+                    borderColor: isDark ? 'rgba(74, 222, 128, 0.4)' : 'rgba(21, 128, 61, 0.3)',
+                    opacity: greenDotBlinkAnim,
+                  },
+                ]}
+              />
+              <Text style={[styles.attendanceOpenTxt, { color: isDark ? '#D4D4D8' : '#334155' }]}>
+                Attendance open · Pending
+              </Text>
             </View>
           )}
         </View>
@@ -2849,7 +2956,21 @@ export default function AttendanceScreen({ navigation, route }: any) {
           ) : (
             <>
               <TouchableOpacity
-                style={[styles.scanAttendanceBtn, { backgroundColor: att.goldCtaBg }]}
+                style={[
+                  styles.scanAttendanceBtn,
+                  {
+                    backgroundColor: scanBtnBg,
+                    borderWidth: 1,
+                    borderColor: isDark ? '#E7E5E4' : '#27272A',
+                  },
+                  !isDark && {
+                    shadowColor: '#000',
+                    shadowOpacity: 0.22,
+                    shadowRadius: 6,
+                    shadowOffset: { width: 0, height: 3 },
+                    elevation: 4,
+                  },
+                ]}
                 onPress={() => {
                   setSelectedEventForScan(eventItem);
                   setHasScanned(false);
@@ -2857,8 +2978,13 @@ export default function AttendanceScreen({ navigation, route }: any) {
                 }}
                 activeOpacity={0.85}
               >
-                <QrCode size={18} color="#0F172A" strokeWidth={2.4} />
-                <Text style={styles.scanAttendanceBtnTxt} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                <QrCode size={18} color={scanBtnFg} strokeWidth={2.4} />
+                <Text
+                  style={[styles.scanAttendanceBtnTxt, { color: scanBtnFg }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.8}
+                >
                   Scan QR to mark attendance
                 </Text>
               </TouchableOpacity>
@@ -2882,23 +3008,26 @@ export default function AttendanceScreen({ navigation, route }: any) {
       <StatusBar barStyle={colors.barStyle || (isDark ? 'light-content' : 'dark-content')} backgroundColor="transparent" translucent />
 
       {/* ── Top Header ── */}
-            {/* ── Screen Header (Clean circular back button & title) ── */}
       <View
         style={[
           styles.headerRow,
-          { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8 }
+          {
+            paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8,
+            borderBottomWidth: 1.2,
+            borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1',
+          }
         ]}
       >
         <TouchableOpacity
-          style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          style={styles.circularBackBtn}
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          activeOpacity={0.8}
+          activeOpacity={0.7}
         >
-          <ArrowLeft size={20} color={colors.text} strokeWidth={2.4} />
+          <ArrowLeft size={22} color={att.text} strokeWidth={2.4} />
         </TouchableOpacity>
 
-        <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
+        <Text style={[styles.headerTitleText, { color: att.text }]} numberOfLines={1}>
           {activeTab === 'My attendance' ? 'My Attendance' : activeTab === 'Events' ? 'Events' : 'Attendance'}
         </Text>
 
@@ -2906,20 +3035,31 @@ export default function AttendanceScreen({ navigation, route }: any) {
       </View>
 
       {/* ── Segmented Navigation Pill Bar: Home | My attendance | Events ── */}
-      <View style={[styles.tabTrack, { backgroundColor: att.trackBg, borderWidth: 1, borderColor: att.border }]}>
+      <View
+        style={[
+          styles.tabTrack,
+          {
+            backgroundColor: att.trackBg,
+            borderWidth: 1.5,
+            borderColor: isDark ? '#3F3F46' : '#52525B',
+            marginHorizontal: width < 360 ? 14 : 20,
+          },
+        ]}
+      >
         {(['Home', 'My attendance', 'Events'] as MainTab[]).map(tabKey => {
           const isActive = activeTab === tabKey;
+          const isMiddleLongTab = tabKey === 'My attendance';
           return (
             <TouchableOpacity
               key={tabKey}
               style={[
                 styles.tabPill,
+                { flex: isMiddleLongTab ? 1.35 : 1 },
                 isActive && [
                   styles.tabPillActive,
                   {
                     backgroundColor: att.tabActiveBg,
-                    borderWidth: 1,
-                    borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(15, 23, 42, 0.06)',
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : '#E4E4E7',
                   },
                 ],
               ]}
@@ -2927,11 +3067,18 @@ export default function AttendanceScreen({ navigation, route }: any) {
               activeOpacity={0.8}
             >
               <Text
+                 {...({ skipFontSizeScaling: true } as any)}
+                maxFontSizeMultiplier={1.1}
                 style={[
                   styles.tabPillTxt,
-                  { color: isActive ? att.text : att.textMuted },
+                  width < 380 && { fontSize: 12.5 },
+                  width < 350 && { fontSize: 11.5 },
                   isActive && styles.tabPillTxtActive,
+                  { color: isActive ? (isDark ? '#FFFFFF' : '#09090B') : '#E4E4E7' },
                 ]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.82}
               >
                 {tabKey}
               </Text>
@@ -2945,7 +3092,10 @@ export default function AttendanceScreen({ navigation, route }: any) {
           ──────────────────────────────────────────────────────────────────────── */}
       {activeTab === 'Home' && (
         <ScrollView 
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: Math.max(insets.bottom, 36) + 72 },
+          ]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -2960,7 +3110,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
           {/* Today's Events Section */}
           {todayEvents.length === 0 ? (
             /* No Events Scheduled for Today Card */
-            <View style={[styles.noEventsTodayCard, { backgroundColor: att.surface, borderColor: att.border }]}>
+            <View style={[styles.noEventsTodayCard, { backgroundColor: att.surface, borderColor: att.border, borderWidth: 1.2 }]}>
               <View style={[styles.noEventsIconCircle, { backgroundColor: att.blueBg }]}>
                 <Calendar size={22} color={att.blue} />
               </View>
@@ -3053,7 +3203,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
 
           {/* Your Monthly Progress */}
           <Text style={[styles.sectionHeaderTitle, { color: att.text }]}>Your Monthly Progress</Text>
-          <View style={[styles.progressCard, { backgroundColor: att.surface, borderColor: att.border }]}>
+          <View style={[styles.progressCard, { backgroundColor: att.surface, borderColor: isDark ? '#3F3F46' : '#CBD5E1', borderWidth: 1.2 }]}>
             {renderCircularProgress(monthlyStats.percentage)}
             <View style={{ flex: 1 }}>
               <Text style={[styles.progressEventCountTxt, { color: att.text }]}>
@@ -3119,7 +3269,10 @@ export default function AttendanceScreen({ navigation, route }: any) {
           ──────────────────────────────────────────────────────────────────────── */}
       {activeTab === 'My attendance' && (
         <ScrollView 
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: Math.max(insets.bottom, 36) + 72 },
+          ]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -3160,7 +3313,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
           </View>
 
           {/* Progress Card (Dynamically computed for selected period) */}
-          <View style={[styles.progressCard, { marginTop: 4, marginBottom: 20, backgroundColor: att.surface, borderColor: att.border }]}>
+          <View style={[styles.progressCard, { marginTop: 4, marginBottom: 20, backgroundColor: att.surface, borderColor: isDark ? '#3F3F46' : '#CBD5E1', borderWidth: 1.2 }]}>
             {renderCircularProgress(periodData.percentage)}
             <View style={{ flex: 1 }}>
               <Text style={[styles.progressEventCountTxt, { color: att.text }]}>
@@ -3219,7 +3372,10 @@ export default function AttendanceScreen({ navigation, route }: any) {
           ──────────────────────────────────────────────────────────────────────── */}
       {activeTab === 'Events' && (
         <ScrollView 
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: Math.max(insets.bottom, 36) + 72 },
+          ]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -3312,24 +3468,23 @@ export default function AttendanceScreen({ navigation, route }: any) {
           <StatusBar barStyle={colors.barStyle || (isDark ? 'light-content' : 'dark-content')} backgroundColor={att.bg} />
           
           {/* Header */}
-          <View style={[styles.rosterHeader, { borderBottomColor: att.borderSubtle }]}>
+          <View style={[styles.rosterHeader, { borderBottomColor: att.border }]}>
             <TouchableOpacity 
-              style={[styles.backCircleBtn, { backgroundColor: att.surfaceAlt, borderWidth: 1, borderColor: att.border }]} 
+              style={styles.backCircleBtn} 
               onPress={() => setShowAttendeesModal(false)}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              activeOpacity={0.7}
             >
-              <ArrowLeft size={20} color={att.text} />
+              <ArrowLeft size={22} color={att.text} strokeWidth={2.4} />
             </TouchableOpacity>
 
             <View style={styles.rosterHeaderInfo}>
               <Text style={[styles.rosterHeaderTitle, { color: att.text }]} numberOfLines={1}>
                 {selectedEventForList?.title || 'Attendees'}
               </Text>
-              <Text style={[styles.rosterHeaderSub, { color: att.textMuted }]}>
-                {selectedEventForList?.dateStr || ''}
-              </Text>
             </View>
 
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={{ width: 40, alignItems: 'flex-end', justifyContent: 'center' }}>
               {!(selectedEventForList && isEventAttendanceMarked(selectedEventForList)) && (
                 <TouchableOpacity 
                   style={[styles.rosterQrBtn, { backgroundColor: att.surface, borderColor: att.border }]}
@@ -3344,6 +3499,37 @@ export default function AttendanceScreen({ navigation, route }: any) {
                 </TouchableOpacity>
               )}
             </View>
+          </View>
+
+          {/* Event Overview & Attendance History Info Card (Above Search Bar) */}
+          <View
+            style={[
+              styles.rosterEventInfoCard,
+              {
+                backgroundColor: att.surface,
+                borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+              },
+            ]}
+          >
+            <Text style={[styles.rosterEventInfoDesc, { color: att.textMuted }]}>
+              Attendance record for{' '}
+              <Text style={{ fontWeight: '700', color: att.text }}>
+                {selectedEventForList?.title || 'this event'}
+              </Text>
+              . Complete member check-in status and attendance history for this session are available here.
+            </Text>
+
+            {Boolean(selectedEventForList?.dateStr || selectedEventForList?.timeStr) && (
+              <View style={[styles.rosterEventDateRow, { borderTopColor: att.borderSubtle }]}>
+                <Calendar size={13.5} color={att.text} strokeWidth={2.2} />
+                <Text style={[styles.rosterEventDateTxt, { color: att.text }]}>
+                  {selectedEventForList?.dateStr || ''}
+                  {selectedEventForList?.dateStr && selectedEventForList?.timeStr
+                    ? ` · ${selectedEventForList.timeStr}`
+                    : selectedEventForList?.timeStr || ''}
+                </Text>
+              </View>
+            )}
           </View>
 
           {/* Search bar */}
@@ -3486,8 +3672,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
           activeOpacity={1} 
           onPress={() => setFamilyModalMember(null)}
         >
-          <TouchableOpacity 
-            activeOpacity={1} 
+          <Animated.View
             style={[
               styles.familyPopupCard,
               {
@@ -3495,42 +3680,47 @@ export default function AttendanceScreen({ navigation, route }: any) {
                 borderTopWidth: 1,
                 borderColor: att.border,
                 paddingBottom: Math.max(insets.bottom, 16) + 12,
+                transform: [{ translateY: familySheetTranslateY }],
               },
             ]}
-            onPress={e => e.stopPropagation()}
+            onStartShouldSetResponder={() => true}
           >
-            {/* Top Handle bar */}
-            <View style={[styles.modalHandle, { backgroundColor: att.border }]} />
-
-            {/* Header with Member Info & Close button */}
-            <View style={styles.familyPopupHeader}>
-              <AttendeeAvatar
-                profilePicture={familyModalMember?.profilePicture}
-                name={familyModalMember?.name || 'Member'}
-                firstName={familyModalMember?.firstName}
-                lastName={familyModalMember?.lastName}
-              />
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={[styles.familyPopupTitle, { color: att.text }]} numberOfLines={1}>
-                  {familyModalMember?.name}
-                </Text>
-                <Text style={[styles.familyPopupSub, { color: att.textMuted }]}>
-                  {familyModalMember?.isGuest 
-                    ? `Guest Attendee · ${familyModalMember.status}`
-                    : `Family Members · ${familyModalMember?.status || 'Member'}`}
-                </Text>
+            {/* Drag Handle & Header Zone (Swipe down to close) */}
+            <View {...familySheetPanResponder.panHandlers}>
+              <View style={styles.modalHandleTouchArea}>
+                <View style={[styles.modalHandle, { backgroundColor: att.border }]} />
               </View>
-              <TouchableOpacity
-                style={[styles.familyPopupCloseBtn, { backgroundColor: att.surfaceAlt }]}
-                onPress={() => setFamilyModalMember(null)}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <X size={18} color={att.textMuted} />
-              </TouchableOpacity>
+
+              {/* Header with Member Info & Close button */}
+              <View style={styles.familyPopupHeader}>
+                <AttendeeAvatar
+                  profilePicture={familyModalMember?.profilePicture}
+                  name={familyModalMember?.name || 'Member'}
+                  firstName={familyModalMember?.firstName}
+                  lastName={familyModalMember?.lastName}
+                />
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={[styles.familyPopupTitle, { color: att.text }]} numberOfLines={1}>
+                    {familyModalMember?.name}
+                  </Text>
+                  <Text style={[styles.familyPopupSub, { color: att.textMuted }]}>
+                    {familyModalMember?.isGuest 
+                      ? `Guest Attendee · ${familyModalMember.status}`
+                      : `Family Members · ${familyModalMember?.status || 'Member'}`}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.familyPopupCloseBtn, { backgroundColor: isDark ? '#262626' : '#F4F4F5' }]}
+                  onPress={() => setFamilyModalMember(null)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <X size={18} color={isDark ? '#E4E4E7' : '#18181B'} />
+                </TouchableOpacity>
+              </View>
             </View>
 
             {/* Event Name Tag */}
-            <View style={[styles.familyPopupEventBadge, { backgroundColor: att.surfaceAlt, borderColor: att.border }]}>
+            <View style={[styles.familyPopupEventBadge, { backgroundColor: isDark ? '#1F1F1F' : '#FFFFFF', borderColor: att.border }]}>
               <Calendar size={13} color={att.text} style={{ marginRight: 6 }} />
               <Text style={[styles.familyPopupEventText, { color: att.text }]} numberOfLines={1}>
                 {selectedEventForList?.title || 'Event'} Attendance
@@ -3587,7 +3777,17 @@ export default function AttendanceScreen({ navigation, route }: any) {
                     : '';
 
                   return (
-                    <View key={fam.id || idx} style={[styles.familyPopupMemberCard, { backgroundColor: att.surfaceAlt, borderColor: att.border }]}>
+                    <View
+                      key={fam.id || idx}
+                      style={[
+                        styles.familyPopupMemberCard,
+                        {
+                          backgroundColor: isDark ? '#1F1F1F' : '#FFFFFF',
+                          borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+                          borderWidth: 1.2,
+                        },
+                      ]}
+                    >
                       <AttendeeAvatar
                         profilePicture={fam.profilePicture}
                         name={fam.name}
@@ -3595,11 +3795,6 @@ export default function AttendanceScreen({ navigation, route }: any) {
                       <View style={{ flex: 1, marginLeft: 12, marginRight: 8 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
                           <Text style={[styles.familyPopupMemberName, { color: att.text }]} numberOfLines={1}>{fam.name}</Text>
-                          {Boolean(fam.relation) && (
-                            <View style={[styles.familyRelationPill, { backgroundColor: att.blueBg }]}>
-                              <Text style={[styles.familyRelationPillTxt, { color: att.blue }]}>{fam.relation}</Text>
-                            </View>
-                          )}
                         </View>
                         {Boolean(fam.phone) && (
                           <Text style={[styles.familyPopupMemberPhone, { color: att.textMuted }]}>{fam.phone}</Text>
@@ -3624,13 +3819,13 @@ export default function AttendanceScreen({ navigation, route }: any) {
 
             {/* Bottom Close Button */}
             <TouchableOpacity
-              style={[styles.familyPopupDoneBtn, { backgroundColor: isDark ? '#F8FAFC' : '#1a2d5a' }]}
+              style={[styles.familyPopupDoneBtn, { backgroundColor: isDark ? '#F8FAFC' : '#09090B' }]}
               onPress={() => setFamilyModalMember(null)}
               activeOpacity={0.85}
             >
-              <Text style={[styles.familyPopupDoneBtnTxt, { color: isDark ? '#0F172A' : '#ffffff' }]}>Close</Text>
+              <Text style={[styles.familyPopupDoneBtnTxt, { color: isDark ? '#0F172A' : '#FFFFFF' }]}>Close</Text>
             </TouchableOpacity>
-          </TouchableOpacity>
+          </Animated.View>
         </TouchableOpacity>
       </Modal>
 
@@ -3647,51 +3842,51 @@ export default function AttendanceScreen({ navigation, route }: any) {
           setIsTorchOn(false);
         }}
       >
-        <View style={styles.liveScannerContainer}>
+        <View style={[styles.liveScannerContainer, { backgroundColor: '#000000' }]}>
           <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
           {!cameraPermission?.granted ? (
             // Permission Request State
-            <View style={[styles.scannerPermissionWrap, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 }]}>
+            <View style={[styles.scannerPermissionWrap, { backgroundColor: '#000000', paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 }]}>
               <TouchableOpacity 
-                style={styles.scannerPermCloseBtn} 
+                style={[styles.scannerPermCloseBtn, { backgroundColor: '#1F1F1F', borderWidth: 1, borderColor: '#3F3F46' }]} 
                 onPress={() => setShowLiveScanner(false)}
                 activeOpacity={0.8}
               >
-                <X size={22} color="#ffffff" />
+                <X size={22} color="#FFFFFF" />
               </TouchableOpacity>
 
-              <View style={styles.scannerPermCard}>
-                <View style={styles.scannerPermIconBox}>
-                  <Camera size={38} color="#E2A925" strokeWidth={2.2} />
+              <View style={[styles.scannerPermCard, { backgroundColor: '#141414', borderColor: '#262626', borderWidth: 1.2 }]}>
+                <View style={[styles.scannerPermIconBox, { backgroundColor: '#262626' }]}>
+                  <Camera size={36} color="#FFFFFF" strokeWidth={2.2} />
                 </View>
-                <Text style={styles.scannerPermTitle}>Camera Access Required</Text>
-                <Text style={styles.scannerPermSub}>
+                <Text style={[styles.scannerPermTitle, { color: '#FFFFFF' }]}>Camera Access Required</Text>
+                <Text style={[styles.scannerPermSub, { color: '#A1A1AA' }]}>
                   To scan the attendance QR code displayed at your church service, please allow camera access.
                 </Text>
 
                 <TouchableOpacity 
-                  style={styles.scannerPermGrantBtn}
+                  style={[styles.scannerPermGrantBtn, { backgroundColor: '#F5F5F4' }]}
                   onPress={requestCameraPermission}
                   activeOpacity={0.85}
                 >
-                  <Text style={styles.scannerPermGrantBtnTxt}>Grant Permission</Text>
+                  <Text style={[styles.scannerPermGrantBtnTxt, { color: '#09090B' }]}>Grant Permission</Text>
                 </TouchableOpacity>
 
                 <View style={styles.scannerPermDividerRow}>
-                  <View style={styles.scannerPermLine} />
-                  <Text style={styles.scannerPermOrTxt}>or</Text>
-                  <View style={styles.scannerPermLine} />
+                  <View style={[styles.scannerPermLine, { backgroundColor: '#262626' }]} />
+                  <Text style={[styles.scannerPermOrTxt, { color: '#A1A1AA' }]}>or</Text>
+                  <View style={[styles.scannerPermLine, { backgroundColor: '#262626' }]} />
                 </View>
 
                 <View style={{ flexDirection: 'row', width: '100%' }}>
                   <TouchableOpacity 
-                    style={styles.scannerPermAltBtn}
+                    style={[styles.scannerPermAltBtn, { backgroundColor: '#1F1F1F', borderColor: '#3F3F46' }]}
                     onPress={() => { setShowLiveScanner(false); handleLaunchGallery(); }}
                     activeOpacity={0.8}
                   >
-                    <ImageIcon size={16} color="#ffffff" style={{ marginRight: 6 }} />
-                    <Text style={styles.scannerPermAltBtnTxt}>Upload from Gallery</Text>
+                    <ImageIcon size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={[styles.scannerPermAltBtnTxt, { color: '#FFFFFF' }]}>Upload from Gallery</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -3707,10 +3902,49 @@ export default function AttendanceScreen({ navigation, route }: any) {
                 onBarcodeScanned={hasScanned ? undefined : handleQrDetected}
               />
 
-              {/* Viewfinder Dark Mask Overlay */}
-              <View style={StyleSheet.absoluteFillObject}>
-                {/* Top Mask with Header */}
-                <View style={[styles.scannerOverlayTop, { paddingTop: insets.top + 8 }]}>
+              {/* Viewfinder Dark Charcoal Mask Overlay (Single seamless SVG mask with rounded cutout) */}
+              <View
+                style={StyleSheet.absoluteFillObject}
+                onLayout={e => {
+                  const { width: lw, height: lh } = e.nativeEvent.layout;
+                  if (lw > 0 && lh > 0) {
+                    setScannerScreenSize({ w: lw, h: lh });
+                  }
+                }}
+              >
+                {(() => {
+                  const W = scannerScreenSize.w;
+                  const H = scannerScreenSize.h;
+                  const bw = SCAN_FRAME_SIZE;
+                  const bh = SCAN_FRAME_SIZE;
+                  const bx = (W - bw) / 2;
+                  const by = scannerMiddleY !== null ? scannerMiddleY : Math.max(160, (H - bh) * 0.42);
+                  const r = 36;
+                  return (
+                    <Svg
+                      width={W}
+                      height={H}
+                      style={StyleSheet.absoluteFillObject}
+                      pointerEvents="none"
+                    >
+                      <Path
+                        d={`M0,0 H${W} V${H} H0 Z M${bx + r},${by} H${bx + bw - r} A${r},${r} 0 0 1 ${bx + bw},${by + r} V${by + bh - r} A${r},${r} 0 0 1 ${bx + bw - r},${by + bh} H${bx + r} A${r},${r} 0 0 1 ${bx},${by + bh - r} V${by + r} A${r},${r} 0 0 1 ${bx + r},${by} Z`}
+                        fill="rgba(14, 14, 16, 0.82)"
+                        fillRule="evenodd"
+                      />
+                    </Svg>
+                  );
+                })()}
+
+                {/* Top Header & Event Prompt */}
+                <View
+                  style={[
+                    styles.scannerOverlayTop,
+                    {
+                      paddingTop: insets.top + 8,
+                    },
+                  ]}
+                >
                   <View style={styles.scannerHeaderRow}>
                     <TouchableOpacity 
                       style={styles.scannerHeaderCircleBtn}
@@ -3719,96 +3953,158 @@ export default function AttendanceScreen({ navigation, route }: any) {
                         setHasScanned(false);
                         setIsTorchOn(false);
                       }}
-                      activeOpacity={0.75}
+                      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                      activeOpacity={0.7}
                     >
-                      <ArrowLeft size={22} color="#ffffff" strokeWidth={2.4} />
+                      <ArrowLeft size={22} color="#FFFFFF" strokeWidth={2.4} />
                     </TouchableOpacity>
 
-                    <Text style={styles.scannerHeaderTitle}>Scan QR Code</Text>
+                    <Text style={[styles.scannerHeaderTitle, { color: '#FFFFFF' }]}>Scan QR Code</Text>
 
                     <TouchableOpacity 
-                      style={[
-                        styles.scannerHeaderCircleBtn,
-                        isTorchOn && styles.scannerHeaderCircleBtnActive
-                      ]}
+                      style={styles.scannerHeaderCircleBtn}
                       onPress={() => setIsTorchOn(!isTorchOn)}
-                      activeOpacity={0.75}
+                      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                      activeOpacity={0.7}
                     >
                       <Zap 
-                        size={19} 
-                        color={isTorchOn ? '#FBBF24' : '#ffffff'} 
+                        size={21} 
+                        color={isTorchOn ? '#FBBF24' : '#FFFFFF'} 
                         fill={isTorchOn ? '#FBBF24' : 'transparent'} 
                       />
                     </TouchableOpacity>
                   </View>
 
-                  {/* Target Event Prompt (matches Screenshot 1) */}
+                  {/* Target Event Prompt */}
                   <View style={styles.scannerTargetPromptWrap}>
-                    <Text style={styles.scannerTargetPromptSmall}>Scan the Attendance QR Code for</Text>
-                    <Text style={styles.scannerTargetPromptEvent} numberOfLines={1}>
+                    <Text style={[styles.scannerTargetPromptSmall, { color: '#A1A1AA' }]}>
+                      Scan the Attendance QR Code for
+                    </Text>
+                    <Text style={[styles.scannerTargetPromptEvent, { color: '#FFFFFF' }]} numberOfLines={1}>
                       {selectedEventForScan?.title || activeEvent?.title || 'Church Service'}
                     </Text>
                   </View>
                 </View>
 
                 {/* Middle Viewfinder Row */}
-                <View style={styles.scannerMiddleRow}>
-                  {/* Left Side Mask */}
+                <View
+                  style={styles.scannerMiddleRow}
+                  onLayout={e => {
+                    setScannerMiddleY(e.nativeEvent.layout.y);
+                  }}
+                >
+                  {/* Left Side Spacer */}
                   <View style={styles.scannerSideMask} />
 
                   {/* Viewfinder Target Window */}
-                  <View 
+                  <View
                     style={[
                       styles.scannerReticleBox,
-                      { width: SCAN_FRAME_SIZE, height: SCAN_FRAME_SIZE },
-                      hasScanned && styles.scannerReticleBoxScanned
+                      {
+                        width: SCAN_FRAME_SIZE,
+                        height: SCAN_FRAME_SIZE,
+                        borderRadius: 36,
+                      },
+                      hasScanned && styles.scannerReticleBoxScanned,
                     ]}
                   >
-                    {/* 4 Colored Corner Reticles (Red, Blue, Green, Yellow) */}
-                    <View style={[styles.cornerReticle, styles.cornerTL, hasScanned && styles.cornerScanned]} />
-                    <View style={[styles.cornerReticle, styles.cornerTR, hasScanned && styles.cornerScanned]} />
-                    <View style={[styles.cornerReticle, styles.cornerBL, hasScanned && styles.cornerScanned]} />
-                    <View style={[styles.cornerReticle, styles.cornerBR, hasScanned && styles.cornerScanned]} />
-
-                    {/* Laser Sweep Animation */}
-                    {!hasScanned && (
-                      <Animated.View 
-                        style={[
-                          styles.scannerLaserLine,
-                          {
-                            transform: [{
-                              translateY: scanAnim.interpolate({
+                    {/* 4 Colored Curved Corner Reticles inset inside the box with inward-contained Pulse Animation */}
+                    <Animated.View
+                      pointerEvents="none"
+                      style={[
+                        styles.scannerInnerCornersWrap,
+                        {
+                          opacity: hasScanned
+                            ? 1
+                            : reticlePulseAnim.interpolate({
                                 inputRange: [0, 1],
-                                outputRange: [10, SCAN_FRAME_SIZE - 14],
-                              })
-                            }]
-                          }
-                        ]} 
+                                outputRange: [0.65, 1],
+                              }),
+                          transform: [
+                            {
+                              scale: hasScanned
+                                ? 1
+                                : reticlePulseAnim.interpolate({
+                                    inputRange: [0, 1],
+                                    outputRange: [0.94, 1],
+                                  }),
+                            },
+                          ],
+                        },
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.cornerReticle,
+                          styles.cornerTL,
+                          hasScanned && { borderColor: '#10B981' },
+                        ]}
                       />
-                    )}
+                      <View
+                        style={[
+                          styles.cornerReticle,
+                          styles.cornerTR,
+                          hasScanned && { borderColor: '#10B981' },
+                        ]}
+                      />
+                      <View
+                        style={[
+                          styles.cornerReticle,
+                          styles.cornerBL,
+                          hasScanned && { borderColor: '#10B981' },
+                        ]}
+                      />
+                      <View
+                        style={[
+                          styles.cornerReticle,
+                          styles.cornerBR,
+                          hasScanned && { borderColor: '#10B981' },
+                        ]}
+                      />
+                    </Animated.View>
 
                     {hasScanned && (
-                      <View style={styles.scannerScannedIndicator}>
+                      <View
+                        style={[
+                          styles.scannerScannedIndicator,
+                          { backgroundColor: 'rgba(18, 18, 20, 0.84)', borderRadius: 36 },
+                        ]}
+                      >
                         <CheckCircle2 size={36} color="#10B981" strokeWidth={2.5} />
-                        <Text style={styles.scannerScannedTxt}>QR Detected!</Text>
+                        <Text style={[styles.scannerScannedTxt, { color: '#FFFFFF' }]}>QR Detected!</Text>
                       </View>
                     )}
                   </View>
 
-                  {/* Right Side Mask */}
+                  {/* Right Side Spacer */}
                   <View style={styles.scannerSideMask} />
                 </View>
 
-                {/* Bottom Mask with Instructions & Quick Actions */}
-                <View style={[styles.scannerOverlayBottom, { paddingBottom: insets.bottom + 24 }]}>
+                {/* Bottom Instructions & Quick Actions */}
+                <View
+                  style={[
+                    styles.scannerOverlayBottom,
+                    {
+                      paddingBottom: insets.bottom + 24,
+                    },
+                  ]}
+                >
                   {/* Geofence Indicator Pill */}
-                  <View style={styles.scannerGeofencePill}>
-                    <MapPin size={13} color="#60A5FA" strokeWidth={2.4} style={{ marginRight: 5 }} />
-                    <Text style={styles.scannerGeofenceTxt}>100m Church Geofence Active</Text>
+                  <View
+                    style={[
+                      styles.scannerGeofencePill,
+                      {
+                        backgroundColor: '#1F1F1F',
+                        borderColor: '#3F3F46',
+                      },
+                    ]}
+                  >
+                    <MapPin size={13} color="#4ADE80" strokeWidth={2.4} style={{ marginRight: 5 }} />
+                    <Text style={[styles.scannerGeofenceTxt, { color: '#F4F4F5' }]}>100m Church Geofence Active</Text>
                   </View>
 
                   <View style={styles.scannerInstructionWrap}>
-                    <Text style={styles.scannerInstructionMain}>
+                    <Text style={[styles.scannerInstructionMain, { color: '#FFFFFF' }]}>
                       {hasScanned 
                         ? 'Recording your attendance...' 
                         : 'Center the QR code inside the frame to\nrecord your attendance.'}
@@ -4238,7 +4534,7 @@ export default function AttendanceScreen({ navigation, route }: any) {
                           <View style={[styles.famCheckboxUnchecked, { backgroundColor: att.surface, borderColor: att.textMuted }]} />
                         )}
                         <View style={{ marginLeft: 10, flex: 1 }}>
-                          <Text style={[styles.famNameTxt, { color: att.text }, fam.checked && styles.famNameTxtChecked]} numberOfLines={1}>
+                          <Text style={[styles.famNameTxt, fam.checked && styles.famNameTxtChecked, { color: att.text }]} numberOfLines={1}>
                             {fam.name}
                           </Text>
                           <Text style={[styles.famRelationTxt, { color: att.textMuted }]}>
@@ -4689,7 +4985,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FAF7F2',
   },
-    headerRow: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -4697,17 +4993,10 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
   },
   circularBackBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
     justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
+    alignItems: 'flex-start',
   },
   headerTitleText: {
     fontSize: 20,
@@ -4716,8 +5005,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   headerRightSpacer: {
-    width: 44,
-    height: 44,
+    width: 40,
+    height: 40,
   },
   headerCardWrapper: {
     paddingHorizontal: 16,
@@ -4799,9 +5088,8 @@ const styles = StyleSheet.create({
   backCircleBtn: {
     width: 40,
     height: 40,
-    borderRadius: 14,
-    backgroundColor: '#E4EEEA',
-    alignItems: 'center',
+    backgroundColor: 'transparent',
+    alignItems: 'flex-start',
     justifyContent: 'center',
     zIndex: 10,
   },
@@ -4809,6 +5097,7 @@ const styles = StyleSheet.create({
   // Segmented Pill Track: Home | My attendance | Events
   tabTrack: {
     flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#EAEFF5',
     borderRadius: 24,
     padding: 4,
@@ -4818,10 +5107,14 @@ const styles = StyleSheet.create({
   },
   tabPill: {
     flex: 1,
-    paddingVertical: 9,
+    minHeight: 38,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
   tabPillActive: {
     backgroundColor: '#ffffff',
@@ -4834,10 +5127,11 @@ const styles = StyleSheet.create({
   tabPillTxt: {
     fontSize: 13.5,
     fontWeight: '600',
-    color: '#64748B',
+    textAlign: 'center',
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   tabPillTxtActive: {
-    color: '#0f172a',
     fontWeight: '700',
   },
 
@@ -5106,6 +5400,19 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     gap: 6,
   },
+  attendanceOpenInlineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  blinkingGreenDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
+    backgroundColor: '#16A34A',
+    borderWidth: 1,
+    borderColor: 'rgba(21, 128, 61, 0.3)',
+  },
   attendanceCompletedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -5171,8 +5478,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#E2A925',
     paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 14,
+    paddingHorizontal: 18,
+    borderRadius: 999,
     gap: 8,
   },
   scanAttendanceBtnTxt: {
@@ -5189,8 +5496,8 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: '#86EFAC',
     paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 14,
+    paddingHorizontal: 18,
+    borderRadius: 999,
     gap: 8,
   },
   attendanceCompletedBtnTxt: {
@@ -5267,7 +5574,7 @@ const styles = StyleSheet.create({
   eyeBtn: {
     width: 46,
     height: 46,
-    borderRadius: 14,
+    borderRadius: 23,
     backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
@@ -5315,9 +5622,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   thisWeekTitle: {
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: '700',
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
     color: '#0f172a',
   },
   seeAllTxt: {
@@ -5509,16 +5815,20 @@ const styles = StyleSheet.create({
   rosterHeaderInfo: {
     flex: 1,
     paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   rosterHeaderTitle: {
     fontSize: 18,
     fontWeight: '700',
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
     color: '#0f172a',
+    textAlign: 'center',
   },
   rosterHeaderSub: {
     fontSize: 12.5,
     color: '#64748B',
+    textAlign: 'center',
   },
   rosterQrBtn: {
     width: 40,
@@ -5529,9 +5839,39 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  rosterEventInfoCard: {
+    marginHorizontal: 20,
+    marginTop: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1.2,
+    backgroundColor: '#FFFFFF',
+    borderColor: '#CBD5E1',
+  },
+  rosterEventInfoDesc: {
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  rosterEventDateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 9,
+    paddingTop: 9,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  rosterEventDateTxt: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
   rosterSearchWrap: {
     paddingHorizontal: 20,
-    marginTop: 14,
+    marginTop: 12,
     marginBottom: 10,
   },
   searchBox: {
@@ -5633,7 +5973,7 @@ const styles = StyleSheet.create({
   // ── Scan Options Modal ──
   optionsModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
     justifyContent: 'flex-end',
   },
   optionsModalCard: {
@@ -5700,7 +6040,7 @@ const styles = StyleSheet.create({
   // ── Manual Code Modal ──
   manualModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
@@ -5783,7 +6123,7 @@ const styles = StyleSheet.create({
   // ── Decoding Overlay ──
   decodingOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -5817,7 +6157,7 @@ const styles = StyleSheet.create({
   // ── Success Modal ──
   successModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
@@ -5900,11 +6240,11 @@ const styles = StyleSheet.create({
   // ── Live QR Scanner UI Styles ──
   liveScannerContainer: {
     flex: 1,
-    backgroundColor: '#0b0f19',
+    backgroundColor: '#000000',
   },
   scannerOverlayTop: {
     flex: 1,
-    backgroundColor: 'rgba(5, 10, 20, 0.65)',
+    backgroundColor: 'transparent',
     justifyContent: 'flex-start',
   },
   scannerHeaderRow: {
@@ -5915,18 +6255,14 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   scannerHeaderCircleBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(15, 23, 42, 0.65)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    width: 40,
+    height: 40,
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
   },
   scannerHeaderCircleBtnActive: {
-    backgroundColor: 'rgba(226, 169, 37, 0.25)',
-    borderColor: '#E2A925',
+    backgroundColor: 'transparent',
   },
   scannerHeaderCenter: {
     flex: 1,
@@ -5948,14 +6284,14 @@ const styles = StyleSheet.create({
   },
   scannerTargetPromptSmall: {
     fontSize: 14.5,
-    color: '#E2E8F0',
+    color: '#E4E4E7',
     textAlign: 'center',
     fontWeight: '400',
   },
   scannerTargetPromptEvent: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#FBBF24',
+    color: '#FFFFFF',
     textAlign: 'center',
     marginTop: 4,
     letterSpacing: 0.3,
@@ -5967,24 +6303,27 @@ const styles = StyleSheet.create({
   scannerSideMask: {
     flex: 1,
     height: '100%',
-    backgroundColor: 'rgba(5, 10, 20, 0.65)',
+    backgroundColor: 'transparent',
   },
   scannerReticleBox: {
     position: 'relative',
     backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: 24,
     overflow: 'hidden',
   },
   scannerReticleBoxScanned: {
-    borderColor: '#10B981',
     backgroundColor: 'rgba(16, 185, 129, 0.12)',
+  },
+  scannerInnerCornersWrap: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    right: 12,
+    bottom: 12,
   },
   cornerReticle: {
     position: 'absolute',
-    width: 32,
-    height: 32,
+    width: 46,
+    height: 46,
   },
   cornerScanned: {
     borderColor: '#10B981 !important',
@@ -5992,41 +6331,41 @@ const styles = StyleSheet.create({
   cornerTL: {
     top: 0,
     left: 0,
-    borderTopWidth: 4,
-    borderLeftWidth: 4,
+    borderTopWidth: 4.5,
+    borderLeftWidth: 4.5,
     borderColor: '#EF4444',
-    borderTopLeftRadius: 20,
+    borderTopLeftRadius: 26,
   },
   cornerTR: {
     top: 0,
     right: 0,
-    borderTopWidth: 4,
-    borderRightWidth: 4,
+    borderTopWidth: 4.5,
+    borderRightWidth: 4.5,
     borderColor: '#3B82F6',
-    borderTopRightRadius: 20,
+    borderTopRightRadius: 26,
   },
   cornerBL: {
     bottom: 0,
     left: 0,
-    borderBottomWidth: 4,
-    borderLeftWidth: 4,
+    borderBottomWidth: 4.5,
+    borderLeftWidth: 4.5,
     borderColor: '#10B981',
-    borderBottomLeftRadius: 20,
+    borderBottomLeftRadius: 26,
   },
   cornerBR: {
     bottom: 0,
     right: 0,
-    borderBottomWidth: 4,
-    borderRightWidth: 4,
+    borderBottomWidth: 4.5,
+    borderRightWidth: 4.5,
     borderColor: '#F59E0B',
-    borderBottomRightRadius: 20,
+    borderBottomRightRadius: 26,
   },
   scannerLaserLine: {
     height: 2.5,
-    backgroundColor: '#F59E0B',
+    backgroundColor: '#22C55E',
     marginHorizontal: 12,
     borderRadius: 2,
-    shadowColor: '#F59E0B',
+    shadowColor: '#22C55E',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.95,
     shadowRadius: 8,
@@ -6036,7 +6375,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    backgroundColor: 'rgba(18, 18, 20, 0.82)',
   },
   scannerScannedTxt: {
     fontSize: 15,
@@ -6046,7 +6385,7 @@ const styles = StyleSheet.create({
   },
   scannerOverlayBottom: {
     flex: 1.4,
-    backgroundColor: 'rgba(5, 10, 20, 0.65)',
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 24,
@@ -6063,7 +6402,7 @@ const styles = StyleSheet.create({
   },
   scannerInstructionSub: {
     fontSize: 12.5,
-    color: '#94A3B8',
+    color: '#A1A1AA',
     textAlign: 'center',
     marginTop: 4,
   },
@@ -6079,7 +6418,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 24,
-    backgroundColor: 'rgba(30, 41, 59, 0.85)',
+    backgroundColor: 'rgba(24, 24, 27, 0.85)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.15)',
     gap: 8,
@@ -6092,7 +6431,7 @@ const styles = StyleSheet.create({
   // Permission view
   scannerPermissionWrap: {
     flex: 1,
-    backgroundColor: '#0b0f19',
+    backgroundColor: '#000000',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 28,
@@ -6109,19 +6448,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   scannerPermCard: {
-    backgroundColor: '#131c2e',
+    backgroundColor: '#141414',
     borderRadius: 24,
     padding: 26,
     alignItems: 'center',
     width: '100%',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: '#262626',
   },
   scannerPermIconBox: {
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: 'rgba(226, 169, 37, 0.15)',
+    backgroundColor: '#262626',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 18,
@@ -6135,23 +6474,23 @@ const styles = StyleSheet.create({
   },
   scannerPermSub: {
     fontSize: 13.5,
-    color: '#94A3B8',
+    color: '#A1A1AA',
     textAlign: 'center',
     lineHeight: 20,
     marginBottom: 22,
   },
   scannerPermGrantBtn: {
-    backgroundColor: '#E2A925',
+    backgroundColor: '#09090B',
     paddingVertical: 14,
     paddingHorizontal: 24,
-    borderRadius: 14,
+    borderRadius: 999,
     width: '100%',
     alignItems: 'center',
   },
   scannerPermGrantBtnTxt: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#0f172a',
+    color: '#FFFFFF',
   },
   scannerPermDividerRow: {
     flexDirection: 'row',
@@ -6162,12 +6501,12 @@ const styles = StyleSheet.create({
   scannerPermLine: {
     flex: 1,
     height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: '#262626',
   },
   scannerPermOrTxt: {
     paddingHorizontal: 12,
     fontSize: 12,
-    color: '#64748B',
+    color: '#71717A',
     textTransform: 'uppercase',
   },
   scannerPermAltBtn: {
@@ -6176,10 +6515,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 999,
+    backgroundColor: '#1F1F1F',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderColor: '#262626',
   },
   scannerPermAltBtnTxt: {
     fontSize: 13,
@@ -7154,18 +7493,18 @@ const styles = StyleSheet.create({
   scannerGeofencePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.75)',
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
+    backgroundColor: '#1F1F1F',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: 'rgba(96, 165, 250, 0.3)',
+    borderColor: '#3F3F46',
   },
   scannerGeofenceTxt: {
     fontSize: 11.5,
     fontWeight: '600',
-    color: '#BFDBFE',
+    color: '#F4F4F5',
   },
   geofenceDistanceBadge: {
     flexDirection: 'row',
@@ -7202,17 +7541,22 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    backgroundColor: 'transparent',
     justifyContent: 'flex-end',
+  },
+  modalHandleTouchArea: {
+    paddingTop: 6,
+    paddingBottom: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
   },
   modalHandle: {
     width: 44,
-    height: 4,
-    borderRadius: 2,
+    height: 4.5,
+    borderRadius: 2.5,
     backgroundColor: '#CBD5E1',
     alignSelf: 'center',
-    marginTop: 4,
-    marginBottom: 12,
   },
   familyPopupCard: {
     backgroundColor: '#ffffff',
@@ -7369,7 +7713,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   familyPopupDoneBtn: {
-    backgroundColor: '#1a2d5a',
+    backgroundColor: '#09090B',
     borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center',

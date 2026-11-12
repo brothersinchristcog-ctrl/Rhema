@@ -244,19 +244,12 @@ export default function AdminDonationsDashboard({ donations = [], onNavigate }: 
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <TouchableOpacity
-            style={[
-              styles.backBtn,
-              {
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#FFFFFF',
-                borderColor: isDark ? 'rgba(255, 255, 255, 0.3)' : '#CBD5E1',
-                borderWidth: 1.5,
-              },
-            ]}
+            style={styles.backBtn}
             onPress={handleBack}
             activeOpacity={0.7}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.4} />
+            <ArrowLeft size={22} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.4} />
           </TouchableOpacity>
 
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 }}>
@@ -744,7 +737,6 @@ const styles = StyleSheet.create({
   backBtn: {
     width: 40,
     height: 40,
-    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },

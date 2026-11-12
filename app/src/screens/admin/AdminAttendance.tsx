@@ -1372,15 +1372,11 @@ export default function AdminAttendance() {
             <View style={{ minWidth: 54, alignItems: 'flex-start', justifyContent: 'center' }}>
               <TouchableOpacity
                 onPress={() => setSelectedEvent(null)}
-                style={[styles.circularBackBtn, {
-                  backgroundColor: isDark ? '#000000' : '#FFFFFF',
-                  borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : '#E2E8F0',
-                  borderWidth: 1.5,
-                }]}
+                style={styles.circularBackBtn}
                 activeOpacity={0.7}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#0F172A'} strokeWidth={2.2} />
+                <ArrowLeft size={22} color={isDark ? '#FFFFFF' : '#0F172A'} strokeWidth={2.2} />
               </TouchableOpacity>
               <View style={{ height: 12, marginTop: 2 }} />
             </View>
@@ -1839,15 +1835,11 @@ export default function AdminAttendance() {
           <View style={{ minWidth: 54, alignItems: 'flex-start', justifyContent: 'center' }}>
             <TouchableOpacity
               onPress={() => setActiveTab(0)}
-              style={[styles.circularBackBtn, {
-                backgroundColor: isDark ? '#000000' : '#FFFFFF',
-                borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : '#E2E8F0',
-                borderWidth: 1.5,
-              }]}
+              style={styles.circularBackBtn}
               activeOpacity={0.7}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#0F172A'} strokeWidth={2.2} />
+              <ArrowLeft size={22} color={isDark ? '#FFFFFF' : '#0F172A'} strokeWidth={2.2} />
             </TouchableOpacity>
             <View style={{ height: 12, marginTop: 2 }} />
           </View>
@@ -2219,17 +2211,8 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
   },
   container: {
     flex: 1,

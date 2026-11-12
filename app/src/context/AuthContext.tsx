@@ -107,6 +107,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     let subscriber: (() => void) | undefined;
+    // Safety fallback so loading can NEVER hang on splash screen due to slow network/Firestore
+    const safetyTimer = setTimeout(() => {
+      setLoading(false);
+    }, 3000);
 
     const initializeAuth = async () => {
       // 1. Load cached member & cached user session immediately so the user stays logged in forever until explicit signOut
@@ -173,6 +177,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             status: pendingStatusStr || 'pending',
             churchId: pendingChurchStr || 'rhema',
           });
+        }
+
+        // Unblock splash screen immediately if cached session & member/pending state are already restored
+        if (cachedUserObj && (cachedMemberObj || pendingFlagStr === 'true')) {
+          setLoading(false);
         }
       } catch (e) {
         // Ignore cache read errors
@@ -277,12 +286,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               setIsPlatformSuperAdmin(false);
             }
 
-            // Refresh token when online (ignore errors when offline)
-            try {
-              await userState.getIdToken(true);
-            } catch (tokenErr) {
+            // Refresh token in background when online (never block startup)
+            userState.getIdToken(true).catch((tokenErr) => {
               console.warn('⚠️ [Auth] Token refresh skipped (offline?):', tokenErr);
-            }
+            });
 
             // Fetch member profile from Rhema Church
             let globalUser = await FirestoreService.getGlobalUser(userState.uid);
@@ -363,7 +370,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setIsPendingApproval(false);
             setIsRejected(false);
             setRegistrationRequest(null);
-            await AsyncStorage.multiRemove([
+            AsyncStorage.multiRemove([
               '@is_pending_approval',
               '@pending_registration_status',
               '@pending_registration_phone',
@@ -372,35 +379,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               '@pending_registration_gender',
               '@pending_registration_church',
             ]).catch(() => {});
-
-            // FCM Setup - ONLY for approved active members
-            try {
-              const NotificationService = require('../services/NotificationService').default;
-              await NotificationService.requestUserPermission().catch(() => {});
-              const token = await messaging().getToken().catch(() => null);
-              if (token) {
-                await require('../services/firebaseConfig').firestore()
-                  .collection('Rhema Church').doc(targetChurchId)
-                  .collection('members').doc(userState.uid).set({
-                    fcmToken: token
-                  }, { merge: true });
-
-                await NotificationService.subscribeToChurchTopic(targetChurchId);
-              }
-
-              messaging().onTokenRefresh(async (newToken) => {
-                await require('../services/firebaseConfig').firestore()
-                  .collection('Rhema Church').doc(targetChurchId)
-                  .collection('members').doc(userState.uid).set({
-                    fcmToken: newToken
-                  }, { merge: true });
-
-                await NotificationService.subscribeToChurchTopic(targetChurchId);
-              });
-            } catch (err) {
-              console.log('❌ [FCM] Error setting up notifications:', err);
-            }
-
 
             if (memberProfile || globalUser) {
               const effectiveName = (
@@ -450,6 +428,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 AsyncStorage.setItem('@cached_is_super_admin', JSON.stringify(true)).catch(() => {});
               }
             }
+
+            // Immediately unblock app loading once member state is set
+            setLoading(false);
+
+            // FCM Setup in background - ONLY for approved active members (never block startup)
+            (async () => {
+              try {
+                const NotificationService = require('../services/NotificationService').default;
+                await NotificationService.requestUserPermission().catch(() => {});
+                const token = await messaging().getToken().catch(() => null);
+                if (token) {
+                  await require('../services/firebaseConfig').firestore()
+                    .collection('Rhema Church').doc(targetChurchId)
+                    .collection('members').doc(userState.uid).set({
+                      fcmToken: token
+                    }, { merge: true });
+
+                  await NotificationService.subscribeToChurchTopic(targetChurchId);
+                }
+
+                messaging().onTokenRefresh(async (newToken) => {
+                  await require('../services/firebaseConfig').firestore()
+                    .collection('Rhema Church').doc(targetChurchId)
+                    .collection('members').doc(userState.uid).set({
+                      fcmToken: newToken
+                    }, { merge: true });
+
+                  await NotificationService.subscribeToChurchTopic(targetChurchId);
+                });
+              } catch (err) {
+                console.log('❌ [FCM] Error setting up notifications:', err);
+              }
+            })();
 
             // Real-time listener on member profile (updates role/profile changes live, NEVER auto-logs out)
             if (memberListenerRef.current) memberListenerRef.current();
@@ -521,6 +532,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initializeAuth();
 
     return () => {
+      clearTimeout(safetyTimer);
       if (subscriber) subscriber();
       if (memberListenerRef.current) memberListenerRef.current();
       if (superAdminListenerRef.current) superAdminListenerRef.current();

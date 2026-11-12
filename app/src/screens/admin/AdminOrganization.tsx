@@ -213,84 +213,88 @@ export default function AdminOrganization({ navigation }: any) {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
       
       {/* ── Hero Section ── */}
-      <View style={styles.hero}>
+      <View style={[styles.hero, { borderBottomWidth: 1.2, borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1' }]}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1, paddingRight: 4 }}>
-            <TouchableOpacity
-              onPress={() => setActiveTab(0)}
-              style={styles.circularBackBtn}
-              activeOpacity={0.7}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <ArrowLeft size={20} color="#1a2d5a" strokeWidth={2.2} />
-            </TouchableOpacity>
-            <Text style={[styles.heroTitle, { flexShrink: 1, marginLeft: 12 }]} numberOfLines={1}>Church Branches</Text>
+          <TouchableOpacity
+            onPress={() => setActiveTab(0)}
+            style={styles.circularBackBtn}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <ArrowLeft size={22} color={primaryText} strokeWidth={2.2} />
+          </TouchableOpacity>
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 }}>
+            <Text style={[styles.heroTitle, { color: primaryText, textAlign: 'center' }]} numberOfLines={1}>Church Branches</Text>
           </View>
+          <View style={{ width: 40, height: 40 }} />
         </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
         
         {/* Top Summary Card */}
-        <View style={styles.premiumSummaryCard}>
+        <View style={[styles.premiumSummaryCard, { backgroundColor: cardSurface, borderLeftColor: primaryText }]}>
           <View style={styles.summaryLeft}>
-            <View style={styles.premiumIconCircle}>
-              <Building2 size={24} color="#1a2d5a" />
+            <View style={[styles.premiumIconCircle, { backgroundColor: secondarySurface }]}>
+              <Building2 size={24} color={primaryText} />
             </View>
             <View style={styles.summaryTextGroup}>
-              <Text style={styles.premiumSummaryTitle}>Network Overview</Text>
-              <Text style={styles.premiumStatLbl}>Total Branches</Text>
+              <Text style={[styles.premiumSummaryTitle, { color: primaryText }]}>Network Overview</Text>
+              <Text style={[styles.premiumStatLbl, { color: secondaryText }]}>Total Branches</Text>
             </View>
           </View>
           <View style={styles.summaryRight}>
-            <Text style={styles.premiumStatVal}>{branches.length}</Text>
+            <Text style={[styles.premiumStatVal, { color: primaryText }]}>{branches.length}</Text>
           </View>
         </View>
 
         <View style={styles.headerRow}>
-          <Text style={styles.sectionTitle}>Church Branches</Text>
-          <TouchableOpacity style={styles.premiumAddBtn} onPress={() => setShowCreateModal(true)}>
-            <Plus size={18} color="#fff" />
-            <Text style={styles.premiumAddBtnTxt}>New Branch</Text>
+          <Text style={[styles.sectionTitle, { color: primaryText }]}>Church Branches</Text>
+          <TouchableOpacity
+            style={[styles.premiumAddBtn, { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' }]}
+            onPress={() => setShowCreateModal(true)}
+          >
+            <Plus size={18} color={isDark ? '#000000' : '#FFFFFF'} />
+            <Text style={[styles.premiumAddBtnTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>New Branch</Text>
           </TouchableOpacity>
         </View>
 
         {branches.map(branch => (
-          <View key={branch.id} style={styles.premiumBranchCard}>
+          <View key={branch.id} style={[styles.premiumBranchCard, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}>
             <View style={styles.branchCardHeader}>
               <View style={{ flex: 1, paddingRight: 16 }}>
-                <Text style={styles.premiumBranchName} numberOfLines={2}>{branch.name}</Text>
-                <View style={styles.codeBadge}>
-                  <Text style={styles.codeBadgeText}>Code: {branch.churchCode}</Text>
+                <Text style={[styles.premiumBranchName, { color: primaryText }]} numberOfLines={2}>{branch.name}</Text>
+                <View style={[styles.codeBadge, { backgroundColor: secondarySurface }]}>
+                  <Text style={[styles.codeBadgeText, { color: secondaryText }]}>Code: {branch.churchCode}</Text>
                 </View>
               </View>
               <View style={styles.branchActions}>
-                <TouchableOpacity style={styles.iconBtn} onPress={() => handleShareBranch(branch)}>
+                <TouchableOpacity style={[styles.iconBtn, { backgroundColor: secondarySurface }]} onPress={() => handleShareBranch(branch)}>
                   <Share2 size={18} color="#10b981" />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.iconBtn} onPress={() => handleEditBranch(branch)}>
-                  <Edit2 size={18} color="#64748b" />
+                <TouchableOpacity style={[styles.iconBtn, { backgroundColor: secondarySurface }]} onPress={() => handleEditBranch(branch)}>
+                  <Edit2 size={18} color={secondaryText} />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.iconBtn} onPress={() => handleDeleteBranch(branch)}>
+                <TouchableOpacity style={[styles.iconBtn, { backgroundColor: secondarySurface }]} onPress={() => handleDeleteBranch(branch)}>
                   <Trash2 size={18} color="#ef4444" />
                 </TouchableOpacity>
               </View>
             </View>
             
-            <View style={styles.branchCardFooter}>
+            <View style={[styles.branchCardFooter, { borderTopColor: adminBorderColor }]}>
               <View style={styles.memberCountBadge}>
                 <Users size={14} color="#059669" style={{marginRight: 4}} />
                 <Text style={styles.premiumMemberCount}>{branch.memberCount || 0} Members</Text>
               </View>
               <TouchableOpacity 
-                style={styles.premiumViewDashboardBtn}
+                style={[styles.premiumViewDashboardBtn, { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' }]}
                 onPress={() => handleImpersonate(branch)}
               >
-                <Text style={styles.premiumViewDashboardBtnTxt}>View Dashboard</Text>
-                <ChevronRight size={16} color="#fff" style={{marginLeft: 4}} />
+                <Text style={[styles.premiumViewDashboardBtnTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>View Dashboard</Text>
+                <ChevronRight size={16} color={isDark ? '#000000' : '#FFFFFF'} style={{marginLeft: 4}} />
               </TouchableOpacity>
             </View>
           </View>
@@ -346,8 +350,8 @@ export default function AdminOrganization({ navigation }: any) {
               <TouchableOpacity style={styles.cancelBtn} onPress={() => { setShowCreateModal(false); setNewBranchName(''); setNewBranchCode(''); setNewAdminName(''); setNewAdminPhone(''); setEditingBranchId(null); }}>
                 <Text style={styles.cancelBtnTxt}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.createBtn} onPress={handleCreateBranch} disabled={creating}>
-                {creating ? <ActivityIndicator color="#fff" /> : <Text style={styles.createBtnTxt}>{editingBranchId ? 'Save Changes' : 'Create Branch'}</Text>}
+              <TouchableOpacity style={[styles.createBtn, { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' }]} onPress={handleCreateBranch} disabled={creating}>
+                {creating ? <ActivityIndicator color={isDark ? '#000000' : '#FFFFFF'} /> : <Text style={[styles.createBtnTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>{editingBranchId ? 'Save Changes' : 'Create Branch'}</Text>}
               </TouchableOpacity>
             </View>
           </View>
@@ -410,9 +414,9 @@ export default function AdminOrganization({ navigation }: any) {
               <Text style={styles.detailsCode}>{branchSuccess?.code}</Text>
             </View>
             
-            <TouchableOpacity style={styles.shareBtn} onPress={handleShare}>
-              <Share2 size={20} color="#fff" />
-              <Text style={styles.shareBtnTxt}>Share Details</Text>
+            <TouchableOpacity style={[styles.shareBtn, { backgroundColor: isDark ? '#FFFFFF' : '#0F172A' }]} onPress={handleShare}>
+              <Share2 size={20} color={isDark ? '#000000' : '#FFFFFF'} />
+              <Text style={[styles.shareBtnTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>Share Details</Text>
             </TouchableOpacity>
             
             <TouchableOpacity 
@@ -432,17 +436,8 @@ const styles = createAdminThemedStyles(StyleSheet.create({
   circularBackBtn: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
   },
   container: { flex: 1, backgroundColor: '#EDE8DC' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
