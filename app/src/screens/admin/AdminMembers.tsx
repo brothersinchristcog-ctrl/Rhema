@@ -1688,51 +1688,40 @@ May God bless you abundantly! ❤️`;
           )}
         </View>
 
-        {/* Filter Badges Row: All | Active | Inactive | Members | Guests | Village/City */}
+        {/* Filter Badges Row: Guests | All | Active | Inactive | Village/City */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ alignItems: 'center', gap: 8, paddingRight: 16 }}
           style={{ marginBottom: 14 }}
         >
-          {(['All', 'Members', 'Guests'] as const).map(rFilter => {
-            const isSelected = roleFilter === rFilter;
-            const label =
-              rFilter === 'Guests'
-                ? `Guests (${guestMembersCount})`
-                : rFilter === 'Members'
-                ? `Members (${fullMembersCount})`
-                : 'All Roles';
-            const isGuestChip = rFilter === 'Guests';
-            return (
-              <TouchableOpacity
-                key={`role-${rFilter}`}
-                style={[
-                  styles.filterChip,
-                  isDark
-                    ? (isSelected
-                        ? { backgroundColor: isGuestChip ? '#7C3AED' : '#FFFFFF', borderColor: isGuestChip ? '#7C3AED' : '#FFFFFF' }
-                        : { backgroundColor: '#18181B', borderColor: isGuestChip ? 'rgba(167,139,250,0.4)' : 'rgba(255, 255, 255, 0.14)' })
-                    : (isSelected
-                        ? { backgroundColor: isGuestChip ? '#6D28D9' : '#000000', borderColor: isGuestChip ? '#6D28D9' : '#000000' }
-                        : { backgroundColor: isGuestChip ? '#F5F3FF' : '#F8FAFC', borderColor: isGuestChip ? '#DDD6FE' : '#CBD5E1' })
-                ]}
-                onPress={() => setRoleFilter(rFilter)}
-                activeOpacity={0.8}
-              >
-                <Text
-                  style={[
-                    styles.filterChipTxt,
-                    isDark
-                      ? (isSelected ? { color: isGuestChip ? '#FFFFFF' : '#000000', fontWeight: '800' } : { color: isGuestChip ? '#C4B5FD' : '#A1A1AA' })
-                      : (isSelected ? { color: '#FFFFFF', fontWeight: '800' } : { color: isGuestChip ? '#6D28D9' : '#64748B' })
-                  ]}
-                >
-                  {label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+          {/* Guests Badge */}
+          <TouchableOpacity
+            key="role-Guests"
+            style={[
+              styles.filterChip,
+              isDark
+                ? (roleFilter === 'Guests'
+                    ? { backgroundColor: '#7C3AED', borderColor: '#7C3AED' }
+                    : { backgroundColor: '#18181B', borderColor: 'rgba(167,139,250,0.4)' })
+                : (roleFilter === 'Guests'
+                    ? { backgroundColor: '#6D28D9', borderColor: '#6D28D9' }
+                    : { backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' })
+            ]}
+            onPress={() => setRoleFilter(prev => prev === 'Guests' ? 'All' : 'Guests')}
+            activeOpacity={0.8}
+          >
+            <Text
+              style={[
+                styles.filterChipTxt,
+                isDark
+                  ? (roleFilter === 'Guests' ? { color: '#FFFFFF', fontWeight: '800' } : { color: '#C4B5FD' })
+                  : (roleFilter === 'Guests' ? { color: '#FFFFFF', fontWeight: '800' } : { color: '#6D28D9' })
+              ]}
+            >
+              {`Guests (${guestMembersCount})`}
+            </Text>
+          </TouchableOpacity>
 
           {(['All', 'Active', 'Inactive'] as const).map(filter => {
             const isActive = statusFilter === filter;

@@ -14,55 +14,84 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { 
   LogOut, 
   Smartphone, 
-  Shield
+  BookOpen,
+  Sparkles,
+  Mic,
+  Music,
+  Award,
+  Users,
+  ClipboardCheck,
+  Heart,
+  Flame,
+  HeartHandshake,
+  Droplets,
+  UserCheck,
+  CalendarDays,
+  CalendarClock,
+  CalendarCheck,
+  Briefcase,
+  Coins,
+  Wallet,
+  Gift,
+  Bell,
+  MessageCircle,
+  Image as ImageIcon,
+  Video,
+  Building2,
+  Sliders,
+  Headset,
+  Shield,
+  HelpCircle
 } from 'lucide-react-native';
 import { useChurch } from '../../context/ChurchContext';
 import { AdminTabContext } from '../../context/AdminTabContext';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme, FONT_STYLE_OPTIONS } from '../../context/ThemeContext';
 
-// ── Tab 3D Asset Icons (Matches Home Screen Quick Access 3D Style) ──
-const TAB_3D_ASSETS: Record<string, { icon: any }> = {
+// ── Modern Vector Icon Configuration for Each Tab ──
+const TAB_ICONS: Record<string, { icon: any; color: string }> = {
   // Ministry & Word
-  'Promises': { icon: require('../../../assets/3d_daily_verse.png') },
-  'Daily Verses': { icon: require('../../../assets/3d_daily_verse.png') },
-  'Sermons': { icon: require('../../../assets/retro_mic_3d.png') },
-  'Songs': { icon: require('../../../assets/3d_sermons.png') },
-  'Bible Quiz': { icon: require('../../../assets/3d_bible_quiz.png') },
+  'Promises': { icon: BookOpen, color: '#0D9488' },
+  'Daily Verses': { icon: Sparkles, color: '#D97706' },
+  'Sermons': { icon: Mic, color: '#4F46E5' },
+  'Songs': { icon: Music, color: '#E11D48' },
+  'Bible Quiz': { icon: Award, color: '#CA8A04' },
 
   // People & Fellowship
-  'Members': { icon: require('../../../assets/3d_members_family.png') },
-  'Attendance': { icon: require('../../../assets/3d_attendance.png') },
-  'Prayers': { icon: require('../../../assets/give_hand_heart.png') },
-  'Testimonies': { icon: require('../../../assets/give_hand_heart.png') },
-  'Care Cells': { icon: require('../../../assets/gallery_3d_family.png') },
-  'Baptism': { icon: require('../../../assets/3d_give.png') },
+  'Members': { icon: Users, color: '#0284C7' },
+  'Attendance': { icon: ClipboardCheck, color: '#059669' },
+  'Prayers': { icon: Heart, color: '#E11D48' },
+  'Testimonies': { icon: Flame, color: '#9333EA' },
+  'Care Cells': { icon: HeartHandshake, color: '#EA580C' },
+  'Baptism': { icon: Droplets, color: '#06B6D4' },
+  'Volunteer Management': { icon: UserCheck, color: '#6366F1' },
+  'Approvals': { icon: UserCheck, color: '#10B981' },
 
   // Services & Events
-  'Events': { icon: require('../../../assets/3d_events.png') },
-  'Schedule': { icon: require('../../../assets/3d_sermon_notes.png') },
-  'Service Roster': { icon: require('../../../assets/gallery_3d_stage.png') },
-  'Pastor Event': { icon: require('../../../assets/gallery_3d_stage.png') },
+  'Events': { icon: CalendarDays, color: '#EA580C' },
+  'Schedule': { icon: CalendarClock, color: '#D97706' },
+  'Service Roster': { icon: CalendarCheck, color: '#0F766E' },
+  'Pastor Event': { icon: Briefcase, color: '#7C3AED' },
 
   // Finance & Celebrations
-  'Donations': { icon: require('../../../assets/3d_give.png') },
-  'Expense': { icon: require('../../../assets/3d_give.png') },
-  'Celebrations': { icon: require('../../../assets/3d_party_popper.png') },
+  'Donations': { icon: Coins, color: '#10B981' },
+  'Expense': { icon: Wallet, color: '#F43F5E' },
+  'Celebrations': { icon: Gift, color: '#D946EF' },
 
   // Media & Communications
-  'Notifications': { icon: require('../../../assets/3d_contact_us.png') },
-  'WhatsApp': { icon: require('../../../assets/3d_contact_us.png') },
-  'Gallery': { icon: require('../../../assets/3d_gallery.png') },
-  'Online Meetings': { icon: require('../../../assets/3d_online_meetings.png') },
+  'Notifications': { icon: Bell, color: '#F59E0B' },
+  'WhatsApp': { icon: MessageCircle, color: '#25D366' },
+  'Gallery': { icon: ImageIcon, color: '#0EA5E9' },
+  'Online Meetings': { icon: Video, color: '#3B82F6' },
 
   // Church Management
-  'Church Branches': { icon: require('../../../assets/gallery_3d_church.png') },
-  'Church Settings': { icon: require('../../../assets/3d_about_us.png') },
-  'Support Team': { icon: require('../../../assets/3d_contact_us.png') },
-  'App Admin': { icon: require('../../../assets/3d_about_us.png') },
+  'Church Branches': { icon: Building2, color: '#475569' },
+  'Church Settings': { icon: Sliders, color: '#64748B' },
+  'Support Team': { icon: Headset, color: '#0284C7' },
+  'App Admin': { icon: Shield, color: '#F59E0B' },
 };
 
-// ── Categorized Sections (Grouped Cleanly like Home Screen Quick Access) ──
+// ── Categorized Sections (Grouped Cleanly) ──
 const SECTIONS = [
   {
     id: 'ministry',
@@ -72,7 +101,7 @@ const SECTIONS = [
   {
     id: 'people',
     title: 'People & Fellowship',
-    tabNames: ['Members', 'Attendance', 'Prayers', 'Testimonies', 'Care Cells', 'Baptism'],
+    tabNames: ['Members', 'Attendance', 'Prayers', 'Testimonies', 'Care Cells', 'Baptism', 'Volunteer Management', 'Approvals'],
   },
   {
     id: 'events',
@@ -113,7 +142,7 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
 
   const appFontFamily = FONT_STYLE_OPTIONS.find(o => o.id === fontStyle)?.family || (Platform.OS === 'ios' ? 'System' : 'sans-serif');
   const screenBg = isDark ? '#09090B' : (colors.background || '#FAF7F2');
-  const cardBg = isDark ? '#1C1C22' : '#FFFFFF';
+  const cardBg = isDark ? '#18181B' : '#FFFFFF';
   const cardBorder = isDark ? '#27272A' : '#E2E8F0';
   const primaryText = isDark ? '#FFFFFF' : (colors.text || '#0F172A');
   const secondaryText = isDark ? '#A1A1AA' : '#64748B';
@@ -149,6 +178,11 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
   const isMediumDevice = windowWidth >= 375 && windowWidth < 415;
   const horizontalPadding = isSmallDevice ? 14 : isMediumDevice ? 16 : 18;
 
+  // Responsive 3-column card dimensions
+  const contentWidth = windowWidth - (horizontalPadding * 2);
+  const gridGap = isSmallDevice ? 10 : 12;
+  const cardWidth = Math.floor((contentWidth - (gridGap * 2)) / 3);
+
   const fullName = member?.name || user?.displayName || 'Administrator';
 
   // Track all rendered tab names so no tab is EVER missed
@@ -170,9 +204,19 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
         bounces={true}
       >
         {/* Over-scroll cover above 0 */}
-        <View pointerEvents="none" style={{ position: 'absolute', top: -800, left: 0, right: 0, height: 800, backgroundColor: isDark ? '#2D180C' : '#FFC59E' }} />
+        <View 
+          pointerEvents="none" 
+          style={{ 
+            position: 'absolute', 
+            top: -800, 
+            left: 0, 
+            right: 0, 
+            height: 800, 
+            backgroundColor: isDark ? '#2D180C' : '#FFC59E' 
+          }} 
+        />
 
-        {/* ── Top Hero Section: Gradient is self-contained so ALL cards start BELOW it ── */}
+        {/* ── Top Hero Section: Preserved Previous Card ── */}
         <LinearGradient
           colors={isDark ? ['#2D180C', '#1A1008', '#09090B'] : ['#FFC59E', '#FFD1AF', '#FFDEC4', '#FFE9D7', '#FFF2E8']}
           start={{ x: 0, y: 0 }}
@@ -260,7 +304,7 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
             </TouchableOpacity>
           </View>
 
-          {/* ── Centered Admin Dashboard Headline (NO icon, perfectly centered) ── */}
+          {/* ── Centered Admin Dashboard Headline ── */}
           <View style={styles.adminCenterHeaderBlock}>
             <Text 
               style={[
@@ -282,7 +326,7 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
           </View>
         </LinearGradient>
 
-        {/* ── Main Structured Sections: Completely BELOW the Orange Gradient (Home Screen Quick Access 3D Grid Style) ── */}
+        {/* ── Main Structured Sections: Modern Vector Icon Tab Cards ── */}
         <View style={[styles.sectionsContainer, { paddingHorizontal: horizontalPadding }]}>
           {SECTIONS.map((section) => {
             const sectionTabs = section.tabNames
@@ -296,7 +340,7 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
             if (sectionTabs.length === 0) return null;
 
             return (
-              <View key={`sec_3d_${section.id}`} style={styles.sectionBlock}>
+              <View key={`sec_${section.id}`} style={styles.sectionBlock}>
                 {/* Section Header Row */}
                 <View style={styles.sectionHeaderRow}>
                   <Text style={[styles.sectionTitleTxt, { color: primaryText, fontFamily: appFontFamily }]}>
@@ -307,61 +351,68 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
                   </Text>
                 </View>
 
-                {/* 4-in-a-Row 3D Icon Grid (Exact Home Screen Quick Access Pattern) */}
-                <View style={styles.grid4Container}>
-                  {Array.from({ length: Math.ceil(sectionTabs.length / 4) }).map((_, rowIndex) => {
-                    const rowItems = sectionTabs.slice(rowIndex * 4, rowIndex * 4 + 4);
+                {/* 3-in-a-Row Modern Tab Cards Grid */}
+                <View style={styles.tabGrid}>
+                  {Array.from({ length: Math.ceil(sectionTabs.length / 3) }).map((_, rowIndex) => {
+                    const rowItems = sectionTabs.slice(rowIndex * 3, rowIndex * 3 + 3);
                     if (rowItems.length === 0) return null;
 
                     return (
-                      <View 
-                        key={rowIndex} 
-                        style={[
-                          styles.grid4Row, 
-                          rowItems.length < 4 && { justifyContent: 'flex-start', gap: '2.93%' }
-                        ]}
-                      >
+                      <View key={`row_${section.id}_${rowIndex}`} style={styles.tabRow}>
                         {rowItems.map((tab: any) => {
-                          const asset = TAB_3D_ASSETS[tab.name] || { icon: require('../../../assets/3d_about_us.png') };
+                          const tabConfig = TAB_ICONS[tab.name] || { icon: HelpCircle, color: '#64748B' };
+                          const IconComponent = tabConfig.icon;
+                          const iconColor = tabConfig.color;
 
                           return (
                             <TouchableOpacity
-                              key={`tab_3d_${tab.name}_${tab.index}`}
-                              style={styles.grid4Item}
-                              activeOpacity={0.85}
+                              key={`tab_${tab.name}_${tab.index}`}
+                              style={[
+                                styles.tabCard,
+                                {
+                                  width: cardWidth,
+                                  backgroundColor: cardBg,
+                                  borderColor: cardBorder,
+                                  shadowColor: isDark ? '#000' : '#64748B',
+                                  shadowOpacity: isDark ? 0.35 : 0.05,
+                                }
+                              ]}
+                              activeOpacity={0.72}
                               onPress={() => setActiveTab(tab.index)}
                             >
-                              <View
-                                style={[
-                                  styles.grid4Card,
-                                  {
-                                    backgroundColor: cardBg,
-                                    borderColor: cardBorder,
-                                    shadowColor: '#000',
-                                    shadowOpacity: isDark ? 0.25 : 0.05,
-                                  }
-                                ]}
-                              >
-                                <Image
-                                  source={asset.icon}
-                                  style={styles.grid4Icon}
-                                  resizeMode="contain"
+                              {/* Clean Icon Display without surrounding borders or containers */}
+                              <View style={styles.tabIconWrap}>
+                                <IconComponent
+                                  size={isSmallDevice ? 26 : 28}
+                                  color={iconColor}
+                                  strokeWidth={2.2}
                                 />
                               </View>
+
+                              {/* Tab Label (Two-line clear text, never truncated) */}
                               <Text
                                 style={[
-                                  styles.grid4Label,
-                                  { color: primaryText, fontFamily: appFontFamily }
+                                  styles.tabLabel,
+                                  { 
+                                    color: primaryText, 
+                                    fontFamily: appFontFamily,
+                                    fontSize: scaleFont(isSmallDevice ? 11.5 : 12.5),
+                                  }
                                 ]}
-                                numberOfLines={1}
+                                numberOfLines={2}
                                 adjustsFontSizeToFit
-                                minimumFontScale={0.78}
+                                minimumFontScale={0.82}
                               >
                                 {tab.name}
                               </Text>
                             </TouchableOpacity>
                           );
                         })}
+
+                        {/* Spacer elements to maintain column alignment for rows with 1 or 2 items */}
+                        {Array.from({ length: 3 - rowItems.length }).map((_, spacerIdx) => (
+                          <View key={`spacer_${spacerIdx}`} style={{ width: cardWidth }} />
+                        ))}
                       </View>
                     );
                   })}
@@ -392,60 +443,64 @@ export default function AdminDashboard({ navigation, allTabs = [] }: any) {
                   </Text>
                 </View>
 
-                <View style={styles.grid4Container}>
-                  {Array.from({ length: Math.ceil(unrenderedTabs.length / 4) }).map((_, rowIndex) => {
-                    const rowItems = unrenderedTabs.slice(rowIndex * 4, rowIndex * 4 + 4);
+                <View style={styles.tabGrid}>
+                  {Array.from({ length: Math.ceil(unrenderedTabs.length / 3) }).map((_, rowIndex) => {
+                    const rowItems = unrenderedTabs.slice(rowIndex * 3, rowIndex * 3 + 3);
                     if (rowItems.length === 0) return null;
 
                     return (
-                      <View 
-                        key={rowIndex} 
-                        style={[
-                          styles.grid4Row, 
-                          rowItems.length < 4 && { justifyContent: 'flex-start', gap: '2.93%' }
-                        ]}
-                      >
+                      <View key={`row_fallback_${rowIndex}`} style={styles.tabRow}>
                         {rowItems.map((tab: any) => {
-                          const asset = TAB_3D_ASSETS[tab.name] || { icon: require('../../../assets/3d_about_us.png') };
+                          const tabConfig = TAB_ICONS[tab.name] || { icon: HelpCircle, color: '#64748B' };
+                          const IconComponent = tabConfig.icon;
+                          const iconColor = tabConfig.color;
 
                           return (
                             <TouchableOpacity
                               key={`tab_fallback_${tab.name}_${tab.index}`}
-                              style={styles.grid4Item}
-                              activeOpacity={0.85}
+                              style={[
+                                styles.tabCard,
+                                {
+                                  width: cardWidth,
+                                  backgroundColor: cardBg,
+                                  borderColor: cardBorder,
+                                  shadowColor: isDark ? '#000' : '#64748B',
+                                  shadowOpacity: isDark ? 0.35 : 0.05,
+                                }
+                              ]}
+                              activeOpacity={0.72}
                               onPress={() => setActiveTab(tab.index)}
                             >
-                              <View
-                                style={[
-                                  styles.grid4Card,
-                                  {
-                                    backgroundColor: cardBg,
-                                    borderColor: cardBorder,
-                                    shadowColor: '#000',
-                                    shadowOpacity: isDark ? 0.25 : 0.05,
-                                  }
-                                ]}
-                              >
-                                <Image
-                                  source={asset.icon}
-                                  style={styles.grid4Icon}
-                                  resizeMode="contain"
+                              {/* Clean Icon Display without surrounding borders or containers */}
+                              <View style={styles.tabIconWrap}>
+                                <IconComponent
+                                  size={isSmallDevice ? 26 : 28}
+                                  color={iconColor}
+                                  strokeWidth={2.2}
                                 />
                               </View>
                               <Text
                                 style={[
-                                  styles.grid4Label,
-                                  { color: primaryText, fontFamily: appFontFamily }
+                                  styles.tabLabel,
+                                  { 
+                                    color: primaryText, 
+                                    fontFamily: appFontFamily,
+                                    fontSize: scaleFont(isSmallDevice ? 11.5 : 12.5),
+                                  }
                                 ]}
-                                numberOfLines={1}
+                                numberOfLines={2}
                                 adjustsFontSizeToFit
-                                minimumFontScale={0.78}
+                                minimumFontScale={0.82}
                               >
                                 {tab.name}
                               </Text>
                             </TouchableOpacity>
                           );
                         })}
+
+                        {Array.from({ length: 3 - rowItems.length }).map((_, spacerIdx) => (
+                          <View key={`spacer_fb_${spacerIdx}`} style={{ width: cardWidth }} />
+                        ))}
                       </View>
                     );
                   })}
@@ -580,7 +635,7 @@ const styles = StyleSheet.create({
   // ── Sections Container: Positioned Below the Orange Gradient ──
   sectionsContainer: {
     marginTop: 18,
-    gap: 16,
+    gap: 18,
   },
   sectionBlock: {
     width: '100%',
@@ -589,7 +644,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'baseline',
     justifyContent: 'space-between',
-    marginBottom: 10,
+    marginBottom: 12,
     paddingHorizontal: 2,
   },
   sectionTitleTxt: {
@@ -602,45 +657,39 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
-  // ── 4-in-a-Row 3D Icon Grid (Exact Home Screen Pattern) ──
-  grid4Container: {
-    marginTop: 2,
+  // ── 3-in-a-Row Modern Tab Cards Grid ──
+  tabGrid: {
+    width: '100%',
   },
-  grid4Row: {
+  tabRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 14,
+    marginBottom: 12,
   },
-  grid4Item: {
-    width: '22.8%',
-    alignItems: 'center',
-  },
-  grid4Card: {
-    width: '100%',
-    aspectRatio: 1.48,
-    minHeight: 46,
-    maxHeight: 54,
-    borderRadius: 15,
+  tabCard: {
+    borderRadius: 18,
     borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 6,
+    minHeight: 104,
+    overflow: 'hidden',
+    elevation: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+  },
+  tabIconWrap: {
+    height: 36,
     justifyContent: 'center',
     alignItems: 'center',
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 3,
-    elevation: 1,
+    marginBottom: 8,
   },
-  grid4Icon: {
-    width: 38,
-    height: 38,
-  },
-  grid4Label: {
-    marginTop: 6,
-    fontSize: 11.5,
+  tabLabel: {
     fontWeight: '700',
     textAlign: 'center',
     letterSpacing: -0.1,
+    lineHeight: 15,
   },
 
   // ── Bottom Action Buttons ──
