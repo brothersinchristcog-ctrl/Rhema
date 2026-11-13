@@ -118,6 +118,8 @@ export interface RegistrationRequest {
   reviewedByUid?: string;
   reviewedByName?: string;
   reviewedAt?: string;
+  fcmToken?: string;
+  platform?: string;
   churchId: string;
 }
 
@@ -1734,7 +1736,7 @@ class FirestoreService {
             .get({ source: 'server' })
             .catch(() => null);
 
-          if (reqDoc && reqDoc.exists) {
+          if (reqDoc && reqDoc.exists()) {
             const reqData = reqDoc.data() as RegistrationRequest;
             if (reqData?.status === 'pending') {
               return { exists: false, isPending: true, registrationRequest: reqData };
@@ -1803,7 +1805,7 @@ class FirestoreService {
           .get({ source: 'server' })
           .catch(() => null);
 
-        if (reqDoc && reqDoc.exists) {
+        if (reqDoc && reqDoc.exists()) {
           const reqData = reqDoc.data() as RegistrationRequest;
           if (reqData?.status === 'pending') {
             return { exists: false, isPending: true, registrationRequest: reqData };
@@ -5029,7 +5031,7 @@ class FirestoreService {
         .collection('registration_requests')
         .doc(docId)
         .get();
-      if (doc.exists) {
+      if (doc.exists()) {
         return { id: doc.id, ...doc.data() } as RegistrationRequest;
       }
       return null;
@@ -5185,7 +5187,7 @@ class FirestoreService {
         .doc(docId)
         .onSnapshot(
           (snap: any) => {
-            if (snap && snap.exists) {
+            if (snap && snap.exists()) {
               callback({ id: snap.id, ...snap.data() } as RegistrationRequest);
             } else {
               callback(null);
@@ -5215,7 +5217,7 @@ class FirestoreService {
         .doc(requestId);
 
       const snap = await docRef.get();
-      if (!snap.exists) {
+      if (!snap.exists()) {
         return { success: false, error: 'Registration request not found' };
       }
 
@@ -5259,6 +5261,8 @@ class FirestoreService {
         approvedAt: new Date().toISOString(),
         approvedByUid: adminUid || '',
         approvedByName: adminName || 'Admin',
+        ...(reqData.fcmToken ? { fcmToken: reqData.fcmToken } : {}),
+        ...(reqData.platform ? { platform: reqData.platform } : {}),
       };
 
       await firestore()
@@ -5310,7 +5314,7 @@ class FirestoreService {
         .doc(requestId);
 
       const snap = await docRef.get();
-      if (snap.exists) {
+      if (snap.exists()) {
         const reqData = snap.data() as RegistrationRequest;
         const targetMemberId = reqData.authUid || requestId;
         // Delete from members collection in Firebase if any stub or doc exists
@@ -5348,7 +5352,7 @@ class FirestoreService {
         .doc(requestId);
 
       const snap = await docRef.get();
-      if (snap.exists) {
+      if (snap.exists()) {
         const reqData = snap.data() as RegistrationRequest;
         const targetMemberId = reqData.authUid || requestId;
         // Ensure any member doc is also permanently deleted

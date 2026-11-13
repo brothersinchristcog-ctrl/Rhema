@@ -247,12 +247,12 @@ export default function SongDetailModal({
             ]}
           >
             <TouchableOpacity
-              style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              style={styles.cleanHeaderBtn}
               onPress={onClose}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              activeOpacity={0.8}
+              hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
+              activeOpacity={0.7}
             >
-              <ArrowLeft size={20} color={colors.text} strokeWidth={2.4} />
+              <ArrowLeft size={22} color={colors.text} strokeWidth={2.4} />
             </TouchableOpacity>
 
             <View style={styles.headerTitleWrap}>
@@ -268,13 +268,13 @@ export default function SongDetailModal({
 
             {onToggleSave ? (
               <TouchableOpacity
-                style={[styles.circularBackBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                style={styles.cleanHeaderBtn}
                 onPress={() => onToggleSave(song)}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                activeOpacity={0.8}
+                hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
+                activeOpacity={0.7}
               >
                 <Bookmark 
-                  size={18} 
+                  size={20} 
                   color={isSaved ? (!isDark ? '#0F172A' : '#E8C46E') : colors.textSecondary} 
                   fill={isSaved ? (!isDark ? '#0F172A' : '#E8C46E') : 'none'} 
                 />
@@ -528,6 +528,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingBottom: 14,
+  },
+  cleanHeaderBtn: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   circularBackBtn: {
     width: 44,

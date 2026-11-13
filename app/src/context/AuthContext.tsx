@@ -23,6 +23,8 @@ interface AuthContextType {
   registrationRequest: any | null;
   refreshApprovalStatus: () => Promise<boolean>;
   setPendingApprovalState: (pending: boolean, rejected?: boolean, req?: any) => void;
+  isCompletingSignUp: boolean;
+  setIsCompletingSignUp: (val: boolean) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -36,9 +38,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isPendingApproval, setIsPendingApproval] = useState(false);
   const [isRejected, setIsRejected] = useState(false);
   const [registrationRequest, setRegistrationRequest] = useState<any | null>(null);
+  const [isCompletingSignUp, setIsCompletingSignUpState] = useState(false);
   const memberListenerRef = useRef<(() => void) | null>(null);
   const superAdminListenerRef = useRef<(() => void) | null>(null);
   const isSigningOutRef = useRef<boolean>(false);
+  const isCompletingSignUpRef = useRef<boolean>(false);
+
+  const setIsCompletingSignUp = (val: boolean) => {
+    isCompletingSignUpRef.current = val;
+    setIsCompletingSignUpState(val);
+  };
 
   const checkSuperAdminStatus = async (targetUid: string): Promise<boolean> => {
     if (!targetUid) return false;
@@ -345,6 +354,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             );
 
             if (!hasValidMemberProfile && !isPlatformSuperAdmin) {
+              // If the user is actively completing OTP + saving registration details, let VerifyOtp finish
+              // persisting formData to Firestore & AsyncStorage before switching to ApprovalPending.
+              if (isCompletingSignUpRef.current) {
+                setLoading(false);
+                return;
+              }
+
               // This is a registering user or applicant awaiting admin approval!
               console.log('⏳ [Auth] User is not an active approved member yet. Checking registration request...');
               setMember(null);
@@ -360,7 +376,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               } else {
                 setIsPendingApproval(true);
                 setIsRejected(false);
-                setRegistrationRequest(reqData || { phone: phoneToCheck, status: 'pending' });
+                setRegistrationRequest((prev: any) =>
+                  reqData || (prev?.fullName || prev?.firstName ? prev : { phone: phoneToCheck, status: 'pending' })
+                );
               }
               setLoading(false);
               return;
@@ -583,6 +601,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsPendingApproval(false);
       setIsRejected(false);
       setRegistrationRequest(null);
+      setIsCompletingSignUp(false);
     } catch (error) {
       console.error('Sign out error:', error);
     } finally {
@@ -680,6 +699,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       registrationRequest,
       refreshApprovalStatus,
       setPendingApprovalState,
+      isCompletingSignUp,
+      setIsCompletingSignUp,
     }}>
       {children}
     </AuthContext.Provider>

@@ -20,6 +20,7 @@ export const ta: TranslationSchema = {
     clear: 'அழி',
     viewAll: 'அனைத்தும் பார்',
     readMore: 'மேலும் படிக்க',
+    showMore: 'மேலும் காட்டு',
     showLess: 'குறைவாகக் காட்டு',
     loading: 'ஏற்றுகிறது...',
     refresh: 'புதுப்பி',

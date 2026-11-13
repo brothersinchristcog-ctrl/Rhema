@@ -15,11 +15,14 @@ import {
   Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Path } from 'react-native-svg';
+import { RHEMA_LOGO_PATH, RHEMA_LOGO_VIEWBOX } from './rhemaLogoPath';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ChevronLeft,
   AlertTriangle,
+  AlertCircle,
   Calendar,
   Phone,
   Clock,
@@ -27,13 +30,27 @@ import {
 import FirestoreService from '../../services/FirestoreService';
 import auth from '@react-native-firebase/auth';
 
+import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
+import { sendOtpWithoutAutoSignIn, submitPendingRegistration } from '../../utils/phoneAuthHelper';
 
 export default function SignUpScreen({ navigation }: any) {
   const { churchId, activeChurch } = useChurch();
+  const { setIsCompletingSignUp, setPendingApprovalState } = useAuth();
   const [loading, setLoading] = useState(false);
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [showPendingModal, setShowPendingModal] = useState(false);
+  const [validationModal, setValidationModal] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    fields?: string[];
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    fields: [],
+  });
   const [pendingReqData, setPendingReqData] = useState<any>(null);
   const [isDatePickerVisible, setDatePickerVisibility] = useState(false);
   const [datePickerField, setDatePickerField] = useState('');
@@ -82,18 +99,40 @@ export default function SignUpScreen({ navigation }: any) {
   };
 
   const handleSignUp = async () => {
-    if (!formData.firstName || !formData.lastName || !formData.phone) {
-      Alert.alert('Required Fields', 'Please fill in your name and phone number.');
+    if (!formData.firstName?.trim() || !formData.lastName?.trim() || !formData.phone?.trim()) {
+      setValidationModal({
+        visible: true,
+        title: 'Required Fields',
+        message: 'Please fill in your name and phone number.',
+      });
+      return;
+    }
+
+    const rawPhoneDigits = formData.phone.replace(/[^0-9]/g, '');
+    if (rawPhoneDigits.length !== 10) {
+      setValidationModal({
+        visible: true,
+        title: 'Invalid Number',
+        message: 'Please enter a valid 10-digit phone number.',
+      });
       return;
     }
 
     if (formData.baptized === 'Yes' && (!formData.baptismDate || !formData.baptismChurch)) {
-      Alert.alert('Baptism Details', 'Please provide the Date and Church of your baptism.');
+      setValidationModal({
+        visible: true,
+        title: 'Baptism Details',
+        message: 'Please provide the Date and Church of your baptism.',
+      });
       return;
     }
 
     if (formData.maritalStatus !== 'Single' && (!formData.anniversaryDate || !formData.numberOfChildren)) {
-      Alert.alert('Marital Details', 'Please provide your Anniversary Date and Number of Children.');
+      setValidationModal({
+        visible: true,
+        title: 'Marital Details',
+        message: 'Please provide your Anniversary Date and Number of Children.',
+      });
       return;
     }
 
@@ -102,7 +141,11 @@ export default function SignUpScreen({ navigation }: any) {
       const checkResult = await FirestoreService.checkContactExists(formData.phone);
       
       if (checkResult?.error) {
-        Alert.alert('Database Error', 'Unable to verify phone number. Please try again later.');
+        setValidationModal({
+          visible: true,
+          title: 'Database Error',
+          message: 'Unable to verify phone number. Please try again later.',
+        });
         setLoading(false);
         return;
       }
@@ -133,23 +176,63 @@ export default function SignUpScreen({ navigation }: any) {
       }
       
       if (!cleanNum.startsWith('+') || cleanNum.length < 12) {
-        Alert.alert('Invalid Number', 'Please enter a valid 10-digit phone number.');
+        setValidationModal({
+          visible: true,
+          title: 'Invalid Mobile Number',
+          message: 'Please enter a valid 10-digit phone number.',
+        });
         setLoading(false);
         return;
       }
 
-      // Send OTP
-      const confirmation = await auth().signInWithPhoneNumber(cleanNum);
-      
-      // Navigate to OTP screen and pass the formData so it can be saved after verification
-      navigation.navigate('VerifyOtp', { 
-        confirmation, 
+      // Keep AuthNavigator mounted while SignUp OTP & registration submission complete
+      setIsCompletingSignUp(true);
+
+      // Send OTP without auto-signing in on SMS arrival so the user stays on VerifyOtp
+      const sendRes = await sendOtpWithoutAutoSignIn(cleanNum, false);
+
+      if (sendRes.mode === 'instant_verified' && !sendRes.autoCode) {
+        // Google Play Services instant-verified SIM without sending SMS: complete sign-in & save full form data
+        const credential = auth.PhoneAuthProvider.credential(null as any, '');
+        const credResult = await auth().signInWithCredential(credential);
+        if (credResult?.user) {
+          const submitRes = await submitPendingRegistration({
+            authUid: credResult.user.uid,
+            phoneNumber: cleanNum,
+            churchId,
+            formData,
+            setPendingApprovalState,
+          });
+          if (!submitRes.success) {
+            await auth().signOut().catch(() => {});
+            setIsCompletingSignUp(false);
+            Alert.alert('Registration Error', submitRes.error || 'Failed to save registration details.');
+            return;
+          }
+          setIsCompletingSignUp(false);
+          navigation.replace('ApprovalPending', {
+            phoneNumber: submitRes.formattedPhone,
+            churchId: submitRes.targetChurch,
+            applicantName: submitRes.fullName,
+            city: formData.city,
+            gender: formData.gender,
+            dob: formData.dob,
+            applicantData: submitRes.requestData,
+          });
+          return;
+        }
+      }
+
+      // Navigate to OTP screen and pass the formData & verificationId so user verifies & saves after OTP
+      navigation.navigate('VerifyOtp', {
+        verificationId: sendRes.verificationId,
         phoneNumber: cleanNum,
-        formData: formData, // Pass all form data to save after OTP
-        isSignUp: true      // Flag to indicate this is a new registration
+        formData: formData,
+        isSignUp: true,
       });
 
     } catch (error: any) {
+      setIsCompletingSignUp(false);
       if (error?.message?.includes('failed-precondition') || error?.message?.includes('index')) {
         Alert.alert('System Updating', 'The database is currently updating its indexes. Please try registering again in 1-2 minutes.');
       } else {
@@ -200,14 +283,16 @@ export default function SignUpScreen({ navigation }: any) {
               </TouchableOpacity>
             </View>
 
-            {/* 3D Character Illustration Area with Semi-Circle Arch */}
+            {/* Rhema Global Ministries wordmark */}
             <View style={styles.characterContainer}>
-              <View style={styles.semiCircleArch} />
-              <Image 
-                source={require('../../../assets/login_character.png')}
-                style={styles.characterImg}
-                resizeMode="contain"
-              />
+              <View style={styles.brandWrap}>
+                <View style={styles.brandLogoBox}>
+                  <Svg width="100%" height="100%" viewBox={RHEMA_LOGO_VIEWBOX}>
+                    <Path d={RHEMA_LOGO_PATH} fill="#0B1F5C" fillRule="evenodd" />
+                  </Svg>
+                  <Text style={styles.brandSub} numberOfLines={1} adjustsFontSizeToFit>GLOBAL MINISTRIES</Text>
+                </View>
+              </View>
             </View>
           </LinearGradient>
 
@@ -219,26 +304,24 @@ export default function SignUpScreen({ navigation }: any) {
             {/* ── First Name and Last Name in ONE Row ── */}
             <View style={styles.nameRow}>
               <View style={[styles.inputGroup, { flex: 1, marginRight: 10 }]}>
-                <Text style={styles.inputLabel}>FIRST NAME</Text>
                 <View style={styles.inputWrapper}>
                   <TextInput 
                     style={styles.input} 
                     value={formData.firstName} 
                     onChangeText={(v) => handleInputChange('firstName', v)} 
-                    placeholder="John" 
+                    placeholder="First name" 
                     placeholderTextColor="#94A3B8" 
                   />
                 </View>
               </View>
 
               <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.inputLabel}>LAST NAME</Text>
                 <View style={styles.inputWrapper}>
                   <TextInput 
                     style={styles.input} 
                     value={formData.lastName} 
                     onChangeText={(v) => handleInputChange('lastName', v)} 
-                    placeholder="Mathew" 
+                    placeholder="Last name" 
                     placeholderTextColor="#94A3B8" 
                   />
                 </View>
@@ -247,7 +330,6 @@ export default function SignUpScreen({ navigation }: any) {
 
             {/* ── Mobile Number Pill ── */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>MOBILE NUMBER</Text>
               <View style={styles.pillInputWrapper}>
                 <View style={styles.phoneIconWrap}>
                   <Phone size={19} color="#FA6203" strokeWidth={2.4} />
@@ -268,13 +350,12 @@ export default function SignUpScreen({ navigation }: any) {
 
             {/* ── Village / City ── */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>VILLAGE / CITY</Text>
               <View style={styles.inputWrapper}>
                 <TextInput 
                   style={styles.input} 
                   value={formData.city} 
                   onChangeText={(v) => handleInputChange('city', v)} 
-                  placeholder="Enter your village or city" 
+                  placeholder="Village or City" 
                   placeholderTextColor="#94A3B8" 
                 />
               </View>
@@ -283,11 +364,10 @@ export default function SignUpScreen({ navigation }: any) {
             {/* ── Date of Birth & Gender in One Row ── */}
             <View style={styles.row}>
               <View style={[styles.inputGroup, { flex: 1, marginRight: 10 }]}>
-                <Text style={styles.inputLabel}>DATE OF BIRTH</Text>
                 <TouchableOpacity onPress={() => showDatePicker('dob')} activeOpacity={0.8}>
                   <View style={[styles.inputWrapper, styles.dateInputWrapper]}>
                     <Text style={formData.dob ? styles.inputValue : styles.inputPlaceholder}>
-                      {formData.dob ? formData.dob.split('-').reverse().join('-') : 'DD-MM-YYYY'}
+                      {formData.dob ? formData.dob.split('-').reverse().join('-') : 'Date of Birth'}
                     </Text>
                     <Calendar size={18} color="#FA6203" />
                   </View>
@@ -295,7 +375,6 @@ export default function SignUpScreen({ navigation }: any) {
               </View>
 
               <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.inputLabel}>GENDER</Text>
                 <View style={styles.genderRow}>
                   <TouchableOpacity 
                     style={[styles.genderBtn, formData.gender === 'Male' && styles.genderBtnActive]} 
@@ -342,6 +421,41 @@ export default function SignUpScreen({ navigation }: any) {
 
       {/* Bottom safe area is pure white */}
       <SafeAreaView edges={['bottom']} style={{ backgroundColor: '#FFFFFF' }} />
+
+      {/* ── Custom Validation Alert Modal Popup Card ── */}
+      <Modal 
+        animationType="fade" 
+        transparent={true} 
+        visible={validationModal.visible}
+        onRequestClose={() => setValidationModal(prev => ({ ...prev, visible: false }))}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.validationCard}>
+            {/* Top Right Corner Rhema Global Ministries branding */}
+            <View style={styles.popupTopRightBrand}>
+              <View style={styles.popupBrandScaleWrap}>
+                <View style={styles.brandLogoBox}>
+                  <Svg width="100%" height="100%" viewBox={RHEMA_LOGO_VIEWBOX}>
+                    <Path d={RHEMA_LOGO_PATH} fill="#0B1F5C" fillRule="evenodd" />
+                  </Svg>
+                  <Text style={styles.brandSub} numberOfLines={1} adjustsFontSizeToFit>GLOBAL MINISTRIES</Text>
+                </View>
+              </View>
+            </View>
+
+            <Text style={styles.validationTitle}>{validationModal.title}</Text>
+            <Text style={styles.validationSub}>{validationModal.message}</Text>
+
+            <TouchableOpacity 
+              style={styles.validationActionBtn} 
+              onPress={() => setValidationModal(prev => ({ ...prev, visible: false }))}
+              activeOpacity={0.88}
+            >
+              <Text style={styles.validationActionBtnTxt}>Okay</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* ── Duplicate Member Alert Modal ── */}
       <Modal animationType="fade" transparent={true} visible={showDuplicateModal}>
@@ -468,21 +582,27 @@ const styles = StyleSheet.create({
     position: 'relative',
     paddingTop: 0,
   },
-  semiCircleArch: {
-    position: 'absolute',
-    bottom: 0,
-    width: 250,
-    height: 165,
-    borderTopLeftRadius: 125,
-    borderTopRightRadius: 125,
-    borderBottomLeftRadius: 0,
-    borderBottomRightRadius: 0,
-    backgroundColor: '#FCEEE2',
-    alignSelf: 'center',
-  },
-  characterImg: {
-    width: '100%',
+  brandWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
     height: 175,
+    paddingBottom: 70,
+  },
+  brandLogoBox: {
+    width: 210,
+    height: 88,
+  },
+  brandSub: {
+    position: 'absolute',
+    left: 73,
+    top: 67,
+    width: 136,
+    textAlign: 'center',
+    fontSize: 10.5,
+    fontWeight: '700',
+    letterSpacing: 2.2,
+    color: '#07153F',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
   },
   formContainer: {
     backgroundColor: '#FFFFFF',
@@ -516,7 +636,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   inputGroup: {
-    marginBottom: 14,
+    marginBottom: 16,
   },
   inputLabel: {
     fontSize: 11,
@@ -532,8 +652,8 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     height: 52,
     paddingHorizontal: 16,
-    borderWidth: 1.2,
-    borderColor: '#EDF2F6',
+    borderWidth: 1.4,
+    borderColor: '#CBD5E1',
     shadowColor: '#718096',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
@@ -554,8 +674,8 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     height: 52,
     paddingHorizontal: 16,
-    borderWidth: 1.2,
-    borderColor: '#EDF2F6',
+    borderWidth: 1.4,
+    borderColor: '#CBD5E1',
     shadowColor: '#718096',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
@@ -605,6 +725,8 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     padding: 3,
     height: 52,
+    borderWidth: 1.2,
+    borderColor: '#CBD5E1',
   },
   genderBtn: {
     flex: 1,
@@ -736,5 +858,70 @@ const styles = StyleSheet.create({
     color: '#64748B', 
     fontSize: 14, 
     fontWeight: '600' 
+  },
+  validationCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 28,
+    paddingHorizontal: 24,
+    paddingTop: 68,
+    paddingBottom: 22,
+    width: '100%',
+    maxWidth: 360,
+    alignItems: 'center',
+    position: 'relative',
+    shadowColor: '#0A1629',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 10,
+  },
+  popupTopRightBrand: {
+    position: 'absolute',
+    top: 14,
+    right: 16,
+    width: 90,
+    height: 38,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  popupBrandScaleWrap: {
+    width: 210,
+    height: 88,
+    transform: [{ scale: 0.42 }],
+  },
+  validationTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0A1629',
+    textAlign: 'center',
+    marginBottom: 8,
+    letterSpacing: -0.3,
+  },
+  validationSub: {
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 22,
+    paddingHorizontal: 8,
+  },
+  validationActionBtn: {
+    backgroundColor: '#0F172A',
+    height: 48,
+    width: '100%',
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 3,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+  },
+  validationActionBtnTxt: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
 });

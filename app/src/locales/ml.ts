@@ -20,6 +20,7 @@ export const ml: TranslationSchema = {
     clear: 'മായ്ക്കുക',
     viewAll: 'എല്ലാം കാണുക',
     readMore: 'കൂടുതൽ വായിക്കുക',
+    showMore: 'കൂടുതൽ കാണിക്കുക',
     showLess: 'കുറച്ച് കാണിക്കുക',
     loading: 'ലോഡ് ചെയ്യുന്നു...',
     refresh: 'പുതുക്കുക',

@@ -1267,31 +1267,27 @@ export default function SongsScreen({ navigation, route }: any) {
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#000000' : colors.background }]}>
       <StatusBar
-        barStyle="light-content"
-        backgroundColor={isDark ? '#000000' : '#1E293B'}
+        barStyle="dark-content"
+        backgroundColor="#FFE4CC"
       />
 
-      
-      
-            {/* ── Top Header Card (Clean square card containing header, tabs, and straight category badges) ── */}
+      {/* ── Top Header Card (Clean square card containing header, tabs, and straight category badges) ── */}
       <View
         style={{
-          backgroundColor: isDark ? '#121214' : '#1E293B',
+          backgroundColor: '#FFE4CC',
           borderBottomWidth: 1,
-          borderBottomColor: isDark ? '#27272A' : '#334155',
+          borderBottomColor: 'rgba(250, 98, 3, 0.15)',
           overflow: 'hidden',
           paddingBottom: 14,
         }}
       >
-        {!isDark && (
-          <LinearGradient
-            colors={['#1E293B', '#334155', '#475569']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0.35, y: 1 }}
-            style={StyleSheet.absoluteFillObject}
-            pointerEvents="none"
-          />
-        )}
+        <LinearGradient
+          colors={['#FFE4CC', '#FFD3AE', '#FFBF8C']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0.35, y: 1 }}
+          style={StyleSheet.absoluteFillObject}
+          pointerEvents="none"
+        />
 
         {/* ── Screen Header (Clean circular back button & title) ── */}
         <View
@@ -1301,21 +1297,15 @@ export default function SongsScreen({ navigation, route }: any) {
           ]}
         >
           <TouchableOpacity
-            style={[
-              styles.circularBackBtn,
-              {
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(255, 255, 255, 0.16)',
-                borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(255, 255, 255, 0.28)',
-              }
-            ]}
+            style={styles.headerBackBtn}
             onPress={() => navigation.goBack()}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
             activeOpacity={0.7}
           >
-            <ArrowLeft size={20} color="#FFFFFF" strokeWidth={2.4} />
+            <ArrowLeft size={22} color="#0F172A" strokeWidth={2.4} />
           </TouchableOpacity>
 
-          <Text style={[styles.headerTitleText, { color: '#FFFFFF' }]} numberOfLines={1}>
+          <Text style={[styles.headerTitleText, { color: '#0F172A' }]} numberOfLines={1}>
             {t('songs.worshipAndPraise')}
           </Text>
 
@@ -1331,13 +1321,13 @@ export default function SongsScreen({ navigation, route }: any) {
                 styles.tabPill,
                 activeTab === 'browse'
                   ? {
-                      backgroundColor: isDark ? '#c9e8a3' : '#FFFFFF',
-                      borderColor: isDark ? '#c9e8a3' : '#FFFFFF',
+                      backgroundColor: '#FA6203',
+                      borderColor: '#FA6203',
                       borderWidth: 1.5,
                     }
                   : {
-                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(255, 255, 255, 0.16)',
-                      borderColor: isDark ? 'rgba(255, 255, 255, 0.20)' : 'rgba(255, 255, 255, 0.28)',
+                      backgroundColor: 'rgba(255, 255, 255, 0.75)',
+                      borderColor: 'rgba(250, 98, 3, 0.18)',
                       borderWidth: 1.5,
                     },
               ]}
@@ -1348,8 +1338,8 @@ export default function SongsScreen({ navigation, route }: any) {
                 size={13}
                 color={
                   activeTab === 'browse'
-                    ? (isDark ? '#16213f' : '#0F172A')
-                    : '#FFFFFF'
+                    ? '#FFFFFF'
+                    : '#0F172A'
                 }
                 strokeWidth={2.4}
               />
@@ -1358,8 +1348,8 @@ export default function SongsScreen({ navigation, route }: any) {
                   styles.tabPillTxt,
                   {
                     color: activeTab === 'browse'
-                      ? (isDark ? '#16213f' : '#0F172A')
-                      : '#FFFFFF',
+                      ? '#FFFFFF'
+                      : '#0F172A',
                   },
                   activeTab === 'browse' && { fontWeight: '900' },
                 ]}
@@ -1374,13 +1364,13 @@ export default function SongsScreen({ navigation, route }: any) {
                 styles.tabPill,
                 activeTab === 'eventSongs'
                   ? {
-                      backgroundColor: isDark ? '#c9e8a3' : '#FFFFFF',
-                      borderColor: isDark ? '#c9e8a3' : '#FFFFFF',
+                      backgroundColor: '#FA6203',
+                      borderColor: '#FA6203',
                       borderWidth: 1.5,
                     }
                   : {
-                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(255, 255, 255, 0.16)',
-                      borderColor: isDark ? 'rgba(255, 255, 255, 0.20)' : 'rgba(255, 255, 255, 0.28)',
+                      backgroundColor: 'rgba(255, 255, 255, 0.75)',
+                      borderColor: 'rgba(250, 98, 3, 0.18)',
                       borderWidth: 1.5,
                     },
               ]}
@@ -1391,8 +1381,8 @@ export default function SongsScreen({ navigation, route }: any) {
                 size={13}
                 color={
                   activeTab === 'eventSongs'
-                    ? (isDark ? '#16213f' : '#0F172A')
-                    : '#FFFFFF'
+                    ? '#FFFFFF'
+                    : '#0F172A'
                 }
                 strokeWidth={2.4}
               />
@@ -1401,8 +1391,8 @@ export default function SongsScreen({ navigation, route }: any) {
                   styles.tabPillTxt,
                   {
                     color: activeTab === 'eventSongs'
-                      ? (isDark ? '#16213f' : '#0F172A')
-                      : '#FFFFFF',
+                      ? '#FFFFFF'
+                      : '#0F172A',
                   },
                   activeTab === 'eventSongs' && { fontWeight: '900' },
                 ]}
@@ -1417,13 +1407,13 @@ export default function SongsScreen({ navigation, route }: any) {
                 styles.tabPill,
                 activeTab === 'theme'
                   ? {
-                      backgroundColor: isDark ? '#c9e8a3' : '#FFFFFF',
-                      borderColor: isDark ? '#c9e8a3' : '#FFFFFF',
+                      backgroundColor: '#FA6203',
+                      borderColor: '#FA6203',
                       borderWidth: 1.5,
                     }
                   : {
-                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(255, 255, 255, 0.16)',
-                      borderColor: isDark ? 'rgba(255, 255, 255, 0.20)' : 'rgba(255, 255, 255, 0.28)',
+                      backgroundColor: 'rgba(255, 255, 255, 0.75)',
+                      borderColor: 'rgba(250, 98, 3, 0.18)',
                       borderWidth: 1.5,
                     },
               ]}
@@ -1434,8 +1424,8 @@ export default function SongsScreen({ navigation, route }: any) {
                 size={13}
                 color={
                   activeTab === 'theme'
-                    ? (isDark ? '#16213f' : '#0F172A')
-                    : '#FFFFFF'
+                    ? '#FFFFFF'
+                    : '#0F172A'
                 }
                 strokeWidth={2.4}
               />
@@ -1444,8 +1434,8 @@ export default function SongsScreen({ navigation, route }: any) {
                   styles.tabPillTxt,
                   {
                     color: activeTab === 'theme'
-                      ? (isDark ? '#16213f' : '#0F172A')
-                      : '#FFFFFF',
+                      ? '#FFFFFF'
+                      : '#0F172A',
                   },
                   activeTab === 'theme' && { fontWeight: '900' },
                 ]}
@@ -1460,13 +1450,13 @@ export default function SongsScreen({ navigation, route }: any) {
                 styles.tabPill,
                 activeTab === 'songbook'
                   ? {
-                      backgroundColor: isDark ? '#c9e8a3' : '#FFFFFF',
-                      borderColor: isDark ? '#c9e8a3' : '#FFFFFF',
+                      backgroundColor: '#FA6203',
+                      borderColor: '#FA6203',
                       borderWidth: 1.5,
                     }
                   : {
-                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(255, 255, 255, 0.16)',
-                      borderColor: isDark ? 'rgba(255, 255, 255, 0.20)' : 'rgba(255, 255, 255, 0.28)',
+                      backgroundColor: 'rgba(255, 255, 255, 0.75)',
+                      borderColor: 'rgba(250, 98, 3, 0.18)',
                       borderWidth: 1.5,
                     },
               ]}
@@ -1477,8 +1467,8 @@ export default function SongsScreen({ navigation, route }: any) {
                 size={13}
                 color={
                   activeTab === 'songbook'
-                    ? (isDark ? '#16213f' : '#0F172A')
-                    : '#FFFFFF'
+                    ? '#FFFFFF'
+                    : '#0F172A'
                 }
                 strokeWidth={2.4}
               />
@@ -1487,8 +1477,8 @@ export default function SongsScreen({ navigation, route }: any) {
                   styles.tabPillTxt,
                   {
                     color: activeTab === 'songbook'
-                      ? (isDark ? '#16213f' : '#0F172A')
-                      : '#FFFFFF',
+                      ? '#FFFFFF'
+                      : '#0F172A',
                   },
                   activeTab === 'songbook' && { fontWeight: '900' },
                 ]}
@@ -1521,13 +1511,13 @@ export default function SongsScreen({ navigation, route }: any) {
                     styles.chip,
                     isSelected
                       ? {
-                          backgroundColor: isDark ? '#FFFFFF' : '#0F172A',
-                          borderColor: isDark ? '#FFFFFF' : '#0F172A',
+                          backgroundColor: '#0F172A',
+                          borderColor: '#0F172A',
                           borderWidth: 1.5,
                         }
                       : {
-                          backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.16)',
-                          borderColor: isDark ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.28)',
+                          backgroundColor: 'rgba(255, 255, 255, 0.75)',
+                          borderColor: 'rgba(250, 98, 3, 0.18)',
                           borderWidth: 1.5,
                         },
                   ]}
@@ -1538,8 +1528,8 @@ export default function SongsScreen({ navigation, route }: any) {
                       styles.chipTxt,
                       {
                         color: isSelected
-                          ? (isDark ? '#0F172A' : '#FFFFFF')
-                          : '#FFFFFF',
+                          ? '#FFFFFF'
+                          : '#0F172A',
                       },
                       isSelected && { fontWeight: '800' },
                     ]}
@@ -1781,6 +1771,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingBottom: 14,
+  },
+  headerBackBtn: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   circularBackBtn: {
     width: 40,

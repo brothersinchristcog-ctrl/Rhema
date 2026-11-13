@@ -91,7 +91,7 @@ function buildThemedStyleSheet<T extends Record<string, any>>(
     (Platform.OS === 'ios' ? 'System' : 'sans-serif');
   const screenBg = isDark ? '#000000' : colors?.background || '#FAF7F2';
   const cardSurface = isDark ? '#18181B' : colors?.surface || '#FFFFFF';
-  const secondarySurface = isDark ? '#27272A' : colors?.surfaceSecondary || (state.appearance === 'sage_ecru' ? '#DCE2D0' : '#F1F5F9');
+  const secondarySurface = isDark ? '#27272A' : colors?.surfaceSecondary || '#F1F5F9';
   const primaryText = isDark ? '#FFFFFF' : colors?.text || '#0F172A';
   const secondaryText = isDark ? '#A1A1AA' : colors?.textSecondary || '#475569';
   const borderColor = isDark ? '#27272A' : colors?.border || '#E2E8F0';
@@ -222,7 +222,7 @@ export function useAdminTheme() {
     (Platform.OS === 'ios' ? 'System' : 'sans-serif');
   const screenBg = isDark ? '#000000' : colors.background || '#FAF7F2';
   const cardSurface = isDark ? '#18181B' : colors.surface || '#FFFFFF';
-  const secondarySurface = isDark ? '#27272A' : (activeAppearance === 'sage_ecru' ? '#DCE2D0' : '#F1F5F9');
+  const secondarySurface = isDark ? '#27272A' : '#F1F5F9';
   const primaryText = isDark ? '#FFFFFF' : colors.text || '#0F172A';
   const secondaryText = isDark ? '#A1A1AA' : colors.textSecondary || '#475569';
   const borderColor = isDark ? '#27272A' : colors.border || '#E2E8F0';

@@ -21,17 +21,27 @@ import FirestoreService from '../../services/FirestoreService';
 import InviteLinkService from '../../services/InviteLinkService';
 import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
+import { sendOtpWithoutAutoSignIn, submitPendingRegistration } from '../../utils/phoneAuthHelper';
 import { ChevronLeft } from 'lucide-react-native';
 
 type VerifyOtpScreenProps = NativeStackScreenProps<AuthStackParamList, 'VerifyOtp'>;
 
 export default function VerifyOtpScreen({ route, navigation }: VerifyOtpScreenProps) {
   const insets = useSafeAreaInsets();
-  const { confirmation, phoneNumber, contactId, memberName, formData, isSignUp, invitedChurchId, isGuestInvite } = route.params;
-  const { member, setMember, setPendingApprovalState } = useAuth();
+  const { confirmation, verificationId, phoneNumber, contactId, memberName, formData, isSignUp, invitedChurchId, isGuestInvite } = route.params;
+  const { member, setMember, setPendingApprovalState, setIsCompletingSignUp } = useAuth();
   const { churchId: activeChurchId, setChurchId } = useChurch();
-  
+
   const [currConfirmation, setCurrConfirmation] = useState(confirmation);
+  const [currVerificationId, setCurrVerificationId] = useState(verificationId || '');
+
+  useEffect(() => {
+    if (!isSignUp) return;
+    setIsCompletingSignUp(true);
+    return () => {
+      setIsCompletingSignUp(false);
+    };
+  }, [isSignUp, setIsCompletingSignUp]);
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
@@ -79,8 +89,46 @@ export default function VerifyOtpScreen({ route, navigation }: VerifyOtpScreenPr
       if (cleanNum.length === 10 && !cleanNum.startsWith('+')) {
         cleanNum = `+91${cleanNum}`;
       }
-      const newConfirmation = await auth().signInWithPhoneNumber(cleanNum);
-      setCurrConfirmation(newConfirmation);
+      if (isSignUp || !currConfirmation) {
+        if (isSignUp) {
+          setIsCompletingSignUp(true);
+        }
+        const sendRes = await sendOtpWithoutAutoSignIn(cleanNum, true);
+        if (sendRes.mode === 'instant_verified' && !sendRes.autoCode && isSignUp && formData) {
+          setStatus('Completing instant verification...');
+          const instantCred = auth.PhoneAuthProvider.credential(null as any, '');
+          const userCred = await auth().signInWithCredential(instantCred);
+          if (userCred?.user) {
+            const submitRes = await submitPendingRegistration({
+              authUid: userCred.user.uid,
+              phoneNumber: formData.phone || cleanNum,
+              churchId: activeChurchId || 'rhema',
+              formData,
+              setPendingApprovalState,
+            });
+            if (!submitRes.success) {
+              await auth().signOut().catch(() => {});
+              Alert.alert('Registration Error', submitRes.error || 'Failed to submit registration for approval.');
+              return;
+            }
+            setIsCompletingSignUp(false);
+            navigation.replace('ApprovalPending', {
+              phoneNumber: submitRes.formattedPhone,
+              churchId: submitRes.targetChurch,
+              applicantName: submitRes.fullName,
+              city: formData.city,
+              gender: formData.gender,
+              dob: formData.dob,
+              applicantData: submitRes.requestData,
+            });
+            return;
+          }
+        }
+        setCurrVerificationId(sendRes.verificationId);
+      } else {
+        const newConfirmation = await auth().signInWithPhoneNumber(cleanNum);
+        setCurrConfirmation(newConfirmation);
+      }
       setResendCountdown(30);
       setCanResend(false);
       setCode('');
@@ -100,61 +148,50 @@ export default function VerifyOtpScreen({ route, navigation }: VerifyOtpScreenPr
 
     setLoading(true);
     setStatus('Verifying your code...');
-    
+
     try {
-      const result = await currConfirmation.confirm(code);
+      if (isSignUp) {
+        setIsCompletingSignUp(true);
+      }
+      let result: any;
+      if (currConfirmation) {
+        result = await currConfirmation.confirm(code);
+      } else if (currVerificationId) {
+        const credential = auth.PhoneAuthProvider.credential(currVerificationId, code);
+        result = await auth().signInWithCredential(credential);
+      } else {
+        throw new Error('Verification session expired. Please tap Resend Code and try again.');
+      }
       const AsyncStorage = require('@react-native-async-storage/async-storage').default;
 
       // ── Handle Sign Up Flow: Store details and send for Admin Approval ──
       if (result?.user && isSignUp && formData) {
         setStatus('Submitting registration for approval...');
 
-        const targetChurch = activeChurchId || 'rhema';
-        const cleanPhone = (formData.phone || phoneNumber || '').replace(/[^0-9+]/g, '');
-        const fullName = (formData.fullName || `${formData.firstName || ''} ${formData.lastName || ''}`).trim() || formData.firstName;
-
-        const requestData = {
-          ...formData,
-          fullName,
-          phone: cleanPhone,
+        const submitRes = await submitPendingRegistration({
           authUid: result.user.uid,
-          status: 'pending',
-          createdAt: new Date().toISOString(),
-          churchId: targetChurch,
-        };
+          phoneNumber: formData.phone || phoneNumber,
+          churchId: activeChurchId || 'rhema',
+          formData,
+          setPendingApprovalState,
+        });
 
-        // 1. Immediately store in AsyncStorage and in AuthContext state
-        await AsyncStorage.removeItem('@cached_member').catch(() => {});
-        await AsyncStorage.multiSet([
-          ['@pending_registration_phone', cleanPhone],
-          ['@pending_registration_church', targetChurch],
-          ['@pending_registration_name', fullName],
-          ['@pending_registration_city', formData.city || ''],
-          ['@pending_registration_gender', formData.gender || ''],
-          ['@pending_registration_status', 'pending'],
-          ['@is_pending_approval', 'true'],
-        ]).catch(() => {});
-
-        if (setPendingApprovalState) {
-          setPendingApprovalState(true, false, requestData);
-        }
-
-        // 2. Persist to Firestore registration_requests collection
-        const reqResult = await FirestoreService.createOrUpdateRegistrationRequest(targetChurch, requestData);
-
-        if (!reqResult.success) {
-          Alert.alert('Registration Error', reqResult.error || 'Failed to submit registration for approval.');
+        if (!submitRes.success) {
+          await auth().signOut().catch(() => {});
+          Alert.alert('Registration Error', submitRes.error || 'Failed to submit registration for approval.');
           setLoading(false);
           return;
         }
 
+        setIsCompletingSignUp(false);
         navigation.replace('ApprovalPending', {
-          phoneNumber: cleanPhone,
-          churchId: targetChurch,
-          applicantName: fullName,
+          phoneNumber: submitRes.formattedPhone,
+          churchId: submitRes.targetChurch,
+          applicantName: submitRes.fullName,
           city: formData.city,
           gender: formData.gender,
-          applicantData: requestData,
+          dob: formData.dob,
+          applicantData: submitRes.requestData,
         });
         return;
       }
@@ -577,4 +614,4 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.2,
   },
-});
+ });
