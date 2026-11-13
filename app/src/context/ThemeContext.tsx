@@ -21,7 +21,7 @@ export {
   scaleFontSize,
 };
 
-export type ThemeAppearance = 'warm_white' | 'pure_white' | 'sage_ecru' | 'pure_dark';
+export type ThemeAppearance = 'warm_white' | 'pure_white' | 'pure_dark';
 export type QuickActionsStyle = 'bento' | 'grid';
 export type NavBarStyle = 'pill' | 'capsule';
 // ── Font Style Options ──────────────────────────────────────
@@ -60,43 +60,22 @@ export const THEME_OPTIONS: ThemeOption[] = [
     id: 'warm_white',
     name: 'Warm white',
     sub: 'System default',
-    bg: '#FAF7F2',
-    surface: '#FFFFFF',
+    bg: '#F2EAE0',
+    surface: '#FAF6F0',
     text: '#111827',
     textSecondary: '#64748B',
-    border: '#E2E8F0',
+    border: '#E2D9CC',
     accent: '#2563EB',
     isDark: false,
     barStyle: 'light-content',
     headerGradient: ['#2265FA', '#1D4ED8'],
     headerPillBg: '#EFF6FF',
     headerPillIcon: '#2563EB',
-    tabBarBg: '#FFFFFF',
-    tabBarBorder: '#E2E8F0',
+    tabBarBg: '#FAF6F0',
+    tabBarBorder: '#E2D9CC',
     tabBarActiveBg: '#2563EB',
     tabBarActiveFg: '#FFFFFF',
     tabBarInactiveFg: '#64748B',
-  },
-  {
-    id: 'sage_ecru',
-    name: 'Sage Ecru',
-    sub: 'Mineral soft tone',
-    bg: '#E5E9DB',
-    surface: '#F4F7EE',
-    text: '#15261F',
-    textSecondary: '#52665B',
-    border: '#CBD1C4',
-    accent: '#2D5750',
-    isDark: false,
-    barStyle: 'dark-content',
-    headerGradient: ['#2D5750', '#1C3A35'],
-    headerPillBg: '#E5E9DB',
-    headerPillIcon: '#2D5750',
-    tabBarBg: '#F4F7EE',
-    tabBarBorder: '#CBD1C4',
-    tabBarActiveBg: '#2D5750',
-    tabBarActiveFg: '#FFFFFF',
-    tabBarInactiveFg: '#52665B',
   },
   {
     id: 'pure_white',

@@ -20,6 +20,7 @@ export const hi: TranslationSchema = {
     clear: 'साफ़ करें',
     viewAll: 'सभी देखें',
     readMore: 'अधिक पढ़ें',
+    showMore: 'और दिखाएं',
     showLess: 'कम दिखाएं',
     loading: 'लोड हो रहा है...',
     refresh: 'ताज़ा करें',

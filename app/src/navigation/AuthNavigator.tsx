@@ -33,7 +33,8 @@ export type AuthStackParamList = {
     applicantData?: any;
   };
   VerifyOtp: {
-    confirmation: any;
+    confirmation?: any;
+    verificationId?: string;
     phoneNumber: string;
     contactId?: string;
     memberName?: string;

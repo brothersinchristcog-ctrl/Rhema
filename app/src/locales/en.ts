@@ -18,6 +18,7 @@ export const en = {
     clear: 'Clear',
     viewAll: 'View All',
     readMore: 'Read More',
+    showMore: 'Show More',
     showLess: 'Show Less',
     loading: 'Loading...',
     refresh: 'Refresh',

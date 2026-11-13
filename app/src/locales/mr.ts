@@ -20,6 +20,7 @@ export const mr: TranslationSchema = {
     clear: 'साफ करा',
     viewAll: 'सर्व पहा',
     readMore: 'अधिक वाचा',
+    showMore: 'अधिक दाखवा',
     showLess: 'कमी दाखवा',
     loading: 'लोड होत आहे...',
     refresh: 'रिफ्रेश करा',

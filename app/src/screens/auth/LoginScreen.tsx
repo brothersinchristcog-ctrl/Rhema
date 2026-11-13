@@ -11,9 +11,13 @@ import {
   ActivityIndicator,
   Alert,
   StatusBar,
-  ScrollView
+  ScrollView,
+  Modal
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Font from 'expo-font';
+import Svg, { Path } from 'react-native-svg';
+import { RHEMA_LOGO_PATH, RHEMA_LOGO_VIEWBOX } from './rhemaLogoPath';
 import auth from '@react-native-firebase/auth';
 import { RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -40,6 +44,25 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
     Boolean(route.params?.showPhoneInput || route.params?.invitedPhone)
   );
   const scrollViewRef = useRef<ScrollView>(null);
+  const [fontReady, setFontReady] = useState(() => {
+    try { return Font.isLoaded('GreatVibes'); } catch { return false; }
+  });
+  const [validationModal, setValidationModal] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+  });
+  useEffect(() => {
+    let mounted = true;
+    Font.loadAsync({ GreatVibes: require('../../../assets/fonts/GreatVibes-Regular.ttf') })
+      .then(() => { if (mounted) setFontReady(true); })
+      .catch((e) => console.warn('Font load error:', e));
+    return () => { mounted = false; };
+  }, []);
 
   const [phoneNumber, setPhoneNumber] = useState(() =>
     route.params?.invitedPhone ? normalizePhone10(route.params.invitedPhone) : ''
@@ -245,13 +268,37 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
   };
 
   const handleSendCode = async () => {
+    const rawDigits = phoneNumber.replace(/[^0-9]/g, '');
+
+    if (!phoneNumber.trim()) {
+      setValidationModal({
+        visible: true,
+        title: 'Required Field',
+        message: 'Please enter your phone number to sign in.',
+      });
+      return;
+    }
+
+    if (rawDigits.length < 10) {
+      setValidationModal({
+        visible: true,
+        title: 'Invalid Number',
+        message: 'Please enter a valid 10-digit phone number.',
+      });
+      return;
+    }
+
     let formattedNumber = phoneNumber.trim();
     if (formattedNumber.length === 10 && !formattedNumber.startsWith('+')) {
       formattedNumber = `+91${formattedNumber}`;
     }
 
     if (!formattedNumber.startsWith('+') || formattedNumber.length < 12) {
-      Alert.alert('Invalid Number', 'Please enter a valid 10-digit phone number.');
+      setValidationModal({
+        visible: true,
+        title: 'Invalid Number',
+        message: 'Please enter a valid 10-digit phone number.',
+      });
       return;
     }
 
@@ -306,6 +353,30 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
             resolvedContactId = lookup.member.id;
             resolvedName = stripGuestSuffix(lookup.member.name || lookup.member.firstName || '') || resolvedName;
             resolvedGuestFlag = resolvedGuestFlag || isGuestMemberDoc(lookup.member);
+          } else if (lookup?.isPending) {
+            setLoading(false);
+            setPendingReqData(lookup.registrationRequest);
+            setIsPendingApproval(true);
+            await handleViewApprovalStatus();
+            return;
+          } else if (lookup?.isRejected) {
+            setLoading(false);
+            setIsRejected(true);
+            setRejectionReason(lookup.registrationRequest?.rejectionReason || '');
+            setValidationModal({
+              visible: true,
+              title: 'Registration Not Approved',
+              message: lookup.registrationRequest?.rejectionReason || 'Your previous registration was not approved. You can register again.',
+            });
+            return;
+          } else if (!isMember && !isGuestInviteRecord) {
+            setLoading(false);
+            setValidationModal({
+              visible: true,
+              title: 'Number Not Found',
+              message: 'This mobile number is not registered in our church records. Please register first.',
+            });
+            return;
           }
         }
       }
@@ -344,14 +415,30 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
   if (!showPhoneInput) {
     return (
       <View style={styles.landingContainer}>
-        <StatusBar barStyle="dark-content" backgroundColor="#FEF5EE" translucent={false} />
+        <StatusBar barStyle="dark-content" backgroundColor="#FFF6F0" translucent={false} />
+        <LinearGradient 
+          colors={['#FFF6F0', '#FDE4CE', '#FBCFAB']} 
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={StyleSheet.absoluteFillObject} 
+        />
         
         {/* Full Image: Proper aspect ratio with contain so 100% of image is displayed with no spreading */}
         <Image 
-          source={require('../../../assets/welcome_hero.jpg')}
+          source={require('../../../assets/welcome_hero_new.png')}
           style={styles.landingHeroImg}
           resizeMode="contain"
         />
+
+        {/* Top Header with Rhema Global Ministries branding */}
+        <SafeAreaView edges={['top']} style={styles.landingTopArea}>
+          <View style={styles.brandLogoBox}>
+            <Svg width="100%" height="100%" viewBox={RHEMA_LOGO_VIEWBOX}>
+              <Path d={RHEMA_LOGO_PATH} fill="#0B1F5C" fillRule="evenodd" />
+            </Svg>
+            <Text style={styles.brandSub} numberOfLines={1} adjustsFontSizeToFit>GLOBAL MINISTRIES</Text>
+          </View>
+        </SafeAreaView>
         
         <SafeAreaView edges={['bottom']} style={styles.landingBottom}>
           <TouchableOpacity 
@@ -429,12 +516,14 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
         >
           {/* ── 3D Character Illustration Area with Semi-Circle Arch ── */}
           <View style={styles.characterContainer}>
-            <View style={styles.semiCircleArch} />
-            <Image 
-              source={require('../../../assets/login_character.png')}
-              style={styles.characterImg}
-              resizeMode="contain"
-            />
+            <View style={styles.brandWrap}>
+              <View style={styles.brandLogoBox}>
+                <Svg width="100%" height="100%" viewBox={RHEMA_LOGO_VIEWBOX}>
+                  <Path d={RHEMA_LOGO_PATH} fill="#0B1F5C" fillRule="evenodd" />
+                </Svg>
+                <Text style={styles.brandSub} numberOfLines={1} adjustsFontSizeToFit>GLOBAL MINISTRIES</Text>
+              </View>
+            </View>
           </View>
 
           {/* ── White Curved Sheet Card ── */}
@@ -512,50 +601,40 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
               </View>
             )}
 
-            {/* ── Send Verification Button (Disabled by default, enabled only if member found) ── */}
-            {(() => {
-              const isButtonDisabled = loading || (!isMember && !isGuestInviteRecord && !isPendingApproval && !isRejected);
-              return (
-                <TouchableOpacity 
-                  style={[
-                    styles.verificationBtn,
-                    isButtonDisabled && styles.verificationBtnDisabled,
-                    isPendingApproval && { shadowColor: '#F59E0B' },
-                    isRejected && { shadowColor: '#2563EB' }
-                  ]}
-                  onPress={handleSendCode}
-                  disabled={isButtonDisabled}
-                  activeOpacity={0.88}
-                >
-                  <LinearGradient
-                    colors={
-                      isButtonDisabled
-                        ? ['#64748B', '#475569']
-                        : isPendingApproval 
-                        ? ['#F59E0B', '#D97706'] 
-                        : isRejected 
-                        ? ['#3B82F6', '#2563EB'] 
-                        : ['#18181B', '#000000']
-                    }
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.verificationBtnGradient}
-                  >
-                    {loading ? (
-                      <ActivityIndicator color="#FFFFFF" />
-                    ) : isPendingApproval ? (
-                      <Text style={styles.verificationBtnTxt}>View Approval Status</Text>
-                    ) : isRejected ? (
-                      <Text style={styles.verificationBtnTxt}>Submit New Registration</Text>
-                    ) : (
-                      <Text style={[styles.verificationBtnTxt, isButtonDisabled && styles.verificationBtnTxtDisabled]}>
-                        Send Verification
-                      </Text>
-                    )}
-                  </LinearGradient>
-                </TouchableOpacity>
-              );
-            })()}
+            {/* ── Send Verification Button ── */}
+            <TouchableOpacity 
+              style={[
+                styles.verificationBtn,
+                isPendingApproval && { shadowColor: '#F59E0B' },
+                isRejected && { shadowColor: '#2563EB' }
+              ]}
+              onPress={handleSendCode}
+              disabled={loading}
+              activeOpacity={0.88}
+            >
+              <LinearGradient
+                colors={
+                  isPendingApproval 
+                    ? ['#F59E0B', '#D97706'] 
+                    : isRejected 
+                    ? ['#3B82F6', '#2563EB'] 
+                    : ['#18181B', '#000000']
+                }
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.verificationBtnGradient}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : isPendingApproval ? (
+                  <Text style={styles.verificationBtnTxt}>View Approval Status</Text>
+                ) : isRejected ? (
+                  <Text style={styles.verificationBtnTxt}>Submit New Registration</Text>
+                ) : (
+                  <Text style={styles.verificationBtnTxt}>Send Verification</Text>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
 
             {/* Flexible spacer to push the footer to the bottom of the card */}
             <View style={styles.footerPushSpacer} />
@@ -581,6 +660,41 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* ── Custom Validation Alert Modal Popup Card ── */}
+      <Modal 
+        animationType="fade" 
+        transparent={true} 
+        visible={validationModal.visible}
+        onRequestClose={() => setValidationModal(prev => ({ ...prev, visible: false }))}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.validationCard}>
+            {/* Top Right Corner Rhema Global Ministries branding */}
+            <View style={styles.popupTopRightBrand}>
+              <View style={styles.popupBrandScaleWrap}>
+                <View style={styles.brandLogoBox}>
+                  <Svg width="100%" height="100%" viewBox={RHEMA_LOGO_VIEWBOX}>
+                    <Path d={RHEMA_LOGO_PATH} fill="#0B1F5C" fillRule="evenodd" />
+                  </Svg>
+                  <Text style={styles.brandSub} numberOfLines={1} adjustsFontSizeToFit>GLOBAL MINISTRIES</Text>
+                </View>
+              </View>
+            </View>
+
+            <Text style={styles.validationTitle}>{validationModal.title}</Text>
+            <Text style={styles.validationSub}>{validationModal.message}</Text>
+
+            <TouchableOpacity 
+              style={styles.validationActionBtn} 
+              onPress={() => setValidationModal(prev => ({ ...prev, visible: false }))}
+              activeOpacity={0.88}
+            >
+              <Text style={styles.validationActionBtnTxt}>Okay</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -589,7 +703,7 @@ const styles = StyleSheet.create({
   // Landing / Welcome Styles
   landingContainer: { 
     flex: 1, 
-    backgroundColor: '#FEF5EE',
+    backgroundColor: '#FFF6F0',
     position: 'relative',
     justifyContent: 'center',
     alignItems: 'center',
@@ -598,16 +712,26 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+  landingTopArea: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    paddingTop: Platform.OS === 'android' ? 76 : 64,
+    zIndex: 10,
+  },
   landingBottom: { 
     position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 48 : 65,
+    bottom: Platform.OS === 'ios' ? 78 : 95,
     left: 0,
     right: 0,
     paddingHorizontal: 28, 
+    zIndex: 10,
   },
   mainActionBtn: { 
     width: '100%',
-    backgroundColor: '#0F172A', 
+    backgroundColor: '#000000', 
     borderRadius: 26, 
     height: 52, 
     justifyContent: 'center', 
@@ -698,6 +822,28 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 200,
   },
+  brandWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 200,
+    paddingBottom: 70,
+  },
+  brandLogoBox: {
+    width: 210,
+    height: 88,
+  },
+  brandSub: {
+    position: 'absolute',
+    left: 73,
+    top: 67,
+    width: 136,
+    textAlign: 'center',
+    fontSize: 10.5,
+    fontWeight: '700',
+    letterSpacing: 2.2,
+    color: '#07153F',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+  },
   bottomSheetCard: {
     flex: 1,
     flexGrow: 1,
@@ -739,8 +885,8 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     height: 56,
     paddingHorizontal: 18,
-    borderWidth: 1.2,
-    borderColor: '#EDF2F6',
+    borderWidth: 1.4,
+    borderColor: '#CBD5E1',
     shadowColor: '#718096',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
@@ -898,5 +1044,79 @@ const styles = StyleSheet.create({
     color: '#FA6203',
     fontSize: 13,
     fontWeight: '700',
+  },
+
+  // ── Validation Modal Popup Card Styles ──
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  validationCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 28,
+    paddingHorizontal: 24,
+    paddingTop: 68,
+    paddingBottom: 22,
+    width: '100%',
+    maxWidth: 360,
+    alignItems: 'center',
+    position: 'relative',
+    shadowColor: '#0A1629',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 10,
+  },
+  popupTopRightBrand: {
+    position: 'absolute',
+    top: 14,
+    right: 16,
+    width: 90,
+    height: 38,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  popupBrandScaleWrap: {
+    width: 210,
+    height: 88,
+    transform: [{ scale: 0.42 }],
+  },
+  validationTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0A1629',
+    textAlign: 'center',
+    marginBottom: 8,
+    letterSpacing: -0.3,
+  },
+  validationSub: {
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 22,
+    paddingHorizontal: 8,
+  },
+  validationActionBtn: {
+    backgroundColor: '#0F172A',
+    height: 48,
+    width: '100%',
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 3,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+  },
+  validationActionBtnTxt: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
 });

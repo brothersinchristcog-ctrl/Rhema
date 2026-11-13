@@ -100,8 +100,6 @@ export default function AppearanceScreen() {
                               ? '#1E293B'
                               : opt.id === 'pure_white'
                               ? '#0F172A'
-                              : opt.id === 'sage_ecru'
-                              ? '#15261F'
                               : '#F1F5F9',
                         },
                       ]}
@@ -116,8 +114,6 @@ export default function AppearanceScreen() {
                               ? '#94A3B8'
                               : opt.id === 'pure_white'
                               ? '#94A3B8'
-                              : opt.id === 'sage_ecru'
-                              ? '#6B7E72'
                               : '#475569',
                         },
                       ]}

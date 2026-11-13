@@ -404,25 +404,18 @@ export default function ApprovalPendingScreen({ route, navigation }: any) {
             </View>
           ) : (
             <View style={styles.stateCard}>
-              {/* ── 3D Image in Circle Frame ── */}
-              <View style={[
-                styles.circleImageContainer,
-                status === 'approved' 
-                  ? styles.circleBorderApproved 
-                  : status === 'rejected' 
-                  ? styles.circleBorderRejected 
-                  : styles.circleBorderPending
-              ]}>
+              {/* ── Status Illustration ── */}
+              <View style={styles.illustrationContainer}>
                 <Image 
                   source={
                     status === 'approved'
-                      ? require('../../../assets/approval_approved.jpg')
+                      ? require('../../../assets/status_approved.png')
                       : status === 'rejected'
-                      ? require('../../../assets/approval_rejected.jpg')
-                      : require('../../../assets/approval_pending.jpg')
+                      ? require('../../../assets/status_rejected.png')
+                      : require('../../../assets/status_pending.png')
                   }
-                  style={styles.circleImage}
-                  resizeMode="cover"
+                  style={styles.illustrationImage}
+                  resizeMode="contain"
                 />
               </View>
 
@@ -604,8 +597,8 @@ const styles = StyleSheet.create({
     color: '#0F172A',
   },
   backToLoginBtn: {
-    marginTop: 6,
-    paddingVertical: 10,
+    marginTop: 2,
+    paddingVertical: 8,
     paddingHorizontal: 16,
     alignItems: 'center',
     justifyContent: 'center',
@@ -620,8 +613,8 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'ios' ? 12 : 16,
-    paddingBottom: Platform.OS === 'ios' ? 36 : 48,
+    paddingTop: 2,
+    paddingBottom: Platform.OS === 'ios' ? 16 : 18,
     alignItems: 'center',
   },
 
@@ -643,34 +636,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  // 3D Image Circle Frame
-  circleImageContainer: {
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    overflow: 'hidden',
-    backgroundColor: '#000000',
-    borderWidth: 4,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.16,
-    shadowRadius: 18,
-    elevation: 8,
-    marginTop: 4,
-    marginBottom: 24,
+  // Status Illustration (1024x787 source, aspect ratio preserved)
+  illustrationContainer: {
+    width: 216,
+    height: 166,
+    alignSelf: 'center',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 0,
+    marginBottom: 8,
   },
-  circleBorderPending: {
-    borderColor: '#FED7AA',
-  },
-  circleBorderApproved: {
-    borderColor: '#A7F3D0',
-  },
-  circleBorderRejected: {
-    borderColor: '#FECACA',
-  },
-  circleImage: {
-    width: '100%',
-    height: '100%',
+  illustrationImage: {
+    width: 216,
+    height: 166,
   },
 
   // Status pills
@@ -733,19 +711,19 @@ const styles = StyleSheet.create({
   },
 
   heading: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '800',
     color: '#0F172A',
     textAlign: 'center',
-    marginBottom: 10,
+    marginBottom: 6,
     letterSpacing: -0.3,
   },
   description: {
-    fontSize: 14,
-    lineHeight: 21,
+    fontSize: 13.5,
+    lineHeight: 19.5,
     color: '#475569',
     textAlign: 'center',
-    marginBottom: 24,
+    marginBottom: 14,
     paddingHorizontal: 4,
   },
 
@@ -754,8 +732,8 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
-    paddingHorizontal: 18,
-    paddingVertical: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     borderWidth: 1,
     borderColor: '#F1F5F9',
     shadowColor: '#718096',
@@ -769,7 +747,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: 8,
   },
   summaryLabelRow: {
     flexDirection: 'row',
@@ -834,7 +812,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 20,
+    marginBottom: 12,
   },
   liveSyncTxt: {
     fontSize: 12.5,
@@ -888,12 +866,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     width: '100%',
-    height: 50,
-    borderRadius: 25,
+    height: 46,
+    borderRadius: 23,
     backgroundColor: '#FFFFFF',
     borderWidth: 1.2,
     borderColor: '#E2E8F0',
-    marginBottom: 12,
+    marginBottom: 4,
   },
   refreshBtnTxt: {
     fontSize: 14.5,

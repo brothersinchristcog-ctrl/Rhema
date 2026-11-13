@@ -21,7 +21,9 @@ import {
   Animated,
   Easing,
   Pressable,
-  useWindowDimensions
+  useWindowDimensions,
+  LayoutAnimation,
+  UIManager
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Font from 'expo-font';
@@ -34,6 +36,8 @@ import {
   Book, 
   Play, 
   ChevronRight, 
+  ChevronDown,
+  ChevronUp,
   Share2, 
   Mic, 
   Heart, 
@@ -92,6 +96,10 @@ import { CustomAlert } from '../components/CustomAlert';
 import ServiceRosterService from '../services/ServiceRosterService';
 import { MemberServiceDuty } from '../types/serviceRoster';
 import Svg, { Path, Circle, Ellipse, Rect, Polygon, Defs, LinearGradient as SvgLinearGradient, RadialGradient as SvgRadialGradient, Stop, Text as SvgText, Mask, G } from 'react-native-svg';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
@@ -707,110 +715,6 @@ const getScreenTheme = (appearance: string = 'warm_white'): ScreenThemeConfig =>
         bentoRosterBorder: '#14847B',
         bentoRosterText: '#FFFFFF',
         bentoRosterSub: '#CCFBF1',
-      };
-    case 'sage_ecru':
-      return {
-        appearance: 'sage_ecru',
-        bg: '#E5E9DB',
-        gradient: ['#E5E9DB', '#DFE3D6', '#CBD1C4'],
-        overscrollTop: '#E5E9DB',
-        overscrollBottom: '#CBD1C4',
-        text: '#14231C',
-        textMuted: '#52665B',
-        heroText: '#14231C',
-        heroTagline: '#2D5750',
-        heroDateNum: '#14231C',
-        heroDateMonth: '#2D5750',
-        heroGreet: '#52665B',
-        cardBg: '#F4F7EE',
-        cardBorder: '#CBD1C4',
-        barStyle: 'dark-content' as const,
-        isDark: false,
-        accent: '#2D5750',
-        btnPrimaryBg: '#E5E9DB',
-        btnPrimaryText: '#2D5750',
-        btnPrimaryBorder: '#CBD1C4',
-        seeAllColor: '#2D5750',
-        medallionBg: ['#F4F7EE', '#EBF0E4'],
-        medallionBorder: '#CBD1C4',
-        sermonCardGradient: ['#243831', '#172722'],
-        sermonCardBorder: '#3A564C',
-        mqBg: '#F4F7EE',
-        mqBorder: '#CBD1C4',
-        mqTitle: '#2D5750',
-        mqLine: ['#2D5750', 'transparent'],
-        mqRule: ['#CBD1C4', '#DFE3D6'],
-        mqRowBorder: '#E5E9DB',
-        mqItemTitle: '#14231C',
-        mqItemTitleTe: '#3E5247',
-        mqTimeCapBg: '#E5E9DB',
-        mqTimeCapBorder: '#CBD1C4',
-        mqTimeText: '#2D5750',
-        mqSeeAll: '#2D5750',
-        mqSep: '#CBD1C4',
-        promiseCardBg: '#F4F7EE',
-        promiseCardBorder: '#CBD1C4',
-        promiseLabel: '#2D5750',
-        promiseVerseTe: '#14231C',
-        promiseVerseEn: '#354D42',
-        promiseRefPrimary: '#2D5750',
-        promiseRefSecondary: '#52665B',
-        promiseRefDivider: '#CBD1C4',
-        promiseQuote: 'rgba(20, 35, 28, 0.08)',
-        promiseLine: '#2D5750',
-        promiseBtnBg: '#E5E9DB',
-        promiseBtnBorder: '#CBD1C4',
-        promiseBtnText: '#2D5750',
-        promiseBtnIcon: '#2D5750',
-        dotColor: 'rgba(20, 35, 28, 0.25)',
-        dotActiveColor: '#2D5750',
-        // Quick Actions Bento Cards (Sage Ecru - Earthy mineral tones)
-        bentoSermonsGradient: ['#243831', '#172722'],
-        bentoSermonsBorder: '#3A564C',
-        bentoSermonsText: '#FFFFFF',
-        bentoSermonsSub: '#D1DDD7',
-        bentoEventsGradient: ['#6B5838', '#4A3B22'],
-        bentoEventsBorder: '#8A724B',
-        bentoEventsText: '#FFFFFF',
-        bentoEventsSub: '#EFE8D6',
-        bentoSongsGradient: ['#6E404E', '#4A2531'],
-        bentoSongsBorder: '#8C5766',
-        bentoSongsText: '#FFFFFF',
-        bentoSongsSub: '#F0DEE3',
-        bentoGiveGradient: ['#524E26', '#353315'],
-        bentoGiveBorder: '#706B36',
-        bentoGiveText: '#FFECA6',
-        bentoGiveSub: '#DDD49C',
-        bentoVerseGradient: ['#1E3A8A', '#0E1E45'],
-        bentoVerseBorder: '#3B82F6',
-        bentoVerseText: '#FFFFFF',
-        bentoAttendanceGradient: ['#3D4A41', '#28332B'],
-        bentoAttendanceBorder: '#526357',
-        bentoAttendanceText: '#FFFFFF',
-        bentoNotesGradient: ['#4E2A84', '#2C1354'],
-        bentoNotesBorder: '#7844C4',
-        bentoNotesText: '#FFFFFF',
-        bentoQuizGradient: ['#157347', '#0B4226'],
-        bentoQuizBorder: '#22A85C',
-        bentoQuizText: '#FFFFFF',
-        bentoMembersGradient: ['#D9651A', '#8F3805'],
-        bentoMembersBorder: '#F97316',
-        bentoMembersText: '#FFFFFF',
-        bentoMeetingsGradient: ['#1C4E68', '#103040'],
-        bentoMeetingsBorder: '#2B6D90',
-        bentoMeetingsText: '#FFFFFF',
-        bentoGalleryGradient: ['#18181B', '#09090B'],
-        bentoGalleryBorder: '#3F3F46',
-        bentoGalleryText: '#FFFFFF',
-        bentoGallerySub: '#A1A1AA',
-        bentoYoutubeGradient: ['#611818', '#380B0B'],
-        bentoYoutubeBorder: '#7E2222',
-        bentoYoutubeText: '#FFFFFF',
-        bentoYoutubeSub: '#F8D7D7',
-        bentoRosterGradient: ['#234B44', '#142E29'],
-        bentoRosterBorder: '#387066',
-        bentoRosterText: '#FFFFFF',
-        bentoRosterSub: '#D1E7E2',
       };
     case 'pure_dark':
       return {
@@ -2895,6 +2799,7 @@ export default function HomeScreen() {
   // -- Sticky Header Animation --
   const [onlineMeetingsY, setOnlineMeetingsY] = useState(0);
   const [quickAccessY, setQuickAccessY] = useState(0);
+  const [showAllBento, setShowAllBento] = useState(false);
 
   const scrollY = useRef(new Animated.Value(0)).current;
   const headerPadding = Math.max(insets.top + 8, Platform.OS === 'ios' ? 50 : (StatusBar.currentHeight ? StatusBar.currentHeight + 12 : 36));
@@ -4322,8 +4227,6 @@ export default function HomeScreen() {
                                     ? '#F5F5F5' // PhonePe soft neutral card background
                                     : appearance === 'warm_white'
                                     ? '#FFFFFF'
-                                    : appearance === 'sage_ecru'
-                                    ? '#F4F7EE'
                                     : screenTheme.isDark
                                     ? '#121212'
                                     : '#F5F5F5',
@@ -4332,8 +4235,6 @@ export default function HomeScreen() {
                                     ? '#E9E9E9' // PhonePe hairline card border
                                     : appearance === 'warm_white'
                                     ? '#E2E8F0'
-                                    : appearance === 'sage_ecru'
-                                    ? '#CBD1C4'
                                     : screenTheme.isDark
                                     ? '#27272A'
                                     : '#E9E9E9',
@@ -4863,7 +4764,10 @@ export default function HomeScreen() {
               </LinearGradient>
             </TouchableOpacity>
 
-            {/* ── ROW 6: Left Column (Meetings & Members - Normal Cards, height same as Sermon Notes) + Right Column (Big YouTube Card) ── */}
+            {/* ── EXPANDABLE BENTO SECTION (Rows 6, 7 & 8) ── */}
+            {showAllBento && (
+              <>
+                {/* ── ROW 6: Left Column (Meetings & Members - Normal Cards, height same as Sermon Notes) + Right Column (Big YouTube Card) ── */}
             <View
               style={styles.bentoRow6}
               onLayout={(e) => setOnlineMeetingsY(e.nativeEvent.layout.y)}
@@ -5208,6 +5112,48 @@ export default function HomeScreen() {
                   </View>
                 </View>
               </LinearGradient>
+            </TouchableOpacity>
+              </>
+            )}
+
+            {/* ── Bento Show More / Show Less Toggle Button ── */}
+            <TouchableOpacity
+              style={[
+                styles.bentoShowMoreBtn,
+                {
+                  backgroundColor: screenTheme.isDark ? '#1C1D22' : '#FFFFFF',
+                  borderColor: screenTheme.isDark ? '#2E323B' : '#E2E8F0',
+                },
+              ]}
+              onPress={() => {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                setShowAllBento(prev => !prev);
+              }}
+              activeOpacity={0.75}
+            >
+              <Text
+                style={[
+                  styles.bentoShowMoreTxt,
+                  { color: screenTheme.isDark ? '#F4F4F5' : '#1E293B' },
+                ]}
+              >
+                {showAllBento
+                  ? (t('common.showLess') || 'Show Less')
+                  : (t('common.showMore') || 'Show More')}
+              </Text>
+              {showAllBento ? (
+                <ChevronUp
+                  size={15}
+                  color={screenTheme.isDark ? '#94A3B8' : '#64748B'}
+                  strokeWidth={2.4}
+                />
+              ) : (
+                <ChevronDown
+                  size={15}
+                  color={screenTheme.isDark ? '#94A3B8' : '#64748B'}
+                  strokeWidth={2.4}
+                />
+              )}
             </TouchableOpacity>
               </View>
             )}
@@ -7984,6 +7930,29 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 4,
     borderWidth: 1,
+  },
+  bentoShowMoreBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 9,
+    paddingHorizontal: 20,
+    borderRadius: 22,
+    borderWidth: 1,
+    alignSelf: 'center',
+    marginTop: 12,
+    marginBottom: 4,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  bentoShowMoreTxt: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
 
   quickAccessHeaderRow: {

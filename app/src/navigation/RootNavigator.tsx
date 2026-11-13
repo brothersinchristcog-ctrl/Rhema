@@ -664,6 +664,7 @@ function Navigation() {
     isPendingApproval,
     isRejected,
     registrationRequest,
+    isCompletingSignUp,
   } = useAuth();
   const { activeChurch, setChurchId } = useChurch();
   const navigation = useNavigation();
@@ -1239,7 +1240,9 @@ function Navigation() {
   // ONLY block on approval pending if a non-anonymous user is currently authenticated with Firebase
   // but has NOT been approved as a member yet (awaiting admin review or rejected).
   // If the user has signed out (!user), they must NEVER be blocked — they must see the Auth screens (Login / SignUp)!
+  // Keep AuthNavigator mounted while SignUp OTP + Firestore registration submission is in progress
   const shouldBlockOnApproval = Boolean(
+    !isCompletingSignUp &&
     user && 
     !user.isAnonymous && 
     !isApprovedMember && 
@@ -1266,7 +1269,9 @@ function Navigation() {
     );
   }
 
-  const initialRouteName = !user 
+  const hasActiveSession = Boolean(user && !isCompletingSignUp);
+
+  const initialRouteName = !hasActiveSession 
     ? "Auth" 
     : !onboardingComplete 
     ? "Onboarding" 
@@ -1280,7 +1285,7 @@ function Navigation() {
       initialRouteName={initialRouteName}
       screenOptions={{ headerShown: false, animation: 'none' }}
     >
-      {user ? (
+      {hasActiveSession ? (
         onboardingComplete ? (
           <>
             <Stack.Screen name="Tabs" component={TabNavigator} options={{ gestureEnabled: false, headerBackButtonMenuEnabled: false }} />

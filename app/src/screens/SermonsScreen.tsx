@@ -550,17 +550,17 @@ const DatePill = ({
 
   if (isAshTop) {
     if (on) {
-      bg = '#FFFFFF';
-      border = '#FFFFFF';
-      numColor = '#0F172A';
-      subColor = '#334155';
-      dotBg = dot ? '#0F172A' : 'transparent';
-    } else {
-      bg = 'rgba(255,255,255,0.16)';
-      border = 'rgba(255,255,255,0.28)';
+      bg = '#FA6203';
+      border = '#FA6203';
       numColor = '#FFFFFF';
-      subColor = 'rgba(255,255,255,0.85)';
+      subColor = 'rgba(255,255,255,0.9)';
       dotBg = dot ? '#FFFFFF' : 'transparent';
+    } else {
+      bg = 'rgba(255,255,255,0.75)';
+      border = 'rgba(250,98,3,0.18)';
+      numColor = '#0F172A';
+      subColor = '#64748B';
+      dotBg = dot ? '#FA6203' : 'transparent';
     }
   }
 
@@ -1059,20 +1059,28 @@ export default function SermonsScreen({ navigation }: any) {
 
   // In pure_white or light themes, use an elegant slate/ash gradient at the top
   // so the white dome curve arches with clean, subtle, premium contrast.
-  const isAshTop = !isDark && (appearance === 'pure_white' || appearance === 'warm_white' || colors.background === '#FFFFFF');
-  const topSectionBg = isDark ? colors.background : (isAshTop ? '#1E293B' : colors.background);
+  // Same light peach gradient as Sign In / Register, applied in both light and dark themes.
+  const isAshTop = true;
+  const topSectionBg = '#FFE4CC';
+  // Panel below the arch follows the chosen theme:
+  // - warm_white: rich warm cream/almond tone (#F2EAE0)
+  // - pure_white: crisp snow white (#FFFFFF)
+  // - pure_dark: dark AMOLED surface
+  const isWarmWhite = appearance === 'warm_white' || (!isDark && appearance !== 'pure_white');
+  const panelBg = isDark
+    ? (colors.surface || '#121214')
+    : isWarmWhite
+    ? '#F2EAE0'
+    : (colors.background || '#FFFFFF');
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? colors.background : colors.surface }]}>
-      <StatusBar
-        barStyle={isAshTop ? 'light-content' : (colors.barStyle || (isDark ? 'light-content' : 'dark-content'))}
-        backgroundColor={isAshTop ? '#1E293B' : topSectionBg}
-      />
+    <View style={[styles.container, { backgroundColor: panelBg }]}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFE4CC" />
 
-      {/* ── Refined Ash / Slate Gradient at Top ── */}
+      {/* ── Light Peach Gradient at Top (matches Sign In / Register) ── */}
       {isAshTop && (
         <LinearGradient
-          colors={['#1E293B', '#334155', '#475569']}
+          colors={['#FFE4CC', '#FFD3AE', '#FFBF8C']}
           start={{ x: 0, y: 0 }}
           end={{ x: 0.35, y: 1 }}
           style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 380 }}
@@ -1088,10 +1096,10 @@ export default function SermonsScreen({ navigation }: any) {
           hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
           activeOpacity={0.7}
         >
-          <Icon name="back" size={22} color={isAshTop ? '#FFFFFF' : colors.text} />
+          <Icon name="back" size={22} color="#0F172A" />
         </TouchableOpacity>
 
-        <Text style={[styles.headerTitle, { color: isAshTop ? '#FFFFFF' : colors.text }]} numberOfLines={1}>
+        <Text style={[styles.headerTitle, { color: '#0F172A' }]} numberOfLines={1}>
           Sermons
         </Text>
 
@@ -1101,7 +1109,7 @@ export default function SermonsScreen({ navigation }: any) {
           hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
           activeOpacity={0.7}
         >
-          <Icon name="dots" size={20} color={isAshTop ? '#FFFFFF' : colors.text} />
+          <Icon name="dots" size={20} color="#0F172A" />
         </TouchableOpacity>
       </View>
 
@@ -1113,20 +1121,20 @@ export default function SermonsScreen({ navigation }: any) {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={isAshTop ? '#FFFFFF' : C.lime}
-            colors={[isAshTop ? '#94A3B8' : C.lime, '#334155']}
+            tintColor="#FA6203"
+            colors={['#FA6203', '#FB923C']}
           />
         }
       >
         {/* ── Month & Year Selector ── */}
         <Pressable style={styles.mon} onPress={() => setSheet(true)}>
-          <Text style={[styles.monTxt, { color: isAshTop ? '#FFFFFF' : colors.text }]}>
+          <Text style={[styles.monTxt, { color: '#0F172A' }]}>
             {MON[m]} {y}
           </Text>
           <Icon
             name="down"
             size={22}
-            color={isAshTop ? '#CBD5E1' : (isDark ? C.lime : (colors.accent || '#2563EB'))}
+            color="#FA6203"
           />
         </Pressable>
 
@@ -1173,13 +1181,13 @@ export default function SermonsScreen({ navigation }: any) {
           >
             <Path
               d={`M 0,72 Q ${width / 2},-16 ${width},72 L ${width},72 L 0,72 Z`}
-              fill={colors.surface}
+              fill={panelBg}
             />
           </Svg>
         </View>
 
         {/* ── Lower Panel in colors.surface ── */}
-        <View style={[styles.panel, { backgroundColor: colors.surface, marginTop: -1, flex: 1 }]}>
+        <View style={[styles.panel, { backgroundColor: panelBg, marginTop: -1, flex: 1 }]}>
           {/* Fully Rounded Category Badges Strip (Capsule Badge - Fixed Height, No Ballooning) */}
           <ScrollView
             horizontal
@@ -1202,8 +1210,16 @@ export default function SermonsScreen({ navigation }: any) {
                           borderWidth: 1.5,
                         }
                       : {
-                          backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#FFFFFF',
-                          borderColor: isDark ? 'rgba(255,255,255,0.28)' : '#94A3B8',
+                          backgroundColor: isDark
+                            ? 'rgba(255,255,255,0.08)'
+                            : isWarmWhite
+                            ? '#FAF6F0'
+                            : '#FFFFFF',
+                          borderColor: isDark
+                            ? 'rgba(255,255,255,0.28)'
+                            : isWarmWhite
+                            ? '#DCD3C5'
+                            : '#94A3B8',
                           borderWidth: 1.5,
                         },
                   ]}

@@ -20,6 +20,7 @@ export const kn: TranslationSchema = {
     clear: 'ತೆರವುಗೊಳಿಸಿ',
     viewAll: 'ಎಲ್ಲವನ್ನೂ ವೀಕ್ಷಿಸಿ',
     readMore: 'ಇನ್ನಷ್ಟು ಓದಿ',
+    showMore: 'ಇನ್ನಷ್ಟು ತೋರಿಸಿ',
     showLess: 'ಕಡಿಮೆ ತೋರಿಸಿ',
     loading: 'ಲೋಡ್ ಆಗುತ್ತಿದೆ...',
     refresh: 'ರಿಫ್ರೆಶ್',
