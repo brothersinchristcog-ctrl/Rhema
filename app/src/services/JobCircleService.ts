@@ -201,6 +201,13 @@ class JobCircleService {
       );
   }
 
+  async deleteOpportunity(churchId: string, id: string): Promise<void> {
+    await this.getRootRef(churchId)
+      .collection('job_circle_opportunities')
+      .doc(id)
+      .delete();
+  }
+
   async setOpportunityStatus(
     churchId: string,
     id: string,

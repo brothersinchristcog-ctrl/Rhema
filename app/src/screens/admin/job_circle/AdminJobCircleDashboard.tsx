@@ -31,6 +31,7 @@ import {
   ExternalLink,
   HeartHandshake,
   Filter,
+  Trash2,
 } from 'lucide-react-native';
 import { useAuth } from '../../../context/AuthContext';
 import { useChurch } from '../../../context/ChurchContext';
@@ -177,6 +178,30 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
       console.error('Error updating opp status:', err);
       Alert.alert('Error', 'Could not update opportunity status.');
     }
+  };
+
+  const handleDeleteOpportunity = (opp: JobOpportunity) => {
+    Alert.alert(
+      'Delete Opportunity',
+      `Are you sure you want to delete "${opp.title}"? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await JobCircleService.deleteOpportunity(churchId, opp.id);
+              setOpportunities(prev => prev.filter(o => o.id !== opp.id));
+              Alert.alert('Deleted', 'Ministry opportunity removed successfully.');
+            } catch (err: any) {
+              console.error('Error deleting opp:', err);
+              Alert.alert('Error', err?.message || 'Could not delete opportunity.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   // Metrics
@@ -534,6 +559,13 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
                         <Text style={{ color: '#dc2626', fontSize: 12, fontWeight: '600' }}>Close</Text>
                       </TouchableOpacity>
                     )}
+
+                    <TouchableOpacity
+                      style={[styles.btnOutline, { borderColor: isDark ? '#3F3F46' : '#E2E8F0', paddingHorizontal: 10 }]}
+                      onPress={() => handleDeleteOpportunity(opp)}
+                    >
+                      <Trash2 size={14} color="#DC2626" />
+                    </TouchableOpacity>
                   </View>
                 </View>
               ))}
