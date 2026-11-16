@@ -325,6 +325,34 @@ export default function AdminJobCircleDashboard({ navigation, routeParams }: Adm
     );
   };
 
+  const handleDeleteApplication = (app: JobApplication) => {
+    Alert.alert(
+      'Delete Application',
+      `Are you sure you want to delete the application submitted by "${app.memberName}" for "${app.opportunityTitle}"? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await JobCircleService.deleteApplication(churchId, app.id, app.opportunityId);
+              setApplications(prev => prev.filter(a => a.id !== app.id));
+              if (selectedApp?.id === app.id) {
+                setReviewModalVisible(false);
+                setSelectedApp(null);
+              }
+              Alert.alert('Deleted', 'Application removed successfully.');
+            } catch (err: any) {
+              console.error('Delete application error:', err);
+              Alert.alert('Error', err?.message || 'Could not delete application.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleToggleOpportunityStatus = async (opp: JobOpportunity, newStatus: 'approved' | 'closed') => {
     try {
       await JobCircleService.setOpportunityStatus(churchId, opp.id, newStatus, {
@@ -939,43 +967,58 @@ export default function AdminJobCircleDashboard({ navigation, routeParams }: Adm
                     activeOpacity={0.8}
                   >
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Text style={[styles.cardTitle, { color: primaryText }]}>{app.memberName}</Text>
-                      <View
-                        style={[
-                          styles.statusBadge,
-                          {
-                            backgroundColor:
-                              app.status === 'selected' || app.status === 'joined'
-                                ? (isDark ? 'rgba(16, 185, 129, 0.2)' : '#D1FAE5')
-                                : app.status === 'meeting_scheduled'
-                                ? (isDark ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7')
-                                : app.status === 'under_review'
-                                ? (isDark ? 'rgba(59, 130, 246, 0.2)' : '#DBEAFE')
-                                : app.status === 'rejected'
-                                ? (isDark ? 'rgba(239, 68, 68, 0.2)' : '#FEE2E2')
-                                : (isDark ? 'rgba(148, 163, 184, 0.2)' : '#F1F5F9'),
-                          },
-                        ]}
-                      >
-                        <Text
+                      <Text style={[styles.cardTitle, { color: primaryText, flex: 1, marginRight: 8 }]} numberOfLines={1}>
+                        {app.memberName}
+                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <View
                           style={[
-                            styles.statusText,
+                            styles.statusBadge,
                             {
-                              color:
+                              backgroundColor:
                                 app.status === 'selected' || app.status === 'joined'
-                                  ? (isDark ? '#34D399' : '#059669')
+                                  ? (isDark ? 'rgba(16, 185, 129, 0.2)' : '#D1FAE5')
                                   : app.status === 'meeting_scheduled'
-                                  ? (isDark ? '#FBBF24' : '#B45309')
+                                  ? (isDark ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7')
                                   : app.status === 'under_review'
-                                  ? (isDark ? '#60A5FA' : '#2563EB')
+                                  ? (isDark ? 'rgba(59, 130, 246, 0.2)' : '#DBEAFE')
                                   : app.status === 'rejected'
-                                  ? (isDark ? '#F87171' : '#DC2626')
-                                  : (isDark ? '#94A3B8' : '#475569'),
+                                  ? (isDark ? 'rgba(239, 68, 68, 0.2)' : '#FEE2E2')
+                                  : (isDark ? 'rgba(148, 163, 184, 0.2)' : '#F1F5F9'),
                             },
                           ]}
                         >
-                          {app.status.replace(/_/g, ' ').toUpperCase()}
-                        </Text>
+                          <Text
+                            style={[
+                              styles.statusText,
+                              {
+                                color:
+                                  app.status === 'selected' || app.status === 'joined'
+                                    ? (isDark ? '#34D399' : '#059669')
+                                    : app.status === 'meeting_scheduled'
+                                    ? (isDark ? '#FBBF24' : '#B45309')
+                                    : app.status === 'under_review'
+                                    ? (isDark ? '#60A5FA' : '#2563EB')
+                                    : app.status === 'rejected'
+                                    ? (isDark ? '#F87171' : '#DC2626')
+                                    : (isDark ? '#94A3B8' : '#475569'),
+                              },
+                            ]}
+                          >
+                            {app.status.replace(/_/g, ' ').toUpperCase()}
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          style={{
+                            padding: 6,
+                            borderRadius: 8,
+                            backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2',
+                          }}
+                          onPress={() => handleDeleteApplication(app)}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Trash2 size={16} color={isDark ? '#F87171' : '#DC2626'} />
+                        </TouchableOpacity>
                       </View>
                     </View>
 
@@ -1020,10 +1063,25 @@ export default function AdminJobCircleDashboard({ navigation, routeParams }: Adm
           <View style={[styles.modalCard, { backgroundColor: cardSurface, maxHeight: '88%' }]}>
             {selectedApp && (
               <ScrollView showsVerticalScrollIndicator={false}>
-                <Text style={[styles.modalTitle, { color: primaryText }]}>{selectedApp.memberName}</Text>
-                <Text style={[styles.modalSub, { color: isDark ? '#93C5FD' : '#1a2d5a' }]}>
-                  Role: {selectedApp.opportunityTitle}
-                </Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <View style={{ flex: 1, marginRight: 12 }}>
+                    <Text style={[styles.modalTitle, { color: primaryText }]}>{selectedApp.memberName}</Text>
+                    <Text style={[styles.modalSub, { color: isDark ? '#93C5FD' : '#1a2d5a' }]}>
+                      Role: {selectedApp.opportunityTitle}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={{
+                      padding: 8,
+                      borderRadius: 8,
+                      backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2',
+                    }}
+                    onPress={() => handleDeleteApplication(selectedApp)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Trash2 size={18} color={isDark ? '#F87171' : '#DC2626'} />
+                  </TouchableOpacity>
+                </View>
 
                 {/* Candidate Contact */}
                 <View style={[styles.detailBox, { backgroundColor: isDark ? '#27272A50' : screenBg, borderColor: adminBorderColor }]}>

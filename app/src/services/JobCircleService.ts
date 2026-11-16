@@ -425,6 +425,22 @@ class JobCircleService {
     });
   }
 
+  async deleteApplication(churchId: string, applicationId: string, opportunityId?: string): Promise<void> {
+    const ref = this.getRootRef(churchId).collection('job_circle_applications').doc(applicationId);
+    await ref.delete();
+
+    // Decrement opportunity application count if opportunityId is available
+    if (opportunityId) {
+      await this.getRootRef(churchId)
+        .collection('job_circle_opportunities')
+        .doc(opportunityId)
+        .update({
+          applicationsCount: firestore.FieldValue.increment(-1),
+        })
+        .catch(() => {});
+    }
+  }
+
   // ─────────────────────────────────────────────────────────────
   // 5. MEMBER MINISTRY PROFILE
   // ─────────────────────────────────────────────────────────────
