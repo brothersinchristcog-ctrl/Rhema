@@ -18,19 +18,26 @@ import {
   FlatList,
   NativeSyntheticEvent,
   NativeScrollEvent,
+  Animated,
+  StatusBar,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import Svg, {
+  Defs,
+  Rect,
+  RadialGradient as SvgRadialGradient,
+  Stop,
+  Path,
+} from 'react-native-svg';
 import * as DocumentPicker from 'expo-document-picker';
 import firestore from '@react-native-firebase/firestore';
 import {
   Briefcase,
   Search,
-  Filter,
   CheckCircle2,
   Clock,
   MapPin,
-  ArrowLeft,
   Send,
   X,
   User,
@@ -38,11 +45,10 @@ import {
   FileText,
   Trash2,
   Bell,
-  Sparkles,
   ChevronRight,
   Compass,
-  Check,
 } from 'lucide-react-native';
+import { RHEMA_LOGO_PATH, RHEMA_LOGO_VIEWBOX } from '../auth/rhemaLogoPath';
 import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -84,6 +90,8 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
   // Screen View State: Splash Screen vs Main Opportunities Screen
   // If navigated directly with skipSplash or application deep link, skip splash
   const [showSplash, setShowSplash] = useState<boolean>(!route?.params?.skipSplash && !route?.params?.applicationId);
+  const bgFade = useRef(new Animated.Value(0)).current;
+  const contentFade = useRef(new Animated.Value(0)).current;
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -105,15 +113,36 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
   const [selectedFile, setSelectedFile] = useState<{ uri: string; name: string; mimeType?: string; size?: number } | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Android hardware back handler: if in Main view, back returns to Splash; if in Splash, back exits screen
+  // Splash Screen Fade & Auto-Transition
+  useEffect(() => {
+    if (!showSplash) return;
+
+    Animated.parallel([
+      Animated.timing(bgFade, {
+        toValue: 1,
+        duration: 450,
+        useNativeDriver: true,
+      }),
+      Animated.timing(contentFade, {
+        toValue: 1,
+        duration: 650,
+        delay: 120,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    const timer = setTimeout(() => {
+      setShowSplash(false);
+    }, 1800);
+
+    return () => clearTimeout(timer);
+  }, [showSplash, bgFade, contentFade]);
+
+  // Android hardware back handler: maintain proper back navigation to Member Dashboard
   useEffect(() => {
     const onBackPress = () => {
       if (selectedOppForApply) {
         setSelectedOppForApply(null);
-        return true;
-      }
-      if (!showSplash) {
-        setShowSplash(true);
         return true;
       }
       if (navigation.canGoBack()) {
@@ -124,7 +153,7 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
     };
     const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
     return () => subscription.remove();
-  }, [navigation, selectedOppForApply, showSplash]);
+  }, [navigation, selectedOppForApply]);
 
   useEffect(() => {
     loadAllOpportunities();
@@ -565,112 +594,67 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
   };
 
   // ─────────────────────────────────────────────────────────────
-  // 1. SPLASH / INTRO SCREEN
+  // 1. SPLASH / ENTRY SCREEN (Simple text-only "Rhema Job Circle")
   // ─────────────────────────────────────────────────────────────
   if (showSplash) {
     return (
-      <View style={[styles.splashContainer, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-        <LinearGradient
-          colors={['#070D18', '#0F1A30', '#162344', '#1E3160']}
-          style={StyleSheet.absoluteFillObject}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0.8, y: 1 }}
+      <TouchableOpacity
+        activeOpacity={1}
+        onPress={() => setShowSplash(false)}
+        style={styles.splashContainer}
+      >
+        <StatusBar
+          barStyle="dark-content"
+          backgroundColor="#FFFFFF"
+          translucent
         />
 
-        {/* Ambient Top Glow / Accents */}
-        <View style={styles.splashTopGlow} pointerEvents="none" />
+        {/* Pristine White & Pearl Silk Background */}
+        <Animated.View style={[StyleSheet.absoluteFillObject, { opacity: bgFade }]}>
+          <LinearGradient
+            colors={['#FFFFFF', '#FAF9FD', '#F4F2FA', '#ECE7F6', '#F7F5FC', '#FFFFFF']}
+            locations={[0, 0.2, 0.45, 0.75, 0.9, 1]}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={StyleSheet.absoluteFillObject}
+          />
 
-        {/* Splash Navigation Header: Simple clean back button */}
-        <View style={styles.splashHeaderRow}>
-          <TouchableOpacity
-            style={styles.splashBackBtn}
-            onPress={() => {
-              if (navigation.canGoBack()) {
-                navigation.goBack();
-              }
-            }}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            activeOpacity={0.8}
-          >
-            <ArrowLeft size={20} color="#FFFFFF" strokeWidth={2.4} />
-          </TouchableOpacity>
-          <View style={styles.splashHeaderBadge}>
-            <Sparkles size={13} color="#93C5FD" />
-            <Text style={styles.splashHeaderBadgeTxt}>MINISTRY CALLING</Text>
-          </View>
-          <View style={{ width: 40 }} />
-        </View>
+          <Svg style={StyleSheet.absoluteFillObject} width="100%" height="100%">
+            <Defs>
+              <SvgRadialGradient id="topWhiteGlow" cx="50%" cy="0%" r="55%">
+                <Stop offset="0%" stopColor="#FFFFFF" stopOpacity="1" />
+                <Stop offset="70%" stopColor="#FFFFFF" stopOpacity="0.4" />
+                <Stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
+              </SvgRadialGradient>
+              <SvgRadialGradient id="softLilacGlow" cx="80%" cy="60%" r="50%">
+                <Stop offset="0%" stopColor="#E8E1F7" stopOpacity="0.5" />
+                <Stop offset="100%" stopColor="#E8E1F7" stopOpacity="0" />
+              </SvgRadialGradient>
+              <SvgRadialGradient id="softGoldGlow" cx="20%" cy="85%" r="45%">
+                <Stop offset="0%" stopColor="#F9F2E3" stopOpacity="0.55" />
+                <Stop offset="100%" stopColor="#F9F2E3" stopOpacity="0" />
+              </SvgRadialGradient>
+            </Defs>
+            <Rect width="100%" height="100%" fill="url(#topWhiteGlow)" />
+            <Rect width="100%" height="100%" fill="url(#softLilacGlow)" />
+            <Rect width="100%" height="100%" fill="url(#softGoldGlow)" />
+          </Svg>
+        </Animated.View>
 
-        {/* Center Intro Visual & Typography */}
-        <ScrollView
-          contentContainerStyle={styles.splashScrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Visual Ministry Emblem */}
-          <View style={styles.splashVisualWrapper}>
-            <LinearGradient
-              colors={['#2563EB', '#1D4ED8', '#1E3A8A']}
-              style={styles.splashEmblemCircle}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <Compass size={64} color="#FFFFFF" strokeWidth={1.8} />
-            </LinearGradient>
-            <View style={styles.splashGlowRing} />
-          </View>
-
-          {/* Prominent Title: Rhema Job Circle */}
-          <Text style={styles.splashMainTitle}>Rhema Job Circle</Text>
-          <Text style={styles.splashTagline}>& Calling</Text>
-
-          <Text style={styles.splashSubtitle}>
-            Discover your God-given calling, serve in church ministries, and answer the call to kingdom leadership.
-          </Text>
-
-          {/* Feature Highlights Pills */}
-          <View style={styles.splashFeaturesGrid}>
-            <View style={styles.splashFeatureItem}>
-              <View style={styles.splashFeatureIconWrap}>
-                <Check size={14} color="#60A5FA" strokeWidth={2.5} />
-              </View>
-              <Text style={styles.splashFeatureTxt}>Staff & Volunteer Ministry Roles</Text>
-            </View>
-
-            <View style={styles.splashFeatureItem}>
-              <View style={styles.splashFeatureIconWrap}>
-                <Check size={14} color="#60A5FA" strokeWidth={2.5} />
-              </View>
-              <Text style={styles.splashFeatureTxt}>Transparent Application Pipeline</Text>
-            </View>
-
-            <View style={styles.splashFeatureItem}>
-              <View style={styles.splashFeatureIconWrap}>
-                <Check size={14} color="#60A5FA" strokeWidth={2.5} />
-              </View>
-              <Text style={styles.splashFeatureTxt}>Direct Ministry Leader Review</Text>
+        {/* "Rhema Job Circle" Centered Navy-Blue Branding */}
+        <Animated.View style={[styles.splashCenterContainer, { opacity: contentFade }]}>
+          <View style={styles.brandScaleWrap}>
+            <View style={styles.brandLogoBox}>
+              <Svg width="100%" height="100%" viewBox={RHEMA_LOGO_VIEWBOX}>
+                <Path d={RHEMA_LOGO_PATH} fill="#0B1F5C" fillRule="evenodd" />
+              </Svg>
+              <Text style={styles.brandSub} numberOfLines={1} adjustsFontSizeToFit>
+                JOB CIRCLE
+              </Text>
             </View>
           </View>
-        </ScrollView>
-
-        {/* Bottom CTA Button: Explore Opportunities */}
-        <View style={styles.splashFooter}>
-          <TouchableOpacity
-            style={styles.splashExploreBtn}
-            onPress={() => setShowSplash(false)}
-            activeOpacity={0.88}
-          >
-            <LinearGradient
-              colors={['#3B82F6', '#2563EB', '#1D4ED8']}
-              style={styles.splashBtnGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-            >
-              <Text style={styles.splashExploreBtnTxt}>Explore Opportunities</Text>
-              <ChevronRight size={18} color="#FFFFFF" strokeWidth={2.5} />
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
-      </View>
+        </Animated.View>
+      </TouchableOpacity>
     );
   }
 
@@ -681,8 +665,14 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
 
   return (
     <View style={[styles.container, { backgroundColor: screenBg }]}>
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={screenBg}
+      />
+
       {/* ── HEADER LAYOUT ── */}
       {/* Top-left: Logged-in member's profile picture */}
+      {/* Middle: Prominent Search Bar ("Search ministry opportunities...") */}
       {/* Top-right: Notification bell icon with unread badge */}
       <View
         style={[
@@ -704,16 +694,27 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
             <Image source={{ uri: memberPhotoUrl }} style={styles.memberAvatarImg} resizeMode="cover" />
           ) : (
             <View style={[styles.memberAvatarFallback, { backgroundColor: isDark ? '#1E293B' : '#E0E7FF' }]}>
-              <User size={18} color={isDark ? '#93C5FD' : '#2563EB'} />
+              <User size={18} color={isDark ? '#93C5FD' : '#1a2d5a'} />
             </View>
           )}
         </TouchableOpacity>
 
-        {/* Center: Clean Title */}
-        <View style={styles.headerTitleWrap}>
-          <Text style={[styles.mainHeaderTitle, { color: primaryText }]} numberOfLines={1}>
-            Rhema Job Circle
-          </Text>
+        {/* Center Header Space: Prominent Search Bar */}
+        <View style={[styles.headerSearchBox, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
+          <Search size={17} color={secondaryText} />
+          <TextInput
+            style={[styles.searchInput, { color: primaryText }]}
+            placeholder="Search ministry opportunities..."
+            placeholderTextColor={secondaryText}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            returnKeyType="search"
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <X size={16} color={secondaryText} />
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Top-Right: Notification Bell with Unread Badge */}
@@ -730,27 +731,6 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
             </View>
           )}
         </TouchableOpacity>
-      </View>
-
-      {/* ── SEARCH BAR ── */}
-      {/* Placed prominently below the header */}
-      <View style={styles.searchBarWrapper}>
-        <View style={[styles.searchBox, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
-          <Search size={18} color={secondaryText} />
-          <TextInput
-            style={[styles.searchInput, { color: primaryText }]}
-            placeholder="Search ministry opportunities..."
-            placeholderTextColor={secondaryText}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            returnKeyType="search"
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <X size={17} color={secondaryText} />
-            </TouchableOpacity>
-          )}
-        </View>
       </View>
 
       {/* ── MAIN CONTENT: Single Card or Horizontal Carousel ── */}
@@ -1014,167 +994,49 @@ const styles = StyleSheet.create({
   // ── SPLASH SCREEN STYLES ──
   splashContainer: {
     flex: 1,
-    justifyContent: 'space-between',
-  },
-  splashTopGlow: {
-    position: 'absolute',
-    top: -80,
-    left: '10%',
-    width: '80%',
-    height: 250,
-    borderRadius: 125,
-    backgroundColor: 'rgba(59, 130, 246, 0.15)',
-  },
-  splashHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 8,
-  },
-  splashBackBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  splashHeaderBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(59, 130, 246, 0.18)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(96, 165, 250, 0.3)',
-  },
-  splashHeaderBadgeTxt: {
-    color: '#93C5FD',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-  },
-  splashScrollContent: {
-    paddingHorizontal: 24,
-    alignItems: 'center',
-    paddingTop: 30,
-    paddingBottom: 20,
-  },
-  splashVisualWrapper: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 24,
-  },
-  splashEmblemCircle: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
+  splashCenterContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 8,
-    shadowColor: '#2563EB',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-  },
-  splashGlowRing: {
-    position: 'absolute',
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    borderWidth: 1.5,
-    borderColor: 'rgba(96, 165, 250, 0.25)',
-  },
-  splashMainTitle: {
-    fontSize: 28,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    textAlign: 'center',
-    letterSpacing: -0.5,
-  },
-  splashTagline: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#93C5FD',
-    textAlign: 'center',
-    marginTop: 2,
-    marginBottom: 14,
-  },
-  splashSubtitle: {
-    fontSize: 14.5,
-    color: 'rgba(255, 255, 255, 0.72)',
-    textAlign: 'center',
-    lineHeight: 22,
-    paddingHorizontal: 10,
-    marginBottom: 28,
-  },
-  splashFeaturesGrid: {
     width: '100%',
-    gap: 12,
   },
-  splashFeatureItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  splashFeatureIconWrap: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: 'rgba(59, 130, 246, 0.25)',
+  brandScaleWrap: {
+    width: 210,
+    height: 88,
+    transform: [{ scale: 1.3 }],
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
   },
-  splashFeatureTxt: {
-    fontSize: 13.5,
-    fontWeight: '600',
-    color: '#F1F5F9',
+  brandLogoBox: {
+    width: 210,
+    height: 88,
   },
-  splashFooter: {
-    paddingHorizontal: 20,
-    paddingBottom: 24,
-  },
-  splashExploreBtn: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    elevation: 4,
-    shadowColor: '#2563EB',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-  },
-  splashBtnGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-  },
-  splashExploreBtnTxt: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: 0.3,
+  brandSub: {
+    position: 'absolute',
+    left: 73,
+    top: 67,
+    width: 136,
+    textAlign: 'center',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 2.8,
+    color: '#07153F',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
   },
 
-  // ── MAIN HEADER STYLES ──
+  // ── MAIN HEADER STYLES (Profile Left + Search Bar Center + Bell Right) ──
   mainHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 18,
+    paddingHorizontal: 16,
     paddingBottom: 12,
     borderBottomWidth: 1,
+    gap: 10,
   },
   profileAvatarTouchable: {
     width: 40,
@@ -1182,7 +1044,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: 'hidden',
     borderWidth: 1.5,
-    borderColor: '#3B82F6',
+    borderColor: '#1a2d5a',
   },
   memberAvatarImg: {
     width: '100%',
@@ -1194,15 +1056,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerTitleWrap: {
+  headerSearchBox: {
     flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 12,
+    height: 40,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    borderWidth: 1,
   },
-  mainHeaderTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    letterSpacing: -0.2,
+  searchInput: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 13.5,
+    paddingVertical: 0,
   },
   bellBtn: {
     width: 40,
@@ -1231,26 +1098,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#EF4444',
   },
 
-  // ── SEARCH BAR STYLES ──
-  searchBarWrapper: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  searchBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
-  searchInput: {
-    flex: 1,
-    marginLeft: 10,
-    fontSize: 14.5,
-    paddingVertical: 0,
-  },
-
   // ── CONTENT FEED / CAROUSEL STYLES ──
   centerLoading: {
     flex: 1,
@@ -1263,6 +1110,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 18,
+    marginTop: 14,
     marginBottom: 12,
   },
   carouselSectionTitle: {
