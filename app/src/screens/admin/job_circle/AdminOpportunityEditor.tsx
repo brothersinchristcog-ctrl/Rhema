@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -27,15 +27,16 @@ import {
   ChevronDown,
   Check,
   CheckCircle2,
+  X,
 } from 'lucide-react-native';
+import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import { useAuth } from '../../../context/AuthContext';
 import { useChurch } from '../../../context/ChurchContext';
 import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
 import JobCircleService from '../../../services/JobCircleService';
 import {
   JobOpportunity,
-  JobOpportunityType,
-  JobCompensationType,
+  JobCategory,
   DEFAULT_MINISTRY_CATEGORIES,
 } from '../../../types/jobCircle';
 
@@ -50,7 +51,7 @@ interface AdminOpportunityEditorProps {
 
 const SERIF = Platform.OS === 'ios' ? 'Georgia' : 'serif';
 
-const ROLE_TYPES: { label: string; value: JobOpportunityType }[] = [
+const DEFAULT_ROLE_TYPES = [
   { label: 'Full-Time Paid Ministry', value: 'full_time_paid' },
   { label: 'Part-Time Paid Ministry', value: 'part_time_paid' },
   { label: 'Volunteer Service (Unpaid)', value: 'volunteer' },
@@ -58,11 +59,27 @@ const ROLE_TYPES: { label: string; value: JobOpportunityType }[] = [
   { label: 'Internship', value: 'internship' },
 ];
 
-const COMPENSATION_TYPES: { label: string; value: JobCompensationType }[] = [
+const DEFAULT_COMPENSATION_TYPES = [
   { label: 'Unpaid / Voluntary', value: 'unpaid' },
   { label: 'Monthly Salary', value: 'salary' },
   { label: 'Honorarium / Stipend', value: 'stipend' },
 ];
+
+const WEEKDAYS = [
+  { label: 'Mon', full: 'Monday' },
+  { label: 'Tue', full: 'Tuesday' },
+  { label: 'Wed', full: 'Wednesday' },
+  { label: 'Thu', full: 'Thursday' },
+  { label: 'Fri', full: 'Friday' },
+  { label: 'Sat', full: 'Saturday' },
+  { label: 'Sun', full: 'Sunday' },
+];
+
+interface ScheduleSlot {
+  days: string[]; // e.g. ["Monday", "Wednesday"]
+  startTime: string; // e.g. "6:00 PM"
+  endTime: string; // e.g. "8:00 PM"
+}
 
 export default function AdminOpportunityEditor({ navigation, route }: AdminOpportunityEditorProps) {
   const insets = useSafeAreaInsets();
@@ -81,19 +98,31 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
   const churchId = activeChurch?.id || 'rhema';
   const editingOpp = route.params?.opportunity;
 
+  // Basic Info
   const [title, setTitle] = useState(editingOpp?.title || '');
+  const [categories, setCategories] = useState<JobCategory[]>(DEFAULT_MINISTRY_CATEGORIES);
   const [categoryId, setCategoryId] = useState(editingOpp?.categoryId || DEFAULT_MINISTRY_CATEGORIES[0].id);
   const [description, setDescription] = useState(editingOpp?.description || '');
-  const [location, setLocation] = useState(editingOpp?.location || 'Rhema Main Sanctuary');
-  const [timeCommitment, setTimeCommitment] = useState(editingOpp?.timeCommitment || 'Sundays (8:00 AM - 1:00 PM)');
-  const [opportunityType, setOpportunityType] = useState<JobOpportunityType>(editingOpp?.opportunityType || 'volunteer');
-  const [compensationType, setCompensationType] = useState<JobCompensationType>(editingOpp?.compensationType || 'unpaid');
+  const [location, setLocation] = useState(editingOpp?.location || '');
+
+  // Opportunity Types & Compensation Types with Custom Support
+  const [roleTypes, setRoleTypes] = useState(DEFAULT_ROLE_TYPES);
+  const [opportunityType, setOpportunityType] = useState<string>(editingOpp?.opportunityType || 'volunteer');
+  const [compensationTypes, setCompensationTypes] = useState(DEFAULT_COMPENSATION_TYPES);
+  const [compensationType, setCompensationType] = useState<string>(editingOpp?.compensationType || 'unpaid');
   const [compensationDetails, setCompensationDetails] = useState(editingOpp?.compensationDetails || '');
 
-  // Modals for selection
-  const [categoryModalVisible, setCategoryModalVisible] = useState(false);
-  const [roleTypeModalVisible, setRoleTypeModalVisible] = useState(false);
-  const [compTypeModalVisible, setCompTypeModalVisible] = useState(false);
+  // Time Commitment Schedule Slots
+  const [schedules, setSchedules] = useState<ScheduleSlot[]>(() => {
+    if (editingOpp?.timeCommitment) {
+      // Keep legacy string representation accessible
+      return [{ days: ['Sunday'], startTime: '9:00 AM', endTime: '12:00 PM' }];
+    }
+    return [{ days: ['Sunday'], startTime: '9:00 AM', endTime: '12:00 PM' }];
+  });
+
+  // Time Picker State for Schedule Slot
+  const [timePickerTarget, setTimePickerTarget] = useState<{ slotIdx: number; field: 'start' | 'end' } | null>(null);
 
   // Dynamic Lists for Responsibilities & Skills
   const [responsibilities, setResponsibilities] = useState<string[]>(
@@ -107,9 +136,168 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
       : ['']
   );
 
-  const [saving, setSaving] = useState(false);
-  const selectedCategoryObj = DEFAULT_MINISTRY_CATEGORIES.find(c => c.id === categoryId) || DEFAULT_MINISTRY_CATEGORIES[0];
+  // Modals for Selection
+  const [categoryModalVisible, setCategoryModalVisible] = useState(false);
+  const [roleTypeModalVisible, setRoleTypeModalVisible] = useState(false);
+  const [compTypeModalVisible, setCompTypeModalVisible] = useState(false);
 
+  // Modals for "+ New" Custom Entries
+  const [newCategoryModalVisible, setNewCategoryModalVisible] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [addingCategory, setAddingCategory] = useState(false);
+
+  const [newRoleTypeModalVisible, setNewRoleTypeModalVisible] = useState(false);
+  const [newRoleTypeName, setNewRoleTypeName] = useState('');
+  const [addingRoleType, setAddingRoleType] = useState(false);
+
+  const [newCompTypeModalVisible, setNewCompTypeModalVisible] = useState(false);
+  const [newCompTypeName, setNewCompTypeName] = useState('');
+  const [addingCompType, setAddingCompType] = useState(false);
+
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    loadCategoriesAndConfigs();
+  }, [churchId]);
+
+  const loadCategoriesAndConfigs = async () => {
+    try {
+      const [cats, configs] = await Promise.all([
+        JobCircleService.getCategories(churchId),
+        JobCircleService.getCustomConfigs(churchId),
+      ]);
+      setCategories(cats);
+
+      if (configs.opportunityTypes && configs.opportunityTypes.length > 0) {
+        setRoleTypes([...DEFAULT_ROLE_TYPES, ...configs.opportunityTypes]);
+      }
+      if (configs.compensationTypes && configs.compensationTypes.length > 0) {
+        setCompensationTypes([...DEFAULT_COMPENSATION_TYPES, ...configs.compensationTypes]);
+      }
+    } catch (err) {
+      console.warn('Error loading custom categories/configs:', err);
+    }
+  };
+
+  const selectedCategoryObj = categories.find(c => c.id === categoryId) || categories[0] || DEFAULT_MINISTRY_CATEGORIES[0];
+
+  // ── CUSTOM CATEGORY HANDLER ──
+  const handleAddNewCategory = async () => {
+    if (!newCategoryName.trim()) {
+      Alert.alert('Required', 'Please enter a category name.');
+      return;
+    }
+    try {
+      setAddingCategory(true);
+      const created = await JobCircleService.addCategory(churchId, newCategoryName.trim());
+      setCategories(prev => [...prev, created]);
+      setCategoryId(created.id);
+      setNewCategoryName('');
+      setNewCategoryModalVisible(false);
+      setCategoryModalVisible(false);
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Could not add category.');
+    } finally {
+      setAddingCategory(false);
+    }
+  };
+
+  // ── CUSTOM ROLE TYPE HANDLER ──
+  const handleAddNewRoleType = async () => {
+    if (!newRoleTypeName.trim()) {
+      Alert.alert('Required', 'Please enter an opportunity type name.');
+      return;
+    }
+    try {
+      setAddingRoleType(true);
+      const val = await JobCircleService.addCustomOpportunityType(churchId, newRoleTypeName.trim());
+      const newEntry = { label: newRoleTypeName.trim(), value: val };
+      setRoleTypes(prev => [...prev, newEntry]);
+      setOpportunityType(val);
+      setNewRoleTypeName('');
+      setNewRoleTypeModalVisible(false);
+      setRoleTypeModalVisible(false);
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Could not add opportunity type.');
+    } finally {
+      setAddingRoleType(false);
+    }
+  };
+
+  // ── CUSTOM COMPENSATION TYPE HANDLER ──
+  const handleAddNewCompType = async () => {
+    if (!newCompTypeName.trim()) {
+      Alert.alert('Required', 'Please enter a compensation type name.');
+      return;
+    }
+    try {
+      setAddingCompType(true);
+      const val = await JobCircleService.addCustomCompensationType(churchId, newCompTypeName.trim());
+      const newEntry = { label: newCompTypeName.trim(), value: val };
+      setCompensationTypes(prev => [...prev, newEntry]);
+      setCompensationType(val);
+      setNewCompTypeName('');
+      setNewCompTypeModalVisible(false);
+      setCompTypeModalVisible(false);
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Could not add compensation type.');
+    } finally {
+      setAddingCompType(false);
+    }
+  };
+
+  // ── SCHEDULE SLOTS HELPERS ──
+  const handleAddScheduleSlot = () => {
+    setSchedules([...schedules, { days: ['Sunday'], startTime: '9:00 AM', endTime: '12:00 PM' }]);
+  };
+
+  const handleRemoveScheduleSlot = (idx: number) => {
+    setSchedules(schedules.filter((_, i) => i !== idx));
+  };
+
+  const handleToggleDay = (slotIdx: number, dayFull: string) => {
+    const updated = [...schedules];
+    const slot = updated[slotIdx];
+    if (slot.days.includes(dayFull)) {
+      if (slot.days.length > 1) {
+        slot.days = slot.days.filter(d => d !== dayFull);
+      }
+    } else {
+      slot.days = [...slot.days, dayFull];
+    }
+    setSchedules(updated);
+  };
+
+  const formatScheduleCommitmentSummary = (): string => {
+    if (schedules.length === 0) return 'Flexible schedule';
+    return schedules
+      .map(s => `${s.days.join(', ')}: ${s.startTime} – ${s.endTime}`)
+      .join(' | ');
+  };
+
+  // ── TIME PICKER HANDLER ──
+  const handleTimeConfirm = (date: Date) => {
+    if (!timePickerTarget) return;
+    const { slotIdx, field } = timePickerTarget;
+    let hours = date.getHours();
+    const minutes = date.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const minStr = minutes < 10 ? `0${minutes}` : minutes;
+    const formatted = `${hours}:${minStr} ${ampm}`;
+
+    const updated = [...schedules];
+    if (field === 'start') {
+      updated[slotIdx].startTime = formatted;
+    } else {
+      updated[slotIdx].endTime = formatted;
+    }
+    setSchedules(updated);
+    setTimePickerTarget(null);
+  };
+
+  // ── RESPONSIBILITIES LIST ──
   const handleAddResponsibility = () => {
     setResponsibilities([...responsibilities, '']);
   };
@@ -124,6 +312,7 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
     setResponsibilities(responsibilities.filter((_, idx) => idx !== index));
   };
 
+  // ── SKILLS LIST ──
   const handleAddSkill = () => {
     setRequiredSkills([...requiredSkills, '']);
   };
@@ -138,13 +327,14 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
     setRequiredSkills(requiredSkills.filter((_, idx) => idx !== index));
   };
 
+  // ── SAVE & PUBLISH ──
   const handleSave = async (isPublish: boolean) => {
     if (!title.trim()) {
-      Alert.alert('Required Field', 'Please enter a Position Title.');
+      Alert.alert('Required Field', 'Please enter a ministry position title.');
       return;
     }
     if (!description.trim()) {
-      Alert.alert('Required Field', 'Please enter a Job Description.');
+      Alert.alert('Required Field', 'Please enter a job description.');
       return;
     }
 
@@ -152,6 +342,7 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
       setSaving(true);
       const cleanResponsibilities = responsibilities.map(r => r.trim()).filter(Boolean);
       const cleanSkills = requiredSkills.map(s => s.trim()).filter(Boolean);
+      const timeCommitmentSummary = formatScheduleCommitmentSummary();
 
       if (editingOpp) {
         await JobCircleService.updateOpportunity(churchId, editingOpp.id, {
@@ -159,10 +350,10 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
           categoryId: selectedCategoryObj.id,
           categoryName: selectedCategoryObj.name,
           description: description.trim(),
-          location: location.trim(),
-          timeCommitment: timeCommitment.trim(),
-          opportunityType,
-          compensationType,
+          location: location.trim() || 'Rhema Main Campus',
+          timeCommitment: timeCommitmentSummary,
+          opportunityType: opportunityType as any,
+          compensationType: compensationType as any,
           compensationDetails: compensationDetails.trim(),
           responsibilities: cleanResponsibilities,
           requiredSkills: cleanSkills,
@@ -177,10 +368,10 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
           description: description.trim(),
           responsibilities: cleanResponsibilities,
           requiredSkills: cleanSkills,
-          location: location.trim(),
-          timeCommitment: timeCommitment.trim(),
-          opportunityType,
-          compensationType,
+          location: location.trim() || 'Rhema Main Campus',
+          timeCommitment: timeCommitmentSummary,
+          opportunityType: opportunityType as any,
+          compensationType: compensationType as any,
           compensationDetails: compensationDetails.trim(),
           status: isPublish ? 'approved' : 'draft',
           createdById: user?.uid || 'admin',
@@ -200,7 +391,7 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
 
   return (
     <View style={[styles.container, { backgroundColor: screenBg }]}>
-      {/* ── HERO HEADER (Exact Same Design As Daily Promise Editor) ── */}
+      {/* ── HERO HEADER ── */}
       <View
         style={[
           styles.hero,
@@ -242,7 +433,7 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
       </View>
 
       <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 30 }]}>
-        {/* ── CARD 1: BASIC INFORMATION ── */}
+        {/* ── CARD 1: POSITION DETAILS ── */}
         <View style={[styles.sectionCard, isDark ? styles.sectionDark : styles.sectionLight]}>
           <LinearGradient
             colors={
@@ -259,43 +450,55 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
               <Text style={[styles.secHdTXT, { color: primaryText }]}>Position Details</Text>
             </View>
 
-            {/* Position Title */}
+            {/* 1. Position Title with Clear Placeholder */}
             <View style={styles.fGroup}>
               <Text style={[styles.fLabel, { color: primaryText }]}>Position Title *</Text>
               <View style={[styles.inputWrap, isDark ? styles.inputWrapDark : styles.inputWrapLight]}>
                 <TextInput
                   style={[styles.inputText, { color: primaryText }]}
-                  placeholder="e.g. Associate Pastor, Worship Director, Media Lead"
-                  placeholderTextColor={secondaryText}
+                  placeholder="Enter ministry position title"
+                  placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                   value={title}
                   onChangeText={setTitle}
                 />
               </View>
             </View>
 
-            {/* Ministry Category Dropdown */}
+            {/* 2. Ministry Category with "+ New Category" button & English-Only */}
             <View style={styles.fGroup}>
-              <Text style={[styles.fLabel, { color: primaryText }]}>Ministry Category *</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0 }]}>Ministry Category *</Text>
+                <TouchableOpacity
+                  onPress={() => setNewCategoryModalVisible(true)}
+                  style={[styles.smallAddPill, { borderColor: isDark ? '#3F3F46' : '#CBD5E1' }]}
+                >
+                  <Plus size={11} color={isDark ? '#FFFFFF' : '#1a2d5a'} />
+                  <Text style={[styles.smallAddPillTxt, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>
+                    + New Category
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
               <TouchableOpacity
                 style={[styles.inputWrap, isDark ? styles.inputWrapDark : styles.inputWrapLight, { justifyContent: 'space-between' }]}
                 onPress={() => setCategoryModalVisible(true)}
                 activeOpacity={0.8}
               >
                 <Text style={[styles.inputText, { color: primaryText }]}>
-                  {selectedCategoryObj.name} ({selectedCategoryObj.nameTelugu})
+                  {selectedCategoryObj.name}
                 </Text>
                 <ChevronDown size={16} color={secondaryText} />
               </TouchableOpacity>
             </View>
 
-            {/* Description */}
+            {/* 3. Description */}
             <View style={styles.fGroup}>
               <Text style={[styles.fLabel, { color: primaryText }]}>Calling & Job Description *</Text>
               <View style={[styles.inputWrap, isDark ? styles.inputWrapDark : styles.inputWrapLight, { minHeight: 96, alignItems: 'flex-start' }]}>
                 <TextInput
                   style={[styles.inputText, { color: primaryText, minHeight: 80, textAlignVertical: 'top' }]}
                   placeholder="Describe the church calling, primary duties, team atmosphere..."
-                  placeholderTextColor={secondaryText}
+                  placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                   multiline
                   numberOfLines={4}
                   value={description}
@@ -306,7 +509,7 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
           </LinearGradient>
         </View>
 
-        {/* ── CARD 2: CLASSIFICATION & COMPENSATION ── */}
+        {/* ── CARD 2: TERMS, COMPENSATION & TIME COMMITMENT ── */}
         <View style={[styles.sectionCard, isDark ? styles.sectionDark : styles.sectionLight, { marginTop: 14 }]}>
           <LinearGradient
             colors={
@@ -323,31 +526,49 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
               <Text style={[styles.secHdTXT, { color: primaryText }]}>Terms & Compensation</Text>
             </View>
 
-            {/* Role Type */}
+            {/* Opportunity Type with "+ New" */}
             <View style={styles.fGroup}>
-              <Text style={[styles.fLabel, { color: primaryText }]}>Opportunity Type</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0 }]}>Opportunity Type</Text>
+                <TouchableOpacity
+                  onPress={() => setNewRoleTypeModalVisible(true)}
+                  style={[styles.smallAddPill, { borderColor: isDark ? '#3F3F46' : '#CBD5E1' }]}
+                >
+                  <Plus size={11} color={isDark ? '#FFFFFF' : '#1a2d5a'} />
+                  <Text style={[styles.smallAddPillTxt, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>+ New</Text>
+                </TouchableOpacity>
+              </View>
               <TouchableOpacity
                 style={[styles.inputWrap, isDark ? styles.inputWrapDark : styles.inputWrapLight, { justifyContent: 'space-between' }]}
                 onPress={() => setRoleTypeModalVisible(true)}
                 activeOpacity={0.8}
               >
                 <Text style={[styles.inputText, { color: primaryText }]}>
-                  {ROLE_TYPES.find(r => r.value === opportunityType)?.label || opportunityType}
+                  {roleTypes.find(r => r.value === opportunityType)?.label || opportunityType}
                 </Text>
                 <ChevronDown size={16} color={secondaryText} />
               </TouchableOpacity>
             </View>
 
-            {/* Compensation Type */}
+            {/* Compensation Type with "+ New" */}
             <View style={styles.fGroup}>
-              <Text style={[styles.fLabel, { color: primaryText }]}>Compensation Type</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0 }]}>Compensation Type</Text>
+                <TouchableOpacity
+                  onPress={() => setNewCompTypeModalVisible(true)}
+                  style={[styles.smallAddPill, { borderColor: isDark ? '#3F3F46' : '#CBD5E1' }]}
+                >
+                  <Plus size={11} color={isDark ? '#FFFFFF' : '#1a2d5a'} />
+                  <Text style={[styles.smallAddPillTxt, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>+ New</Text>
+                </TouchableOpacity>
+              </View>
               <TouchableOpacity
                 style={[styles.inputWrap, isDark ? styles.inputWrapDark : styles.inputWrapLight, { justifyContent: 'space-between' }]}
                 onPress={() => setCompTypeModalVisible(true)}
                 activeOpacity={0.8}
               >
                 <Text style={[styles.inputText, { color: primaryText }]}>
-                  {COMPENSATION_TYPES.find(c => c.value === compensationType)?.label || compensationType}
+                  {compensationTypes.find(c => c.value === compensationType)?.label || compensationType}
                 </Text>
                 <ChevronDown size={16} color={secondaryText} />
               </TouchableOpacity>
@@ -361,7 +582,7 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                   <TextInput
                     style={[styles.inputText, { color: primaryText }]}
                     placeholder="e.g. ₹25,000 - ₹35,000 / month, or Ministry Stipend"
-                    placeholderTextColor={secondaryText}
+                    placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                     value={compensationDetails}
                     onChangeText={setCompensationDetails}
                   />
@@ -369,37 +590,129 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
               </View>
             )}
 
-            {/* Location */}
+            {/* Location with Clear Placeholder */}
             <View style={styles.fGroup}>
               <Text style={[styles.fLabel, { color: primaryText }]}>Location</Text>
               <View style={[styles.inputWrap, isDark ? styles.inputWrapDark : styles.inputWrapLight]}>
                 <TextInput
                   style={[styles.inputText, { color: primaryText }]}
-                  placeholder="e.g. Rhema Main Sanctuary, Youth Center, Online"
-                  placeholderTextColor={secondaryText}
+                  placeholder="Enter church or ministry location"
+                  placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                   value={location}
                   onChangeText={setLocation}
                 />
               </View>
             </View>
 
-            {/* Time Commitment */}
-            <View style={styles.fGroup}>
-              <Text style={[styles.fLabel, { color: primaryText }]}>Time Commitment</Text>
-              <View style={[styles.inputWrap, isDark ? styles.inputWrapDark : styles.inputWrapLight]}>
-                <TextInput
-                  style={[styles.inputText, { color: primaryText }]}
-                  placeholder="e.g. Sundays 8:00 AM - 1:00 PM, 15 hours/week"
-                  placeholderTextColor={secondaryText}
-                  value={timeCommitment}
-                  onChangeText={setTimeCommitment}
-                />
+            {/* ── TIME COMMITMENT (Day Selector + Start/End Time Pickers) ── */}
+            <View style={[styles.fGroup, { marginTop: 4 }]}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0 }]}>
+                  Time Commitment & Schedule
+                </Text>
+                <TouchableOpacity
+                  onPress={handleAddScheduleSlot}
+                  style={[styles.smallAddPill, { borderColor: isDark ? '#3F3F46' : '#CBD5E1' }]}
+                >
+                  <Plus size={11} color={isDark ? '#FFFFFF' : '#1a2d5a'} />
+                  <Text style={[styles.smallAddPillTxt, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>
+                    + Add Schedule
+                  </Text>
+                </TouchableOpacity>
               </View>
+
+              {schedules.map((slot, sIdx) => (
+                <View
+                  key={sIdx}
+                  style={[
+                    styles.scheduleBox,
+                    {
+                      backgroundColor: isDark ? '#1F1F23' : '#F8FAFC',
+                      borderColor: isDark ? '#3F3F46' : '#E2E8F0',
+                    },
+                  ]}
+                >
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: primaryText }}>
+                      Schedule #{sIdx + 1}
+                    </Text>
+                    {schedules.length > 1 && (
+                      <TouchableOpacity onPress={() => handleRemoveScheduleSlot(sIdx)} style={{ padding: 4 }}>
+                        <Trash2 size={16} color="#DC2626" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {/* Day Selection Chips (Mon to Sun) */}
+                  <Text style={{ fontSize: 11, fontWeight: '600', color: secondaryText, marginBottom: 6 }}>
+                    Select Day(s):
+                  </Text>
+                  <View style={styles.daysRow}>
+                    {WEEKDAYS.map(day => {
+                      const isSelected = slot.days.includes(day.full);
+                      return (
+                        <TouchableOpacity
+                          key={day.full}
+                          style={[
+                            styles.dayChip,
+                            isSelected
+                              ? { backgroundColor: isDark ? '#FFFFFF' : '#1a2d5a' }
+                              : { backgroundColor: isDark ? '#27272A' : '#FFFFFF', borderColor: isDark ? '#3F3F46' : '#CBD5E1', borderWidth: 1 },
+                          ]}
+                          onPress={() => handleToggleDay(sIdx, day.full)}
+                        >
+                          <Text
+                            style={[
+                              styles.dayChipTxt,
+                              { color: isSelected ? (isDark ? '#000000' : '#FFFFFF') : primaryText },
+                              isSelected && { fontWeight: '700' },
+                            ]}
+                          >
+                            {day.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  {/* Time Range Pickers */}
+                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                    {/* Start Time */}
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 11, color: secondaryText, marginBottom: 4 }}>Start Time</Text>
+                      <TouchableOpacity
+                        style={[styles.timeBtn, { backgroundColor: isDark ? '#27272A' : '#FFFFFF', borderColor: isDark ? '#3F3F46' : '#CBD5E1' }]}
+                        onPress={() => setTimePickerTarget({ slotIdx: sIdx, field: 'start' })}
+                      >
+                        <Clock size={13} color={secondaryText} />
+                        <Text style={[styles.timeBtnTxt, { color: primaryText }]}>{slot.startTime}</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* End Time */}
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 11, color: secondaryText, marginBottom: 4 }}>End Time</Text>
+                      <TouchableOpacity
+                        style={[styles.timeBtn, { backgroundColor: isDark ? '#27272A' : '#FFFFFF', borderColor: isDark ? '#3F3F46' : '#CBD5E1' }]}
+                        onPress={() => setTimePickerTarget({ slotIdx: sIdx, field: 'end' })}
+                      >
+                        <Clock size={13} color={secondaryText} />
+                        <Text style={[styles.timeBtnTxt, { color: primaryText }]}>{slot.endTime}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* Schedule Summary Preview */}
+                  <Text style={[styles.scheduleSummary, { color: isDark ? '#34D399' : '#15803d' }]}>
+                    ✓ {slot.days.join(', ')} – {slot.startTime} to {slot.endTime}
+                  </Text>
+                </View>
+              ))}
             </View>
           </LinearGradient>
         </View>
 
-        {/* ── CARD 3: RESPONSIBILITIES LIST ── */}
+        {/* ── CARD 3: KEY RESPONSIBILITIES (Fixed Visibility of "+" Button) ── */}
         <View style={[styles.sectionCard, isDark ? styles.sectionDark : styles.sectionLight, { marginTop: 14 }]}>
           <LinearGradient
             colors={
@@ -409,37 +722,45 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
             }
             style={styles.sectionInner}
           >
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <View style={[styles.secHdPill, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
                   <FileText size={14} color={isDark ? '#94A3B8' : '#1E293B'} />
                 </View>
                 <Text style={[styles.secHdTXT, { color: primaryText }]}>Key Responsibilities</Text>
               </View>
+
+              {/* Properly Styled & Visible "+" Button */}
               <TouchableOpacity
                 onPress={handleAddResponsibility}
-                style={[styles.smallAddBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
+                style={[
+                  styles.addActionButton,
+                  {
+                    backgroundColor: isDark ? '#FFFFFF' : '#1a2d5a',
+                  },
+                ]}
+                activeOpacity={0.8}
               >
-                <Plus size={13} color={isDark ? '#000000' : '#FFFFFF'} />
-                <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#000000' : '#FFFFFF', marginLeft: 4 }}>
-                  Add
+                <Plus size={14} color={isDark ? '#000000' : '#FFFFFF'} />
+                <Text style={[styles.addActionButtonTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
+                  Add Responsibility
                 </Text>
               </TouchableOpacity>
             </View>
 
             {responsibilities.map((resp, idx) => (
-              <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 }}>
+              <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 8 }}>
                 <View style={[styles.inputWrap, isDark ? styles.inputWrapDark : styles.inputWrapLight, { flex: 1 }]}>
                   <TextInput
                     style={[styles.inputText, { color: primaryText }]}
-                    placeholder={`Responsibility #${idx + 1}`}
-                    placeholderTextColor={secondaryText}
+                    placeholder={`e.g. Lead Sunday morning worship team`}
+                    placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                     value={resp}
                     onChangeText={t => handleUpdateResponsibility(t, idx)}
                   />
                 </View>
                 {responsibilities.length > 1 && (
-                  <TouchableOpacity onPress={() => handleRemoveResponsibility(idx)} style={{ padding: 6 }}>
+                  <TouchableOpacity onPress={() => handleRemoveResponsibility(idx)} style={styles.deleteBtn}>
                     <Trash2 size={18} color="#DC2626" />
                   </TouchableOpacity>
                 )}
@@ -448,7 +769,7 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
           </LinearGradient>
         </View>
 
-        {/* ── CARD 4: REQUIRED SKILLS ── */}
+        {/* ── CARD 4: REQUIRED SKILLS & CALLING (Fixed Visibility of "+" Button) ── */}
         <View style={[styles.sectionCard, isDark ? styles.sectionDark : styles.sectionLight, { marginTop: 14 }]}>
           <LinearGradient
             colors={
@@ -458,37 +779,45 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
             }
             style={styles.sectionInner}
           >
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <View style={[styles.secHdPill, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
                   <CheckCircle2 size={14} color={isDark ? '#94A3B8' : '#1E293B'} />
                 </View>
                 <Text style={[styles.secHdTXT, { color: primaryText }]}>Required Skills & Calling</Text>
               </View>
+
+              {/* Properly Styled & Visible "+" Button */}
               <TouchableOpacity
                 onPress={handleAddSkill}
-                style={[styles.smallAddBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
+                style={[
+                  styles.addActionButton,
+                  {
+                    backgroundColor: isDark ? '#FFFFFF' : '#1a2d5a',
+                  },
+                ]}
+                activeOpacity={0.8}
               >
-                <Plus size={13} color={isDark ? '#000000' : '#FFFFFF'} />
-                <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#000000' : '#FFFFFF', marginLeft: 4 }}>
-                  Add
+                <Plus size={14} color={isDark ? '#000000' : '#FFFFFF'} />
+                <Text style={[styles.addActionButtonTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
+                  Add Skill
                 </Text>
               </TouchableOpacity>
             </View>
 
             {requiredSkills.map((sk, idx) => (
-              <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 }}>
+              <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 8 }}>
                 <View style={[styles.inputWrap, isDark ? styles.inputWrapDark : styles.inputWrapLight, { flex: 1 }]}>
                   <TextInput
                     style={[styles.inputText, { color: primaryText }]}
-                    placeholder={`Skill #${idx + 1} (e.g. Sound Engineering, Keyboard)`}
-                    placeholderTextColor={secondaryText}
+                    placeholder={`e.g. Keyboard / Piano, Sound Mixing, Preaching`}
+                    placeholderTextColor={isDark ? '#71717A' : '#94A3B8'}
                     value={sk}
                     onChangeText={t => handleUpdateSkill(t, idx)}
                   />
                 </View>
                 {requiredSkills.length > 1 && (
-                  <TouchableOpacity onPress={() => handleRemoveSkill(idx)} style={{ padding: 6 }}>
+                  <TouchableOpacity onPress={() => handleRemoveSkill(idx)} style={styles.deleteBtn}>
                     <Trash2 size={18} color="#DC2626" />
                   </TouchableOpacity>
                 )}
@@ -497,9 +826,9 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
           </LinearGradient>
         </View>
 
-        {/* ── 5. BOTTOM ACTION BUTTONS (Exact Match to Daily Promise Editor) ── */}
+        {/* ── 5. BOTTOM ACTION BUTTONS ── */}
         <View style={styles.footerBtnRow}>
-          {/* Primary: Save & Publish Now */}
+          {/* Primary: Publish Opportunity */}
           <TouchableOpacity
             style={[
               styles.btnSave,
@@ -542,13 +871,18 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
         </View>
       </ScrollView>
 
-      {/* Category Selection Modal */}
+      {/* ── MODAL: Category Selector (English Only) ── */}
       <Modal visible={categoryModalVisible} transparent animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setCategoryModalVisible(false)}>
           <View style={[styles.modalCard, { backgroundColor: cardSurface }]}>
-            <Text style={[styles.modalTitle, { color: primaryText }]}>Select Ministry Category</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <Text style={[styles.modalTitle, { color: primaryText, marginBottom: 0 }]}>Select Ministry Category</Text>
+              <TouchableOpacity onPress={() => setNewCategoryModalVisible(true)}>
+                <Text style={{ color: '#1a2d5a', fontSize: 13, fontWeight: '700' }}>+ Add New</Text>
+              </TouchableOpacity>
+            </View>
             <ScrollView style={{ maxHeight: 320 }}>
-              {DEFAULT_MINISTRY_CATEGORIES.map(cat => (
+              {categories.map(cat => (
                 <TouchableOpacity
                   key={cat.id}
                   style={[styles.modalOption, categoryId === cat.id && { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
@@ -558,7 +892,7 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                   }}
                 >
                   <Text style={[styles.modalOptionTxt, { color: primaryText }, categoryId === cat.id && { fontWeight: '700' }]}>
-                    {cat.name} ({cat.nameTelugu})
+                    {cat.name}
                   </Text>
                   {categoryId === cat.id && <Check size={18} color="#1a2d5a" />}
                 </TouchableOpacity>
@@ -568,12 +902,54 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
         </TouchableOpacity>
       </Modal>
 
-      {/* Role Type Modal */}
+      {/* ── MODAL: Create New Category ── */}
+      <Modal visible={newCategoryModalVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: cardSurface }]}>
+            <Text style={[styles.modalTitle, { color: primaryText }]}>Add New Ministry Category</Text>
+            <TextInput
+              style={[styles.inputSingle, { backgroundColor: screenBg, borderColor: adminBorderColor, color: primaryText }]}
+              placeholder="e.g. Outreach & Evangelism"
+              placeholderTextColor={secondaryText}
+              value={newCategoryName}
+              onChangeText={setNewCategoryName}
+              autoFocus
+            />
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+              <TouchableOpacity
+                style={[styles.modalSmallBtn, { borderColor: adminBorderColor, borderWidth: 1 }]}
+                onPress={() => setNewCategoryModalVisible(false)}
+                disabled={addingCategory}
+              >
+                <Text style={{ color: primaryText, fontWeight: '600' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalSmallBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
+                onPress={handleAddNewCategory}
+                disabled={addingCategory}
+              >
+                {addingCategory ? (
+                  <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
+                ) : (
+                  <Text style={{ color: isDark ? '#000000' : '#FFFFFF', fontWeight: '700' }}>Save Category</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL: Role Type Selector ── */}
       <Modal visible={roleTypeModalVisible} transparent animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setRoleTypeModalVisible(false)}>
           <View style={[styles.modalCard, { backgroundColor: cardSurface }]}>
-            <Text style={[styles.modalTitle, { color: primaryText }]}>Select Opportunity Type</Text>
-            {ROLE_TYPES.map(rt => (
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <Text style={[styles.modalTitle, { color: primaryText, marginBottom: 0 }]}>Select Opportunity Type</Text>
+              <TouchableOpacity onPress={() => setNewRoleTypeModalVisible(true)}>
+                <Text style={{ color: '#1a2d5a', fontSize: 13, fontWeight: '700' }}>+ Add New</Text>
+              </TouchableOpacity>
+            </View>
+            {roleTypes.map(rt => (
               <TouchableOpacity
                 key={rt.value}
                 style={[styles.modalOption, opportunityType === rt.value && { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
@@ -593,12 +969,54 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
         </TouchableOpacity>
       </Modal>
 
-      {/* Compensation Type Modal */}
+      {/* ── MODAL: Create New Role Type ── */}
+      <Modal visible={newRoleTypeModalVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: cardSurface }]}>
+            <Text style={[styles.modalTitle, { color: primaryText }]}>Add Opportunity Type</Text>
+            <TextInput
+              style={[styles.inputSingle, { backgroundColor: screenBg, borderColor: adminBorderColor, color: primaryText }]}
+              placeholder="e.g. Contract / Consultant"
+              placeholderTextColor={secondaryText}
+              value={newRoleTypeName}
+              onChangeText={setNewRoleTypeName}
+              autoFocus
+            />
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+              <TouchableOpacity
+                style={[styles.modalSmallBtn, { borderColor: adminBorderColor, borderWidth: 1 }]}
+                onPress={() => setNewRoleTypeModalVisible(false)}
+                disabled={addingRoleType}
+              >
+                <Text style={{ color: primaryText, fontWeight: '600' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalSmallBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
+                onPress={handleAddNewRoleType}
+                disabled={addingRoleType}
+              >
+                {addingRoleType ? (
+                  <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
+                ) : (
+                  <Text style={{ color: isDark ? '#000000' : '#FFFFFF', fontWeight: '700' }}>Save Type</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL: Compensation Type Selector ── */}
       <Modal visible={compTypeModalVisible} transparent animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setCompTypeModalVisible(false)}>
           <View style={[styles.modalCard, { backgroundColor: cardSurface }]}>
-            <Text style={[styles.modalTitle, { color: primaryText }]}>Select Compensation</Text>
-            {COMPENSATION_TYPES.map(ct => (
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <Text style={[styles.modalTitle, { color: primaryText, marginBottom: 0 }]}>Select Compensation</Text>
+              <TouchableOpacity onPress={() => setNewCompTypeModalVisible(true)}>
+                <Text style={{ color: '#1a2d5a', fontSize: 13, fontWeight: '700' }}>+ Add New</Text>
+              </TouchableOpacity>
+            </View>
+            {compensationTypes.map(ct => (
               <TouchableOpacity
                 key={ct.value}
                 style={[styles.modalOption, compensationType === ct.value && { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
@@ -616,6 +1034,51 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {/* ── MODAL: Create New Compensation Type ── */}
+      <Modal visible={newCompTypeModalVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: cardSurface }]}>
+            <Text style={[styles.modalTitle, { color: primaryText }]}>Add Compensation Option</Text>
+            <TextInput
+              style={[styles.inputSingle, { backgroundColor: screenBg, borderColor: adminBorderColor, color: primaryText }]}
+              placeholder="e.g. Travel Allowance Only"
+              placeholderTextColor={secondaryText}
+              value={newCompTypeName}
+              onChangeText={setNewCompTypeName}
+              autoFocus
+            />
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+              <TouchableOpacity
+                style={[styles.modalSmallBtn, { borderColor: adminBorderColor, borderWidth: 1 }]}
+                onPress={() => setNewCompTypeModalVisible(false)}
+                disabled={addingCompType}
+              >
+                <Text style={{ color: primaryText, fontWeight: '600' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalSmallBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
+                onPress={handleAddNewCompType}
+                disabled={addingCompType}
+              >
+                {addingCompType ? (
+                  <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
+                ) : (
+                  <Text style={{ color: isDark ? '#000000' : '#FFFFFF', fontWeight: '700' }}>Save Option</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL: Native DateTimePickerModal for Time Slots ── */}
+      <DateTimePickerModal
+        isVisible={timePickerTarget !== null}
+        mode="time"
+        onConfirm={handleTimeConfirm}
+        onCancel={() => setTimePickerTarget(null)}
+      />
     </View>
   );
 }
@@ -641,7 +1104,7 @@ const styles = createAdminThemedStyles(
     heroTitle: { fontSize: 20, fontWeight: '800', textAlign: 'center', letterSpacing: -0.4 },
     scrollContent: { padding: 16 },
 
-    // ── SECTION CARDS (Exact match to AdminPromiseEditor) ──
+    // Section Cards
     sectionCard: {
       borderRadius: 16,
       overflow: 'hidden',
@@ -722,15 +1185,79 @@ const styles = createAdminThemedStyles(
       fontSize: 13,
       fontWeight: '500',
     },
-    smallAddBtn: {
+    smallAddPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 12,
+      borderWidth: 1,
+      gap: 3,
+    },
+    smallAddPillTxt: {
+      fontSize: 11,
+      fontWeight: '700',
+    },
+
+    // Schedule Styling
+    scheduleBox: {
+      padding: 12,
+      borderRadius: 12,
+      borderWidth: 1,
+      marginBottom: 10,
+    },
+    daysRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 6,
+    },
+    dayChip: {
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 8,
+    },
+    dayChipTxt: {
+      fontSize: 11,
+    },
+    timeBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      borderRadius: 8,
+      borderWidth: 1,
+      gap: 6,
+    },
+    timeBtnTxt: {
+      fontSize: 12,
+      fontWeight: '600',
+    },
+    scheduleSummary: {
+      fontSize: 11,
+      fontWeight: '600',
+      marginTop: 8,
+    },
+
+    // Action Buttons in Cards (Fixed + Visibility)
+    addActionButton: {
       flexDirection: 'row',
       alignItems: 'center',
       paddingHorizontal: 10,
       paddingVertical: 5,
-      borderRadius: 14,
+      borderRadius: 999,
+      gap: 4,
+    },
+    addActionButtonTxt: {
+      fontSize: 11,
+      fontWeight: '700',
+    },
+    deleteBtn: {
+      padding: 8,
+      justifyContent: 'center',
+      alignItems: 'center',
     },
 
-    // ── FOOTER BUTTONS (Exact match to AdminPromiseEditor) ──
+    // Footer Buttons
     footerBtnRow: {
       flexDirection: 'column',
       gap: 12,
@@ -780,6 +1307,7 @@ const styles = createAdminThemedStyles(
       letterSpacing: 0.2,
     },
 
+    // Modals
     modalOverlay: {
       flex: 1,
       backgroundColor: 'rgba(0,0,0,0.5)',
@@ -807,6 +1335,20 @@ const styles = createAdminThemedStyles(
     },
     modalOptionTxt: {
       fontSize: 14,
+    },
+    inputSingle: {
+      borderWidth: 1.5,
+      borderRadius: 10,
+      padding: 12,
+      fontSize: 14,
+      marginTop: 4,
+    },
+    modalSmallBtn: {
+      flex: 1,
+      paddingVertical: 10,
+      borderRadius: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
   })
 );

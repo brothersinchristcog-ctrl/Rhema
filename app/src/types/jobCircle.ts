@@ -6,9 +6,10 @@ export type JobOpportunityType =
   | 'volunteer'
   | 'temporary'
   | 'internship'
-  | 'ministry_service';
+  | 'ministry_service'
+  | (string & {});
 
-export type JobCompensationType = 'salary' | 'stipend' | 'unpaid';
+export type JobCompensationType = 'salary' | 'stipend' | 'unpaid' | (string & {});
 
 export type JobOpportunityStatus = 'draft' | 'pending' | 'approved' | 'rejected' | 'closed';
 

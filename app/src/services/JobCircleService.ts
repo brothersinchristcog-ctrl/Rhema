@@ -64,6 +64,65 @@ class JobCircleService {
       .set(updates, { merge: true });
   }
 
+  async addCategory(churchId: string, name: string): Promise<JobCategory> {
+    const col = this.getRootRef(churchId).collection('job_circle_categories');
+    const newDoc = col.doc();
+    const newCat: JobCategory = {
+      id: newDoc.id,
+      name: name.trim(),
+      nameTelugu: '',
+      icon: 'Briefcase',
+      order: Date.now(),
+      isEnabled: true,
+    };
+    await newDoc.set(newCat);
+    return newCat;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Custom Configs (Custom Opportunity Types & Compensation Types)
+  // ─────────────────────────────────────────────────────────────
+  async getCustomConfigs(churchId: string): Promise<{ opportunityTypes: { label: string; value: string }[]; compensationTypes: { label: string; value: string }[] }> {
+    try {
+      const doc = await this.getRootRef(churchId).collection('job_circle_settings').doc('configs').get();
+      if (!doc.exists) {
+        return { opportunityTypes: [], compensationTypes: [] };
+      }
+      const data = doc.data() || {};
+      return {
+        opportunityTypes: data.opportunityTypes || [],
+        compensationTypes: data.compensationTypes || [],
+      };
+    } catch (err) {
+      console.warn('[JobCircleService] getCustomConfigs fallback:', err);
+      return { opportunityTypes: [], compensationTypes: [] };
+    }
+  }
+
+  async addCustomOpportunityType(churchId: string, label: string): Promise<string> {
+    const val = label.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const ref = this.getRootRef(churchId).collection('job_circle_settings').doc('configs');
+    await ref.set(
+      {
+        opportunityTypes: firestore.FieldValue.arrayUnion({ label: label.trim(), value: val }),
+      },
+      { merge: true }
+    );
+    return val;
+  }
+
+  async addCustomCompensationType(churchId: string, label: string): Promise<string> {
+    const val = label.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const ref = this.getRootRef(churchId).collection('job_circle_settings').doc('configs');
+    await ref.set(
+      {
+        compensationTypes: firestore.FieldValue.arrayUnion({ label: label.trim(), value: val }),
+      },
+      { merge: true }
+    );
+    return val;
+  }
+
   // ─────────────────────────────────────────────────────────────
   // 2. OPPORTUNITIES MANAGEMENT
   // ─────────────────────────────────────────────────────────────
