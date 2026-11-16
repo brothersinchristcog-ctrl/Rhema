@@ -4620,3 +4620,160 @@ export const triggerVolunteerPushTestHttp = onRequest(
   }
 );
 
+
+// ─────────────────────────────────────────────────────────────
+// 💼 JOB CIRCLE & MINISTRY RECRUITMENT CLOUD TRIGGERS
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Trigger: When a member submits a new Ministry Application
+ * Notifies Church Admins so they can review the candidate and their attached CV.
+ */
+export const onJobApplicationCreated = onDocumentCreated(
+  { document: 'Rhema Church/{churchId}/job_circle_applications/{applicationId}', region: 'asia-south1' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+
+    const data = snap.data();
+    const churchId = event.params.churchId;
+    const applicationId = event.params.applicationId;
+
+    try {
+      const applicantName = data.memberName || 'A church member';
+      const roleTitle = data.opportunityTitle || 'Ministry Position';
+
+      const title = '💼 New Ministry Application!';
+      const body = `${applicantName} has applied for "${roleTitle}". Please review their calling and attached CV.`;
+
+      const db = getFirestore();
+      const messaging = getMessaging();
+      const { tokens: adminTokens, adminUids } = await resolveVolunteerAdminTokens(db, churchId);
+
+      if (adminTokens.length > 0) {
+        await sendHighPriorityPush(
+          messaging,
+          adminTokens,
+          title,
+          body,
+          {
+            type: 'job_application_admin',
+            churchId,
+            applicationId,
+            opportunityId: data.opportunityId || '',
+            targetTab: 'Job Circle',
+          },
+          'church_alerts'
+        );
+      }
+
+      // Persist in-app notifications for admins
+      if (adminUids.length > 0) {
+        await writeVolunteerInAppNotifications(
+          db,
+          churchId,
+          `job_admin_${applicationId}`,
+          {
+            type: 'job_application_admin',
+            title,
+            body,
+            applicationId,
+            opportunityId: data.opportunityId || '',
+            opportunityTitle: roleTitle,
+            applicantName,
+            referenceType: 'job_circle_application',
+            referenceId: applicationId,
+          },
+          adminUids
+        );
+      }
+
+      console.log(`✅ [JobCircle] Notified admins for new application: ${applicationId}`);
+    } catch (err) {
+      console.error('[JobCircle] Error handling onJobApplicationCreated push:', err);
+    }
+  }
+);
+
+/**
+ * Trigger: When an Admin updates an Application Status (Under Review, Meeting Scheduled, Selected, Rejected)
+ * Sends instant push notification to the member.
+ */
+export const onJobApplicationUpdated = onDocumentUpdated(
+  { document: 'Rhema Church/{churchId}/job_circle_applications/{applicationId}', region: 'asia-south1' },
+  async (event) => {
+    const change = event.data;
+    if (!change) return;
+
+    const before = change.before.data();
+    const after = change.after.data();
+    const churchId = event.params.churchId;
+    const applicationId = event.params.applicationId;
+
+    if (!before || !after) return;
+    if (before.status === after.status) return; // Only notify on status transitions
+
+    try {
+      const memberId = after.memberId;
+      const roleTitle = after.opportunityTitle || 'Ministry Position';
+      const status = after.status;
+
+      let title = '💼 Ministry Application Update';
+      let body = `Your application for "${roleTitle}" has been updated to ${status.replace('_', ' ').toUpperCase()}.`;
+
+      if (status === 'meeting_scheduled') {
+        title = '📅 Ministry Interview / Meeting Scheduled!';
+        body = `A meeting has been scheduled for your application for "${roleTitle}". Please check Job Circle in the app for details.`;
+      } else if (status === 'selected') {
+        title = '🎉 Congratulations! You have been Selected!';
+        body = `You have been selected for "${roleTitle}" at Rhema Church. Welcome to the ministry team!`;
+      } else if (status === 'shortlisted') {
+        title = '⭐ Application Shortlisted!';
+        body = `Your application for "${roleTitle}" has been shortlisted by church ministry leaders.`;
+      }
+
+      const db = getFirestore();
+      const messaging = getMessaging();
+      const tokens = await resolveVolunteerMemberTokens(db, churchId, memberId, after.memberPhone, after.memberEmail, after.memberName);
+
+      if (tokens.length > 0) {
+        await sendHighPriorityPush(
+          messaging,
+          tokens,
+          title,
+          body,
+          {
+            type: 'job_application_member',
+            churchId,
+            applicationId,
+            status,
+            screen: 'JobCircle',
+          },
+          'church_alerts'
+        );
+      }
+
+      await writeVolunteerInAppNotifications(
+        db,
+        churchId,
+        `job_status_${applicationId}_${status}`,
+        {
+          type: 'job_application_member',
+          title,
+          body,
+          applicationId,
+          opportunityId: after.opportunityId || '',
+          opportunityTitle: roleTitle,
+          status,
+          referenceType: 'job_circle_application',
+          referenceId: applicationId,
+        },
+        memberId
+      );
+
+      console.log(`✅ [JobCircle] Notified member ${memberId} of status update: ${status}`);
+    } catch (err) {
+      console.error('[JobCircle] Error handling onJobApplicationUpdated push:', err);
+    }
+  }
+);
