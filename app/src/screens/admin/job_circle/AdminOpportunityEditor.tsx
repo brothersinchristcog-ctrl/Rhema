@@ -466,8 +466,8 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
 
             {/* 2. Ministry Category with "+ New Category" button & English-Only */}
             <View style={styles.fGroup}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0 }]}>Ministry Category *</Text>
+              <View style={styles.fieldHeaderBetween}>
+                <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0, flexShrink: 1 }]}>Ministry Category *</Text>
                 <TouchableOpacity
                   onPress={() => setNewCategoryModalVisible(true)}
                   style={[styles.smallAddPill, { borderColor: isDark ? '#3F3F46' : '#CBD5E1', backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
@@ -529,8 +529,8 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
 
             {/* Opportunity Type with "+ New" */}
             <View style={styles.fGroup}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0 }]}>Opportunity Type</Text>
+              <View style={styles.fieldHeaderBetween}>
+                <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0, flexShrink: 1 }]}>Opportunity Type</Text>
                 <TouchableOpacity
                   onPress={() => setNewRoleTypeModalVisible(true)}
                   style={[styles.smallAddPill, { borderColor: isDark ? '#3F3F46' : '#CBD5E1', backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
@@ -554,8 +554,8 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
 
             {/* Compensation Type with "+ New" */}
             <View style={styles.fGroup}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0 }]}>Compensation Type</Text>
+              <View style={styles.fieldHeaderBetween}>
+                <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0, flexShrink: 1 }]}>Compensation Type</Text>
                 <TouchableOpacity
                   onPress={() => setNewCompTypeModalVisible(true)}
                   style={[styles.smallAddPill, { borderColor: isDark ? '#3F3F46' : '#CBD5E1', backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
@@ -609,8 +609,8 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
 
             {/* ── TIME COMMITMENT (Day Selector + Start/End Time Pickers) ── */}
             <View style={[styles.fGroup, { marginTop: 4 }]}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0 }]}>
+              <View style={styles.fieldHeaderBetween}>
+                <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0, flexShrink: 1 }]}>
                   Time Commitment & Schedule
                 </Text>
                 <TouchableOpacity
@@ -1168,6 +1168,13 @@ const styles = createAdminThemedStyles(
       gap: 8,
       flex: 1,
       minWidth: 0,
+    },
+    fieldHeaderBetween: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 6,
+      gap: 10,
     },
     fGroup: { marginBottom: 14 },
     fLabel: {
