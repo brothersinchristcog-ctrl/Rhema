@@ -35,6 +35,8 @@ import {
   Eye,
   Star,
   UserCheck,
+  MapPin,
+  X,
 } from 'lucide-react-native';
 import { useAuth } from '../../../context/AuthContext';
 import { useChurch } from '../../../context/ChurchContext';
@@ -868,9 +870,23 @@ export default function AdminJobCircleDashboard({ navigation, routeParams }: Adm
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.cardTitle, { color: primaryText }]}>{opp.title}</Text>
-                        <Text style={[styles.cardSub, { color: secondaryText }]}>
-                          {opp.categoryName} • {opp.timeCommitment}
+                        <Text style={[styles.cardSub, { color: isDark ? '#93C5FD' : '#1a2d5a', fontWeight: '600', marginTop: 2 }]}>
+                          {opp.categoryName}
                         </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
+                          <Clock size={13} color={secondaryText} />
+                          <Text style={{ fontSize: 12, color: secondaryText, flex: 1 }} numberOfLines={2}>
+                            {opp.timeCommitment}
+                          </Text>
+                        </View>
+                        {opp.location ? (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                            <MapPin size={13} color={secondaryText} />
+                            <Text style={{ fontSize: 12, color: secondaryText }}>
+                              {opp.location}
+                            </Text>
+                          </View>
+                        ) : null}
                       </View>
                       <View
                         style={[
@@ -1269,15 +1285,31 @@ export default function AdminJobCircleDashboard({ navigation, routeParams }: Adm
       {/* ── 6. SCHEDULE INTERVIEW MODAL ── */}
       <Modal visible={scheduleModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: cardSurface, maxHeight: '85%' }]}>
-            <Text style={[styles.modalTitle, { color: primaryText }]}>Schedule Ministry Interview</Text>
-            <Text style={[styles.modalSub, { color: isDark ? '#93C5FD' : '#1a2d5a' }]}>
-              Applicant: {selectedApp?.memberName}
-            </Text>
+          <View style={[styles.modalCard, { backgroundColor: cardSurface, maxHeight: '92%', height: '88%' }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+              <View style={{ flex: 1, marginRight: 10 }}>
+                <Text style={[styles.modalTitle, { color: primaryText }]}>Schedule Ministry Interview</Text>
+                <Text style={[styles.modalSub, { color: isDark ? '#93C5FD' : '#1a2d5a', marginBottom: 0 }]}>
+                  Applicant: {selectedApp?.memberName}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setScheduleModalVisible(false)}
+                style={{ padding: 6, borderRadius: 20, backgroundColor: isDark ? '#27272A' : '#F1F5F9' }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <X size={18} color={primaryText} />
+              </TouchableOpacity>
+            </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView
+              showsVerticalScrollIndicator={true}
+              style={{ flex: 1 }}
+              contentContainerStyle={{ paddingBottom: 24 }}
+              keyboardShouldPersistTaps="handled"
+            >
               {/* Date Selection */}
-              <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 8 }]}>Interview Date</Text>
+              <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 4 }]}>Interview Date</Text>
               <TouchableOpacity
                 style={[styles.input, { backgroundColor: isDark ? '#27272A50' : screenBg, borderColor: adminBorderColor, justifyContent: 'center' }]}
                 onPress={() => setDatePickerVisible(true)}
@@ -1320,7 +1352,7 @@ export default function AdminJobCircleDashboard({ navigation, routeParams }: Adm
                 textAlignVertical="top"
               />
 
-              <View style={{ flexDirection: 'row', gap: 12, marginTop: 20 }}>
+              <View style={{ flexDirection: 'row', gap: 12, marginTop: 24, marginBottom: 8 }}>
                 <TouchableOpacity
                   style={[styles.closeModalBtn, { flex: 1, borderColor: adminBorderColor }]}
                   onPress={() => setScheduleModalVisible(false)}
