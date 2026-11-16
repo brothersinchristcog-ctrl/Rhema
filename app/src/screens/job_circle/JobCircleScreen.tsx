@@ -380,7 +380,7 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
   // Navigation Handlers
   const handleOpenProfile = () => {
     try {
-      navigation.navigate('Profile');
+      navigation.navigate('Tabs', { screen: 'Profile' });
     } catch (e) {
       console.warn('Profile navigation error:', e);
     }
