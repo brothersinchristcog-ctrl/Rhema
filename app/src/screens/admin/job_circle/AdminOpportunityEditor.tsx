@@ -647,9 +647,9 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                     )}
                   </View>
 
-                  {/* Day Selection Chips (Mon to Sun) */}
-                  <Text style={{ fontSize: 11, fontWeight: '600', color: secondaryText, marginBottom: 6 }}>
-                    Select Day(s):
+                  {/* Day Selection Row (7 Equal Modern Circular/Pill Chips) */}
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: secondaryText, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                    Select Days
                   </Text>
                   <View style={styles.daysRow}>
                     {WEEKDAYS.map(day => {
@@ -660,16 +660,27 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                           style={[
                             styles.dayChip,
                             isSelected
-                              ? { backgroundColor: isDark ? '#FFFFFF' : '#1a2d5a' }
-                              : { backgroundColor: isDark ? '#27272A' : '#FFFFFF', borderColor: isDark ? '#3F3F46' : '#CBD5E1', borderWidth: 1 },
+                              ? {
+                                  backgroundColor: isDark ? '#FFFFFF' : '#1a2d5a',
+                                  borderColor: isDark ? '#FFFFFF' : '#1a2d5a',
+                                }
+                              : {
+                                  backgroundColor: isDark ? '#27272A' : '#F1F5F9',
+                                  borderColor: isDark ? '#3F3F46' : '#E2E8F0',
+                                },
                           ]}
                           onPress={() => handleToggleDay(sIdx, day.full)}
+                          activeOpacity={0.7}
                         >
                           <Text
                             style={[
                               styles.dayChipTxt,
-                              { color: isSelected ? (isDark ? '#000000' : '#FFFFFF') : primaryText },
-                              isSelected && { fontWeight: '700' },
+                              {
+                                color: isSelected
+                                  ? (isDark ? '#000000' : '#FFFFFF')
+                                  : (isDark ? '#A1A1AA' : '#64748B'),
+                                fontWeight: isSelected ? '800' : '600',
+                              },
                             ]}
                           >
                             {day.label}
@@ -1221,23 +1232,28 @@ const styles = createAdminThemedStyles(
 
     // Schedule Styling
     scheduleBox: {
-      padding: 12,
-      borderRadius: 12,
-      borderWidth: 1,
-      marginBottom: 10,
+      padding: 14,
+      borderRadius: 14,
+      borderWidth: 1.5,
+      marginBottom: 12,
     },
     daysRow: {
       flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 6,
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: 4,
     },
     dayChip: {
-      paddingHorizontal: 10,
-      paddingVertical: 6,
-      borderRadius: 8,
+      flex: 1,
+      paddingVertical: 9,
+      borderRadius: 10,
+      borderWidth: 1.5,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     dayChipTxt: {
-      fontSize: 11,
+      fontSize: 11.5,
+      textAlign: 'center',
     },
     timeBtn: {
       flexDirection: 'row',
