@@ -253,6 +253,139 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
     }
   };
 
+  // ── DELETE CUSTOM CATEGORY HANDLER ──
+  const handleDeleteCategory = (cat: JobCategory) => {
+    const isDefault = DEFAULT_MINISTRY_CATEGORIES.some(d => d.id === cat.id);
+    if (isDefault) {
+      Alert.alert('System Category', 'Default system categories cannot be deleted.');
+      return;
+    }
+
+    Alert.alert(
+      'Delete Custom Category',
+      `Are you sure you want to delete the category "${cat.name}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Check if any existing opportunities use this category
+              const usageCount = await JobCircleService.checkCategoryUsage(churchId, cat.id);
+              if (usageCount > 0) {
+                // Safely soft delete (mark disabled) to preserve historical records
+                await JobCircleService.deleteCategory(churchId, cat.id, true);
+                Alert.alert(
+                  'Category Deactivated',
+                  `"${cat.name}" is used in ${usageCount} existing opportunity record(s). It has been deactivated so it cannot be selected for new opportunities while preserving existing records.`
+                );
+              } else {
+                await JobCircleService.deleteCategory(churchId, cat.id, false);
+                Alert.alert('Deleted', `Category "${cat.name}" was deleted successfully.`);
+              }
+
+              setCategories(prev => prev.filter(c => c.id !== cat.id));
+              if (categoryId === cat.id) {
+                const fallback = DEFAULT_MINISTRY_CATEGORIES[0];
+                setCategoryId(fallback.id);
+              }
+            } catch (err: any) {
+              console.error('Error deleting category:', err);
+              Alert.alert('Error', err?.message || 'Could not delete category.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // ── DELETE CUSTOM ROLE TYPE HANDLER ──
+  const handleDeleteRoleType = (item: { label: string; value: string }) => {
+    const isDefault = DEFAULT_ROLE_TYPES.some(d => d.value === item.value);
+    if (isDefault) {
+      Alert.alert('System Option', 'Default opportunity types cannot be deleted.');
+      return;
+    }
+
+    Alert.alert(
+      'Delete Custom Opportunity Type',
+      `Are you sure you want to delete "${item.label}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const usageCount = await JobCircleService.checkOpportunityTypeUsage(churchId, item.value);
+              if (usageCount > 0) {
+                Alert.alert(
+                  'In Use',
+                  `"${item.label}" is currently used in ${usageCount} existing opportunity record(s). Please edit or reassign those opportunities before deleting this type.`
+                );
+                return;
+              }
+
+              await JobCircleService.deleteCustomOpportunityType(churchId, item);
+              setRoleTypes(prev => prev.filter(r => r.value !== item.value));
+              if (opportunityType === item.value) {
+                setOpportunityType(DEFAULT_ROLE_TYPES[0].value);
+              }
+              Alert.alert('Deleted', `Opportunity type "${item.label}" deleted successfully.`);
+            } catch (err: any) {
+              console.error('Error deleting role type:', err);
+              Alert.alert('Error', err?.message || 'Could not delete opportunity type.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // ── DELETE CUSTOM COMPENSATION TYPE HANDLER ──
+  const handleDeleteCompType = (item: { label: string; value: string }) => {
+    const isDefault = DEFAULT_COMPENSATION_TYPES.some(d => d.value === item.value);
+    if (isDefault) {
+      Alert.alert('System Option', 'Default compensation types cannot be deleted.');
+      return;
+    }
+
+    Alert.alert(
+      'Delete Custom Compensation Option',
+      `Are you sure you want to delete "${item.label}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const usageCount = await JobCircleService.checkCompensationTypeUsage(churchId, item.value);
+              if (usageCount > 0) {
+                Alert.alert(
+                  'In Use',
+                  `"${item.label}" is currently used in ${usageCount} existing opportunity record(s). Please edit or reassign those opportunities before deleting this option.`
+                );
+                return;
+              }
+
+              await JobCircleService.deleteCustomCompensationType(churchId, item);
+              setCompensationTypes(prev => prev.filter(c => c.value !== item.value));
+              if (compensationType === item.value) {
+                setCompensationType(DEFAULT_COMPENSATION_TYPES[0].value);
+              }
+              Alert.alert('Deleted', `Compensation option "${item.label}" deleted successfully.`);
+            } catch (err: any) {
+              console.error('Error deleting compensation type:', err);
+              Alert.alert('Error', err?.message || 'Could not delete compensation option.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   // ── SCHEDULE SLOTS HELPERS ──
   const handleAddScheduleSlot = () => {
     setSchedules([...schedules, { days: ['Sunday'], startTime: '9:00 AM', endTime: '12:00 PM' }]);
@@ -1047,21 +1180,54 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
               <Text style={[styles.modalTitle, { color: primaryText, marginBottom: 0 }]}>Select Ministry Category</Text>
             </View>
             <ScrollView style={{ maxHeight: 320 }}>
-              {categories.map(cat => (
-                <TouchableOpacity
-                  key={cat.id}
-                  style={[styles.modalOption, categoryId === cat.id && { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
-                  onPress={() => {
-                    setCategoryId(cat.id);
-                    setCategoryModalVisible(false);
-                  }}
-                >
-                  <Text style={[styles.modalOptionTxt, { color: primaryText }, categoryId === cat.id && { fontWeight: '700' }]}>
-                    {cat.name}
-                  </Text>
-                  {categoryId === cat.id && <Check size={18} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />}
-                </TouchableOpacity>
-              ))}
+              {categories.map(cat => {
+                const isCustom = !DEFAULT_MINISTRY_CATEGORIES.some(d => d.id === cat.id);
+                return (
+                  <View
+                    key={cat.id}
+                    style={[
+                      styles.modalOption,
+                      categoryId === cat.id && { backgroundColor: isDark ? '#27272A' : '#F1F5F9' },
+                    ]}
+                  >
+                    <TouchableOpacity
+                      style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                      onPress={() => {
+                        setCategoryId(cat.id);
+                        setCategoryModalVisible(false);
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.modalOptionTxt,
+                          { color: primaryText },
+                          categoryId === cat.id && { fontWeight: '700' },
+                        ]}
+                      >
+                        {cat.name}
+                      </Text>
+                      {categoryId === cat.id && (
+                        <Check size={18} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} style={{ marginRight: isCustom ? 8 : 0 }} />
+                      )}
+                    </TouchableOpacity>
+
+                    {isCustom && (
+                      <TouchableOpacity
+                        style={{
+                          padding: 6,
+                          borderRadius: 6,
+                          backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2',
+                          marginLeft: 8,
+                        }}
+                        onPress={() => handleDeleteCategory(cat)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Trash2 size={15} color={isDark ? '#F87171' : '#DC2626'} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })}
             </ScrollView>
           </View>
         </TouchableOpacity>
@@ -1111,22 +1277,57 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
             <View style={{ marginBottom: 12 }}>
               <Text style={[styles.modalTitle, { color: primaryText, marginBottom: 0 }]}>Select Opportunity Type</Text>
             </View>
-            {roleTypes.map(rt => (
-              <TouchableOpacity
-                key={rt.value}
-                style={[styles.modalOption, opportunityType === rt.value && { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
-                onPress={() => {
-                  setOpportunityType(rt.value);
-                  if (rt.value === 'volunteer') setCompensationType('unpaid');
-                  setRoleTypeModalVisible(false);
-                }}
-              >
-                <Text style={[styles.modalOptionTxt, { color: primaryText }, opportunityType === rt.value && { fontWeight: '700' }]}>
-                  {rt.label}
-                </Text>
-                {opportunityType === rt.value && <Check size={18} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />}
-              </TouchableOpacity>
-            ))}
+            <ScrollView style={{ maxHeight: 320 }}>
+              {roleTypes.map(rt => {
+                const isCustom = !DEFAULT_ROLE_TYPES.some(d => d.value === rt.value);
+                return (
+                  <View
+                    key={rt.value}
+                    style={[
+                      styles.modalOption,
+                      opportunityType === rt.value && { backgroundColor: isDark ? '#27272A' : '#F1F5F9' },
+                    ]}
+                  >
+                    <TouchableOpacity
+                      style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                      onPress={() => {
+                        setOpportunityType(rt.value);
+                        if (rt.value === 'volunteer') setCompensationType('unpaid');
+                        setRoleTypeModalVisible(false);
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.modalOptionTxt,
+                          { color: primaryText },
+                          opportunityType === rt.value && { fontWeight: '700' },
+                        ]}
+                      >
+                        {rt.label}
+                      </Text>
+                      {opportunityType === rt.value && (
+                        <Check size={18} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} style={{ marginRight: isCustom ? 8 : 0 }} />
+                      )}
+                    </TouchableOpacity>
+
+                    {isCustom && (
+                      <TouchableOpacity
+                        style={{
+                          padding: 6,
+                          borderRadius: 6,
+                          backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2',
+                          marginLeft: 8,
+                        }}
+                        onPress={() => handleDeleteRoleType(rt)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Trash2 size={15} color={isDark ? '#F87171' : '#DC2626'} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })}
+            </ScrollView>
           </View>
         </TouchableOpacity>
       </Modal>
@@ -1175,21 +1376,56 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
             <View style={{ marginBottom: 12 }}>
               <Text style={[styles.modalTitle, { color: primaryText, marginBottom: 0 }]}>Select Compensation</Text>
             </View>
-            {compensationTypes.map(ct => (
-              <TouchableOpacity
-                key={ct.value}
-                style={[styles.modalOption, compensationType === ct.value && { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
-                onPress={() => {
-                  setCompensationType(ct.value);
-                  setCompTypeModalVisible(false);
-                }}
-              >
-                <Text style={[styles.modalOptionTxt, { color: primaryText }, compensationType === ct.value && { fontWeight: '700' }]}>
-                  {ct.label}
-                </Text>
-                {compensationType === ct.value && <Check size={18} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />}
-              </TouchableOpacity>
-            ))}
+            <ScrollView style={{ maxHeight: 320 }}>
+              {compensationTypes.map(ct => {
+                const isCustom = !DEFAULT_COMPENSATION_TYPES.some(d => d.value === ct.value);
+                return (
+                  <View
+                    key={ct.value}
+                    style={[
+                      styles.modalOption,
+                      compensationType === ct.value && { backgroundColor: isDark ? '#27272A' : '#F1F5F9' },
+                    ]}
+                  >
+                    <TouchableOpacity
+                      style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                      onPress={() => {
+                        setCompensationType(ct.value);
+                        setCompTypeModalVisible(false);
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.modalOptionTxt,
+                          { color: primaryText },
+                          compensationType === ct.value && { fontWeight: '700' },
+                        ]}
+                      >
+                        {ct.label}
+                      </Text>
+                      {compensationType === ct.value && (
+                        <Check size={18} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} style={{ marginRight: isCustom ? 8 : 0 }} />
+                      )}
+                    </TouchableOpacity>
+
+                    {isCustom && (
+                      <TouchableOpacity
+                        style={{
+                          padding: 6,
+                          borderRadius: 6,
+                          backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2',
+                          marginLeft: 8,
+                        }}
+                        onPress={() => handleDeleteCompType(ct)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Trash2 size={15} color={isDark ? '#F87171' : '#DC2626'} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })}
+            </ScrollView>
           </View>
         </TouchableOpacity>
       </Modal>
