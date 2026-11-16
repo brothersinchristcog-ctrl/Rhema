@@ -55,6 +55,7 @@ import JobCircleScreen from '../screens/job_circle/JobCircleScreen';
 import OpportunityDetailScreen from '../screens/job_circle/OpportunityDetailScreen';
 import AdminJobCircleDashboard from '../screens/admin/job_circle/AdminJobCircleDashboard';
 import AdminOpportunityEditor from '../screens/admin/job_circle/AdminOpportunityEditor';
+import AdminMinistryTeamsScreen from '../screens/admin/job_circle/AdminMinistryTeamsScreen';
 import SermonsScreen from '../screens/SermonsScreen';
 import SongsScreen from '../screens/SongsScreen';
 import EventDetailsScreen from '../screens/EventDetailsScreen';
@@ -1316,6 +1317,7 @@ function Navigation() {
             <Stack.Screen name="OpportunityDetailScreen" component={renderPremium(OpportunityDetailScreen)} />
             <Stack.Screen name="AdminJobCircleDashboard" component={renderPremium(AdminJobCircleDashboard)} />
             <Stack.Screen name="AdminOpportunityEditor" component={renderPremium(AdminOpportunityEditor)} />
+            <Stack.Screen name="AdminMinistryTeamsScreen" component={renderPremium(AdminMinistryTeamsScreen)} />
             <Stack.Screen name="Sermons" component={renderPremium(SermonsScreen)} />
             <Stack.Screen name="Songs" component={renderPremium(SongsScreen)} />
             <Stack.Screen name="EventDetails" component={renderPremium(EventDetailsScreen)} />
