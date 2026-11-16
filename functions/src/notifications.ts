@@ -4777,3 +4777,82 @@ export const onJobApplicationUpdated = onDocumentUpdated(
     }
   }
 );
+
+/**
+ * Trigger: When a new Ministry Opportunity is published (status == 'approved')
+ * Automatically broadcasts a high-priority push notification to all church members!
+ */
+export const onJobOpportunityCreated = onDocumentCreated(
+  { document: 'Rhema Church/{churchId}/job_circle_opportunities/{opportunityId}', region: 'asia-south1' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+
+    const data = snap.data();
+    const churchId = event.params.churchId;
+    const opportunityId = event.params.opportunityId;
+
+    if (data.status !== 'approved') {
+      console.log(`[JobCircle] Opportunity ${opportunityId} created with status '${data.status}', skipping member broadcast.`);
+      return;
+    }
+
+    try {
+      const title = '💼 New Ministry Opportunity Open!';
+      const categoryText = data.categoryName ? ` in ${data.categoryName}` : '';
+      const body = `Rhema Church is looking for a "${data.title}"${categoryText}. Tap to view details and submit your calling!`;
+
+      const db = getFirestore();
+      const messaging = getMessaging();
+
+      // Gather FCM tokens from all church members
+      const tokenSet = new Set<string>();
+      const membersSnap = await db.collection('Rhema Church').doc(churchId).collection('members').get();
+      membersSnap.forEach((mDoc: any) => {
+        const mData = mDoc.data();
+        if (Array.isArray(mData?.fcmTokens)) {
+          mData.fcmTokens.forEach((tk: any) => {
+            if (typeof tk === 'string' && tk.trim().length > 10) tokenSet.add(tk.trim());
+          });
+        }
+        if (typeof mData?.fcmToken === 'string' && mData.fcmToken.trim().length > 10) {
+          tokenSet.add(mData.fcmToken.trim());
+        }
+      });
+
+      const memberTokens = Array.from(tokenSet);
+
+      if (memberTokens.length > 0) {
+        await sendHighPriorityPush(
+          messaging,
+          memberTokens,
+          title,
+          body,
+          {
+            type: 'job_opportunity_new',
+            churchId,
+            opportunityId,
+            screen: 'JobCircle',
+          },
+          'church_alerts'
+        );
+      }
+
+      // Persist in church notifications for member in-app visibility
+      await db.collection('Rhema Church').doc(churchId).collection('notifications').add({
+        type: 'job_opportunity_new',
+        title,
+        body,
+        opportunityId,
+        opportunityTitle: data.title || '',
+        categoryName: data.categoryName || '',
+        createdAt: FieldValue.serverTimestamp(),
+        read: false,
+      });
+
+      console.log(`✅ [JobCircle] Broadcasted new opportunity "${data.title}" to ${memberTokens.length} member device(s).`);
+    } catch (err) {
+      console.error('[JobCircle] Error broadcasting new opportunity push:', err);
+    }
+  }
+);

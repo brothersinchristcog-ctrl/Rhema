@@ -490,13 +490,6 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
             <View>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                 <Text style={[styles.sectionTitle, { color: primaryText }]}>Ministry Postings</Text>
-                <TouchableOpacity
-                  style={[styles.addBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
-                  onPress={() => navigation.navigate('AdminOpportunityEditor')}
-                >
-                  <Plus size={14} color={isDark ? '#000000' : '#FFFFFF'} style={{ marginRight: 4 }} />
-                  <Text style={{ color: isDark ? '#000000' : '#FFFFFF', fontSize: 12, fontWeight: '700' }}>New</Text>
-                </TouchableOpacity>
               </View>
 
               {opportunities.map(opp => (
