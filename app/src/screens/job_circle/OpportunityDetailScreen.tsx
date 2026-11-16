@@ -116,6 +116,11 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const file = result.assets[0];
+        const maxSizeBytes = 25 * 1024 * 1024; // 25MB limit
+        if (file.size && file.size > maxSizeBytes) {
+          Alert.alert('File Too Large', 'Please select a resume file smaller than 25MB.');
+          return;
+        }
         setSelectedFile({
           uri: file.uri,
           name: file.name,

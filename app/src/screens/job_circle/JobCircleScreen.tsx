@@ -118,10 +118,16 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const file = result.assets[0];
+        const maxSizeBytes = 25 * 1024 * 1024; // 25MB limit
+        if (file.size && file.size > maxSizeBytes) {
+          Alert.alert('File Too Large', 'Please select a resume file smaller than 25MB.');
+          return;
+        }
         setSelectedFile({
           uri: file.uri,
           name: file.name,
           mimeType: file.mimeType || 'application/pdf',
+          size: file.size,
         });
       }
     } catch (err) {
@@ -325,10 +331,10 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
           </Text>
         </View>
 
-        {/* Structured Job Meta Specs (LinkedIn Reference) */}
-        <View style={[styles.postDetailsBox, { backgroundColor: isDark ? '#27272A50' : '#F8FAFC', borderColor: cardBorder }]}>
+        {/* Clean Job Metadata Rows (Clean Modern Text Rows) */}
+        <View style={styles.postDetailsBox}>
           <View style={styles.detailRow}>
-            <Text style={styles.detailEmoji}>📍</Text>
+            <MapPin size={15} color={isDark ? '#60A5FA' : '#1D4ED8'} style={styles.detailIcon} />
             <Text style={[styles.detailLabel, { color: secondaryText }]}>Location:</Text>
             <Text style={[styles.detailVal, { color: primaryText }]} numberOfLines={1}>
               {opp.location || 'Rhema Main Campus'}
@@ -336,7 +342,7 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
           </View>
 
           <View style={styles.detailRow}>
-            <Text style={styles.detailEmoji}>💼</Text>
+            <Briefcase size={15} color={isDark ? '#60A5FA' : '#1D4ED8'} style={styles.detailIcon} />
             <Text style={[styles.detailLabel, { color: secondaryText }]}>Role & Category:</Text>
             <Text style={[styles.detailVal, { color: primaryText }]} numberOfLines={1}>
               {opp.categoryName || opp.title}
@@ -344,7 +350,7 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
           </View>
 
           <View style={styles.detailRow}>
-            <Text style={styles.detailEmoji}>🏷️</Text>
+            <Filter size={15} color={isDark ? '#60A5FA' : '#1D4ED8'} style={styles.detailIcon} />
             <Text style={[styles.detailLabel, { color: secondaryText }]}>Opportunity Type:</Text>
             <View style={[styles.typePill, { backgroundColor: isPaid ? (isDark ? '#F59E0B25' : '#FEF3C7') : (isDark ? '#10B98125' : '#ECFDF5') }]}>
               <Text style={[styles.typePillTxt, { color: isPaid ? (isDark ? '#FBBF24' : '#B45309') : (isDark ? '#34D399' : '#047857') }]}>
@@ -355,7 +361,7 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
 
           {opp.compensationDetails ? (
             <View style={styles.detailRow}>
-              <Text style={styles.detailEmoji}>💰</Text>
+              <DollarSign size={15} color="#10B981" style={styles.detailIcon} />
               <Text style={[styles.detailLabel, { color: secondaryText }]}>Compensation:</Text>
               <Text style={[styles.detailVal, { color: isDark ? '#FBBF24' : '#B45309', fontWeight: '700' }]}>
                 {opp.compensationDetails}
@@ -364,7 +370,7 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
           ) : null}
 
           <View style={styles.detailRow}>
-            <Text style={styles.detailEmoji}>⏰</Text>
+            <Clock size={15} color={isDark ? '#60A5FA' : '#1D4ED8'} style={styles.detailIcon} />
             <Text style={[styles.detailLabel, { color: secondaryText }]}>Schedule:</Text>
             <Text style={[styles.detailVal, { color: primaryText }]} numberOfLines={1}>
               {opp.timeCommitment}
@@ -639,9 +645,14 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
               />
 
               {/* Resume / Document Picker */}
-              <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 14 }]}>
-                Resume / CV Attachment (Optional)
-              </Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, marginBottom: 8 }}>
+                <Text style={[styles.fieldLabel, { color: primaryText, marginBottom: 0 }]}>
+                  Resume / CV Attachment (Optional)
+                </Text>
+                <Text style={{ fontSize: 11.5, color: secondaryText, fontWeight: '500' }}>
+                  Max 25MB
+                </Text>
+              </View>
               {selectedFile ? (
                 <View
                   style={[
@@ -659,7 +670,7 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
                     </Text>
                     {selectedFile.size ? (
                       <Text style={[styles.fileSizeTxt, { color: secondaryText }]}>
-                        {(selectedFile.size / 1024).toFixed(0)} KB
+                        {(selectedFile.size / (1024 * 1024)).toFixed(1)} MB
                       </Text>
                     ) : null}
                   </View>
@@ -667,7 +678,7 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
                     onPress={() => setSelectedFile(null)}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <X size={18} color={secondaryText} />
+                    <Trash2 size={18} color="#EF4444" />
                   </TouchableOpacity>
                 </View>
               ) : (
@@ -686,6 +697,9 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
                   <Text style={[styles.uploadBoxPrompt, { color: primaryText }]}>
                     Tap to upload Resume / CV (PDF or DOCX)
                   </Text>
+                  <Text style={{ fontSize: 11.5, color: secondaryText }}>
+                    Up to 25MB supported
+                  </Text>
                 </TouchableOpacity>
               )}
 
@@ -694,7 +708,11 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
                 <TouchableOpacity
                   style={[
                     styles.modalCancelBtn,
-                    { backgroundColor: isDark ? '#27272A' : '#E2E8F0' },
+                    {
+                      backgroundColor: isDark ? '#27272A' : '#F1F5F9',
+                      borderColor: cardBorder,
+                      borderWidth: 1,
+                    },
                   ]}
                   onPress={() => setSelectedOppForApply(null)}
                   disabled={submitting}
@@ -705,7 +723,9 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
                 <TouchableOpacity
                   style={[
                     styles.modalSubmitBtn,
-                    { backgroundColor: isDark ? '#3B82F6' : '#1a2d5a' },
+                    {
+                      backgroundColor: isDark ? '#FFFFFF' : '#1a2d5a',
+                    },
                     submitting && { opacity: 0.7 },
                   ]}
                   onPress={handleSubmitApplication}
@@ -713,11 +733,13 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
                   activeOpacity={0.85}
                 >
                   {submitting ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
+                    <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
                   ) : (
                     <>
-                      <Send size={16} color="#FFFFFF" />
-                      <Text style={styles.modalSubmitTxt}>Submit Application</Text>
+                      <Send size={16} color={isDark ? '#000000' : '#FFFFFF'} />
+                      <Text style={[styles.modalSubmitTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
+                        Submit Application
+                      </Text>
                     </>
                   )}
                 </TouchableOpacity>
@@ -830,30 +852,26 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   postDetailsBox: {
-    marginHorizontal: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    gap: 8,
-    marginBottom: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+    gap: 7,
+    marginBottom: 10,
   },
   detailRow: {
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'nowrap',
   },
-  detailEmoji: {
-    fontSize: 13,
-    marginRight: 6,
+  detailIcon: {
+    marginRight: 8,
   },
   detailLabel: {
-    fontSize: 12.5,
+    fontSize: 13,
     fontWeight: '600',
     marginRight: 6,
   },
   detailVal: {
-    fontSize: 13,
+    fontSize: 13.5,
     fontWeight: '600',
     flex: 1,
   },
@@ -1082,12 +1100,12 @@ const styles = StyleSheet.create({
   modalCancelBtn: {
     flex: 1,
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
   modalCancelTxt: {
-    fontSize: 14,
+    fontSize: 14.5,
     fontWeight: '700',
   },
   modalSubmitBtn: {
@@ -1097,11 +1115,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: 14,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
   modalSubmitTxt: {
-    color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '800',
+    letterSpacing: 0.2,
   },
 });
