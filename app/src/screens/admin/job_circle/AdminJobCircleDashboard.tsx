@@ -14,6 +14,7 @@ import {
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
   ArrowLeft,
   Briefcase,
@@ -29,7 +30,7 @@ import {
   Edit,
   ExternalLink,
   HeartHandshake,
-  Search,
+  Filter,
 } from 'lucide-react-native';
 import { useAuth } from '../../../context/AuthContext';
 import { useChurch } from '../../../context/ChurchContext';
@@ -46,6 +47,18 @@ interface AdminJobCircleDashboardProps {
   navigation: any;
 }
 
+const SERIF = Platform.OS === 'ios' ? 'Georgia' : 'serif';
+
+const colors = {
+  moss: '#2E7D32',
+  mossDeep: '#1B5E20',
+  gold: '#F59E0B',
+  goldDeep: '#B45309',
+  clay: '#D97706',
+  ink: '#0F172A',
+  inkSoft: '#475569',
+};
+
 export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDashboardProps) {
   const insets = useSafeAreaInsets();
   const { user, member } = useAuth();
@@ -59,13 +72,12 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
     primaryText,
     secondaryText,
     borderColor: adminBorderColor,
-    scaleFont,
-    appFontFamily,
   } = useAdminTheme();
 
   const churchId = activeChurch?.id || 'rhema';
 
   const [activeTab, setActiveTab] = useState<'overview' | 'opportunities' | 'applications'>('overview');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'pending' | 'total'>('all');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -107,7 +119,6 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
   };
 
   const handleBack = () => {
-    // When inside Admin Tab navigator, 0 is the main Admin Dashboard
     if (setAdminParentTab) {
       setAdminParentTab(0);
     } else if (navigation?.goBack) {
@@ -170,64 +181,72 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
 
   // Metrics
   const activeOppsCount = opportunities.filter(o => o.status === 'approved').length;
-  const pendingOppsCount = opportunities.filter(o => o.status === 'pending').length;
   const pendingAppsCount = applications.filter(a => a.status === 'submitted' || a.status === 'under_review').length;
-  const shortlistedAppsCount = applications.filter(a => a.status === 'shortlisted' || a.status === 'meeting_scheduled').length;
+  const totalAppsCount = applications.length;
 
   return (
     <View style={[styles.container, { backgroundColor: screenBg }]}>
-      {/* ── STANDARD ADMIN HERO HEADER (Matching other Admin Screens) ── */}
+      {/* ── 1. HERO SECTION (Exact Same Design As Daily Promise Tab) ── */}
       <View
         style={[
           styles.hero,
           {
             backgroundColor: isDark ? '#000000' : '#FFFFFF',
             borderBottomWidth: 1,
-            borderBottomColor: adminBorderColor,
-            paddingTop: Math.max(insets.top, 8),
+            borderBottomColor: isDark ? '#27272A' : '#E2E8F0',
+            paddingBottom: 14,
+            marginBottom: 4,
           },
         ]}
       >
         <View style={styles.heroRow}>
-          {/* Back Button -> Safely returns to Admin Dashboard */}
+          {/* Circular Back Button (Returns directly to Dashboard) */}
           <TouchableOpacity
             onPress={handleBack}
-            style={[styles.circularBackBtn, { borderColor: adminBorderColor, backgroundColor: cardSurface }]}
+            style={[styles.circularBackBtn, { borderColor: isDark ? '#3F3F46' : '#E2E8F0', backgroundColor: isDark ? '#18181B' : '#FFFFFF' }]}
             activeOpacity={0.7}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <ArrowLeft size={22} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.2} />
+            <ArrowLeft size={22} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.2} />
           </TouchableOpacity>
 
-          {/* Centered Admin Title */}
-          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 }}>
+          {/* Centered Serif Title */}
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 }}>
             <Text
               style={[
                 styles.heroTitle,
                 {
-                  color: isDark ? '#FFFFFF' : '#1a2d5a',
-                  fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+                  color: isDark ? '#FFFFFF' : '#0F172A',
+                  fontFamily: SERIF,
                 },
               ]}
               numberOfLines={1}
             >
-              Job Circle Management
+              Job Circle
             </Text>
           </View>
 
-          {/* Post Action */}
+          {/* Clean Pill Action Button matching Daily Promise "+ New Promise" */}
           <TouchableOpacity
-            style={[styles.circularBackBtn, { borderColor: adminBorderColor, backgroundColor: cardSurface }]}
+            style={[
+              styles.newBtn,
+              {
+                backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                borderColor: isDark ? '#FFFFFF' : '#000000',
+              },
+            ]}
             onPress={() => navigation.navigate('AdminOpportunityEditor')}
-            activeOpacity={0.7}
+            activeOpacity={0.8}
           >
-            <Plus size={22} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.2} />
+            <Text style={[styles.newBtnTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
+              + New Role
+            </Text>
           </TouchableOpacity>
         </View>
 
-        {/* ── SEGMENT TABS (Standard Admin Style) ── */}
-        <View style={{ paddingHorizontal: 16, marginTop: 12, marginBottom: 10 }}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.segmentContainer}>
+        {/* Sub-tabs segment (Overview / Openings / Applicants) */}
+        <View style={{ paddingHorizontal: 16, marginTop: 12, marginBottom: 2 }}>
+          <View style={styles.segmentContainer}>
             {(
               [
                 { id: 'overview', label: 'Overview' },
@@ -259,7 +278,7 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
                 </TouchableOpacity>
               );
             })}
-          </ScrollView>
+          </View>
         </View>
       </View>
 
@@ -269,62 +288,200 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
         </View>
       ) : (
         <ScrollView
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 24 }]}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 30 }]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
           showsVerticalScrollIndicator={false}
         >
-          {/* OVERVIEW TAB */}
+          {/* ── 2. STATISTICS CARDS (Exact Match to Daily Promise Stat Cards) ── */}
           {activeTab === 'overview' && (
             <View>
-              {/* Metric Cards Grid */}
-              <View style={styles.metricsGrid}>
-                <View style={[styles.metricCard, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}>
-                  <Briefcase size={22} color="#1a2d5a" />
-                  <Text style={[styles.metricNumber, { color: primaryText }]}>{activeOppsCount}</Text>
-                  <Text style={[styles.metricLabel, { color: secondaryText }]}>Active Opportunities</Text>
-                </View>
+              <View style={styles.statsRow}>
+                {/* 1. Active Opportunities (Moss Green / Success) */}
+                <TouchableOpacity
+                  style={[
+                    styles.statBox,
+                    {
+                      backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                      borderColor: activeFilter === 'active'
+                        ? (isDark ? '#34D399' : colors.moss)
+                        : (isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(62, 107, 82, 0.22)'),
+                      borderWidth: activeFilter === 'active' ? 1.8 : 1,
+                    },
+                  ]}
+                  onPress={() => setActiveFilter(prev => (prev === 'active' ? 'all' : 'active'))}
+                  activeOpacity={0.75}
+                >
+                  <LinearGradient
+                    colors={
+                      isDark
+                        ? ['rgba(52, 211, 153, 0.14)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)']
+                        : ['#FFFFFF', '#F7FCF9', '#ECFDF5']
+                    }
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.statGlassInner}
+                  >
+                    <View style={[styles.statNotch, { backgroundColor: isDark ? '#34D399' : colors.moss }]} />
+                    <Text style={[styles.statNum, { color: isDark ? '#34D399' : colors.moss, fontFamily: SERIF }]}>
+                      {activeOppsCount}
+                    </Text>
+                    <View style={styles.statLabelRow}>
+                      <Text
+                        style={[
+                          styles.statLabel,
+                          { color: isDark ? '#E4E4E7' : colors.inkSoft },
+                          activeFilter === 'active' && { color: isDark ? '#34D399' : colors.moss },
+                        ]}
+                      >
+                        Active
+                      </Text>
+                      {activeFilter === 'active' && <View style={[styles.activeIndicatorDot, { backgroundColor: isDark ? '#34D399' : colors.moss }]} />}
+                    </View>
+                    <Text style={[styles.statHintTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+                      {activeFilter === 'active' ? 'Active ✓' : 'Opportunities'}
+                    </Text>
+                  </LinearGradient>
+                </TouchableOpacity>
 
-                <View style={[styles.metricCard, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}>
-                  <Clock size={22} color="#b45309" />
-                  <Text style={[styles.metricNumber, { color: primaryText }]}>{pendingAppsCount}</Text>
-                  <Text style={[styles.metricLabel, { color: secondaryText }]}>Pending Reviews</Text>
-                </View>
+                {/* 2. Pending Reviews (Amber Gold / Warning) */}
+                <TouchableOpacity
+                  style={[
+                    styles.statBox,
+                    {
+                      backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                      borderColor: activeFilter === 'pending'
+                        ? (isDark ? '#FBBF24' : colors.goldDeep)
+                        : (isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(166, 124, 61, 0.24)'),
+                      borderWidth: activeFilter === 'pending' ? 1.8 : 1,
+                    },
+                  ]}
+                  onPress={() => setActiveFilter(prev => (prev === 'pending' ? 'all' : 'pending'))}
+                  activeOpacity={0.75}
+                >
+                  <LinearGradient
+                    colors={
+                      isDark
+                        ? ['rgba(251, 191, 36, 0.14)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)']
+                        : ['#FFFFFF', '#FFFDF7', '#FEF3C7']
+                    }
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.statGlassInner}
+                  >
+                    <View style={[styles.statNotch, { backgroundColor: isDark ? '#FBBF24' : colors.gold }]} />
+                    <Text style={[styles.statNum, { color: isDark ? '#FBBF24' : colors.goldDeep, fontFamily: SERIF }]}>
+                      {pendingAppsCount}
+                    </Text>
+                    <View style={styles.statLabelRow}>
+                      <Text
+                        style={[
+                          styles.statLabel,
+                          { color: isDark ? '#E4E4E7' : colors.inkSoft },
+                          activeFilter === 'pending' && { color: isDark ? '#FBBF24' : colors.goldDeep },
+                        ]}
+                      >
+                        Pending
+                      </Text>
+                      {activeFilter === 'pending' && <View style={[styles.activeIndicatorDot, { backgroundColor: isDark ? '#FBBF24' : colors.goldDeep }]} />}
+                    </View>
+                    <Text style={[styles.statHintTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+                      {activeFilter === 'pending' ? 'Active ✓' : 'Reviews'}
+                    </Text>
+                  </LinearGradient>
+                </TouchableOpacity>
 
-                <View style={[styles.metricCard, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}>
-                  <Users size={22} color="#15803d" />
-                  <Text style={[styles.metricNumber, { color: primaryText }]}>{shortlistedAppsCount}</Text>
-                  <Text style={[styles.metricLabel, { color: secondaryText }]}>Shortlisted / Interview</Text>
-                </View>
-
-                <View style={[styles.metricCard, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}>
-                  <CheckCircle2 size={22} color="#1a2d5a" />
-                  <Text style={[styles.metricNumber, { color: primaryText }]}>{applications.length}</Text>
-                  <Text style={[styles.metricLabel, { color: secondaryText }]}>Total Applicants</Text>
-                </View>
+                {/* 3. Total Applicants (Clay / Blue / Neutral) */}
+                <TouchableOpacity
+                  style={[
+                    styles.statBox,
+                    {
+                      backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                      borderColor: activeFilter === 'total'
+                        ? (isDark ? '#60A5FA' : '#1E40AF')
+                        : (isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(30, 64, 175, 0.22)'),
+                      borderWidth: activeFilter === 'total' ? 1.8 : 1,
+                    },
+                  ]}
+                  onPress={() => setActiveFilter(prev => (prev === 'total' ? 'all' : 'total'))}
+                  activeOpacity={0.75}
+                >
+                  <LinearGradient
+                    colors={
+                      isDark
+                        ? ['rgba(96, 165, 250, 0.14)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)']
+                        : ['#FFFFFF', '#F8FAFC', '#EFF6FF']
+                    }
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.statGlassInner}
+                  >
+                    <View style={[styles.statNotch, { backgroundColor: isDark ? '#60A5FA' : '#1E40AF' }]} />
+                    <Text style={[styles.statNum, { color: isDark ? '#60A5FA' : '#1E40AF', fontFamily: SERIF }]}>
+                      {totalAppsCount}
+                    </Text>
+                    <View style={styles.statLabelRow}>
+                      <Text
+                        style={[
+                          styles.statLabel,
+                          { color: isDark ? '#E4E4E7' : colors.inkSoft },
+                          activeFilter === 'total' && { color: isDark ? '#60A5FA' : '#1E40AF' },
+                        ]}
+                      >
+                        Total
+                      </Text>
+                      {activeFilter === 'total' && <View style={[styles.activeIndicatorDot, { backgroundColor: isDark ? '#60A5FA' : '#1E40AF' }]} />}
+                    </View>
+                    <Text style={[styles.statHintTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+                      {activeFilter === 'total' ? 'Active ✓' : 'Applicants'}
+                    </Text>
+                  </LinearGradient>
+                </TouchableOpacity>
               </View>
 
-              {/* Action Banners */}
-              <TouchableOpacity
-                style={[styles.actionBanner, { backgroundColor: '#1a2d5a' }]}
-                onPress={() => navigation.navigate('AdminOpportunityEditor')}
-              >
-                <Plus size={20} color="#fff" />
-                <Text style={styles.actionBannerText}>Post New Ministry Opportunity</Text>
-              </TouchableOpacity>
+              {/* ── 3. REDESIGNED ACTION BUTTONS (Clean, Modern, Consistent) ── */}
+              <View style={styles.actionBtnGroup}>
+                {/* Primary Action: Post New Ministry Opportunity */}
+                <TouchableOpacity
+                  style={[
+                    styles.primaryActionBtn,
+                    {
+                      backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                      borderColor: isDark ? '#FFFFFF' : '#000000',
+                    },
+                  ]}
+                  onPress={() => navigation.navigate('AdminOpportunityEditor')}
+                  activeOpacity={0.8}
+                >
+                  <Briefcase size={16} color={isDark ? '#000000' : '#FFFFFF'} />
+                  <Text style={[styles.primaryActionTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
+                    Post New Ministry Opportunity
+                  </Text>
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.actionBanner, { backgroundColor: cardSurface, borderColor: adminBorderColor, borderWidth: 1, marginTop: 12 }]}
-                onPress={() => {
-                  if (setTabByName) {
-                    setTabByName('Volunteer Management');
-                  } else if (navigation?.navigate) {
-                    navigation.navigate('Admin', { targetTab: 'Volunteer Management' });
-                  }
-                }}
-              >
-                <HeartHandshake size={20} color="#1a2d5a" />
-                <Text style={[styles.actionBannerText, { color: primaryText }]}>Open Volunteer Management</Text>
-              </TouchableOpacity>
+                {/* Secondary Action: Open Volunteer Management */}
+                <TouchableOpacity
+                  style={[
+                    styles.secondaryActionBtn,
+                    {
+                      backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                      borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+                    },
+                  ]}
+                  onPress={() => {
+                    if (setTabByName) {
+                      setTabByName('Volunteer Management');
+                    } else if (navigation?.navigate) {
+                      navigation.navigate('Admin', { targetTab: 'Volunteer Management' });
+                    }
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <HeartHandshake size={16} color={isDark ? '#E2E8F0' : '#1a2d5a'} />
+                  <Text style={[styles.secondaryActionTxt, { color: isDark ? '#E2E8F0' : '#1a2d5a' }]}>
+                    Open Volunteer Management
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
 
@@ -334,11 +491,11 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                 <Text style={[styles.sectionTitle, { color: primaryText }]}>Ministry Postings</Text>
                 <TouchableOpacity
-                  style={[styles.addBtn, { backgroundColor: '#1a2d5a' }]}
+                  style={[styles.addBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
                   onPress={() => navigation.navigate('AdminOpportunityEditor')}
                 >
-                  <Plus size={16} color="#fff" style={{ marginRight: 4 }} />
-                  <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>New</Text>
+                  <Plus size={14} color={isDark ? '#000000' : '#FFFFFF'} style={{ marginRight: 4 }} />
+                  <Text style={{ color: isDark ? '#000000' : '#FFFFFF', fontSize: 12, fontWeight: '700' }}>New</Text>
                 </TouchableOpacity>
               </View>
 
@@ -569,7 +726,17 @@ const styles = createAdminThemedStyles(
       shadowRadius: 2,
       elevation: 2,
     },
-    heroTitle: { fontSize: 19, fontWeight: '800', textAlign: 'center', letterSpacing: -0.3 },
+    heroTitle: { fontSize: 20, fontWeight: '800', textAlign: 'center', letterSpacing: -0.4 },
+    newBtn: {
+      borderRadius: 999,
+      paddingHorizontal: 13,
+      paddingVertical: 7.5,
+      borderWidth: 1.5,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    newBtnTxt: { fontWeight: '800', fontSize: 12 },
     segmentContainer: {
       flexDirection: 'row',
       gap: 6,
@@ -586,14 +753,100 @@ const styles = createAdminThemedStyles(
     },
     loadingCenter: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     scrollContent: { padding: 16 },
-    metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
-    metricCard: { width: '48%', padding: 14, borderRadius: 14, borderWidth: 1, alignItems: 'center' },
-    metricNumber: { fontSize: 24, fontWeight: '800', marginVertical: 4 },
-    metricLabel: { fontSize: 12, textAlign: 'center' },
-    actionBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 12, gap: 8 },
-    actionBannerText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
+
+    // ── STATS CARDS (Exact match to AdminPromiseList) ──
+    statsRow: {
+      flexDirection: 'row',
+      gap: 10,
+      marginBottom: 16,
+    },
+    statBox: {
+      flex: 1,
+      borderRadius: 16,
+      alignItems: 'center',
+      elevation: 2,
+      shadowColor: '#0F172A',
+      shadowOpacity: 0.06,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 3 },
+      borderWidth: 1,
+      overflow: 'hidden',
+    },
+    statGlassInner: {
+      width: '100%',
+      paddingVertical: 12,
+      alignItems: 'center',
+      position: 'relative',
+    },
+    statNotch: {
+      position: 'absolute',
+      top: -1,
+      width: 32,
+      height: 3.5,
+      borderBottomLeftRadius: 4,
+      borderBottomRightRadius: 4,
+    },
+    statNum: {
+      fontSize: 25,
+      fontWeight: '700',
+      marginBottom: 2,
+    },
+    statLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    statLabel: { fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 1.1, fontWeight: '700' },
+    activeIndicatorDot: { width: 6, height: 6, borderRadius: 3 },
+    statHintTxt: { fontSize: 8.5, fontWeight: '600', marginTop: 2, letterSpacing: 0.3 },
+
+    // ── REDESIGNED ACTION BUTTONS ──
+    actionBtnGroup: {
+      flexDirection: 'column',
+      gap: 10,
+      marginBottom: 20,
+    },
+    primaryActionBtn: {
+      width: '100%',
+      borderRadius: 999,
+      paddingVertical: 14,
+      paddingHorizontal: 20,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      borderWidth: 1.5,
+      elevation: 3,
+      shadowColor: '#000',
+      shadowOpacity: 0.12,
+      shadowRadius: 6,
+      shadowOffset: { width: 0, height: 3 },
+    },
+    primaryActionTxt: {
+      fontSize: 14,
+      fontWeight: '800',
+      letterSpacing: 0.2,
+    },
+    secondaryActionBtn: {
+      width: '100%',
+      borderRadius: 999,
+      paddingVertical: 14,
+      paddingHorizontal: 20,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      borderWidth: 1.5,
+      elevation: 1,
+      shadowColor: '#000',
+      shadowOpacity: 0.04,
+      shadowRadius: 4,
+      shadowOffset: { width: 0, height: 2 },
+    },
+    secondaryActionTxt: {
+      fontSize: 14,
+      fontWeight: '700',
+      letterSpacing: 0.2,
+    },
+
     sectionTitle: { fontSize: 17, fontWeight: '700' },
-    addBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+    addBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
     card: { padding: 14, borderRadius: 14, borderWidth: 1, marginBottom: 12 },
     cardTitle: { fontSize: 16, fontWeight: '700' },
     cardSub: { fontSize: 13, marginTop: 2 },
