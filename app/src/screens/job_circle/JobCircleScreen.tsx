@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -15,9 +15,14 @@ import {
   Modal,
   Alert,
   KeyboardAvoidingView,
+  FlatList,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as DocumentPicker from 'expo-document-picker';
+import firestore from '@react-native-firebase/firestore';
 import {
   Briefcase,
   Search,
@@ -25,7 +30,6 @@ import {
   CheckCircle2,
   Clock,
   MapPin,
-  DollarSign,
   ArrowLeft,
   Send,
   X,
@@ -33,6 +37,11 @@ import {
   Upload,
   FileText,
   Trash2,
+  Bell,
+  Sparkles,
+  ChevronRight,
+  Compass,
+  Check,
 } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
@@ -42,20 +51,39 @@ import JobCircleService from '../../services/JobCircleService';
 import FirestoreService from '../../services/FirestoreService';
 import { JobOpportunity, AttachmentInfo } from '../../types/jobCircle';
 
-export default function JobCircleScreen({ navigation }: { navigation: any }) {
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CARD_WIDTH = SCREEN_WIDTH - 32;
+
+interface JobCircleScreenProps {
+  navigation: any;
+  route?: {
+    params?: {
+      skipSplash?: boolean;
+      initialTab?: string;
+      applicationId?: string;
+      opportunityId?: string;
+    };
+  };
+}
+
+export default function JobCircleScreen({ navigation, route }: JobCircleScreenProps) {
   const insets = useSafeAreaInsets();
   const { user, member } = useAuth();
   const { activeChurch } = useChurch();
   const { colors, isDark } = useTheme();
 
-  // Responsive dynamic colors
+  // Responsive dynamic colors (following Rhema Navy Blue & MD3 Theme)
   const screenBg = isDark ? '#000000' : (colors.background || '#FAF7F2');
-  const cardSurface = isDark ? '#18181B' : (colors.surface || '#FFFFFF');
-  const cardBorder = isDark ? '#27272A' : (colors.border || '#E2E8F0');
+  const cardSurface = isDark ? '#141416' : (colors.surface || '#FFFFFF');
+  const cardBorder = isDark ? '#262629' : (colors.border || '#E2E8F0');
   const primaryText = isDark ? '#FFFFFF' : (colors.text || '#0F172A');
-  const secondaryText = isDark ? '#A1A1AA' : (colors.textSecondary || '#64748B');
+  const secondaryText = isDark ? '#94A3B8' : (colors.textSecondary || '#64748B');
 
   const churchId = activeChurch?.id || 'rhema';
+
+  // Screen View State: Splash Screen vs Main Opportunities Screen
+  // If navigated directly with skipSplash or application deep link, skip splash
+  const [showSplash, setShowSplash] = useState<boolean>(!route?.params?.skipSplash && !route?.params?.applicationId);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -63,10 +91,13 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
   const [creatorProfiles, setCreatorProfiles] = useState<{ [uid: string]: { name: string; photo?: string } }>({});
   const [expandedDescIds, setExpandedDescIds] = useState<{ [key: string]: boolean }>({});
   const [appliedOppIds, setAppliedOppIds] = useState<string[]>([]);
+  const [unreadNotifCount, setUnreadNotifCount] = useState<number>(0);
 
-  // Search & Type Filters
+  // Search
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedType, setSelectedType] = useState<string>('all');
+
+  // Carousel Active Index
+  const [activeCarouselIdx, setActiveCarouselIdx] = useState(0);
 
   // Direct Apply Modal State
   const [selectedOppForApply, setSelectedOppForApply] = useState<JobOpportunity | null>(null);
@@ -74,11 +105,15 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
   const [selectedFile, setSelectedFile] = useState<{ uri: string; name: string; mimeType?: string; size?: number } | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Android hardware back handler
+  // Android hardware back handler: if in Main view, back returns to Splash; if in Splash, back exits screen
   useEffect(() => {
     const onBackPress = () => {
       if (selectedOppForApply) {
         setSelectedOppForApply(null);
+        return true;
+      }
+      if (!showSplash) {
+        setShowSplash(true);
         return true;
       }
       if (navigation.canGoBack()) {
@@ -89,11 +124,46 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
     };
     const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
     return () => subscription.remove();
-  }, [navigation, selectedOppForApply]);
+  }, [navigation, selectedOppForApply, showSplash]);
 
   useEffect(() => {
     loadAllOpportunities();
     loadAppliedStatus();
+  }, [churchId]);
+
+  // Listen to Job Circle notifications to display real-time unread badge
+  useEffect(() => {
+    if (!churchId) return;
+    try {
+      const unsub = firestore()
+        .collection('Rhema Church')
+        .doc(churchId)
+        .collection('notifications')
+        .where('read', '==', false)
+        .onSnapshot(snap => {
+          if (snap) {
+            const count = snap.docs.filter(doc => {
+              const d = doc.data();
+              return (
+                d.type === 'job_opportunity_new' ||
+                d.type === 'job_application_admin' ||
+                d.type === 'job_application_member' ||
+                d.opportunityId ||
+                d.applicationId ||
+                d.referenceType === 'job_circle_opportunity' ||
+                d.referenceType === 'job_circle_application'
+              );
+            }).length;
+            setUnreadNotifCount(count);
+          }
+        }, err => {
+          console.warn('[JobCircleScreen] notifications listener error:', err?.message || err);
+        });
+
+      return () => unsub();
+    } catch (e) {
+      console.warn('[JobCircleScreen] notifications listener caught error:', e);
+    }
   }, [churchId]);
 
   const loadAppliedStatus = async () => {
@@ -172,7 +242,7 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
       setSelectedOppForApply(null);
       setApplicationMessage('');
       setSelectedFile(null);
-      Alert.alert('Application Submitted', 'Your ministry application has been received! The ministry leader will review your calling.');
+      Alert.alert('Application Submitted', 'Your ministry application has been received! Church ministry leaders will prayerfully review your calling.');
     } catch (err: any) {
       console.error('Submit application error:', err);
       Alert.alert('Submission Error', err.message || 'Could not submit application. Please try again.');
@@ -209,10 +279,11 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
   const loadAllOpportunities = async () => {
     try {
       setLoading(true);
+      // Fetch approved opportunities dynamically from Firebase
       const opps = await JobCircleService.getOpportunities(churchId, { onlyApproved: true });
       setOpportunities(opps);
 
-      // Fetch creator member profiles to guarantee real person name and photo
+      // Fetch creator member profiles to display actual poster name and profile picture
       const creatorUids = Array.from(new Set(opps.map(o => o.createdById).filter(Boolean)));
       if (creatorUids.length > 0) {
         const profileEntries: { [uid: string]: { name: string; photo?: string } } = {};
@@ -250,57 +321,93 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
   const handleRefresh = () => {
     setRefreshing(true);
     loadAllOpportunities();
+    loadAppliedStatus();
   };
 
-  // Filtered Opportunities for Feed / Search
+  // Search query filters by title, role/category, requiredSkills, and location
   const filteredOpportunities = opportunities.filter(opp => {
-    const matchesSearch =
-      opp.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (opp.categoryName && opp.categoryName.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (opp.location && opp.location.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (opp.description && opp.description.toLowerCase().includes(searchQuery.toLowerCase()));
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return true;
 
-    const matchesType =
-      selectedType === 'all' ||
-      (selectedType === 'paid' && opp.compensationType !== 'unpaid') ||
-      (selectedType === 'volunteer' && opp.compensationType === 'unpaid');
+    const matchesTitle = opp.title?.toLowerCase().includes(q);
+    const matchesCategory = opp.categoryName?.toLowerCase().includes(q);
+    const matchesLocation = opp.location?.toLowerCase().includes(q);
+    const matchesDescription = opp.description?.toLowerCase().includes(q);
+    const matchesSkills = Array.isArray(opp.requiredSkills) && opp.requiredSkills.some(s => s.toLowerCase().includes(q));
 
-    return matchesSearch && matchesType;
+    return matchesTitle || matchesCategory || matchesLocation || matchesDescription || matchesSkills;
   });
 
-  // ── LINKEDIN STYLE POST CARD RENDERER ──
-  const renderPostCard = (opp: JobOpportunity) => {
+  // User Profile Photo
+  const memberPhotoUrl =
+    (member as any)?.profilePhoto ||
+    (member as any)?.photoURL ||
+    (member as any)?.photoUrl ||
+    (member as any)?.profileImageUrl ||
+    user?.photoURL ||
+    '';
+  const memberDisplayName = member?.name || (member as any)?.fullName || user?.displayName || 'Member';
+
+  // Navigation Handlers
+  const handleOpenProfile = () => {
+    try {
+      navigation.navigate('Profile');
+    } catch (e) {
+      console.warn('Profile navigation error:', e);
+    }
+  };
+
+  const handleOpenNotifications = () => {
+    try {
+      navigation.navigate('Updates', {
+        filterCategory: 'job_circle',
+        filterTitle: 'Job Circle Notifications',
+        highlightType: 'job_circle',
+      });
+    } catch (e) {
+      console.warn('Updates navigation error:', e);
+    }
+  };
+
+  // Carousel Scroll Handler
+  const onCarouselScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const offsetX = e.nativeEvent.contentOffset.x;
+    const index = Math.round(offsetX / (CARD_WIDTH + 16));
+    if (index >= 0 && index !== activeCarouselIdx) {
+      setActiveCarouselIdx(index);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────
+  // RENDER: MINISTRY OPPORTUNITY CARD
+  // ─────────────────────────────────────────────────────────────
+  const renderOpportunityCard = (opp: JobOpportunity, isCarousel: boolean = false) => {
     const isPaid = opp.compensationType !== 'unpaid';
     const isExpanded = !!expandedDescIds[opp.id];
     const postedTimeAgo = formatPostedDate(opp.createdAt);
-    const hasLongDesc = (opp.description || '').length > 140;
+    const hasLongDesc = (opp.description || '').length > 130;
 
-    // Poster name & photo: Use the creator's real name and picture
+    // Poster name & photo
     const creatorInfo = creatorProfiles[opp.createdById];
-    const posterName =
-      creatorInfo?.name ||
-      opp.createdByName ||
-      '';
-    const posterPhoto =
-      creatorInfo?.photo ||
-      opp.createdByPhoto ||
-      '';
-    // Display only explicitly assigned designation; never invent a title
+    const posterName = creatorInfo?.name || opp.createdByName || '';
+    const posterPhoto = creatorInfo?.photo || opp.createdByPhoto || '';
     const posterRole = opp.createdByRole && opp.createdByRole !== 'Ministry Coordinator' ? opp.createdByRole : '';
+    const isApplied = appliedOppIds.includes(opp.id);
 
     return (
       <View
         key={opp.id}
         style={[
-          styles.postCard,
+          styles.oppCard,
+          isCarousel && { width: CARD_WIDTH, marginRight: 16 },
           {
             backgroundColor: cardSurface,
             borderColor: cardBorder,
           },
         ]}
       >
-        {/* Post Header: Person Who Posted the Job (Name & Profile Picture) */}
-        <View style={styles.postHeaderRow}>
+        {/* ── TOP SECTION: Posted-by member profile picture, name, posted date/time ── */}
+        <View style={styles.cardHeaderRow}>
           {posterPhoto ? (
             <Image source={{ uri: posterPhoto }} style={styles.posterAvatar} resizeMode="cover" />
           ) : (
@@ -311,174 +418,143 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
 
           <View style={{ flex: 1, marginLeft: 10 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={[styles.postAuthorName, { color: primaryText }]} numberOfLines={1}>
-                {posterName || 'Church Ministry'}
+              <Text style={[styles.posterNameText, { color: primaryText }]} numberOfLines={1}>
+                {posterName || 'Rhema Ministries'}
               </Text>
-              <View style={styles.officialBadge}>
-                <CheckCircle2 size={13} color="#2563EB" />
-              </View>
+              <CheckCircle2 size={13} color="#2563EB" />
             </View>
-            <Text style={[styles.postAuthorSubtitle, { color: secondaryText }]} numberOfLines={1}>
+            <Text style={[styles.posterSubtitleText, { color: secondaryText }]} numberOfLines={1}>
               {posterRole ? `${posterRole} • ${postedTimeAgo}` : postedTimeAgo}
             </Text>
           </View>
-        </View>
 
-        {/* Post Headline: Natural church ministry invitation */}
-        <View style={styles.postHeadlineBox}>
-          <Text style={[styles.postHeadlineTitle, { color: primaryText }]}>
-            {posterName ? (
-              <>
-                <Text style={{ color: isDark ? '#60A5FA' : '#1D4ED8', fontWeight: '800' }}>{posterName}</Text>
-                {' is inviting members to serve in the '}
-                <Text style={{ fontWeight: '800' }}>{opp.title} Ministry</Text>
-              </>
-            ) : (
-              <>
-                <Text style={{ fontWeight: '800' }}>{opp.title} Ministry</Text>
-                {' – Volunteers Needed'}
-              </>
-            )}
-          </Text>
-        </View>
-
-        {/* Clean Job Metadata Rows (Clean Modern Text Rows) */}
-        <View style={styles.postDetailsBox}>
-          <View style={styles.detailRow}>
-            <MapPin size={15} color={isDark ? '#60A5FA' : '#1D4ED8'} style={styles.detailIcon} />
-            <Text style={[styles.detailLabel, { color: secondaryText }]}>Location:</Text>
-            <Text style={[styles.detailVal, { color: primaryText }]} numberOfLines={1}>
-              {opp.location || 'Rhema Main Campus'}
-            </Text>
-          </View>
-
-          <View style={styles.detailRow}>
-            <Briefcase size={15} color={isDark ? '#60A5FA' : '#1D4ED8'} style={styles.detailIcon} />
-            <Text style={[styles.detailLabel, { color: secondaryText }]}>Role & Category:</Text>
-            <Text style={[styles.detailVal, { color: primaryText }]} numberOfLines={1}>
-              {opp.categoryName || opp.title}
-            </Text>
-          </View>
-
-          <View style={styles.detailRow}>
-            <Filter size={15} color={isDark ? '#60A5FA' : '#1D4ED8'} style={styles.detailIcon} />
-            <Text style={[styles.detailLabel, { color: secondaryText }]}>Opportunity Type:</Text>
-            <View style={[styles.typePill, { backgroundColor: isPaid ? (isDark ? '#F59E0B25' : '#FEF3C7') : (isDark ? '#10B98125' : '#ECFDF5') }]}>
-              <Text style={[styles.typePillTxt, { color: isPaid ? (isDark ? '#FBBF24' : '#B45309') : (isDark ? '#34D399' : '#047857') }]}>
-                {opp.opportunityType.replace(/_/g, ' ').toUpperCase()}
-              </Text>
-            </View>
-          </View>
-
-          {opp.compensationDetails ? (
-            <View style={styles.detailRow}>
-              <View style={[styles.rupeeIconCircle, { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7' }]}>
-                <Text style={{ fontSize: 12, fontWeight: '800', color: isDark ? '#FBBF24' : '#B45309' }}>₹</Text>
-              </View>
-              <Text style={[styles.detailLabel, { color: secondaryText }]}>Compensation:</Text>
-              <Text style={[styles.detailVal, { color: isDark ? '#FBBF24' : '#B45309', fontWeight: '700' }]}>
-                {opp.compensationDetails}
-              </Text>
-            </View>
-          ) : null}
-
-          <View style={styles.detailRow}>
-            <Clock size={15} color={isDark ? '#60A5FA' : '#1D4ED8'} style={styles.detailIcon} />
-            <Text style={[styles.detailLabel, { color: secondaryText }]}>Schedule:</Text>
-            <Text style={[styles.detailVal, { color: primaryText }]} numberOfLines={1}>
-              {opp.timeCommitment}
+          <View style={[styles.typeBadge, { backgroundColor: isPaid ? (isDark ? '#F59E0B25' : '#FEF3C7') : (isDark ? '#10B98125' : '#ECFDF5') }]}>
+            <Text style={[styles.typeBadgeTxt, { color: isPaid ? (isDark ? '#FBBF24' : '#B45309') : (isDark ? '#34D399' : '#047857') }]}>
+              {opp.opportunityType.replace(/_/g, ' ').toUpperCase()}
             </Text>
           </View>
         </View>
 
-        {/* Opportunity Description with "...more" Toggle */}
-        <View style={styles.postBodyWrap}>
-          <Text
-            style={[styles.postDescription, { color: primaryText }]}
-            numberOfLines={isExpanded ? undefined : 3}
-          >
-            {opp.description}
-          </Text>
-          {hasLongDesc && (
-            <TouchableOpacity onPress={() => toggleDescExpand(opp.id)} style={{ alignSelf: 'flex-start', marginTop: 4 }}>
-              <Text style={{ color: isDark ? '#60A5FA' : '#1D4ED8', fontWeight: '700', fontSize: 13 }}>
-                {isExpanded ? 'Show less' : '...more'}
-              </Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Key Responsibilities or Calling Points (if any) */}
-        {opp.responsibilities && opp.responsibilities.length > 0 && isExpanded && (
-          <View style={styles.expandedSection}>
-            <Text style={[styles.expandedSecTitle, { color: primaryText }]}>Key Responsibilities:</Text>
-            {opp.responsibilities.map((resp, i) => (
-              <View key={i} style={styles.bulletItem}>
-                <Text style={{ color: '#2563EB', marginRight: 6 }}>•</Text>
-                <Text style={[styles.bulletTxt, { color: secondaryText }]}>{resp}</Text>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* Uploaded Opportunity Banner / Thumbnail Image */}
+        {/* ── IMAGE SECTION: Admin thumbnail/banner image maintaining aspect ratio ── */}
         <TouchableOpacity
           onPress={() => navigation.navigate('OpportunityDetailScreen', { opportunity: opp })}
           activeOpacity={0.92}
-          style={styles.postBannerWrap}
+          style={styles.cardBannerWrap}
         >
           {opp.thumbnailUrl ? (
             <Image
               source={{ uri: opp.thumbnailUrl }}
-              style={styles.postBannerImg}
+              style={styles.cardBannerImg}
               resizeMode="cover"
             />
           ) : (
-            // Clean Default Graphic Placeholder
-            <View style={[styles.defaultBannerPlaceholder, { backgroundColor: isDark ? '#1E293B' : '#0F172A' }]}>
+            <View style={[styles.defaultBannerPlaceholder, { backgroundColor: isDark ? '#182234' : '#0F172A' }]}>
               <View style={styles.placeholderWatermark}>
-                <Briefcase size={80} color="rgba(255,255,255,0.08)" />
+                <Compass size={84} color="rgba(255,255,255,0.06)" />
               </View>
               <View style={styles.placeholderContent}>
                 <View style={styles.placeholderChurchTag}>
-                  <Text style={styles.placeholderChurchTagTxt}>{posterName.toUpperCase()}</Text>
+                  <Text style={styles.placeholderChurchTagTxt}>RHEMA MINISTRIES</Text>
                 </View>
                 <Text style={styles.placeholderTitle} numberOfLines={2}>
                   {opp.title}
                 </Text>
                 <Text style={styles.placeholderSub}>
-                  {opp.categoryName} • {opp.location}
+                  {opp.categoryName || 'Ministry Role'} • {opp.location || 'Main Campus'}
                 </Text>
               </View>
             </View>
           )}
         </TouchableOpacity>
 
-        {/* Apply Now Primary Action Strip */}
-        <View style={styles.postApplyStrip}>
-          {appliedOppIds.includes(opp.id) ? (
+        {/* ── OPPORTUNITY DETAILS: Ministry position title, Role / Ministry name, Location ── */}
+        <View style={styles.cardDetailsBox}>
+          <Text style={[styles.cardTitleText, { color: primaryText }]} numberOfLines={2}>
+            {opp.title}
+          </Text>
+
+          <View style={styles.cardMetadataRow}>
+            <View style={styles.metaItem}>
+              <Briefcase size={14} color={isDark ? '#60A5FA' : '#1D4ED8'} />
+              <Text style={[styles.metaItemTxt, { color: secondaryText }]} numberOfLines={1}>
+                {opp.categoryName || opp.title}
+              </Text>
+            </View>
+
+            <View style={styles.metaItem}>
+              <MapPin size={14} color={isDark ? '#60A5FA' : '#1D4ED8'} />
+              <Text style={[styles.metaItemTxt, { color: secondaryText }]} numberOfLines={1}>
+                {opp.location || 'Rhema Main Campus'}
+              </Text>
+            </View>
+          </View>
+
+          {/* Schedule / Time commitment if available */}
+          {opp.timeCommitment ? (
+            <View style={[styles.metaItem, { marginTop: 4 }]}>
+              <Clock size={14} color={secondaryText} />
+              <Text style={[styles.metaItemTxt, { color: secondaryText }]} numberOfLines={1}>
+                {opp.timeCommitment}
+              </Text>
+            </View>
+          ) : null}
+
+          {/* Description */}
+          {opp.description ? (
+            <View style={{ marginTop: 8 }}>
+              <Text
+                style={[styles.descText, { color: primaryText }]}
+                numberOfLines={isExpanded ? undefined : 2}
+              >
+                {opp.description}
+              </Text>
+              {hasLongDesc && (
+                <TouchableOpacity onPress={() => toggleDescExpand(opp.id)} style={{ alignSelf: 'flex-start', marginTop: 3 }}>
+                  <Text style={{ color: isDark ? '#60A5FA' : '#1D4ED8', fontWeight: '700', fontSize: 12.5 }}>
+                    {isExpanded ? 'Show less' : '...more'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ) : null}
+        </View>
+
+        {/* ── BOTTOM ACTION BUTTONS: Apply Now or Status ── */}
+        <View style={styles.cardBottomRow}>
+          <TouchableOpacity
+            style={[styles.detailsLinkBtn, { borderColor: cardBorder }]}
+            onPress={() => navigation.navigate('OpportunityDetailScreen', { opportunity: opp })}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.detailsLinkTxt, { color: isDark ? '#E4E4E7' : '#334155' }]}>
+              View Details
+            </Text>
+            <ChevronRight size={15} color={secondaryText} />
+          </TouchableOpacity>
+
+          {isApplied ? (
             <View
               style={[
-                styles.appliedPill,
+                styles.appliedStatusPill,
                 {
                   backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#ECFDF5',
                   borderColor: isDark ? '#065F46' : '#A7F3D0',
                 },
               ]}
             >
-              <CheckCircle2 size={18} color="#059669" />
-              <Text style={[styles.appliedPillTxt, { color: isDark ? '#34D399' : '#047857' }]}>
-                Application Submitted
+              <CheckCircle2 size={16} color="#059669" />
+              <Text style={[styles.appliedStatusTxt, { color: isDark ? '#34D399' : '#047857' }]}>
+                Applied
               </Text>
             </View>
           ) : (
             <TouchableOpacity
-              style={[styles.applyNowButton, { backgroundColor: isDark ? '#FFFFFF' : '#1a2d5a' }]}
+              style={[styles.applyPrimaryBtn, { backgroundColor: isDark ? '#FFFFFF' : '#1a2d5a' }]}
               onPress={() => setSelectedOppForApply(opp)}
               activeOpacity={0.85}
             >
-              <Send size={15} color={isDark ? '#000000' : '#FFFFFF'} />
-              <Text style={[styles.applyNowTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
+              <Send size={14} color={isDark ? '#000000' : '#FFFFFF'} />
+              <Text style={[styles.applyPrimaryTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
                 Apply Now
               </Text>
             </TouchableOpacity>
@@ -488,119 +564,286 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
     );
   };
 
+  // ─────────────────────────────────────────────────────────────
+  // 1. SPLASH / INTRO SCREEN
+  // ─────────────────────────────────────────────────────────────
+  if (showSplash) {
+    return (
+      <View style={[styles.splashContainer, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        <LinearGradient
+          colors={['#070D18', '#0F1A30', '#162344', '#1E3160']}
+          style={StyleSheet.absoluteFillObject}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0.8, y: 1 }}
+        />
+
+        {/* Ambient Top Glow / Accents */}
+        <View style={styles.splashTopGlow} pointerEvents="none" />
+
+        {/* Splash Navigation Header: Simple clean back button */}
+        <View style={styles.splashHeaderRow}>
+          <TouchableOpacity
+            style={styles.splashBackBtn}
+            onPress={() => {
+              if (navigation.canGoBack()) {
+                navigation.goBack();
+              }
+            }}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            activeOpacity={0.8}
+          >
+            <ArrowLeft size={20} color="#FFFFFF" strokeWidth={2.4} />
+          </TouchableOpacity>
+          <View style={styles.splashHeaderBadge}>
+            <Sparkles size={13} color="#93C5FD" />
+            <Text style={styles.splashHeaderBadgeTxt}>MINISTRY CALLING</Text>
+          </View>
+          <View style={{ width: 40 }} />
+        </View>
+
+        {/* Center Intro Visual & Typography */}
+        <ScrollView
+          contentContainerStyle={styles.splashScrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Visual Ministry Emblem */}
+          <View style={styles.splashVisualWrapper}>
+            <LinearGradient
+              colors={['#2563EB', '#1D4ED8', '#1E3A8A']}
+              style={styles.splashEmblemCircle}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <Compass size={64} color="#FFFFFF" strokeWidth={1.8} />
+            </LinearGradient>
+            <View style={styles.splashGlowRing} />
+          </View>
+
+          {/* Prominent Title: Rhema Job Circle */}
+          <Text style={styles.splashMainTitle}>Rhema Job Circle</Text>
+          <Text style={styles.splashTagline}>& Calling</Text>
+
+          <Text style={styles.splashSubtitle}>
+            Discover your God-given calling, serve in church ministries, and answer the call to kingdom leadership.
+          </Text>
+
+          {/* Feature Highlights Pills */}
+          <View style={styles.splashFeaturesGrid}>
+            <View style={styles.splashFeatureItem}>
+              <View style={styles.splashFeatureIconWrap}>
+                <Check size={14} color="#60A5FA" strokeWidth={2.5} />
+              </View>
+              <Text style={styles.splashFeatureTxt}>Staff & Volunteer Ministry Roles</Text>
+            </View>
+
+            <View style={styles.splashFeatureItem}>
+              <View style={styles.splashFeatureIconWrap}>
+                <Check size={14} color="#60A5FA" strokeWidth={2.5} />
+              </View>
+              <Text style={styles.splashFeatureTxt}>Transparent Application Pipeline</Text>
+            </View>
+
+            <View style={styles.splashFeatureItem}>
+              <View style={styles.splashFeatureIconWrap}>
+                <Check size={14} color="#60A5FA" strokeWidth={2.5} />
+              </View>
+              <Text style={styles.splashFeatureTxt}>Direct Ministry Leader Review</Text>
+            </View>
+          </View>
+        </ScrollView>
+
+        {/* Bottom CTA Button: Explore Opportunities */}
+        <View style={styles.splashFooter}>
+          <TouchableOpacity
+            style={styles.splashExploreBtn}
+            onPress={() => setShowSplash(false)}
+            activeOpacity={0.88}
+          >
+            <LinearGradient
+              colors={['#3B82F6', '#2563EB', '#1D4ED8']}
+              style={styles.splashBtnGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+            >
+              <Text style={styles.splashExploreBtnTxt}>Explore Opportunities</Text>
+              <ChevronRight size={18} color="#FFFFFF" strokeWidth={2.5} />
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 2. MAIN JOB CIRCLE SCREEN
+  // ─────────────────────────────────────────────────────────────
+  const isMultiple = filteredOpportunities.length > 1;
+
   return (
     <View style={[styles.container, { backgroundColor: screenBg }]}>
-      {/* ── Screen Header matching Member Dashboard tabs ── */}
+      {/* ── HEADER LAYOUT ── */}
+      {/* Top-left: Logged-in member's profile picture */}
+      {/* Top-right: Notification bell icon with unread badge */}
       <View
         style={[
-          styles.headerRow,
+          styles.mainHeaderRow,
           {
             paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8,
-            borderBottomWidth: 1.2,
-            borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1',
             backgroundColor: screenBg,
+            borderBottomColor: cardBorder,
           },
         ]}
       >
+        {/* Top-Left: Member Profile Picture */}
         <TouchableOpacity
-          style={[styles.circularBackBtn, { backgroundColor: cardSurface, borderColor: cardBorder }]}
-          onPress={() => navigation.goBack()}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          onPress={handleOpenProfile}
           activeOpacity={0.8}
+          style={styles.profileAvatarTouchable}
         >
-          <ArrowLeft size={20} color={primaryText} strokeWidth={2.4} />
+          {memberPhotoUrl ? (
+            <Image source={{ uri: memberPhotoUrl }} style={styles.memberAvatarImg} resizeMode="cover" />
+          ) : (
+            <View style={[styles.memberAvatarFallback, { backgroundColor: isDark ? '#1E293B' : '#E0E7FF' }]}>
+              <User size={18} color={isDark ? '#93C5FD' : '#2563EB'} />
+            </View>
+          )}
         </TouchableOpacity>
 
-        <Text style={[styles.headerTitleText, { color: primaryText }]} numberOfLines={1}>
-          Job Circle & Calling
-        </Text>
+        {/* Center: Clean Title */}
+        <View style={styles.headerTitleWrap}>
+          <Text style={[styles.mainHeaderTitle, { color: primaryText }]} numberOfLines={1}>
+            Rhema Job Circle
+          </Text>
+        </View>
 
-        <View style={styles.headerRightSpacer} />
+        {/* Top-Right: Notification Bell with Unread Badge */}
+        <TouchableOpacity
+          onPress={handleOpenNotifications}
+          activeOpacity={0.8}
+          style={[styles.bellBtn, { backgroundColor: cardSurface, borderColor: cardBorder }]}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Bell size={20} color={primaryText} />
+          {unreadNotifCount > 0 && (
+            <View style={styles.notifBadge}>
+              <View style={styles.notifBadgeDot} />
+            </View>
+          )}
+        </TouchableOpacity>
       </View>
 
-      {/* Main Content Feed */}
+      {/* ── SEARCH BAR ── */}
+      {/* Placed prominently below the header */}
+      <View style={styles.searchBarWrapper}>
+        <View style={[styles.searchBox, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
+          <Search size={18} color={secondaryText} />
+          <TextInput
+            style={[styles.searchInput, { color: primaryText }]}
+            placeholder="Search ministry opportunities..."
+            placeholderTextColor={secondaryText}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            returnKeyType="search"
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <X size={17} color={secondaryText} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      {/* ── MAIN CONTENT: Single Card or Horizontal Carousel ── */}
       {loading ? (
         <View style={styles.centerLoading}>
           <ActivityIndicator size="large" color={isDark ? '#60A5FA' : Colors.primary} />
+          <Text style={{ marginTop: 12, fontSize: 13, color: secondaryText }}>
+            Loading ministry opportunities...
+          </Text>
         </View>
-      ) : (
+      ) : filteredOpportunities.length === 0 ? (
         <ScrollView
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 24 }]}
+          contentContainerStyle={{ flexGrow: 1, padding: 24, justifyContent: 'center', alignItems: 'center' }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+        >
+          <View style={[styles.emptyBox, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
+            <Briefcase size={44} color={secondaryText} style={{ marginBottom: 12 }} />
+            <Text style={{ color: primaryText, fontWeight: '800', fontSize: 17, marginBottom: 6 }}>
+              No Opportunities Found
+            </Text>
+            <Text style={{ color: secondaryText, textAlign: 'center', lineHeight: 20, fontSize: 13.5 }}>
+              {searchQuery.trim()
+                ? 'No ministry positions match your search query. Try clearing your search.'
+                : 'Approved ministry openings and volunteer callings will appear here when published.'}
+            </Text>
+          </View>
+        </ScrollView>
+      ) : isMultiple ? (
+        // ── 6. OPPORTUNITY CAROUSEL: Horizontal scrolling when multiple opportunities ──
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
           showsVerticalScrollIndicator={false}
         >
-          {/* Search Box */}
-          <View style={[styles.searchBox, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
-            <Search size={18} color={secondaryText} />
-            <TextInput
-              style={[styles.searchInput, { color: primaryText }]}
-              placeholder="Search ministry role, calling, location..."
-              placeholderTextColor={secondaryText}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <X size={16} color={secondaryText} />
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {/* Filter Chips: All, Paid, Volunteer */}
-          <View style={styles.filterRow}>
-            {(['all', 'paid', 'volunteer'] as const).map(type => (
-              <TouchableOpacity
-                key={type}
-                style={[
-                  styles.filterChip,
-                  selectedType === type
-                    ? { backgroundColor: isDark ? '#FFFFFF' : '#1a2d5a' }
-                    : { backgroundColor: cardSurface, borderColor: cardBorder, borderWidth: 1 },
-                ]}
-                onPress={() => setSelectedType(type)}
-                activeOpacity={0.8}
-              >
-                <Text
-                  style={[
-                    styles.filterChipText,
-                    selectedType === type
-                      ? { color: isDark ? '#000000' : '#FFFFFF', fontWeight: '700' }
-                      : { color: primaryText },
-                  ]}
-                >
-                  {type === 'all' ? 'All Roles' : type === 'paid' ? 'Paid / Staff' : 'Volunteer'}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Count Header */}
-          <View style={[styles.sectionHeader, { marginBottom: 12 }]}>
-            <Text style={{ fontSize: 13, color: secondaryText, fontWeight: '600' }}>
-              {filteredOpportunities.length} {filteredOpportunities.length === 1 ? 'Opportunity' : 'Opportunities'} available
+          <View style={styles.carouselHeaderRow}>
+            <Text style={[styles.carouselSectionTitle, { color: primaryText }]}>
+              Ministry Opportunities
+            </Text>
+            <Text style={{ fontSize: 12.5, color: secondaryText, fontWeight: '600' }}>
+              {activeCarouselIdx + 1} of {filteredOpportunities.length}
             </Text>
           </View>
 
-          {/* Feed List */}
-          {filteredOpportunities.length === 0 ? (
-            <View style={[styles.emptyBox, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
-              <Briefcase size={40} color={secondaryText} style={{ marginBottom: 12 }} />
-              <Text style={{ color: primaryText, fontWeight: '700', fontSize: 16, marginBottom: 4 }}>
-                No Postings Found
-              </Text>
-              <Text style={{ color: secondaryText, textAlign: 'center', lineHeight: 20 }}>
-                {searchQuery.trim()
-                  ? 'No ministry openings match your search keyword. Try clearing filters.'
-                  : 'New ministry positions and volunteer opportunities will appear directly in this feed when published.'}
-              </Text>
-            </View>
-          ) : (
-            filteredOpportunities.map(opp => renderPostCard(opp))
-          )}
+          <FlatList
+            data={filteredOpportunities}
+            keyExtractor={item => item.id}
+            renderItem={({ item }) => renderOpportunityCard(item, true)}
+            horizontal
+            pagingEnabled={false}
+            snapToInterval={CARD_WIDTH + 16}
+            decelerationRate="fast"
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.carouselContentContainer}
+            onScroll={onCarouselScroll}
+            scrollEventThrottle={16}
+          />
+
+          {/* Carousel Dot Indicators */}
+          <View style={styles.carouselIndicatorsRow}>
+            {filteredOpportunities.map((_, idx) => (
+              <View
+                key={idx}
+                style={[
+                  styles.carouselDot,
+                  idx === activeCarouselIdx
+                    ? [styles.carouselDotActive, { backgroundColor: isDark ? '#60A5FA' : '#1D4ED8' }]
+                    : [styles.carouselDotInactive, { backgroundColor: isDark ? '#3F3F46' : '#CBD5E1' }],
+                ]}
+              />
+            ))}
+          </View>
+        </ScrollView>
+      ) : (
+        // ── Single Opportunity Card (Normal display without carousel controls) ──
+        <ScrollView
+          contentContainerStyle={[styles.singleCardScroll, { paddingBottom: insets.bottom + 24 }]}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.carouselHeaderRow}>
+            <Text style={[styles.carouselSectionTitle, { color: primaryText }]}>
+              Ministry Opportunity
+            </Text>
+            <Text style={{ fontSize: 12.5, color: secondaryText, fontWeight: '600' }}>
+              1 Available
+            </Text>
+          </View>
+
+          {renderOpportunityCard(filteredOpportunities[0], false)}
         </ScrollView>
       )}
 
-      {/* Direct In-Screen Application Modal */}
+      {/* ── DIRECT IN-SCREEN APPLICATION BOTTOM SHEET MODAL ── */}
       <Modal
         visible={!!selectedOppForApply}
         animationType="slide"
@@ -767,182 +1010,353 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  headerRow: {
+
+  // ── SPLASH SCREEN STYLES ──
+  splashContainer: {
+    flex: 1,
+    justifyContent: 'space-between',
+  },
+  splashTopGlow: {
+    position: 'absolute',
+    top: -80,
+    left: '10%',
+    width: '80%',
+    height: 250,
+    borderRadius: 125,
+    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+  },
+  splashHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingBottom: 14,
+    paddingTop: 8,
   },
-  circularBackBtn: {
+  splashBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  splashHeaderBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(59, 130, 246, 0.18)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(96, 165, 250, 0.3)',
+  },
+  splashHeaderBadgeTxt: {
+    color: '#93C5FD',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  splashScrollContent: {
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    paddingTop: 30,
+    paddingBottom: 20,
+  },
+  splashVisualWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  splashEmblemCircle: {
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+  },
+  splashGlowRing: {
+    position: 'absolute',
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    borderWidth: 1.5,
+    borderColor: 'rgba(96, 165, 250, 0.25)',
+  },
+  splashMainTitle: {
+    fontSize: 28,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    letterSpacing: -0.5,
+  },
+  splashTagline: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#93C5FD',
+    textAlign: 'center',
+    marginTop: 2,
+    marginBottom: 14,
+  },
+  splashSubtitle: {
+    fontSize: 14.5,
+    color: 'rgba(255, 255, 255, 0.72)',
+    textAlign: 'center',
+    lineHeight: 22,
+    paddingHorizontal: 10,
+    marginBottom: 28,
+  },
+  splashFeaturesGrid: {
+    width: '100%',
+    gap: 12,
+  },
+  splashFeatureItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  splashFeatureIconWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(59, 130, 246, 0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  splashFeatureTxt: {
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: '#F1F5F9',
+  },
+  splashFooter: {
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+  },
+  splashExploreBtn: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    elevation: 4,
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  splashBtnGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+  },
+  splashExploreBtnTxt: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+
+  // ── MAIN HEADER STYLES ──
+  mainHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+  },
+  profileAvatarTouchable: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: '#3B82F6',
+  },
+  memberAvatarImg: {
+    width: '100%',
+    height: '100%',
+  },
+  memberAvatarFallback: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerTitleWrap: {
+    flex: 1,
+    alignItems: 'center',
+    marginHorizontal: 12,
+  },
+  mainHeaderTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  bellBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
     borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    position: 'relative',
   },
-  headerTitleText: {
-    fontSize: 19,
-    fontWeight: '800',
-    letterSpacing: -0.2,
-    textAlign: 'center',
+  notifBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#EF4444',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  headerRightSpacer: {
-    width: 40,
-    height: 40,
+  notifBadgeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#EF4444',
   },
-  centerLoading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  scrollContent: { padding: 16 },
 
-  // Search & Filters
+  // ── SEARCH BAR STYLES ──
+  searchBarWrapper: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
+    paddingVertical: 11,
+    borderRadius: 14,
     borderWidth: 1,
-    marginBottom: 10,
   },
-  searchInput: { flex: 1, marginLeft: 8, fontSize: 14 },
-  filterRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  filterChip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20 },
-  filterChipText: { fontSize: 12, fontWeight: '600' },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  searchInput: {
+    flex: 1,
+    marginLeft: 10,
+    fontSize: 14.5,
+    paddingVertical: 0,
+  },
 
-  // ── LINKEDIN STYLE POST CARD STYLES ──
-  postCard: {
+  // ── CONTENT FEED / CAROUSEL STYLES ──
+  centerLoading: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  carouselHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    marginBottom: 12,
+  },
+  carouselSectionTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  carouselContentContainer: {
+    paddingHorizontal: 16,
+  },
+  singleCardScroll: {
+    paddingHorizontal: 16,
+  },
+  carouselIndicatorsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 14,
+  },
+  carouselDot: {
+    height: 6,
+    borderRadius: 3,
+  },
+  carouselDotActive: {
+    width: 22,
+  },
+  carouselDotInactive: {
+    width: 6,
+  },
+
+  // ── OPPORTUNITY CARD STYLES ──
+  oppCard: {
     borderRadius: 18,
     borderWidth: 1,
-    marginBottom: 18,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
+    marginBottom: 16,
   },
-  postHeaderRow: {
+  cardHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 12,
+    paddingVertical: 12,
   },
   posterAvatar: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     borderWidth: 1.5,
     borderColor: '#3B82F6',
   },
   posterAvatarPlaceholder: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  postAuthorName: {
-    fontSize: 16,
+  posterNameText: {
+    fontSize: 14.5,
     fontWeight: '700',
     letterSpacing: -0.2,
   },
-  officialBadge: {
+  posterSubtitleText: {
+    fontSize: 12,
     marginTop: 1,
   },
-  postAuthorSubtitle: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  postHeadlineBox: {
-    paddingHorizontal: 16,
-    paddingBottom: 10,
-  },
-  postHeadlineTitle: {
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  postDetailsBox: {
-    paddingHorizontal: 16,
-    paddingVertical: 4,
-    gap: 7,
-    marginBottom: 10,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'nowrap',
-  },
-  detailIcon: {
-    marginRight: 8,
-  },
-  rupeeIconCircle: {
-    width: 17,
-    height: 17,
-    borderRadius: 8.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
-  },
-  detailLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginRight: 6,
-  },
-  detailVal: {
-    fontSize: 13.5,
-    fontWeight: '600',
-    flex: 1,
-  },
-  typePill: {
+  typeBadge: {
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 3,
     borderRadius: 6,
   },
-  typePillTxt: {
-    fontSize: 11,
-    fontWeight: '700',
+  typeBadgeTxt: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
-  postBodyWrap: {
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-  },
-  postDescription: {
-    fontSize: 13.5,
-    lineHeight: 20,
-  },
-  expandedSection: {
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-  },
-  expandedSecTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    marginBottom: 6,
-  },
-  bulletItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 4,
-  },
-  bulletTxt: {
-    fontSize: 12.5,
-    lineHeight: 18,
-    flex: 1,
-  },
-  postBannerWrap: {
+  cardBannerWrap: {
     width: '100%',
-    overflow: 'hidden',
+    height: 190,
+    backgroundColor: '#0F172A',
   },
-  postBannerImg: {
+  cardBannerImg: {
     width: '100%',
-    height: 220,
+    height: '100%',
   },
   defaultBannerPlaceholder: {
     width: '100%',
-    height: 190,
+    height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
@@ -963,7 +1377,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 6,
-    marginBottom: 10,
+    marginBottom: 8,
   },
   placeholderChurchTagTxt: {
     color: '#93C5FD',
@@ -973,62 +1387,110 @@ const styles = StyleSheet.create({
   },
   placeholderTitle: {
     color: '#FFFFFF',
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '800',
     textAlign: 'center',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   placeholderSub: {
     color: 'rgba(255,255,255,0.7)',
-    fontSize: 12.5,
+    fontSize: 12,
     textAlign: 'center',
   },
-  postApplyStrip: {
+  cardDetailsBox: {
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingTop: 12,
+    paddingBottom: 8,
   },
-  applyNowButton: {
+  cardTitleText: {
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+    marginBottom: 6,
+  },
+  cardMetadataRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 13,
-    borderRadius: 12,
-    elevation: 3,
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  metaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  metaItemTxt: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  descText: {
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  cardBottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(150,150,150,0.12)',
+    gap: 12,
+  },
+  detailsLinkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  detailsLinkTxt: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  applyPrimaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 10,
+    elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
-    shadowRadius: 4,
+    shadowRadius: 3,
   },
-  applyNowTxt: {
-    fontSize: 15,
+  applyPrimaryTxt: {
+    fontSize: 13.5,
     fontWeight: '800',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
-  appliedPill: {
+  appliedStatusPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 12,
-    borderRadius: 12,
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
     borderWidth: 1.2,
   },
-  appliedPillTxt: {
-    fontSize: 14,
+  appliedStatusTxt: {
+    fontSize: 13,
     fontWeight: '700',
-    letterSpacing: 0.2,
   },
   emptyBox: {
     padding: 28,
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 20,
+    width: '100%',
   },
 
-  // In-Screen Modal Styles
+  // ── IN-SCREEN MODAL STYLES ──
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.65)',

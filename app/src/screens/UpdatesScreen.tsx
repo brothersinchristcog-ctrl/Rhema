@@ -132,7 +132,7 @@ function stripHtml(html: string): string {
 export default function UpdatesScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
-  const { highlightId, highlightType } = route?.params || {};
+  const { highlightId, highlightType, filterCategory, filterTitle } = route?.params || {};
   const { t } = useLanguage();
 
   const getTypeName = (type: string) => {
@@ -283,7 +283,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
     }
 
     // SECURITY: If broadcast is targeted to admin role, skip if current user is not admin
-    if ((data.targetRole === 'admin' || data.type === 'baptism_request_admin' || data.type === 'prayer_request_admin' || data.type === 'testimony_admin' || data.type === 'volunteer_application_admin') && !isAdmin) {
+    if ((data.targetRole === 'admin' || data.type === 'baptism_request_admin' || data.type === 'prayer_request_admin' || data.type === 'testimony_admin' || data.type === 'volunteer_application_admin' || data.type === 'job_application_admin') && !isAdmin) {
       return null;
     }
 
@@ -690,7 +690,22 @@ export default function UpdatesScreen({ navigation, route }: any) {
     return () => { unsubscribe(); unsubscribeChurchNotifs(); unsubscribeMeetings(); unsubscribeMemberNotifs(); };
   }, [activeChurch?.id, member?.churchId, user?.phoneNumber, member?.phone, member?.id, user?.uid, isAdmin]);
   const allUpdates = dynamicUpdates;
-  const visibleUpdates = allUpdates.filter(update => !deletedIds.includes(update.id));
+  const visibleUpdates = allUpdates.filter(update => {
+    if (deletedIds.includes(update.id)) return false;
+    if (filterCategory === 'job_circle') {
+      const isJobCircle =
+        update.type === 'job_opportunity_new' ||
+        update.type === 'job_application_admin' ||
+        update.type === 'job_application_member' ||
+        update.opportunityId ||
+        update.applicationId ||
+        update.title?.includes('Ministry Opportunity') ||
+        update.title?.includes('Ministry Application') ||
+        update.title?.includes('Ministry Interview');
+      return isJobCircle;
+    }
+    return true;
+  });
 
   // Reset hasAutoOpened whenever route params change to allow new notification clicks to pop up
   useEffect(() => {
@@ -774,7 +789,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
         </TouchableOpacity>
 
         <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
-          {t('updates.title')}
+          {filterTitle || t('updates.title')}
         </Text>
 
         <View style={styles.headerRightSpacer} />
