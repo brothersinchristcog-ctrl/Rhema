@@ -323,7 +323,7 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
                 Apply: {opportunity.title}
               </Text>
               <TouchableOpacity onPress={() => setApplyModalVisible(false)} style={{ padding: 4 }}>
-                <Trash2 size={0} color="transparent" /> {/* Spacer */}
+                <Text style={{ color: theme.textSecondary, fontSize: 16, fontWeight: '700' }}>✕</Text>
               </TouchableOpacity>
             </View>
             <Text style={[styles.modalSubtitle, { color: theme.textSecondary }]}>

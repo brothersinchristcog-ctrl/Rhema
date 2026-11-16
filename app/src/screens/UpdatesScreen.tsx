@@ -28,6 +28,9 @@ const VOLUNTEER_NOTIFICATION_TYPES = [
   'volunteer_assignment',
   'volunteer_event_change',
   'volunteer_reminder',
+  'job_opportunity_new',
+  'job_application_admin',
+  'job_application_member',
 ];
 
 function SwipeableRow({ children, onDelete }: { children: React.ReactNode; onDelete: () => void }) {
@@ -150,6 +153,9 @@ export default function UpdatesScreen({ navigation, route }: any) {
     if (type === 'volunteer_assignment') return 'VOLUNTEER ASSIGNMENT';
     if (type === 'volunteer_event_change') return 'EVENT VOLUNTEER UPDATE';
     if (type === 'volunteer_reminder') return 'VOLUNTEER REMINDER';
+    if (type === 'job_opportunity_new') return 'MINISTRY OPPORTUNITY';
+    if (type === 'job_application_admin') return 'MINISTRY APPLICATION';
+    if (type === 'job_application_member') return 'APPLICATION UPDATE';
     if (!type) return (t('updates.types.announcement') || 'ANNOUNCEMENT').toUpperCase();
     const trans = t(`updates.types.${type}`);
     return trans && trans !== `updates.types.${type}` ? trans.toUpperCase() : type.toUpperCase();
