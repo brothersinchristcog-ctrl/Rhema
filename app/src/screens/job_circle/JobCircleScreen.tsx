@@ -280,12 +280,13 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
     const posterName =
       creatorInfo?.name ||
       opp.createdByName ||
-      'Church Leader';
+      '';
     const posterPhoto =
       creatorInfo?.photo ||
       opp.createdByPhoto ||
       '';
-    const posterRole = opp.createdByRole || 'Ministry Coordinator';
+    // Display only explicitly assigned designation; never invent a title
+    const posterRole = opp.createdByRole && opp.createdByRole !== 'Ministry Coordinator' ? opp.createdByRole : '';
 
     return (
       <View
@@ -311,23 +312,33 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
           <View style={{ flex: 1, marginLeft: 10 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <Text style={[styles.postAuthorName, { color: primaryText }]} numberOfLines={1}>
-                {posterName}
+                {posterName || 'Church Ministry'}
               </Text>
               <View style={styles.officialBadge}>
                 <CheckCircle2 size={13} color="#2563EB" />
               </View>
             </View>
             <Text style={[styles.postAuthorSubtitle, { color: secondaryText }]} numberOfLines={1}>
-              {posterRole} • {postedTimeAgo}
+              {posterRole ? `${posterRole} • ${postedTimeAgo}` : postedTimeAgo}
             </Text>
           </View>
         </View>
 
-        {/* Post Headline: Position Title (LinkedIn Alert style) */}
+        {/* Post Headline: Natural church ministry invitation */}
         <View style={styles.postHeadlineBox}>
           <Text style={[styles.postHeadlineTitle, { color: primaryText }]}>
-            🚨 <Text style={{ color: isDark ? '#60A5FA' : '#1D4ED8', fontWeight: '800' }}>{posterName}</Text> is recruiting –{' '}
-            <Text style={{ fontWeight: '800' }}>{opp.title}</Text>
+            {posterName ? (
+              <>
+                <Text style={{ color: isDark ? '#60A5FA' : '#1D4ED8', fontWeight: '800' }}>{posterName}</Text>
+                {' is inviting members to serve in the '}
+                <Text style={{ fontWeight: '800' }}>{opp.title} Ministry</Text>
+              </>
+            ) : (
+              <>
+                <Text style={{ fontWeight: '800' }}>{opp.title} Ministry</Text>
+                {' – Volunteers Needed'}
+              </>
+            )}
           </Text>
         </View>
 

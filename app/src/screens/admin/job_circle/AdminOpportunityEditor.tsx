@@ -421,9 +421,9 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
           responsibilities: cleanResponsibilities,
           requiredSkills: cleanSkills,
           thumbnailUrl: thumbnailUrl.trim() || undefined,
-          createdByName: member?.name || user?.displayName || editingOpp.createdByName || 'Church Administrator',
+          createdByName: member?.name || user?.displayName || editingOpp.createdByName || '',
           createdByPhoto: creatorPhoto || editingOpp.createdByPhoto || undefined,
-          createdByRole: (member as any)?.role || editingOpp.createdByRole || 'Ministry Leader',
+          createdByRole: (member as any)?.role || editingOpp.createdByRole || undefined,
           status: isPublish ? 'approved' : 'draft',
         });
       } else {
@@ -451,9 +451,9 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
           thumbnailUrl: thumbnailUrl.trim() || undefined,
           status: isPublish ? 'approved' : 'draft',
           createdById: user?.uid || 'admin',
-          createdByName: member?.name || user?.displayName || 'Church Administrator',
+          createdByName: member?.name || user?.displayName || '',
           createdByPhoto: creatorPhoto || undefined,
-          createdByRole: (member as any)?.role || 'Ministry Leader',
+          createdByRole: (member as any)?.role || undefined,
         });
       }
 
