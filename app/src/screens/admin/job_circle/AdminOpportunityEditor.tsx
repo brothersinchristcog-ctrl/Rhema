@@ -59,7 +59,7 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
   const [opportunityType, setOpportunityType] = useState<JobOpportunityType>(editingOpp?.opportunityType || 'volunteer');
   const [compensationType, setCompensationType] = useState<JobCompensationType>(editingOpp?.compensationType || 'unpaid');
   const [compensationDetails, setCompensationDetails] = useState(editingOpp?.compensationDetails || '');
-  
+
   // Responsibilities & Skills dynamic lists
   const [responsibilities, setResponsibilities] = useState<string[]>(
     editingOpp?.responsibilities && editingOpp.responsibilities.length > 0

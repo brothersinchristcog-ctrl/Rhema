@@ -310,4 +310,20 @@ export declare const scheduledVolunteerReminders: import("firebase-functions/v2/
  *   memberId: string (required for member_test)
  */
 export declare const triggerVolunteerPushTestHttp: import("firebase-functions/v2/https").HttpsFunction;
+/**
+ * Trigger: When a member submits a new Ministry Application
+ * Notifies Church Admins so they can review the candidate and their attached CV.
+ */
+export declare const onJobApplicationCreated: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+    churchId: string;
+    applicationId: string;
+}>>;
+/**
+ * Trigger: When an Admin updates an Application Status (Under Review, Meeting Scheduled, Selected, Rejected)
+ * Sends instant push notification to the member.
+ */
+export declare const onJobApplicationUpdated: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+    churchId: string;
+    applicationId: string;
+}>>;
 //# sourceMappingURL=notifications.d.ts.map
