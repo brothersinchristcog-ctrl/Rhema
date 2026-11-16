@@ -9,6 +9,8 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  Image,
+  Share,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -206,13 +208,36 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
           <Text style={styles.headerTitle} numberOfLines={1}>
             {opportunity.title}
           </Text>
-          <TouchableOpacity style={styles.iconBtn}>
+          <TouchableOpacity
+            style={styles.iconBtn}
+            onPress={() => {
+              Share.share({
+                message: `📢 Ministry Calling at ${activeChurch?.name || 'Rhema Church'}:\n\n` +
+                  `💼 Position: ${opportunity.title}\n` +
+                  `📍 Location: ${opportunity.location}\n` +
+                  `⏰ Time: ${opportunity.timeCommitment}\n` +
+                  `\nDescription: ${opportunity.description}\n\nJoin hands in God's service through Rhema Church Job Circle!`,
+                title: opportunity.title,
+              }).catch(() => {});
+            }}
+          >
             <Share2 size={20} color="#ffffff" />
           </TouchableOpacity>
         </View>
       </LinearGradient>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Opportunity Banner Image (if uploaded) */}
+        {opportunity.thumbnailUrl ? (
+          <View style={styles.detailBannerWrap}>
+            <Image
+              source={{ uri: opportunity.thumbnailUrl }}
+              style={styles.detailBannerImg}
+              resizeMode="cover"
+            />
+          </View>
+        ) : null}
+
         {/* Main Card */}
         <View style={[styles.mainCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <View style={styles.badgeRow}>
@@ -414,6 +439,17 @@ const styles = StyleSheet.create({
   headerTitle: { flex: 1, fontSize: 18, fontWeight: '700', color: '#ffffff', marginHorizontal: 12 },
   iconBtn: { padding: 8 },
   scrollContent: { padding: 16, paddingBottom: 100 },
+  detailBannerWrap: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.08)',
+  },
+  detailBannerImg: {
+    width: '100%',
+    height: 200,
+  },
   mainCard: { padding: 16, borderRadius: 16, borderWidth: 1, marginBottom: 16 },
   badgeRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   typeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },

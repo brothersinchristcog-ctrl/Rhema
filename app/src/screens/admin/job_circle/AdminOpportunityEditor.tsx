@@ -10,6 +10,7 @@ import {
   Alert,
   Platform,
   Modal,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -28,7 +29,11 @@ import {
   Check,
   CheckCircle2,
   X,
+  ImageIcon,
+  Upload,
 } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
+import storage from '@react-native-firebase/storage';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import { useAuth } from '../../../context/AuthContext';
 import { useChurch } from '../../../context/ChurchContext';
@@ -104,6 +109,8 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
   const [categoryId, setCategoryId] = useState(editingOpp?.categoryId || DEFAULT_MINISTRY_CATEGORIES[0].id);
   const [description, setDescription] = useState(editingOpp?.description || '');
   const [location, setLocation] = useState(editingOpp?.location || '');
+  const [thumbnailUrl, setThumbnailUrl] = useState(editingOpp?.thumbnailUrl || '');
+  const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
 
   // Opportunity Types & Compensation Types with Custom Support
   const [roleTypes, setRoleTypes] = useState(DEFAULT_ROLE_TYPES);
@@ -327,6 +334,54 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
     setRequiredSkills(requiredSkills.filter((_, idx) => idx !== index));
   };
 
+  // ── THUMBNAIL UPLOAD & PICKER ──
+  const uploadThumbnailToStorage = async (localUri: string): Promise<string> => {
+    try {
+      const ext = localUri.substring(localUri.lastIndexOf('.') + 1) || 'jpg';
+      const storagePath = `job_circle/thumbnails/job_${Date.now()}.${ext}`;
+      const reference = storage().ref(storagePath);
+      await reference.putFile(localUri);
+      return await reference.getDownloadURL();
+    } catch (error) {
+      console.error('Storage thumbnail upload failed:', error);
+      throw new Error('Could not upload banner to cloud storage.');
+    }
+  };
+
+  const handlePickThumbnail = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [16, 9],
+        quality: 0.85,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const localUri = result.assets[0].uri;
+        setUploadingThumbnail(true);
+        try {
+          const cloudUrl = await uploadThumbnailToStorage(localUri);
+          setThumbnailUrl(cloudUrl);
+        } catch (uploadErr: any) {
+          console.warn('Upload fallback to local URI:', uploadErr);
+          setThumbnailUrl(localUri);
+          Alert.alert('Notice', 'Cloud upload failed. Local image saved, please verify internet connection.');
+        } finally {
+          setUploadingThumbnail(false);
+        }
+      }
+    } catch (err: any) {
+      console.error('Error selecting image:', err);
+      Alert.alert('Error', 'Unable to pick image. Please try again.');
+      setUploadingThumbnail(false);
+    }
+  };
+
+  const handleRemoveThumbnail = () => {
+    setThumbnailUrl('');
+  };
+
   // ── SAVE & PUBLISH ──
   const handleSave = async (isPublish: boolean) => {
     if (!title.trim()) {
@@ -357,6 +412,7 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
           compensationDetails: compensationDetails.trim(),
           responsibilities: cleanResponsibilities,
           requiredSkills: cleanSkills,
+          thumbnailUrl: thumbnailUrl.trim() || undefined,
           status: isPublish ? 'approved' : 'draft',
         });
       } else {
@@ -373,6 +429,7 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
           opportunityType: opportunityType as any,
           compensationType: compensationType as any,
           compensationDetails: compensationDetails.trim(),
+          thumbnailUrl: thumbnailUrl.trim() || undefined,
           status: isPublish ? 'approved' : 'draft',
           createdById: user?.uid || 'admin',
           createdByName: member?.name || user?.displayName || 'Admin',
@@ -510,6 +567,73 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                   onChangeText={setDescription}
                 />
               </View>
+            </View>
+
+            {/* 4. Opportunity Thumbnail / Banner Image (LinkedIn-Style) */}
+            <View style={styles.fGroup}>
+              <View style={styles.fieldHeaderBetween}>
+                <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0 }]}>
+                  Thumbnail / Banner Image
+                </Text>
+                {thumbnailUrl ? (
+                  <TouchableOpacity
+                    onPress={handleRemoveThumbnail}
+                    style={[styles.smallAddPill, { borderColor: '#EF4444', backgroundColor: isDark ? '#7F1D1D30' : '#FEE2E2' }]}
+                    activeOpacity={0.7}
+                  >
+                    <Trash2 size={11} color="#EF4444" />
+                    <Text style={[styles.smallAddPillTxt, { color: '#EF4444' }]}>Remove</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+
+              {thumbnailUrl ? (
+                <View style={[styles.thumbnailPreviewCard, { borderColor: isDark ? '#3F3F46' : '#CBD5E1' }]}>
+                  <Image source={{ uri: thumbnailUrl }} style={styles.thumbnailImg} resizeMode="cover" />
+                  <TouchableOpacity
+                    style={[styles.replaceThumbnailBtn, { backgroundColor: isDark ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.9)' }]}
+                    onPress={handlePickThumbnail}
+                    activeOpacity={0.8}
+                  >
+                    <Upload size={14} color={isDark ? '#FFFFFF' : '#0F172A'} />
+                    <Text style={[styles.replaceThumbnailTxt, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                      Change Image
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={[
+                    styles.thumbnailUploadBox,
+                    {
+                      borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+                      backgroundColor: isDark ? '#27272A50' : '#F8FAFC',
+                    },
+                  ]}
+                  onPress={handlePickThumbnail}
+                  disabled={uploadingThumbnail}
+                  activeOpacity={0.8}
+                >
+                  {uploadingThumbnail ? (
+                    <View style={{ alignItems: 'center', gap: 6 }}>
+                      <ActivityIndicator size="small" color={isDark ? '#60A5FA' : '#1a2d5a'} />
+                      <Text style={[styles.uploadBoxSub, { color: secondaryText }]}>Uploading to cloud storage...</Text>
+                    </View>
+                  ) : (
+                    <View style={{ alignItems: 'center', gap: 6 }}>
+                      <View style={[styles.uploadIconCircle, { backgroundColor: isDark ? '#3F3F46' : '#E2E8F0' }]}>
+                        <ImageIcon size={22} color={isDark ? '#93C5FD' : '#1a2d5a'} />
+                      </View>
+                      <Text style={[styles.uploadBoxTitle, { color: primaryText }]}>
+                        Upload Opportunity Banner
+                      </Text>
+                      <Text style={[styles.uploadBoxSub, { color: secondaryText }]}>
+                        Tap to choose 16:9 banner or post graphic from gallery
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              )}
             </View>
           </LinearGradient>
         </View>
@@ -1296,6 +1420,59 @@ const styles = createAdminThemedStyles(
       padding: 8,
       justifyContent: 'center',
       alignItems: 'center',
+    },
+
+    // Thumbnail / Banner Styles
+    thumbnailUploadBox: {
+      borderWidth: 1.5,
+      borderStyle: 'dashed',
+      borderRadius: 14,
+      paddingVertical: 24,
+      paddingHorizontal: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    uploadIconCircle: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 2,
+    },
+    uploadBoxTitle: {
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    uploadBoxSub: {
+      fontSize: 12,
+      textAlign: 'center',
+    },
+    thumbnailPreviewCard: {
+      borderRadius: 14,
+      overflow: 'hidden',
+      borderWidth: 1.5,
+      position: 'relative',
+    },
+    thumbnailImg: {
+      width: '100%',
+      height: 180,
+    },
+    replaceThumbnailBtn: {
+      position: 'absolute',
+      bottom: 10,
+      right: 10,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+      borderRadius: 8,
+      elevation: 2,
+    },
+    replaceThumbnailTxt: {
+      fontSize: 12,
+      fontWeight: '700',
     },
 
     // Footer Buttons

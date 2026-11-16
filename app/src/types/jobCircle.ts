@@ -52,6 +52,7 @@ export interface JobOpportunity {
   requiredSkills: string[];
   qualifications?: string[];
   experienceRequired?: string;
+  thumbnailUrl?: string; // Banner / thumbnail image for LinkedIn-style feed
   location: string;
   timeCommitment: string;
   opportunityType: JobOpportunityType;
