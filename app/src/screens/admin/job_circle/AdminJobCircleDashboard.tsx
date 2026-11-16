@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import {
   StyleSheet,
   View,
@@ -11,9 +11,9 @@ import {
   Alert,
   Modal,
   Linking,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import {
   ArrowLeft,
   Briefcase,
@@ -29,11 +29,12 @@ import {
   Edit,
   ExternalLink,
   HeartHandshake,
+  Search,
 } from 'lucide-react-native';
 import { useAuth } from '../../../context/AuthContext';
 import { useChurch } from '../../../context/ChurchContext';
-import { useTheme } from '../../../context/ThemeContext';
-import { Colors } from '../../../theme/Theme';
+import { AdminTabContext } from '../../../context/AdminTabContext';
+import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
 import JobCircleService from '../../../services/JobCircleService';
 import {
   JobOpportunity,
@@ -49,16 +50,19 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
   const insets = useSafeAreaInsets();
   const { user, member } = useAuth();
   const { activeChurch } = useChurch();
-  const { colors, currentThemeOption } = useTheme();
-  const theme = {
-    bg: colors.bgSecondary,
-    surface: colors.bgPrimary,
-    text: colors.textPrimary,
-    textSecondary: colors.textSecondary,
-    border: colors.border,
-    accent: colors.accent,
-    headerGradient: currentThemeOption?.headerGradient || ['#1a2d5a', '#2c3e6b'],
-  };
+  const { setActiveTab: setAdminParentTab } = useContext(AdminTabContext) || {};
+
+  const {
+    isDark,
+    screenBg,
+    cardSurface,
+    primaryText,
+    secondaryText,
+    borderColor: adminBorderColor,
+    scaleFont,
+    appFontFamily,
+  } = useAdminTheme();
+
   const churchId = activeChurch?.id || 'rhema';
 
   const [activeTab, setActiveTab] = useState<'overview' | 'opportunities' | 'applications' | 'teams' | 'volunteers'>('overview');
@@ -100,6 +104,15 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
   const handleRefresh = () => {
     setRefreshing(true);
     loadAdminData();
+  };
+
+  const handleBack = () => {
+    // When inside Admin Tab navigator, 0 is the main Admin Dashboard
+    if (setAdminParentTab) {
+      setAdminParentTab(0);
+    } else if (navigation?.goBack) {
+      navigation.goBack();
+    }
   };
 
   const handleOpenReview = (app: JobApplication) => {
@@ -162,73 +175,107 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
   const shortlistedAppsCount = applications.filter(a => a.status === 'shortlisted' || a.status === 'meeting_scheduled').length;
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.bg }]}>
-      {/* Header */}
-      <LinearGradient
-        colors={theme.headerGradient || ['#1a2d5a', '#2c3e6b']}
-        style={[styles.header, { paddingTop: insets.top + 8 }]}
+    <View style={[styles.container, { backgroundColor: screenBg }]}>
+      {/* ── STANDARD ADMIN HERO HEADER (Matching other Admin Screens) ── */}
+      <View
+        style={[
+          styles.hero,
+          {
+            backgroundColor: isDark ? '#000000' : '#FFFFFF',
+            borderBottomWidth: 1,
+            borderBottomColor: adminBorderColor,
+            paddingTop: Math.max(insets.top, 8),
+          },
+        ]}
       >
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtn}>
-            <ArrowLeft size={22} color="#ffffff" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Job Circle Management</Text>
+        <View style={styles.heroRow}>
+          {/* Back Button -> Safely returns to Admin Dashboard */}
           <TouchableOpacity
-            style={styles.iconBtn}
-            onPress={() => navigation.navigate('AdminOpportunityEditor')}
+            onPress={handleBack}
+            style={[styles.circularBackBtn, { borderColor: adminBorderColor, backgroundColor: cardSurface }]}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Plus size={22} color="#ffffff" />
+            <ArrowLeft size={22} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.2} />
+          </TouchableOpacity>
+
+          {/* Centered Admin Title */}
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 }}>
+            <Text
+              style={[
+                styles.heroTitle,
+                {
+                  color: isDark ? '#FFFFFF' : '#1a2d5a',
+                  fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+                },
+              ]}
+              numberOfLines={1}
+            >
+              Job Circle Management
+            </Text>
+          </View>
+
+          {/* Post Action */}
+          <TouchableOpacity
+            style={[styles.circularBackBtn, { borderColor: adminBorderColor, backgroundColor: cardSurface }]}
+            onPress={() => navigation.navigate('AdminOpportunityEditor')}
+            activeOpacity={0.7}
+          >
+            <Plus size={22} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.2} />
           </TouchableOpacity>
         </View>
 
-        {/* Tab Pills */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabRow}>
-          {(
-            [
-              { id: 'overview', label: 'Overview' },
-              { id: 'opportunities', label: `Openings (${opportunities.length})` },
-              { id: 'applications', label: `Applicants (${applications.length})` },
-              { id: 'teams', label: 'Ministry Teams' },
-              { id: 'volunteers', label: 'Volunteers' },
-            ] as const
-          ).map(tab => {
-            const isActive = activeTab === tab.id;
-            return (
-              <TouchableOpacity
-                key={tab.id}
-                style={[
-                  styles.tabPill,
-                  isActive
-                    ? { backgroundColor: '#ffffff' }
-                    : { backgroundColor: 'rgba(255,255,255,0.15)' },
-                ]}
-                onPress={() => {
-                  if (tab.id === 'volunteers') {
-                    navigation.navigate('AdminVolunteerManagement');
-                  } else if (tab.id === 'teams') {
-                    navigation.navigate('AdminMinistryTeamsScreen');
-                  } else {
-                    setActiveTab(tab.id);
-                  }
-                }}
-              >
-                <Text
+        {/* ── SEGMENT TABS (Standard Admin Style) ── */}
+        <View style={{ paddingHorizontal: 16, marginTop: 12, marginBottom: 10 }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.segmentContainer}>
+            {(
+              [
+                { id: 'overview', label: 'Overview' },
+                { id: 'opportunities', label: `Openings (${opportunities.length})` },
+                { id: 'applications', label: `Applicants (${applications.length})` },
+                { id: 'teams', label: 'Ministry Teams' },
+                { id: 'volunteers', label: 'Volunteers' },
+              ] as const
+            ).map(tab => {
+              const isActive = activeTab === tab.id;
+              return (
+                <TouchableOpacity
+                  key={tab.id}
                   style={[
-                    styles.tabPillText,
-                    isActive ? { color: Colors.primary, fontWeight: '700' } : { color: '#ffffff' },
+                    styles.segmentTab,
+                    isActive
+                      ? { backgroundColor: isDark ? '#27272A' : '#1a2d5a' }
+                      : { backgroundColor: 'transparent' },
                   ]}
+                  onPress={() => {
+                    if (tab.id === 'volunteers') {
+                      navigation.navigate('AdminVolunteerManagement');
+                    } else if (tab.id === 'teams') {
+                      navigation.navigate('AdminMinistryTeamsScreen');
+                    } else {
+                      setActiveTab(tab.id);
+                    }
+                  }}
                 >
-                  {tab.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      </LinearGradient>
+                  <Text
+                    style={[
+                      styles.segmentTabText,
+                      { color: isActive ? '#FFFFFF' : secondaryText },
+                      isActive && { fontWeight: '700' },
+                    ]}
+                  >
+                    {tab.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </View>
 
       {loading ? (
         <View style={styles.loadingCenter}>
-          <ActivityIndicator size="large" color={theme.accent || Colors.primary} />
+          <ActivityIndicator size="large" color="#1a2d5a" />
         </View>
       ) : (
         <ScrollView
@@ -241,34 +288,34 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
             <View>
               {/* Metric Cards Grid */}
               <View style={styles.metricsGrid}>
-                <View style={[styles.metricCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                  <Briefcase size={22} color={theme.accent || Colors.primary} />
-                  <Text style={[styles.metricNumber, { color: theme.text }]}>{activeOppsCount}</Text>
-                  <Text style={[styles.metricLabel, { color: theme.textSecondary }]}>Active Opportunities</Text>
+                <View style={[styles.metricCard, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}>
+                  <Briefcase size={22} color="#1a2d5a" />
+                  <Text style={[styles.metricNumber, { color: primaryText }]}>{activeOppsCount}</Text>
+                  <Text style={[styles.metricLabel, { color: secondaryText }]}>Active Opportunities</Text>
                 </View>
 
-                <View style={[styles.metricCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                  <Clock size={22} color={Colors.warning} />
-                  <Text style={[styles.metricNumber, { color: theme.text }]}>{pendingAppsCount}</Text>
-                  <Text style={[styles.metricLabel, { color: theme.textSecondary }]}>Pending Reviews</Text>
+                <View style={[styles.metricCard, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}>
+                  <Clock size={22} color="#b45309" />
+                  <Text style={[styles.metricNumber, { color: primaryText }]}>{pendingAppsCount}</Text>
+                  <Text style={[styles.metricLabel, { color: secondaryText }]}>Pending Reviews</Text>
                 </View>
 
-                <View style={[styles.metricCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                  <Users size={22} color={Colors.success} />
-                  <Text style={[styles.metricNumber, { color: theme.text }]}>{shortlistedAppsCount}</Text>
-                  <Text style={[styles.metricLabel, { color: theme.textSecondary }]}>Shortlisted / Interview</Text>
+                <View style={[styles.metricCard, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}>
+                  <Users size={22} color="#15803d" />
+                  <Text style={[styles.metricNumber, { color: primaryText }]}>{shortlistedAppsCount}</Text>
+                  <Text style={[styles.metricLabel, { color: secondaryText }]}>Shortlisted / Interview</Text>
                 </View>
 
-                <View style={[styles.metricCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                  <CheckCircle2 size={22} color={Colors.primary} />
-                  <Text style={[styles.metricNumber, { color: theme.text }]}>{applications.length}</Text>
-                  <Text style={[styles.metricLabel, { color: theme.textSecondary }]}>Total Applicants</Text>
+                <View style={[styles.metricCard, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}>
+                  <CheckCircle2 size={22} color="#1a2d5a" />
+                  <Text style={[styles.metricNumber, { color: primaryText }]}>{applications.length}</Text>
+                  <Text style={[styles.metricLabel, { color: secondaryText }]}>Total Applicants</Text>
                 </View>
               </View>
 
               {/* Action Banners */}
               <TouchableOpacity
-                style={[styles.actionBanner, { backgroundColor: theme.accent || Colors.primary }]}
+                style={[styles.actionBanner, { backgroundColor: '#1a2d5a' }]}
                 onPress={() => navigation.navigate('AdminOpportunityEditor')}
               >
                 <Plus size={20} color="#fff" />
@@ -276,11 +323,11 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.actionBanner, { backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1, marginTop: 12 }]}
+                style={[styles.actionBanner, { backgroundColor: cardSurface, borderColor: adminBorderColor, borderWidth: 1, marginTop: 12 }]}
                 onPress={() => navigation.navigate('AdminVolunteerManagement')}
               >
-                <HeartHandshake size={20} color={Colors.primary} />
-                <Text style={[styles.actionBannerText, { color: theme.text }]}>Open Volunteer Management</Text>
+                <HeartHandshake size={20} color="#1a2d5a" />
+                <Text style={[styles.actionBannerText, { color: primaryText }]}>Open Volunteer Management</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -289,9 +336,9 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
           {activeTab === 'opportunities' && (
             <View>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <Text style={[styles.sectionTitle, { color: theme.text }]}>Ministry Postings</Text>
+                <Text style={[styles.sectionTitle, { color: primaryText }]}>Ministry Postings</Text>
                 <TouchableOpacity
-                  style={[styles.addBtn, { backgroundColor: theme.accent || Colors.primary }]}
+                  style={[styles.addBtn, { backgroundColor: '#1a2d5a' }]}
                   onPress={() => navigation.navigate('AdminOpportunityEditor')}
                 >
                   <Plus size={16} color="#fff" style={{ marginRight: 4 }} />
@@ -300,14 +347,14 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
               </View>
 
               {opportunities.map(opp => (
-                <View key={opp.id} style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <View key={opp.id} style={[styles.card, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.cardTitle, { color: theme.text }]}>{opp.title}</Text>
-                      <Text style={[styles.cardSub, { color: theme.textSecondary }]}>{opp.categoryName} • {opp.timeCommitment}</Text>
+                      <Text style={[styles.cardTitle, { color: primaryText }]}>{opp.title}</Text>
+                      <Text style={[styles.cardSub, { color: secondaryText }]}>{opp.categoryName} • {opp.timeCommitment}</Text>
                     </View>
-                    <View style={[styles.statusBadge, { backgroundColor: opp.status === 'approved' ? '#E1F5EE' : Colors.goldLight }]}>
-                      <Text style={[styles.statusText, { color: opp.status === 'approved' ? Colors.success : Colors.warning }]}>
+                    <View style={[styles.statusBadge, { backgroundColor: opp.status === 'approved' ? '#E1F5EE' : '#FEF3C7' }]}>
+                      <Text style={[styles.statusText, { color: opp.status === 'approved' ? '#15803d' : '#b45309' }]}>
                         {opp.status.toUpperCase()}
                       </Text>
                     </View>
@@ -315,30 +362,30 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
 
                   <View style={styles.cardActionsRow}>
                     <TouchableOpacity
-                      style={[styles.btnOutline, { borderColor: theme.border }]}
+                      style={[styles.btnOutline, { borderColor: adminBorderColor }]}
                       onPress={() => navigation.navigate('AdminOpportunityEditor', { opportunity: opp })}
                     >
-                      <Edit size={14} color={theme.text} style={{ marginRight: 4 }} />
-                      <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600' }}>Edit</Text>
+                      <Edit size={14} color={primaryText} style={{ marginRight: 4 }} />
+                      <Text style={{ color: primaryText, fontSize: 12, fontWeight: '600' }}>Edit</Text>
                     </TouchableOpacity>
 
                     {opp.status !== 'approved' && (
                       <TouchableOpacity
-                        style={[styles.btnOutline, { borderColor: Colors.success, backgroundColor: '#E1F5EE' }]}
+                        style={[styles.btnOutline, { borderColor: '#15803d', backgroundColor: '#E1F5EE' }]}
                         onPress={() => handleToggleOpportunityStatus(opp, 'approved')}
                       >
-                        <CheckCircle2 size={14} color={Colors.success} style={{ marginRight: 4 }} />
-                        <Text style={{ color: Colors.success, fontSize: 12, fontWeight: '600' }}>Approve</Text>
+                        <CheckCircle2 size={14} color="#15803d" style={{ marginRight: 4 }} />
+                        <Text style={{ color: '#15803d', fontSize: 12, fontWeight: '600' }}>Approve</Text>
                       </TouchableOpacity>
                     )}
 
                     {opp.status === 'approved' && (
                       <TouchableOpacity
-                        style={[styles.btnOutline, { borderColor: Colors.error }]}
+                        style={[styles.btnOutline, { borderColor: '#dc2626' }]}
                         onPress={() => handleToggleOpportunityStatus(opp, 'closed')}
                       >
-                        <XCircle size={14} color={Colors.error} style={{ marginRight: 4 }} />
-                        <Text style={{ color: Colors.error, fontSize: 12, fontWeight: '600' }}>Close</Text>
+                        <XCircle size={14} color="#dc2626" style={{ marginRight: 4 }} />
+                        <Text style={{ color: '#dc2626', fontSize: 12, fontWeight: '600' }}>Close</Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -350,42 +397,42 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
           {/* APPLICATIONS TAB */}
           {activeTab === 'applications' && (
             <View>
-              <Text style={[styles.sectionTitle, { color: theme.text, marginBottom: 12 }]}>
+              <Text style={[styles.sectionTitle, { color: primaryText, marginBottom: 12 }]}>
                 Applicant Review Pipeline
               </Text>
 
               {applications.length === 0 ? (
-                <View style={[styles.emptyBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                  <Text style={{ color: theme.textSecondary }}>No applications submitted yet.</Text>
+                <View style={[styles.emptyBox, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}>
+                  <Text style={{ color: secondaryText }}>No applications submitted yet.</Text>
                 </View>
               ) : (
                 applications.map(app => (
                   <TouchableOpacity
                     key={app.id}
-                    style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                    style={[styles.card, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}
                     onPress={() => handleOpenReview(app)}
                   >
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Text style={[styles.cardTitle, { color: theme.text }]}>{app.memberName}</Text>
+                      <Text style={[styles.cardTitle, { color: primaryText }]}>{app.memberName}</Text>
                       <View style={[styles.statusBadge, { backgroundColor: '#EFF6FF' }]}>
                         <Text style={[styles.statusText, { color: '#2563EB' }]}>
                           {app.status.replace('_', ' ').toUpperCase()}
                         </Text>
                       </View>
                     </View>
-                    <Text style={[styles.cardSub, { color: theme.accent || Colors.primary, fontWeight: '600', marginTop: 2 }]}>
+                    <Text style={[styles.cardSub, { color: '#1a2d5a', fontWeight: '600', marginTop: 2 }]}>
                       Applied for: {app.opportunityTitle}
                     </Text>
 
                     <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 14 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        <Phone size={13} color={theme.textSecondary} />
-                        <Text style={{ fontSize: 12, color: theme.textSecondary }}>{app.memberPhone}</Text>
+                        <Phone size={13} color={secondaryText} />
+                        <Text style={{ fontSize: 12, color: secondaryText }}>{app.memberPhone}</Text>
                       </View>
                       {app.resumeAttachment && (
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                          <FileText size={13} color={Colors.primary} />
-                          <Text style={{ fontSize: 12, color: Colors.primary, fontWeight: '600' }}>CV Attached</Text>
+                          <FileText size={13} color="#1a2d5a" />
+                          <Text style={{ fontSize: 12, color: '#1a2d5a', fontWeight: '600' }}>CV Attached</Text>
                         </View>
                       )}
                     </View>
@@ -400,19 +447,19 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
       {/* Review Modal */}
       <Modal visible={reviewModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: theme.surface, maxHeight: '85%' }]}>
+          <View style={[styles.modalCard, { backgroundColor: cardSurface, maxHeight: '85%' }]}>
             {selectedApp && (
               <ScrollView showsVerticalScrollIndicator={false}>
-                <Text style={[styles.modalTitle, { color: theme.text }]}>{selectedApp.memberName}</Text>
-                <Text style={[styles.modalSub, { color: theme.accent || Colors.primary }]}>
+                <Text style={[styles.modalTitle, { color: primaryText }]}>{selectedApp.memberName}</Text>
+                <Text style={[styles.modalSub, { color: '#1a2d5a' }]}>
                   Role: {selectedApp.opportunityTitle}
                 </Text>
 
                 {/* Candidate Contact */}
-                <View style={[styles.detailBox, { backgroundColor: theme.bg, borderColor: theme.border }]}>
-                  <Text style={{ fontSize: 13, color: theme.text }}>Phone: {selectedApp.memberPhone}</Text>
+                <View style={[styles.detailBox, { backgroundColor: screenBg, borderColor: adminBorderColor }]}>
+                  <Text style={{ fontSize: 13, color: primaryText }}>Phone: {selectedApp.memberPhone}</Text>
                   {selectedApp.memberEmail ? (
-                    <Text style={{ fontSize: 13, color: theme.text, marginTop: 4 }}>
+                    <Text style={{ fontSize: 13, color: primaryText, marginTop: 4 }}>
                       Email: {selectedApp.memberEmail}
                     </Text>
                   ) : null}
@@ -421,9 +468,9 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
                 {/* Calling Statement / Message */}
                 {selectedApp.applicationMessage ? (
                   <View style={{ marginTop: 12 }}>
-                    <Text style={[styles.fieldLabel, { color: theme.text }]}>Applicant Calling Statement</Text>
-                    <View style={[styles.detailBox, { backgroundColor: theme.bg, borderColor: theme.border }]}>
-                      <Text style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 18 }}>
+                    <Text style={[styles.fieldLabel, { color: primaryText }]}>Applicant Calling Statement</Text>
+                    <View style={[styles.detailBox, { backgroundColor: screenBg, borderColor: adminBorderColor }]}>
+                      <Text style={{ fontSize: 13, color: secondaryText, lineHeight: 18 }}>
                         {selectedApp.applicationMessage}
                       </Text>
                     </View>
@@ -433,32 +480,32 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
                 {/* CV / Resume Attachment Link */}
                 {selectedApp.resumeAttachment ? (
                   <View style={{ marginTop: 12 }}>
-                    <Text style={[styles.fieldLabel, { color: theme.text }]}>Attached Resume / CV</Text>
+                    <Text style={[styles.fieldLabel, { color: primaryText }]}>Attached Resume / CV</Text>
                     <TouchableOpacity
-                      style={[styles.resumeLinkBox, { borderColor: Colors.primary }]}
+                      style={[styles.resumeLinkBox, { borderColor: '#1a2d5a' }]}
                       onPress={() => Linking.openURL(selectedApp.resumeAttachment!.url)}
                     >
-                      <FileText size={18} color={Colors.primary} />
-                      <Text style={[styles.resumeName, { color: Colors.primary }]} numberOfLines={1}>
+                      <FileText size={18} color="#1a2d5a" />
+                      <Text style={[styles.resumeName, { color: '#1a2d5a' }]} numberOfLines={1}>
                         {selectedApp.resumeAttachment.fileName}
                       </Text>
-                      <ExternalLink size={16} color={Colors.primary} />
+                      <ExternalLink size={16} color="#1a2d5a" />
                     </TouchableOpacity>
                   </View>
                 ) : null}
 
                 {/* Admin Notes */}
-                <Text style={[styles.fieldLabel, { color: theme.text, marginTop: 14 }]}>Admin / Leader Notes</Text>
+                <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 14 }]}>Admin / Leader Notes</Text>
                 <TextInput
-                  style={[styles.input, { backgroundColor: theme.bg, borderColor: theme.border, color: theme.text }]}
+                  style={[styles.input, { backgroundColor: screenBg, borderColor: adminBorderColor, color: primaryText }]}
                   placeholder="Internal review notes..."
-                  placeholderTextColor={theme.textSecondary}
+                  placeholderTextColor={secondaryText}
                   value={adminNotes}
                   onChangeText={setAdminNotes}
                 />
 
                 {/* Status Transitions */}
-                <Text style={[styles.fieldLabel, { color: theme.text, marginTop: 16 }]}>Update Status</Text>
+                <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 16 }]}>Update Status</Text>
                 <View style={styles.statusActionRow}>
                   <TouchableOpacity
                     style={[styles.statusBtn, { backgroundColor: '#EFF6FF' }]}
@@ -469,11 +516,11 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.statusBtn, { backgroundColor: Colors.goldLight }]}
+                    style={[styles.statusBtn, { backgroundColor: '#FEF3C7' }]}
                     onPress={() => handleUpdateStatus('meeting_scheduled')}
                     disabled={updatingStatus}
                   >
-                    <Text style={{ color: Colors.warning, fontWeight: '700', fontSize: 12 }}>Schedule Interview</Text>
+                    <Text style={{ color: '#b45309', fontWeight: '700', fontSize: 12 }}>Schedule Interview</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -481,7 +528,7 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
                     onPress={() => handleUpdateStatus('selected')}
                     disabled={updatingStatus}
                   >
-                    <Text style={{ color: Colors.success, fontWeight: '700', fontSize: 12 }}>Select / Appoint</Text>
+                    <Text style={{ color: '#15803d', fontWeight: '700', fontSize: 12 }}>Select / Appoint</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -489,17 +536,17 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
                     onPress={() => handleUpdateStatus('rejected')}
                     disabled={updatingStatus}
                   >
-                    <Text style={{ color: Colors.error, fontWeight: '700', fontSize: 12 }}>Reject</Text>
+                    <Text style={{ color: '#dc2626', fontWeight: '700', fontSize: 12 }}>Reject</Text>
                   </TouchableOpacity>
                 </View>
               </ScrollView>
             )}
 
             <TouchableOpacity
-              style={[styles.closeModalBtn, { borderColor: theme.border, marginTop: 16 }]}
+              style={[styles.closeModalBtn, { borderColor: adminBorderColor, marginTop: 16 }]}
               onPress={() => setReviewModalVisible(false)}
             >
-              <Text style={{ color: theme.text, fontWeight: '600' }}>Close</Text>
+              <Text style={{ color: primaryText, fontWeight: '600' }}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -508,43 +555,68 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  header: { paddingHorizontal: 16, paddingBottom: 14 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: '#ffffff' },
-  iconBtn: { padding: 8 },
-  tabRow: { flexDirection: 'row', gap: 8 },
-  tabPill: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
-  tabPillText: { fontSize: 12, fontWeight: '600' },
-  loadingCenter: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  scrollContent: { padding: 16 },
-  metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
-  metricCard: { width: '48%', padding: 14, borderRadius: 14, borderWidth: 1, alignItems: 'center' },
-  metricNumber: { fontSize: 24, fontWeight: '800', marginVertical: 4 },
-  metricLabel: { fontSize: 12, textAlign: 'center' },
-  actionBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 12, gap: 8 },
-  actionBannerText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
-  sectionTitle: { fontSize: 17, fontWeight: '700' },
-  addBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
-  card: { padding: 14, borderRadius: 14, borderWidth: 1, marginBottom: 12 },
-  cardTitle: { fontSize: 16, fontWeight: '700' },
-  cardSub: { fontSize: 13, marginTop: 2 },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  statusText: { fontSize: 11, fontWeight: '700' },
-  cardActionsRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
-  btnOutline: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1 },
-  emptyBox: { padding: 24, borderRadius: 12, borderWidth: 1, alignItems: 'center' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  modalCard: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20 },
-  modalTitle: { fontSize: 20, fontWeight: '700' },
-  modalSub: { fontSize: 14, fontWeight: '600', marginBottom: 12 },
-  detailBox: { padding: 12, borderRadius: 10, borderWidth: 1 },
-  fieldLabel: { fontSize: 13, fontWeight: '600', marginBottom: 6 },
-  resumeLinkBox: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 10, borderWidth: 1, gap: 10 },
-  resumeName: { flex: 1, fontSize: 13, fontWeight: '600' },
-  input: { borderWidth: 1, borderRadius: 10, padding: 12, fontSize: 14 },
-  statusActionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
-  statusBtn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8 },
-  closeModalBtn: { paddingVertical: 12, borderRadius: 10, borderWidth: 1, alignItems: 'center' },
-});
+const styles = createAdminThemedStyles(
+  StyleSheet.create({
+    container: { flex: 1 },
+    hero: { paddingBottom: 6 },
+    heroRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16 },
+    circularBackBtn: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      borderWidth: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 2,
+      elevation: 2,
+    },
+    heroTitle: { fontSize: 19, fontWeight: '800', textAlign: 'center', letterSpacing: -0.3 },
+    segmentContainer: {
+      flexDirection: 'row',
+      gap: 6,
+      paddingVertical: 2,
+    },
+    segmentTab: {
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      borderRadius: 18,
+    },
+    segmentTabText: {
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    loadingCenter: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    scrollContent: { padding: 16 },
+    metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
+    metricCard: { width: '48%', padding: 14, borderRadius: 14, borderWidth: 1, alignItems: 'center' },
+    metricNumber: { fontSize: 24, fontWeight: '800', marginVertical: 4 },
+    metricLabel: { fontSize: 12, textAlign: 'center' },
+    actionBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 12, gap: 8 },
+    actionBannerText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
+    sectionTitle: { fontSize: 17, fontWeight: '700' },
+    addBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+    card: { padding: 14, borderRadius: 14, borderWidth: 1, marginBottom: 12 },
+    cardTitle: { fontSize: 16, fontWeight: '700' },
+    cardSub: { fontSize: 13, marginTop: 2 },
+    statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+    statusText: { fontSize: 11, fontWeight: '700' },
+    cardActionsRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+    btnOutline: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1 },
+    emptyBox: { padding: 24, borderRadius: 12, borderWidth: 1, alignItems: 'center' },
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+    modalCard: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20 },
+    modalTitle: { fontSize: 20, fontWeight: '700' },
+    modalSub: { fontSize: 14, fontWeight: '600', marginBottom: 12 },
+    detailBox: { padding: 12, borderRadius: 10, borderWidth: 1 },
+    fieldLabel: { fontSize: 13, fontWeight: '600', marginBottom: 6 },
+    resumeLinkBox: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 10, borderWidth: 1, gap: 10 },
+    resumeName: { flex: 1, fontSize: 13, fontWeight: '600' },
+    input: { borderWidth: 1, borderRadius: 10, padding: 12, fontSize: 14 },
+    statusActionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
+    statusBtn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8 },
+    closeModalBtn: { paddingVertical: 12, borderRadius: 10, borderWidth: 1, alignItems: 'center' },
+  })
+);
