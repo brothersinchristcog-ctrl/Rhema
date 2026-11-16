@@ -12,8 +12,12 @@ import {
   BackHandler,
   Platform,
   Image,
+  Modal,
+  Alert,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as DocumentPicker from 'expo-document-picker';
 import {
   Briefcase,
   Search,
@@ -26,6 +30,9 @@ import {
   Send,
   X,
   User,
+  Upload,
+  FileText,
+  Trash2,
 } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
@@ -33,11 +40,11 @@ import { useTheme } from '../../context/ThemeContext';
 import { Colors } from '../../theme/Theme';
 import JobCircleService from '../../services/JobCircleService';
 import FirestoreService from '../../services/FirestoreService';
-import { JobOpportunity } from '../../types/jobCircle';
+import { JobOpportunity, AttachmentInfo } from '../../types/jobCircle';
 
 export default function JobCircleScreen({ navigation }: { navigation: any }) {
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
+  const { user, member } = useAuth();
   const { activeChurch } = useChurch();
   const { colors, isDark } = useTheme();
 
@@ -55,14 +62,25 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
   const [opportunities, setOpportunities] = useState<JobOpportunity[]>([]);
   const [creatorProfiles, setCreatorProfiles] = useState<{ [uid: string]: { name: string; photo?: string } }>({});
   const [expandedDescIds, setExpandedDescIds] = useState<{ [key: string]: boolean }>({});
+  const [appliedOppIds, setAppliedOppIds] = useState<string[]>([]);
 
   // Search & Type Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState<string>('all');
 
+  // Direct Apply Modal State
+  const [selectedOppForApply, setSelectedOppForApply] = useState<JobOpportunity | null>(null);
+  const [applicationMessage, setApplicationMessage] = useState('');
+  const [selectedFile, setSelectedFile] = useState<{ uri: string; name: string; mimeType?: string; size?: number } | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
   // Android hardware back handler
   useEffect(() => {
     const onBackPress = () => {
+      if (selectedOppForApply) {
+        setSelectedOppForApply(null);
+        return true;
+      }
       if (navigation.canGoBack()) {
         navigation.goBack();
         return true;
@@ -71,11 +89,91 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
     };
     const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
     return () => subscription.remove();
-  }, [navigation]);
+  }, [navigation, selectedOppForApply]);
 
   useEffect(() => {
     loadAllOpportunities();
+    loadAppliedStatus();
   }, [churchId]);
+
+  const loadAppliedStatus = async () => {
+    if (!user?.uid) return;
+    try {
+      const myApps = await JobCircleService.getMyApplications(churchId, user.uid);
+      const activeIds = myApps
+        .filter(a => a.status !== 'withdrawn' && a.status !== 'rejected')
+        .map(a => a.opportunityId);
+      setAppliedOppIds(activeIds);
+    } catch (e) {
+      console.warn('Error loading applied opportunities:', e);
+    }
+  };
+
+  const handlePickDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const file = result.assets[0];
+        setSelectedFile({
+          uri: file.uri,
+          name: file.name,
+          mimeType: file.mimeType || 'application/pdf',
+        });
+      }
+    } catch (err) {
+      console.warn('Document picker error:', err);
+      Alert.alert('Error', 'Unable to pick document. Please try again.');
+    }
+  };
+
+  const handleSubmitApplication = async () => {
+    if (!user?.uid || !selectedOppForApply) return;
+
+    try {
+      setSubmitting(true);
+      let resumeAttachment: AttachmentInfo | undefined = undefined;
+
+      if (selectedFile) {
+        resumeAttachment = await JobCircleService.uploadAttachment(
+          churchId,
+          user.uid,
+          selectedFile.uri,
+          selectedFile.name,
+          selectedFile.mimeType
+        );
+      }
+
+      await JobCircleService.applyForOpportunity(
+        churchId,
+        selectedOppForApply,
+        {
+          id: user.uid,
+          name: member?.name || user.displayName || 'Church Member',
+          phone: member?.phone || user.phoneNumber || '',
+          email: member?.email || user.email || '',
+        },
+        {
+          applicationMessage: applicationMessage.trim(),
+          resumeAttachment,
+        }
+      );
+
+      setAppliedOppIds(prev => [...prev, selectedOppForApply.id]);
+      setSelectedOppForApply(null);
+      setApplicationMessage('');
+      setSelectedFile(null);
+      Alert.alert('Application Submitted', 'Your ministry application has been received! The ministry leader will review your calling.');
+    } catch (err: any) {
+      console.error('Submit application error:', err);
+      Alert.alert('Submission Error', err.message || 'Could not submit application. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const toggleDescExpand = (oppId: string) => {
     setExpandedDescIds(prev => ({ ...prev, [oppId]: !prev[oppId] }));
@@ -339,16 +437,33 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
 
         {/* Apply Now Primary Action Strip */}
         <View style={styles.postApplyStrip}>
-          <TouchableOpacity
-            style={[styles.applyNowButton, { backgroundColor: isDark ? '#FFFFFF' : '#1a2d5a' }]}
-            onPress={() => navigation.navigate('OpportunityDetailScreen', { opportunity: opp })}
-            activeOpacity={0.85}
-          >
-            <Send size={15} color={isDark ? '#000000' : '#FFFFFF'} />
-            <Text style={[styles.applyNowTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
-              Apply Now
-            </Text>
-          </TouchableOpacity>
+          {appliedOppIds.includes(opp.id) ? (
+            <View
+              style={[
+                styles.appliedPill,
+                {
+                  backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#ECFDF5',
+                  borderColor: isDark ? '#065F46' : '#A7F3D0',
+                },
+              ]}
+            >
+              <CheckCircle2 size={18} color="#059669" />
+              <Text style={[styles.appliedPillTxt, { color: isDark ? '#34D399' : '#047857' }]}>
+                Application Submitted
+              </Text>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={[styles.applyNowButton, { backgroundColor: isDark ? '#FFFFFF' : '#1a2d5a' }]}
+              onPress={() => setSelectedOppForApply(opp)}
+              activeOpacity={0.85}
+            >
+              <Send size={15} color={isDark ? '#000000' : '#FFFFFF'} />
+              <Text style={[styles.applyNowTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
+                Apply Now
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     );
@@ -465,6 +580,152 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
           )}
         </ScrollView>
       )}
+
+      {/* Direct In-Screen Application Modal */}
+      <Modal
+        visible={!!selectedOppForApply}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => {
+          if (!submitting) setSelectedOppForApply(null);
+        }}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalBackdrop}
+        >
+          <View style={[styles.modalSheet, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
+            <View style={styles.modalDragHandle} />
+
+            <View style={styles.modalHeaderRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.modalTitleText, { color: primaryText }]} numberOfLines={1}>
+                  Apply: {selectedOppForApply?.title}
+                </Text>
+                <Text style={[styles.modalSubtitleText, { color: secondaryText }]}>
+                  Attach your CV/Resume and share a brief message of calling.
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setSelectedOppForApply(null)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                style={styles.modalCloseBtn}
+              >
+                <X size={20} color={secondaryText} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 16 }}>
+              {/* Message Input */}
+              <Text style={[styles.fieldLabel, { color: primaryText }]}>
+                Message / Calling Statement
+              </Text>
+              <TextInput
+                style={[
+                  styles.messageTextArea,
+                  {
+                    backgroundColor: isDark ? '#27272A80' : '#F8FAFC',
+                    borderColor: cardBorder,
+                    color: primaryText,
+                  },
+                ]}
+                placeholder="Share your heart for this ministry, previous experience, or questions..."
+                placeholderTextColor={secondaryText}
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+                value={applicationMessage}
+                onChangeText={setApplicationMessage}
+              />
+
+              {/* Resume / Document Picker */}
+              <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 14 }]}>
+                Resume / CV Attachment (Optional)
+              </Text>
+              {selectedFile ? (
+                <View
+                  style={[
+                    styles.fileSelectedBox,
+                    {
+                      backgroundColor: isDark ? '#1E293B' : '#EFF6FF',
+                      borderColor: isDark ? '#3B82F6' : '#BFDBFE',
+                    },
+                  ]}
+                >
+                  <FileText size={22} color={isDark ? '#60A5FA' : '#2563EB'} />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={[styles.fileNameTxt, { color: primaryText }]} numberOfLines={1}>
+                      {selectedFile.name}
+                    </Text>
+                    {selectedFile.size ? (
+                      <Text style={[styles.fileSizeTxt, { color: secondaryText }]}>
+                        {(selectedFile.size / 1024).toFixed(0)} KB
+                      </Text>
+                    ) : null}
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => setSelectedFile(null)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <X size={18} color={secondaryText} />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={[
+                    styles.uploadDottedBox,
+                    {
+                      backgroundColor: isDark ? '#27272A50' : '#F8FAFC',
+                      borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+                    },
+                  ]}
+                  onPress={handlePickDocument}
+                  activeOpacity={0.8}
+                >
+                  <Upload size={22} color={isDark ? '#93C5FD' : '#2563EB'} />
+                  <Text style={[styles.uploadBoxPrompt, { color: primaryText }]}>
+                    Tap to upload Resume / CV (PDF or DOCX)
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {/* Action Buttons */}
+              <View style={styles.modalActionsRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.modalCancelBtn,
+                    { backgroundColor: isDark ? '#27272A' : '#E2E8F0' },
+                  ]}
+                  onPress={() => setSelectedOppForApply(null)}
+                  disabled={submitting}
+                >
+                  <Text style={[styles.modalCancelTxt, { color: primaryText }]}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.modalSubmitBtn,
+                    { backgroundColor: isDark ? '#3B82F6' : '#1a2d5a' },
+                    submitting && { opacity: 0.7 },
+                  ]}
+                  onPress={handleSubmitApplication}
+                  disabled={submitting}
+                  activeOpacity={0.85}
+                >
+                  {submitting ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Send size={16} color="#FFFFFF" />
+                      <Text style={styles.modalSubmitTxt}>Submit Application</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -705,6 +966,20 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.3,
   },
+  appliedPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1.2,
+  },
+  appliedPillTxt: {
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
   emptyBox: {
     padding: 28,
     borderRadius: 16,
@@ -712,5 +987,121 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 20,
+  },
+
+  // In-Screen Modal Styles
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 28,
+    maxHeight: '85%',
+  },
+  modalDragHandle: {
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#94A3B8',
+    alignSelf: 'center',
+    marginBottom: 14,
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  modalTitleText: {
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+    marginBottom: 4,
+  },
+  modalSubtitleText: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  modalCloseBtn: {
+    padding: 4,
+    marginLeft: 12,
+  },
+  fieldLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  messageTextArea: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 14,
+    minHeight: 100,
+  },
+  uploadDottedBox: {
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderRadius: 12,
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  uploadBoxPrompt: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  fileSelectedBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1.2,
+    borderRadius: 12,
+    padding: 12,
+  },
+  fileNameTxt: {
+    fontSize: 13.5,
+    fontWeight: '700',
+  },
+  fileSizeTxt: {
+    fontSize: 11.5,
+    marginTop: 2,
+  },
+  modalActionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 24,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCancelTxt: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  modalSubmitBtn: {
+    flex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  modalSubmitTxt: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
   },
 });
