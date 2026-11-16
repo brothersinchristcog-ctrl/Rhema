@@ -90,6 +90,7 @@ import AdminServicePlanner from '../screens/admin/AdminServicePlanner';
 import AdminTestimonies from '../screens/admin/AdminTestimonies';
 import AdminVolunteerManagement from '../screens/admin/AdminVolunteerManagement';
 import AdminJobCircleDashboard from '../screens/admin/job_circle/AdminJobCircleDashboard';
+import AdminMinistryTeamsScreen from '../screens/admin/job_circle/AdminMinistryTeamsScreen';
 import CareCellService from '../services/CareCellService';
 import { RHEMA_CHURCH_ID } from '../constants/ChurchConfig';
 
@@ -300,6 +301,7 @@ export default function AdminNavigator({ navigation, route }: any) {
     ...(isSuperAdminUser || hasCareCellAccess ? [{ name: 'Care Cells', icon: HeartHandshake, component: AdminCareCellsHub }] : []),
     { name: 'Service Roster', icon: CalendarDays, component: AdminServicePlanner },
     { name: 'Job Circle', icon: Briefcase, component: AdminJobCircleDashboard },
+    { name: 'Ministry Teams', icon: Users, component: AdminMinistryTeamsScreen },
     { name: 'Volunteer Management', icon: HeartHandshake, component: AdminVolunteerManagement },
     { name: 'Members', icon: Users, component: AdminMembers },
     { name: 'Approvals', icon: UserCheck, component: AdminRegistrationApprovals },

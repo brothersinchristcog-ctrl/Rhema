@@ -50,7 +50,7 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
   const insets = useSafeAreaInsets();
   const { user, member } = useAuth();
   const { activeChurch } = useChurch();
-  const { setActiveTab: setAdminParentTab } = useContext(AdminTabContext) || {};
+  const { setActiveTab: setAdminParentTab, setTabByName } = useContext(AdminTabContext) || {};
 
   const {
     isDark,
@@ -249,9 +249,17 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
                   ]}
                   onPress={() => {
                     if (tab.id === 'volunteers') {
-                      navigation.navigate('AdminVolunteerManagement');
+                      if (setTabByName) {
+                        setTabByName('Volunteer Management');
+                      } else if (navigation?.navigate) {
+                        navigation.navigate('Admin', { targetTab: 'Volunteer Management' });
+                      }
                     } else if (tab.id === 'teams') {
-                      navigation.navigate('AdminMinistryTeamsScreen');
+                      if (setTabByName) {
+                        setTabByName('Ministry Teams');
+                      } else if (navigation?.navigate) {
+                        navigation.navigate('AdminMinistryTeamsScreen');
+                      }
                     } else {
                       setActiveTab(tab.id);
                     }
@@ -324,7 +332,13 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
 
               <TouchableOpacity
                 style={[styles.actionBanner, { backgroundColor: cardSurface, borderColor: adminBorderColor, borderWidth: 1, marginTop: 12 }]}
-                onPress={() => navigation.navigate('AdminVolunteerManagement')}
+                onPress={() => {
+                  if (setTabByName) {
+                    setTabByName('Volunteer Management');
+                  } else if (navigation?.navigate) {
+                    navigation.navigate('Admin', { targetTab: 'Volunteer Management' });
+                  }
+                }}
               >
                 <HeartHandshake size={20} color="#1a2d5a" />
                 <Text style={[styles.actionBannerText, { color: primaryText }]}>Open Volunteer Management</Text>
