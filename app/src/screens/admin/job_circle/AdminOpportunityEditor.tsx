@@ -473,9 +473,9 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                   style={[styles.smallAddPill, { borderColor: isDark ? '#3F3F46' : '#CBD5E1', backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
                   activeOpacity={0.7}
                 >
-                  <Plus size={12} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />
+                  <Plus size={11} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />
                   <Text style={[styles.smallAddPillTxt, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>
-                    New Category
+                    New
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -536,8 +536,8 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                   style={[styles.smallAddPill, { borderColor: isDark ? '#3F3F46' : '#CBD5E1', backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
                   activeOpacity={0.7}
                 >
-                  <Plus size={12} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />
-                  <Text style={[styles.smallAddPillTxt, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>New Type</Text>
+                  <Plus size={11} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />
+                  <Text style={[styles.smallAddPillTxt, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>New</Text>
                 </TouchableOpacity>
               </View>
               <TouchableOpacity
@@ -561,8 +561,8 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                   style={[styles.smallAddPill, { borderColor: isDark ? '#3F3F46' : '#CBD5E1', backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
                   activeOpacity={0.7}
                 >
-                  <Plus size={12} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />
-                  <Text style={[styles.smallAddPillTxt, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>New Option</Text>
+                  <Plus size={11} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />
+                  <Text style={[styles.smallAddPillTxt, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>New</Text>
                 </TouchableOpacity>
               </View>
               <TouchableOpacity
@@ -618,9 +618,9 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                   style={[styles.smallAddPill, { borderColor: isDark ? '#3F3F46' : '#CBD5E1', backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
                   activeOpacity={0.7}
                 >
-                  <Plus size={12} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />
+                  <Plus size={11} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />
                   <Text style={[styles.smallAddPillTxt, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>
-                    Add Schedule
+                    Add
                   </Text>
                 </TouchableOpacity>
               </View>

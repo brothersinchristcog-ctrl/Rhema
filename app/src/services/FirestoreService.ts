@@ -3082,10 +3082,14 @@ class FirestoreService {
         let list: any[] = [];
         
         // 1. Fetch Public Approved Requests
-        let publicQuery = query.where('isPublic', '==', true).where('isAnswered', '==', true);
-        const publicSnapshot = await publicQuery.get();
-        const publicList = publicSnapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
-        list.push(...publicList);
+        try {
+          let publicQuery = query.where('isPublic', '==', true).where('isAnswered', '==', true);
+          const publicSnapshot = await publicQuery.get();
+          const publicList = publicSnapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+          list.push(...publicList);
+        } catch (pubErr) {
+          console.warn('Could not fetch public prayers:', pubErr);
+        }
         
         // 2. Fetch User's Own Requests (Public or Private, Pending or Approved)
         if (userIdentifier) {
