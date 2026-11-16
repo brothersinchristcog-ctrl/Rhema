@@ -217,36 +217,43 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
   const isPaid = opportunity.compensationType !== 'unpaid';
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.bg }]}>
-      {/* Header */}
-      <LinearGradient
-        colors={theme.headerGradient || ['#1a2d5a', '#2c3e6b']}
-        style={[styles.header, { paddingTop: insets.top + 8 }]}
+    <View style={[styles.container, { backgroundColor: isDark ? '#000000' : '#F8FAFC' }]}>
+      {/* ── Screen Header matching Member Dashboard tabs ── */}
+      <View
+        style={[
+          styles.headerRow,
+          {
+            paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8,
+            borderBottomWidth: 1.2,
+            borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1',
+            backgroundColor: isDark ? '#000000' : '#FFFFFF',
+          },
+        ]}
       >
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtn}>
-            <ArrowLeft size={22} color="#ffffff" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {opportunity.title}
-          </Text>
-          <TouchableOpacity
-            style={styles.iconBtn}
-            onPress={() => {
-              Share.share({
-                message: `📢 Ministry Calling at ${activeChurch?.name || 'Rhema Church'}:\n\n` +
-                  `💼 Position: ${opportunity.title}\n` +
-                  `📍 Location: ${opportunity.location}\n` +
-                  `⏰ Time: ${opportunity.timeCommitment}\n` +
-                  `\nDescription: ${opportunity.description}\n\nJoin hands in God's service through Rhema Church Job Circle!`,
-                title: opportunity.title,
-              }).catch(() => {});
-            }}
-          >
-            <Share2 size={20} color="#ffffff" />
-          </TouchableOpacity>
-        </View>
-      </LinearGradient>
+        <TouchableOpacity
+          style={[
+            styles.circularBackBtn,
+            {
+              backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+              borderColor: isDark ? '#3F3F46' : '#E2E8F0',
+            },
+          ]}
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          activeOpacity={0.7}
+        >
+          <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#0F172A'} strokeWidth={2.4} />
+        </TouchableOpacity>
+
+        <Text
+          style={[styles.headerTitleText, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
+          numberOfLines={1}
+        >
+          {opportunity.title}
+        </Text>
+
+        <View style={styles.headerRightSpacer} />
+      </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Member Application Status Card (if applied) */}
@@ -646,10 +653,32 @@ const styles = StyleSheet.create({
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   errorText: { fontSize: 16, marginBottom: 16 },
   backBtn: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 8 },
-  header: { paddingHorizontal: 16, paddingBottom: 16 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  headerTitle: { flex: 1, fontSize: 18, fontWeight: '700', color: '#ffffff', marginHorizontal: 12 },
-  iconBtn: { padding: 8 },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+  },
+  circularBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1.2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitleText: {
+    flex: 1,
+    fontSize: 17,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginHorizontal: 8,
+  },
+  headerRightSpacer: {
+    width: 40,
+    height: 40,
+  },
   scrollContent: { padding: 16, paddingBottom: 100 },
   detailBannerWrap: {
     borderRadius: 16,

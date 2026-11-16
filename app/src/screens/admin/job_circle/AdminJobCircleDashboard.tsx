@@ -169,27 +169,40 @@ export default function AdminJobCircleDashboard({ navigation, routeParams }: Adm
     setReviewModalVisible(true);
   };
 
-  // Status Action: Under Review
-  const handleSetUnderReview = async () => {
+  // Status Action: Under Review with confirmation dialog
+  const handleSetUnderReview = () => {
     if (!selectedApp) return;
-    try {
-      setUpdatingStatus(true);
-      await JobCircleService.updateApplicationStatus(churchId, selectedApp.id, 'under_review', {
-        adminId: user?.uid || 'admin',
-        adminName: member?.name || user?.displayName || 'Admin',
-        adminNotes: adminNotes.trim(),
-      });
-      setApplications(prev =>
-        prev.map(a => (a.id === selectedApp.id ? { ...a, status: 'under_review', adminNotes: adminNotes.trim() } : a))
-      );
-      setSelectedApp(prev => (prev ? { ...prev, status: 'under_review', adminNotes: adminNotes.trim() } : null));
-      Alert.alert('Status Updated', 'Application marked as Under Review.');
-    } catch (err: any) {
-      console.error('Update status error:', err);
-      Alert.alert('Error', err.message || 'Could not update application status.');
-    } finally {
-      setUpdatingStatus(false);
-    }
+    Alert.alert(
+      'Mark Under Review',
+      `Move ${selectedApp.memberName}'s application for "${selectedApp.opportunityTitle}" into Under Review?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm',
+          style: 'default',
+          onPress: async () => {
+            try {
+              setUpdatingStatus(true);
+              await JobCircleService.updateApplicationStatus(churchId, selectedApp.id, 'under_review', {
+                adminId: user?.uid || 'admin',
+                adminName: member?.name || user?.displayName || 'Admin',
+                adminNotes: adminNotes.trim(),
+              });
+              setApplications(prev =>
+                prev.map(a => (a.id === selectedApp.id ? { ...a, status: 'under_review', adminNotes: adminNotes.trim() } : a))
+              );
+              setSelectedApp(prev => (prev ? { ...prev, status: 'under_review', adminNotes: adminNotes.trim() } : null));
+              Alert.alert('Status Updated', 'Application marked as Under Review.');
+            } catch (err: any) {
+              console.error('Update status error:', err);
+              Alert.alert('Error', err.message || 'Could not update application status.');
+            } finally {
+              setUpdatingStatus(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   // Status Action: Open Interview Scheduler
@@ -1167,43 +1180,75 @@ export default function AdminJobCircleDashboard({ navigation, routeParams }: Adm
 
                 {/* Status Transitions */}
                 <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 16 }]}>Update Status</Text>
-                <View style={styles.statusActionRow}>
+                <View style={styles.statusActionGrid}>
                   <TouchableOpacity
-                    style={[styles.statusBtn, { backgroundColor: isDark ? '#1E3A8A' : '#EFF6FF' }]}
+                    style={[
+                      styles.statusGridBtn,
+                      {
+                        backgroundColor: isDark ? '#1E293B' : '#EFF6FF',
+                        borderColor: isDark ? '#3B82F6' : '#93C5FD',
+                      },
+                    ]}
                     onPress={handleSetUnderReview}
                     disabled={updatingStatus}
+                    activeOpacity={0.75}
                   >
-                    <Text style={{ color: isDark ? '#93C5FD' : '#2563EB', fontWeight: '700', fontSize: 12 }}>
+                    <Clock size={16} color={isDark ? '#93C5FD' : '#2563EB'} />
+                    <Text style={{ color: isDark ? '#93C5FD' : '#2563EB', fontWeight: '700', fontSize: 13, marginTop: 4 }}>
                       Under Review
                     </Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.statusBtn, { backgroundColor: isDark ? '#78350F' : '#FEF3C7' }]}
+                    style={[
+                      styles.statusGridBtn,
+                      {
+                        backgroundColor: isDark ? '#2D2012' : '#FEF3C7',
+                        borderColor: isDark ? '#F59E0B' : '#FCD34D',
+                      },
+                    ]}
                     onPress={handleOpenScheduleModal}
                     disabled={updatingStatus}
+                    activeOpacity={0.75}
                   >
-                    <Text style={{ color: isDark ? '#FCD34D' : '#b45309', fontWeight: '700', fontSize: 12 }}>
+                    <Calendar size={16} color={isDark ? '#FCD34D' : '#B45309'} />
+                    <Text style={{ color: isDark ? '#FCD34D' : '#B45309', fontWeight: '700', fontSize: 13, marginTop: 4 }}>
                       Schedule Interview
                     </Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.statusBtn, { backgroundColor: isDark ? '#064E3B' : '#E1F5EE' }]}
+                    style={[
+                      styles.statusGridBtn,
+                      {
+                        backgroundColor: isDark ? '#063B2F' : '#E1F5EE',
+                        borderColor: isDark ? '#10B981' : '#6EE7B7',
+                      },
+                    ]}
                     onPress={handleSelectAppoint}
                     disabled={updatingStatus}
+                    activeOpacity={0.75}
                   >
-                    <Text style={{ color: isDark ? '#6EE7B7' : '#15803d', fontWeight: '700', fontSize: 12 }}>
+                    <CheckCircle2 size={16} color={isDark ? '#6EE7B7' : '#15803D'} />
+                    <Text style={{ color: isDark ? '#6EE7B7' : '#15803D', fontWeight: '700', fontSize: 13, marginTop: 4 }}>
                       Select / Appoint
                     </Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.statusBtn, { backgroundColor: isDark ? '#7F1D1D' : '#FEE2E2' }]}
+                    style={[
+                      styles.statusGridBtn,
+                      {
+                        backgroundColor: isDark ? '#3B1214' : '#FEE2E2',
+                        borderColor: isDark ? '#EF4444' : '#FCA5A5',
+                      },
+                    ]}
                     onPress={handleRejectApplication}
                     disabled={updatingStatus}
+                    activeOpacity={0.75}
                   >
-                    <Text style={{ color: isDark ? '#FCA5A5' : '#dc2626', fontWeight: '700', fontSize: 12 }}>
+                    <XCircle size={16} color={isDark ? '#FCA5A5' : '#DC2626'} />
+                    <Text style={{ color: isDark ? '#FCA5A5' : '#DC2626', fontWeight: '700', fontSize: 13, marginTop: 4 }}>
                       Reject
                     </Text>
                   </TouchableOpacity>
@@ -1502,6 +1547,21 @@ const styles = createAdminThemedStyles(
     resumeLinkBox: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 10, borderWidth: 1, gap: 10 },
     resumeName: { flex: 1, fontSize: 13, fontWeight: '600' },
     input: { borderWidth: 1, borderRadius: 10, padding: 12, fontSize: 14 },
+    statusActionGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 10,
+      marginTop: 6,
+    },
+    statusGridBtn: {
+      width: '48%',
+      paddingVertical: 12,
+      paddingHorizontal: 12,
+      borderRadius: 12,
+      borderWidth: 1.2,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
     statusActionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
     statusBtn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8 },
     closeModalBtn: { paddingVertical: 12, borderRadius: 10, borderWidth: 1, alignItems: 'center' },
