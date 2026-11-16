@@ -405,6 +405,38 @@ class NotificationService {
           }
           break;
         }
+        case 'job_opportunity_new': {
+          const oppId = rawData.opportunityId || rawData.referenceId || id;
+          console.log('💼 [NotificationService] Routing to Ministry Opportunity:', { oppId });
+          if (oppId) {
+            nav.navigate('OpportunityDetailScreen', { opportunityId: oppId });
+          } else {
+            nav.navigate('JobCircle');
+          }
+          break;
+        }
+        case 'job_application_admin': {
+          const appId = rawData.applicationId || rawData.referenceId || id;
+          console.log('💼 [NotificationService] Routing Admin to Job Circle Applications:', { appId });
+          nav.navigate('AdminRoot', {
+            targetTab: 'Job Circle',
+            applicationId: appId,
+            timestamp: Date.now(),
+          });
+          break;
+        }
+        case 'job_application_member': {
+          const appId = rawData.applicationId || rawData.referenceId || id;
+          const oppId = rawData.opportunityId;
+          console.log('💼 [NotificationService] Routing Member to Job Circle Applications:', { appId, oppId });
+          nav.navigate('JobCircle', {
+            initialTab: 'applications',
+            applicationId: appId,
+            opportunityId: oppId,
+            timestamp: Date.now(),
+          });
+          break;
+        }
         default:
           if (id) {
             nav.navigate('Updates', { highlightId: id, highlightType: type });

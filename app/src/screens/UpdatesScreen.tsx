@@ -370,6 +370,25 @@ export default function UpdatesScreen({ navigation, route }: any) {
       icon = Bell;
       color = '#7C3AED';
       resolvedType = 'volunteer_reminder';
+    } else if (
+      data.type === 'job_opportunity_new' ||
+      data.type === 'job_application_admin' ||
+      data.type === 'job_application_member' ||
+      data.referenceType === 'job_circle_application' ||
+      data.referenceType === 'job_circle_opportunity' ||
+      data.title?.includes('Ministry Opportunity') ||
+      data.title?.includes('Ministry Application') ||
+      data.title?.includes('Ministry Interview')
+    ) {
+      icon = Briefcase;
+      color = '#0284c7';
+      if (data.type === 'job_application_admin') {
+        resolvedType = 'job_application_admin';
+      } else if (data.type === 'job_application_member' || data.title?.includes('Ministry Interview') || data.title?.includes('Application')) {
+        resolvedType = 'job_application_member';
+      } else {
+        resolvedType = data.type || 'job_opportunity_new';
+      }
     } else if (data.type === 'event' || data.title?.includes('📅')) {
       icon = Calendar;
       color = '#10b981';
@@ -544,7 +563,8 @@ export default function UpdatesScreen({ navigation, route }: any) {
       serviceDate: data.serviceDate || null,
       requestId: data.requestId || null,
       prayerId: data.prayerId || null,
-      applicationId: data.applicationId || data.referenceId || null,
+      opportunityId: data.opportunityId || (data.referenceType === 'job_circle_opportunity' ? data.referenceId : null) || null,
+      applicationId: data.applicationId || (data.referenceType === 'job_circle_application' ? data.referenceId : null) || null,
       eventId: data.eventId || null,
       volunteerType: data.volunteerType || null,
       volunteerStatus: data.status || null,
@@ -899,7 +919,12 @@ export default function UpdatesScreen({ navigation, route }: any) {
                       timestamp: Date.now(),
                     });
                   } else if (update.type === 'job_application_member') {
-                    navigation.navigate('JobCircle', { initialTab: 'applications' });
+                    navigation.navigate('JobCircle', {
+                      initialTab: 'applications',
+                      applicationId: update.applicationId,
+                      opportunityId: update.opportunityId,
+                      timestamp: Date.now(),
+                    });
                   } else {
                     setSelectedUpdate(update);
                   }

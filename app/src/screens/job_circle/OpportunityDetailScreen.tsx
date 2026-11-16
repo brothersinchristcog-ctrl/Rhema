@@ -72,10 +72,17 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
   const [submitting, setSubmitting] = useState(false);
   const [hasApplied, setHasApplied] = useState(false);
 
+  const [userApplication, setUserApplication] = useState<any>(null);
+
   useEffect(() => {
     loadOpportunity();
-    checkIfAlreadyApplied();
-  }, [route.params.opportunityId]);
+  }, [route.params?.opportunityId, route.params?.opportunity]);
+
+  useEffect(() => {
+    if (opportunity?.id) {
+      checkIfAlreadyApplied();
+    }
+  }, [opportunity?.id, user?.uid]);
 
   const loadOpportunity = async () => {
     if (route.params.opportunity) {
@@ -100,8 +107,14 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
     if (!user?.uid || !opportunity?.id) return;
     try {
       const myApps = await JobCircleService.getMyApplications(churchId, user.uid);
-      const existing = myApps.some(app => app.opportunityId === opportunity.id && app.status !== 'withdrawn' && app.status !== 'rejected');
-      setHasApplied(existing);
+      const existingApp = myApps.find(app => app.opportunityId === opportunity.id && app.status !== 'withdrawn');
+      if (existingApp) {
+        setUserApplication(existingApp);
+        setHasApplied(existingApp.status !== 'rejected');
+      } else {
+        setUserApplication(null);
+        setHasApplied(false);
+      }
     } catch (err) {
       console.warn('Error checking existing application:', err);
     }
@@ -232,6 +245,124 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
       </LinearGradient>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Member Application Status Card (if applied) */}
+        {userApplication ? (
+          <View
+            style={[
+              styles.sectionCard,
+              {
+                backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                borderColor:
+                  userApplication.status === 'selected'
+                    ? '#10B981'
+                    : userApplication.status === 'meeting_scheduled'
+                    ? '#F59E0B'
+                    : userApplication.status === 'under_review'
+                    ? '#3B82F6'
+                    : userApplication.status === 'rejected'
+                    ? '#EF4444'
+                    : theme.border,
+                borderWidth: 1.5,
+                marginBottom: 16,
+              },
+            ]}
+          >
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <Text style={[styles.sectionTitle, { color: theme.text, marginBottom: 0 }]}>
+                Your Application Status
+              </Text>
+              <View
+                style={[
+                  styles.typeBadge,
+                  {
+                    backgroundColor:
+                      userApplication.status === 'selected'
+                        ? (isDark ? 'rgba(16, 185, 129, 0.2)' : '#D1FAE5')
+                        : userApplication.status === 'meeting_scheduled'
+                        ? (isDark ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7')
+                        : userApplication.status === 'under_review'
+                        ? (isDark ? 'rgba(59, 130, 246, 0.2)' : '#DBEAFE')
+                        : userApplication.status === 'rejected'
+                        ? (isDark ? 'rgba(239, 68, 68, 0.2)' : '#FEE2E2')
+                        : (isDark ? 'rgba(148, 163, 184, 0.2)' : '#F1F5F9'),
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.typeBadgeText,
+                    {
+                      color:
+                        userApplication.status === 'selected'
+                          ? '#059669'
+                          : userApplication.status === 'meeting_scheduled'
+                          ? '#B45309'
+                          : userApplication.status === 'under_review'
+                          ? '#2563EB'
+                          : userApplication.status === 'rejected'
+                          ? '#DC2626'
+                          : '#475569',
+                    },
+                  ]}
+                >
+                  {userApplication.status.replace(/_/g, ' ').toUpperCase()}
+                </Text>
+              </View>
+            </View>
+
+            {userApplication.status === 'meeting_scheduled' ? (
+              <View style={{ backgroundColor: isDark ? 'rgba(245, 158, 11, 0.1)' : '#FFFBEB', padding: 12, borderRadius: 10, marginTop: 4 }}>
+                <Text style={{ fontWeight: '700', color: isDark ? '#FBBF24' : '#B45309', fontSize: 14, marginBottom: 4 }}>
+                  📅 Ministry Interview Scheduled
+                </Text>
+                {userApplication.meetingDate ? (
+                  <Text style={{ color: theme.text, fontSize: 13, marginTop: 2 }}>
+                    Date: <Text style={{ fontWeight: '600' }}>{userApplication.meetingDate}</Text>
+                  </Text>
+                ) : null}
+                {userApplication.meetingTime ? (
+                  <Text style={{ color: theme.text, fontSize: 13, marginTop: 2 }}>
+                    Time: <Text style={{ fontWeight: '600' }}>{userApplication.meetingTime}</Text>
+                  </Text>
+                ) : null}
+                {userApplication.meetingLocation ? (
+                  <Text style={{ color: theme.text, fontSize: 13, marginTop: 2 }}>
+                    Location / Link: <Text style={{ fontWeight: '600' }}>{userApplication.meetingLocation}</Text>
+                  </Text>
+                ) : null}
+                {userApplication.meetingNotes ? (
+                  <Text style={{ color: theme.textSecondary, fontSize: 12.5, marginTop: 4, fontStyle: 'italic' }}>
+                    "{userApplication.meetingNotes}"
+                  </Text>
+                ) : null}
+              </View>
+            ) : userApplication.status === 'selected' ? (
+              <Text style={{ color: isDark ? '#34D399' : '#059669', fontSize: 13, lineHeight: 18, marginTop: 4 }}>
+                🎉 Congratulations! You have been appointed to serve in this ministry. A ministry leader will connect with you soon.
+              </Text>
+            ) : userApplication.status === 'under_review' ? (
+              <Text style={{ color: theme.textSecondary, fontSize: 13, lineHeight: 18, marginTop: 4 }}>
+                Your calling and application are currently being prayerfully reviewed by ministry leaders.
+              </Text>
+            ) : userApplication.status === 'rejected' ? (
+              <View style={{ backgroundColor: isDark ? 'rgba(239, 68, 68, 0.1)' : '#FEF2F2', padding: 10, borderRadius: 8, marginTop: 4 }}>
+                <Text style={{ color: isDark ? '#F87171' : '#DC2626', fontSize: 13 }}>
+                  Thank you for your heart to serve. This application has not been selected at this time.
+                </Text>
+                {userApplication.adminNotes ? (
+                  <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 4, fontStyle: 'italic' }}>
+                    Leader Note: {userApplication.adminNotes}
+                  </Text>
+                ) : null}
+              </View>
+            ) : (
+              <Text style={{ color: theme.textSecondary, fontSize: 13, lineHeight: 18, marginTop: 4 }}>
+                Application received. You will receive notifications as leaders review your calling.
+              </Text>
+            )}
+          </View>
+        ) : null}
+
         {/* Opportunity Banner Image (if uploaded) */}
         {opportunity.thumbnailUrl ? (
           <View style={styles.detailBannerWrap}>

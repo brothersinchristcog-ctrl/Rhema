@@ -10,11 +10,11 @@ import {
   RefreshControl,
   Alert,
   Modal,
-  Linking,
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import {
   ArrowLeft,
   Briefcase,
@@ -32,12 +32,16 @@ import {
   HeartHandshake,
   Filter,
   Trash2,
+  Eye,
+  Star,
+  UserCheck,
 } from 'lucide-react-native';
 import { useAuth } from '../../../context/AuthContext';
 import { useChurch } from '../../../context/ChurchContext';
 import { AdminTabContext } from '../../../context/AdminTabContext';
 import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
 import JobCircleService from '../../../services/JobCircleService';
+import InAppDocumentViewerModal from '../../../components/InAppDocumentViewerModal';
 import {
   JobOpportunity,
   JobApplication,
@@ -46,6 +50,7 @@ import {
 
 interface AdminJobCircleDashboardProps {
   navigation: any;
+  routeParams?: any;
 }
 
 const SERIF = Platform.OS === 'ios' ? 'Georgia' : 'serif';
@@ -60,7 +65,7 @@ const colors = {
   inkSoft: '#475569',
 };
 
-export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDashboardProps) {
+export default function AdminJobCircleDashboard({ navigation, routeParams }: AdminJobCircleDashboardProps) {
   const insets = useSafeAreaInsets();
   const { user, member } = useAuth();
   const { activeChurch } = useChurch();
@@ -77,8 +82,18 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
 
   const churchId = activeChurch?.id || 'rhema';
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'opportunities' | 'applications'>('overview');
-  const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'pending' | 'total'>('all');
+  // Integrated Stat Filters: all, active_opps, pending_opps, total_apps, under_review, shortlisted, selected, volunteers
+  type StatFilter =
+    | 'all'
+    | 'active_opps'
+    | 'pending_opps'
+    | 'total_apps'
+    | 'under_review'
+    | 'shortlisted'
+    | 'selected'
+    | 'volunteers';
+
+  const [selectedStat, setSelectedStat] = useState<StatFilter>('all');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -90,12 +105,33 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
   const [selectedApp, setSelectedApp] = useState<JobApplication | null>(null);
   const [reviewModalVisible, setReviewModalVisible] = useState(false);
   const [adminNotes, setAdminNotes] = useState('');
-  const [meetingNotes, setMeetingNotes] = useState('');
   const [updatingStatus, setUpdatingStatus] = useState(false);
+
+  // Interview Schedule Modal State
+  const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
+  const [interviewDate, setInterviewDate] = useState(new Date());
+  const [interviewTime, setInterviewTime] = useState('10:00 AM');
+  const [interviewLocation, setInterviewLocation] = useState('Rhema Church / Online Meet');
+  const [interviewNotes, setInterviewNotes] = useState('');
+  const [isDatePickerVisible, setDatePickerVisible] = useState(false);
+  const [isTimePickerVisible, setTimePickerVisible] = useState(false);
+
+  // In-App Resume / Document Viewer Modal State
+  const [resumeDocToView, setResumeDocToView] = useState<{ url: string; name: string; mimeType?: string } | null>(null);
 
   useEffect(() => {
     loadAdminData();
   }, [churchId]);
+
+  // Deep link handling when navigated with applicationId or targetTab from notification
+  useEffect(() => {
+    if (routeParams?.applicationId && applications.length > 0) {
+      const target = applications.find(a => a.id === routeParams.applicationId);
+      if (target) {
+        handleOpenReview(target);
+      }
+    }
+  }, [routeParams, applications]);
 
   const loadAdminData = async () => {
     try {
@@ -130,38 +166,163 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
   const handleOpenReview = (app: JobApplication) => {
     setSelectedApp(app);
     setAdminNotes(app.adminNotes || '');
-    setMeetingNotes(app.meetingNotes || '');
     setReviewModalVisible(true);
   };
 
-  const handleUpdateStatus = async (newStatus: JobApplicationStatus) => {
+  // Status Action: Under Review
+  const handleSetUnderReview = async () => {
     if (!selectedApp) return;
-
     try {
       setUpdatingStatus(true);
-      await JobCircleService.updateApplicationStatus(churchId, selectedApp.id, newStatus, {
+      await JobCircleService.updateApplicationStatus(churchId, selectedApp.id, 'under_review', {
         adminId: user?.uid || 'admin',
         adminName: member?.name || user?.displayName || 'Admin',
         adminNotes: adminNotes.trim(),
-        meetingNotes: meetingNotes.trim(),
       });
-
       setApplications(prev =>
-        prev.map(a =>
-          a.id === selectedApp.id
-            ? { ...a, status: newStatus, adminNotes: adminNotes.trim(), meetingNotes: meetingNotes.trim() }
-            : a
-        )
+        prev.map(a => (a.id === selectedApp.id ? { ...a, status: 'under_review', adminNotes: adminNotes.trim() } : a))
       );
-
-      setReviewModalVisible(false);
-      Alert.alert('Status Updated', `Application moved to ${newStatus.replace('_', ' ').toUpperCase()}`);
+      setSelectedApp(prev => (prev ? { ...prev, status: 'under_review', adminNotes: adminNotes.trim() } : null));
+      Alert.alert('Status Updated', 'Application marked as Under Review.');
     } catch (err: any) {
       console.error('Update status error:', err);
       Alert.alert('Error', err.message || 'Could not update application status.');
     } finally {
       setUpdatingStatus(false);
     }
+  };
+
+  // Status Action: Open Interview Scheduler
+  const handleOpenScheduleModal = () => {
+    if (!selectedApp) return;
+    setInterviewNotes(selectedApp.meetingNotes || '');
+    setInterviewLocation(selectedApp.meetingLocation || 'Rhema Church / Online Meet');
+    setInterviewTime(selectedApp.meetingTime || '10:00 AM');
+    setScheduleModalVisible(true);
+  };
+
+  // Confirm Interview Schedule
+  const handleConfirmScheduleInterview = async () => {
+    if (!selectedApp) return;
+    try {
+      setUpdatingStatus(true);
+      const dateStr = interviewDate.toISOString().split('T')[0];
+      await JobCircleService.updateApplicationStatus(churchId, selectedApp.id, 'meeting_scheduled', {
+        adminId: user?.uid || 'admin',
+        adminName: member?.name || user?.displayName || 'Admin',
+        meetingDate: dateStr,
+        meetingTime: interviewTime.trim() || '10:00 AM',
+        meetingLocation: interviewLocation.trim() || 'Rhema Church / Online Meet',
+        meetingNotes: interviewNotes.trim(),
+        adminNotes: adminNotes.trim(),
+      });
+      setApplications(prev =>
+        prev.map(a =>
+          a.id === selectedApp.id
+            ? {
+                ...a,
+                status: 'meeting_scheduled',
+                meetingDate: dateStr,
+                meetingTime: interviewTime.trim() || '10:00 AM',
+                meetingLocation: interviewLocation.trim() || 'Rhema Church / Online Meet',
+                meetingNotes: interviewNotes.trim(),
+                adminNotes: adminNotes.trim(),
+              }
+            : a
+        )
+      );
+      setSelectedApp(prev =>
+        prev
+          ? {
+              ...prev,
+              status: 'meeting_scheduled',
+              meetingDate: dateStr,
+              meetingTime: interviewTime.trim() || '10:00 AM',
+              meetingLocation: interviewLocation.trim() || 'Rhema Church / Online Meet',
+              meetingNotes: interviewNotes.trim(),
+            }
+          : null
+      );
+      setScheduleModalVisible(false);
+      Alert.alert('Interview Scheduled', `Meeting scheduled for ${dateStr} at ${interviewTime}. The applicant has been notified.`);
+    } catch (err: any) {
+      console.error('Schedule interview error:', err);
+      Alert.alert('Error', err.message || 'Could not schedule interview.');
+    } finally {
+      setUpdatingStatus(false);
+    }
+  };
+
+  // Status Action: Select / Appoint
+  const handleSelectAppoint = () => {
+    if (!selectedApp) return;
+    Alert.alert(
+      'Confirm Appointment',
+      `Are you sure you want to appoint ${selectedApp.memberName} to the "${selectedApp.opportunityTitle}" ministry?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm & Appoint',
+          style: 'default',
+          onPress: async () => {
+            try {
+              setUpdatingStatus(true);
+              await JobCircleService.updateApplicationStatus(churchId, selectedApp.id, 'selected', {
+                adminId: user?.uid || 'admin',
+                adminName: member?.name || user?.displayName || 'Admin',
+                adminNotes: adminNotes.trim(),
+              });
+              setApplications(prev =>
+                prev.map(a => (a.id === selectedApp.id ? { ...a, status: 'selected', adminNotes: adminNotes.trim() } : a))
+              );
+              setSelectedApp(prev => (prev ? { ...prev, status: 'selected', adminNotes: adminNotes.trim() } : null));
+              Alert.alert('Candidate Appointed', `${selectedApp.memberName} has been appointed to the ministry team!`);
+            } catch (err: any) {
+              console.error('Appoint error:', err);
+              Alert.alert('Error', err.message || 'Could not appoint candidate.');
+            } finally {
+              setUpdatingStatus(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Status Action: Reject with confirmation
+  const handleRejectApplication = () => {
+    if (!selectedApp) return;
+    Alert.alert(
+      'Confirm Rejection',
+      `Are you sure you want to decline ${selectedApp.memberName}'s application for this ministry opportunity?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Decline Application',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setUpdatingStatus(true);
+              await JobCircleService.updateApplicationStatus(churchId, selectedApp.id, 'rejected', {
+                adminId: user?.uid || 'admin',
+                adminName: member?.name || user?.displayName || 'Admin',
+                adminNotes: adminNotes.trim(),
+              });
+              setApplications(prev =>
+                prev.map(a => (a.id === selectedApp.id ? { ...a, status: 'rejected', adminNotes: adminNotes.trim() } : a))
+              );
+              setSelectedApp(prev => (prev ? { ...prev, status: 'rejected', adminNotes: adminNotes.trim() } : null));
+              Alert.alert('Application Updated', 'Application status updated to Rejected.');
+            } catch (err: any) {
+              console.error('Reject error:', err);
+              Alert.alert('Error', err.message || 'Could not reject application.');
+            } finally {
+              setUpdatingStatus(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleToggleOpportunityStatus = async (opp: JobOpportunity, newStatus: 'approved' | 'closed') => {
@@ -206,8 +367,43 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
 
   // Metrics
   const activeOppsCount = opportunities.filter(o => o.status === 'approved').length;
-  const pendingAppsCount = applications.filter(a => a.status === 'submitted' || a.status === 'under_review').length;
+  const pendingOppsCount = opportunities.filter(o => o.status === 'pending' || o.status === 'draft').length;
+  const totalOppsCount = opportunities.length;
+
   const totalAppsCount = applications.length;
+  const underReviewCount = applications.filter(a => a.status === 'under_review').length;
+  const shortlistedCount = applications.filter(a => a.status === 'shortlisted').length;
+  const selectedCount = applications.filter(a => a.status === 'selected' || a.status === 'joined').length;
+  const volunteerAppsCount = applications.filter(
+    a => a.opportunityType === 'volunteer' || a.opportunityType === 'ministry_service'
+  ).length;
+
+  // Filtered Records based on the clicked Stat Card
+  const showOpportunities =
+    selectedStat === 'all' || selectedStat === 'active_opps' || selectedStat === 'pending_opps';
+  const showApplications =
+    selectedStat === 'all' ||
+    selectedStat === 'total_apps' ||
+    selectedStat === 'under_review' ||
+    selectedStat === 'shortlisted' ||
+    selectedStat === 'selected' ||
+    selectedStat === 'volunteers';
+
+  const filteredOpportunities = opportunities.filter(opp => {
+    if (selectedStat === 'active_opps') return opp.status === 'approved';
+    if (selectedStat === 'pending_opps') return opp.status === 'pending' || opp.status === 'draft';
+    return true;
+  });
+
+  const filteredApplications = applications.filter(app => {
+    if (selectedStat === 'under_review') return app.status === 'under_review';
+    if (selectedStat === 'shortlisted') return app.status === 'shortlisted';
+    if (selectedStat === 'selected') return app.status === 'selected' || app.status === 'joined';
+    if (selectedStat === 'volunteers') {
+      return app.opportunityType === 'volunteer' || app.opportunityType === 'ministry_service';
+    }
+    return true;
+  });
 
   return (
     <View style={[styles.container, { backgroundColor: screenBg }]}>
@@ -228,7 +424,13 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
           {/* Circular Back Button (Returns directly to Dashboard) */}
           <TouchableOpacity
             onPress={handleBack}
-            style={[styles.circularBackBtn, { borderColor: isDark ? '#3F3F46' : '#E2E8F0', backgroundColor: isDark ? '#18181B' : '#FFFFFF' }]}
+            style={[
+              styles.circularBackBtn,
+              {
+                borderColor: isDark ? '#3F3F46' : '#E2E8F0',
+                backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+              },
+            ]}
             activeOpacity={0.7}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
@@ -268,43 +470,6 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
             </Text>
           </TouchableOpacity>
         </View>
-
-        {/* Sub-tabs segment (Overview / Openings / Applicants) */}
-        <View style={{ paddingHorizontal: 16, marginTop: 12, marginBottom: 2 }}>
-          <View style={styles.segmentContainer}>
-            {(
-              [
-                { id: 'overview', label: 'Overview' },
-                { id: 'opportunities', label: `Openings (${opportunities.length})` },
-                { id: 'applications', label: `Applicants (${applications.length})` },
-              ] as const
-            ).map(tab => {
-              const isActive = activeTab === tab.id;
-              return (
-                <TouchableOpacity
-                  key={tab.id}
-                  style={[
-                    styles.segmentTab,
-                    isActive
-                      ? { backgroundColor: isDark ? '#27272A' : '#1a2d5a' }
-                      : { backgroundColor: 'transparent' },
-                  ]}
-                  onPress={() => setActiveTab(tab.id)}
-                >
-                  <Text
-                    style={[
-                      styles.segmentTabText,
-                      { color: isActive ? '#FFFFFF' : secondaryText },
-                      isActive && { fontWeight: '700' },
-                    ]}
-                  >
-                    {tab.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
       </View>
 
       {loading ? (
@@ -317,264 +482,504 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
           showsVerticalScrollIndicator={false}
         >
-          {/* ── 2. STATISTICS CARDS (Exact Match to Daily Promise Stat Cards) ── */}
-          {activeTab === 'overview' && (
-            <View>
-              <View style={styles.statsRow}>
-                {/* 1. Active Opportunities (Moss Green / Success) */}
-                <TouchableOpacity
-                  style={[
-                    styles.statBox,
-                    {
-                      backgroundColor: isDark ? '#18181B' : '#FFFFFF',
-                      borderColor: activeFilter === 'active'
-                        ? (isDark ? '#34D399' : colors.moss)
-                        : (isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(62, 107, 82, 0.22)'),
-                      borderWidth: activeFilter === 'active' ? 1.8 : 1,
-                    },
-                  ]}
-                  onPress={() => setActiveFilter(prev => (prev === 'active' ? 'all' : 'active'))}
-                  activeOpacity={0.75}
-                >
-                  <LinearGradient
-                    colors={
-                      isDark
-                        ? ['rgba(52, 211, 153, 0.14)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)']
-                        : ['#FFFFFF', '#F7FCF9', '#ECFDF5']
-                    }
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.statGlassInner}
-                  >
-                    <View style={[styles.statNotch, { backgroundColor: isDark ? '#34D399' : colors.moss }]} />
-                    <Text style={[styles.statNum, { color: isDark ? '#34D399' : colors.moss, fontFamily: SERIF }]}>
-                      {activeOppsCount}
-                    </Text>
-                    <View style={styles.statLabelRow}>
-                      <Text
-                        style={[
-                          styles.statLabel,
-                          { color: isDark ? '#E4E4E7' : colors.inkSoft },
-                          activeFilter === 'active' && { color: isDark ? '#34D399' : colors.moss },
-                        ]}
-                      >
-                        Active
-                      </Text>
-                      {activeFilter === 'active' && <View style={[styles.activeIndicatorDot, { backgroundColor: isDark ? '#34D399' : colors.moss }]} />}
-                    </View>
-                    <Text style={[styles.statHintTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
-                      {activeFilter === 'active' ? 'Active ✓' : 'Opportunities'}
-                    </Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-
-                {/* 2. Pending Reviews (Amber Gold / Warning) */}
-                <TouchableOpacity
-                  style={[
-                    styles.statBox,
-                    {
-                      backgroundColor: isDark ? '#18181B' : '#FFFFFF',
-                      borderColor: activeFilter === 'pending'
-                        ? (isDark ? '#FBBF24' : colors.goldDeep)
-                        : (isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(166, 124, 61, 0.24)'),
-                      borderWidth: activeFilter === 'pending' ? 1.8 : 1,
-                    },
-                  ]}
-                  onPress={() => setActiveFilter(prev => (prev === 'pending' ? 'all' : 'pending'))}
-                  activeOpacity={0.75}
-                >
-                  <LinearGradient
-                    colors={
-                      isDark
-                        ? ['rgba(251, 191, 36, 0.14)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)']
-                        : ['#FFFFFF', '#FFFDF7', '#FEF3C7']
-                    }
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.statGlassInner}
-                  >
-                    <View style={[styles.statNotch, { backgroundColor: isDark ? '#FBBF24' : colors.gold }]} />
-                    <Text style={[styles.statNum, { color: isDark ? '#FBBF24' : colors.goldDeep, fontFamily: SERIF }]}>
-                      {pendingAppsCount}
-                    </Text>
-                    <View style={styles.statLabelRow}>
-                      <Text
-                        style={[
-                          styles.statLabel,
-                          { color: isDark ? '#E4E4E7' : colors.inkSoft },
-                          activeFilter === 'pending' && { color: isDark ? '#FBBF24' : colors.goldDeep },
-                        ]}
-                      >
-                        Pending
-                      </Text>
-                      {activeFilter === 'pending' && <View style={[styles.activeIndicatorDot, { backgroundColor: isDark ? '#FBBF24' : colors.goldDeep }]} />}
-                    </View>
-                    <Text style={[styles.statHintTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
-                      {activeFilter === 'pending' ? 'Active ✓' : 'Reviews'}
-                    </Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-
-                {/* 3. Total Applicants (Clay / Blue / Neutral) */}
-                <TouchableOpacity
-                  style={[
-                    styles.statBox,
-                    {
-                      backgroundColor: isDark ? '#18181B' : '#FFFFFF',
-                      borderColor: activeFilter === 'total'
+          {/* ── 2. INTERACTIVE STATISTICS CARDS (Clickable & Filter Records Below) ── */}
+          <View style={styles.statsContainer}>
+            {/* Row 1: Opportunities Stats */}
+            <View style={styles.statsRow}>
+              {/* Card 1: Total Opportunities */}
+              <TouchableOpacity
+                style={[
+                  styles.statBox,
+                  {
+                    backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                    borderColor:
+                      selectedStat === 'all'
                         ? (isDark ? '#60A5FA' : '#1E40AF')
                         : (isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(30, 64, 175, 0.22)'),
-                      borderWidth: activeFilter === 'total' ? 1.8 : 1,
-                    },
-                  ]}
-                  onPress={() => setActiveFilter(prev => (prev === 'total' ? 'all' : 'total'))}
-                  activeOpacity={0.75}
+                    borderWidth: selectedStat === 'all' ? 2 : 1,
+                  },
+                ]}
+                onPress={() => setSelectedStat('all')}
+                activeOpacity={0.75}
+              >
+                <LinearGradient
+                  colors={
+                    isDark
+                      ? ['rgba(96, 165, 250, 0.14)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)']
+                      : ['#FFFFFF', '#F8FAFC', '#EFF6FF']
+                  }
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.statGlassInner}
                 >
-                  <LinearGradient
-                    colors={
-                      isDark
-                        ? ['rgba(96, 165, 250, 0.14)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)']
-                        : ['#FFFFFF', '#F8FAFC', '#EFF6FF']
-                    }
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.statGlassInner}
-                  >
-                    <View style={[styles.statNotch, { backgroundColor: isDark ? '#60A5FA' : '#1E40AF' }]} />
-                    <Text style={[styles.statNum, { color: isDark ? '#60A5FA' : '#1E40AF', fontFamily: SERIF }]}>
-                      {totalAppsCount}
-                    </Text>
-                    <View style={styles.statLabelRow}>
-                      <Text
-                        style={[
-                          styles.statLabel,
-                          { color: isDark ? '#E4E4E7' : colors.inkSoft },
-                          activeFilter === 'total' && { color: isDark ? '#60A5FA' : '#1E40AF' },
-                        ]}
-                      >
-                        Total
-                      </Text>
-                      {activeFilter === 'total' && <View style={[styles.activeIndicatorDot, { backgroundColor: isDark ? '#60A5FA' : '#1E40AF' }]} />}
-                    </View>
-                    <Text style={[styles.statHintTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
-                      {activeFilter === 'total' ? 'Active ✓' : 'Applicants'}
-                    </Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              </View>
-
-              {/* ── 3. REDESIGNED ACTION BUTTON (Clean, Modern, Consistent) ── */}
-              <View style={styles.actionBtnGroup}>
-                {/* Primary Action: Post New Ministry Opportunity */}
-                <TouchableOpacity
-                  style={[
-                    styles.primaryActionBtn,
-                    {
-                      backgroundColor: isDark ? '#FFFFFF' : '#000000',
-                      borderColor: isDark ? '#FFFFFF' : '#000000',
-                    },
-                  ]}
-                  onPress={() => navigation.navigate('AdminOpportunityEditor')}
-                  activeOpacity={0.8}
-                >
-                  <Briefcase size={16} color={isDark ? '#000000' : '#FFFFFF'} />
-                  <Text style={[styles.primaryActionTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
-                    Post New Ministry Opportunity
+                  <View style={[styles.statNotch, { backgroundColor: isDark ? '#60A5FA' : '#1E40AF' }]} />
+                  <Text style={[styles.statNum, { color: isDark ? '#60A5FA' : '#1E40AF', fontFamily: SERIF }]}>
+                    {totalOppsCount}
                   </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-
-          {/* OPPORTUNITIES TAB */}
-          {activeTab === 'opportunities' && (
-            <View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <Text style={[styles.sectionTitle, { color: primaryText }]}>Ministry Postings</Text>
-              </View>
-
-              {opportunities.map(opp => (
-                <View key={opp.id} style={[styles.card, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.cardTitle, { color: primaryText }]}>{opp.title}</Text>
-                      <Text style={[styles.cardSub, { color: secondaryText }]}>{opp.categoryName} • {opp.timeCommitment}</Text>
-                    </View>
-                    <View style={[styles.statusBadge, { backgroundColor: opp.status === 'approved' ? '#E1F5EE' : '#FEF3C7' }]}>
-                      <Text style={[styles.statusText, { color: opp.status === 'approved' ? '#15803d' : '#b45309' }]}>
-                        {opp.status.toUpperCase()}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.cardActionsRow}>
-                    <TouchableOpacity
-                      style={[styles.btnOutline, { borderColor: adminBorderColor }]}
-                      onPress={() => navigation.navigate('AdminOpportunityEditor', { opportunity: opp })}
+                  <View style={styles.statLabelRow}>
+                    <Text
+                      style={[
+                        styles.statLabel,
+                        { color: isDark ? '#E4E4E7' : colors.inkSoft },
+                        selectedStat === 'all' && { color: isDark ? '#60A5FA' : '#1E40AF' },
+                      ]}
                     >
-                      <Edit size={14} color={primaryText} style={{ marginRight: 4 }} />
-                      <Text style={{ color: primaryText, fontSize: 12, fontWeight: '600' }}>Edit</Text>
-                    </TouchableOpacity>
-
-                    {opp.status !== 'approved' && (
-                      <TouchableOpacity
-                        style={[styles.btnOutline, { borderColor: '#15803d', backgroundColor: '#E1F5EE' }]}
-                        onPress={() => handleToggleOpportunityStatus(opp, 'approved')}
-                      >
-                        <CheckCircle2 size={14} color="#15803d" style={{ marginRight: 4 }} />
-                        <Text style={{ color: '#15803d', fontSize: 12, fontWeight: '600' }}>Approve</Text>
-                      </TouchableOpacity>
-                    )}
-
-                    {opp.status === 'approved' && (
-                      <TouchableOpacity
-                        style={[styles.btnOutline, { borderColor: '#dc2626' }]}
-                        onPress={() => handleToggleOpportunityStatus(opp, 'closed')}
-                      >
-                        <XCircle size={14} color="#dc2626" style={{ marginRight: 4 }} />
-                        <Text style={{ color: '#dc2626', fontSize: 12, fontWeight: '600' }}>Close</Text>
-                      </TouchableOpacity>
-                    )}
-
-                    <TouchableOpacity
-                      style={[styles.btnOutline, { borderColor: isDark ? '#3F3F46' : '#E2E8F0', paddingHorizontal: 10 }]}
-                      onPress={() => handleDeleteOpportunity(opp)}
-                    >
-                      <Trash2 size={14} color="#DC2626" />
-                    </TouchableOpacity>
+                      Total Roles
+                    </Text>
+                    {selectedStat === 'all' && <View style={[styles.activeIndicatorDot, { backgroundColor: isDark ? '#60A5FA' : '#1E40AF' }]} />}
                   </View>
-                </View>
-              ))}
-            </View>
-          )}
+                  <Text style={[styles.statHintTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+                    {selectedStat === 'all' ? 'Selected ✓' : 'Tap to filter'}
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
 
-          {/* APPLICATIONS TAB */}
-          {activeTab === 'applications' && (
-            <View>
-              <Text style={[styles.sectionTitle, { color: primaryText, marginBottom: 12 }]}>
-                Applicant Review Pipeline
+              {/* Card 2: Active Opportunities */}
+              <TouchableOpacity
+                style={[
+                  styles.statBox,
+                  {
+                    backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                    borderColor:
+                      selectedStat === 'active_opps'
+                        ? (isDark ? '#34D399' : colors.moss)
+                        : (isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(62, 107, 82, 0.22)'),
+                    borderWidth: selectedStat === 'active_opps' ? 2 : 1,
+                  },
+                ]}
+                onPress={() => setSelectedStat(prev => (prev === 'active_opps' ? 'all' : 'active_opps'))}
+                activeOpacity={0.75}
+              >
+                <LinearGradient
+                  colors={
+                    isDark
+                      ? ['rgba(52, 211, 153, 0.14)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)']
+                      : ['#FFFFFF', '#F7FCF9', '#ECFDF5']
+                  }
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.statGlassInner}
+                >
+                  <View style={[styles.statNotch, { backgroundColor: isDark ? '#34D399' : colors.moss }]} />
+                  <Text style={[styles.statNum, { color: isDark ? '#34D399' : colors.moss, fontFamily: SERIF }]}>
+                    {activeOppsCount}
+                  </Text>
+                  <View style={styles.statLabelRow}>
+                    <Text
+                      style={[
+                        styles.statLabel,
+                        { color: isDark ? '#E4E4E7' : colors.inkSoft },
+                        selectedStat === 'active_opps' && { color: isDark ? '#34D399' : colors.moss },
+                      ]}
+                    >
+                      Active
+                    </Text>
+                    {selectedStat === 'active_opps' && <View style={[styles.activeIndicatorDot, { backgroundColor: isDark ? '#34D399' : colors.moss }]} />}
+                  </View>
+                  <Text style={[styles.statHintTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+                    {selectedStat === 'active_opps' ? 'Selected ✓' : 'Published'}
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
+
+              {/* Card 3: Pending Approvals */}
+              <TouchableOpacity
+                style={[
+                  styles.statBox,
+                  {
+                    backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                    borderColor:
+                      selectedStat === 'pending_opps'
+                        ? (isDark ? '#FBBF24' : colors.goldDeep)
+                        : (isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(166, 124, 61, 0.24)'),
+                    borderWidth: selectedStat === 'pending_opps' ? 2 : 1,
+                  },
+                ]}
+                onPress={() => setSelectedStat(prev => (prev === 'pending_opps' ? 'all' : 'pending_opps'))}
+                activeOpacity={0.75}
+              >
+                <LinearGradient
+                  colors={
+                    isDark
+                      ? ['rgba(251, 191, 36, 0.14)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)']
+                      : ['#FFFFFF', '#FFFDF7', '#FEF3C7']
+                  }
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.statGlassInner}
+                >
+                  <View style={[styles.statNotch, { backgroundColor: isDark ? '#FBBF24' : colors.gold }]} />
+                  <Text style={[styles.statNum, { color: isDark ? '#FBBF24' : colors.goldDeep, fontFamily: SERIF }]}>
+                    {pendingOppsCount}
+                  </Text>
+                  <View style={styles.statLabelRow}>
+                    <Text
+                      style={[
+                        styles.statLabel,
+                        { color: isDark ? '#E4E4E7' : colors.inkSoft },
+                        selectedStat === 'pending_opps' && { color: isDark ? '#FBBF24' : colors.goldDeep },
+                      ]}
+                    >
+                      Drafts
+                    </Text>
+                    {selectedStat === 'pending_opps' && <View style={[styles.activeIndicatorDot, { backgroundColor: isDark ? '#FBBF24' : colors.goldDeep }]} />}
+                  </View>
+                  <Text style={[styles.statHintTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+                    {selectedStat === 'pending_opps' ? 'Selected ✓' : 'Unpublished'}
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+
+            {/* Row 2: Applications Pipeline Stats */}
+            <View style={[styles.statsRow, { marginTop: 10 }]}>
+              {/* Card 4: Total Applications */}
+              <TouchableOpacity
+                style={[
+                  styles.statBox,
+                  {
+                    backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                    borderColor:
+                      selectedStat === 'total_apps'
+                        ? (isDark ? '#A78BFA' : '#7C3AED')
+                        : (isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(124, 58, 237, 0.22)'),
+                    borderWidth: selectedStat === 'total_apps' ? 2 : 1,
+                  },
+                ]}
+                onPress={() => setSelectedStat(prev => (prev === 'total_apps' ? 'all' : 'total_apps'))}
+                activeOpacity={0.75}
+              >
+                <LinearGradient
+                  colors={
+                    isDark
+                      ? ['rgba(167, 139, 250, 0.14)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)']
+                      : ['#FFFFFF', '#FAF5FF', '#F3E8FF']
+                  }
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.statGlassInner}
+                >
+                  <View style={[styles.statNotch, { backgroundColor: isDark ? '#A78BFA' : '#7C3AED' }]} />
+                  <Text style={[styles.statNum, { color: isDark ? '#A78BFA' : '#7C3AED', fontFamily: SERIF }]}>
+                    {totalAppsCount}
+                  </Text>
+                  <View style={styles.statLabelRow}>
+                    <Text
+                      style={[
+                        styles.statLabel,
+                        { color: isDark ? '#E4E4E7' : colors.inkSoft },
+                        selectedStat === 'total_apps' && { color: isDark ? '#A78BFA' : '#7C3AED' },
+                      ]}
+                    >
+                      Applicants
+                    </Text>
+                    {selectedStat === 'total_apps' && <View style={[styles.activeIndicatorDot, { backgroundColor: isDark ? '#A78BFA' : '#7C3AED' }]} />}
+                  </View>
+                  <Text style={[styles.statHintTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+                    {selectedStat === 'total_apps' ? 'Selected ✓' : 'All Candidates'}
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
+
+              {/* Card 5: Under Review */}
+              <TouchableOpacity
+                style={[
+                  styles.statBox,
+                  {
+                    backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                    borderColor:
+                      selectedStat === 'under_review'
+                        ? (isDark ? '#38BDF8' : '#0284C7')
+                        : (isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(2, 132, 199, 0.22)'),
+                    borderWidth: selectedStat === 'under_review' ? 2 : 1,
+                  },
+                ]}
+                onPress={() => setSelectedStat(prev => (prev === 'under_review' ? 'all' : 'under_review'))}
+                activeOpacity={0.75}
+              >
+                <LinearGradient
+                  colors={
+                    isDark
+                      ? ['rgba(56, 189, 248, 0.14)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)']
+                      : ['#FFFFFF', '#F0F9FF', '#E0F2FE']
+                  }
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.statGlassInner}
+                >
+                  <View style={[styles.statNotch, { backgroundColor: isDark ? '#38BDF8' : '#0284C7' }]} />
+                  <Text style={[styles.statNum, { color: isDark ? '#38BDF8' : '#0284C7', fontFamily: SERIF }]}>
+                    {underReviewCount}
+                  </Text>
+                  <View style={styles.statLabelRow}>
+                    <Text
+                      style={[
+                        styles.statLabel,
+                        { color: isDark ? '#E4E4E7' : colors.inkSoft },
+                        selectedStat === 'under_review' && { color: isDark ? '#38BDF8' : '#0284C7' },
+                      ]}
+                    >
+                      In Review
+                    </Text>
+                    {selectedStat === 'under_review' && <View style={[styles.activeIndicatorDot, { backgroundColor: isDark ? '#38BDF8' : '#0284C7' }]} />}
+                  </View>
+                  <Text style={[styles.statHintTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+                    {selectedStat === 'under_review' ? 'Selected ✓' : 'Under Review'}
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
+
+              {/* Card 6: Selected / Appointed */}
+              <TouchableOpacity
+                style={[
+                  styles.statBox,
+                  {
+                    backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                    borderColor:
+                      selectedStat === 'selected'
+                        ? (isDark ? '#34D399' : '#059669')
+                        : (isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(5, 150, 105, 0.22)'),
+                    borderWidth: selectedStat === 'selected' ? 2 : 1,
+                  },
+                ]}
+                onPress={() => setSelectedStat(prev => (prev === 'selected' ? 'all' : 'selected'))}
+                activeOpacity={0.75}
+              >
+                <LinearGradient
+                  colors={
+                    isDark
+                      ? ['rgba(52, 211, 153, 0.14)', 'rgba(39, 39, 42, 0.55)', 'rgba(15, 15, 18, 0.90)']
+                      : ['#FFFFFF', '#ECFDF5', '#D1FAE5']
+                  }
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.statGlassInner}
+                >
+                  <View style={[styles.statNotch, { backgroundColor: isDark ? '#34D399' : '#059669' }]} />
+                  <Text style={[styles.statNum, { color: isDark ? '#34D399' : '#059669', fontFamily: SERIF }]}>
+                    {selectedCount}
+                  </Text>
+                  <View style={styles.statLabelRow}>
+                    <Text
+                      style={[
+                        styles.statLabel,
+                        { color: isDark ? '#E4E4E7' : colors.inkSoft },
+                        selectedStat === 'selected' && { color: isDark ? '#34D399' : '#059669' },
+                      ]}
+                    >
+                      Appointed
+                    </Text>
+                    {selectedStat === 'selected' && <View style={[styles.activeIndicatorDot, { backgroundColor: isDark ? '#34D399' : '#059669' }]} />}
+                  </View>
+                  <Text style={[styles.statHintTxt, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
+                    {selectedStat === 'selected' ? 'Selected ✓' : 'Appointed'}
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* ── 3. ACTION BUTTON ── */}
+          <View style={styles.actionBtnGroup}>
+            <TouchableOpacity
+              style={[
+                styles.primaryActionBtn,
+                {
+                  backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                  borderColor: isDark ? '#FFFFFF' : '#000000',
+                },
+              ]}
+              onPress={() => navigation.navigate('AdminOpportunityEditor')}
+              activeOpacity={0.8}
+            >
+              <Briefcase size={16} color={isDark ? '#000000' : '#FFFFFF'} />
+              <Text style={[styles.primaryActionTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
+                Post New Ministry Opportunity
               </Text>
+            </TouchableOpacity>
+          </View>
 
-              {applications.length === 0 ? (
+          {/* ── 4. FILTERED RECORDS (Displayed Directly Below Statistics Cards) ── */}
+
+          {/* Section A: Ministry Openings (if relevant to selected stat) */}
+          {showOpportunities && (
+            <View style={{ marginBottom: 20 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <Text style={[styles.sectionTitle, { color: primaryText }]}>
+                  Ministry Postings ({filteredOpportunities.length})
+                </Text>
+                {selectedStat !== 'all' && (
+                  <TouchableOpacity onPress={() => setSelectedStat('all')}>
+                    <Text style={{ color: isDark ? '#60A5FA' : '#1D4ED8', fontSize: 12, fontWeight: '700' }}>
+                      Show All
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {filteredOpportunities.length === 0 ? (
                 <View style={[styles.emptyBox, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}>
-                  <Text style={{ color: secondaryText }}>No applications submitted yet.</Text>
+                  <Text style={{ color: secondaryText }}>No ministry postings match this filter.</Text>
                 </View>
               ) : (
-                applications.map(app => (
+                filteredOpportunities.map(opp => (
+                  <View key={opp.id} style={[styles.card, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.cardTitle, { color: primaryText }]}>{opp.title}</Text>
+                        <Text style={[styles.cardSub, { color: secondaryText }]}>
+                          {opp.categoryName} • {opp.timeCommitment}
+                        </Text>
+                      </View>
+                      <View
+                        style={[
+                          styles.statusBadge,
+                          {
+                            backgroundColor:
+                              opp.status === 'approved'
+                                ? (isDark ? 'rgba(16, 185, 129, 0.2)' : '#E1F5EE')
+                                : (isDark ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7'),
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.statusText,
+                            {
+                              color:
+                                opp.status === 'approved'
+                                  ? (isDark ? '#34D399' : '#15803d')
+                                  : (isDark ? '#FBBF24' : '#b45309'),
+                            },
+                          ]}
+                        >
+                          {opp.status.toUpperCase()}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.cardActionsRow}>
+                      <TouchableOpacity
+                        style={[styles.btnOutline, { borderColor: adminBorderColor }]}
+                        onPress={() => navigation.navigate('AdminOpportunityEditor', { opportunity: opp })}
+                      >
+                        <Edit size={14} color={primaryText} style={{ marginRight: 4 }} />
+                        <Text style={{ color: primaryText, fontSize: 12, fontWeight: '600' }}>Edit</Text>
+                      </TouchableOpacity>
+
+                      {opp.status !== 'approved' && (
+                        <TouchableOpacity
+                          style={[
+                            styles.btnOutline,
+                            {
+                              borderColor: isDark ? '#059669' : '#15803d',
+                              backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#E1F5EE',
+                            },
+                          ]}
+                          onPress={() => handleToggleOpportunityStatus(opp, 'approved')}
+                        >
+                          <CheckCircle2 size={14} color={isDark ? '#34D399' : '#15803d'} style={{ marginRight: 4 }} />
+                          <Text style={{ color: isDark ? '#34D399' : '#15803d', fontSize: 12, fontWeight: '600' }}>
+                            Publish
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+
+                      {opp.status === 'approved' && (
+                        <TouchableOpacity
+                          style={[styles.btnOutline, { borderColor: isDark ? '#EF4444' : '#dc2626' }]}
+                          onPress={() => handleToggleOpportunityStatus(opp, 'closed')}
+                        >
+                          <XCircle size={14} color={isDark ? '#F87171' : '#dc2626'} style={{ marginRight: 4 }} />
+                          <Text style={{ color: isDark ? '#F87171' : '#dc2626', fontSize: 12, fontWeight: '600' }}>
+                            Close
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+
+                      <TouchableOpacity
+                        style={[styles.btnOutline, { borderColor: isDark ? '#3F3F46' : '#E2E8F0', paddingHorizontal: 10 }]}
+                        onPress={() => handleDeleteOpportunity(opp)}
+                      >
+                        <Trash2 size={14} color="#DC2626" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))
+              )}
+            </View>
+          )}
+
+          {/* Section B: Applicant Review Pipeline */}
+          {showApplications && (
+            <View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <Text style={[styles.sectionTitle, { color: primaryText }]}>
+                  Applicant Review Pipeline ({filteredApplications.length})
+                </Text>
+                {selectedStat !== 'all' && (
+                  <TouchableOpacity onPress={() => setSelectedStat('all')}>
+                    <Text style={{ color: isDark ? '#60A5FA' : '#1D4ED8', fontSize: 12, fontWeight: '700' }}>
+                      Show All
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {filteredApplications.length === 0 ? (
+                <View style={[styles.emptyBox, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}>
+                  <Text style={{ color: secondaryText }}>No applications match the selected filter.</Text>
+                </View>
+              ) : (
+                filteredApplications.map(app => (
                   <TouchableOpacity
                     key={app.id}
                     style={[styles.card, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}
                     onPress={() => handleOpenReview(app)}
+                    activeOpacity={0.8}
                   >
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                       <Text style={[styles.cardTitle, { color: primaryText }]}>{app.memberName}</Text>
-                      <View style={[styles.statusBadge, { backgroundColor: '#EFF6FF' }]}>
-                        <Text style={[styles.statusText, { color: '#2563EB' }]}>
-                          {app.status.replace('_', ' ').toUpperCase()}
+                      <View
+                        style={[
+                          styles.statusBadge,
+                          {
+                            backgroundColor:
+                              app.status === 'selected' || app.status === 'joined'
+                                ? (isDark ? 'rgba(16, 185, 129, 0.2)' : '#D1FAE5')
+                                : app.status === 'meeting_scheduled'
+                                ? (isDark ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7')
+                                : app.status === 'under_review'
+                                ? (isDark ? 'rgba(59, 130, 246, 0.2)' : '#DBEAFE')
+                                : app.status === 'rejected'
+                                ? (isDark ? 'rgba(239, 68, 68, 0.2)' : '#FEE2E2')
+                                : (isDark ? 'rgba(148, 163, 184, 0.2)' : '#F1F5F9'),
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.statusText,
+                            {
+                              color:
+                                app.status === 'selected' || app.status === 'joined'
+                                  ? (isDark ? '#34D399' : '#059669')
+                                  : app.status === 'meeting_scheduled'
+                                  ? (isDark ? '#FBBF24' : '#B45309')
+                                  : app.status === 'under_review'
+                                  ? (isDark ? '#60A5FA' : '#2563EB')
+                                  : app.status === 'rejected'
+                                  ? (isDark ? '#F87171' : '#DC2626')
+                                  : (isDark ? '#94A3B8' : '#475569'),
+                            },
+                          ]}
+                        >
+                          {app.status.replace(/_/g, ' ').toUpperCase()}
                         </Text>
                       </View>
                     </View>
-                    <Text style={[styles.cardSub, { color: '#1a2d5a', fontWeight: '600', marginTop: 2 }]}>
+
+                    <Text style={[styles.cardSub, { color: isDark ? '#93C5FD' : '#1a2d5a', fontWeight: '600', marginTop: 2 }]}>
                       Applied for: {app.opportunityTitle}
                     </Text>
 
@@ -585,11 +990,22 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
                       </View>
                       {app.resumeAttachment && (
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                          <FileText size={13} color="#1a2d5a" />
-                          <Text style={{ fontSize: 12, color: '#1a2d5a', fontWeight: '600' }}>CV Attached</Text>
+                          <FileText size={13} color={isDark ? '#93C5FD' : '#1a2d5a'} />
+                          <Text style={{ fontSize: 12, color: isDark ? '#93C5FD' : '#1a2d5a', fontWeight: '600' }}>
+                            CV Attached
+                          </Text>
                         </View>
                       )}
                     </View>
+
+                    {/* Interview info if scheduled */}
+                    {app.status === 'meeting_scheduled' && app.meetingDate ? (
+                      <View style={{ backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : '#FEF3C7', padding: 8, borderRadius: 8, marginTop: 8 }}>
+                        <Text style={{ fontSize: 12, color: isDark ? '#FBBF24' : '#B45309', fontWeight: '700' }}>
+                          📅 Interview: {app.meetingDate} {app.meetingTime ? `at ${app.meetingTime}` : ''}
+                        </Text>
+                      </View>
+                    ) : null}
                   </TouchableOpacity>
                 ))
               )}
@@ -598,20 +1014,22 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
         </ScrollView>
       )}
 
-      {/* Review Modal */}
+      {/* ── 5. APPLICATION REVIEW MODAL ── */}
       <Modal visible={reviewModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: cardSurface, maxHeight: '85%' }]}>
+          <View style={[styles.modalCard, { backgroundColor: cardSurface, maxHeight: '88%' }]}>
             {selectedApp && (
               <ScrollView showsVerticalScrollIndicator={false}>
                 <Text style={[styles.modalTitle, { color: primaryText }]}>{selectedApp.memberName}</Text>
-                <Text style={[styles.modalSub, { color: '#1a2d5a' }]}>
+                <Text style={[styles.modalSub, { color: isDark ? '#93C5FD' : '#1a2d5a' }]}>
                   Role: {selectedApp.opportunityTitle}
                 </Text>
 
                 {/* Candidate Contact */}
-                <View style={[styles.detailBox, { backgroundColor: screenBg, borderColor: adminBorderColor }]}>
-                  <Text style={{ fontSize: 13, color: primaryText }}>Phone: {selectedApp.memberPhone}</Text>
+                <View style={[styles.detailBox, { backgroundColor: isDark ? '#27272A50' : screenBg, borderColor: adminBorderColor }]}>
+                  <Text style={{ fontSize: 13, color: primaryText, fontWeight: '600' }}>
+                    Phone: {selectedApp.memberPhone}
+                  </Text>
                   {selectedApp.memberEmail ? (
                     <Text style={{ fontSize: 13, color: primaryText, marginTop: 4 }}>
                       Email: {selectedApp.memberEmail}
@@ -623,7 +1041,7 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
                 {selectedApp.applicationMessage ? (
                   <View style={{ marginTop: 12 }}>
                     <Text style={[styles.fieldLabel, { color: primaryText }]}>Applicant Calling Statement</Text>
-                    <View style={[styles.detailBox, { backgroundColor: screenBg, borderColor: adminBorderColor }]}>
+                    <View style={[styles.detailBox, { backgroundColor: isDark ? '#27272A50' : screenBg, borderColor: adminBorderColor }]}>
                       <Text style={{ fontSize: 13, color: secondaryText, lineHeight: 18 }}>
                         {selectedApp.applicationMessage}
                       </Text>
@@ -631,66 +1049,105 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
                   </View>
                 ) : null}
 
-                {/* CV / Resume Attachment Link */}
+                {/* CV / Resume In-App Viewer Link */}
                 {selectedApp.resumeAttachment ? (
                   <View style={{ marginTop: 12 }}>
                     <Text style={[styles.fieldLabel, { color: primaryText }]}>Attached Resume / CV</Text>
                     <TouchableOpacity
-                      style={[styles.resumeLinkBox, { borderColor: '#1a2d5a' }]}
-                      onPress={() => Linking.openURL(selectedApp.resumeAttachment!.url)}
+                      style={[
+                        styles.resumeLinkBox,
+                        {
+                          borderColor: isDark ? '#3B82F6' : '#1a2d5a',
+                          backgroundColor: isDark ? '#1E293B' : '#EFF6FF',
+                        },
+                      ]}
+                      onPress={() =>
+                        setResumeDocToView({
+                          url: selectedApp.resumeAttachment!.url,
+                          name: selectedApp.resumeAttachment!.fileName || 'Resume.pdf',
+                          mimeType: selectedApp.resumeAttachment!.mimeType || 'application/pdf',
+                        })
+                      }
+                      activeOpacity={0.8}
                     >
-                      <FileText size={18} color="#1a2d5a" />
-                      <Text style={[styles.resumeName, { color: '#1a2d5a' }]} numberOfLines={1}>
+                      <FileText size={18} color={isDark ? '#60A5FA' : '#1a2d5a'} />
+                      <Text style={[styles.resumeName, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]} numberOfLines={1}>
                         {selectedApp.resumeAttachment.fileName}
                       </Text>
-                      <ExternalLink size={16} color="#1a2d5a" />
+                      <Eye size={16} color={isDark ? '#60A5FA' : '#1a2d5a'} />
                     </TouchableOpacity>
+                  </View>
+                ) : null}
+
+                {/* Scheduled Meeting Info (if scheduled) */}
+                {selectedApp.status === 'meeting_scheduled' ? (
+                  <View style={{ backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : '#FEF3C7', padding: 12, borderRadius: 10, marginTop: 12 }}>
+                    <Text style={{ fontWeight: '700', color: isDark ? '#FBBF24' : '#B45309', fontSize: 13, marginBottom: 4 }}>
+                      📅 Interview Scheduled
+                    </Text>
+                    <Text style={{ color: primaryText, fontSize: 13 }}>
+                      Date: {selectedApp.meetingDate || 'N/A'} at {selectedApp.meetingTime || 'N/A'}
+                    </Text>
+                    {selectedApp.meetingLocation ? (
+                      <Text style={{ color: primaryText, fontSize: 12.5, marginTop: 2 }}>
+                        Location / Link: {selectedApp.meetingLocation}
+                      </Text>
+                    ) : null}
                   </View>
                 ) : null}
 
                 {/* Admin Notes */}
                 <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 14 }]}>Admin / Leader Notes</Text>
                 <TextInput
-                  style={[styles.input, { backgroundColor: screenBg, borderColor: adminBorderColor, color: primaryText }]}
+                  style={[styles.input, { backgroundColor: isDark ? '#27272A50' : screenBg, borderColor: adminBorderColor, color: primaryText }]}
                   placeholder="Internal review notes..."
                   placeholderTextColor={secondaryText}
                   value={adminNotes}
                   onChangeText={setAdminNotes}
+                  multiline
                 />
 
                 {/* Status Transitions */}
                 <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 16 }]}>Update Status</Text>
                 <View style={styles.statusActionRow}>
                   <TouchableOpacity
-                    style={[styles.statusBtn, { backgroundColor: '#EFF6FF' }]}
-                    onPress={() => handleUpdateStatus('under_review')}
+                    style={[styles.statusBtn, { backgroundColor: isDark ? '#1E3A8A' : '#EFF6FF' }]}
+                    onPress={handleSetUnderReview}
                     disabled={updatingStatus}
                   >
-                    <Text style={{ color: '#2563EB', fontWeight: '700', fontSize: 12 }}>Under Review</Text>
+                    <Text style={{ color: isDark ? '#93C5FD' : '#2563EB', fontWeight: '700', fontSize: 12 }}>
+                      Under Review
+                    </Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.statusBtn, { backgroundColor: '#FEF3C7' }]}
-                    onPress={() => handleUpdateStatus('meeting_scheduled')}
+                    style={[styles.statusBtn, { backgroundColor: isDark ? '#78350F' : '#FEF3C7' }]}
+                    onPress={handleOpenScheduleModal}
                     disabled={updatingStatus}
                   >
-                    <Text style={{ color: '#b45309', fontWeight: '700', fontSize: 12 }}>Schedule Interview</Text>
+                    <Text style={{ color: isDark ? '#FCD34D' : '#b45309', fontWeight: '700', fontSize: 12 }}>
+                      Schedule Interview
+                    </Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.statusBtn, { backgroundColor: '#E1F5EE' }]}
-                    onPress={() => handleUpdateStatus('selected')}
+                    style={[styles.statusBtn, { backgroundColor: isDark ? '#064E3B' : '#E1F5EE' }]}
+                    onPress={handleSelectAppoint}
                     disabled={updatingStatus}
                   >
-                    <Text style={{ color: '#15803d', fontWeight: '700', fontSize: 12 }}>Select / Appoint</Text>
+                    <Text style={{ color: isDark ? '#6EE7B7' : '#15803d', fontWeight: '700', fontSize: 12 }}>
+                      Select / Appoint
+                    </Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.statusBtn, { backgroundColor: '#FEE2E2' }]}
-                    onPress={() => handleUpdateStatus('rejected')}
+                    style={[styles.statusBtn, { backgroundColor: isDark ? '#7F1D1D' : '#FEE2E2' }]}
+                    onPress={handleRejectApplication}
                     disabled={updatingStatus}
                   >
-                    <Text style={{ color: '#dc2626', fontWeight: '700', fontSize: 12 }}>Reject</Text>
+                    <Text style={{ color: isDark ? '#FCA5A5' : '#dc2626', fontWeight: '700', fontSize: 12 }}>
+                      Reject
+                    </Text>
                   </TouchableOpacity>
                 </View>
               </ScrollView>
@@ -705,6 +1162,126 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
           </View>
         </View>
       </Modal>
+
+      {/* ── 6. SCHEDULE INTERVIEW MODAL ── */}
+      <Modal visible={scheduleModalVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: cardSurface, maxHeight: '85%' }]}>
+            <Text style={[styles.modalTitle, { color: primaryText }]}>Schedule Ministry Interview</Text>
+            <Text style={[styles.modalSub, { color: isDark ? '#93C5FD' : '#1a2d5a' }]}>
+              Applicant: {selectedApp?.memberName}
+            </Text>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {/* Date Selection */}
+              <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 8 }]}>Interview Date</Text>
+              <TouchableOpacity
+                style={[styles.input, { backgroundColor: isDark ? '#27272A50' : screenBg, borderColor: adminBorderColor, justifyContent: 'center' }]}
+                onPress={() => setDatePickerVisible(true)}
+              >
+                <Text style={{ color: primaryText, fontSize: 14 }}>
+                  📅 {interviewDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Time Selection */}
+              <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 12 }]}>Interview Time</Text>
+              <TouchableOpacity
+                style={[styles.input, { backgroundColor: isDark ? '#27272A50' : screenBg, borderColor: adminBorderColor, justifyContent: 'center' }]}
+                onPress={() => setTimePickerVisible(true)}
+              >
+                <Text style={{ color: primaryText, fontSize: 14 }}>⏰ {interviewTime}</Text>
+              </TouchableOpacity>
+
+              {/* Meeting Location / Online Link */}
+              <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 12 }]}>
+                Meeting Location or Meeting Link
+              </Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: isDark ? '#27272A50' : screenBg, borderColor: adminBorderColor, color: primaryText }]}
+                placeholder="e.g. Rhema Church Conference Room or Google Meet URL"
+                placeholderTextColor={secondaryText}
+                value={interviewLocation}
+                onChangeText={setInterviewLocation}
+              />
+
+              {/* Optional Notes for Applicant */}
+              <Text style={[styles.fieldLabel, { color: primaryText, marginTop: 12 }]}>Notes for Applicant (Optional)</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: isDark ? '#27272A50' : screenBg, borderColor: adminBorderColor, color: primaryText, minHeight: 70 }]}
+                placeholder="Bring a Bible and portfolio, or prepare 5 minutes..."
+                placeholderTextColor={secondaryText}
+                value={interviewNotes}
+                onChangeText={setInterviewNotes}
+                multiline
+                textAlignVertical="top"
+              />
+
+              <View style={{ flexDirection: 'row', gap: 12, marginTop: 20 }}>
+                <TouchableOpacity
+                  style={[styles.closeModalBtn, { flex: 1, borderColor: adminBorderColor }]}
+                  onPress={() => setScheduleModalVisible(false)}
+                >
+                  <Text style={{ color: primaryText, fontWeight: '600' }}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.primaryActionBtn,
+                    {
+                      flex: 2,
+                      backgroundColor: isDark ? '#FFFFFF' : '#1a2d5a',
+                      borderColor: isDark ? '#FFFFFF' : '#1a2d5a',
+                    },
+                  ]}
+                  onPress={handleConfirmScheduleInterview}
+                  disabled={updatingStatus}
+                >
+                  {updatingStatus ? (
+                    <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
+                  ) : (
+                    <Text style={[styles.primaryActionTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
+                      Confirm & Send Invite
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Date Picker Modal */}
+      <DateTimePickerModal
+        isVisible={isDatePickerVisible}
+        mode="date"
+        date={interviewDate}
+        onConfirm={d => {
+          setDatePickerVisible(false);
+          setInterviewDate(d);
+        }}
+        onCancel={() => setDatePickerVisible(false)}
+      />
+
+      {/* Time Picker Modal */}
+      <DateTimePickerModal
+        isVisible={isTimePickerVisible}
+        mode="time"
+        date={interviewDate}
+        onConfirm={d => {
+          setTimePickerVisible(false);
+          const timeFormatted = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+          setInterviewTime(timeFormatted);
+        }}
+        onCancel={() => setTimePickerVisible(false)}
+      />
+
+      {/* ── 7. IN-APP RESUME VIEWER MODAL ── */}
+      <InAppDocumentViewerModal
+        visible={!!resumeDocToView}
+        doc={resumeDocToView}
+        onClose={() => setResumeDocToView(null)}
+      />
     </View>
   );
 }
@@ -756,10 +1333,12 @@ const styles = createAdminThemedStyles(
     scrollContent: { padding: 16 },
 
     // ── STATS CARDS (Exact match to AdminPromiseList) ──
+    statsContainer: {
+      marginBottom: 16,
+    },
     statsRow: {
       flexDirection: 'row',
       gap: 10,
-      marginBottom: 16,
     },
     statBox: {
       flex: 1,

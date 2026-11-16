@@ -4721,15 +4721,24 @@ export const onJobApplicationUpdated = onDocumentUpdated(
       let title = '💼 Ministry Application Update';
       let body = `Your application for "${roleTitle}" has been updated to ${status.replace('_', ' ').toUpperCase()}.`;
 
-      if (status === 'meeting_scheduled') {
+      if (status === 'under_review') {
+        title = '🔍 Application Under Review';
+        body = `Your application for "${roleTitle}" is now under review by church ministry leaders.`;
+      } else if (status === 'meeting_scheduled') {
         title = '📅 Ministry Interview / Meeting Scheduled!';
-        body = `A meeting has been scheduled for your application for "${roleTitle}". Please check Job Circle in the app for details.`;
+        const dateStr = after.meetingDate ? ` on ${after.meetingDate}` : '';
+        const timeStr = after.meetingTime ? ` at ${after.meetingTime}` : '';
+        body = `A ministry interview has been scheduled for your application for "${roleTitle}"${dateStr}${timeStr}. Please check Job Circle in the app for details.`;
       } else if (status === 'selected') {
         title = '🎉 Congratulations! You have been Selected!';
-        body = `You have been selected for "${roleTitle}" at Rhema Church. Welcome to the ministry team!`;
+        body = `Congratulations! You have been selected to serve in "${roleTitle}". Welcome to the ministry team!`;
       } else if (status === 'shortlisted') {
         title = '⭐ Application Shortlisted!';
         body = `Your application for "${roleTitle}" has been shortlisted by church ministry leaders.`;
+      } else if (status === 'rejected') {
+        title = '📋 Ministry Application Update';
+        const reasonStr = after.adminNotes ? ` Note: ${after.adminNotes}` : '';
+        body = `Thank you for your heart to serve. Your application for "${roleTitle}" has not been selected at this time.${reasonStr}`;
       }
 
       const db = getFirestore();
