@@ -463,7 +463,7 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
                 </TouchableOpacity>
               </View>
 
-              {/* ── 3. REDESIGNED ACTION BUTTONS (Clean, Modern, Consistent) ── */}
+              {/* ── 3. REDESIGNED ACTION BUTTON (Clean, Modern, Consistent) ── */}
               <View style={styles.actionBtnGroup}>
                 {/* Primary Action: Post New Ministry Opportunity */}
                 <TouchableOpacity
@@ -480,30 +480,6 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
                   <Briefcase size={16} color={isDark ? '#000000' : '#FFFFFF'} />
                   <Text style={[styles.primaryActionTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
                     Post New Ministry Opportunity
-                  </Text>
-                </TouchableOpacity>
-
-                {/* Secondary Action: Open Volunteer Management */}
-                <TouchableOpacity
-                  style={[
-                    styles.secondaryActionBtn,
-                    {
-                      backgroundColor: isDark ? '#18181B' : '#FFFFFF',
-                      borderColor: isDark ? '#3F3F46' : '#CBD5E1',
-                    },
-                  ]}
-                  onPress={() => {
-                    if (setTabByName) {
-                      setTabByName('Volunteer Management');
-                    } else if (navigation?.navigate) {
-                      navigation.navigate('Admin', { targetTab: 'Volunteer Management' });
-                    }
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <HeartHandshake size={16} color={isDark ? '#E2E8F0' : '#1a2d5a'} />
-                  <Text style={[styles.secondaryActionTxt, { color: isDark ? '#E2E8F0' : '#1a2d5a' }]}>
-                    Open Volunteer Management
                   </Text>
                 </TouchableOpacity>
               </View>
