@@ -883,11 +883,8 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
       <Modal visible={categoryModalVisible} transparent animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setCategoryModalVisible(false)}>
           <View style={[styles.modalCard, { backgroundColor: cardSurface }]}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <View style={{ marginBottom: 12 }}>
               <Text style={[styles.modalTitle, { color: primaryText, marginBottom: 0 }]}>Select Ministry Category</Text>
-              <TouchableOpacity onPress={() => setNewCategoryModalVisible(true)}>
-                <Text style={{ color: '#1a2d5a', fontSize: 13, fontWeight: '700' }}>+ Add New</Text>
-              </TouchableOpacity>
             </View>
             <ScrollView style={{ maxHeight: 320 }}>
               {categories.map(cat => (
@@ -951,11 +948,8 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
       <Modal visible={roleTypeModalVisible} transparent animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setRoleTypeModalVisible(false)}>
           <View style={[styles.modalCard, { backgroundColor: cardSurface }]}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <View style={{ marginBottom: 12 }}>
               <Text style={[styles.modalTitle, { color: primaryText, marginBottom: 0 }]}>Select Opportunity Type</Text>
-              <TouchableOpacity onPress={() => setNewRoleTypeModalVisible(true)}>
-                <Text style={{ color: '#1a2d5a', fontSize: 13, fontWeight: '700' }}>+ Add New</Text>
-              </TouchableOpacity>
             </View>
             {roleTypes.map(rt => (
               <TouchableOpacity
@@ -1018,11 +1012,8 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
       <Modal visible={compTypeModalVisible} transparent animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setCompTypeModalVisible(false)}>
           <View style={[styles.modalCard, { backgroundColor: cardSurface }]}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <View style={{ marginBottom: 12 }}>
               <Text style={[styles.modalTitle, { color: primaryText, marginBottom: 0 }]}>Select Compensation</Text>
-              <TouchableOpacity onPress={() => setNewCompTypeModalVisible(true)}>
-                <Text style={{ color: '#1a2d5a', fontSize: 13, fontWeight: '700' }}>+ Add New</Text>
-              </TouchableOpacity>
             </View>
             {compensationTypes.map(ct => (
               <TouchableOpacity
