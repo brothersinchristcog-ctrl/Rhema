@@ -899,7 +899,7 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                   <Text style={[styles.modalOptionTxt, { color: primaryText }, categoryId === cat.id && { fontWeight: '700' }]}>
                     {cat.name}
                   </Text>
-                  {categoryId === cat.id && <Check size={18} color="#1a2d5a" />}
+                  {categoryId === cat.id && <Check size={18} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />}
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -964,7 +964,7 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                 <Text style={[styles.modalOptionTxt, { color: primaryText }, opportunityType === rt.value && { fontWeight: '700' }]}>
                   {rt.label}
                 </Text>
-                {opportunityType === rt.value && <Check size={18} color="#1a2d5a" />}
+                {opportunityType === rt.value && <Check size={18} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />}
               </TouchableOpacity>
             ))}
           </View>
@@ -1027,7 +1027,7 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                 <Text style={[styles.modalOptionTxt, { color: primaryText }, compensationType === ct.value && { fontWeight: '700' }]}>
                   {ct.label}
                 </Text>
-                {compensationType === ct.value && <Check size={18} color="#1a2d5a" />}
+                {compensationType === ct.value && <Check size={18} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />}
               </TouchableOpacity>
             ))}
           </View>
