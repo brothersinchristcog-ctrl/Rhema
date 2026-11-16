@@ -432,7 +432,11 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 30 }]}>
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 120 }]}
+        showsVerticalScrollIndicator={true}
+        keyboardShouldPersistTaps="handled"
+      >
         {/* ── CARD 1: POSITION DETAILS ── */}
         <View style={[styles.sectionCard, isDark ? styles.sectionDark : styles.sectionLight]}>
           <LinearGradient

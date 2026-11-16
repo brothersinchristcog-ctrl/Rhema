@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, StatusBar, Platform, ActivityIndicator, Modal, PanResponder, Animated, Dimensions, Linking, Alert, Image, BackHandler, Clipboard, ToastAndroid } from 'react-native';
-import { ChevronLeft, ArrowLeft, Bell, Calendar, Info, MessageCircle, AlertTriangle, X, Gift, Heart, Sparkles, Droplets, Trash2, Tv, BookOpen, Music, Mic , Video, Layers, UserCheck, Zap, HeartHandshake } from 'lucide-react-native';
+import { ChevronLeft, ArrowLeft, Bell, Calendar, Info, MessageCircle, AlertTriangle, X, Gift, Heart, Sparkles, Droplets, Trash2, Tv, BookOpen, Music, Mic , Video, Layers, UserCheck, Zap, HeartHandshake, Briefcase } from 'lucide-react-native';
 import { openZoomMeeting } from '../utils/ZoomLauncher';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -453,6 +453,16 @@ export default function UpdatesScreen({ navigation, route }: any) {
       icon = Mic;
       color = '#6366f1';
       resolvedType = 'sermon';
+    } else if (
+      data.type === 'job_opportunity_new' ||
+      data.type === 'job_application_admin' ||
+      data.type === 'job_application_member' ||
+      data.title?.includes('Ministry Opportunity') ||
+      data.title?.includes('Ministry Application')
+    ) {
+      icon = Briefcase;
+      color = '#0284c7';
+      resolvedType = data.type || 'job_opportunity_new';
     }
 
     let dateStr = '';
@@ -870,6 +880,20 @@ export default function UpdatesScreen({ navigation, route }: any) {
                     } else {
                       navigation.navigate('Testimonies', { initialTab: 'mine' });
                     }
+                  } else if (update.type === 'job_opportunity_new') {
+                    if (update.opportunityId) {
+                      navigation.navigate('OpportunityDetailScreen', { opportunityId: update.opportunityId });
+                    } else {
+                      navigation.navigate('JobCircle');
+                    }
+                  } else if (update.type === 'job_application_admin') {
+                    navigation.navigate('AdminRoot', {
+                      targetTab: 'Job Circle',
+                      applicationId: update.applicationId,
+                      timestamp: Date.now(),
+                    });
+                  } else if (update.type === 'job_application_member') {
+                    navigation.navigate('JobCircle', { initialTab: 'applications' });
                   } else {
                     setSelectedUpdate(update);
                   }

@@ -48,7 +48,7 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
   const insets = useSafeAreaInsets();
   const { user, member } = useAuth();
   const { activeChurch } = useChurch();
-  const { colors, currentThemeOption } = useTheme();
+  const { colors, currentThemeOption, isDark } = useTheme();
   const theme = {
     bg: colors.bgSecondary,
     surface: colors.bgPrimary,
@@ -317,8 +317,15 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
       {/* Apply Modal with CV Attachment */}
       <Modal visible={applyModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.surface, maxHeight: '85%' }]}>
-            <Text style={[styles.modalTitle, { color: theme.text }]}>Apply: {opportunity.title}</Text>
+          <View style={[styles.modalContent, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', maxHeight: '90%' }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <Text style={[styles.modalTitle, { color: theme.text, flex: 1 }]} numberOfLines={1}>
+                Apply: {opportunity.title}
+              </Text>
+              <TouchableOpacity onPress={() => setApplyModalVisible(false)} style={{ padding: 4 }}>
+                <Trash2 size={0} color="transparent" /> {/* Spacer */}
+              </TouchableOpacity>
+            </View>
             <Text style={[styles.modalSubtitle, { color: theme.textSecondary }]}>
               Attach your CV/Resume and share a brief message of calling.
             </Text>
@@ -327,7 +334,14 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
               {/* Note / Message */}
               <Text style={[styles.inputLabel, { color: theme.text }]}>Message / Calling Statement</Text>
               <TextInput
-                style={[styles.textArea, { backgroundColor: theme.bg, borderColor: theme.border, color: theme.text }]}
+                style={[
+                  styles.textArea,
+                  {
+                    backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                    borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+                    color: theme.text,
+                  },
+                ]}
                 placeholder="Share your heart for this ministry, previous experience, or questions..."
                 placeholderTextColor={theme.textSecondary}
                 multiline
@@ -341,7 +355,7 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
                 Resume / CV Attachment (Optional)
               </Text>
               {selectedFile ? (
-                <View style={[styles.filePreviewCard, { backgroundColor: theme.bg, borderColor: theme.border }]}>
+                <View style={[styles.filePreviewCard, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: isDark ? '#3F3F46' : '#CBD5E1' }]}>
                   <FileText size={24} color={Colors.primary} />
                   <Text style={[styles.fileName, { color: theme.text }]} numberOfLines={1}>
                     {selectedFile.name}
@@ -352,7 +366,7 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
                 </View>
               ) : (
                 <TouchableOpacity
-                  style={[styles.uploadBox, { borderColor: theme.border, backgroundColor: theme.bg }]}
+                  style={[styles.uploadBox, { borderColor: isDark ? '#3F3F46' : '#CBD5E1', backgroundColor: isDark ? '#27272A' : '#F8FAFC' }]}
                   onPress={handlePickDocument}
                 >
                   <Upload size={24} color={theme.textSecondary} />
@@ -365,21 +379,21 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
 
             <View style={styles.modalBtnRow}>
               <TouchableOpacity
-                style={[styles.modalCancelBtn, { borderColor: theme.border }]}
+                style={[styles.modalCancelBtn, { borderColor: isDark ? '#3F3F46' : '#CBD5E1', backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
                 onPress={() => setApplyModalVisible(false)}
                 disabled={submitting}
               >
-                <Text style={{ color: theme.textSecondary, fontWeight: '600' }}>Cancel</Text>
+                <Text style={{ color: theme.text, fontWeight: '700' }}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalSubmitBtn, { backgroundColor: theme.accent || Colors.primary }]}
+                style={[styles.modalSubmitBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
                 onPress={handleSubmitApplication}
                 disabled={submitting}
               >
                 {submitting ? (
-                  <ActivityIndicator size="small" color="#ffffff" />
+                  <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
                 ) : (
-                  <Text style={{ color: '#ffffff', fontWeight: 'bold' }}>Submit Application</Text>
+                  <Text style={{ color: isDark ? '#000000' : '#FFFFFF', fontWeight: 'bold' }}>Submit Application</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -424,8 +438,21 @@ const styles = StyleSheet.create({
   applyBtnText: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
   appliedBanner: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, paddingVertical: 14 },
   appliedText: { fontSize: 16, fontWeight: '700' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  modalContent: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20 },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    elevation: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+  },
   modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 4 },
   modalSubtitle: { fontSize: 13, marginBottom: 16 },
   inputLabel: { fontSize: 14, fontWeight: '600', marginBottom: 6 },
