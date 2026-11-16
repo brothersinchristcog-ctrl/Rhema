@@ -147,21 +147,15 @@ class JobCircleService {
         query = query.where('categoryId', '==', options.categoryId);
       }
 
-      try {
-        const snap = await query.orderBy('createdAt', 'desc').get();
-        return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as JobOpportunity));
-      } catch (idxErr) {
-        // Fallback in-memory sorting if composite index is building
-        const snap = await query.get();
-        const list = snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as JobOpportunity));
-        return list.sort((a, b) => {
-          const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : (a.createdAt?.seconds ? a.createdAt.seconds * 1000 : 0);
-          const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : (b.createdAt?.seconds ? b.createdAt.seconds * 1000 : 0);
-          return timeB - timeA;
-        });
-      }
+      const snap = await query.get();
+      const list = snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as JobOpportunity));
+      return list.sort((a, b) => {
+        const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : (a.createdAt?.seconds ? a.createdAt.seconds * 1000 : 0);
+        const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : (b.createdAt?.seconds ? b.createdAt.seconds * 1000 : 0);
+        return timeB - timeA;
+      });
     } catch (err) {
-      console.error('[JobCircleService] getOpportunities error:', err);
+      console.warn('[JobCircleService] getOpportunities error:', err);
       return [];
     }
   }
@@ -328,30 +322,21 @@ class JobCircleService {
   async getMyApplications(churchId: string, memberId: string): Promise<JobApplication[]> {
     if (!memberId) return [];
     try {
-      try {
-        const snap = await this.getRootRef(churchId)
-          .collection('job_circle_applications')
-          .where('memberId', '==', memberId)
-          .orderBy('createdAt', 'desc')
-          .get();
+      // In Cloud Firestore, querying with .where() and .orderBy() on a different field requires a composite index.
+      // To ensure this always works seamlessly without index deployment errors across all devices:
+      const snap = await this.getRootRef(churchId)
+        .collection('job_circle_applications')
+        .where('memberId', '==', memberId)
+        .get();
 
-        return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as JobApplication));
-      } catch (idxErr) {
-        // Fallback in-memory sorting if composite index is building or not created
-        const snap = await this.getRootRef(churchId)
-          .collection('job_circle_applications')
-          .where('memberId', '==', memberId)
-          .get();
-
-        const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as JobApplication));
-        return list.sort((a, b) => {
-          const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : (a.createdAt?.seconds ? a.createdAt.seconds * 1000 : 0);
-          const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : (b.createdAt?.seconds ? b.createdAt.seconds * 1000 : 0);
-          return timeB - timeA;
-        });
-      }
+      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as JobApplication));
+      return list.sort((a, b) => {
+        const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : (a.createdAt?.seconds ? a.createdAt.seconds * 1000 : 0);
+        const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : (b.createdAt?.seconds ? b.createdAt.seconds * 1000 : 0);
+        return timeB - timeA;
+      });
     } catch (err) {
-      console.error('[JobCircleService] getMyApplications error:', err);
+      console.warn('[JobCircleService] getMyApplications query error, returning empty list:', err);
       return [];
     }
   }
@@ -371,21 +356,15 @@ class JobCircleService {
         query = query.where('status', '==', status);
       }
 
-      try {
-        const snap = await query.orderBy('createdAt', 'desc').get();
-        return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as JobApplication));
-      } catch (idxErr) {
-        // Fallback in-memory sorting if composite index is not present
-        const snap = await query.get();
-        const list = snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as JobApplication));
-        return list.sort((a, b) => {
-          const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : (a.createdAt?.seconds ? a.createdAt.seconds * 1000 : 0);
-          const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : (b.createdAt?.seconds ? b.createdAt.seconds * 1000 : 0);
-          return timeB - timeA;
-        });
-      }
+      const snap = await query.get();
+      const list = snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as JobApplication));
+      return list.sort((a, b) => {
+        const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : (a.createdAt?.seconds ? a.createdAt.seconds * 1000 : 0);
+        const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : (b.createdAt?.seconds ? b.createdAt.seconds * 1000 : 0);
+        return timeB - timeA;
+      });
     } catch (err) {
-      console.error('[JobCircleService] getAllApplications error:', err);
+      console.warn('[JobCircleService] getAllApplications query error, returning empty list:', err);
       return [];
     }
   }

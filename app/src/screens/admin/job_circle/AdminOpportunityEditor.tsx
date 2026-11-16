@@ -470,11 +470,12 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                 <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0 }]}>Ministry Category *</Text>
                 <TouchableOpacity
                   onPress={() => setNewCategoryModalVisible(true)}
-                  style={[styles.smallAddPill, { borderColor: isDark ? '#3F3F46' : '#CBD5E1' }]}
+                  style={[styles.smallAddPill, { borderColor: isDark ? '#3F3F46' : '#CBD5E1', backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
+                  activeOpacity={0.7}
                 >
-                  <Plus size={11} color={isDark ? '#FFFFFF' : '#1a2d5a'} />
+                  <Plus size={12} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />
                   <Text style={[styles.smallAddPillTxt, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>
-                    + New Category
+                    New Category
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -532,10 +533,11 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                 <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0 }]}>Opportunity Type</Text>
                 <TouchableOpacity
                   onPress={() => setNewRoleTypeModalVisible(true)}
-                  style={[styles.smallAddPill, { borderColor: isDark ? '#3F3F46' : '#CBD5E1' }]}
+                  style={[styles.smallAddPill, { borderColor: isDark ? '#3F3F46' : '#CBD5E1', backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
+                  activeOpacity={0.7}
                 >
-                  <Plus size={11} color={isDark ? '#FFFFFF' : '#1a2d5a'} />
-                  <Text style={[styles.smallAddPillTxt, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>+ New</Text>
+                  <Plus size={12} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />
+                  <Text style={[styles.smallAddPillTxt, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>New Type</Text>
                 </TouchableOpacity>
               </View>
               <TouchableOpacity
@@ -556,10 +558,11 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                 <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0 }]}>Compensation Type</Text>
                 <TouchableOpacity
                   onPress={() => setNewCompTypeModalVisible(true)}
-                  style={[styles.smallAddPill, { borderColor: isDark ? '#3F3F46' : '#CBD5E1' }]}
+                  style={[styles.smallAddPill, { borderColor: isDark ? '#3F3F46' : '#CBD5E1', backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
+                  activeOpacity={0.7}
                 >
-                  <Plus size={11} color={isDark ? '#FFFFFF' : '#1a2d5a'} />
-                  <Text style={[styles.smallAddPillTxt, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>+ New</Text>
+                  <Plus size={12} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />
+                  <Text style={[styles.smallAddPillTxt, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>New Option</Text>
                 </TouchableOpacity>
               </View>
               <TouchableOpacity
@@ -612,11 +615,12 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                 </Text>
                 <TouchableOpacity
                   onPress={handleAddScheduleSlot}
-                  style={[styles.smallAddPill, { borderColor: isDark ? '#3F3F46' : '#CBD5E1' }]}
+                  style={[styles.smallAddPill, { borderColor: isDark ? '#3F3F46' : '#CBD5E1', backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
+                  activeOpacity={0.7}
                 >
-                  <Plus size={11} color={isDark ? '#FFFFFF' : '#1a2d5a'} />
+                  <Plus size={12} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />
                   <Text style={[styles.smallAddPillTxt, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>
-                    + Add Schedule
+                    Add Schedule
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -722,15 +726,17 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
             }
             style={styles.sectionInner}
           >
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={styles.cardHeaderFlex}>
+              <View style={styles.cardHeaderTitleRow}>
                 <View style={[styles.secHdPill, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
                   <FileText size={14} color={isDark ? '#94A3B8' : '#1E293B'} />
                 </View>
-                <Text style={[styles.secHdTXT, { color: primaryText }]}>Key Responsibilities</Text>
+                <Text style={[styles.secHdTXT, { color: primaryText }]} numberOfLines={1}>
+                  Key Responsibilities
+                </Text>
               </View>
 
-              {/* Properly Styled & Visible "+" Button */}
+              {/* Responsive & Visible "+" Button */}
               <TouchableOpacity
                 onPress={handleAddResponsibility}
                 style={[
@@ -741,9 +747,9 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                 ]}
                 activeOpacity={0.8}
               >
-                <Plus size={14} color={isDark ? '#000000' : '#FFFFFF'} />
+                <Plus size={13} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.5} />
                 <Text style={[styles.addActionButtonTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
-                  Add Responsibility
+                  Add
                 </Text>
               </TouchableOpacity>
             </View>
@@ -779,15 +785,17 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
             }
             style={styles.sectionInner}
           >
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={styles.cardHeaderFlex}>
+              <View style={styles.cardHeaderTitleRow}>
                 <View style={[styles.secHdPill, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
                   <CheckCircle2 size={14} color={isDark ? '#94A3B8' : '#1E293B'} />
                 </View>
-                <Text style={[styles.secHdTXT, { color: primaryText }]}>Required Skills & Calling</Text>
+                <Text style={[styles.secHdTXT, { color: primaryText }]} numberOfLines={1}>
+                  Required Skills & Calling
+                </Text>
               </View>
 
-              {/* Properly Styled & Visible "+" Button */}
+              {/* Responsive & Visible "+" Button */}
               <TouchableOpacity
                 onPress={handleAddSkill}
                 style={[
@@ -798,9 +806,9 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                 ]}
                 activeOpacity={0.8}
               >
-                <Plus size={14} color={isDark ? '#000000' : '#FFFFFF'} />
+                <Plus size={13} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.5} />
                 <Text style={[styles.addActionButtonTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
-                  Add Skill
+                  Add
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1153,8 +1161,22 @@ const styles = createAdminThemedStyles(
       fontSize: 12.5,
       fontWeight: '800',
       textTransform: 'uppercase',
-      letterSpacing: 1.1,
+      letterSpacing: 0.8,
+      flexShrink: 1,
+    },
+    cardHeaderFlex: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 14,
+      gap: 8,
+    },
+    cardHeaderTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
       flex: 1,
+      minWidth: 0,
     },
     fGroup: { marginBottom: 14 },
     fLabel: {
@@ -1246,6 +1268,7 @@ const styles = createAdminThemedStyles(
       paddingVertical: 5,
       borderRadius: 999,
       gap: 4,
+      flexShrink: 0,
     },
     addActionButtonTxt: {
       fontSize: 11,
