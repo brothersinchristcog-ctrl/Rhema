@@ -88,8 +88,19 @@ class JobCircleService {
         query = query.where('categoryId', '==', options.categoryId);
       }
 
-      const snap = await query.orderBy('createdAt', 'desc').get();
-      return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as JobOpportunity));
+      try {
+        const snap = await query.orderBy('createdAt', 'desc').get();
+        return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as JobOpportunity));
+      } catch (idxErr) {
+        // Fallback in-memory sorting if composite index is building
+        const snap = await query.get();
+        const list = snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as JobOpportunity));
+        return list.sort((a, b) => {
+          const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : (a.createdAt?.seconds ? a.createdAt.seconds * 1000 : 0);
+          const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : (b.createdAt?.seconds ? b.createdAt.seconds * 1000 : 0);
+          return timeB - timeA;
+        });
+      }
     } catch (err) {
       console.error('[JobCircleService] getOpportunities error:', err);
       return [];
@@ -256,14 +267,30 @@ class JobCircleService {
   }
 
   async getMyApplications(churchId: string, memberId: string): Promise<JobApplication[]> {
+    if (!memberId) return [];
     try {
-      const snap = await this.getRootRef(churchId)
-        .collection('job_circle_applications')
-        .where('memberId', '==', memberId)
-        .orderBy('createdAt', 'desc')
-        .get();
+      try {
+        const snap = await this.getRootRef(churchId)
+          .collection('job_circle_applications')
+          .where('memberId', '==', memberId)
+          .orderBy('createdAt', 'desc')
+          .get();
 
-      return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as JobApplication));
+        return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as JobApplication));
+      } catch (idxErr) {
+        // Fallback in-memory sorting if composite index is building or not created
+        const snap = await this.getRootRef(churchId)
+          .collection('job_circle_applications')
+          .where('memberId', '==', memberId)
+          .get();
+
+        const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as JobApplication));
+        return list.sort((a, b) => {
+          const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : (a.createdAt?.seconds ? a.createdAt.seconds * 1000 : 0);
+          const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : (b.createdAt?.seconds ? b.createdAt.seconds * 1000 : 0);
+          return timeB - timeA;
+        });
+      }
     } catch (err) {
       console.error('[JobCircleService] getMyApplications error:', err);
       return [];
@@ -285,8 +312,19 @@ class JobCircleService {
         query = query.where('status', '==', status);
       }
 
-      const snap = await query.orderBy('createdAt', 'desc').get();
-      return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as JobApplication));
+      try {
+        const snap = await query.orderBy('createdAt', 'desc').get();
+        return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as JobApplication));
+      } catch (idxErr) {
+        // Fallback in-memory sorting if composite index is not present
+        const snap = await query.get();
+        const list = snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as JobApplication));
+        return list.sort((a, b) => {
+          const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : (a.createdAt?.seconds ? a.createdAt.seconds * 1000 : 0);
+          const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : (b.createdAt?.seconds ? b.createdAt.seconds * 1000 : 0);
+          return timeB - timeA;
+        });
+      }
     } catch (err) {
       console.error('[JobCircleService] getAllApplications error:', err);
       return [];
