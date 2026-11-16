@@ -61,7 +61,7 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
   };
   const churchId = activeChurch?.id || 'rhema';
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'opportunities' | 'applications' | 'volunteers'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'opportunities' | 'applications' | 'teams' | 'volunteers'>('overview');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -182,12 +182,13 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
         </View>
 
         {/* Tab Pills */}
-        <View style={styles.tabRow}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabRow}>
           {(
             [
               { id: 'overview', label: 'Overview' },
               { id: 'opportunities', label: `Openings (${opportunities.length})` },
               { id: 'applications', label: `Applicants (${applications.length})` },
+              { id: 'teams', label: 'Ministry Teams' },
               { id: 'volunteers', label: 'Volunteers' },
             ] as const
           ).map(tab => {
@@ -203,8 +204,9 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
                 ]}
                 onPress={() => {
                   if (tab.id === 'volunteers') {
-                    // Seamless link to existing Admin Volunteer Management
                     navigation.navigate('AdminVolunteerManagement');
+                  } else if (tab.id === 'teams') {
+                    navigation.navigate('AdminMinistryTeamsScreen');
                   } else {
                     setActiveTab(tab.id);
                   }
@@ -221,7 +223,7 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
               </TouchableOpacity>
             );
           })}
-        </View>
+        </ScrollView>
       </LinearGradient>
 
       {loading ? (
