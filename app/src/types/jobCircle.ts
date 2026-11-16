@@ -67,6 +67,8 @@ export interface JobOpportunity {
   // Scoped leader or creator
   createdById: string;
   createdByName: string;
+  createdByPhoto?: string;
+  createdByRole?: string;
   approvedById?: string;
   approvedByName?: string;
   approvedAt?: any;

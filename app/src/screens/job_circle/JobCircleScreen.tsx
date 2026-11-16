@@ -9,13 +9,10 @@ import {
   ActivityIndicator,
   RefreshControl,
   Dimensions,
-  Alert,
   BackHandler,
   Platform,
   Image,
-  Share,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Briefcase,
@@ -26,18 +23,16 @@ import {
   MapPin,
   DollarSign,
   ArrowLeft,
-  Share2,
-  Bookmark,
   Send,
-  ThumbsUp,
-  ExternalLink,
   X,
+  User,
 } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
 import { useTheme } from '../../context/ThemeContext';
 import { Colors } from '../../theme/Theme';
 import JobCircleService from '../../services/JobCircleService';
+import FirestoreService from '../../services/FirestoreService';
 import { JobOpportunity } from '../../types/jobCircle';
 
 export default function JobCircleScreen({ navigation }: { navigation: any }) {
@@ -58,8 +53,7 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [opportunities, setOpportunities] = useState<JobOpportunity[]>([]);
-  const [savedOppIds, setSavedOppIds] = useState<string[]>([]);
-  const [likedOppIds, setLikedOppIds] = useState<string[]>([]);
+  const [creatorProfiles, setCreatorProfiles] = useState<{ [uid: string]: { name: string; photo?: string } }>({});
   const [expandedDescIds, setExpandedDescIds] = useState<{ [key: string]: boolean }>({});
 
   // Search & Type Filters
@@ -81,62 +75,7 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
 
   useEffect(() => {
     loadAllOpportunities();
-    loadSavedState();
   }, [churchId]);
-
-  const loadSavedState = async () => {
-    try {
-      const [savedJson, likedJson] = await Promise.all([
-        AsyncStorage.getItem(`@job_circle_saved_${churchId}`),
-        AsyncStorage.getItem(`@job_circle_liked_${churchId}`),
-      ]);
-      if (savedJson) setSavedOppIds(JSON.parse(savedJson));
-      if (likedJson) setLikedOppIds(JSON.parse(likedJson));
-    } catch (e) {
-      console.warn('Error reading saved job state:', e);
-    }
-  };
-
-  const toggleSaveOpportunity = async (oppId: string) => {
-    try {
-      const isSaved = savedOppIds.includes(oppId);
-      const updated = isSaved ? savedOppIds.filter(id => id !== oppId) : [...savedOppIds, oppId];
-      setSavedOppIds(updated);
-      await AsyncStorage.setItem(`@job_circle_saved_${churchId}`, JSON.stringify(updated));
-      Alert.alert(isSaved ? 'Removed' : 'Saved', isSaved ? 'Opportunity removed from saved.' : 'Opportunity saved for later!');
-    } catch (e) {
-      console.error('Error toggling save:', e);
-    }
-  };
-
-  const toggleLikeOpportunity = async (oppId: string) => {
-    try {
-      const isLiked = likedOppIds.includes(oppId);
-      const updated = isLiked ? likedOppIds.filter(id => id !== oppId) : [...likedOppIds, oppId];
-      setLikedOppIds(updated);
-      await AsyncStorage.setItem(`@job_circle_liked_${churchId}`, JSON.stringify(updated));
-    } catch (e) {
-      console.error('Error toggling like:', e);
-    }
-  };
-
-  const handleShareOpportunity = async (opp: JobOpportunity) => {
-    try {
-      const shareMsg = `📢 Ministry Calling at ${activeChurch?.name || 'Rhema Church'}:\n\n` +
-        `💼 Position: ${opp.title}\n` +
-        `📍 Location: ${opp.location}\n` +
-        `⏰ Time: ${opp.timeCommitment}\n` +
-        (opp.compensationDetails ? `💰 Compensation: ${opp.compensationDetails}\n` : '') +
-        `\nDescription: ${opp.description}\n\nJoin hands in God's service through Rhema Church Job Circle!`;
-
-      await Share.share({
-        message: shareMsg,
-        title: opp.title,
-      });
-    } catch (e: any) {
-      console.warn('Share error:', e);
-    }
-  };
 
   const toggleDescExpand = (oppId: string) => {
     setExpandedDescIds(prev => ({ ...prev, [oppId]: !prev[oppId] }));
@@ -168,6 +107,34 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
       setLoading(true);
       const opps = await JobCircleService.getOpportunities(churchId, { onlyApproved: true });
       setOpportunities(opps);
+
+      // Fetch creator member profiles to guarantee real person name and photo
+      const creatorUids = Array.from(new Set(opps.map(o => o.createdById).filter(Boolean)));
+      if (creatorUids.length > 0) {
+        const profileEntries: { [uid: string]: { name: string; photo?: string } } = {};
+        await Promise.all(
+          creatorUids.map(async uid => {
+            try {
+              const mem = await FirestoreService.getMemberProfile(churchId, uid);
+              if (mem) {
+                const photo =
+                  (mem as any).profilePhoto ||
+                  (mem as any).photoURL ||
+                  (mem as any).photoUrl ||
+                  (mem as any).profileImageUrl ||
+                  '';
+                profileEntries[uid] = {
+                  name: mem.name || (mem as any).fullName || 'Church Leader',
+                  photo: photo || undefined,
+                };
+              }
+            } catch (e) {
+              console.warn('Could not fetch creator profile:', e);
+            }
+          })
+        );
+        setCreatorProfiles(profileEntries);
+      }
     } catch (err) {
       console.error('Error loading Job Circle opportunities:', err);
     } finally {
@@ -200,13 +167,21 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
   // ── LINKEDIN STYLE POST CARD RENDERER ──
   const renderPostCard = (opp: JobOpportunity) => {
     const isPaid = opp.compensationType !== 'unpaid';
-    const isSaved = savedOppIds.includes(opp.id);
-    const isLiked = likedOppIds.includes(opp.id);
     const isExpanded = !!expandedDescIds[opp.id];
-    const churchLogo = activeChurch?.theme?.logoUrl || (activeChurch as any)?.logoUrl;
-    const churchName = activeChurch?.name || 'Rhema Global Ministries';
     const postedTimeAgo = formatPostedDate(opp.createdAt);
     const hasLongDesc = (opp.description || '').length > 140;
+
+    // Poster name & photo: Use the creator's real name and picture
+    const creatorInfo = creatorProfiles[opp.createdById];
+    const posterName =
+      creatorInfo?.name ||
+      opp.createdByName ||
+      'Church Leader';
+    const posterPhoto =
+      creatorInfo?.photo ||
+      opp.createdByPhoto ||
+      '';
+    const posterRole = opp.createdByRole || 'Ministry Coordinator';
 
     return (
       <View
@@ -219,48 +194,35 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
           },
         ]}
       >
-        {/* Post Header: Church Profile, Name, Posted Time */}
+        {/* Post Header: Person Who Posted the Job (Name & Profile Picture) */}
         <View style={styles.postHeaderRow}>
-          {churchLogo ? (
-            <Image source={{ uri: churchLogo }} style={styles.churchAvatar} resizeMode="cover" />
+          {posterPhoto ? (
+            <Image source={{ uri: posterPhoto }} style={styles.posterAvatar} resizeMode="cover" />
           ) : (
-            <View style={[styles.churchAvatarPlaceholder, { backgroundColor: isDark ? '#1E3A8A' : '#DBEAFE' }]}>
-              <Briefcase size={18} color={isDark ? '#93C5FD' : '#1E40AF'} />
+            <View style={[styles.posterAvatarPlaceholder, { backgroundColor: isDark ? '#1E3A8A' : '#DBEAFE' }]}>
+              <User size={20} color={isDark ? '#93C5FD' : '#1E40AF'} />
             </View>
           )}
 
           <View style={{ flex: 1, marginLeft: 10 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <Text style={[styles.postAuthorName, { color: primaryText }]} numberOfLines={1}>
-                {churchName}
+                {posterName}
               </Text>
               <View style={styles.officialBadge}>
-                <CheckCircle2 size={12} color="#2563EB" />
+                <CheckCircle2 size={13} color="#2563EB" />
               </View>
             </View>
             <Text style={[styles.postAuthorSubtitle, { color: secondaryText }]} numberOfLines={1}>
-              Church Ministry & Leadership • {postedTimeAgo}
+              {posterRole} • {postedTimeAgo}
             </Text>
           </View>
-
-          {/* Bookmark / Save Post */}
-          <TouchableOpacity
-            style={styles.headerActionBtn}
-            onPress={() => toggleSaveOpportunity(opp.id)}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Bookmark
-              size={20}
-              color={isSaved ? '#2563EB' : secondaryText}
-              fill={isSaved ? '#2563EB' : 'none'}
-            />
-          </TouchableOpacity>
         </View>
 
         {/* Post Headline: Position Title (LinkedIn Alert style) */}
         <View style={styles.postHeadlineBox}>
           <Text style={[styles.postHeadlineTitle, { color: primaryText }]}>
-            🚨 <Text style={{ color: isDark ? '#60A5FA' : '#1D4ED8', fontWeight: '800' }}>{churchName}</Text> is hiring / recruiting –{' '}
+            🚨 <Text style={{ color: isDark ? '#60A5FA' : '#1D4ED8', fontWeight: '800' }}>{posterName}</Text> is recruiting –{' '}
             <Text style={{ fontWeight: '800' }}>{opp.title}</Text>
           </Text>
         </View>
@@ -362,7 +324,7 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
               </View>
               <View style={styles.placeholderContent}>
                 <View style={styles.placeholderChurchTag}>
-                  <Text style={styles.placeholderChurchTagTxt}>{churchName.toUpperCase()}</Text>
+                  <Text style={styles.placeholderChurchTagTxt}>{posterName.toUpperCase()}</Text>
                 </View>
                 <Text style={styles.placeholderTitle} numberOfLines={2}>
                   {opp.title}
@@ -376,7 +338,7 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
         </TouchableOpacity>
 
         {/* Apply Now Primary Action Strip */}
-        <View style={[styles.postApplyStrip, { borderBottomColor: cardBorder }]}>
+        <View style={styles.postApplyStrip}>
           <TouchableOpacity
             style={[styles.applyNowButton, { backgroundColor: isDark ? '#FFFFFF' : '#1a2d5a' }]}
             onPress={() => navigation.navigate('OpportunityDetailScreen', { opportunity: opp })}
@@ -386,42 +348,6 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
             <Text style={[styles.applyNowTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
               Apply Now
             </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Social Actions Row: Like, Share, View Details */}
-        <View style={styles.socialActionRow}>
-          <TouchableOpacity
-            style={styles.socialBtn}
-            onPress={() => toggleLikeOpportunity(opp.id)}
-            activeOpacity={0.7}
-          >
-            <ThumbsUp
-              size={18}
-              color={isLiked ? '#2563EB' : secondaryText}
-              fill={isLiked ? '#2563EB' : 'none'}
-            />
-            <Text style={[styles.socialBtnTxt, { color: isLiked ? '#2563EB' : secondaryText }]}>
-              {isLiked ? 'Liked' : 'Like'}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.socialBtn}
-            onPress={() => handleShareOpportunity(opp)}
-            activeOpacity={0.7}
-          >
-            <Share2 size={18} color={secondaryText} />
-            <Text style={[styles.socialBtnTxt, { color: secondaryText }]}>Share</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.socialBtn}
-            onPress={() => navigation.navigate('OpportunityDetailScreen', { opportunity: opp })}
-            activeOpacity={0.7}
-          >
-            <ExternalLink size={18} color={secondaryText} />
-            <Text style={[styles.socialBtnTxt, { color: secondaryText }]}>Details</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -591,39 +517,39 @@ const styles = StyleSheet.create({
 
   // ── LINKEDIN STYLE POST CARD STYLES ──
   postCard: {
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 1,
-    marginBottom: 16,
+    marginBottom: 18,
     overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   postHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingTop: 14,
-    paddingBottom: 10,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 12,
   },
-  churchAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+  posterAvatar: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 1.5,
+    borderColor: '#3B82F6',
   },
-  churchAvatarPlaceholder: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  posterAvatarPlaceholder: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     alignItems: 'center',
     justifyContent: 'center',
   },
   postAuthorName: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '700',
     letterSpacing: -0.2,
   },
@@ -634,26 +560,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
-  headerActionBtn: {
-    padding: 6,
-    borderRadius: 20,
-  },
   postHeadlineBox: {
-    paddingHorizontal: 14,
-    paddingBottom: 8,
+    paddingHorizontal: 16,
+    paddingBottom: 10,
   },
   postHeadlineTitle: {
     fontSize: 15,
     lineHeight: 22,
   },
   postDetailsBox: {
-    marginHorizontal: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 12,
+    marginHorizontal: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 14,
     borderWidth: 1,
-    gap: 7,
-    marginBottom: 10,
+    gap: 8,
+    marginBottom: 12,
   },
   detailRow: {
     flexDirection: 'row',
@@ -684,16 +606,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   postBodyWrap: {
-    paddingHorizontal: 14,
-    paddingBottom: 10,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
   },
   postDescription: {
     fontSize: 13.5,
     lineHeight: 20,
   },
   expandedSection: {
-    paddingHorizontal: 14,
-    paddingBottom: 10,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
   },
   expandedSecTitle: {
     fontSize: 13,
@@ -716,7 +638,7 @@ const styles = StyleSheet.create({
   },
   postBannerImg: {
     width: '100%',
-    height: 210,
+    height: 220,
   },
   defaultBannerPlaceholder: {
     width: '100%',
@@ -762,39 +684,26 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   postApplyStrip: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
   },
   applyNowButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 11,
-    borderRadius: 10,
-    elevation: 2,
+    paddingVertical: 13,
+    borderRadius: 12,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
   },
   applyNowTxt: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  socialActionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    paddingVertical: 10,
-  },
-  socialBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 4,
-    paddingHorizontal: 12,
-  },
-  socialBtnTxt: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
   emptyBox: {
     padding: 28,

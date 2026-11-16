@@ -400,6 +400,14 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
       const timeCommitmentSummary = formatScheduleCommitmentSummary();
 
       if (editingOpp) {
+        const creatorPhoto =
+          (member as any)?.profilePhoto ||
+          (member as any)?.photoURL ||
+          (member as any)?.photoUrl ||
+          (member as any)?.profileImageUrl ||
+          user?.photoURL ||
+          '';
+
         await JobCircleService.updateOpportunity(churchId, editingOpp.id, {
           title: title.trim(),
           categoryId: selectedCategoryObj.id,
@@ -413,9 +421,20 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
           responsibilities: cleanResponsibilities,
           requiredSkills: cleanSkills,
           thumbnailUrl: thumbnailUrl.trim() || undefined,
+          createdByName: member?.name || user?.displayName || editingOpp.createdByName || 'Church Administrator',
+          createdByPhoto: creatorPhoto || editingOpp.createdByPhoto || undefined,
+          createdByRole: (member as any)?.role || editingOpp.createdByRole || 'Ministry Leader',
           status: isPublish ? 'approved' : 'draft',
         });
       } else {
+        const creatorPhoto =
+          (member as any)?.profilePhoto ||
+          (member as any)?.photoURL ||
+          (member as any)?.photoUrl ||
+          (member as any)?.profileImageUrl ||
+          user?.photoURL ||
+          '';
+
         await JobCircleService.createOpportunity(churchId, {
           churchId,
           title: title.trim(),
@@ -432,7 +451,9 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
           thumbnailUrl: thumbnailUrl.trim() || undefined,
           status: isPublish ? 'approved' : 'draft',
           createdById: user?.uid || 'admin',
-          createdByName: member?.name || user?.displayName || 'Admin',
+          createdByName: member?.name || user?.displayName || 'Church Administrator',
+          createdByPhoto: creatorPhoto || undefined,
+          createdByRole: (member as any)?.role || 'Ministry Leader',
         });
       }
 
