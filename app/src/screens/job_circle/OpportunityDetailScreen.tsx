@@ -11,6 +11,8 @@ import {
   Modal,
   Image,
   Share,
+  Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -19,7 +21,6 @@ import {
   Briefcase,
   MapPin,
   Clock,
-  DollarSign,
   Heart,
   Calendar,
   Upload,
@@ -27,6 +28,8 @@ import {
   Trash2,
   CheckCircle2,
   Share2,
+  X,
+  Send,
 } from 'lucide-react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { useAuth } from '../../context/AuthContext';
@@ -68,7 +71,7 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
   // Application modal state
   const [applyModalVisible, setApplyModalVisible] = useState(false);
   const [applicationMessage, setApplicationMessage] = useState('');
-  const [selectedFile, setSelectedFile] = useState<{ uri: string; name: string; mimeType?: string } | null>(null);
+  const [selectedFile, setSelectedFile] = useState<{ uri: string; name: string; mimeType?: string; size?: number } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [hasApplied, setHasApplied] = useState(false);
 
@@ -138,6 +141,7 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
           uri: file.uri,
           name: file.name,
           mimeType: file.mimeType || 'application/pdf',
+          size: file.size,
         });
       }
     } catch (err) {
@@ -396,8 +400,10 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
 
           {opportunity.compensationDetails ? (
             <View style={styles.metaRow}>
-              <DollarSign size={16} color={Colors.warning} />
-              <Text style={[styles.metaText, { color: theme.text, fontWeight: '600' }]}>
+              <View style={[styles.rupeeIconCircle, { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7' }]}>
+                <Text style={{ fontSize: 13, fontWeight: '800', color: isDark ? '#FBBF24' : '#B45309' }}>₹</Text>
+              </View>
+              <Text style={[styles.metaText, { color: isDark ? '#FBBF24' : '#B45309', fontWeight: '700' }]}>
                 {opportunity.compensationDetails}
               </Text>
             </View>
@@ -477,19 +483,39 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
 
       {/* Apply Modal with CV Attachment */}
       <Modal visible={applyModalVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: isDark ? '#18181B' : '#FFFFFF', maxHeight: '90%' }]}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-              <Text style={[styles.modalTitle, { color: theme.text, flex: 1 }]} numberOfLines={1}>
-                Apply: {opportunity.title}
-              </Text>
-              <TouchableOpacity onPress={() => setApplyModalVisible(false)} style={{ padding: 4 }}>
-                <Text style={{ color: theme.textSecondary, fontSize: 16, fontWeight: '700' }}>✕</Text>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View
+            style={[
+              styles.modalContent,
+              {
+                backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                borderColor: isDark ? '#3F3F46' : '#E2E8F0',
+                paddingBottom: Math.max(insets.bottom + 12, 24),
+              },
+            ]}
+          >
+            <View style={styles.modalDragHandle} />
+
+            <View style={styles.modalHeaderRow}>
+              <View style={{ flex: 1, marginRight: 10 }}>
+                <Text style={[styles.modalTitle, { color: theme.text }]} numberOfLines={1}>
+                  Apply: {opportunity.title}
+                </Text>
+                <Text style={[styles.modalSubtitle, { color: theme.textSecondary }]}>
+                  Attach your CV/Resume and share a brief message of calling.
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setApplyModalVisible(false)}
+                style={styles.modalCloseBtn}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <X size={20} color={theme.textSecondary} />
               </TouchableOpacity>
             </View>
-            <Text style={[styles.modalSubtitle, { color: theme.textSecondary }]}>
-              Attach your CV/Resume and share a brief message of calling.
-            </Text>
 
             <ScrollView showsVerticalScrollIndicator={false}>
               {/* Note / Message */}
@@ -512,54 +538,104 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
               />
 
               {/* CV / Resume Attachment Section */}
-              <Text style={[styles.inputLabel, { color: theme.text, marginTop: 16 }]}>
-                Resume / CV Attachment (Optional)
-              </Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, marginBottom: 6 }}>
+                <Text style={[styles.inputLabel, { color: theme.text, marginBottom: 0 }]}>
+                  Resume / CV Attachment (Optional)
+                </Text>
+                <Text style={{ fontSize: 11.5, color: theme.textSecondary, fontWeight: '500' }}>
+                  Max 25MB
+                </Text>
+              </View>
+
               {selectedFile ? (
-                <View style={[styles.filePreviewCard, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: isDark ? '#3F3F46' : '#CBD5E1' }]}>
-                  <FileText size={24} color={Colors.primary} />
-                  <Text style={[styles.fileName, { color: theme.text }]} numberOfLines={1}>
-                    {selectedFile.name}
-                  </Text>
-                  <TouchableOpacity onPress={() => setSelectedFile(null)}>
-                    <Trash2 size={20} color={Colors.error} />
+                <View
+                  style={[
+                    styles.filePreviewCard,
+                    {
+                      backgroundColor: isDark ? '#1E293B' : '#EFF6FF',
+                      borderColor: isDark ? '#3B82F6' : '#BFDBFE',
+                    },
+                  ]}
+                >
+                  <FileText size={22} color={isDark ? '#60A5FA' : Colors.primary} />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={[styles.fileName, { color: theme.text }]} numberOfLines={1}>
+                      {selectedFile.name}
+                    </Text>
+                    {selectedFile.size ? (
+                      <Text style={{ fontSize: 11.5, color: theme.textSecondary, marginTop: 2 }}>
+                        {(selectedFile.size / (1024 * 1024)).toFixed(1)} MB
+                      </Text>
+                    ) : null}
+                  </View>
+                  <TouchableOpacity onPress={() => setSelectedFile(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Trash2 size={18} color={Colors.error} />
                   </TouchableOpacity>
                 </View>
               ) : (
                 <TouchableOpacity
-                  style={[styles.uploadBox, { borderColor: isDark ? '#3F3F46' : '#CBD5E1', backgroundColor: isDark ? '#27272A' : '#F8FAFC' }]}
+                  style={[
+                    styles.uploadBox,
+                    {
+                      borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+                      backgroundColor: isDark ? '#27272A50' : '#F8FAFC',
+                    },
+                  ]}
                   onPress={handlePickDocument}
+                  activeOpacity={0.8}
                 >
-                  <Upload size={24} color={theme.textSecondary} />
-                  <Text style={[styles.uploadBoxText, { color: theme.textSecondary }]}>
+                  <Upload size={22} color={isDark ? '#93C5FA' : '#2563EB'} />
+                  <Text style={[styles.uploadBoxText, { color: theme.text }]}>
                     Tap to upload Resume / CV (PDF or DOCX)
+                  </Text>
+                  <Text style={{ fontSize: 11.5, color: theme.textSecondary }}>
+                    Up to 25MB supported
                   </Text>
                 </TouchableOpacity>
               )}
-            </ScrollView>
 
-            <View style={styles.modalBtnRow}>
-              <TouchableOpacity
-                style={[styles.modalCancelBtn, { borderColor: isDark ? '#3F3F46' : '#CBD5E1', backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
-                onPress={() => setApplyModalVisible(false)}
-                disabled={submitting}
-              >
-                <Text style={{ color: theme.text, fontWeight: '700' }}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalSubmitBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
-                onPress={handleSubmitApplication}
-                disabled={submitting}
-              >
-                {submitting ? (
-                  <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
-                ) : (
-                  <Text style={{ color: isDark ? '#000000' : '#FFFFFF', fontWeight: 'bold' }}>Submit Application</Text>
-                )}
-              </TouchableOpacity>
-            </View>
+              <View style={styles.modalBtnRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.modalCancelBtn,
+                    {
+                      borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+                      backgroundColor: isDark ? '#27272A' : '#F1F5F9',
+                    },
+                  ]}
+                  onPress={() => setApplyModalVisible(false)}
+                  disabled={submitting}
+                >
+                  <Text style={{ color: theme.text, fontWeight: '700', fontSize: 14 }}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.modalSubmitBtn,
+                    {
+                      backgroundColor: isDark ? '#FFFFFF' : '#1a2d5a',
+                    },
+                    submitting && { opacity: 0.7 },
+                  ]}
+                  onPress={handleSubmitApplication}
+                  disabled={submitting}
+                  activeOpacity={0.85}
+                >
+                  {submitting ? (
+                    <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
+                  ) : (
+                    <>
+                      <Send size={15} color={isDark ? '#000000' : '#FFFFFF'} style={{ marginRight: 6 }} />
+                      <Text style={{ color: isDark ? '#000000' : '#FFFFFF', fontWeight: 'bold', fontSize: 14 }}>
+                        Submit Application
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -634,6 +710,32 @@ const styles = StyleSheet.create({
   filePreviewCard: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 12, borderWidth: 1, gap: 12 },
   fileName: { flex: 1, fontSize: 14, fontWeight: '500' },
   modalBtnRow: { flexDirection: 'row', gap: 12, marginTop: 20 },
-  modalCancelBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, borderWidth: 1, alignItems: 'center' },
-  modalSubmitBtn: { flex: 2, paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
+  modalCancelBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  modalSubmitBtn: { flex: 2, paddingVertical: 12, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  rupeeIconCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalDragHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(156, 163, 175, 0.4)',
+    alignSelf: 'center',
+    marginBottom: 14,
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 10,
+  },
+  modalCloseBtn: {
+    padding: 6,
+    borderRadius: 20,
+    backgroundColor: 'rgba(156, 163, 175, 0.15)',
+  },
 });

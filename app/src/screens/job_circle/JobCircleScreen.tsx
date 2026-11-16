@@ -372,7 +372,9 @@ export default function JobCircleScreen({ navigation }: { navigation: any }) {
 
           {opp.compensationDetails ? (
             <View style={styles.detailRow}>
-              <DollarSign size={15} color="#10B981" style={styles.detailIcon} />
+              <View style={[styles.rupeeIconCircle, { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7' }]}>
+                <Text style={{ fontSize: 12, fontWeight: '800', color: isDark ? '#FBBF24' : '#B45309' }}>₹</Text>
+              </View>
               <Text style={[styles.detailLabel, { color: secondaryText }]}>Compensation:</Text>
               <Text style={[styles.detailVal, { color: isDark ? '#FBBF24' : '#B45309', fontWeight: '700' }]}>
                 {opp.compensationDetails}
@@ -874,6 +876,14 @@ const styles = StyleSheet.create({
     flexWrap: 'nowrap',
   },
   detailIcon: {
+    marginRight: 8,
+  },
+  rupeeIconCircle: {
+    width: 17,
+    height: 17,
+    borderRadius: 8.5,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: 8,
   },
   detailLabel: {
