@@ -35,7 +35,9 @@ class JobCircleService {
         return DEFAULT_MINISTRY_CATEGORIES;
       }
 
-      return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as JobCategory));
+      return snap.docs
+        .map(doc => ({ id: doc.id, ...doc.data() } as JobCategory))
+        .filter(cat => cat.isEnabled !== false);
     } catch (err) {
       console.warn('[JobCircleService] getCategories fallback to defaults:', err);
       return DEFAULT_MINISTRY_CATEGORIES;
@@ -79,6 +81,29 @@ class JobCircleService {
     return newCat;
   }
 
+  async checkCategoryUsage(churchId: string, categoryId: string): Promise<number> {
+    try {
+      const snap = await this.getRootRef(churchId)
+        .collection('job_circle_opportunities')
+        .where('categoryId', '==', categoryId)
+        .limit(10)
+        .get();
+      return snap.size;
+    } catch (err) {
+      console.warn('[JobCircleService] checkCategoryUsage error:', err);
+      return 0;
+    }
+  }
+
+  async deleteCategory(churchId: string, categoryId: string, forceSoftDelete = false): Promise<void> {
+    const ref = this.getRootRef(churchId).collection('job_circle_categories').doc(categoryId);
+    if (forceSoftDelete) {
+      await ref.update({ isEnabled: false });
+    } else {
+      await ref.delete();
+    }
+  }
+
   // ─────────────────────────────────────────────────────────────
   // Custom Configs (Custom Opportunity Types & Compensation Types)
   // ─────────────────────────────────────────────────────────────
@@ -111,6 +136,27 @@ class JobCircleService {
     return val;
   }
 
+  async checkOpportunityTypeUsage(churchId: string, oppTypeValue: string): Promise<number> {
+    try {
+      const snap = await this.getRootRef(churchId)
+        .collection('job_circle_opportunities')
+        .where('opportunityType', '==', oppTypeValue)
+        .limit(10)
+        .get();
+      return snap.size;
+    } catch (err) {
+      console.warn('[JobCircleService] checkOpportunityTypeUsage error:', err);
+      return 0;
+    }
+  }
+
+  async deleteCustomOpportunityType(churchId: string, item: { label: string; value: string }): Promise<void> {
+    const ref = this.getRootRef(churchId).collection('job_circle_settings').doc('configs');
+    await ref.update({
+      opportunityTypes: firestore.FieldValue.arrayRemove(item),
+    });
+  }
+
   async addCustomCompensationType(churchId: string, label: string): Promise<string> {
     const val = label.toLowerCase().replace(/[^a-z0-9]/g, '_');
     const ref = this.getRootRef(churchId).collection('job_circle_settings').doc('configs');
@@ -121,6 +167,27 @@ class JobCircleService {
       { merge: true }
     );
     return val;
+  }
+
+  async checkCompensationTypeUsage(churchId: string, compTypeValue: string): Promise<number> {
+    try {
+      const snap = await this.getRootRef(churchId)
+        .collection('job_circle_opportunities')
+        .where('compensationType', '==', compTypeValue)
+        .limit(10)
+        .get();
+      return snap.size;
+    } catch (err) {
+      console.warn('[JobCircleService] checkCompensationTypeUsage error:', err);
+      return 0;
+    }
+  }
+
+  async deleteCustomCompensationType(churchId: string, item: { label: string; value: string }): Promise<void> {
+    const ref = this.getRootRef(churchId).collection('job_circle_settings').doc('configs');
+    await ref.update({
+      compensationTypes: firestore.FieldValue.arrayRemove(item),
+    });
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -199,6 +266,13 @@ class JobCircleService {
         },
         { merge: true }
       );
+  }
+
+  async deleteOpportunity(churchId: string, id: string): Promise<void> {
+    await this.getRootRef(churchId)
+      .collection('job_circle_opportunities')
+      .doc(id)
+      .delete();
   }
 
   async setOpportunityStatus(
@@ -416,6 +490,22 @@ class JobCircleService {
       status: 'withdrawn',
       updatedAt: firestore.FieldValue.serverTimestamp(),
     });
+  }
+
+  async deleteApplication(churchId: string, applicationId: string, opportunityId?: string): Promise<void> {
+    const ref = this.getRootRef(churchId).collection('job_circle_applications').doc(applicationId);
+    await ref.delete();
+
+    // Decrement opportunity application count if opportunityId is available
+    if (opportunityId) {
+      await this.getRootRef(churchId)
+        .collection('job_circle_opportunities')
+        .doc(opportunityId)
+        .update({
+          applicationsCount: firestore.FieldValue.increment(-1),
+        })
+        .catch(() => {});
+    }
   }
 
   // ─────────────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ import {
   Alert,
   Platform,
   Modal,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -28,7 +29,11 @@ import {
   Check,
   CheckCircle2,
   X,
+  ImageIcon,
+  Upload,
 } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
+import storage from '@react-native-firebase/storage';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import { useAuth } from '../../../context/AuthContext';
 import { useChurch } from '../../../context/ChurchContext';
@@ -104,6 +109,8 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
   const [categoryId, setCategoryId] = useState(editingOpp?.categoryId || DEFAULT_MINISTRY_CATEGORIES[0].id);
   const [description, setDescription] = useState(editingOpp?.description || '');
   const [location, setLocation] = useState(editingOpp?.location || '');
+  const [thumbnailUrl, setThumbnailUrl] = useState(editingOpp?.thumbnailUrl || '');
+  const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
 
   // Opportunity Types & Compensation Types with Custom Support
   const [roleTypes, setRoleTypes] = useState(DEFAULT_ROLE_TYPES);
@@ -246,6 +253,139 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
     }
   };
 
+  // ── DELETE CUSTOM CATEGORY HANDLER ──
+  const handleDeleteCategory = (cat: JobCategory) => {
+    const isDefault = DEFAULT_MINISTRY_CATEGORIES.some(d => d.id === cat.id);
+    if (isDefault) {
+      Alert.alert('System Category', 'Default system categories cannot be deleted.');
+      return;
+    }
+
+    Alert.alert(
+      'Delete Custom Category',
+      `Are you sure you want to delete the category "${cat.name}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Check if any existing opportunities use this category
+              const usageCount = await JobCircleService.checkCategoryUsage(churchId, cat.id);
+              if (usageCount > 0) {
+                // Safely soft delete (mark disabled) to preserve historical records
+                await JobCircleService.deleteCategory(churchId, cat.id, true);
+                Alert.alert(
+                  'Category Deactivated',
+                  `"${cat.name}" is used in ${usageCount} existing opportunity record(s). It has been deactivated so it cannot be selected for new opportunities while preserving existing records.`
+                );
+              } else {
+                await JobCircleService.deleteCategory(churchId, cat.id, false);
+                Alert.alert('Deleted', `Category "${cat.name}" was deleted successfully.`);
+              }
+
+              setCategories(prev => prev.filter(c => c.id !== cat.id));
+              if (categoryId === cat.id) {
+                const fallback = DEFAULT_MINISTRY_CATEGORIES[0];
+                setCategoryId(fallback.id);
+              }
+            } catch (err: any) {
+              console.error('Error deleting category:', err);
+              Alert.alert('Error', err?.message || 'Could not delete category.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // ── DELETE CUSTOM ROLE TYPE HANDLER ──
+  const handleDeleteRoleType = (item: { label: string; value: string }) => {
+    const isDefault = DEFAULT_ROLE_TYPES.some(d => d.value === item.value);
+    if (isDefault) {
+      Alert.alert('System Option', 'Default opportunity types cannot be deleted.');
+      return;
+    }
+
+    Alert.alert(
+      'Delete Custom Opportunity Type',
+      `Are you sure you want to delete "${item.label}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const usageCount = await JobCircleService.checkOpportunityTypeUsage(churchId, item.value);
+              if (usageCount > 0) {
+                Alert.alert(
+                  'In Use',
+                  `"${item.label}" is currently used in ${usageCount} existing opportunity record(s). Please edit or reassign those opportunities before deleting this type.`
+                );
+                return;
+              }
+
+              await JobCircleService.deleteCustomOpportunityType(churchId, item);
+              setRoleTypes(prev => prev.filter(r => r.value !== item.value));
+              if (opportunityType === item.value) {
+                setOpportunityType(DEFAULT_ROLE_TYPES[0].value);
+              }
+              Alert.alert('Deleted', `Opportunity type "${item.label}" deleted successfully.`);
+            } catch (err: any) {
+              console.error('Error deleting role type:', err);
+              Alert.alert('Error', err?.message || 'Could not delete opportunity type.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // ── DELETE CUSTOM COMPENSATION TYPE HANDLER ──
+  const handleDeleteCompType = (item: { label: string; value: string }) => {
+    const isDefault = DEFAULT_COMPENSATION_TYPES.some(d => d.value === item.value);
+    if (isDefault) {
+      Alert.alert('System Option', 'Default compensation types cannot be deleted.');
+      return;
+    }
+
+    Alert.alert(
+      'Delete Custom Compensation Option',
+      `Are you sure you want to delete "${item.label}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const usageCount = await JobCircleService.checkCompensationTypeUsage(churchId, item.value);
+              if (usageCount > 0) {
+                Alert.alert(
+                  'In Use',
+                  `"${item.label}" is currently used in ${usageCount} existing opportunity record(s). Please edit or reassign those opportunities before deleting this option.`
+                );
+                return;
+              }
+
+              await JobCircleService.deleteCustomCompensationType(churchId, item);
+              setCompensationTypes(prev => prev.filter(c => c.value !== item.value));
+              if (compensationType === item.value) {
+                setCompensationType(DEFAULT_COMPENSATION_TYPES[0].value);
+              }
+              Alert.alert('Deleted', `Compensation option "${item.label}" deleted successfully.`);
+            } catch (err: any) {
+              console.error('Error deleting compensation type:', err);
+              Alert.alert('Error', err?.message || 'Could not delete compensation option.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   // ── SCHEDULE SLOTS HELPERS ──
   const handleAddScheduleSlot = () => {
     setSchedules([...schedules, { days: ['Sunday'], startTime: '9:00 AM', endTime: '12:00 PM' }]);
@@ -327,6 +467,54 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
     setRequiredSkills(requiredSkills.filter((_, idx) => idx !== index));
   };
 
+  // ── THUMBNAIL UPLOAD & PICKER ──
+  const uploadThumbnailToStorage = async (localUri: string): Promise<string> => {
+    try {
+      const ext = localUri.substring(localUri.lastIndexOf('.') + 1) || 'jpg';
+      const storagePath = `job_circle/thumbnails/job_${Date.now()}.${ext}`;
+      const reference = storage().ref(storagePath);
+      await reference.putFile(localUri);
+      return await reference.getDownloadURL();
+    } catch (error) {
+      console.error('Storage thumbnail upload failed:', error);
+      throw new Error('Could not upload banner to cloud storage.');
+    }
+  };
+
+  const handlePickThumbnail = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [16, 9],
+        quality: 0.85,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const localUri = result.assets[0].uri;
+        setUploadingThumbnail(true);
+        try {
+          const cloudUrl = await uploadThumbnailToStorage(localUri);
+          setThumbnailUrl(cloudUrl);
+        } catch (uploadErr: any) {
+          console.warn('Upload fallback to local URI:', uploadErr);
+          setThumbnailUrl(localUri);
+          Alert.alert('Notice', 'Cloud upload failed. Local image saved, please verify internet connection.');
+        } finally {
+          setUploadingThumbnail(false);
+        }
+      }
+    } catch (err: any) {
+      console.error('Error selecting image:', err);
+      Alert.alert('Error', 'Unable to pick image. Please try again.');
+      setUploadingThumbnail(false);
+    }
+  };
+
+  const handleRemoveThumbnail = () => {
+    setThumbnailUrl('');
+  };
+
   // ── SAVE & PUBLISH ──
   const handleSave = async (isPublish: boolean) => {
     if (!title.trim()) {
@@ -345,6 +533,14 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
       const timeCommitmentSummary = formatScheduleCommitmentSummary();
 
       if (editingOpp) {
+        const creatorPhoto =
+          (member as any)?.profilePhoto ||
+          (member as any)?.photoURL ||
+          (member as any)?.photoUrl ||
+          (member as any)?.profileImageUrl ||
+          user?.photoURL ||
+          '';
+
         await JobCircleService.updateOpportunity(churchId, editingOpp.id, {
           title: title.trim(),
           categoryId: selectedCategoryObj.id,
@@ -357,9 +553,21 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
           compensationDetails: compensationDetails.trim(),
           responsibilities: cleanResponsibilities,
           requiredSkills: cleanSkills,
+          thumbnailUrl: thumbnailUrl.trim() || undefined,
+          createdByName: member?.name || user?.displayName || editingOpp.createdByName || '',
+          createdByPhoto: creatorPhoto || editingOpp.createdByPhoto || undefined,
+          createdByRole: (member as any)?.role || editingOpp.createdByRole || undefined,
           status: isPublish ? 'approved' : 'draft',
         });
       } else {
+        const creatorPhoto =
+          (member as any)?.profilePhoto ||
+          (member as any)?.photoURL ||
+          (member as any)?.photoUrl ||
+          (member as any)?.profileImageUrl ||
+          user?.photoURL ||
+          '';
+
         await JobCircleService.createOpportunity(churchId, {
           churchId,
           title: title.trim(),
@@ -373,9 +581,12 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
           opportunityType: opportunityType as any,
           compensationType: compensationType as any,
           compensationDetails: compensationDetails.trim(),
+          thumbnailUrl: thumbnailUrl.trim() || undefined,
           status: isPublish ? 'approved' : 'draft',
           createdById: user?.uid || 'admin',
-          createdByName: member?.name || user?.displayName || 'Admin',
+          createdByName: member?.name || user?.displayName || '',
+          createdByPhoto: creatorPhoto || undefined,
+          createdByRole: (member as any)?.role || undefined,
         });
       }
 
@@ -432,7 +643,11 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 30 }]}>
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 120 }]}
+        showsVerticalScrollIndicator={true}
+        keyboardShouldPersistTaps="handled"
+      >
         {/* ── CARD 1: POSITION DETAILS ── */}
         <View style={[styles.sectionCard, isDark ? styles.sectionDark : styles.sectionLight]}>
           <LinearGradient
@@ -466,16 +681,16 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
 
             {/* 2. Ministry Category with "+ New Category" button & English-Only */}
             <View style={styles.fGroup}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0 }]}>Ministry Category *</Text>
+              <View style={styles.fieldHeaderBetween}>
+                <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0, flexShrink: 1 }]}>Ministry Category *</Text>
                 <TouchableOpacity
                   onPress={() => setNewCategoryModalVisible(true)}
                   style={[styles.smallAddPill, { borderColor: isDark ? '#3F3F46' : '#CBD5E1', backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
                   activeOpacity={0.7}
                 >
-                  <Plus size={12} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />
+                  <Plus size={11} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />
                   <Text style={[styles.smallAddPillTxt, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>
-                    New Category
+                    New
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -507,6 +722,73 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                 />
               </View>
             </View>
+
+            {/* 4. Opportunity Thumbnail / Banner Image (LinkedIn-Style) */}
+            <View style={styles.fGroup}>
+              <View style={styles.fieldHeaderBetween}>
+                <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0 }]}>
+                  Thumbnail / Banner Image
+                </Text>
+                {thumbnailUrl ? (
+                  <TouchableOpacity
+                    onPress={handleRemoveThumbnail}
+                    style={[styles.smallAddPill, { borderColor: '#EF4444', backgroundColor: isDark ? '#7F1D1D30' : '#FEE2E2' }]}
+                    activeOpacity={0.7}
+                  >
+                    <Trash2 size={11} color="#EF4444" />
+                    <Text style={[styles.smallAddPillTxt, { color: '#EF4444' }]}>Remove</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+
+              {thumbnailUrl ? (
+                <View style={[styles.thumbnailPreviewCard, { borderColor: isDark ? '#3F3F46' : '#CBD5E1' }]}>
+                  <Image source={{ uri: thumbnailUrl }} style={styles.thumbnailImg} resizeMode="cover" />
+                  <TouchableOpacity
+                    style={[styles.replaceThumbnailBtn, { backgroundColor: isDark ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.9)' }]}
+                    onPress={handlePickThumbnail}
+                    activeOpacity={0.8}
+                  >
+                    <Upload size={14} color={isDark ? '#FFFFFF' : '#0F172A'} />
+                    <Text style={[styles.replaceThumbnailTxt, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                      Change Image
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={[
+                    styles.thumbnailUploadBox,
+                    {
+                      borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+                      backgroundColor: isDark ? '#27272A50' : '#F8FAFC',
+                    },
+                  ]}
+                  onPress={handlePickThumbnail}
+                  disabled={uploadingThumbnail}
+                  activeOpacity={0.8}
+                >
+                  {uploadingThumbnail ? (
+                    <View style={{ alignItems: 'center', gap: 6 }}>
+                      <ActivityIndicator size="small" color={isDark ? '#60A5FA' : '#1a2d5a'} />
+                      <Text style={[styles.uploadBoxSub, { color: secondaryText }]}>Uploading to cloud storage...</Text>
+                    </View>
+                  ) : (
+                    <View style={{ alignItems: 'center', gap: 6 }}>
+                      <View style={[styles.uploadIconCircle, { backgroundColor: isDark ? '#3F3F46' : '#E2E8F0' }]}>
+                        <ImageIcon size={22} color={isDark ? '#93C5FD' : '#1a2d5a'} />
+                      </View>
+                      <Text style={[styles.uploadBoxTitle, { color: primaryText }]}>
+                        Upload Opportunity Banner
+                      </Text>
+                      <Text style={[styles.uploadBoxSub, { color: secondaryText }]}>
+                        Tap to choose 16:9 banner or post graphic from gallery
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              )}
+            </View>
           </LinearGradient>
         </View>
 
@@ -529,15 +811,15 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
 
             {/* Opportunity Type with "+ New" */}
             <View style={styles.fGroup}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0 }]}>Opportunity Type</Text>
+              <View style={styles.fieldHeaderBetween}>
+                <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0, flexShrink: 1 }]}>Opportunity Type</Text>
                 <TouchableOpacity
                   onPress={() => setNewRoleTypeModalVisible(true)}
                   style={[styles.smallAddPill, { borderColor: isDark ? '#3F3F46' : '#CBD5E1', backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
                   activeOpacity={0.7}
                 >
-                  <Plus size={12} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />
-                  <Text style={[styles.smallAddPillTxt, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>New Type</Text>
+                  <Plus size={11} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />
+                  <Text style={[styles.smallAddPillTxt, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>New</Text>
                 </TouchableOpacity>
               </View>
               <TouchableOpacity
@@ -554,15 +836,15 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
 
             {/* Compensation Type with "+ New" */}
             <View style={styles.fGroup}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0 }]}>Compensation Type</Text>
+              <View style={styles.fieldHeaderBetween}>
+                <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0, flexShrink: 1 }]}>Compensation Type</Text>
                 <TouchableOpacity
                   onPress={() => setNewCompTypeModalVisible(true)}
                   style={[styles.smallAddPill, { borderColor: isDark ? '#3F3F46' : '#CBD5E1', backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
                   activeOpacity={0.7}
                 >
-                  <Plus size={12} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />
-                  <Text style={[styles.smallAddPillTxt, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>New Option</Text>
+                  <Plus size={11} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />
+                  <Text style={[styles.smallAddPillTxt, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>New</Text>
                 </TouchableOpacity>
               </View>
               <TouchableOpacity
@@ -609,8 +891,8 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
 
             {/* ── TIME COMMITMENT (Day Selector + Start/End Time Pickers) ── */}
             <View style={[styles.fGroup, { marginTop: 4 }]}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0 }]}>
+              <View style={styles.fieldHeaderBetween}>
+                <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0, flexShrink: 1 }]}>
                   Time Commitment & Schedule
                 </Text>
                 <TouchableOpacity
@@ -618,9 +900,9 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                   style={[styles.smallAddPill, { borderColor: isDark ? '#3F3F46' : '#CBD5E1', backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
                   activeOpacity={0.7}
                 >
-                  <Plus size={12} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />
+                  <Plus size={11} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />
                   <Text style={[styles.smallAddPillTxt, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>
-                    Add Schedule
+                    Add
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -647,9 +929,9 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                     )}
                   </View>
 
-                  {/* Day Selection Chips (Mon to Sun) */}
-                  <Text style={{ fontSize: 11, fontWeight: '600', color: secondaryText, marginBottom: 6 }}>
-                    Select Day(s):
+                  {/* Day Selection Row (7 Equal Modern Circular/Pill Chips) */}
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: secondaryText, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                    Select Days
                   </Text>
                   <View style={styles.daysRow}>
                     {WEEKDAYS.map(day => {
@@ -660,16 +942,27 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                           style={[
                             styles.dayChip,
                             isSelected
-                              ? { backgroundColor: isDark ? '#FFFFFF' : '#1a2d5a' }
-                              : { backgroundColor: isDark ? '#27272A' : '#FFFFFF', borderColor: isDark ? '#3F3F46' : '#CBD5E1', borderWidth: 1 },
+                              ? {
+                                  backgroundColor: isDark ? '#FFFFFF' : '#1a2d5a',
+                                  borderColor: isDark ? '#FFFFFF' : '#1a2d5a',
+                                }
+                              : {
+                                  backgroundColor: isDark ? '#27272A' : '#F1F5F9',
+                                  borderColor: isDark ? '#3F3F46' : '#E2E8F0',
+                                },
                           ]}
                           onPress={() => handleToggleDay(sIdx, day.full)}
+                          activeOpacity={0.7}
                         >
                           <Text
                             style={[
                               styles.dayChipTxt,
-                              { color: isSelected ? (isDark ? '#000000' : '#FFFFFF') : primaryText },
-                              isSelected && { fontWeight: '700' },
+                              {
+                                color: isSelected
+                                  ? (isDark ? '#000000' : '#FFFFFF')
+                                  : (isDark ? '#A1A1AA' : '#64748B'),
+                                fontWeight: isSelected ? '800' : '600',
+                              },
                             ]}
                           >
                             {day.label}
@@ -883,28 +1176,58 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
       <Modal visible={categoryModalVisible} transparent animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setCategoryModalVisible(false)}>
           <View style={[styles.modalCard, { backgroundColor: cardSurface }]}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <View style={{ marginBottom: 12 }}>
               <Text style={[styles.modalTitle, { color: primaryText, marginBottom: 0 }]}>Select Ministry Category</Text>
-              <TouchableOpacity onPress={() => setNewCategoryModalVisible(true)}>
-                <Text style={{ color: '#1a2d5a', fontSize: 13, fontWeight: '700' }}>+ Add New</Text>
-              </TouchableOpacity>
             </View>
             <ScrollView style={{ maxHeight: 320 }}>
-              {categories.map(cat => (
-                <TouchableOpacity
-                  key={cat.id}
-                  style={[styles.modalOption, categoryId === cat.id && { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
-                  onPress={() => {
-                    setCategoryId(cat.id);
-                    setCategoryModalVisible(false);
-                  }}
-                >
-                  <Text style={[styles.modalOptionTxt, { color: primaryText }, categoryId === cat.id && { fontWeight: '700' }]}>
-                    {cat.name}
-                  </Text>
-                  {categoryId === cat.id && <Check size={18} color="#1a2d5a" />}
-                </TouchableOpacity>
-              ))}
+              {categories.map(cat => {
+                const isCustom = !DEFAULT_MINISTRY_CATEGORIES.some(d => d.id === cat.id);
+                return (
+                  <View
+                    key={cat.id}
+                    style={[
+                      styles.modalOption,
+                      categoryId === cat.id && { backgroundColor: isDark ? '#27272A' : '#F1F5F9' },
+                    ]}
+                  >
+                    <TouchableOpacity
+                      style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                      onPress={() => {
+                        setCategoryId(cat.id);
+                        setCategoryModalVisible(false);
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.modalOptionTxt,
+                          { color: primaryText },
+                          categoryId === cat.id && { fontWeight: '700' },
+                        ]}
+                      >
+                        {cat.name}
+                      </Text>
+                      {categoryId === cat.id && (
+                        <Check size={18} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} style={{ marginRight: isCustom ? 8 : 0 }} />
+                      )}
+                    </TouchableOpacity>
+
+                    {isCustom && (
+                      <TouchableOpacity
+                        style={{
+                          padding: 6,
+                          borderRadius: 6,
+                          backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2',
+                          marginLeft: 8,
+                        }}
+                        onPress={() => handleDeleteCategory(cat)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Trash2 size={15} color={isDark ? '#F87171' : '#DC2626'} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })}
             </ScrollView>
           </View>
         </TouchableOpacity>
@@ -951,28 +1274,60 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
       <Modal visible={roleTypeModalVisible} transparent animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setRoleTypeModalVisible(false)}>
           <View style={[styles.modalCard, { backgroundColor: cardSurface }]}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <View style={{ marginBottom: 12 }}>
               <Text style={[styles.modalTitle, { color: primaryText, marginBottom: 0 }]}>Select Opportunity Type</Text>
-              <TouchableOpacity onPress={() => setNewRoleTypeModalVisible(true)}>
-                <Text style={{ color: '#1a2d5a', fontSize: 13, fontWeight: '700' }}>+ Add New</Text>
-              </TouchableOpacity>
             </View>
-            {roleTypes.map(rt => (
-              <TouchableOpacity
-                key={rt.value}
-                style={[styles.modalOption, opportunityType === rt.value && { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
-                onPress={() => {
-                  setOpportunityType(rt.value);
-                  if (rt.value === 'volunteer') setCompensationType('unpaid');
-                  setRoleTypeModalVisible(false);
-                }}
-              >
-                <Text style={[styles.modalOptionTxt, { color: primaryText }, opportunityType === rt.value && { fontWeight: '700' }]}>
-                  {rt.label}
-                </Text>
-                {opportunityType === rt.value && <Check size={18} color="#1a2d5a" />}
-              </TouchableOpacity>
-            ))}
+            <ScrollView style={{ maxHeight: 320 }}>
+              {roleTypes.map(rt => {
+                const isCustom = !DEFAULT_ROLE_TYPES.some(d => d.value === rt.value);
+                return (
+                  <View
+                    key={rt.value}
+                    style={[
+                      styles.modalOption,
+                      opportunityType === rt.value && { backgroundColor: isDark ? '#27272A' : '#F1F5F9' },
+                    ]}
+                  >
+                    <TouchableOpacity
+                      style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                      onPress={() => {
+                        setOpportunityType(rt.value);
+                        if (rt.value === 'volunteer') setCompensationType('unpaid');
+                        setRoleTypeModalVisible(false);
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.modalOptionTxt,
+                          { color: primaryText },
+                          opportunityType === rt.value && { fontWeight: '700' },
+                        ]}
+                      >
+                        {rt.label}
+                      </Text>
+                      {opportunityType === rt.value && (
+                        <Check size={18} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} style={{ marginRight: isCustom ? 8 : 0 }} />
+                      )}
+                    </TouchableOpacity>
+
+                    {isCustom && (
+                      <TouchableOpacity
+                        style={{
+                          padding: 6,
+                          borderRadius: 6,
+                          backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2',
+                          marginLeft: 8,
+                        }}
+                        onPress={() => handleDeleteRoleType(rt)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Trash2 size={15} color={isDark ? '#F87171' : '#DC2626'} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })}
+            </ScrollView>
           </View>
         </TouchableOpacity>
       </Modal>
@@ -1018,27 +1373,59 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
       <Modal visible={compTypeModalVisible} transparent animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setCompTypeModalVisible(false)}>
           <View style={[styles.modalCard, { backgroundColor: cardSurface }]}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <View style={{ marginBottom: 12 }}>
               <Text style={[styles.modalTitle, { color: primaryText, marginBottom: 0 }]}>Select Compensation</Text>
-              <TouchableOpacity onPress={() => setNewCompTypeModalVisible(true)}>
-                <Text style={{ color: '#1a2d5a', fontSize: 13, fontWeight: '700' }}>+ Add New</Text>
-              </TouchableOpacity>
             </View>
-            {compensationTypes.map(ct => (
-              <TouchableOpacity
-                key={ct.value}
-                style={[styles.modalOption, compensationType === ct.value && { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
-                onPress={() => {
-                  setCompensationType(ct.value);
-                  setCompTypeModalVisible(false);
-                }}
-              >
-                <Text style={[styles.modalOptionTxt, { color: primaryText }, compensationType === ct.value && { fontWeight: '700' }]}>
-                  {ct.label}
-                </Text>
-                {compensationType === ct.value && <Check size={18} color="#1a2d5a" />}
-              </TouchableOpacity>
-            ))}
+            <ScrollView style={{ maxHeight: 320 }}>
+              {compensationTypes.map(ct => {
+                const isCustom = !DEFAULT_COMPENSATION_TYPES.some(d => d.value === ct.value);
+                return (
+                  <View
+                    key={ct.value}
+                    style={[
+                      styles.modalOption,
+                      compensationType === ct.value && { backgroundColor: isDark ? '#27272A' : '#F1F5F9' },
+                    ]}
+                  >
+                    <TouchableOpacity
+                      style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                      onPress={() => {
+                        setCompensationType(ct.value);
+                        setCompTypeModalVisible(false);
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.modalOptionTxt,
+                          { color: primaryText },
+                          compensationType === ct.value && { fontWeight: '700' },
+                        ]}
+                      >
+                        {ct.label}
+                      </Text>
+                      {compensationType === ct.value && (
+                        <Check size={18} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} style={{ marginRight: isCustom ? 8 : 0 }} />
+                      )}
+                    </TouchableOpacity>
+
+                    {isCustom && (
+                      <TouchableOpacity
+                        style={{
+                          padding: 6,
+                          borderRadius: 6,
+                          backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2',
+                          marginLeft: 8,
+                        }}
+                        onPress={() => handleDeleteCompType(ct)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Trash2 size={15} color={isDark ? '#F87171' : '#DC2626'} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })}
+            </ScrollView>
           </View>
         </TouchableOpacity>
       </Modal>
@@ -1178,6 +1565,13 @@ const styles = createAdminThemedStyles(
       flex: 1,
       minWidth: 0,
     },
+    fieldHeaderBetween: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 6,
+      gap: 10,
+    },
     fGroup: { marginBottom: 14 },
     fLabel: {
       fontSize: 11,
@@ -1223,23 +1617,28 @@ const styles = createAdminThemedStyles(
 
     // Schedule Styling
     scheduleBox: {
-      padding: 12,
-      borderRadius: 12,
-      borderWidth: 1,
-      marginBottom: 10,
+      padding: 14,
+      borderRadius: 14,
+      borderWidth: 1.5,
+      marginBottom: 12,
     },
     daysRow: {
       flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 6,
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: 4,
     },
     dayChip: {
-      paddingHorizontal: 10,
-      paddingVertical: 6,
-      borderRadius: 8,
+      flex: 1,
+      paddingVertical: 9,
+      borderRadius: 10,
+      borderWidth: 1.5,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     dayChipTxt: {
-      fontSize: 11,
+      fontSize: 11.5,
+      textAlign: 'center',
     },
     timeBtn: {
       flexDirection: 'row',
@@ -1278,6 +1677,59 @@ const styles = createAdminThemedStyles(
       padding: 8,
       justifyContent: 'center',
       alignItems: 'center',
+    },
+
+    // Thumbnail / Banner Styles
+    thumbnailUploadBox: {
+      borderWidth: 1.5,
+      borderStyle: 'dashed',
+      borderRadius: 14,
+      paddingVertical: 24,
+      paddingHorizontal: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    uploadIconCircle: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 2,
+    },
+    uploadBoxTitle: {
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    uploadBoxSub: {
+      fontSize: 12,
+      textAlign: 'center',
+    },
+    thumbnailPreviewCard: {
+      borderRadius: 14,
+      overflow: 'hidden',
+      borderWidth: 1.5,
+      position: 'relative',
+    },
+    thumbnailImg: {
+      width: '100%',
+      height: 180,
+    },
+    replaceThumbnailBtn: {
+      position: 'absolute',
+      bottom: 10,
+      right: 10,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+      borderRadius: 8,
+      elevation: 2,
+    },
+    replaceThumbnailTxt: {
+      fontSize: 12,
+      fontWeight: '700',
     },
 
     // Footer Buttons

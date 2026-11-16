@@ -326,4 +326,12 @@ export declare const onJobApplicationUpdated: import("firebase-functions/core").
     churchId: string;
     applicationId: string;
 }>>;
+/**
+ * Trigger: When a new Ministry Opportunity is published (status == 'approved')
+ * Automatically broadcasts a high-priority push notification to all church members!
+ */
+export declare const onJobOpportunityCreated: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+    churchId: string;
+    opportunityId: string;
+}>>;
 //# sourceMappingURL=notifications.d.ts.map

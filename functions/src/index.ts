@@ -1783,6 +1783,9 @@ export {
   onEventUpdatedForVolunteersLegacy,
   scheduledVolunteerReminders,
   triggerVolunteerPushTestHttp,
+  onJobApplicationCreated,
+  onJobApplicationUpdated,
+  onJobOpportunityCreated,
 } from './notifications.js';
 
 export {

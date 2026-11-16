@@ -196,7 +196,10 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
             setPublicPrayerCount(snapshot.docs.length);
           }
         }, (error) => {
-          console.error("Prayer listener error", error);
+          // Gracefully suppress permission denied / listener warning if user is not authorized or during auth transition
+          if (__DEV__) {
+            console.warn("Prayer listener:", error?.message || error);
+          }
         });
       return () => unsubscribe();
     }, [activeChurch?.id]);
@@ -937,6 +940,7 @@ function Navigation() {
           type === 'prayer' ||
           type === 'testimony_admin' ||
           type === 'volunteer_application_admin' ||
+          type === 'job_application_admin' ||
           type === 'admin_roster_alert';
 
         if (isAdminNotification && isAdmin && viewMode !== 'admin') {
@@ -964,6 +968,7 @@ function Navigation() {
             type === 'prayer' ||
             type === 'testimony_admin' ||
             type === 'volunteer_application_admin' ||
+            type === 'job_application_admin' ||
             type === 'admin_roster_alert';
 
           if (isAdminNotification && isAdmin && viewMode !== 'admin') {
@@ -1139,6 +1144,7 @@ function Navigation() {
             type === 'prayer' ||
             type === 'testimony_admin' ||
             type === 'volunteer_application_admin' ||
+            type === 'job_application_admin' ||
             type === 'admin_roster_alert';
 
           if (isAdminNotification && isAdmin && viewMode !== 'admin') {

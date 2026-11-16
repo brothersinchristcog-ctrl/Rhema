@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, StatusBar, Platform, ActivityIndicator, Modal, PanResponder, Animated, Dimensions, Linking, Alert, Image, BackHandler, Clipboard, ToastAndroid } from 'react-native';
-import { ChevronLeft, ArrowLeft, Bell, Calendar, Info, MessageCircle, AlertTriangle, X, Gift, Heart, Sparkles, Droplets, Trash2, Tv, BookOpen, Music, Mic , Video, Layers, UserCheck, Zap, HeartHandshake } from 'lucide-react-native';
+import { ChevronLeft, ArrowLeft, Bell, Calendar, Info, MessageCircle, AlertTriangle, X, Gift, Heart, Sparkles, Droplets, Trash2, Tv, BookOpen, Music, Mic , Video, Layers, UserCheck, Zap, HeartHandshake, Briefcase } from 'lucide-react-native';
 import { openZoomMeeting } from '../utils/ZoomLauncher';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -28,6 +28,9 @@ const VOLUNTEER_NOTIFICATION_TYPES = [
   'volunteer_assignment',
   'volunteer_event_change',
   'volunteer_reminder',
+  'job_opportunity_new',
+  'job_application_admin',
+  'job_application_member',
 ];
 
 function SwipeableRow({ children, onDelete }: { children: React.ReactNode; onDelete: () => void }) {
@@ -150,6 +153,9 @@ export default function UpdatesScreen({ navigation, route }: any) {
     if (type === 'volunteer_assignment') return 'VOLUNTEER ASSIGNMENT';
     if (type === 'volunteer_event_change') return 'EVENT VOLUNTEER UPDATE';
     if (type === 'volunteer_reminder') return 'VOLUNTEER REMINDER';
+    if (type === 'job_opportunity_new') return 'MINISTRY OPPORTUNITY';
+    if (type === 'job_application_admin') return 'MINISTRY APPLICATION';
+    if (type === 'job_application_member') return 'APPLICATION UPDATE';
     if (!type) return (t('updates.types.announcement') || 'ANNOUNCEMENT').toUpperCase();
     const trans = t(`updates.types.${type}`);
     return trans && trans !== `updates.types.${type}` ? trans.toUpperCase() : type.toUpperCase();
@@ -364,6 +370,25 @@ export default function UpdatesScreen({ navigation, route }: any) {
       icon = Bell;
       color = '#7C3AED';
       resolvedType = 'volunteer_reminder';
+    } else if (
+      data.type === 'job_opportunity_new' ||
+      data.type === 'job_application_admin' ||
+      data.type === 'job_application_member' ||
+      data.referenceType === 'job_circle_application' ||
+      data.referenceType === 'job_circle_opportunity' ||
+      data.title?.includes('Ministry Opportunity') ||
+      data.title?.includes('Ministry Application') ||
+      data.title?.includes('Ministry Interview')
+    ) {
+      icon = Briefcase;
+      color = '#0284c7';
+      if (data.type === 'job_application_admin') {
+        resolvedType = 'job_application_admin';
+      } else if (data.type === 'job_application_member' || data.title?.includes('Ministry Interview') || data.title?.includes('Application')) {
+        resolvedType = 'job_application_member';
+      } else {
+        resolvedType = data.type || 'job_opportunity_new';
+      }
     } else if (data.type === 'event' || data.title?.includes('📅')) {
       icon = Calendar;
       color = '#10b981';
@@ -453,6 +478,16 @@ export default function UpdatesScreen({ navigation, route }: any) {
       icon = Mic;
       color = '#6366f1';
       resolvedType = 'sermon';
+    } else if (
+      data.type === 'job_opportunity_new' ||
+      data.type === 'job_application_admin' ||
+      data.type === 'job_application_member' ||
+      data.title?.includes('Ministry Opportunity') ||
+      data.title?.includes('Ministry Application')
+    ) {
+      icon = Briefcase;
+      color = '#0284c7';
+      resolvedType = data.type || 'job_opportunity_new';
     }
 
     let dateStr = '';
@@ -528,7 +563,8 @@ export default function UpdatesScreen({ navigation, route }: any) {
       serviceDate: data.serviceDate || null,
       requestId: data.requestId || null,
       prayerId: data.prayerId || null,
-      applicationId: data.applicationId || data.referenceId || null,
+      opportunityId: data.opportunityId || (data.referenceType === 'job_circle_opportunity' ? data.referenceId : null) || null,
+      applicationId: data.applicationId || (data.referenceType === 'job_circle_application' ? data.referenceId : null) || null,
       eventId: data.eventId || null,
       volunteerType: data.volunteerType || null,
       volunteerStatus: data.status || null,
@@ -870,6 +906,25 @@ export default function UpdatesScreen({ navigation, route }: any) {
                     } else {
                       navigation.navigate('Testimonies', { initialTab: 'mine' });
                     }
+                  } else if (update.type === 'job_opportunity_new') {
+                    if (update.opportunityId) {
+                      navigation.navigate('OpportunityDetailScreen', { opportunityId: update.opportunityId });
+                    } else {
+                      navigation.navigate('JobCircle');
+                    }
+                  } else if (update.type === 'job_application_admin') {
+                    navigation.navigate('AdminRoot', {
+                      targetTab: 'Job Circle',
+                      applicationId: update.applicationId,
+                      timestamp: Date.now(),
+                    });
+                  } else if (update.type === 'job_application_member') {
+                    navigation.navigate('JobCircle', {
+                      initialTab: 'applications',
+                      applicationId: update.applicationId,
+                      opportunityId: update.opportunityId,
+                      timestamp: Date.now(),
+                    });
                   } else {
                     setSelectedUpdate(update);
                   }

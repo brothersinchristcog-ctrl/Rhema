@@ -52,6 +52,7 @@ export interface JobOpportunity {
   requiredSkills: string[];
   qualifications?: string[];
   experienceRequired?: string;
+  thumbnailUrl?: string; // Banner / thumbnail image for LinkedIn-style feed
   location: string;
   timeCommitment: string;
   opportunityType: JobOpportunityType;
@@ -66,6 +67,8 @@ export interface JobOpportunity {
   // Scoped leader or creator
   createdById: string;
   createdByName: string;
+  createdByPhoto?: string;
+  createdByRole?: string;
   approvedById?: string;
   approvedByName?: string;
   approvedAt?: any;
