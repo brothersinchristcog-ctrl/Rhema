@@ -65,7 +65,7 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
 
   const churchId = activeChurch?.id || 'rhema';
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'opportunities' | 'applications' | 'teams' | 'volunteers'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'opportunities' | 'applications'>('overview');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -233,8 +233,6 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
                 { id: 'overview', label: 'Overview' },
                 { id: 'opportunities', label: `Openings (${opportunities.length})` },
                 { id: 'applications', label: `Applicants (${applications.length})` },
-                { id: 'teams', label: 'Ministry Teams' },
-                { id: 'volunteers', label: 'Volunteers' },
               ] as const
             ).map(tab => {
               const isActive = activeTab === tab.id;
@@ -247,23 +245,7 @@ export default function AdminJobCircleDashboard({ navigation }: AdminJobCircleDa
                       ? { backgroundColor: isDark ? '#27272A' : '#1a2d5a' }
                       : { backgroundColor: 'transparent' },
                   ]}
-                  onPress={() => {
-                    if (tab.id === 'volunteers') {
-                      if (setTabByName) {
-                        setTabByName('Volunteer Management');
-                      } else if (navigation?.navigate) {
-                        navigation.navigate('Admin', { targetTab: 'Volunteer Management' });
-                      }
-                    } else if (tab.id === 'teams') {
-                      if (setTabByName) {
-                        setTabByName('Ministry Teams');
-                      } else if (navigation?.navigate) {
-                        navigation.navigate('AdminMinistryTeamsScreen');
-                      }
-                    } else {
-                      setActiveTab(tab.id);
-                    }
-                  }}
+                  onPress={() => setActiveTab(tab.id)}
                 >
                   <Text
                     style={[
