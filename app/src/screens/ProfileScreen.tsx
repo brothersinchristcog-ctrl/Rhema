@@ -47,6 +47,7 @@ import {
   MapPin,
   Crown,
   Award,
+  Briefcase,
   Shield,
   HeartHandshake,
   Sun,
@@ -675,6 +676,14 @@ export default function ProfileScreen({ navigation }: any) {
             title="Baptism" 
             sub="Submit request & track approval status" 
             onPress={() => navigation.navigate('BaptismRequest')}
+            textColor={colors.text}
+            subColor={colors.textSecondary}
+          />
+          <MenuItem 
+            icon={<Briefcase size={22} color={colors.text} strokeWidth={1.8} />} 
+            title="Job Circle & Calling" 
+            sub="Church recruitment, staff roles & ministry calling" 
+            onPress={() => navigation.navigate('JobCircle')}
             textColor={colors.text}
             subColor={colors.textSecondary}
           />

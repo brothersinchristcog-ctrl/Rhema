@@ -51,6 +51,10 @@ import GivingScreen from '../screens/GivingScreen';
 import GivingHistoryScreen from '../screens/GivingHistoryScreen';
 import BaptismRequestScreen from '../screens/BaptismRequestScreen';
 import VolunteerScreen from '../screens/VolunteerScreen';
+import JobCircleScreen from '../screens/job_circle/JobCircleScreen';
+import OpportunityDetailScreen from '../screens/job_circle/OpportunityDetailScreen';
+import AdminJobCircleDashboard from '../screens/admin/job_circle/AdminJobCircleDashboard';
+import AdminOpportunityEditor from '../screens/admin/job_circle/AdminOpportunityEditor';
 import SermonsScreen from '../screens/SermonsScreen';
 import SongsScreen from '../screens/SongsScreen';
 import EventDetailsScreen from '../screens/EventDetailsScreen';
@@ -1307,6 +1311,11 @@ function Navigation() {
             <Stack.Screen name="BaptismRequest" component={renderPremium(BaptismRequestScreen)} />
             <Stack.Screen name="Volunteer" component={renderPremium(VolunteerScreen)} />
             <Stack.Screen name="VolunteerScreen" component={renderPremium(VolunteerScreen)} />
+            <Stack.Screen name="JobCircle" component={renderPremium(JobCircleScreen)} />
+            <Stack.Screen name="JobCircleScreen" component={renderPremium(JobCircleScreen)} />
+            <Stack.Screen name="OpportunityDetailScreen" component={renderPremium(OpportunityDetailScreen)} />
+            <Stack.Screen name="AdminJobCircleDashboard" component={renderPremium(AdminJobCircleDashboard)} />
+            <Stack.Screen name="AdminOpportunityEditor" component={renderPremium(AdminOpportunityEditor)} />
             <Stack.Screen name="Sermons" component={renderPremium(SermonsScreen)} />
             <Stack.Screen name="Songs" component={renderPremium(SongsScreen)} />
             <Stack.Screen name="EventDetails" component={renderPremium(EventDetailsScreen)} />
