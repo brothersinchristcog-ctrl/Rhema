@@ -196,7 +196,10 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
             setPublicPrayerCount(snapshot.docs.length);
           }
         }, (error) => {
-          console.error("Prayer listener error", error);
+          // Gracefully suppress permission denied / listener warning if user is not authorized or during auth transition
+          if (__DEV__) {
+            console.warn("Prayer listener:", error?.message || error);
+          }
         });
       return () => unsubscribe();
     }, [activeChurch?.id]);
