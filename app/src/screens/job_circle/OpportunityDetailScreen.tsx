@@ -55,12 +55,13 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
   const { activeChurch } = useChurch();
   const { colors, currentThemeOption, isDark } = useTheme();
   const theme = {
-    bg: colors.bgSecondary,
-    surface: colors.bgPrimary,
-    text: colors.textPrimary,
-    textSecondary: colors.textSecondary,
-    border: colors.border,
-    accent: colors.accent,
+    bg: isDark ? '#000000' : colors.bg,
+    surface: isDark ? '#121214' : colors.surface,
+    cardBorder: isDark ? '#27272A' : '#E2E8F0',
+    text: isDark ? '#FFFFFF' : '#0F172A',
+    textSecondary: isDark ? '#A1A1AA' : '#64748B',
+    border: isDark ? '#27272A' : '#E2E8F0',
+    accent: isDark ? '#60A5FA' : (colors.accent || Colors.primary),
     headerGradient: currentThemeOption?.headerGradient || ['#1a2d5a', '#2c3e6b'],
   };
   const churchId = activeChurch?.id || 'rhema';
@@ -272,14 +273,14 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
                     ? '#3B82F6'
                     : userApplication.status === 'rejected'
                     ? '#EF4444'
-                    : theme.border,
+                    : theme.cardBorder,
                 borderWidth: 1.5,
                 marginBottom: 16,
               },
             ]}
           >
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <Text style={[styles.sectionTitle, { color: theme.text, marginBottom: 0 }]}>
+              <Text style={[styles.sectionTitle, { color: isDark ? '#FFFFFF' : '#0F172A', marginBottom: 0 }]}>
                 Your Application Status
               </Text>
               <View
@@ -288,14 +289,14 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
                   {
                     backgroundColor:
                       userApplication.status === 'selected'
-                        ? (isDark ? 'rgba(16, 185, 129, 0.2)' : '#D1FAE5')
+                        ? (isDark ? 'rgba(16, 185, 129, 0.25)' : '#D1FAE5')
                         : userApplication.status === 'meeting_scheduled'
-                        ? (isDark ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7')
+                        ? (isDark ? 'rgba(245, 158, 11, 0.25)' : '#FEF3C7')
                         : userApplication.status === 'under_review'
-                        ? (isDark ? 'rgba(59, 130, 246, 0.2)' : '#DBEAFE')
+                        ? (isDark ? 'rgba(59, 130, 246, 0.25)' : '#DBEAFE')
                         : userApplication.status === 'rejected'
-                        ? (isDark ? 'rgba(239, 68, 68, 0.2)' : '#FEE2E2')
-                        : (isDark ? 'rgba(148, 163, 184, 0.2)' : '#F1F5F9'),
+                        ? (isDark ? 'rgba(239, 68, 68, 0.25)' : '#FEE2E2')
+                        : (isDark ? 'rgba(148, 163, 184, 0.25)' : '#F1F5F9'),
                   },
                 ]}
               >
@@ -305,14 +306,14 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
                     {
                       color:
                         userApplication.status === 'selected'
-                          ? '#059669'
+                          ? (isDark ? '#34D399' : '#059669')
                           : userApplication.status === 'meeting_scheduled'
-                          ? '#B45309'
+                          ? (isDark ? '#FBBF24' : '#B45309')
                           : userApplication.status === 'under_review'
-                          ? '#2563EB'
+                          ? (isDark ? '#93C5FD' : '#2563EB')
                           : userApplication.status === 'rejected'
-                          ? '#DC2626'
-                          : '#475569',
+                          ? (isDark ? '#FCA5A5' : '#DC2626')
+                          : (isDark ? '#CBD5E1' : '#475569'),
                     },
                   ]}
                 >
@@ -322,27 +323,27 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
             </View>
 
             {userApplication.status === 'meeting_scheduled' ? (
-              <View style={{ backgroundColor: isDark ? 'rgba(245, 158, 11, 0.1)' : '#FFFBEB', padding: 12, borderRadius: 10, marginTop: 4 }}>
+              <View style={{ backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : '#FFFBEB', padding: 12, borderRadius: 10, marginTop: 4 }}>
                 <Text style={{ fontWeight: '700', color: isDark ? '#FBBF24' : '#B45309', fontSize: 14, marginBottom: 4 }}>
                   📅 Ministry Interview Scheduled
                 </Text>
                 {userApplication.meetingDate ? (
-                  <Text style={{ color: theme.text, fontSize: 13, marginTop: 2 }}>
+                  <Text style={{ color: isDark ? '#FFFFFF' : '#0F172A', fontSize: 13, marginTop: 2 }}>
                     Date: <Text style={{ fontWeight: '600' }}>{userApplication.meetingDate}</Text>
                   </Text>
                 ) : null}
                 {userApplication.meetingTime ? (
-                  <Text style={{ color: theme.text, fontSize: 13, marginTop: 2 }}>
+                  <Text style={{ color: isDark ? '#FFFFFF' : '#0F172A', fontSize: 13, marginTop: 2 }}>
                     Time: <Text style={{ fontWeight: '600' }}>{userApplication.meetingTime}</Text>
                   </Text>
                 ) : null}
                 {userApplication.meetingLocation ? (
-                  <Text style={{ color: theme.text, fontSize: 13, marginTop: 2 }}>
+                  <Text style={{ color: isDark ? '#FFFFFF' : '#0F172A', fontSize: 13, marginTop: 2 }}>
                     Location / Link: <Text style={{ fontWeight: '600' }}>{userApplication.meetingLocation}</Text>
                   </Text>
                 ) : null}
                 {userApplication.meetingNotes ? (
-                  <Text style={{ color: theme.textSecondary, fontSize: 12.5, marginTop: 4, fontStyle: 'italic' }}>
+                  <Text style={{ color: isDark ? '#CBD5E1' : '#64748B', fontSize: 12.5, marginTop: 4, fontStyle: 'italic' }}>
                     "{userApplication.meetingNotes}"
                   </Text>
                 ) : null}
@@ -352,22 +353,22 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
                 🎉 Congratulations! You have been appointed to serve in this ministry. A ministry leader will connect with you soon.
               </Text>
             ) : userApplication.status === 'under_review' ? (
-              <Text style={{ color: theme.textSecondary, fontSize: 13, lineHeight: 18, marginTop: 4 }}>
+              <Text style={{ color: isDark ? '#E2E8F0' : '#475569', fontSize: 13.5, lineHeight: 20, marginTop: 4 }}>
                 Your calling and application are currently being prayerfully reviewed by ministry leaders.
               </Text>
             ) : userApplication.status === 'rejected' ? (
-              <View style={{ backgroundColor: isDark ? 'rgba(239, 68, 68, 0.1)' : '#FEF2F2', padding: 10, borderRadius: 8, marginTop: 4 }}>
-                <Text style={{ color: isDark ? '#F87171' : '#DC2626', fontSize: 13 }}>
+              <View style={{ backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEF2F2', padding: 10, borderRadius: 8, marginTop: 4 }}>
+                <Text style={{ color: isDark ? '#FCA5A5' : '#DC2626', fontSize: 13 }}>
                   Thank you for your heart to serve. This application has not been selected at this time.
                 </Text>
                 {userApplication.adminNotes ? (
-                  <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 4, fontStyle: 'italic' }}>
+                  <Text style={{ color: isDark ? '#CBD5E1' : '#64748B', fontSize: 12, marginTop: 4, fontStyle: 'italic' }}>
                     Leader Note: {userApplication.adminNotes}
                   </Text>
                 ) : null}
               </View>
             ) : (
-              <Text style={{ color: theme.textSecondary, fontSize: 13, lineHeight: 18, marginTop: 4 }}>
+              <Text style={{ color: isDark ? '#E2E8F0' : '#475569', fontSize: 13.5, lineHeight: 20, marginTop: 4 }}>
                 Application received. You will receive notifications as leaders review your calling.
               </Text>
             )}
@@ -400,14 +401,14 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
             </View>
           </View>
 
-          <Text style={[styles.title, { color: theme.text }]}>{opportunity.title}</Text>
-          <Text style={[styles.categoryName, { color: theme.accent || Colors.primary }]}>
+          <Text style={[styles.title, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>{opportunity.title}</Text>
+          <Text style={[styles.categoryName, { color: isDark ? '#93C5FD' : (theme.accent || Colors.primary) }]}>
             {opportunity.categoryName}
           </Text>
 
           {opportunity.compensationDetails ? (
             <View style={styles.metaRow}>
-              <View style={[styles.rupeeIconCircle, { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7' }]}>
+              <View style={[styles.rupeeIconCircle, { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.25)' : '#FEF3C7' }]}>
                 <Text style={{ fontSize: 13, fontWeight: '800', color: isDark ? '#FBBF24' : '#B45309' }}>₹</Text>
               </View>
               <Text style={[styles.metaText, { color: isDark ? '#FBBF24' : '#B45309', fontWeight: '700' }]}>
@@ -417,19 +418,19 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
           ) : null}
 
           <View style={styles.metaRow}>
-            <MapPin size={16} color={theme.textSecondary} />
-            <Text style={[styles.metaText, { color: theme.textSecondary }]}>{opportunity.location}</Text>
+            <MapPin size={16} color={isDark ? '#A1A1AA' : theme.textSecondary} />
+            <Text style={[styles.metaText, { color: isDark ? '#E2E8F0' : theme.textSecondary }]}>{opportunity.location}</Text>
           </View>
 
           <View style={styles.metaRow}>
-            <Clock size={16} color={theme.textSecondary} />
-            <Text style={[styles.metaText, { color: theme.textSecondary }]}>{opportunity.timeCommitment}</Text>
+            <Clock size={16} color={isDark ? '#A1A1AA' : theme.textSecondary} />
+            <Text style={[styles.metaText, { color: isDark ? '#E2E8F0' : theme.textSecondary }]}>{opportunity.timeCommitment}</Text>
           </View>
 
           {opportunity.applicationDeadline ? (
             <View style={styles.metaRow}>
-              <Calendar size={16} color={theme.textSecondary} />
-              <Text style={[styles.metaText, { color: theme.textSecondary }]}>
+              <Calendar size={16} color={isDark ? '#A1A1AA' : theme.textSecondary} />
+              <Text style={[styles.metaText, { color: isDark ? '#E2E8F0' : theme.textSecondary }]}>
                 Deadline: {new Date(opportunity.applicationDeadline.seconds ? opportunity.applicationDeadline.seconds * 1000 : opportunity.applicationDeadline).toLocaleDateString()}
               </Text>
             </View>
@@ -438,18 +439,18 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
 
         {/* Description */}
         <View style={[styles.sectionCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>Description</Text>
-          <Text style={[styles.bodyText, { color: theme.textSecondary }]}>{opportunity.description}</Text>
+          <Text style={[styles.sectionTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>Description</Text>
+          <Text style={[styles.bodyText, { color: isDark ? '#E2E8F0' : '#475569' }]}>{opportunity.description}</Text>
         </View>
 
         {/* Responsibilities */}
         {opportunity.responsibilities && opportunity.responsibilities.length > 0 && (
           <View style={[styles.sectionCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Key Responsibilities</Text>
+            <Text style={[styles.sectionTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>Key Responsibilities</Text>
             {opportunity.responsibilities.map((resp, idx) => (
               <View key={idx} style={styles.bulletRow}>
-                <Text style={[styles.bullet, { color: theme.accent || Colors.primary }]}>•</Text>
-                <Text style={[styles.bulletText, { color: theme.textSecondary }]}>{resp}</Text>
+                <Text style={[styles.bullet, { color: isDark ? '#93C5FD' : (theme.accent || Colors.primary) }]}>•</Text>
+                <Text style={[styles.bulletText, { color: isDark ? '#E2E8F0' : '#475569' }]}>{resp}</Text>
               </View>
             ))}
           </View>
@@ -458,11 +459,11 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
         {/* Required Skills */}
         {opportunity.requiredSkills && opportunity.requiredSkills.length > 0 && (
           <View style={[styles.sectionCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Required Skills & Calling</Text>
+            <Text style={[styles.sectionTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>Required Skills & Calling</Text>
             <View style={styles.chipsWrap}>
               {opportunity.requiredSkills.map((skill, idx) => (
-                <View key={idx} style={[styles.skillChip, { backgroundColor: theme.bg, borderColor: theme.border }]}>
-                  <Text style={[styles.skillChipText, { color: theme.text }]}>{skill}</Text>
+                <View key={idx} style={[styles.skillChip, { backgroundColor: isDark ? '#27272A' : theme.bg, borderColor: theme.border }]}>
+                  <Text style={[styles.skillChipText, { color: isDark ? '#FFFFFF' : theme.text }]}>{skill}</Text>
                 </View>
               ))}
             </View>
