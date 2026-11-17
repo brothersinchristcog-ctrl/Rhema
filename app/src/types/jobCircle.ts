@@ -53,6 +53,7 @@ export interface JobOpportunity {
   qualifications?: string[];
   experienceRequired?: string;
   thumbnailUrl?: string; // Banner / thumbnail image for LinkedIn-style feed
+  jdAttachment?: AttachmentInfo; // Attached Job Description document (PDF, Word, or image)
   location: string;
   timeCommitment: string;
   scheduleSlots?: { days: string[]; startTime: string; endTime: string }[];

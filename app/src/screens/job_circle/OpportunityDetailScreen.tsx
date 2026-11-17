@@ -30,6 +30,7 @@ import {
   Share2,
   X,
   Send,
+  Eye,
 } from 'lucide-react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { useAuth } from '../../context/AuthContext';
@@ -38,6 +39,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { Colors } from '../../theme/Theme';
 import JobCircleService from '../../services/JobCircleService';
 import NotificationService from '../../services/NotificationService';
+import InAppDocumentViewerModal, { InAppDocumentViewerDoc } from '../../components/InAppDocumentViewerModal';
 import { JobOpportunity, AttachmentInfo } from '../../types/jobCircle';
 
 interface OpportunityDetailScreenProps {
@@ -77,8 +79,16 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
   const [selectedFile, setSelectedFile] = useState<{ uri: string; name: string; mimeType?: string; size?: number } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [hasApplied, setHasApplied] = useState(false);
+  const [viewerDoc, setViewerDoc] = useState<InAppDocumentViewerDoc | null>(null);
 
   const [userApplication, setUserApplication] = useState<any>(null);
+
+  const formatDocSize = (bytes?: number): string => {
+    if (!bytes || bytes <= 0) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
 
   useEffect(() => {
     loadOpportunity();
@@ -371,6 +381,78 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
           </Text>
         </View>
 
+        {/* Job Description Document (In-App Viewable) */}
+        {opportunity.jdAttachment?.url ? (
+          <View style={styles.detailSection}>
+            <Text style={[styles.sectionHeading, { color: headingColor }]}>Job Description Document</Text>
+            <View
+              style={[
+                styles.jdDocMemberCard,
+                {
+                  backgroundColor: isDark ? '#18181B' : '#F8FAFC',
+                  borderColor: isDark ? '#27272A' : '#E2E8F0',
+                },
+              ]}
+            >
+              <View style={styles.jdDocMemberInfo}>
+                <View
+                  style={[
+                    styles.jdDocMemberIconBox,
+                    {
+                      backgroundColor: opportunity.jdAttachment.fileName?.toLowerCase().endsWith('.pdf')
+                        ? (isDark ? '#7F1D1D40' : '#FEE2E2')
+                        : (isDark ? '#1E3A8A40' : '#DBEAFE'),
+                    },
+                  ]}
+                >
+                  <FileText
+                    size={22}
+                    color={
+                      opportunity.jdAttachment.fileName?.toLowerCase().endsWith('.pdf')
+                        ? '#EF4444'
+                        : '#3B82F6'
+                    }
+                  />
+                </View>
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <Text
+                    style={[styles.jdDocMemberTitle, { color: headingColor }]}
+                    numberOfLines={1}
+                  >
+                    {opportunity.jdAttachment.fileName || 'Job Description Document'}
+                  </Text>
+                  <Text style={[styles.jdDocMemberSub, { color: theme.textSecondary }]}>
+                    {[
+                      formatDocSize(opportunity.jdAttachment.fileSize),
+                      opportunity.jdAttachment.fileName?.toLowerCase().endsWith('.pdf') ? 'PDF Document' : 'Document',
+                    ]
+                      .filter(Boolean)
+                      .join(' • ')}
+                  </Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.jdDocViewButton,
+                  { backgroundColor: isDark ? '#2563EB' : '#1a2d5a' },
+                ]}
+                onPress={() =>
+                  setViewerDoc({
+                    url: opportunity.jdAttachment!.url,
+                    name: opportunity.jdAttachment!.fileName || 'Job Description',
+                    mimeType: opportunity.jdAttachment!.mimeType,
+                  })
+                }
+                activeOpacity={0.85}
+              >
+                <Eye size={15} color="#FFFFFF" strokeWidth={2.2} />
+                <Text style={styles.jdDocViewButtonTxt}>View Document In-App</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
+
         {/* 2. Responsibilities */}
         {opportunity.responsibilities && opportunity.responsibilities.length > 0 ? (
           <View style={styles.detailSection}>
@@ -623,6 +705,13 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* ── IN-APP DOCUMENT VIEWER MODAL ── */}
+      <InAppDocumentViewerModal
+        visible={!!viewerDoc}
+        doc={viewerDoc}
+        onClose={() => setViewerDoc(null)}
+      />
     </View>
   );
 }
@@ -730,5 +819,47 @@ const styles = StyleSheet.create({
     padding: 6,
     borderRadius: 20,
     backgroundColor: 'rgba(156, 163, 175, 0.15)',
+  },
+  // In-App Viewable JD Document Styles
+  jdDocMemberCard: {
+    borderRadius: 14,
+    borderWidth: 1.2,
+    padding: 14,
+    marginTop: 8,
+    gap: 12,
+  },
+  jdDocMemberInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  jdDocMemberIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  jdDocMemberTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  jdDocMemberSub: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  jdDocViewButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+  },
+  jdDocViewButtonTxt: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });
