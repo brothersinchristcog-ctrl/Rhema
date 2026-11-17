@@ -752,8 +752,11 @@ export default function UpdatesScreen({ navigation, route }: any) {
     }
 
     let itemTitle = data.title || t('updates.announcement');
-    // Ensure only clean calendar icon is shown without unwanted bracketed date text
+    // Ensure 3D calendar icon 📅 is shown for events without unwanted bracketed date text
     itemTitle = itemTitle.replace(/🗓️\s*\[.*?\]\s*/g, '📅 ').replace(/🗓️\s*/g, '📅 ');
+    if (resolvedType === 'event' && !itemTitle.includes('📅')) {
+      itemTitle = `📅 ${itemTitle}`;
+    }
     let itemContent = stripHtml(data.content || data.body || '');
 
     if (resolvedType === 'youtube_live') {

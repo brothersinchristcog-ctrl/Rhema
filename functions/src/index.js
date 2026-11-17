@@ -865,10 +865,13 @@ async function handleBroadcastPushDispatch(data, churchIdParam, messageIdParam) 
         return;
     }
     let title = (data.title || 'Church Update').trim();
-    // Clean up any bracketed date format if present, keeping calendar icon
+    // Clean up any bracketed date format if present, keeping 3D calendar icon 📅
     title = title.replace(/🗓️\s*\[.*?\]\s*/g, '📅 ').replace(/🗓️\s*/g, '📅 ');
     const body = data.content || '';
     const type = data.type || 'general';
+    if (type === 'event' && !title.includes('📅')) {
+        title = `📅 ${title}`;
+    }
     const churchId = churchIdParam || data.targetChurchId || DEFAULT_CHURCH_ID;
     // Atomic coordination with onVolunteerPostCreated so volunteer_post_new is sent once and never skipped
     if (type === 'volunteer_post_new' && data.postId) {
