@@ -1,3 +1,4 @@
+import './globalConfig.js';
 import { onRequest } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';
 const PLAY_STORE_BASE = 'https://play.google.com/store/apps/details?id=com.rhemaglobalministries.app';

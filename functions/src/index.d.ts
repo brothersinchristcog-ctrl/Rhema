@@ -1,3 +1,4 @@
+import './globalConfig.js';
 /**
  * ⏰ AUTOMATED DAILY PROMISE SCHEDULER
  * Scheduled to run every day at 05:00 AM IST (01:30 AM UTC)
@@ -7,7 +8,7 @@ export declare const automatedDailyPromise: import("firebase-functions/v2/schedu
  * 📣 ON BROADCAST CREATED TRIGGER (Rhema Church collection)
  * Catches all broadcasts created in 'Rhema Church/{churchId}/broadcasts/{messageId}'
  */
-export declare const sendRhemaBroadcastPush: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+export declare const sendRhemaBroadcastPush: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
     churchId: string;
     messageId: string;
 }>>;

@@ -1,3 +1,4 @@
+import './globalConfig.js';
 import { onRequest } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';
 

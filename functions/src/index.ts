@@ -1,3 +1,4 @@
+import './globalConfig.js';
 import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import * as functionsCompat from 'firebase-functions/v1';
