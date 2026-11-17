@@ -36,6 +36,8 @@ interface CareCellVisitModalProps {
   onClose: () => void;
   cells: CareCell[];
   initialCellId?: string;
+  initialTargetMemberIds?: string[];
+  initialScope?: 'ALL' | 'SPECIFIC';
   createdBy: string;
   createdByName?: string;
   onSuccess?: () => void;
@@ -54,6 +56,8 @@ export default function CareCellVisitModal({
   onClose,
   cells,
   initialCellId,
+  initialTargetMemberIds,
+  initialScope,
   createdBy,
   createdByName,
   onSuccess,
@@ -99,8 +103,18 @@ export default function CareCellVisitModal({
       setVisitors('Pastor & Cell Leader');
       setTitle('Pastoral Home Visit');
       setPurpose('');
+
+      if (initialTargetMemberIds && initialTargetMemberIds.length > 0) {
+        setVisitScope('SPECIFIC');
+        setSelectedMemberIds(initialTargetMemberIds);
+      } else if (initialScope) {
+        setVisitScope(initialScope);
+      } else {
+        setVisitScope('ALL');
+        setSelectedMemberIds([]);
+      }
     }
-  }, [visible, initialCellId, cells]);
+  }, [visible, initialCellId, initialTargetMemberIds, initialScope, cells]);
 
   // Fetch count of active members for selected cell
   useEffect(() => {

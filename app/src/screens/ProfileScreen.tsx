@@ -73,6 +73,9 @@ import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import { formatDateDisplay } from '../utils/DateUtils';
 import { CHURCH_SKILL_CATEGORIES, ALL_PREDEFINED_SKILLS } from '../constants/churchSkills';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import MemberLocationService from '../services/MemberLocationService';
+import LocationService from '../services/LocationService';
 
 const { width } = Dimensions.get('window');
 
@@ -112,6 +115,30 @@ export default function ProfileScreen({ navigation }: any) {
   const [skillSearchText, setSkillSearchText] = useState('');
   const [selectedCategoryTab, setSelectedCategoryTab] = useState<string>('all');
   const [customSkillInput, setCustomSkillInput] = useState('');
+
+  // Home Location Modal States
+  const [isLocationModalVisible, setIsLocationModalVisible] = useState(false);
+  const [homeCoords, setHomeCoords] = useState<{ latitude: number; longitude: number } | null>(
+    authMember?.latitude && authMember?.longitude ? { latitude: authMember.latitude, longitude: authMember.longitude } : null
+  );
+  const [homeLandmark, setHomeLandmark] = useState<string>((authMember as any)?.landmark || '');
+  const [homeAddressText, setHomeAddressText] = useState<string>((authMember as any)?.completeAddress || '');
+  const [locationConsent, setLocationConsent] = useState<boolean>((authMember as any)?.locationSharingConsent ?? true);
+  const [savingLocation, setSavingLocation] = useState(false);
+  const [fetchingGPS, setFetchingGPS] = useState(false);
+
+  useEffect(() => {
+    if (member) {
+      if (member.latitude && member.longitude) {
+        setHomeCoords({ latitude: member.latitude, longitude: member.longitude });
+      }
+      if ((member as any).landmark) setHomeLandmark((member as any).landmark);
+      if ((member as any).completeAddress) setHomeAddressText((member as any).completeAddress);
+      if (typeof (member as any).locationSharingConsent === 'boolean') {
+        setLocationConsent((member as any).locationSharingConsent);
+      }
+    }
+  }, [member]);
 
   const resolveInitialNames = (mem: any) => {
     const rawName = (mem?.name || mem?.displayName || mem?.fullName || '').trim();
@@ -262,6 +289,107 @@ export default function ProfileScreen({ navigation }: any) {
     } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+  };
+
+  const handleSaveHomeLocation = async () => {
+    if (!homeCoords) {
+      Alert.alert('Place Map Pin', 'Please tap on the map or use Current GPS to select your home location.');
+      return;
+    }
+    const churchId = activeChurch?.id || member?.churchId || RHEMA_CHURCH_ID;
+    const memberId = member?.id || (member as any)?.uid || user?.uid;
+    if (!memberId) {
+      Alert.alert('Error', 'Member ID not found. Please re-login.');
+      return;
+    }
+
+    setSavingLocation(true);
+    try {
+      await MemberLocationService.saveConfirmedHomeLocation(churchId, memberId, {
+        latitude: homeCoords.latitude,
+        longitude: homeCoords.longitude,
+        completeAddress: homeAddressText.trim(),
+        landmark: homeLandmark.trim(),
+        locationSharingConsent: locationConsent,
+      });
+
+      // Update in-memory member state
+      setMember((prev: any) => ({
+        ...prev,
+        latitude: homeCoords.latitude,
+        longitude: homeCoords.longitude,
+        completeAddress: homeAddressText.trim(),
+        landmark: homeLandmark.trim(),
+        locationSharingConsent: locationConsent,
+        locationAccuracy: 'verified_home',
+      }));
+
+      Alert.alert(
+        'Home Location Saved!',
+        'Your exact home location has been verified. Pastors and Care Cell leaders can now navigate to your home for pastoral visits.'
+      );
+      setIsLocationModalVisible(false);
+    } catch (err: any) {
+      console.error('Error saving home location:', err);
+      Alert.alert('Error', err.message || 'Failed to save home location.');
+    } finally {
+      setSavingLocation(false);
+    }
+  };
+
+  const handleRevokeHomeLocation = async () => {
+    Alert.alert(
+      'Revoke Exact Location Sharing',
+      'Are you sure you want to remove your exact home coordinates? Pastors will only see your approximate village/city center for care cells.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Revoke',
+          style: 'destructive',
+          onPress: async () => {
+            const churchId = activeChurch?.id || member?.churchId || RHEMA_CHURCH_ID;
+            const memberId = member?.id || (member as any)?.uid || user?.uid;
+            if (!memberId) return;
+            setSavingLocation(true);
+            try {
+              await MemberLocationService.revokeHomeLocationConsent(churchId, memberId);
+              setMember((prev: any) => ({
+                ...prev,
+                locationSharingConsent: false,
+                locationAccuracy: 'village_approximate',
+              }));
+              setLocationConsent(false);
+              Alert.alert('Location Sharing Revoked', 'Your exact home coordinates are no longer shared.');
+              setIsLocationModalVisible(false);
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Failed to revoke location.');
+            } finally {
+              setSavingLocation(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleUseCurrentGPS = async () => {
+    setFetchingGPS(true);
+    try {
+      const res = await LocationService.getCurrentLocation();
+      if (res.success && res.coords) {
+        setHomeCoords({
+          latitude: res.coords.latitude,
+          longitude: res.coords.longitude,
+        });
+        Alert.alert('GPS Location Set', 'Map pin moved to your current device GPS coordinates.');
+      } else {
+        Alert.alert('Location Error', res.error || 'Could not determine GPS coordinates.');
+      }
+    } catch (err: any) {
+      Alert.alert('GPS Error', err.message || 'Failed to get GPS location.');
+    } finally {
+      setFetchingGPS(false);
     }
   };
 
@@ -599,6 +727,22 @@ export default function ProfileScreen({ navigation }: any) {
             <Text style={[styles.profileNameText, { color: colors.text }]}>
               {(member?.name && member.name.trim()) || ((member as any)?.displayName && (member as any).displayName.trim()) || (member?.firstName ? `${member.firstName} ${member.lastName || ''}`.trim() : user?.displayName || 'Beloved Member')}
             </Text>
+
+            {/* Member Code / ID Badge */}
+            {member?.memberCode ? (
+              <View style={[
+                styles.memberCodeBadge,
+                {
+                  backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF',
+                  borderColor: isDark ? 'rgba(59, 130, 246, 0.35)' : '#BFDBFE',
+                }
+              ]}>
+                <View style={[styles.memberCodeDot, { backgroundColor: isDark ? '#60A5FA' : '#2563EB' }]} />
+                <Text style={[styles.memberCodeLabel, { color: isDark ? '#93C5FD' : '#1D4ED8' }]}>
+                  MEMBER ID: <Text style={{ fontWeight: '800' }}>{member.memberCode}</Text>
+                </Text>
+              </View>
+            ) : null}
           </Animated.View>
 
           {/* ── All Buttons / Options Card ── */}
@@ -692,6 +836,16 @@ export default function ProfileScreen({ navigation }: any) {
             title="Church Volunteering" 
             sub="Apply to serve & view volunteer assignments" 
             onPress={() => navigation.navigate('Volunteer')}
+            textColor={colors.text}
+            subColor={colors.textSecondary}
+          />
+          <MenuItem 
+            icon={<MapPin size={22} color={colors.text} strokeWidth={1.8} />} 
+            title="My Home Location" 
+            sub={member?.locationSharingConsent ? "Location verified for pastoral care visits" : "Set map pin for Care Cell visits"} 
+            badge={member?.locationSharingConsent ? "Verified" : undefined}
+            badgeColor="#10B981"
+            onPress={() => setIsLocationModalVisible(true)}
             textColor={colors.text}
             subColor={colors.textSecondary}
           />
@@ -891,6 +1045,297 @@ export default function ProfileScreen({ navigation }: any) {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* ── My Home Location Modal (Care Cell & Pastoral Visits) ── */}
+      <Modal
+        visible={isLocationModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setIsLocationModalVisible(false)}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+          <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={colors.background} />
+
+          {/* Modal Header */}
+          <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingHorizontal: 16,
+            paddingVertical: 14,
+            borderBottomWidth: 1,
+            borderBottomColor: colors.border,
+            backgroundColor: colors.surface,
+          }}>
+            <TouchableOpacity 
+              onPress={() => setIsLocationModalVisible(false)}
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: 19,
+                justifyContent: 'center',
+                alignItems: 'center',
+                backgroundColor: isDark ? '#27272A' : '#F1F5F9',
+              }}
+              activeOpacity={0.7}
+            >
+              <ArrowLeft size={20} color={colors.text} />
+            </TouchableOpacity>
+
+            <View style={{ alignItems: 'center' }}>
+              <Text style={{ fontSize: 17, fontWeight: '700', color: colors.text }}>My Home Location</Text>
+              <Text style={{ fontSize: 11, color: colors.textSecondary }}>Care Cell & Pastoral Visits</Text>
+            </View>
+
+            <View style={{ width: 38 }} />
+          </View>
+
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+            {/* Info Notice Box */}
+            <View style={{
+              backgroundColor: isDark ? 'rgba(59, 130, 246, 0.12)' : '#EFF6FF',
+              borderRadius: 12,
+              padding: 14,
+              borderWidth: 1,
+              borderColor: isDark ? 'rgba(59, 130, 246, 0.25)' : '#BFDBFE',
+              marginBottom: 16,
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                <MapPin size={18} color={isDark ? '#60A5FA' : '#2563EB'} style={{ marginRight: 8 }} />
+                <Text style={{ fontSize: 14, fontWeight: '700', color: isDark ? '#93C5FD' : '#1E40AF' }}>
+                  Pastoral Visit Pin
+                </Text>
+              </View>
+              <Text style={{ fontSize: 12.5, lineHeight: 18, color: isDark ? '#E2E8F0' : '#1E293B' }}>
+                Your church profile shows your village/city as{' '}
+                <Text style={{ fontWeight: '700' }}>
+                  {member?.village || member?.city || member?.mailingCity || 'Not specified'}
+                </Text>
+                . Setting your home pin helps pastors and Care Cell leaders visit your home easily without getting lost.
+              </Text>
+            </View>
+
+            {/* Interactive Google Map Box */}
+            <View style={{
+              borderRadius: 14,
+              overflow: 'hidden',
+              borderWidth: 1,
+              borderColor: colors.border,
+              backgroundColor: colors.surface,
+              marginBottom: 14,
+            }}>
+              <MapView
+                provider={PROVIDER_GOOGLE}
+                style={{ width: '100%', height: 260 }}
+                initialRegion={{
+                  latitude: homeCoords?.latitude || member?.latitude || 15.4989,
+                  longitude: homeCoords?.longitude || member?.longitude || 78.4836,
+                  latitudeDelta: 0.015,
+                  longitudeDelta: 0.015,
+                }}
+                onPress={(e) => {
+                  const coords = e.nativeEvent.coordinate;
+                  setHomeCoords({ latitude: coords.latitude, longitude: coords.longitude });
+                }}
+              >
+                {homeCoords && (
+                  <Marker
+                    coordinate={homeCoords}
+                    draggable
+                    onDragEnd={(e) => {
+                      const coords = e.nativeEvent.coordinate;
+                      setHomeCoords({ latitude: coords.latitude, longitude: coords.longitude });
+                    }}
+                    title="My Residence"
+                    description="Drag or tap to adjust exact pin"
+                    pinColor="#2563EB"
+                  />
+                )}
+              </MapView>
+
+              {/* Pin notice footer */}
+              <View style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                backgroundColor: isDark ? '#18181B' : '#F8FAFC',
+                borderTopWidth: 1,
+                borderTopColor: colors.border,
+              }}>
+                <Text style={{ fontSize: 11.5, color: colors.textSecondary, flex: 1, marginRight: 8 }}>
+                  💡 Tap anywhere on the map or drag the blue pin to adjust.
+                </Text>
+                <TouchableOpacity
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    backgroundColor: isDark ? '#27272A' : '#EEF2FF',
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: isDark ? 'rgba(255,255,255,0.1)' : '#C7D2FE',
+                  }}
+                  onPress={handleUseCurrentGPS}
+                  disabled={fetchingGPS}
+                >
+                  {fetchingGPS ? (
+                    <ActivityIndicator size="small" color="#2563EB" style={{ marginRight: 4 }} />
+                  ) : (
+                    <MapPin size={12} color="#2563EB" style={{ marginRight: 4 }} />
+                  )}
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#93C5FD' : '#2563EB' }}>
+                    {fetchingGPS ? 'Locating...' : 'Use Current GPS'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Coordinates display */}
+            {homeCoords && (
+              <View style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: 10,
+                borderRadius: 8,
+                backgroundColor: isDark ? '#1C1917' : '#F8FAFC',
+                marginBottom: 14,
+                borderWidth: 1,
+                borderColor: colors.border,
+              }}>
+                <Text style={{ fontSize: 11, color: colors.textSecondary }}>
+                  Coordinates: {homeCoords.latitude.toFixed(6)}, {homeCoords.longitude.toFixed(6)}
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <CheckCircle2 size={12} color="#10B981" style={{ marginRight: 4 }} />
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#10B981' }}>Pin Ready</Text>
+                </View>
+              </View>
+            )}
+
+            {/* Landmark Input */}
+            <Text style={{ fontSize: 12.5, fontWeight: '700', color: colors.text, marginBottom: 6 }}>
+              Nearby Landmark or Directions (Optional)
+            </Text>
+            <TextInput
+              style={{
+                backgroundColor: colors.surface,
+                color: colors.text,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: colors.border,
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                fontSize: 13.5,
+                marginBottom: 14,
+              }}
+              placeholder="e.g. Opposite Rama temple, blue gate, 2nd house"
+              placeholderTextColor={colors.textSecondary}
+              value={homeLandmark}
+              onChangeText={setHomeLandmark}
+            />
+
+            {/* Residential Address Input */}
+            <Text style={{ fontSize: 12.5, fontWeight: '700', color: colors.text, marginBottom: 6 }}>
+              House / Street Address (Optional)
+            </Text>
+            <TextInput
+              style={{
+                backgroundColor: colors.surface,
+                color: colors.text,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: colors.border,
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                fontSize: 13.5,
+                marginBottom: 16,
+              }}
+              placeholder="e.g. Door No. 4/12B, Main Bazaar Street"
+              placeholderTextColor={colors.textSecondary}
+              value={homeAddressText}
+              onChangeText={setHomeAddressText}
+            />
+
+            {/* Location Sharing Consent Switch */}
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: 14,
+              borderRadius: 12,
+              backgroundColor: colors.surface,
+              borderWidth: 1,
+              borderColor: colors.border,
+              marginBottom: 20,
+            }}>
+              <View style={{ flex: 1, marginRight: 12 }}>
+                <Text style={{ fontSize: 13.5, fontWeight: '700', color: colors.text, marginBottom: 2 }}>
+                  Share with Care Cell & Pastors
+                </Text>
+                <Text style={{ fontSize: 11.5, color: colors.textSecondary, lineHeight: 16 }}>
+                  Allows pastors and your Care Cell leader to view this pin for scheduled pastoral visits.
+                </Text>
+              </View>
+              <Switch
+                value={locationConsent}
+                onValueChange={setLocationConsent}
+                trackColor={{ false: '#94A3B8', true: '#2563EB' }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+
+            {/* Action Buttons */}
+            <TouchableOpacity
+              style={{
+                backgroundColor: '#2563EB',
+                paddingVertical: 14,
+                borderRadius: 12,
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexDirection: 'row',
+                marginBottom: 12,
+              }}
+              onPress={handleSaveHomeLocation}
+              disabled={savingLocation}
+              activeOpacity={0.8}
+            >
+              {savingLocation ? (
+                <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 8 }} />
+              ) : (
+                <Check size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+              )}
+              <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '700' }}>
+                {savingLocation ? 'Saving Location...' : 'Save Verified Home Location'}
+              </Text>
+            </TouchableOpacity>
+
+            {(member?.latitude || (member as any)?.locationData?.latitude) && (
+              <TouchableOpacity
+                style={{
+                  paddingVertical: 12,
+                  borderRadius: 10,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderWidth: 1,
+                  borderColor: isDark ? 'rgba(239, 68, 68, 0.4)' : '#FCA5A5',
+                  backgroundColor: isDark ? 'rgba(239, 68, 68, 0.1)' : '#FEF2F2',
+                }}
+                onPress={handleRevokeHomeLocation}
+                disabled={savingLocation}
+                activeOpacity={0.8}
+              >
+                <Text style={{ color: '#EF4444', fontSize: 13, fontWeight: '700' }}>
+                  Revoke Exact Location Sharing
+                </Text>
+              </TouchableOpacity>
+            )}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
 
       {/* ── Edit Profile Screen (Full Screen, Theme-Styled) ── */}
       <Modal
@@ -1901,6 +2346,27 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 12,
     letterSpacing: 0.3,
+  },
+  memberCodeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 3.5,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  memberCodeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 6,
+  },
+  memberCodeLabel: {
+    fontSize: 11,
+    letterSpacing: 0.5,
+    fontWeight: '600',
   },
 
   // All Buttons Card

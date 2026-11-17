@@ -21,6 +21,7 @@ import {
   Heart,
   Megaphone,
   Home,
+  MapPin,
 } from 'lucide-react-native';
 import { AdminTabContext } from '../../../context/AdminTabContext';
 import { useAuth } from '../../../context/AuthContext';
@@ -29,6 +30,7 @@ import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThem
 import CareCellsOverviewTab from './tabs/CareCellsOverviewTab';
 import CareCellsManageTab from './tabs/CareCellsManageTab';
 import CareCellMembersTab from './tabs/CareCellMembersTab';
+import CareCellMemberLocationsTab from './tabs/CareCellMemberLocationsTab';
 import CareCellMeetingsTab from './tabs/CareCellMeetingsTab';
 import CareCellAttendanceTab from './tabs/CareCellAttendanceTab';
 import CareCellVisitsTab from './tabs/CareCellVisitsTab';
@@ -40,12 +42,13 @@ import { CareCell, CareCellMeeting } from '../../../types/CareCellTypes';
 
 const { width } = Dimensions.get('window');
 
-type SubTabKey = 'overview' | 'manage' | 'members' | 'meetings' | 'attendance' | 'visits' | 'followups' | 'announcements';
+type SubTabKey = 'overview' | 'manage' | 'members' | 'locations' | 'meetings' | 'attendance' | 'visits' | 'followups' | 'announcements';
 
 const SUB_TABS = [
   { key: 'overview' as SubTabKey, label: 'Overview', icon: LayoutDashboard },
   { key: 'manage' as SubTabKey, label: 'Care Cells', icon: Building2 },
   { key: 'members' as SubTabKey, label: 'Members', icon: Users },
+  { key: 'locations' as SubTabKey, label: 'Member Locations', icon: MapPin },
   { key: 'meetings' as SubTabKey, label: 'Meetings', icon: Calendar },
   { key: 'attendance' as SubTabKey, label: 'Attendance', icon: ClipboardCheck },
   { key: 'visits' as SubTabKey, label: 'Visits', icon: Home },
@@ -242,6 +245,14 @@ export default function AdminCareCellsHub() {
 
         {activeSubTab === 'members' && (
           <CareCellMembersTab
+            cells={cells}
+            selectedCellId={selectedCellId}
+            onSelectCellId={setSelectedCellId}
+          />
+        )}
+
+        {activeSubTab === 'locations' && (
+          <CareCellMemberLocationsTab
             cells={cells}
             selectedCellId={selectedCellId}
             onSelectCellId={setSelectedCellId}

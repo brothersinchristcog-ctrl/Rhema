@@ -25,6 +25,7 @@ interface MemberItem {
   phone?: string;
   photoUrl?: string;
   userType?: string;
+  memberCode?: string;
   address?: string;
   locality?: string;
   city?: string;
@@ -116,6 +117,7 @@ export default function MemberLookupModal({
               phone: m.phone || m.phoneNumber || m.referencePhone || '',
               photoUrl: m.photoUrl || m.profilePicture || m.profilePhoto || '',
               userType: m.userType || 'Member',
+              memberCode: m.memberCode || '',
               address: m.address || m.street || m.mailingStreet || '',
               locality: m.locality || m.area || m.village || m.city || m.mailingCity || '',
               city: m.city || m.mailingCity || '',
@@ -187,7 +189,8 @@ export default function MemberLookupModal({
         const matchAddr = m.address ? m.address.toLowerCase().includes(q) : false;
         const matchCity = m.city ? m.city.toLowerCase().includes(q) : false;
         const matchVill = m.village ? m.village.toLowerCase().includes(q) : false;
-        return matchName || matchPhone || matchLoc || matchAddr || matchCity || matchVill;
+        const matchCode = m.memberCode ? m.memberCode.toLowerCase().includes(q) : false;
+        return matchName || matchPhone || matchLoc || matchAddr || matchCity || matchVill || matchCode;
       });
     }
     return result;
@@ -306,6 +309,11 @@ export default function MemberLookupModal({
             <Text style={[styles.memberName, isAlreadyInThisCell && styles.textDisabled]} numberOfLines={1}>
               {item.name}
             </Text>
+            {item.memberCode ? (
+              <View style={[styles.memberCodeBadge, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF', borderColor: isDark ? 'rgba(59, 130, 246, 0.3)' : '#BFDBFE' }]}>
+                <Text style={[styles.memberCodeBadgeTxt, { color: isDark ? '#93C5FD' : '#1D4ED8' }]}>{item.memberCode}</Text>
+              </View>
+            ) : null}
             {item.userType && item.userType.toUpperCase().includes('ADMIN') && (
               <View style={styles.adminBadge}>
                 <Text style={styles.adminBadgeTxt}>Admin</Text>
@@ -699,6 +707,17 @@ const styles = createAdminThemedStyles({
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
+  },
+  memberCodeBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  memberCodeBadgeTxt: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   adminBadgeTxt: {
     fontSize: 10,

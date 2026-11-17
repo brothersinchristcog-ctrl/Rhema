@@ -10,6 +10,7 @@ import {
   isGuestMemberDoc,
   stripGuestSuffix,
 } from '../utils/phoneUtils';
+import MemberIdService from './MemberIdService';
 
 // ─── Data Interfaces ─────────────────────────────────────────────────────────
 
@@ -84,6 +85,17 @@ export interface AppMember {
   inviteLink?: string;
   normalizedPhone10?: string;
   onboardingComplete?: boolean;
+  memberCode?: string; // Church-specific human-readable Member ID (e.g. "Rhema-001")
+  memberSequence?: number;
+  memberCodeAssignedAt?: any;
+  latitude?: number;
+  longitude?: number;
+  completeAddress?: string;
+  landmark?: string;
+  locationSharingConsent?: boolean;
+  locationAccuracy?: string;
+  locationSource?: string;
+  locationUpdatedAt?: any;
 }
 
 export interface RegistrationRequest {
@@ -5452,6 +5464,16 @@ class FirestoreService {
         ...(reqData.fcmToken ? { fcmToken: reqData.fcmToken } : {}),
         ...(reqData.platform ? { platform: reqData.platform } : {}),
       };
+
+      // Auto-generate Church Member ID (e.g. Rhema-001)
+      try {
+        const { code, sequence } = await MemberIdService.getNextMemberCode(churchId);
+        newMemberDoc.memberCode = code;
+        newMemberDoc.memberSequence = sequence;
+        newMemberDoc.memberCodeAssignedAt = new Date().toISOString();
+      } catch (idErr) {
+        console.warn('⚠️ MemberIdService auto-generation notice (non-fatal):', idErr);
+      }
 
       const membersCol = firestore().collection('Rhema Church').doc(churchId).collection('members');
       const last10 = normalizePhone10(reqData.phone || requestId);

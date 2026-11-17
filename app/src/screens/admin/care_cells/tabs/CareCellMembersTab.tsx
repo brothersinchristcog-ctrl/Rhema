@@ -29,6 +29,7 @@ import {
 } from 'lucide-react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import firestore from '@react-native-firebase/firestore';
 import CareCellService from '../../../../services/CareCellService';
 import MemberLookupModal from '../components/MemberLookupModal';
 import CareCellMapModal from '../components/CareCellMapModal';
@@ -76,6 +77,31 @@ export default function CareCellMembersTab({
     try {
       const churchId = await CareCellService.getChurchId();
       const list = await CareCellService.getActiveCellMemberships(churchId, activeCellId);
+      
+      // Enrich with memberCode from member collection if missing on membership record
+      const missingCodeMemberIds = list.filter((m) => !m.memberCode).map((m) => m.memberId);
+      if (missingCodeMemberIds.length > 0) {
+        try {
+          const membersSnap = await firestore()
+            .collection('Rhema Church')
+            .doc(churchId || 'rhema')
+            .collection('members')
+            .get();
+          const codeMap = new Map<string, string>();
+          membersSnap.docs.forEach((d) => {
+            const data = d.data();
+            if (data?.memberCode) {
+              codeMap.set(d.id, data.memberCode);
+            }
+          });
+          list.forEach((m) => {
+            if (!m.memberCode && codeMap.has(m.memberId)) {
+              m.memberCode = codeMap.get(m.memberId);
+            }
+          });
+        } catch (_) {}
+      }
+
       setMemberships(list);
     } catch (e) {
       console.error('Error loading cell memberships:', e);
@@ -95,7 +121,8 @@ export default function CareCellMembersTab({
     return memberships.filter((m) => {
       const matchName = (m.memberName || '').toLowerCase().includes(q);
       const matchPhone = (m.memberPhone || '').includes(q);
-      return matchName || matchPhone;
+      const matchCode = (m.memberCode || '').toLowerCase().includes(q);
+      return matchName || matchPhone || matchCode;
     });
   }, [memberships, searchQuery]);
 
@@ -204,7 +231,14 @@ export default function CareCellMembersTab({
         )}
 
         <View style={styles.memberInfo}>
-          <Text style={styles.memberName}>{item.memberName}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+            <Text style={styles.memberName}>{item.memberName}</Text>
+            {item.memberCode ? (
+              <View style={[styles.memberCodeBadge, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF', borderColor: isDark ? 'rgba(59, 130, 246, 0.3)' : '#BFDBFE' }]}>
+                <Text style={[styles.memberCodeBadgeTxt, { color: isDark ? '#93C5FD' : '#1D4ED8' }]}>{item.memberCode}</Text>
+              </View>
+            ) : null}
+          </View>
           {item.memberPhone ? (
             <View style={styles.phoneRow}>
               <Phone size={11} color="#64748B" style={{ marginRight: 4 }} />
@@ -597,6 +631,17 @@ const styles = createAdminThemedStyles({
     fontSize: 14.5,
     fontWeight: '700',
     color: '#0F172A',
+  },
+  memberCodeBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  memberCodeBadgeTxt: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   phoneRow: {
     flexDirection: 'row',

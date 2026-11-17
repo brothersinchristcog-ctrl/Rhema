@@ -24,6 +24,7 @@ export type MemberVisitResponseStatus = 'Pending' | 'Accepted' | 'Declined';
 
 export interface CareCellVisitMemberResponse {
   memberId: string;
+  memberCode?: string; // e.g. "Rhema-001"
   memberName: string;
   memberPhone?: string;
   memberPhoto?: string;
@@ -94,6 +95,7 @@ export interface CareCellMembership {
   cellCode?: string;
   cellName?: string;
   memberId: string;
+  memberCode?: string; // e.g. "Rhema-001"
   memberName: string;
   memberPhone?: string;
   memberPhoto?: string;
@@ -115,6 +117,7 @@ export interface CareCellMembership {
 
 export interface VisitRoutePoint {
   memberId: string;
+  memberCode?: string; // e.g. "Rhema-001"
   memberName: string;
   memberPhone?: string;
   address?: string;
@@ -152,6 +155,7 @@ export interface CareCellAttendance {
   meetingId: string;
   cellId: string;
   memberId: string;
+  memberCode?: string; // e.g. "Rhema-001"
   memberName: string;
   memberPhone?: string;
   memberPhoto?: string;
@@ -168,6 +172,7 @@ export interface CareCellPrayerRequest {
   cellCode?: string;
   cellName?: string;
   memberId: string;
+  memberCode?: string; // e.g. "Rhema-001"
   memberName: string;
   memberPhone?: string;
   memberPhoto?: string;
@@ -188,6 +193,7 @@ export interface CareCellFollowup {
   cellCode?: string;
   cellName?: string;
   memberId: string;
+  memberCode?: string; // e.g. "Rhema-001"
   memberName: string;
   memberPhone?: string;
   memberPhoto?: string;
