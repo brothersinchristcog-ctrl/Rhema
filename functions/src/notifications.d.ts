@@ -344,4 +344,21 @@ export declare const onJobOpportunityUpdated: import("firebase-functions").Cloud
     churchId: string;
     opportunityId: string;
 }>>;
+/**
+ * Trigger: When a new member registration request is created
+ * Notifies church Admins requesting approval.
+ */
+export declare const onRegistrationRequestCreated: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+    churchId: string;
+    requestId: string;
+}>>;
+/**
+ * Trigger: When a registration request status changes
+ * - Returning to `pending` notifies church Admins.
+ * - Transitioning to `approved` or `rejected` notifies the specific registering member.
+ */
+export declare const onRegistrationRequestUpdated: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+    churchId: string;
+    requestId: string;
+}>>;
 //# sourceMappingURL=notifications.d.ts.map

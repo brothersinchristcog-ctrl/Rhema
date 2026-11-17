@@ -1298,10 +1298,18 @@ export default function AdminJobCircleDashboard({ navigation, routeParams }: Adm
             )}
 
             <TouchableOpacity
-              style={[styles.closeModalBtn, { borderColor: adminBorderColor, marginTop: 16 }]}
+              style={[
+                styles.closeModalBtn,
+                {
+                  borderColor: isDark ? '#52525B' : '#94A3B8',
+                  backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                  marginTop: 16,
+                },
+              ]}
               onPress={() => setReviewModalVisible(false)}
+              activeOpacity={0.75}
             >
-              <Text style={{ color: primaryText, fontWeight: '600' }}>Close</Text>
+              <Text style={{ color: isDark ? primaryText : '#0F172A', fontWeight: '700', fontSize: 14 }}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1379,10 +1387,18 @@ export default function AdminJobCircleDashboard({ navigation, routeParams }: Adm
 
               <View style={{ flexDirection: 'row', gap: 12, marginTop: 24, marginBottom: 8 }}>
                 <TouchableOpacity
-                  style={[styles.closeModalBtn, { flex: 1, borderColor: adminBorderColor }]}
+                  style={[
+                    styles.closeModalBtn,
+                    {
+                      flex: 1,
+                      borderColor: isDark ? '#52525B' : '#94A3B8',
+                      backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                    },
+                  ]}
                   onPress={() => setScheduleModalVisible(false)}
+                  activeOpacity={0.75}
                 >
-                  <Text style={{ color: primaryText, fontWeight: '600' }}>Cancel</Text>
+                  <Text style={{ color: isDark ? primaryText : '#0F172A', fontWeight: '700' }}>Cancel</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -1621,6 +1637,6 @@ const styles = createAdminThemedStyles(
     },
     statusActionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
     statusBtn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8 },
-    closeModalBtn: { paddingVertical: 12, borderRadius: 10, borderWidth: 1, alignItems: 'center' },
+    closeModalBtn: { paddingVertical: 13, borderRadius: 12, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   })
 );

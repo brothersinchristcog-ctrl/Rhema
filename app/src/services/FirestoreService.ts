@@ -5066,11 +5066,18 @@ class FirestoreService {
         updatedAt: new Date().toISOString(),
         churchId,
       };
-      // Remove any previous rejection data when re-applying
-      delete payload.rejectionReason;
-      delete payload.reviewedByUid;
-      delete payload.reviewedByName;
-      delete payload.reviewedAt;
+      // Remove any previous rejection & push deduplication markers when (re-)applying
+      payload.rejectionReason = firestore.FieldValue.delete();
+      payload.reviewedByUid = firestore.FieldValue.delete();
+      payload.reviewedByName = firestore.FieldValue.delete();
+      payload.reviewedAt = firestore.FieldValue.delete();
+      payload.adminPushSent = firestore.FieldValue.delete();
+      payload.adminPushSentAt = firestore.FieldValue.delete();
+      payload.adminPushClaimAt = firestore.FieldValue.delete();
+      payload.lastNotifiedStatus = firestore.FieldValue.delete();
+      payload.lastNotifiedStatusAt = firestore.FieldValue.delete();
+      payload.statusNotifyClaimStatus = firestore.FieldValue.delete();
+      payload.statusNotifyClaimAt = firestore.FieldValue.delete();
 
       await firestore()
         .collection('Rhema Church')

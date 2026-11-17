@@ -31,6 +31,9 @@ const VOLUNTEER_NOTIFICATION_TYPES = [
   'job_opportunity_new',
   'job_application_admin',
   'job_application_member',
+  'registration_request_admin',
+  'registration_approved',
+  'registration_rejected',
 ];
 
 function SwipeableRow({ children, onDelete }: { children: React.ReactNode; onDelete: () => void }) {
@@ -156,6 +159,9 @@ export default function UpdatesScreen({ navigation, route }: any) {
     if (type === 'job_opportunity_new') return 'MINISTRY OPPORTUNITY';
     if (type === 'job_application_admin') return 'MINISTRY APPLICATION';
     if (type === 'job_application_member') return 'APPLICATION UPDATE';
+    if (type === 'registration_request_admin') return 'REGISTRATION APPROVAL';
+    if (type === 'registration_approved') return 'REGISTRATION APPROVED';
+    if (type === 'registration_rejected') return 'REGISTRATION UPDATE';
     if (!type) return (t('updates.types.announcement') || 'ANNOUNCEMENT').toUpperCase();
     const trans = t(`updates.types.${type}`);
     return trans && trans !== `updates.types.${type}` ? trans.toUpperCase() : type.toUpperCase();
@@ -283,7 +289,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
     }
 
     // SECURITY: If broadcast is targeted to admin role, skip if current user is not admin
-    if ((data.targetRole === 'admin' || data.type === 'baptism_request_admin' || data.type === 'prayer_request_admin' || data.type === 'testimony_admin' || data.type === 'volunteer_application_admin' || data.type === 'job_application_admin') && !isAdmin) {
+    if ((data.targetRole === 'admin' || data.type === 'baptism_request_admin' || data.type === 'prayer_request_admin' || data.type === 'testimony_admin' || data.type === 'volunteer_application_admin' || data.type === 'job_application_admin' || data.type === 'registration_request_admin') && !isAdmin) {
       return null;
     }
 
@@ -401,6 +407,18 @@ export default function UpdatesScreen({ navigation, route }: any) {
       icon = Calendar;
       color = '#10b981';
       resolvedType = 'event';
+    } else if (data.type === 'registration_request_admin') {
+      icon = UserCheck;
+      color = '#10B981';
+      resolvedType = 'registration_request_admin';
+    } else if (data.type === 'registration_approved') {
+      icon = UserCheck;
+      color = '#059669';
+      resolvedType = 'registration_approved';
+    } else if (data.type === 'registration_rejected') {
+      icon = AlertTriangle;
+      color = '#EF4444';
+      resolvedType = 'registration_rejected';
     } else if (data.type === 'admin_roster_alert' || data.title?.includes('Response Deadline Expired') || data.title?.includes('No Volunteers:') || data.title?.includes('All Volunteers Declined') || data.title?.includes('Unfilled Dut')) {
       icon = Layers;
       color = '#DC2626';
@@ -951,6 +969,12 @@ export default function UpdatesScreen({ navigation, route }: any) {
                     } else {
                       navigation.navigate('Testimonies', { initialTab: 'mine' });
                     }
+                  } else if (update.type === 'registration_request_admin') {
+                    navigation.navigate('AdminRoot', {
+                      targetTab: 'Approvals',
+                      requestId: update.requestId || update.referenceId || update.id,
+                      timestamp: Date.now(),
+                    });
                   } else if (update.type === 'job_opportunity_new') {
                     markJobCircleNotificationsRead([String(update.id)]);
                     if (update.opportunityId) {

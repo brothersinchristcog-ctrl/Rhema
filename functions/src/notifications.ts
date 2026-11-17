@@ -5227,3 +5227,452 @@ export const onJobOpportunityUpdated = onDocumentUpdated(
     }
   }
 );
+
+// ─────────────────────────────────────────────────────────────
+// 🛡️ NEW MEMBER REGISTRATION – ADMIN APPROVAL NOTIFICATIONS
+// ─────────────────────────────────────────────────────────────
+
+function isStrictAdminRole(record: Record<string, any> | undefined): boolean {
+  if (!record) return false;
+  const role = String(record.userType || record.role || '').toLowerCase();
+  return (
+    Boolean(record.isAdmin) ||
+    Boolean(record.isSuperAdmin) ||
+    Boolean(record.superadmin) ||
+    role.includes('admin') ||
+    role.includes('pastor') ||
+    role.includes('super')
+  );
+}
+
+async function resolveChurchRegistrationAdminTokens(
+  db: FirebaseFirestore.Firestore,
+  churchId: string
+): Promise<{ tokens: string[]; adminUids: string[] }> {
+  const tokenSet = new Set<string>();
+  const adminUidSet = new Set<string>();
+  const cid = churchId || 'rhema';
+
+  const collectTokens = (docData: any) => {
+    if (!docData) return;
+    if (typeof docData.fcmToken === 'string' && docData.fcmToken.trim().length > 10) {
+      tokenSet.add(docData.fcmToken.trim());
+    }
+    if (Array.isArray(docData.fcmTokens)) {
+      docData.fcmTokens.forEach((tk: any) => {
+        if (typeof tk === 'string' && tk.trim().length > 10) tokenSet.add(tk.trim());
+      });
+    }
+  };
+
+  for (const colName of ['Rhema Church', 'churches']) {
+    try {
+      const mSnap = await db.collection(colName).doc(cid).collection('members').get();
+      mSnap.forEach((doc) => {
+        const data = doc.data() || {};
+        if (isStrictAdminRole(data)) {
+          adminUidSet.add(doc.id);
+          collectTokens(data);
+        }
+      });
+    } catch (_) {}
+
+    try {
+      const cSnap = await db.collection(colName).doc(cid).get();
+      if (cSnap.exists) {
+        const cData = cSnap.data() || {};
+        const ownerUids = [
+          cData.adminUid,
+          cData.createdBy,
+          cData.pastorUid,
+          cData.ownerUid,
+          ...(Array.isArray(cData.adminUids) ? cData.adminUids : []),
+        ].filter(Boolean);
+        ownerUids.forEach((uid: string) => adminUidSet.add(String(uid)));
+      }
+    } catch (_) {}
+  }
+
+  try {
+    const pSnap = await db.collection('platform_admins').get();
+    pSnap.forEach((doc) => {
+      const data = doc.data() || {};
+      if (isStrictAdminRole(data)) {
+        adminUidSet.add(doc.id);
+        collectTokens(data);
+      }
+    });
+  } catch (_) {}
+
+  for (const uid of Array.from(adminUidSet)) {
+    try {
+      const uSnap = await db.collection('users').doc(uid).get();
+      if (uSnap.exists) collectTokens(uSnap.data());
+    } catch (_) {}
+    try {
+      const mSnap = await db.collection('Rhema Church').doc(cid).collection('members').doc(uid).get();
+      if (mSnap.exists) collectTokens(mSnap.data());
+    } catch (_) {}
+  }
+
+  try {
+    const usersSnap = await db.collection('users').get();
+    usersSnap.forEach((doc) => {
+      const uData = doc.data() || {};
+      const userChurch = uData.primaryChurchId || uData.churchId;
+      const role = String(uData.userType || uData.role || '').toLowerCase();
+      const isPlatformSuper = Boolean(uData.isSuperAdmin) || role.includes('super');
+      if (isStrictAdminRole(uData) && (isPlatformSuper || !userChurch || userChurch === cid)) {
+        adminUidSet.add(doc.id);
+        collectTokens(uData);
+      }
+    });
+  } catch (_) {}
+
+  return {
+    tokens: Array.from(tokenSet),
+    adminUids: Array.from(adminUidSet),
+  };
+}
+
+async function resolveRegistrationApplicantTokens(
+  db: FirebaseFirestore.Firestore,
+  churchId: string,
+  requestId: string,
+  reqData: Record<string, any>
+): Promise<string[]> {
+  const tokenSet = new Set<string>();
+  const cid = churchId || 'rhema';
+
+  const collectTokens = (docData: any) => {
+    if (!docData) return;
+    if (typeof docData.fcmToken === 'string' && docData.fcmToken.trim().length > 10) {
+      tokenSet.add(docData.fcmToken.trim());
+    }
+    if (Array.isArray(docData.fcmTokens)) {
+      docData.fcmTokens.forEach((tk: any) => {
+        if (typeof tk === 'string' && tk.trim().length > 10) tokenSet.add(tk.trim());
+      });
+    }
+  };
+
+  collectTokens(reqData);
+
+  const candidateIds = Array.from(
+    new Set([reqData.authUid, reqData.memberId, requestId].map((v) => String(v || '').trim()).filter(Boolean))
+  );
+
+  for (const uid of candidateIds) {
+    try {
+      const uSnap = await db.collection('users').doc(uid).get();
+      if (uSnap.exists) collectTokens(uSnap.data());
+    } catch (_) {}
+    try {
+      const mSnap = await db.collection('Rhema Church').doc(cid).collection('members').doc(uid).get();
+      if (mSnap.exists) collectTokens(mSnap.data());
+    } catch (_) {}
+  }
+
+  if (tokenSet.size === 0 && reqData.phone) {
+    const rawDigits = String(reqData.phone).replace(/\D/g, '');
+    const last10 = rawDigits.slice(-10);
+    const phoneVariants = Array.from(
+      new Set([String(reqData.phone).trim(), last10 ? `+91${last10}` : '', last10].filter(Boolean))
+    );
+    for (const p of phoneVariants) {
+      try {
+        const uSnap = await db.collection('users').where('phone', '==', p).get();
+        uSnap.forEach((d) => collectTokens(d.data()));
+      } catch (_) {}
+    }
+  }
+
+  return Array.from(tokenSet);
+}
+
+async function resolveChurchDisplayName(
+  db: FirebaseFirestore.Firestore,
+  churchId: string
+): Promise<string> {
+  try {
+    const cSnap = await db.collection('Rhema Church').doc(churchId || 'rhema').get();
+    if (cSnap.exists) {
+      const cName = cSnap.data()?.name;
+      if (typeof cName === 'string' && cName.trim()) return cName.trim();
+    }
+  } catch (_) {}
+  return 'Rhema Global Ministries';
+}
+
+async function handleRegistrationAdminPendingPush(
+  data: Record<string, any>,
+  churchId: string,
+  requestId: string,
+  snapRef: any
+): Promise<void> {
+  if (!data || (data.status && data.status !== 'pending')) return;
+
+  const cid = churchId || 'rhema';
+  const db = getFirestore();
+  const messaging = getMessaging();
+
+  const shouldSend = await claimJobCircleNotificationLease(
+    db,
+    snapRef,
+    'adminPushClaimAt',
+    (freshData, nowMs) =>
+      (freshData.status && freshData.status !== 'pending') ||
+      freshData.adminPushSent === true ||
+      (typeof freshData.adminPushClaimAt === 'number' &&
+        nowMs - freshData.adminPushClaimAt < JOB_CIRCLE_CLAIM_TTL_MS)
+  );
+
+  if (!shouldSend) {
+    console.log(`🛑 [RegistrationApproval] Skipping duplicate admin push for request: ${requestId}`);
+    return;
+  }
+
+  try {
+    const applicantName =
+      String(data.fullName || `${data.firstName || ''} ${data.lastName || ''}`.trim() || data.phone || 'A new member').trim();
+    const city = String(data.city || data.village || '').trim();
+    const locationSuffix = city ? ` from ${city}` : '';
+
+    const title = '🆕 New Member Registration Request';
+    const body = `${applicantName}${locationSuffix} has registered and is requesting admin approval.`;
+
+    const { tokens: adminTokens, adminUids } = await resolveChurchRegistrationAdminTokens(db, cid);
+    const pushData: Record<string, string> = {
+      type: 'registration_request_admin',
+      churchId: cid,
+      requestId,
+      memberName: applicantName,
+      targetTab: 'Approvals',
+      screen: 'AdminRoot',
+      click_action: 'FLUTTER_NOTIFICATION_CLICK',
+    };
+
+    const pushDelivered =
+      adminTokens.length > 0
+        ? (await sendHighPriorityPush(messaging, adminTokens, title, body, pushData, 'church_alerts')).successCount > 0
+        : await sendHighPriorityTopicPush(messaging, `church_${cid}_admin`, title, body, pushData, 'church_alerts');
+
+    const inAppDelivered = await writeVolunteerInAppNotifications(
+      db,
+      cid,
+      `reg_admin_${requestId}`,
+      {
+        type: 'registration_request_admin',
+        targetRole: 'admin',
+        recipientRole: 'admin',
+        title,
+        body,
+        content: body,
+        memberName: applicantName,
+        applicantName,
+        memberPhone: data.phone || '',
+        requestId,
+        referenceId: requestId,
+        referenceType: 'registration_request',
+      },
+      adminUids
+    );
+
+    if (!pushDelivered || !inAppDelivered) {
+      throw new Error(`[RegistrationApproval] Incomplete admin alert delivery for request ${requestId}`);
+    }
+
+    await snapRef.update({
+      adminPushSent: true,
+      adminPushSentAt: FieldValue.serverTimestamp(),
+      adminPushClaimAt: FieldValue.delete(),
+    });
+
+    console.log(`✅ [RegistrationApproval] Notified admins of new registration: ${applicantName} (${requestId})`);
+  } catch (err) {
+    await releaseJobCircleNotificationLease(snapRef, ['adminPushClaimAt']);
+    console.error('[RegistrationApproval] Error notifying admins of new registration:', err);
+    throw err;
+  }
+}
+
+async function handleRegistrationStatusMemberPush(
+  after: Record<string, any>,
+  churchId: string,
+  requestId: string,
+  snapRef: any
+): Promise<void> {
+  const status = String(after.status || '').trim();
+  if (status !== 'approved' && status !== 'rejected') return;
+
+  const cid = churchId || 'rhema';
+  const db = getFirestore();
+  const messaging = getMessaging();
+
+  const shouldSend = await claimJobCircleNotificationLease(
+    db,
+    snapRef,
+    'statusNotifyClaimAt',
+    (freshData, nowMs) =>
+      freshData.status !== status ||
+      freshData.lastNotifiedStatus === status ||
+      (freshData.statusNotifyClaimStatus === status &&
+        typeof freshData.statusNotifyClaimAt === 'number' &&
+        nowMs - freshData.statusNotifyClaimAt < JOB_CIRCLE_CLAIM_TTL_MS),
+    { statusNotifyClaimStatus: status }
+  );
+
+  if (!shouldSend) {
+    console.log(`🛑 [RegistrationApproval] Skipping stale/duplicate ${status} notification for: ${requestId}`);
+    return;
+  }
+
+  try {
+    const churchName = await resolveChurchDisplayName(db, cid);
+    const applicantName = String(
+      after.fullName || `${after.firstName || ''} ${after.lastName || ''}`.trim() || 'Member'
+    ).trim();
+
+    const isApproved = status === 'approved';
+    const rejectionReason = String(after.rejectionReason || '').trim();
+    const title = isApproved ? '🎉 Registration Approved!' : '📋 Registration Not Approved';
+    const body = isApproved
+      ? `Welcome, ${applicantName}! Your membership registration with ${churchName} has been approved. Tap to sign in and get started.`
+      : `${applicantName}, your membership registration with ${churchName} was rejected.${rejectionReason ? ` Reason: ${rejectionReason}` : ''}`;
+
+    const notifType = isApproved ? 'registration_approved' : 'registration_rejected';
+    const memberTokens = await resolveRegistrationApplicantTokens(db, cid, requestId, after);
+
+    let pushDelivered = memberTokens.length === 0;
+    if (memberTokens.length > 0) {
+      const pushRes = await sendHighPriorityPush(
+        messaging,
+        memberTokens,
+        title,
+        body,
+        {
+          type: notifType,
+          churchId: cid,
+          requestId,
+          status,
+          screen: 'ApprovalPending',
+          click_action: 'FLUTTER_NOTIFICATION_CLICK',
+        },
+        'church_alerts'
+      );
+      pushDelivered = pushRes.successCount > 0;
+    }
+
+    let inAppDelivered = true;
+    const targetMemberId = String(after.authUid || requestId || '').trim();
+    if (isApproved && targetMemberId) {
+      inAppDelivered = await writeVolunteerInAppNotifications(
+        db,
+        cid,
+        `reg_status_${requestId}_${status}`,
+        {
+          type: notifType,
+          recipientId: targetMemberId,
+          recipientRole: 'member',
+          targetMemberId,
+          targetPhone: after.phone || '',
+          title,
+          body,
+          content: body,
+          requestId,
+          status,
+          referenceType: 'registration_request',
+          referenceId: requestId,
+        },
+        targetMemberId
+      );
+    }
+
+    if (!pushDelivered || !inAppDelivered) {
+      throw new Error(`[RegistrationApproval] Incomplete ${status} notification delivery for ${requestId}`);
+    }
+
+    await db.runTransaction(async (tx: any) => {
+      const fresh: any = await tx.get(snapRef);
+      if (!fresh.exists) return;
+      const freshData = fresh.data() || {};
+      const updatePayload: Record<string, any> = {};
+      if (freshData.status === status) {
+        updatePayload.lastNotifiedStatus = status;
+        updatePayload.lastNotifiedStatusAt = FieldValue.serverTimestamp();
+      }
+      if (freshData.statusNotifyClaimStatus === status) {
+        updatePayload.statusNotifyClaimStatus = FieldValue.delete();
+        updatePayload.statusNotifyClaimAt = FieldValue.delete();
+      }
+      if (Object.keys(updatePayload).length > 0) {
+        tx.update(snapRef, updatePayload);
+      }
+    });
+
+    console.log(`✅ [RegistrationApproval] Sent ${status} notification to ${applicantName} (${memberTokens.length} device(s)).`);
+  } catch (err) {
+    await db
+      .runTransaction(async (tx: any) => {
+        const fresh: any = await tx.get(snapRef);
+        if (!fresh.exists) return;
+        const freshData = fresh.data() || {};
+        if (freshData.statusNotifyClaimStatus === status) {
+          tx.update(snapRef, {
+            statusNotifyClaimStatus: FieldValue.delete(),
+            statusNotifyClaimAt: FieldValue.delete(),
+          });
+        }
+      })
+      .catch(() => {});
+    console.error(`[RegistrationApproval] Error sending ${status} member notification:`, err);
+    throw err;
+  }
+}
+
+/**
+ * Trigger: When a new member registration request is created
+ * Notifies church Admins requesting approval.
+ */
+export const onRegistrationRequestCreated = onDocumentCreated(
+  { document: 'Rhema Church/{churchId}/registration_requests/{requestId}', region: 'asia-south1' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+
+    const data = snap.data() || {};
+    const churchId = event.params.churchId || 'rhema';
+    const requestId = event.params.requestId;
+
+    await handleRegistrationAdminPendingPush(data, churchId, requestId, snap.ref);
+  }
+);
+
+/**
+ * Trigger: When a registration request status changes
+ * - Returning to `pending` notifies church Admins.
+ * - Transitioning to `approved` or `rejected` notifies the specific registering member.
+ */
+export const onRegistrationRequestUpdated = onDocumentUpdated(
+  { document: 'Rhema Church/{churchId}/registration_requests/{requestId}', region: 'asia-south1' },
+  async (event) => {
+    const change = event.data;
+    if (!change) return;
+
+    const before = change.before.data() || {};
+    const after = change.after.data() || {};
+    const churchId = event.params.churchId || 'rhema';
+    const requestId = event.params.requestId;
+
+    if (before.status === after.status) return;
+
+    if (after.status === 'pending') {
+      await handleRegistrationAdminPendingPush(after, churchId, requestId, change.after.ref);
+      return;
+    }
+
+    if (after.status === 'approved' || after.status === 'rejected') {
+      await handleRegistrationStatusMemberPush(after, churchId, requestId, change.after.ref);
+    }
+  }
+);

@@ -512,6 +512,31 @@ class NotificationService {
           }
           break;
         }
+        case 'registration_request_admin': {
+          const reqId = rawData.requestId || rawData.referenceId || id;
+          console.log('🆕 [NotificationService] Routing Admin to Registration Approvals:', { reqId });
+          nav.navigate('AdminRoot', {
+            targetTab: 'Approvals',
+            requestId: reqId,
+            timestamp: Date.now(),
+          });
+          break;
+        }
+        case 'registration_approved':
+        case 'registration_rejected': {
+          const routeNames = nav.getState?.()?.routeNames || [];
+          if (routeNames.includes('ApprovalPending')) {
+            nav.navigate('ApprovalPending', {
+              requestId: rawData.requestId || rawData.referenceId || id,
+              churchId: rawData.churchId,
+            });
+          } else if (routeNames.includes('Updates')) {
+            nav.navigate('Updates', { highlightId: id, highlightType: type });
+          } else if (routeNames.includes('Tabs')) {
+            nav.navigate('Tabs');
+          }
+          break;
+        }
         default:
           if (id) {
             nav.navigate('Updates', { highlightId: id, highlightType: type });
