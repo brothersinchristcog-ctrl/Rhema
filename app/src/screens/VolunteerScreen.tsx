@@ -786,12 +786,9 @@ export default function VolunteerScreen({ navigation, route }: any) {
             {openPosts.length > 0 && (
               <View style={{ marginBottom: 14 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Sparkles size={15} color="#059669" />
-                    <Text style={{ fontSize: 15, fontWeight: '800', color: colors.text }}>
-                      Open Volunteer Calls ({openPosts.length})
-                    </Text>
-                  </View>
+                  <Text style={{ fontSize: 15, fontWeight: '800', color: colors.text }}>
+                    Open Volunteer Calls ({openPosts.length})
+                  </Text>
                 </View>
 
                 <View style={{ gap: 10 }}>
