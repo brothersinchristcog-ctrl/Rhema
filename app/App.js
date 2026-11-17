@@ -177,6 +177,9 @@ export default function App() {
         return;
       }
 
+      // Also post to Android/iOS system notification bar (with deduplication) so it appears in the device notification drawer
+      NotificationService.displaySystemPushNotification(title, body, rawData).catch(() => {});
+
       setNotification({ title, body, password, remoteMessage, isLive: false });
       
       Animated.sequence([

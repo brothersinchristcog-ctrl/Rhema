@@ -948,9 +948,9 @@ import { onDocumentCreated } from 'firebase-functions/v2/firestore';
 async function handleBroadcastPushDispatch(data: any, churchIdParam?: string, messageIdParam?: string) {
   if (!data) return;
 
-  // Skip if silent/already handled by scheduler or dedicated trigger
-  if (data.silent === true || data.type === 'volunteer_post_new') {
-    console.log(`🛑 Skipping broadcast push for silent/dedicated document: ${messageIdParam}`);
+  // Skip if silent/already handled by scheduler
+  if (data.silent === true) {
+    console.log(`🛑 Skipping broadcast push for silent document: ${messageIdParam}`);
     return;
   }
 
@@ -958,6 +958,39 @@ async function handleBroadcastPushDispatch(data: any, churchIdParam?: string, me
   const body = data.content || '';
   const type = data.type || 'general';
   const churchId = churchIdParam || data.targetChurchId || DEFAULT_CHURCH_ID;
+
+  // Atomic coordination with onVolunteerPostCreated so volunteer_post_new is sent once and never skipped
+  if (type === 'volunteer_post_new' && data.postId) {
+    try {
+      const db = getDb();
+      const postRef = db
+        .collection('Rhema Church')
+        .doc(churchId)
+        .collection('volunteer_posts')
+        .doc(String(data.postId));
+      const nowMs = Date.now();
+      const claimed = await db.runTransaction(async (tx: any) => {
+        const snap = await tx.get(postRef);
+        if (!snap.exists) return true;
+        const pData = snap.data() || {};
+        if (
+          pData.postNotificationSent === true ||
+          (typeof pData.postPushClaimAt === 'number' && nowMs - pData.postPushClaimAt < 120000)
+        ) {
+          return false;
+        }
+        tx.update(postRef, {
+          postNotificationSent: true,
+          postNotificationSentAt: FieldValue.serverTimestamp(),
+        });
+        return true;
+      });
+      if (!claimed) {
+        console.log(`🛑 [BroadcastPush] volunteer_post_new already claimed/sent for post ${data.postId}`);
+        return;
+      }
+    } catch (_) {}
+  }
 
   console.log(`🔔 handleBroadcastPushDispatch fired for: [${title}] type: [${type}] church: [${churchId}]`);
 
@@ -985,6 +1018,11 @@ async function handleBroadcastPushDispatch(data: any, churchIdParam?: string, me
         if (mData.fcmToken && typeof mData.fcmToken === 'string' && mData.fcmToken.trim().length > 0) {
           tokenSet.add(mData.fcmToken.trim());
         }
+        if (Array.isArray(mData.fcmTokens)) {
+          mData.fcmTokens.forEach((tk: any) => {
+            if (typeof tk === 'string' && tk.trim().length > 10) tokenSet.add(tk.trim());
+          });
+        }
       });
     } catch (err) {
       console.warn(`Could not read 'Rhema Church'/${churchId}/members for tokens:`, err);
@@ -1007,6 +1045,11 @@ async function handleBroadcastPushDispatch(data: any, churchIdParam?: string, me
         }
         if (mData.fcmToken && typeof mData.fcmToken === 'string' && mData.fcmToken.trim().length > 0) {
           tokenSet.add(mData.fcmToken.trim());
+        }
+        if (Array.isArray(mData.fcmTokens)) {
+          mData.fcmTokens.forEach((tk: any) => {
+            if (typeof tk === 'string' && tk.trim().length > 10) tokenSet.add(tk.trim());
+          });
         }
       });
     } catch (_) {}
@@ -1046,15 +1089,14 @@ async function handleBroadcastPushDispatch(data: any, churchIdParam?: string, me
         console.warn('⚠️ Error in secondary admin token lookup:', adminLookupErr);
       }
     } else {
-      // General member broadcasts check
+      // General member broadcasts check across all users belonging to this church
       try {
-        let query: any = db.collection('users');
-        if (churchId) {
-          query = query.where('primaryChurchId', '==', churchId);
-        }
-        const snapshotUsers = await query.get();
+        const snapshotUsers = await db.collection('users').get();
         snapshotUsers.forEach((doc: any) => {
           const uData = doc.data();
+          if (!uData) return;
+          const uChurch = uData.primaryChurchId || uData.churchId || 'rhema';
+          if (churchId && uChurch !== churchId) return;
           if (data.targetPhone) {
             const rawDigits = String(data.targetPhone).replace(/\D/g, '').slice(-10);
             const userDigits = String(uData.phone || uData.mobile || '').replace(/\D/g, '').slice(-10);
@@ -1062,6 +1104,11 @@ async function handleBroadcastPushDispatch(data: any, churchIdParam?: string, me
           }
           if (uData.fcmToken && typeof uData.fcmToken === 'string' && uData.fcmToken.trim().length > 0) {
             tokenSet.add(uData.fcmToken.trim());
+          }
+          if (Array.isArray(uData.fcmTokens)) {
+            uData.fcmTokens.forEach((tk: any) => {
+              if (typeof tk === 'string' && tk.trim().length > 10) tokenSet.add(tk.trim());
+            });
           }
         });
       } catch (_) {}

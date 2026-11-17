@@ -4369,8 +4369,16 @@ async function handleJobOpportunityPublishedPush(data, churchId, opportunityId, 
         }
         catch (_) { }
         try {
-            const usersSnap = await db.collection('users').where('primaryChurchId', '==', cid).get();
-            usersSnap.forEach((uDoc) => addTokens(uDoc.data()));
+            const usersSnap = await db.collection('users').get();
+            usersSnap.forEach((uDoc) => {
+                const uData = uDoc.data();
+                if (!uData)
+                    return;
+                const uChurch = uData.primaryChurchId || uData.churchId || 'rhema';
+                if (uChurch === cid) {
+                    addTokens(uData);
+                }
+            });
         }
         catch (_) { }
         const memberTokens = Array.from(tokenSet);
@@ -5096,8 +5104,16 @@ async function handleVolunteerPostPublishedPush(data, churchId, postId, snapRef)
         }
         catch (_) { }
         try {
-            const usersSnap = await db.collection('users').where('primaryChurchId', '==', cid).get();
-            usersSnap.forEach((uDoc) => addTokens(uDoc.data()));
+            const usersSnap = await db.collection('users').get();
+            usersSnap.forEach((uDoc) => {
+                const uData = uDoc.data();
+                if (!uData)
+                    return;
+                const uChurch = uData.primaryChurchId || uData.churchId || 'rhema';
+                if (uChurch === cid) {
+                    addTokens(uData);
+                }
+            });
         }
         catch (_) { }
         const memberTokens = Array.from(tokenSet);
