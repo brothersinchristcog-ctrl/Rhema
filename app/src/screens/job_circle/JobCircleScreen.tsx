@@ -46,9 +46,10 @@ import {
   Trash2,
   Bell,
   ChevronRight,
+  ArrowRight,
   Compass,
 } from 'lucide-react-native';
-import { RHEMA_LOGO_PATH, RHEMA_LOGO_VIEWBOX } from '../auth/rhemaLogoPath';
+import { RHEMA_LOGO_PATH, RHEMA_LOGO_VIEWBOX, RHEMA_LOGO_ASPECT } from '../auth/rhemaLogoPath';
 import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -113,29 +114,23 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
   const [selectedFile, setSelectedFile] = useState<{ uri: string; name: string; mimeType?: string; size?: number } | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Splash Screen Fade & Auto-Transition
+  // Splash Screen Entrance Fade (stays visible until member taps Continue)
   useEffect(() => {
     if (!showSplash) return;
 
     Animated.parallel([
       Animated.timing(bgFade, {
         toValue: 1,
-        duration: 450,
+        duration: 400,
         useNativeDriver: true,
       }),
       Animated.timing(contentFade, {
         toValue: 1,
-        duration: 650,
-        delay: 120,
+        duration: 600,
+        delay: 100,
         useNativeDriver: true,
       }),
     ]).start();
-
-    const timer = setTimeout(() => {
-      setShowSplash(false);
-    }, 1800);
-
-    return () => clearTimeout(timer);
   }, [showSplash, bgFade, contentFade]);
 
   // Android hardware back handler: maintain proper back navigation to Member Dashboard
@@ -613,67 +608,95 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
   };
 
   // ─────────────────────────────────────────────────────────────
-  // 1. SPLASH / ENTRY SCREEN (Simple text-only "Rhema Job Circle")
+  // 1. JOB CIRCLE WELCOME / HOME SCREEN
   // ─────────────────────────────────────────────────────────────
   if (showSplash) {
+    const logoWidth = Math.min(SCREEN_WIDTH * 0.68, 280);
+    const logoHeight = Math.round(logoWidth / RHEMA_LOGO_ASPECT);
+
     return (
-      <TouchableOpacity
-        activeOpacity={1}
-        onPress={() => setShowSplash(false)}
-        style={styles.splashContainer}
-      >
+      <View style={styles.splashContainer}>
         <StatusBar
           barStyle="dark-content"
-          backgroundColor="#FFFFFF"
+          backgroundColor="#FAFBFD"
           translucent
         />
 
-        {/* Pristine White & Pearl Silk Background */}
-        <Animated.View style={[StyleSheet.absoluteFillObject, { opacity: bgFade }]}>
+        {/* Soft Pearl Background with Ambient Top-Left Lavender & Mid-Right Blue Glows */}
+        <Animated.View style={[StyleSheet.absoluteFillObject, { opacity: bgFade }]} pointerEvents="none">
           <LinearGradient
-            colors={['#FFFFFF', '#FAF9FD', '#F4F2FA', '#ECE7F6', '#F7F5FC', '#FFFFFF']}
-            locations={[0, 0.2, 0.45, 0.75, 0.9, 1]}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
+            colors={['#F8FAFF', '#FFFFFF', '#F6F8FF', '#FFFFFF']}
+            locations={[0, 0.35, 0.72, 1]}
+            start={{ x: 0.2, y: 0 }}
+            end={{ x: 0.8, y: 1 }}
             style={StyleSheet.absoluteFillObject}
           />
 
           <Svg style={StyleSheet.absoluteFillObject} width="100%" height="100%">
             <Defs>
-              <SvgRadialGradient id="topWhiteGlow" cx="50%" cy="0%" r="55%">
-                <Stop offset="0%" stopColor="#FFFFFF" stopOpacity="1" />
-                <Stop offset="70%" stopColor="#FFFFFF" stopOpacity="0.4" />
-                <Stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
+              <SvgRadialGradient id="jcTopLeftGlow" cx="15%" cy="16%" r="55%">
+                <Stop offset="0%" stopColor="#E6E5FA" stopOpacity="0.8" />
+                <Stop offset="100%" stopColor="#E6E5FA" stopOpacity="0" />
               </SvgRadialGradient>
-              <SvgRadialGradient id="softLilacGlow" cx="80%" cy="60%" r="50%">
-                <Stop offset="0%" stopColor="#E8E1F7" stopOpacity="0.5" />
-                <Stop offset="100%" stopColor="#E8E1F7" stopOpacity="0" />
-              </SvgRadialGradient>
-              <SvgRadialGradient id="softGoldGlow" cx="20%" cy="85%" r="45%">
-                <Stop offset="0%" stopColor="#F9F2E3" stopOpacity="0.55" />
-                <Stop offset="100%" stopColor="#F9F2E3" stopOpacity="0" />
+              <SvgRadialGradient id="jcRightBlueGlow" cx="88%" cy="54%" r="55%">
+                <Stop offset="0%" stopColor="#E2ECFF" stopOpacity="0.85" />
+                <Stop offset="100%" stopColor="#E2ECFF" stopOpacity="0" />
               </SvgRadialGradient>
             </Defs>
-            <Rect width="100%" height="100%" fill="url(#topWhiteGlow)" />
-            <Rect width="100%" height="100%" fill="url(#softLilacGlow)" />
-            <Rect width="100%" height="100%" fill="url(#softGoldGlow)" />
+            <Rect width="100%" height="100%" fill="url(#jcTopLeftGlow)" />
+            <Rect width="100%" height="100%" fill="url(#jcRightBlueGlow)" />
           </Svg>
         </Animated.View>
 
-        {/* "Rhema Job Circle" Centered Navy-Blue Branding */}
+        {/* Centered Rhema Script Logo, JOB CIRCLE Divider & Tagline */}
         <Animated.View style={[styles.splashCenterContainer, { opacity: contentFade }]}>
-          <View style={styles.brandScaleWrap}>
-            <View style={styles.brandLogoBox}>
-              <Svg width="100%" height="100%" viewBox={RHEMA_LOGO_VIEWBOX}>
-                <Path d={RHEMA_LOGO_PATH} fill="#0B1F5C" fillRule="evenodd" />
-              </Svg>
-              <Text style={styles.brandSub} numberOfLines={1} adjustsFontSizeToFit>
-                JOB CIRCLE
-              </Text>
-            </View>
+          <View style={{ width: logoWidth, height: logoHeight }}>
+            <Svg width="100%" height="100%" viewBox={RHEMA_LOGO_VIEWBOX}>
+              <Path d={RHEMA_LOGO_PATH} fill="#0F2466" fillRule="evenodd" />
+            </Svg>
           </View>
+
+          <View style={styles.splashDividerRow}>
+            <LinearGradient
+              colors={['rgba(15, 36, 102, 0)', 'rgba(15, 36, 102, 0.55)']}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={styles.splashDividerLine}
+            />
+            <Text style={styles.splashJobCircleLabel}>JOB CIRCLE</Text>
+            <LinearGradient
+              colors={['rgba(15, 36, 102, 0.55)', 'rgba(15, 36, 102, 0)']}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={styles.splashDividerLine}
+            />
+          </View>
+
+          <Text style={styles.splashTagline}>
+            Find the work you were called to do.
+          </Text>
         </Animated.View>
-      </TouchableOpacity>
+
+        {/* Bottom Continue Button */}
+        <Animated.View
+          style={[
+            styles.splashBottomWrap,
+            {
+              opacity: contentFade,
+              paddingBottom: Math.max(insets.bottom, 20) + 22,
+            },
+          ]}
+        >
+          <TouchableOpacity
+            style={styles.splashContinueBtn}
+            activeOpacity={0.88}
+            onPress={() => setShowSplash(false)}
+          >
+            <Text style={styles.splashContinueTxt}>Continue</Text>
+            <ArrowRight size={18} color="#FFFFFF" strokeWidth={2.4} />
+          </TouchableOpacity>
+        </Animated.View>
+      </View>
     );
   }
 
@@ -1013,8 +1036,8 @@ const styles = StyleSheet.create({
   // ── SPLASH SCREEN STYLES ──
   splashContainer: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
+    backgroundColor: '#FAFBFD',
+    justifyContent: 'space-between',
     alignItems: 'center',
   },
   splashCenterContainer: {
@@ -1022,29 +1045,58 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     width: '100%',
+    paddingHorizontal: 24,
+    paddingTop: 24,
   },
-  brandScaleWrap: {
-    width: 210,
-    height: 88,
-    transform: [{ scale: 1.3 }],
-    justifyContent: 'center',
+  splashDividerRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    gap: 12,
   },
-  brandLogoBox: {
-    width: 210,
-    height: 88,
+  splashDividerLine: {
+    width: 34,
+    height: 1.2,
   },
-  brandSub: {
-    position: 'absolute',
-    left: 73,
-    top: 67,
-    width: 136,
-    textAlign: 'center',
-    fontSize: 11,
+  splashJobCircleLabel: {
+    fontSize: 13.5,
     fontWeight: '700',
-    letterSpacing: 2.8,
-    color: '#07153F',
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    letterSpacing: 3.8,
+    color: '#0F2466',
+  },
+  splashTagline: {
+    marginTop: 18,
+    fontSize: 15,
+    lineHeight: 22,
+    color: '#4B5563',
+    textAlign: 'center',
+    fontWeight: '400',
+  },
+  splashBottomWrap: {
+    width: '100%',
+    paddingHorizontal: 24,
+  },
+  splashContinueBtn: {
+    width: '100%',
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: '#102466',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    shadowColor: '#0B1B4D',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 14,
+    elevation: 6,
+  },
+  splashContinueTxt: {
+    color: '#FFFFFF',
+    fontSize: 16.5,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
 
   // ── MAIN HEADER STYLES (Profile Left + Search Bar Center + Bell Right) ──
