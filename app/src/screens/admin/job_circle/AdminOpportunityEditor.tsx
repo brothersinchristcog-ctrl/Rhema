@@ -80,6 +80,14 @@ const WEEKDAYS = [
   { label: 'Sun', full: 'Sunday' },
 ];
 
+const SCHEDULE_PRESETS: { label: string; days: string[]; startTime: string; endTime: string }[] = [
+  { label: 'Sun Morning', days: ['Sunday'], startTime: '9:00 AM', endTime: '12:00 PM' },
+  { label: 'Sun Evening', days: ['Sunday'], startTime: '6:00 PM', endTime: '8:30 PM' },
+  { label: 'Weekdays (Mon–Fri)', days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], startTime: '9:00 AM', endTime: '5:00 PM' },
+  { label: 'Weekends', days: ['Saturday', 'Sunday'], startTime: '9:00 AM', endTime: '1:00 PM' },
+  { label: 'Every Day', days: WEEKDAYS.map(w => w.full), startTime: '9:00 AM', endTime: '12:00 PM' },
+];
+
 interface ScheduleSlot {
   days: string[]; // e.g. ["Monday", "Wednesday"]
   startTime: string; // e.g. "6:00 PM"
@@ -451,9 +459,16 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
   };
 
   // ── SCHEDULE SLOTS HELPERS ──
+  const handleApplySchedulePreset = (preset: { days: string[]; startTime: string; endTime: string }) => {
+    setScheduleModified(true);
+    setSchedules([{ days: [...preset.days], startTime: preset.startTime, endTime: preset.endTime }]);
+  };
+
   const handleAddScheduleSlot = () => {
     setScheduleModified(true);
-    setSchedules([...schedules, { days: ['Sunday'], startTime: '9:00 AM', endTime: '12:00 PM' }]);
+    const usedDays = new Set(schedules.flatMap(s => s.days));
+    const nextDay = WEEKDAYS.find(w => !usedDays.has(w.full))?.full || 'Monday';
+    setSchedules([...schedules, { days: [nextDay], startTime: '6:00 PM', endTime: '8:00 PM' }]);
   };
 
   const handleRemoveScheduleSlot = (idx: number) => {
@@ -471,16 +486,32 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
             ? { ...slot, days: slot.days.filter(d => d !== dayFull) }
             : slot;
         }
-        return { ...slot, days: [...slot.days, dayFull] };
+        const nextDays = [...slot.days, dayFull].sort(
+          (a, b) => WEEKDAYS.findIndex(w => w.full === a) - WEEKDAYS.findIndex(w => w.full === b)
+        );
+        return { ...slot, days: nextDays };
       })
     );
   };
 
   const formatScheduleCommitmentSummary = (): string => {
     if (schedules.length === 0) return 'Flexible schedule';
-    return schedules
-      .map(s => `${s.days.join(', ')}: ${s.startTime} – ${s.endTime}`)
-      .join(' | ');
+    // Merge slots that share the exact same time window so duplicate days/times never repeat
+    const groupedByTime = new Map<string, Set<string>>();
+    for (const s of schedules) {
+      const key = `${s.startTime} – ${s.endTime}`;
+      if (!groupedByTime.has(key)) groupedByTime.set(key, new Set());
+      const set = groupedByTime.get(key)!;
+      s.days.forEach(d => set.add(d));
+    }
+    const parts: string[] = [];
+    groupedByTime.forEach((daySet, timeRange) => {
+      const orderedDays = Array.from(daySet).sort(
+        (a, b) => WEEKDAYS.findIndex(w => w.full === a) - WEEKDAYS.findIndex(w => w.full === b)
+      );
+      parts.push(`${orderedDays.join(', ')}: ${timeRange}`);
+    });
+    return parts.join(' | ');
   };
 
   // ── TIME PICKER HANDLER ──
@@ -972,23 +1003,84 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
               </View>
             </View>
 
-            {/* ── TIME COMMITMENT (Day Selector + Start/End Time Pickers) ── */}
-            <View style={[styles.fGroup, { marginTop: 4 }]}>
+            {/* ── TIME COMMITMENT (Quick Presets + Intuitive Day & Time Selector) ── */}
+            <View style={[styles.fGroup, { marginTop: 6 }]}>
               <View style={styles.fieldHeaderBetween}>
-                <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0, flexShrink: 1 }]}>
-                  Time Commitment & Schedule
-                </Text>
+                <View>
+                  <Text style={[styles.fLabel, { color: primaryText, marginBottom: 2 }]}>
+                    Schedule Timing
+                  </Text>
+                  <Text style={{ fontSize: 11.5, color: secondaryText }}>
+                    Choose a quick preset or customize days & hours below
+                  </Text>
+                </View>
                 <TouchableOpacity
                   onPress={handleAddScheduleSlot}
-                  style={[styles.smallAddPill, { borderColor: isDark ? '#3F3F46' : '#CBD5E1', backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
-                  activeOpacity={0.7}
+                  style={[
+                    styles.smallAddPill,
+                    {
+                      borderColor: isDark ? '#3B82F6' : '#1a2d5a',
+                      backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF',
+                      paddingHorizontal: 10,
+                      paddingVertical: 5,
+                    },
+                  ]}
+                  activeOpacity={0.75}
                 >
-                  <Plus size={11} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />
-                  <Text style={[styles.smallAddPillTxt, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>
-                    Add
+                  <Plus size={12} color={isDark ? '#93C5FD' : '#1a2d5a'} strokeWidth={2.5} />
+                  <Text style={[styles.smallAddPillTxt, { color: isDark ? '#93C5FD' : '#1a2d5a' }]}>
+                    Add Time Slot
                   </Text>
                 </TouchableOpacity>
               </View>
+
+              {/* 1-Tap Quick Presets Row */}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8, paddingVertical: 8 }}
+              >
+                {SCHEDULE_PRESETS.map((preset) => {
+                  const isActivePreset =
+                    schedules.length === 1 &&
+                    schedules[0].startTime === preset.startTime &&
+                    schedules[0].endTime === preset.endTime &&
+                    schedules[0].days.length === preset.days.length &&
+                    preset.days.every(d => schedules[0].days.includes(d));
+
+                  return (
+                    <TouchableOpacity
+                      key={preset.label}
+                      onPress={() => handleApplySchedulePreset(preset)}
+                      activeOpacity={0.75}
+                      style={{
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: 999,
+                        borderWidth: 1,
+                        backgroundColor: isActivePreset
+                          ? (isDark ? '#FFFFFF' : '#1a2d5a')
+                          : (isDark ? '#27272A' : '#F1F5F9'),
+                        borderColor: isActivePreset
+                          ? (isDark ? '#FFFFFF' : '#1a2d5a')
+                          : (isDark ? '#3F3F46' : '#CBD5E1'),
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 11.5,
+                          fontWeight: '700',
+                          color: isActivePreset
+                            ? (isDark ? '#000000' : '#FFFFFF')
+                            : (isDark ? '#E4E4E7' : '#334155'),
+                        }}
+                      >
+                        ⚡ {preset.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
 
               {schedules.map((slot, sIdx) => (
                 <View
@@ -996,25 +1088,53 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                   style={[
                     styles.scheduleBox,
                     {
-                      backgroundColor: isDark ? '#1F1F23' : '#F8FAFC',
-                      borderColor: isDark ? '#3F3F46' : '#E2E8F0',
+                      backgroundColor: isDark ? '#18181B' : '#F8FAFC',
+                      borderColor: isDark ? '#27272A' : '#E2E8F0',
                     },
                   ]}
                 >
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: primaryText }}>
-                      Schedule #{sIdx + 1}
-                    </Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <View
+                        style={{
+                          paddingHorizontal: 8,
+                          paddingVertical: 2,
+                          borderRadius: 6,
+                          backgroundColor: isDark ? '#27272A' : '#E2E8F0',
+                        }}
+                      >
+                        <Text style={{ fontSize: 11, fontWeight: '800', color: primaryText }}>
+                          SLOT {sIdx + 1}
+                        </Text>
+                      </View>
+                      <Text style={{ fontSize: 12, color: secondaryText, fontWeight: '600' }}>
+                        {slot.days.length === 7 ? 'Every Day' : `${slot.days.length} day${slot.days.length > 1 ? 's' : ''} selected`}
+                      </Text>
+                    </View>
                     {schedules.length > 1 && (
-                      <TouchableOpacity onPress={() => handleRemoveScheduleSlot(sIdx)} style={{ padding: 4 }}>
-                        <Trash2 size={16} color="#DC2626" />
+                      <TouchableOpacity
+                        onPress={() => handleRemoveScheduleSlot(sIdx)}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 4,
+                          paddingHorizontal: 8,
+                          paddingVertical: 4,
+                          borderRadius: 6,
+                          backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2',
+                        }}
+                      >
+                        <Trash2 size={13} color={isDark ? '#F87171' : '#DC2626'} />
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#F87171' : '#DC2626' }}>
+                          Remove
+                        </Text>
                       </TouchableOpacity>
                     )}
                   </View>
 
-                  {/* Day Selection Row (7 Equal Modern Circular/Pill Chips) */}
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: secondaryText, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-                    Select Days
+                  {/* Day Selection Row */}
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: secondaryText, marginBottom: 8, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+                    1. Tap Days of the Week
                   </Text>
                   <View style={styles.daysRow}>
                     {WEEKDAYS.map(day => {
@@ -1030,12 +1150,12 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                                   borderColor: isDark ? '#FFFFFF' : '#1a2d5a',
                                 }
                               : {
-                                  backgroundColor: isDark ? '#27272A' : '#F1F5F9',
-                                  borderColor: isDark ? '#3F3F46' : '#E2E8F0',
+                                  backgroundColor: isDark ? '#27272A' : '#FFFFFF',
+                                  borderColor: isDark ? '#3F3F46' : '#CBD5E1',
                                 },
                           ]}
                           onPress={() => handleToggleDay(sIdx, day.full)}
-                          activeOpacity={0.7}
+                          activeOpacity={0.75}
                         >
                           <Text
                             style={[
@@ -1043,7 +1163,7 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                               {
                                 color: isSelected
                                   ? (isDark ? '#000000' : '#FFFFFF')
-                                  : (isDark ? '#A1A1AA' : '#64748B'),
+                                  : (isDark ? '#A1A1AA' : '#475569'),
                                 fontWeight: isSelected ? '800' : '600',
                               },
                             ]}
@@ -1056,36 +1176,73 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                   </View>
 
                   {/* Time Range Pickers */}
-                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: secondaryText, marginTop: 14, marginBottom: 8, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+                    2. Set Hours (Start & End Time)
+                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     {/* Start Time */}
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 11, color: secondaryText, marginBottom: 4 }}>Start Time</Text>
-                      <TouchableOpacity
-                        style={[styles.timeBtn, { backgroundColor: isDark ? '#27272A' : '#FFFFFF', borderColor: isDark ? '#3F3F46' : '#CBD5E1' }]}
-                        onPress={() => setTimePickerTarget({ slotIdx: sIdx, field: 'start' })}
-                      >
-                        <Clock size={13} color={secondaryText} />
-                        <Text style={[styles.timeBtnTxt, { color: primaryText }]}>{slot.startTime}</Text>
-                      </TouchableOpacity>
-                    </View>
+                    <TouchableOpacity
+                      style={[
+                        styles.timeBtn,
+                        {
+                          flex: 1,
+                          backgroundColor: isDark ? '#27272A' : '#FFFFFF',
+                          borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+                        },
+                      ]}
+                      onPress={() => setTimePickerTarget({ slotIdx: sIdx, field: 'start' })}
+                      activeOpacity={0.78}
+                    >
+                      <Clock size={14} color={isDark ? '#93C5FD' : '#1a2d5a'} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 10, color: secondaryText, fontWeight: '600' }}>FROM</Text>
+                        <Text style={[styles.timeBtnTxt, { color: primaryText, fontSize: 13.5 }]}>{slot.startTime}</Text>
+                      </View>
+                    </TouchableOpacity>
+
+                    <Text style={{ color: secondaryText, fontWeight: '800', fontSize: 14 }}>→</Text>
 
                     {/* End Time */}
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 11, color: secondaryText, marginBottom: 4 }}>End Time</Text>
-                      <TouchableOpacity
-                        style={[styles.timeBtn, { backgroundColor: isDark ? '#27272A' : '#FFFFFF', borderColor: isDark ? '#3F3F46' : '#CBD5E1' }]}
-                        onPress={() => setTimePickerTarget({ slotIdx: sIdx, field: 'end' })}
-                      >
-                        <Clock size={13} color={secondaryText} />
-                        <Text style={[styles.timeBtnTxt, { color: primaryText }]}>{slot.endTime}</Text>
-                      </TouchableOpacity>
-                    </View>
+                    <TouchableOpacity
+                      style={[
+                        styles.timeBtn,
+                        {
+                          flex: 1,
+                          backgroundColor: isDark ? '#27272A' : '#FFFFFF',
+                          borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+                        },
+                      ]}
+                      onPress={() => setTimePickerTarget({ slotIdx: sIdx, field: 'end' })}
+                      activeOpacity={0.78}
+                    >
+                      <Clock size={14} color={isDark ? '#93C5FD' : '#1a2d5a'} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 10, color: secondaryText, fontWeight: '600' }}>TO</Text>
+                        <Text style={[styles.timeBtnTxt, { color: primaryText, fontSize: 13.5 }]}>{slot.endTime}</Text>
+                      </View>
+                    </TouchableOpacity>
                   </View>
 
-                  {/* Schedule Summary Preview */}
-                  <Text style={[styles.scheduleSummary, { color: isDark ? '#34D399' : '#15803d' }]}>
-                    ✓ {slot.days.join(', ')} – {slot.startTime} to {slot.endTime}
-                  </Text>
+                  {/* Schedule Summary Preview Pill */}
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      marginTop: 12,
+                      paddingHorizontal: 10,
+                      paddingVertical: 7,
+                      borderRadius: 8,
+                      backgroundColor: isDark ? 'rgba(16, 185, 129, 0.12)' : '#ECFDF5',
+                      borderWidth: 1,
+                      borderColor: isDark ? 'rgba(52, 211, 153, 0.3)' : '#A7F3D0',
+                    }}
+                  >
+                    <CheckCircle2 size={13} color={isDark ? '#34D399' : '#059669'} />
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#34D399' : '#047857', flex: 1 }}>
+                      {slot.days.join(', ')} • {slot.startTime} – {slot.endTime}
+                    </Text>
+                  </View>
                 </View>
               ))}
             </View>
