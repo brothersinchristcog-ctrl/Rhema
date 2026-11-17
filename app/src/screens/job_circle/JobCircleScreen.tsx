@@ -22,6 +22,8 @@ import {
   StatusBar,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, {
   Defs,
@@ -56,6 +58,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { Colors } from '../../theme/Theme';
 import JobCircleService from '../../services/JobCircleService';
 import FirestoreService from '../../services/FirestoreService';
+import NotificationService from '../../services/NotificationService';
 import { JobOpportunity, AttachmentInfo } from '../../types/jobCircle';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -89,8 +92,11 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
   const churchId = activeChurch?.id || 'rhema';
 
   // Screen View State: Splash Screen vs Main Opportunities Screen
-  // If navigated directly with skipSplash or application deep link, skip splash
-  const [showSplash, setShowSplash] = useState<boolean>(!route?.params?.skipSplash && !route?.params?.applicationId);
+  // If navigated directly with skipSplash or deep link, skip splash
+  const [showSplash, setShowSplash] = useState<boolean>(
+    !route?.params?.skipSplash && !route?.params?.applicationId && !route?.params?.opportunityId
+  );
+  const lastDeepLinkedOppRef = useRef<string>('');
   const bgFade = useRef(new Animated.Value(0)).current;
   const contentFade = useRef(new Animated.Value(0)).current;
 
@@ -101,6 +107,7 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
   const [expandedDescIds, setExpandedDescIds] = useState<{ [key: string]: boolean }>({});
   const [appliedOppIds, setAppliedOppIds] = useState<string[]>([]);
   const [unreadNotifCount, setUnreadNotifCount] = useState<number>(0);
+  const [readJobNotifIds, setReadJobNotifIds] = useState<string[]>([]);
 
   // Search
   const [searchQuery, setSearchQuery] = useState('');
@@ -155,6 +162,32 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
     loadAppliedStatus();
   }, [churchId]);
 
+  useEffect(() => {
+    const oppId = route?.params?.opportunityId;
+    if (!oppId || lastDeepLinkedOppRef.current === oppId) return;
+    lastDeepLinkedOppRef.current = oppId;
+    setShowSplash(false);
+    navigation.navigate('OpportunityDetailScreen', {
+      opportunityId: oppId,
+      applicationId: route?.params?.applicationId,
+    });
+  }, [route?.params?.opportunityId, route?.params?.applicationId, navigation]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      const readKey = `@read_job_notif_ids_${user?.uid || member?.id || 'guest'}`;
+      AsyncStorage.getItem(readKey)
+        .then(raw => {
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) setReadJobNotifIds(parsed);
+          }
+        })
+        .catch(() => {});
+      loadAppliedStatus();
+    }, [user?.uid, member?.id])
+  );
+
   // Listen to Job Circle notifications to display real-time unread badge
   useEffect(() => {
     if (!churchId) return;
@@ -163,6 +196,7 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
     const uId = user?.uid || '';
     const mId = member?.id || '';
     const uPhone = (user?.phoneNumber || member?.phone || '').replace(/\D/g, '');
+    const readSet = new Set(readJobNotifIds);
 
     try {
       const unsub = firestore()
@@ -173,6 +207,7 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
         .onSnapshot(snap => {
           if (snap) {
             const count = snap.docs.filter(doc => {
+              if (readSet.has(doc.id)) return false;
               const d = doc.data();
               const isJobType =
                 d.type === 'job_opportunity_new' ||
@@ -192,7 +227,11 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
               const targetPhoneVal = (d.targetPhone || '').replace(/\D/g, '');
               if (targetIdVal || targetPhoneVal) {
                 const idMatch = Boolean(targetIdVal && ((uId && targetIdVal === uId) || (mId && targetIdVal === mId)));
-                const phoneMatch = Boolean(targetPhoneVal && uPhone && (uPhone.endsWith(targetPhoneVal) || targetPhoneVal.endsWith(uPhone)));
+                const phoneMatch = Boolean(
+                  targetPhoneVal.length > 5 &&
+                    uPhone.length > 5 &&
+                    (uPhone.endsWith(targetPhoneVal) || targetPhoneVal.endsWith(uPhone))
+                );
                 if (!idMatch && !phoneMatch) return false;
               }
               return true;
@@ -207,7 +246,7 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
     } catch (e) {
       console.warn('[JobCircleScreen] notifications listener caught error:', e);
     }
-  }, [churchId, user?.uid, user?.phoneNumber, member?.id, member?.phone, member?.userType]);
+  }, [churchId, user?.uid, user?.phoneNumber, member?.id, member?.phone, member?.userType, readJobNotifIds]);
 
   const loadAppliedStatus = async () => {
     if (!user?.uid) return;
@@ -266,6 +305,7 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
         );
       }
 
+      const fcmToken = await NotificationService.messaging().getToken().catch(() => '');
       await JobCircleService.applyForOpportunity(
         churchId,
         selectedOppForApply,
@@ -274,6 +314,7 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
           name: member?.name || user.displayName || 'Church Member',
           phone: member?.phone || user.phoneNumber || '',
           email: member?.email || user.email || '',
+          fcmToken: fcmToken || '',
         },
         {
           applicationMessage: applicationMessage.trim(),

@@ -37,6 +37,7 @@ import { useChurch } from '../../context/ChurchContext';
 import { useTheme } from '../../context/ThemeContext';
 import { Colors } from '../../theme/Theme';
 import JobCircleService from '../../services/JobCircleService';
+import NotificationService from '../../services/NotificationService';
 import { JobOpportunity, AttachmentInfo } from '../../types/jobCircle';
 
 interface OpportunityDetailScreenProps {
@@ -44,6 +45,7 @@ interface OpportunityDetailScreenProps {
   route: {
     params: {
       opportunityId?: string;
+      applicationId?: string;
       opportunity?: JobOpportunity;
     };
   };
@@ -111,7 +113,13 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
     if (!user?.uid || !opportunity?.id) return;
     try {
       const myApps = await JobCircleService.getMyApplications(churchId, user.uid);
-      const existingApp = myApps.find(app => app.opportunityId === opportunity.id && app.status !== 'withdrawn');
+      const targetAppId = route?.params?.applicationId;
+      let existingApp = targetAppId
+        ? myApps.find(app => app.id === targetAppId)
+        : myApps.find(app => app.opportunityId === opportunity.id && app.status !== 'withdrawn');
+      if (!existingApp) {
+        existingApp = myApps.find(app => app.opportunityId === opportunity.id && app.status !== 'withdrawn');
+      }
       if (existingApp) {
         setUserApplication(existingApp);
         setHasApplied(existingApp.status !== 'rejected');
@@ -169,7 +177,8 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
         );
       }
 
-      // 2. Submit application
+      // 2. Submit application (include active FCM token for targeted status push)
+      const fcmToken = await NotificationService.messaging().getToken().catch(() => '');
       await JobCircleService.applyForOpportunity(
         churchId,
         opportunity,
@@ -178,6 +187,7 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
           name: member?.name || user.displayName || 'Church Member',
           phone: member?.phone || user.phoneNumber || '',
           email: member?.email || user.email || '',
+          fcmToken: fcmToken || '',
         },
         {
           applicationMessage: applicationMessage.trim(),

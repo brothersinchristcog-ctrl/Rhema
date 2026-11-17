@@ -62,19 +62,27 @@ class NotificationService {
       console.log('📤 Fetching user global church association to save token for UID:', user.uid);
       const FirestoreService = require('./FirestoreService').default;
       const globalUser = await FirestoreService.getGlobalUser(user.uid);
+      const targetChurchId =
+        globalUser?.primaryChurchId ||
+        (await FirestoreService.getChurchId().catch(() => null)) ||
+        'rhema';
 
-      if (globalUser?.primaryChurchId) {
-        // Save to church members subcollection
-        await firestore().collection('Rhema Church').doc(globalUser.primaryChurchId).collection('members').doc(user.uid).set({
+      // Save to church members subcollection and root users document
+      await Promise.allSettled([
+        firestore().collection('Rhema Church').doc(targetChurchId).collection('members').doc(user.uid).set({
           fcmToken: token,
           lastTokenUpdate: firestore.FieldValue.serverTimestamp(),
           platform: Platform.OS,
-        }, { merge: true });
+        }, { merge: true }),
+        firestore().collection('users').doc(user.uid).set({
+          fcmToken: token,
+          primaryChurchId: targetChurchId,
+          lastTokenUpdate: firestore.FieldValue.serverTimestamp(),
+          platform: Platform.OS,
+        }, { merge: true }),
+      ]);
 
-        console.log('✨ Token saved successfully to member profile!');
-      } else {
-        console.log('⚠️ Token not saved: User does not belong to a church yet.');
-      }
+      console.log('✨ Token saved successfully to member profile!');
     } catch (err) {
       console.error('❌ Firestore Token Save Error:', err);
     }
@@ -470,7 +478,7 @@ class NotificationService {
           if (oppId) {
             nav.navigate('OpportunityDetailScreen', { opportunityId: oppId });
           } else {
-            nav.navigate('JobCircle');
+            nav.navigate('JobCircle', { skipSplash: true });
           }
           break;
         }

@@ -905,6 +905,11 @@ function Navigation() {
               title,
               churchId: targetChurchId,
             });
+          } else if (type === 'job_application_admin') {
+            if (isAdmin && viewMode !== 'admin') {
+              setViewMode('admin');
+            }
+            NotificationService.handleNotificationNavigation({ data }, navigationRef);
           } else {
             NotificationService.handleNotificationNavigation({ data }, navigationRef);
           }

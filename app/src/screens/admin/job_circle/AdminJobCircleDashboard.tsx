@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -121,19 +121,42 @@ export default function AdminJobCircleDashboard({ navigation, routeParams }: Adm
   // In-App Resume / Document Viewer Modal State
   const [resumeDocToView, setResumeDocToView] = useState<{ url: string; name: string; mimeType?: string } | null>(null);
 
+  const lastHandledAppDeepLinkRef = useRef<string>('');
+
   useEffect(() => {
     loadAdminData();
   }, [churchId]);
 
-  // Deep link handling when navigated with applicationId or targetTab from notification
+  // Deep link handling when navigated with applicationId from push/in-app notification
   useEffect(() => {
-    if (routeParams?.applicationId && applications.length > 0) {
-      const target = applications.find(a => a.id === routeParams.applicationId);
-      if (target) {
-        handleOpenReview(target);
-      }
+    const targetAppId = routeParams?.applicationId;
+    if (!targetAppId) return;
+    const key = `${targetAppId}:${routeParams?.timestamp || ''}`;
+    if (lastHandledAppDeepLinkRef.current === key) return;
+
+    const openTarget = (app: JobApplication) => {
+      lastHandledAppDeepLinkRef.current = key;
+      setSelectedStat('total_apps');
+      handleOpenReview(app);
+    };
+
+    const existing = applications.find(a => a.id === targetAppId);
+    if (existing) {
+      openTarget(existing);
+      return;
     }
-  }, [routeParams, applications]);
+
+    // Application may be brand-new (submitted after initial dashboard load): fetch it directly
+    let cancelled = false;
+    JobCircleService.getApplicationById(churchId, targetAppId).then((fetched) => {
+      if (cancelled || !fetched) return;
+      setApplications(prev => (prev.some(a => a.id === fetched.id) ? prev : [fetched, ...prev]));
+      openTarget(fetched);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [routeParams?.applicationId, routeParams?.timestamp, applications, churchId]);
 
   const loadAdminData = async () => {
     try {

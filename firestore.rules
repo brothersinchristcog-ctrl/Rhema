@@ -673,6 +673,45 @@ service cloud.firestore {
         );
       }
 
+      // Job Circle & Ministry Recruitment Module
+      match /job_circle_categories/{catId} {
+        allow read: if isAuthenticated();
+        allow write: if isChurchAdmin();
+      }
+
+      match /job_circle_settings/{settingId} {
+        allow read: if isAuthenticated();
+        allow write: if isChurchAdmin();
+      }
+
+      match /job_circle_opportunities/{opportunityId} {
+        allow read: if isAuthenticated();
+        allow create, delete: if isChurchAdmin();
+        allow update: if isChurchAdmin() || (
+          isAuthenticated() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['applicationsCount'])
+        );
+      }
+
+      match /job_circle_applications/{applicationId} {
+        allow read: if isAuthenticated() && (
+          isChurchAdmin() ||
+          request.auth == null ||
+          resource.data.memberId == request.auth.uid
+        );
+        allow create: if isAuthenticated() && (
+          isChurchAdmin() ||
+          request.auth == null ||
+          request.resource.data.memberId == request.auth.uid
+        );
+        allow update: if isChurchAdmin() || (
+          isAuthenticated() &&
+          (request.auth == null || resource.data.memberId == request.auth.uid) &&
+          request.resource.data.status == 'withdrawn'
+        );
+        allow delete: if isChurchAdmin();
+      }
+
       // Any other church subcollection: authenticated members can read, admins can write
       match /{subcollection}/{docId} {
         allow read: if isAuthenticated();
