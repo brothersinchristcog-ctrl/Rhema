@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+
+reviews:
+  profile: "chill"
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - "master"
+      - "backend"
+  path_filters:
+    - "!functions/src/**/*.js"
+    - "!functions/src/**/*.js.map"
+    - "!functions/src/**/*.d.ts"
+    - "!functions/src/**/*.d.ts.map"
+    - "!**/package-lock.json"
+    - "!**/*.txt"
+    - "!**/*.html"
+    - "!**/*.der"
+    - "!**/*.plist"
+  path_instructions:
+    - path: "functions/**/*.ts"
+      instructions: "Check for authentication/authorization checks on callables, Firestore transaction safety, duplicate FCM push prevention, and TypeScript edge cases."
+    - path: "app/**/*"
+      instructions: "Check React Native hook dependencies, null/undefined safety, and navigation parameter handling."
+    - path: "firestore.rules"
+      instructions: "Check for overly permissive rules, missing authentication/authorization checks, and syntax errors."

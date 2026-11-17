@@ -1244,7 +1244,8 @@ export async function checkChurchYouTubeLive(churchDoc, churchId, db) {
             }
             const resolvedVideoId = videoId || prevState?.videoId || '';
             // Atomic Firestore Transaction so concurrent schedulers (monitorMeetingLive + checkYouTubeLive)
-            // can NEVER send two push notifications for the same live session.
+            // claim a short pending lease first and mark completion ONLY after push delivery succeeds.
+            const YT_CLAIM_TTL_MS = 2 * 60 * 1000;
             let shouldSendPush = false;
             if (resolvedVideoId && resolvedVideoId.length === 11) {
                 try {
@@ -1252,13 +1253,22 @@ export async function checkChurchYouTubeLive(churchDoc, churchId, db) {
                         const freshSnap = await tx.get(churchDoc.ref);
                         const freshData = freshSnap.exists ? freshSnap.data() || {} : {};
                         const curState = freshData.youtubeLiveState || { isLive: false };
+                        const nowMs = Date.now();
                         const lastNotifiedMillis = curState?.lastNotifiedAt?.toMillis?.() ||
                             (curState?.lastNotifiedAt?._seconds ? curState.lastNotifiedAt._seconds * 1000 : 0);
-                        const isWithinSameVideoCooldown = lastNotifiedMillis > 0 && Date.now() - lastNotifiedMillis < 4 * 60 * 60 * 1000;
-                        const isWithinGlobalCooldown = lastNotifiedMillis > 0 && Date.now() - lastNotifiedMillis < 15 * 60 * 1000;
-                        const alreadyNotified = Boolean(curState?.isLive) ||
+                        const isWithinSameVideoCooldown = lastNotifiedMillis > 0 && nowMs - lastNotifiedMillis < 4 * 60 * 60 * 1000;
+                        const isWithinGlobalCooldown = lastNotifiedMillis > 0 && nowMs - lastNotifiedMillis < 15 * 60 * 1000;
+                        const isSameVideoAsLastNotified = curState?.lastNotifiedVideoId === resolvedVideoId;
+                        const isOngoingLegacyStream = Boolean(curState?.isLive) &&
+                            !curState?.lastNotifiedVideoId &&
+                            curState?.videoId === resolvedVideoId;
+                        const hasActivePendingClaim = curState?.pendingNotifyVideoId === resolvedVideoId &&
+                            typeof curState?.pendingNotifyAt === 'number' &&
+                            nowMs - curState.pendingNotifyAt < YT_CLAIM_TTL_MS;
+                        const alreadyNotified = hasActivePendingClaim ||
                             isWithinGlobalCooldown ||
-                            (curState?.lastNotifiedVideoId === resolvedVideoId && isWithinSameVideoCooldown);
+                            (isSameVideoAsLastNotified && (Boolean(curState?.isLive) || isWithinSameVideoCooldown)) ||
+                            isOngoingLegacyStream;
                         const nextState = {
                             isLive: true,
                             url: liveWatchUrl,
@@ -1267,8 +1277,8 @@ export async function checkChurchYouTubeLive(churchDoc, churchId, db) {
                             lastChecked: FieldValue.serverTimestamp(),
                         };
                         if (!alreadyNotified) {
-                            nextState.lastNotifiedVideoId = resolvedVideoId;
-                            nextState.lastNotifiedAt = FieldValue.serverTimestamp();
+                            nextState.pendingNotifyVideoId = resolvedVideoId;
+                            nextState.pendingNotifyAt = nowMs;
                         }
                         tx.set(churchDoc.ref, { youtubeLiveState: nextState }, { merge: true });
                         return !alreadyNotified;
@@ -1327,25 +1337,43 @@ export async function checkChurchYouTubeLive(churchDoc, churchId, db) {
                         },
                     },
                 };
-                await getMessaging()
-                    .send(topicMessage)
-                    .catch((e) => console.error('Error sending YouTube Live topic push:', e));
-                // 2. Persist deterministically in broadcasts subcollection (youtube_live_{videoId}) so Updates screen has no duplicates
-                const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
-                await churchDoc.ref
-                    .collection('broadcasts')
-                    .doc(`youtube_live_${resolvedVideoId}`)
-                    .set({
-                    title: pushTitle,
-                    content: pushBody,
-                    date: dateStr,
-                    type: 'youtube_live',
-                    url: liveWatchUrl,
-                    videoId: resolvedVideoId,
-                    silent: true,
-                    createdAt: FieldValue.serverTimestamp(),
-                }, { merge: true })
-                    .catch(() => { });
+                try {
+                    await getMessaging().send(topicMessage);
+                    // Record completion only after FCM topic delivery succeeded
+                    await churchDoc.ref
+                        .update({
+                        'youtubeLiveState.lastNotifiedVideoId': resolvedVideoId,
+                        'youtubeLiveState.lastNotifiedAt': FieldValue.serverTimestamp(),
+                        'youtubeLiveState.pendingNotifyVideoId': FieldValue.delete(),
+                        'youtubeLiveState.pendingNotifyAt': FieldValue.delete(),
+                    })
+                        .catch(() => { });
+                    // 2. Persist deterministically in broadcasts subcollection (youtube_live_{videoId}) so Updates screen has no duplicates
+                    const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+                    await churchDoc.ref
+                        .collection('broadcasts')
+                        .doc(`youtube_live_${resolvedVideoId}`)
+                        .set({
+                        title: pushTitle,
+                        content: pushBody,
+                        date: dateStr,
+                        type: 'youtube_live',
+                        url: liveWatchUrl,
+                        videoId: resolvedVideoId,
+                        silent: true,
+                        createdAt: FieldValue.serverTimestamp(),
+                    }, { merge: true })
+                        .catch(() => { });
+                }
+                catch (sendErr) {
+                    console.error('Error sending YouTube Live topic push; releasing pending claim for retry:', sendErr);
+                    await churchDoc.ref
+                        .update({
+                        'youtubeLiveState.pendingNotifyVideoId': FieldValue.delete(),
+                        'youtubeLiveState.pendingNotifyAt': FieldValue.delete(),
+                    })
+                        .catch(() => { });
+                }
             }
         }
         else {
@@ -1354,6 +1382,8 @@ export async function checkChurchYouTubeLive(churchDoc, churchId, db) {
                 await churchDoc.ref.set({
                     youtubeLiveState: {
                         isLive: false,
+                        pendingNotifyVideoId: FieldValue.delete(),
+                        pendingNotifyAt: FieldValue.delete(),
                         lastChecked: FieldValue.serverTimestamp(),
                     },
                 }, { merge: true }).catch(() => { });
@@ -3578,9 +3608,11 @@ async function sendHighPriorityTopicPush(messaging, topic, title, body, data, ch
             },
         });
         console.log(`📡 Broadcasted high-priority volunteer push to topic: ${topic}`);
+        return true;
     }
     catch (topicErr) {
         console.warn(`[VolunteerPush] Topic broadcast failed for ${topic}:`, topicErr);
+        return false;
     }
 }
 function computeVolunteerAssignmentKey(data) {
@@ -3629,11 +3661,14 @@ async function writeVolunteerInAppNotifications(db, churchId, docId, payload, ta
             .set(docData, { merge: true }));
     }
     const results = await Promise.allSettled(writes);
+    let allSucceeded = true;
     for (const res of results) {
         if (res.status === 'rejected') {
+            allSucceeded = false;
             console.error('Error writing volunteer in-app notification document:', res.reason);
         }
     }
+    return allSucceeded;
 }
 /**
  * 🤝 HELPER: Notify Authorized Church Admins of a New Volunteer Application
@@ -4248,10 +4283,39 @@ export const triggerVolunteerPushTestHttp = onRequest({ cors: true, region: 'asi
 // ─────────────────────────────────────────────────────────────
 // 💼 JOB CIRCLE & MINISTRY RECRUITMENT CLOUD TRIGGERS
 // ─────────────────────────────────────────────────────────────
+const JOB_CIRCLE_CLAIM_TTL_MS = 2 * 60 * 1000;
+async function claimJobCircleNotificationLease(db, docRef, claimAtField, shouldSkip, claimFields = {}) {
+    if (!docRef)
+        return false;
+    const nowMs = Date.now();
+    return db.runTransaction(async (tx) => {
+        const fresh = await tx.get(docRef);
+        if (!fresh.exists)
+            return false;
+        const freshData = fresh.data() || {};
+        if (shouldSkip(freshData, nowMs))
+            return false;
+        tx.update(docRef, {
+            ...claimFields,
+            [claimAtField]: nowMs,
+        });
+        return true;
+    });
+}
+async function releaseJobCircleNotificationLease(docRef, fieldsToDelete) {
+    if (!docRef || fieldsToDelete.length === 0)
+        return;
+    const payload = {};
+    for (const field of fieldsToDelete) {
+        payload[field] = FieldValue.delete();
+    }
+    await docRef.update(payload).catch(() => { });
+}
 /**
  * Shared Helper: Broadcast high-priority push & deterministic in-app notification
  * when a Ministry Opportunity is published (`status === 'approved'`).
- * Atomic transaction on `approvedNotificationSent` prevents duplicate blasts.
+ * Uses a recoverable pending lease transaction and marks `approvedNotificationSent`
+ * only after delivery succeeds.
  */
 async function handleJobOpportunityPublishedPush(data, churchId, opportunityId, snapRef) {
     if (!data || data.status !== 'approved')
@@ -4259,31 +4323,12 @@ async function handleJobOpportunityPublishedPush(data, churchId, opportunityId, 
     const cid = churchId || 'rhema';
     const db = getFirestore();
     const messaging = getMessaging();
-    // Atomic idempotency guard so Create + Edit/Update never double-notifies
+    // Atomic recoverable lease so Create + Edit/Update or concurrent retries never double-notify
     if (snapRef) {
-        let shouldSend = false;
-        try {
-            shouldSend = await db.runTransaction(async (tx) => {
-                const fresh = await tx.get(snapRef);
-                if (!fresh.exists)
-                    return false;
-                const freshData = fresh.data();
-                if (freshData?.status !== 'approved' || freshData?.approvedNotificationSent === true) {
-                    return false;
-                }
-                tx.update(snapRef, {
-                    approvedNotificationSent: true,
-                    approvedNotificationSentAt: FieldValue.serverTimestamp(),
-                });
-                return true;
-            });
-        }
-        catch (txErr) {
-            console.warn('[JobCircle] Transaction check error on approvedNotificationSent:', txErr);
-            if (data.approvedNotificationSent === true)
-                return;
-            shouldSend = true;
-        }
+        const shouldSend = await claimJobCircleNotificationLease(db, snapRef, 'approvedNotificationClaimAt', (freshData, nowMs) => freshData.status !== 'approved' ||
+            freshData.approvedNotificationSent === true ||
+            (typeof freshData.approvedNotificationClaimAt === 'number' &&
+                nowMs - freshData.approvedNotificationClaimAt < JOB_CIRCLE_CLAIM_TTL_MS));
         if (!shouldSend) {
             console.log(`🛑 [JobCircle] Skipping duplicate opportunity push for: ${opportunityId}`);
             return;
@@ -4337,11 +4382,13 @@ async function handleJobOpportunityPublishedPush(data, churchId, opportunityId, 
             screen: 'OpportunityDetailScreen',
             click_action: 'FLUTTER_NOTIFICATION_CLICK',
         };
+        let pushDelivered = false;
         if (memberTokens.length > 0) {
-            await sendHighPriorityPush(messaging, memberTokens, title, body, pushData, 'church_alerts');
+            const pushRes = await sendHighPriorityPush(messaging, memberTokens, title, body, pushData, 'church_alerts');
+            pushDelivered = pushRes.successCount > 0;
         }
         else {
-            await sendHighPriorityTopicPush(messaging, `church_${cid}`, title, body, pushData, 'church_alerts');
+            pushDelivered = await sendHighPriorityTopicPush(messaging, `church_${cid}`, title, body, pushData, 'church_alerts');
         }
         // Persist deterministically in church notifications for Updates screen visibility (no duplicates)
         await db
@@ -4363,10 +4410,22 @@ async function handleJobOpportunityPublishedPush(data, churchId, opportunityId, 
             createdAt: FieldValue.serverTimestamp(),
             read: false,
         }, { merge: true });
+        if (!pushDelivered) {
+            throw new Error(`[JobCircle] Opportunity FCM push failed for ${opportunityId}`);
+        }
+        if (snapRef) {
+            await snapRef.update({
+                approvedNotificationSent: true,
+                approvedNotificationSentAt: FieldValue.serverTimestamp(),
+                approvedNotificationClaimAt: FieldValue.delete(),
+            });
+        }
         console.log(`✅ [JobCircle] Broadcasted new opportunity "${oppTitle}" to ${memberTokens.length} member device(s).`);
     }
     catch (err) {
+        await releaseJobCircleNotificationLease(snapRef, ['approvedNotificationClaimAt']);
         console.error('[JobCircle] Error broadcasting new opportunity push:', err);
+        throw err;
     }
 }
 /**
@@ -4382,28 +4441,13 @@ export const onJobApplicationCreated = onDocumentCreated({ document: 'Rhema Chur
     const applicationId = event.params.applicationId;
     const db = getFirestore();
     const messaging = getMessaging();
-    // Atomic deduplication guard
-    try {
-        const shouldSend = await db.runTransaction(async (tx) => {
-            const fresh = await tx.get(snap.ref);
-            if (!fresh.exists)
-                return false;
-            if (fresh.data()?.adminPushSent === true)
-                return false;
-            tx.update(snap.ref, {
-                adminPushSent: true,
-                adminPushSentAt: FieldValue.serverTimestamp(),
-            });
-            return true;
-        });
-        if (!shouldSend) {
-            console.log(`🛑 [JobCircle] Skipping duplicate admin push for application: ${applicationId}`);
-            return;
-        }
-    }
-    catch (_) {
-        if (data?.adminPushSent === true)
-            return;
+    // Atomic recoverable lease; propagate transaction errors rather than bypassing deduplication
+    const shouldSend = await claimJobCircleNotificationLease(db, snap.ref, 'adminPushClaimAt', (freshData, nowMs) => freshData.adminPushSent === true ||
+        (typeof freshData.adminPushClaimAt === 'number' &&
+            nowMs - freshData.adminPushClaimAt < JOB_CIRCLE_CLAIM_TTL_MS));
+    if (!shouldSend) {
+        console.log(`🛑 [JobCircle] Skipping duplicate admin push for application: ${applicationId}`);
+        return;
     }
     try {
         const applicantName = data.memberName || 'A church member';
@@ -4420,14 +4464,16 @@ export const onJobApplicationCreated = onDocumentCreated({ document: 'Rhema Chur
             screen: 'AdminRoot',
             click_action: 'FLUTTER_NOTIFICATION_CLICK',
         };
+        let pushDelivered = false;
         if (adminTokens.length > 0) {
-            await sendHighPriorityPush(messaging, adminTokens, title, body, pushData, 'church_alerts');
+            const pushRes = await sendHighPriorityPush(messaging, adminTokens, title, body, pushData, 'church_alerts');
+            pushDelivered = pushRes.successCount > 0;
         }
         else {
-            await sendHighPriorityTopicPush(messaging, `church_${churchId}_admin`, title, body, pushData, 'church_alerts');
+            pushDelivered = await sendHighPriorityTopicPush(messaging, `church_${churchId}_admin`, title, body, pushData, 'church_alerts');
         }
         // Persist deterministic in-app notification for admins (targetRole: 'admin' restricts from non-admins)
-        await writeVolunteerInAppNotifications(db, churchId, `job_admin_${applicationId}`, {
+        const inAppDelivered = await writeVolunteerInAppNotifications(db, churchId, `job_admin_${applicationId}`, {
             type: 'job_application_admin',
             targetRole: 'admin',
             recipientRole: 'admin',
@@ -4442,10 +4488,20 @@ export const onJobApplicationCreated = onDocumentCreated({ document: 'Rhema Chur
             referenceType: 'job_circle_application',
             referenceId: applicationId,
         }, adminUids);
+        if (!pushDelivered || !inAppDelivered) {
+            throw new Error(`[JobCircle] Incomplete admin notification delivery for application ${applicationId}`);
+        }
+        await snap.ref.update({
+            adminPushSent: true,
+            adminPushSentAt: FieldValue.serverTimestamp(),
+            adminPushClaimAt: FieldValue.delete(),
+        });
         console.log(`✅ [JobCircle] Notified admins for new application: ${applicationId}`);
     }
     catch (err) {
+        await releaseJobCircleNotificationLease(snap.ref, ['adminPushClaimAt']);
         console.error('[JobCircle] Error handling onJobApplicationCreated push:', err);
+        throw err;
     }
 });
 /**
@@ -4469,67 +4525,52 @@ export const onJobApplicationUpdated = onDocumentUpdated({ document: 'Rhema Chur
         return;
     if (after.lastNotifiedStatus === status)
         return;
+    const memberId = after.memberId || '';
+    const roleTitle = after.opportunityTitle || 'Ministry Position';
+    let title = '💼 Ministry Application Update';
+    let body = `Your application for "${roleTitle}" has been updated to ${status.replace(/_/g, ' ').toUpperCase()}.`;
+    if (status === 'under_review') {
+        title = '🔍 Application Under Review';
+        body = `Your application for "${roleTitle}" is now prayerfully under review by church ministry leaders.`;
+    }
+    else if (status === 'meeting_scheduled') {
+        title = '📅 Ministry Interview / Meeting Scheduled!';
+        const dateStr = after.meetingDate ? ` on ${after.meetingDate}` : '';
+        const timeStr = after.meetingTime ? ` at ${after.meetingTime}` : '';
+        const locStr = after.meetingLocation ? ` (${after.meetingLocation})` : '';
+        body = `A ministry interview has been scheduled for your application for "${roleTitle}"${dateStr}${timeStr}${locStr}. Tap to view full details.`;
+    }
+    else if (status === 'selected') {
+        title = '🎉 Congratulations! You have been Selected!';
+        body = `Congratulations! You have been selected to serve in "${roleTitle}". Welcome to the ministry team!`;
+    }
+    else if (status === 'shortlisted') {
+        title = '⭐ Application Shortlisted!';
+        body = `Your application for "${roleTitle}" has been shortlisted by church ministry leaders.`;
+    }
+    else if (status === 'rejected') {
+        title = '📋 Ministry Application Update';
+        const reasonStr = after.adminNotes ? ` Note: ${after.adminNotes}` : '';
+        body = `Thank you for your heart to serve. Your application for "${roleTitle}" has not been selected at this time.${reasonStr}`;
+    }
+    const db = getFirestore();
+    const messaging = getMessaging();
+    // Atomic lease check: verify the live doc still has this exact status, hasn't been notified,
+    // and isn't actively claimed by another concurrent invocation for the same status.
+    const shouldSend = await claimJobCircleNotificationLease(db, change.after.ref, 'statusNotifyClaimAt', (freshData, nowMs) => freshData.status !== status ||
+        freshData.lastNotifiedStatus === status ||
+        (freshData.statusNotifyClaimStatus === status &&
+            typeof freshData.statusNotifyClaimAt === 'number' &&
+            nowMs - freshData.statusNotifyClaimAt < JOB_CIRCLE_CLAIM_TTL_MS), { statusNotifyClaimStatus: status });
+    if (!shouldSend) {
+        console.log(`🛑 [JobCircle] Skipping stale or duplicate member status push for ${applicationId} -> ${status}`);
+        return;
+    }
     try {
-        const memberId = after.memberId || '';
-        const roleTitle = after.opportunityTitle || 'Ministry Position';
-        let title = '💼 Ministry Application Update';
-        let body = `Your application for "${roleTitle}" has been updated to ${status.replace(/_/g, ' ').toUpperCase()}.`;
-        if (status === 'under_review') {
-            title = '🔍 Application Under Review';
-            body = `Your application for "${roleTitle}" is now prayerfully under review by church ministry leaders.`;
-        }
-        else if (status === 'meeting_scheduled') {
-            title = '📅 Ministry Interview / Meeting Scheduled!';
-            const dateStr = after.meetingDate ? ` on ${after.meetingDate}` : '';
-            const timeStr = after.meetingTime ? ` at ${after.meetingTime}` : '';
-            const locStr = after.meetingLocation ? ` (${after.meetingLocation})` : '';
-            body = `A ministry interview has been scheduled for your application for "${roleTitle}"${dateStr}${timeStr}${locStr}. Tap to view full details.`;
-        }
-        else if (status === 'selected') {
-            title = '🎉 Congratulations! You have been Selected!';
-            body = `Congratulations! You have been selected to serve in "${roleTitle}". Welcome to the ministry team!`;
-        }
-        else if (status === 'shortlisted') {
-            title = '⭐ Application Shortlisted!';
-            body = `Your application for "${roleTitle}" has been shortlisted by church ministry leaders.`;
-        }
-        else if (status === 'rejected') {
-            title = '📋 Ministry Application Update';
-            const reasonStr = after.adminNotes ? ` Note: ${after.adminNotes}` : '';
-            body = `Thank you for your heart to serve. Your application for "${roleTitle}" has not been selected at this time.${reasonStr}`;
-        }
-        const db = getFirestore();
-        const messaging = getMessaging();
-        // Atomic Firestore transaction on lastNotifiedStatus so retries never double-notify
-        let shouldSend = false;
-        try {
-            shouldSend = await db.runTransaction(async (tx) => {
-                const fresh = await tx.get(change.after.ref);
-                if (!fresh.exists)
-                    return false;
-                const freshData = fresh.data() || {};
-                if (freshData.lastNotifiedStatus === status)
-                    return false;
-                tx.update(change.after.ref, {
-                    lastNotifiedStatus: status,
-                    lastNotifiedStatusAt: FieldValue.serverTimestamp(),
-                });
-                return true;
-            });
-        }
-        catch (txErr) {
-            console.warn('[JobCircle] Transaction check error on lastNotifiedStatus:', txErr);
-            if (after.lastNotifiedStatus === status)
-                return;
-            shouldSend = true;
-        }
-        if (!shouldSend) {
-            console.log(`🛑 [JobCircle] Skipping duplicate member status push for ${applicationId} -> ${status}`);
-            return;
-        }
         const tokens = await resolveVolunteerMemberTokens(db, churchId, memberId, after.memberPhone, after.memberEmail, after.memberName, after.memberFcmToken || after.fcmToken);
+        let pushDelivered = tokens.length === 0;
         if (tokens.length > 0) {
-            await sendHighPriorityPush(messaging, tokens, title, body, {
+            const pushRes = await sendHighPriorityPush(messaging, tokens, title, body, {
                 type: 'job_application_member',
                 churchId,
                 applicationId,
@@ -4538,9 +4579,10 @@ export const onJobApplicationUpdated = onDocumentUpdated({ document: 'Rhema Chur
                 screen: after.opportunityId ? 'OpportunityDetailScreen' : 'JobCircle',
                 click_action: 'FLUTTER_NOTIFICATION_CLICK',
             }, 'church_alerts');
+            pushDelivered = pushRes.successCount > 0;
         }
         // Target strictly to applicant member so other church members do NOT see this personal update
-        await writeVolunteerInAppNotifications(db, churchId, `job_status_${applicationId}_${status}`, {
+        const inAppDelivered = await writeVolunteerInAppNotifications(db, churchId, `job_status_${applicationId}_${status}`, {
             type: 'job_application_member',
             recipientId: memberId,
             recipientRole: 'member',
@@ -4556,10 +4598,46 @@ export const onJobApplicationUpdated = onDocumentUpdated({ document: 'Rhema Chur
             referenceType: 'job_circle_application',
             referenceId: applicationId,
         }, memberId);
+        if (!pushDelivered || !inAppDelivered) {
+            throw new Error(`[JobCircle] Incomplete member status delivery for ${applicationId} -> ${status}`);
+        }
+        await db.runTransaction(async (tx) => {
+            const fresh = await tx.get(change.after.ref);
+            if (!fresh.exists)
+                return;
+            const freshData = fresh.data() || {};
+            const updatePayload = {};
+            if (freshData.status === status) {
+                updatePayload.lastNotifiedStatus = status;
+                updatePayload.lastNotifiedStatusAt = FieldValue.serverTimestamp();
+            }
+            if (freshData.statusNotifyClaimStatus === status) {
+                updatePayload.statusNotifyClaimStatus = FieldValue.delete();
+                updatePayload.statusNotifyClaimAt = FieldValue.delete();
+            }
+            if (Object.keys(updatePayload).length > 0) {
+                tx.update(change.after.ref, updatePayload);
+            }
+        });
         console.log(`✅ [JobCircle] Notified member ${memberId} of status update: ${status}`);
     }
     catch (err) {
+        await db
+            .runTransaction(async (tx) => {
+            const fresh = await tx.get(change.after.ref);
+            if (!fresh.exists)
+                return;
+            const freshData = fresh.data() || {};
+            if (freshData.statusNotifyClaimStatus === status) {
+                tx.update(change.after.ref, {
+                    statusNotifyClaimStatus: FieldValue.delete(),
+                    statusNotifyClaimAt: FieldValue.delete(),
+                });
+            }
+        })
+            .catch(() => { });
         console.error('[JobCircle] Error handling onJobApplicationUpdated push:', err);
+        throw err;
     }
 });
 /**
@@ -4595,6 +4673,365 @@ export const onJobOpportunityUpdated = onDocumentUpdated({ document: 'Rhema Chur
         return;
     if (before?.status !== 'approved' && after.status === 'approved') {
         await handleJobOpportunityPublishedPush(after, churchId, opportunityId, change.after.ref);
+    }
+});
+// ─────────────────────────────────────────────────────────────
+// 🛡️ NEW MEMBER REGISTRATION – ADMIN APPROVAL NOTIFICATIONS
+// ─────────────────────────────────────────────────────────────
+function isStrictAdminRole(record) {
+    if (!record)
+        return false;
+    const role = String(record.userType || record.role || '').toLowerCase();
+    return (Boolean(record.isAdmin) ||
+        Boolean(record.isSuperAdmin) ||
+        Boolean(record.superadmin) ||
+        role.includes('admin') ||
+        role.includes('pastor') ||
+        role.includes('super'));
+}
+async function resolveChurchRegistrationAdminTokens(db, churchId) {
+    const tokenSet = new Set();
+    const adminUidSet = new Set();
+    const cid = churchId || 'rhema';
+    const collectTokens = (docData) => {
+        if (!docData)
+            return;
+        if (typeof docData.fcmToken === 'string' && docData.fcmToken.trim().length > 10) {
+            tokenSet.add(docData.fcmToken.trim());
+        }
+        if (Array.isArray(docData.fcmTokens)) {
+            docData.fcmTokens.forEach((tk) => {
+                if (typeof tk === 'string' && tk.trim().length > 10)
+                    tokenSet.add(tk.trim());
+            });
+        }
+    };
+    for (const colName of ['Rhema Church', 'churches']) {
+        try {
+            const mSnap = await db.collection(colName).doc(cid).collection('members').get();
+            mSnap.forEach((doc) => {
+                const data = doc.data() || {};
+                if (isStrictAdminRole(data)) {
+                    adminUidSet.add(doc.id);
+                    collectTokens(data);
+                }
+            });
+        }
+        catch (_) { }
+        try {
+            const cSnap = await db.collection(colName).doc(cid).get();
+            if (cSnap.exists) {
+                const cData = cSnap.data() || {};
+                const ownerUids = [
+                    cData.adminUid,
+                    cData.createdBy,
+                    cData.pastorUid,
+                    cData.ownerUid,
+                    ...(Array.isArray(cData.adminUids) ? cData.adminUids : []),
+                ].filter(Boolean);
+                ownerUids.forEach((uid) => adminUidSet.add(String(uid)));
+            }
+        }
+        catch (_) { }
+    }
+    try {
+        const pSnap = await db.collection('platform_admins').get();
+        pSnap.forEach((doc) => {
+            const data = doc.data() || {};
+            if (isStrictAdminRole(data)) {
+                adminUidSet.add(doc.id);
+                collectTokens(data);
+            }
+        });
+    }
+    catch (_) { }
+    for (const uid of Array.from(adminUidSet)) {
+        try {
+            const uSnap = await db.collection('users').doc(uid).get();
+            if (uSnap.exists)
+                collectTokens(uSnap.data());
+        }
+        catch (_) { }
+        try {
+            const mSnap = await db.collection('Rhema Church').doc(cid).collection('members').doc(uid).get();
+            if (mSnap.exists)
+                collectTokens(mSnap.data());
+        }
+        catch (_) { }
+    }
+    try {
+        const usersSnap = await db.collection('users').get();
+        usersSnap.forEach((doc) => {
+            const uData = doc.data() || {};
+            const userChurch = uData.primaryChurchId || uData.churchId;
+            const role = String(uData.userType || uData.role || '').toLowerCase();
+            const isPlatformSuper = Boolean(uData.isSuperAdmin) || role.includes('super');
+            if (isStrictAdminRole(uData) && (isPlatformSuper || !userChurch || userChurch === cid)) {
+                adminUidSet.add(doc.id);
+                collectTokens(uData);
+            }
+        });
+    }
+    catch (_) { }
+    return {
+        tokens: Array.from(tokenSet),
+        adminUids: Array.from(adminUidSet),
+    };
+}
+async function resolveRegistrationApplicantTokens(db, churchId, requestId, reqData) {
+    const tokenSet = new Set();
+    const cid = churchId || 'rhema';
+    const collectTokens = (docData) => {
+        if (!docData)
+            return;
+        if (typeof docData.fcmToken === 'string' && docData.fcmToken.trim().length > 10) {
+            tokenSet.add(docData.fcmToken.trim());
+        }
+        if (Array.isArray(docData.fcmTokens)) {
+            docData.fcmTokens.forEach((tk) => {
+                if (typeof tk === 'string' && tk.trim().length > 10)
+                    tokenSet.add(tk.trim());
+            });
+        }
+    };
+    collectTokens(reqData);
+    const candidateIds = Array.from(new Set([reqData.authUid, reqData.memberId, requestId].map((v) => String(v || '').trim()).filter(Boolean)));
+    for (const uid of candidateIds) {
+        try {
+            const uSnap = await db.collection('users').doc(uid).get();
+            if (uSnap.exists)
+                collectTokens(uSnap.data());
+        }
+        catch (_) { }
+        try {
+            const mSnap = await db.collection('Rhema Church').doc(cid).collection('members').doc(uid).get();
+            if (mSnap.exists)
+                collectTokens(mSnap.data());
+        }
+        catch (_) { }
+    }
+    if (tokenSet.size === 0 && reqData.phone) {
+        const rawDigits = String(reqData.phone).replace(/\D/g, '');
+        const last10 = rawDigits.slice(-10);
+        const phoneVariants = Array.from(new Set([String(reqData.phone).trim(), last10 ? `+91${last10}` : '', last10].filter(Boolean)));
+        for (const p of phoneVariants) {
+            try {
+                const uSnap = await db.collection('users').where('phone', '==', p).get();
+                uSnap.forEach((d) => collectTokens(d.data()));
+            }
+            catch (_) { }
+        }
+    }
+    return Array.from(tokenSet);
+}
+async function resolveChurchDisplayName(db, churchId) {
+    try {
+        const cSnap = await db.collection('Rhema Church').doc(churchId || 'rhema').get();
+        if (cSnap.exists) {
+            const cName = cSnap.data()?.name;
+            if (typeof cName === 'string' && cName.trim())
+                return cName.trim();
+        }
+    }
+    catch (_) { }
+    return 'Rhema Global Ministries';
+}
+async function handleRegistrationAdminPendingPush(data, churchId, requestId, snapRef) {
+    if (!data || (data.status && data.status !== 'pending'))
+        return;
+    const cid = churchId || 'rhema';
+    const db = getFirestore();
+    const messaging = getMessaging();
+    const shouldSend = await claimJobCircleNotificationLease(db, snapRef, 'adminPushClaimAt', (freshData, nowMs) => (freshData.status && freshData.status !== 'pending') ||
+        freshData.adminPushSent === true ||
+        (typeof freshData.adminPushClaimAt === 'number' &&
+            nowMs - freshData.adminPushClaimAt < JOB_CIRCLE_CLAIM_TTL_MS));
+    if (!shouldSend) {
+        console.log(`🛑 [RegistrationApproval] Skipping duplicate admin push for request: ${requestId}`);
+        return;
+    }
+    try {
+        const applicantName = String(data.fullName || `${data.firstName || ''} ${data.lastName || ''}`.trim() || data.phone || 'A new member').trim();
+        const city = String(data.city || data.village || '').trim();
+        const locationSuffix = city ? ` from ${city}` : '';
+        const title = '🆕 New Member Registration Request';
+        const body = `${applicantName}${locationSuffix} has registered and is requesting admin approval.`;
+        const { tokens: adminTokens, adminUids } = await resolveChurchRegistrationAdminTokens(db, cid);
+        const pushData = {
+            type: 'registration_request_admin',
+            churchId: cid,
+            requestId,
+            memberName: applicantName,
+            targetTab: 'Approvals',
+            screen: 'AdminRoot',
+            click_action: 'FLUTTER_NOTIFICATION_CLICK',
+        };
+        const pushDelivered = adminTokens.length > 0
+            ? (await sendHighPriorityPush(messaging, adminTokens, title, body, pushData, 'church_alerts')).successCount > 0
+            : await sendHighPriorityTopicPush(messaging, `church_${cid}_admin`, title, body, pushData, 'church_alerts');
+        const inAppDelivered = await writeVolunteerInAppNotifications(db, cid, `reg_admin_${requestId}`, {
+            type: 'registration_request_admin',
+            targetRole: 'admin',
+            recipientRole: 'admin',
+            title,
+            body,
+            content: body,
+            memberName: applicantName,
+            applicantName,
+            memberPhone: data.phone || '',
+            requestId,
+            referenceId: requestId,
+            referenceType: 'registration_request',
+        }, adminUids);
+        if (!pushDelivered || !inAppDelivered) {
+            throw new Error(`[RegistrationApproval] Incomplete admin alert delivery for request ${requestId}`);
+        }
+        await snapRef.update({
+            adminPushSent: true,
+            adminPushSentAt: FieldValue.serverTimestamp(),
+            adminPushClaimAt: FieldValue.delete(),
+        });
+        console.log(`✅ [RegistrationApproval] Notified admins of new registration: ${applicantName} (${requestId})`);
+    }
+    catch (err) {
+        await releaseJobCircleNotificationLease(snapRef, ['adminPushClaimAt']);
+        console.error('[RegistrationApproval] Error notifying admins of new registration:', err);
+        throw err;
+    }
+}
+async function handleRegistrationStatusMemberPush(after, churchId, requestId, snapRef) {
+    const status = String(after.status || '').trim();
+    if (status !== 'approved' && status !== 'rejected')
+        return;
+    const cid = churchId || 'rhema';
+    const db = getFirestore();
+    const messaging = getMessaging();
+    const shouldSend = await claimJobCircleNotificationLease(db, snapRef, 'statusNotifyClaimAt', (freshData, nowMs) => freshData.status !== status ||
+        freshData.lastNotifiedStatus === status ||
+        (freshData.statusNotifyClaimStatus === status &&
+            typeof freshData.statusNotifyClaimAt === 'number' &&
+            nowMs - freshData.statusNotifyClaimAt < JOB_CIRCLE_CLAIM_TTL_MS), { statusNotifyClaimStatus: status });
+    if (!shouldSend) {
+        console.log(`🛑 [RegistrationApproval] Skipping stale/duplicate ${status} notification for: ${requestId}`);
+        return;
+    }
+    try {
+        const churchName = await resolveChurchDisplayName(db, cid);
+        const applicantName = String(after.fullName || `${after.firstName || ''} ${after.lastName || ''}`.trim() || 'Member').trim();
+        const isApproved = status === 'approved';
+        const rejectionReason = String(after.rejectionReason || '').trim();
+        const title = isApproved ? '🎉 Registration Approved!' : '📋 Registration Not Approved';
+        const body = isApproved
+            ? `Welcome, ${applicantName}! Your membership registration with ${churchName} has been approved. Tap to sign in and get started.`
+            : `${applicantName}, your membership registration with ${churchName} was rejected.${rejectionReason ? ` Reason: ${rejectionReason}` : ''}`;
+        const notifType = isApproved ? 'registration_approved' : 'registration_rejected';
+        const memberTokens = await resolveRegistrationApplicantTokens(db, cid, requestId, after);
+        let pushDelivered = memberTokens.length === 0;
+        if (memberTokens.length > 0) {
+            const pushRes = await sendHighPriorityPush(messaging, memberTokens, title, body, {
+                type: notifType,
+                churchId: cid,
+                requestId,
+                status,
+                screen: 'ApprovalPending',
+                click_action: 'FLUTTER_NOTIFICATION_CLICK',
+            }, 'church_alerts');
+            pushDelivered = pushRes.successCount > 0;
+        }
+        let inAppDelivered = true;
+        const targetMemberId = String(after.authUid || requestId || '').trim();
+        if (isApproved && targetMemberId) {
+            inAppDelivered = await writeVolunteerInAppNotifications(db, cid, `reg_status_${requestId}_${status}`, {
+                type: notifType,
+                recipientId: targetMemberId,
+                recipientRole: 'member',
+                targetMemberId,
+                targetPhone: after.phone || '',
+                title,
+                body,
+                content: body,
+                requestId,
+                status,
+                referenceType: 'registration_request',
+                referenceId: requestId,
+            }, targetMemberId);
+        }
+        if (!pushDelivered || !inAppDelivered) {
+            throw new Error(`[RegistrationApproval] Incomplete ${status} notification delivery for ${requestId}`);
+        }
+        await db.runTransaction(async (tx) => {
+            const fresh = await tx.get(snapRef);
+            if (!fresh.exists)
+                return;
+            const freshData = fresh.data() || {};
+            const updatePayload = {};
+            if (freshData.status === status) {
+                updatePayload.lastNotifiedStatus = status;
+                updatePayload.lastNotifiedStatusAt = FieldValue.serverTimestamp();
+            }
+            if (freshData.statusNotifyClaimStatus === status) {
+                updatePayload.statusNotifyClaimStatus = FieldValue.delete();
+                updatePayload.statusNotifyClaimAt = FieldValue.delete();
+            }
+            if (Object.keys(updatePayload).length > 0) {
+                tx.update(snapRef, updatePayload);
+            }
+        });
+        console.log(`✅ [RegistrationApproval] Sent ${status} notification to ${applicantName} (${memberTokens.length} device(s)).`);
+    }
+    catch (err) {
+        await db
+            .runTransaction(async (tx) => {
+            const fresh = await tx.get(snapRef);
+            if (!fresh.exists)
+                return;
+            const freshData = fresh.data() || {};
+            if (freshData.statusNotifyClaimStatus === status) {
+                tx.update(snapRef, {
+                    statusNotifyClaimStatus: FieldValue.delete(),
+                    statusNotifyClaimAt: FieldValue.delete(),
+                });
+            }
+        })
+            .catch(() => { });
+        console.error(`[RegistrationApproval] Error sending ${status} member notification:`, err);
+        throw err;
+    }
+}
+/**
+ * Trigger: When a new member registration request is created
+ * Notifies church Admins requesting approval.
+ */
+export const onRegistrationRequestCreated = onDocumentCreated({ document: 'Rhema Church/{churchId}/registration_requests/{requestId}', region: 'asia-south1' }, async (event) => {
+    const snap = event.data;
+    if (!snap)
+        return;
+    const data = snap.data() || {};
+    const churchId = event.params.churchId || 'rhema';
+    const requestId = event.params.requestId;
+    await handleRegistrationAdminPendingPush(data, churchId, requestId, snap.ref);
+});
+/**
+ * Trigger: When a registration request status changes
+ * - Returning to `pending` notifies church Admins.
+ * - Transitioning to `approved` or `rejected` notifies the specific registering member.
+ */
+export const onRegistrationRequestUpdated = onDocumentUpdated({ document: 'Rhema Church/{churchId}/registration_requests/{requestId}', region: 'asia-south1' }, async (event) => {
+    const change = event.data;
+    if (!change)
+        return;
+    const before = change.before.data() || {};
+    const after = change.after.data() || {};
+    const churchId = event.params.churchId || 'rhema';
+    const requestId = event.params.requestId;
+    if (before.status === after.status)
+        return;
+    if (after.status === 'pending') {
+        await handleRegistrationAdminPendingPush(after, churchId, requestId, change.after.ref);
+        return;
+    }
+    if (after.status === 'approved' || after.status === 'rejected') {
+        await handleRegistrationStatusMemberPush(after, churchId, requestId, change.after.ref);
     }
 });
 //# sourceMappingURL=notifications.js.map

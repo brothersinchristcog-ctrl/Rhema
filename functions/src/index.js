@@ -1230,12 +1230,112 @@ export const checkYouTubeLive = onSchedule('*/5 * * * *', async (event) => {
         console.error('Error in checkYouTubeLive scheduler:', error);
     }
 });
+function hasAdminRoleFlag(data) {
+    if (!data)
+        return false;
+    const role = String(data.userType || data.role || '').toLowerCase();
+    return (Boolean(data.isAdmin) ||
+        Boolean(data.isSuperAdmin) ||
+        role.includes('admin') ||
+        role.includes('pastor') ||
+        role.includes('super'));
+}
+async function assertChurchAdminAccess(db, uid, token, churchId) {
+    if (token?.superadmin === true || token?.super_admin === true)
+        return;
+    if (token?.admin === true && (!token?.churchId || token.churchId === churchId))
+        return;
+    const platformAdminSnap = await db.collection('platform_admins').doc(uid).get();
+    if (platformAdminSnap.exists && platformAdminSnap.data()?.superadmin === true)
+        return;
+    const memberRefs = [
+        db.collection('Rhema Church').doc(churchId).collection('members').doc(uid),
+        db.collection('churches').doc(churchId).collection('members').doc(uid),
+    ];
+    for (const mRef of memberRefs) {
+        const mSnap = await mRef.get();
+        if (mSnap.exists && hasAdminRoleFlag(mSnap.data()))
+            return;
+    }
+    const churchRefs = [
+        db.collection('Rhema Church').doc(churchId),
+        db.collection('churches').doc(churchId),
+    ];
+    for (const cRef of churchRefs) {
+        const cSnap = await cRef.get();
+        if (cSnap.exists) {
+            const cData = cSnap.data() || {};
+            const adminList = Array.isArray(cData.adminUids) ? cData.adminUids : [];
+            if (cData.adminUid === uid ||
+                cData.createdBy === uid ||
+                cData.pastorUid === uid ||
+                cData.ownerUid === uid ||
+                adminList.includes(uid)) {
+                return;
+            }
+        }
+    }
+    const userSnap = await db.collection('users').doc(uid).get();
+    if (userSnap.exists) {
+        const uData = userSnap.data() || {};
+        const role = String(uData.userType || uData.role || '').toLowerCase();
+        const isSuper = Boolean(uData.isSuperAdmin) || role.includes('super');
+        const userChurch = uData.primaryChurchId || uData.churchId;
+        if (isSuper || (hasAdminRoleFlag(uData) && (!userChurch || userChurch === churchId))) {
+            return;
+        }
+    }
+    throw new HttpsError('permission-denied', 'Admin permission is required for the target church.');
+}
+function validateYouTubeLiveUrl(rawUrl) {
+    const defaultUrl = 'https://www.youtube.com/@RhemaGlobalMinistries/streams';
+    if (rawUrl === undefined || rawUrl === null || rawUrl === '')
+        return defaultUrl;
+    if (typeof rawUrl !== 'string') {
+        throw new HttpsError('invalid-argument', 'Invalid YouTube URL.');
+    }
+    let parsed;
+    try {
+        parsed = new URL(rawUrl.trim());
+    }
+    catch {
+        throw new HttpsError('invalid-argument', 'Malformed YouTube URL.');
+    }
+    const allowedHosts = new Set([
+        'youtube.com',
+        'www.youtube.com',
+        'm.youtube.com',
+        'youtu.be',
+        'studio.youtube.com',
+    ]);
+    if (parsed.protocol !== 'https:' || !allowedHosts.has(parsed.hostname.toLowerCase())) {
+        throw new HttpsError('invalid-argument', 'url must be an HTTPS YouTube URL.');
+    }
+    return parsed.toString();
+}
 export const triggerTestYouTubeLive = onCall({ invoker: 'public' }, async (request) => {
     try {
-        const liveUrl = request.data?.url || 'https://www.youtube.com/@RhemaGlobalMinistries/streams';
-        const videoId = request.data?.videoId || '';
-        const churchId = request.data?.churchId || DEFAULT_CHURCH_ID;
+        if (!request.auth?.uid) {
+            throw new HttpsError('unauthenticated', 'Authentication is required.');
+        }
+        const rawChurchId = typeof request.data?.churchId === 'string' && request.data.churchId.trim()
+            ? request.data.churchId.trim()
+            : DEFAULT_CHURCH_ID;
+        if (!/^[a-zA-Z0-9_-]{1,64}$/.test(rawChurchId)) {
+            throw new HttpsError('invalid-argument', 'Invalid churchId.');
+        }
+        const churchId = rawChurchId;
         const db = getDb();
+        await assertChurchAdminAccess(db, request.auth.uid, request.auth.token, churchId);
+        const liveUrl = validateYouTubeLiveUrl(request.data?.url);
+        const rawVideoId = request.data?.videoId;
+        let videoId = '';
+        if (rawVideoId !== undefined && rawVideoId !== null && rawVideoId !== '') {
+            if (typeof rawVideoId !== 'string' || !/^[a-zA-Z0-9_-]{11}$/.test(rawVideoId.trim())) {
+                throw new HttpsError('invalid-argument', 'videoId must be a valid 11-character YouTube ID.');
+            }
+            videoId = rawVideoId.trim();
+        }
         const pushTitle = '🔴 We Are LIVE Now!';
         const pushBody = "Join us for a time of worship, prayer and God's Word. Our live service is now streaming on YouTube. Be blessed!";
         const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
@@ -1290,6 +1390,8 @@ export const triggerTestYouTubeLive = onCall({ invoker: 'public' }, async (reque
         return { success: true, broadcastId: docId };
     }
     catch (error) {
+        if (error instanceof HttpsError)
+            throw error;
         console.error('triggerTestYouTubeLive Error:', error);
         throw new HttpsError('internal', error.message);
     }
@@ -1527,7 +1629,7 @@ const testBaptismsV1 = functionsCompat.https.onRequest(async (req, res) => {
         res.status(500).send(error.message);
     }
 });
-export { publishScheduledSermons, triggerPublishScheduledSermonsHttp, triggerDailyVersePushHttp, sendDailyVersePushScheduled, monitorMeetingLive, pushMeetingLive, onBaptismRequestCreatedAdmin, onBaptismRequestCreatedAdminLegacy, onPrayerRequestCreatedAdmin, onPrayerRequestCreatedAdminLegacy, onPrayerRequestProcessedMember, onPrayerRequestProcessedMemberLegacy, pushPrayerRequestApproved, pushCareCellAnnouncement, pushCareCellMeeting, pushCareCellPrayerRequest, pushCareCellVisit, onTestimonyCreatedAdmin, onTestimonyCreatedAdminLegacy, onTestimonyUpdatedWorkflow, onTestimonyUpdatedWorkflowLegacy, onVolunteerApplicationCreated, onVolunteerApplicationCreatedLegacy, onVolunteerApplicationUpdated, onVolunteerApplicationUpdatedLegacy, onEventUpdatedForVolunteers, onEventUpdatedForVolunteersLegacy, scheduledVolunteerReminders, triggerVolunteerPushTestHttp, onJobApplicationCreated, onJobApplicationUpdated, onJobOpportunityCreated, onJobOpportunityUpdated, } from './notifications.js';
+export { publishScheduledSermons, triggerPublishScheduledSermonsHttp, triggerDailyVersePushHttp, sendDailyVersePushScheduled, monitorMeetingLive, pushMeetingLive, onBaptismRequestCreatedAdmin, onBaptismRequestCreatedAdminLegacy, onPrayerRequestCreatedAdmin, onPrayerRequestCreatedAdminLegacy, onPrayerRequestProcessedMember, onPrayerRequestProcessedMemberLegacy, pushPrayerRequestApproved, pushCareCellAnnouncement, pushCareCellMeeting, pushCareCellPrayerRequest, pushCareCellVisit, onTestimonyCreatedAdmin, onTestimonyCreatedAdminLegacy, onTestimonyUpdatedWorkflow, onTestimonyUpdatedWorkflowLegacy, onVolunteerApplicationCreated, onVolunteerApplicationCreatedLegacy, onVolunteerApplicationUpdated, onVolunteerApplicationUpdatedLegacy, onEventUpdatedForVolunteers, onEventUpdatedForVolunteersLegacy, scheduledVolunteerReminders, triggerVolunteerPushTestHttp, onJobApplicationCreated, onJobApplicationUpdated, onJobOpportunityCreated, onJobOpportunityUpdated, onRegistrationRequestCreated, onRegistrationRequestUpdated, } from './notifications.js';
 export { onServiceAssignmentQueueDispatched, onServiceAssignmentResponded, checkServiceAssignmentTimeoutsCron, sendServiceRosterRemindersCron, triggerCheckRosterTimeoutsHttp, dispatchServiceAssignmentNotificationHttp, onServiceRehearsalCreated, onServicePlanPublished, bookResponsibilitySlotHttp, declineResponsibilitySlotHttp, } from './rosterNotifications.js';
 export { guestInviteLanding } from './guestInvite.js';
 //# sourceMappingURL=index.js.map

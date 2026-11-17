@@ -13,6 +13,34 @@ import {
 } from '../types/jobCircle';
 import VolunteerService from './VolunteerService';
 
+function isPlainObject(value: unknown): value is Record<string, any> {
+  if (!value || typeof value !== 'object') return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+/**
+ * Recursively removes undefined fields from plain objects and arrays so
+ * Cloud Firestore writes never fail with "Unsupported field value: undefined",
+ * while leaving Date, Timestamp, and FieldValue sentinels intact.
+ */
+function stripUndefinedFields<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value
+      .filter((item) => item !== undefined)
+      .map((item) => stripUndefinedFields(item)) as unknown as T;
+  }
+  if (!isPlainObject(value)) {
+    return value;
+  }
+  const cleaned: Record<string, any> = {};
+  for (const [key, val] of Object.entries(value)) {
+    if (val === undefined) continue;
+    cleaned[key] = stripUndefinedFields(val);
+  }
+  return cleaned as T;
+}
+
 class JobCircleService {
   private getRootRef(churchId: string) {
     const cid = churchId || 'rhema';
@@ -63,7 +91,7 @@ class JobCircleService {
     await this.getRootRef(churchId)
       .collection('job_circle_categories')
       .doc(categoryId)
-      .set(updates, { merge: true });
+      .set(stripUndefinedFields(updates), { merge: true });
   }
 
   async addCategory(churchId: string, name: string): Promise<JobCategory> {
@@ -239,14 +267,14 @@ class JobCircleService {
   ): Promise<string> {
     const col = this.getRootRef(churchId).collection('job_circle_opportunities');
     const newDoc = col.doc();
-    const payload = {
+    const payload = stripUndefinedFields({
       ...data,
       id: newDoc.id,
       churchId,
       applicationsCount: 0,
       createdAt: firestore.FieldValue.serverTimestamp(),
       updatedAt: firestore.FieldValue.serverTimestamp(),
-    };
+    });
     await newDoc.set(payload);
     return newDoc.id;
   }
@@ -260,10 +288,10 @@ class JobCircleService {
       .collection('job_circle_opportunities')
       .doc(id)
       .set(
-        {
+        stripUndefinedFields({
           ...updates,
           updatedAt: firestore.FieldValue.serverTimestamp(),
-        },
+        }),
         { merge: true }
       );
   }
@@ -379,22 +407,23 @@ class JobCircleService {
   ): Promise<string> {
     const col = this.getRootRef(churchId).collection('job_circle_applications');
 
-    // Duplicate check: Verify applicant has no active application for this opportunity
+    // Duplicate check: Verify applicant has no active application across all matching records
     const existingSnap = await col
       .where('opportunityId', '==', opportunity.id)
       .where('memberId', '==', member.id)
-      .limit(1)
       .get();
 
-    if (!existingSnap.empty) {
-      const existing = existingSnap.docs[0].data();
-      if (existing.status !== 'withdrawn' && existing.status !== 'rejected') {
-        throw new Error('You have already applied for this ministry opportunity.');
-      }
+    const hasActiveApplication = existingSnap.docs.some(doc => {
+      const existingStatus = doc.data()?.status;
+      return existingStatus !== 'withdrawn' && existingStatus !== 'rejected';
+    });
+
+    if (hasActiveApplication) {
+      throw new Error('You have already applied for this ministry opportunity.');
     }
 
     const appDoc = col.doc();
-    const payload: JobApplication = {
+    const payload = stripUndefinedFields<JobApplication>({
       id: appDoc.id,
       churchId,
       opportunityId: opportunity.id,
@@ -414,7 +443,7 @@ class JobCircleService {
       status: 'submitted',
       createdAt: firestore.FieldValue.serverTimestamp(),
       updatedAt: firestore.FieldValue.serverTimestamp(),
-    };
+    });
 
     await appDoc.set(payload);
 
@@ -687,11 +716,11 @@ class JobCircleService {
       .collection('job_circle_profiles')
       .doc(profile.memberId)
       .set(
-        {
+        stripUndefinedFields({
           ...profile,
           churchId,
           updatedAt: firestore.FieldValue.serverTimestamp(),
-        },
+        }),
         { merge: true }
       );
   }
@@ -719,13 +748,15 @@ class JobCircleService {
   ): Promise<string> {
     const col = this.getRootRef(churchId).collection('job_circle_teams');
     const doc = col.doc();
-    await doc.set({
-      ...team,
-      id: doc.id,
-      churchId,
-      createdAt: firestore.FieldValue.serverTimestamp(),
-      updatedAt: firestore.FieldValue.serverTimestamp(),
-    });
+    await doc.set(
+      stripUndefinedFields({
+        ...team,
+        id: doc.id,
+        churchId,
+        createdAt: firestore.FieldValue.serverTimestamp(),
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+      })
+    );
     return doc.id;
   }
 
@@ -735,12 +766,13 @@ class JobCircleService {
     member: { memberId: string; memberName: string; roleInTeam: string; phone?: string }
   ): Promise<void> {
     const ref = this.getRootRef(churchId).collection('job_circle_teams').doc(teamId);
+    const cleanedMember = stripUndefinedFields({
+      ...member,
+      joinedAt: new Date().toISOString(),
+    });
     await ref.update({
       memberIds: firestore.FieldValue.arrayUnion(member.memberId),
-      members: firestore.FieldValue.arrayUnion({
-        ...member,
-        joinedAt: new Date().toISOString(),
-      }),
+      members: firestore.FieldValue.arrayUnion(cleanedMember),
       updatedAt: firestore.FieldValue.serverTimestamp(),
     });
   }
@@ -751,17 +783,19 @@ class JobCircleService {
     memberId: string
   ): Promise<void> {
     const ref = this.getRootRef(churchId).collection('job_circle_teams').doc(teamId);
-    const doc = await ref.get();
-    if (!doc.exists) return;
+    await firestore().runTransaction(async (transaction) => {
+      const doc = await transaction.get(ref);
+      if (!doc.exists) return;
 
-    const data = doc.data() as MinistryTeam;
-    const updatedMembers = (data.members || []).filter(m => m.memberId !== memberId);
-    const updatedIds = (data.memberIds || []).filter(id => id !== memberId);
+      const data = doc.data() as MinistryTeam;
+      const updatedMembers = (data.members || []).filter(m => m.memberId !== memberId);
+      const updatedIds = (data.memberIds || []).filter(id => id !== memberId);
 
-    await ref.update({
-      members: updatedMembers,
-      memberIds: updatedIds,
-      updatedAt: firestore.FieldValue.serverTimestamp(),
+      transaction.update(ref, {
+        members: updatedMembers,
+        memberIds: updatedIds,
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+      });
     });
   }
 

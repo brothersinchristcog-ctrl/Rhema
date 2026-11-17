@@ -47,7 +47,6 @@ import {
   FileText,
   Trash2,
   Bell,
-  ChevronRight,
   ArrowRight,
   Compass,
 } from 'lucide-react-native';
@@ -478,8 +477,10 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
     const isApplied = appliedOppIds.includes(opp.id);
 
     return (
-      <View
+      <TouchableOpacity
         key={opp.id}
+        activeOpacity={0.92}
+        onPress={() => navigation.navigate('OpportunityDetailScreen', { opportunity: opp })}
         style={[
           styles.oppCard,
           isCarousel && { width: CARD_WIDTH, marginRight: 16 },
@@ -513,11 +514,7 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
         </View>
 
         {/* ── IMAGE SECTION: Admin thumbnail/banner image maintaining aspect ratio ── */}
-        <TouchableOpacity
-          onPress={() => navigation.navigate('OpportunityDetailScreen', { opportunity: opp })}
-          activeOpacity={0.92}
-          style={styles.cardBannerWrap}
-        >
+        <View style={styles.cardBannerWrap}>
           {opp.thumbnailUrl ? (
             <Image
               source={{ uri: opp.thumbnailUrl }}
@@ -542,7 +539,7 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
               </View>
             </View>
           )}
-        </TouchableOpacity>
+        </View>
 
         {/* ── OPPORTUNITY DETAILS: Ministry position title, Role / Ministry name, Location ── */}
         <View style={styles.cardDetailsBox}>
@@ -586,7 +583,13 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
                 {opp.description}
               </Text>
               {hasLongDesc && (
-                <TouchableOpacity onPress={() => toggleDescExpand(opp.id)} style={{ alignSelf: 'flex-start', marginTop: 3 }}>
+                <TouchableOpacity
+                  onPress={(e) => {
+                    e?.stopPropagation?.();
+                    toggleDescExpand(opp.id);
+                  }}
+                  style={{ alignSelf: 'flex-start', marginTop: 3 }}
+                >
                   <Text style={{ color: isDark ? '#60A5FA' : '#1D4ED8', fontWeight: '700', fontSize: 12.5 }}>
                     {isExpanded ? 'Show less' : '...more'}
                   </Text>
@@ -596,19 +599,8 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
           ) : null}
         </View>
 
-        {/* ── BOTTOM ACTION BUTTONS: Apply Now or Status ── */}
+        {/* ── BOTTOM ACTION BUTTON: Centered rounded pill Apply Now / Applied status ── */}
         <View style={styles.cardBottomRow}>
-          <TouchableOpacity
-            style={[styles.detailsLinkBtn, { borderColor: cardBorder }]}
-            onPress={() => navigation.navigate('OpportunityDetailScreen', { opportunity: opp })}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.detailsLinkTxt, { color: isDark ? '#E4E4E7' : '#334155' }]}>
-              View Details
-            </Text>
-            <ChevronRight size={15} color={secondaryText} />
-          </TouchableOpacity>
-
           {isApplied ? (
             <View
               style={[
@@ -627,7 +619,10 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
           ) : (
             <TouchableOpacity
               style={[styles.applyPrimaryBtn, { backgroundColor: isDark ? '#FFFFFF' : '#1a2d5a' }]}
-              onPress={() => setSelectedOppForApply(opp)}
+              onPress={(e) => {
+                e?.stopPropagation?.();
+                setSelectedOppForApply(opp);
+              }}
               activeOpacity={0.85}
             >
               <Send size={14} color={isDark ? '#000000' : '#FFFFFF'} />
@@ -637,7 +632,7 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
             </TouchableOpacity>
           )}
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -1374,51 +1369,39 @@ const styles = StyleSheet.create({
   cardBottomRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderTopWidth: 1,
     borderTopColor: 'rgba(150,150,150,0.12)',
-    gap: 12,
-  },
-  detailsLinkBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  detailsLinkTxt: {
-    fontSize: 13,
-    fontWeight: '700',
   },
   applyPrimaryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    borderRadius: 10,
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 11,
+    paddingHorizontal: 30,
+    borderRadius: 999,
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
-    shadowRadius: 3,
+    shadowRadius: 4,
   },
   applyPrimaryTxt: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '800',
     letterSpacing: 0.2,
   },
   appliedStatusPill: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    borderRadius: 999,
     borderWidth: 1.2,
   },
   appliedStatusTxt: {

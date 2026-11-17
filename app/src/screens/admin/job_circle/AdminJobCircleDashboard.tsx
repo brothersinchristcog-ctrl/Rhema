@@ -42,6 +42,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { useChurch } from '../../../context/ChurchContext';
 import { AdminTabContext } from '../../../context/AdminTabContext';
 import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
+import { parseLocalDate, toStandardDateString } from '../../../utils/DateUtils';
 import JobCircleService from '../../../services/JobCircleService';
 import InAppDocumentViewerModal from '../../../components/InAppDocumentViewerModal';
 import {
@@ -56,6 +57,78 @@ interface AdminJobCircleDashboardProps {
 }
 
 const SERIF = Platform.OS === 'ios' ? 'Georgia' : 'serif';
+
+const SHORT_DAY_MAP: Record<string, string> = {
+  monday: 'Mon',
+  mon: 'Mon',
+  tuesday: 'Tue',
+  tue: 'Tue',
+  wednesday: 'Wed',
+  wed: 'Wed',
+  thursday: 'Thu',
+  thu: 'Thu',
+  friday: 'Fri',
+  fri: 'Fri',
+  saturday: 'Sat',
+  sat: 'Sat',
+  sunday: 'Sun',
+  sun: 'Sun',
+};
+
+const DAY_ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+function formatOpportunityScheduleChips(opp: JobOpportunity): string[] {
+  const timeMap = new Map<string, Set<string>>();
+  const fallbackChips: string[] = [];
+
+  const addSlot = (days: string[], start: string, end: string) => {
+    const timeKey = `${start.trim()} – ${end.trim()}`;
+    if (!timeMap.has(timeKey)) {
+      timeMap.set(timeKey, new Set<string>());
+    }
+    const daySet = timeMap.get(timeKey)!;
+    days.forEach((d) => {
+      const clean = SHORT_DAY_MAP[d.trim().toLowerCase()] || d.trim();
+      if (clean) daySet.add(clean);
+    });
+  };
+
+  if (Array.isArray(opp.scheduleSlots) && opp.scheduleSlots.length > 0) {
+    opp.scheduleSlots.forEach((s) => {
+      if (Array.isArray(s.days) && s.days.length > 0 && s.startTime && s.endTime) {
+        addSlot(s.days, s.startTime, s.endTime);
+      }
+    });
+  } else if (opp.timeCommitment) {
+    const segments = opp.timeCommitment.split('|').map((p) => p.trim()).filter(Boolean);
+    for (const seg of segments) {
+      const m = seg.match(/^([^:]+):\s*(\d{1,2}:\d{2}\s*(?:AM|PM))\s*[–—-]\s*(\d{1,2}:\d{2}\s*(?:AM|PM))$/i);
+      if (m) {
+        const rawDays = m[1].split(',').map((d) => d.trim()).filter(Boolean);
+        addSlot(rawDays, m[2].toUpperCase(), m[3].toUpperCase());
+      } else {
+        fallbackChips.push(seg);
+      }
+    }
+  }
+
+  const formatted: string[] = [];
+  timeMap.forEach((daySet, timeRange) => {
+    const orderedDays = Array.from(daySet).sort((a, b) => {
+      const idxA = DAY_ORDER.indexOf(a);
+      const idxB = DAY_ORDER.indexOf(b);
+      return (idxA === -1 ? 99 : idxA) - (idxB === -1 ? 99 : idxB);
+    });
+    const daysLabel =
+      orderedDays.length === 7
+        ? 'Every Day'
+        : orderedDays.join(', ');
+    formatted.push(`${daysLabel} • ${timeRange}`);
+  });
+
+  const combined = [...formatted, ...fallbackChips];
+  return combined.length > 0 ? combined : ['Flexible schedule'];
+}
 
 const colors = {
   moss: '#2E7D32',
@@ -233,6 +306,7 @@ export default function AdminJobCircleDashboard({ navigation, routeParams }: Adm
   // Status Action: Open Interview Scheduler
   const handleOpenScheduleModal = () => {
     if (!selectedApp) return;
+    setInterviewDate(selectedApp.meetingDate ? parseLocalDate(selectedApp.meetingDate) : new Date());
     setInterviewNotes(selectedApp.meetingNotes || '');
     setInterviewLocation(selectedApp.meetingLocation || 'Rhema Church / Online Meet');
     setInterviewTime(selectedApp.meetingTime || '10:00 AM');
@@ -244,7 +318,7 @@ export default function AdminJobCircleDashboard({ navigation, routeParams }: Adm
     if (!selectedApp) return;
     try {
       setUpdatingStatus(true);
-      const dateStr = interviewDate.toISOString().split('T')[0];
+      const dateStr = toStandardDateString(interviewDate);
       await JobCircleService.updateApplicationStatus(churchId, selectedApp.id, 'meeting_scheduled', {
         adminId: user?.uid || 'admin',
         adminName: member?.name || user?.displayName || 'Admin',
@@ -888,104 +962,200 @@ export default function AdminJobCircleDashboard({ navigation, routeParams }: Adm
                   <Text style={{ color: secondaryText }}>No ministry postings match this filter.</Text>
                 </View>
               ) : (
-                filteredOpportunities.map(opp => (
-                  <View key={opp.id} style={[styles.card, { backgroundColor: cardSurface, borderColor: adminBorderColor }]}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.cardTitle, { color: primaryText }]}>{opp.title}</Text>
-                        <Text style={[styles.cardSub, { color: isDark ? '#93C5FD' : '#1a2d5a', fontWeight: '600', marginTop: 2 }]}>
-                          {opp.categoryName}
-                        </Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
-                          <Clock size={13} color={secondaryText} />
-                          <Text style={{ fontSize: 12, color: secondaryText, flex: 1 }} numberOfLines={2}>
-                            {opp.timeCommitment}
+                filteredOpportunities.map(opp => {
+                  const scheduleChips = formatOpportunityScheduleChips(opp);
+                  const isApproved = opp.status === 'approved';
+
+                  return (
+                    <TouchableOpacity
+                      key={opp.id}
+                      activeOpacity={0.88}
+                      onPress={() => navigation.navigate('OpportunityDetailScreen', { opportunity: opp })}
+                      style={[
+                        styles.card,
+                        {
+                          backgroundColor: cardSurface,
+                          borderColor: isDark ? '#27272A' : '#E2E8F0',
+                        },
+                      ]}
+                    >
+                      {/* Card Header: Title, Category & Status Pill */}
+                      <View style={styles.oppCardHeaderRow}>
+                        <View style={{ flex: 1, paddingRight: 10 }}>
+                          <Text style={[styles.cardTitle, { color: primaryText }]} numberOfLines={1}>
+                            {opp.title}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.cardSub,
+                              { color: isDark ? '#93C5FD' : '#1a2d5a', fontWeight: '600', marginTop: 3 },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {opp.categoryName || 'Ministry Role'}
                           </Text>
                         </View>
+
+                        <View
+                          style={[
+                            styles.statusBadge,
+                            {
+                              backgroundColor: isApproved
+                                ? (isDark ? 'rgba(16, 185, 129, 0.18)' : '#DCFCE7')
+                                : (isDark ? 'rgba(245, 158, 11, 0.18)' : '#FEF3C7'),
+                              borderColor: isApproved
+                                ? (isDark ? 'rgba(52, 211, 153, 0.35)' : '#86EFAC')
+                                : (isDark ? 'rgba(251, 191, 36, 0.35)' : '#FDE68A'),
+                              borderWidth: 1,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.statusText,
+                              {
+                                color: isApproved
+                                  ? (isDark ? '#34D399' : '#15803D')
+                                  : (isDark ? '#FBBF24' : '#B45309'),
+                              },
+                            ]}
+                          >
+                            {opp.status.toUpperCase()}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Clean Schedule Timing & Location Pills */}
+                      <View style={styles.oppMetaContainer}>
+                        <View style={styles.scheduleChipsWrap}>
+                          {scheduleChips.map((chipText, idx) => (
+                            <View
+                              key={idx}
+                              style={[
+                                styles.scheduleChipPill,
+                                {
+                                  backgroundColor: isDark ? '#1F242D' : '#F1F5F9',
+                                  borderColor: isDark ? '#334155' : '#CBD5E1',
+                                },
+                              ]}
+                            >
+                              <Clock size={12} color={isDark ? '#93C5FD' : '#1E40AF'} />
+                              <Text
+                                style={[
+                                  styles.scheduleChipText,
+                                  { color: isDark ? '#E2E8F0' : '#1E293B' },
+                                ]}
+                                numberOfLines={1}
+                              >
+                                {chipText}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+
                         {opp.location ? (
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                          <View style={styles.locationMetaRow}>
                             <MapPin size={13} color={secondaryText} />
-                            <Text style={{ fontSize: 12, color: secondaryText }}>
+                            <Text style={{ fontSize: 12.5, color: secondaryText, flex: 1 }} numberOfLines={1}>
                               {opp.location}
                             </Text>
                           </View>
                         ) : null}
                       </View>
+
+                      {/* Redesigned Consistent 3-Button Action Footer */}
                       <View
                         style={[
-                          styles.statusBadge,
-                          {
-                            backgroundColor:
-                              opp.status === 'approved'
-                                ? (isDark ? 'rgba(16, 185, 129, 0.2)' : '#E1F5EE')
-                                : (isDark ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7'),
-                          },
+                          styles.cardActionsRow,
+                          { borderTopColor: isDark ? '#27272A' : '#F1F5F9' },
                         ]}
                       >
-                        <Text
+                        {/* 1. Edit Button */}
+                        <TouchableOpacity
                           style={[
-                            styles.statusText,
+                            styles.cardActionBtn,
                             {
-                              color:
-                                opp.status === 'approved'
-                                  ? (isDark ? '#34D399' : '#15803d')
-                                  : (isDark ? '#FBBF24' : '#b45309'),
+                              backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                              borderColor: isDark ? '#3F3F46' : '#CBD5E1',
                             },
                           ]}
+                          activeOpacity={0.78}
+                          onPress={(e) => {
+                            e?.stopPropagation?.();
+                            navigation.navigate('AdminOpportunityEditor', { opportunity: opp });
+                          }}
                         >
-                          {opp.status.toUpperCase()}
-                        </Text>
+                          <Edit size={13.5} color={primaryText} />
+                          <Text style={[styles.cardActionBtnTxt, { color: primaryText }]}>Edit</Text>
+                        </TouchableOpacity>
+
+                        {/* 2. Publish or Close Button */}
+                        {!isApproved ? (
+                          <TouchableOpacity
+                            style={[
+                              styles.cardActionBtn,
+                              {
+                                backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#ECFDF5',
+                                borderColor: isDark ? 'rgba(52, 211, 153, 0.4)' : '#A7F3D0',
+                              },
+                            ]}
+                            activeOpacity={0.78}
+                            onPress={(e) => {
+                              e?.stopPropagation?.();
+                              handleToggleOpportunityStatus(opp, 'approved');
+                            }}
+                          >
+                            <CheckCircle2 size={13.5} color={isDark ? '#34D399' : '#047857'} />
+                            <Text style={[styles.cardActionBtnTxt, { color: isDark ? '#34D399' : '#047857' }]}>
+                              Publish
+                            </Text>
+                          </TouchableOpacity>
+                        ) : (
+                          <TouchableOpacity
+                            style={[
+                              styles.cardActionBtn,
+                              {
+                                backgroundColor: isDark ? 'rgba(245, 158, 11, 0.14)' : '#FFFBEB',
+                                borderColor: isDark ? 'rgba(251, 191, 36, 0.4)' : '#FDE68A',
+                              },
+                            ]}
+                            activeOpacity={0.78}
+                            onPress={(e) => {
+                              e?.stopPropagation?.();
+                              handleToggleOpportunityStatus(opp, 'closed');
+                            }}
+                          >
+                            <XCircle size={13.5} color={isDark ? '#FBBF24' : '#B45309'} />
+                            <Text style={[styles.cardActionBtnTxt, { color: isDark ? '#FBBF24' : '#B45309' }]}>
+                              Close
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+
+                        {/* 3. Delete Button */}
+                        <TouchableOpacity
+                          style={[
+                            styles.cardActionBtn,
+                            {
+                              backgroundColor: isDark ? 'rgba(239, 68, 68, 0.14)' : '#FEF2F2',
+                              borderColor: isDark ? 'rgba(248, 113, 113, 0.38)' : '#FECACA',
+                            },
+                          ]}
+                          activeOpacity={0.78}
+                          onPress={(e) => {
+                            e?.stopPropagation?.();
+                            handleDeleteOpportunity(opp);
+                          }}
+                        >
+                          <Trash2 size={13.5} color={isDark ? '#F87171' : '#DC2626'} />
+                          <Text style={[styles.cardActionBtnTxt, { color: isDark ? '#F87171' : '#DC2626' }]}>
+                            Delete
+                          </Text>
+                        </TouchableOpacity>
                       </View>
-                    </View>
-
-                    <View style={styles.cardActionsRow}>
-                      <TouchableOpacity
-                        style={[styles.btnOutline, { borderColor: adminBorderColor }]}
-                        onPress={() => navigation.navigate('AdminOpportunityEditor', { opportunity: opp })}
-                      >
-                        <Edit size={14} color={primaryText} style={{ marginRight: 4 }} />
-                        <Text style={{ color: primaryText, fontSize: 12, fontWeight: '600' }}>Edit</Text>
-                      </TouchableOpacity>
-
-                      {opp.status !== 'approved' && (
-                        <TouchableOpacity
-                          style={[
-                            styles.btnOutline,
-                            {
-                              borderColor: isDark ? '#059669' : '#15803d',
-                              backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#E1F5EE',
-                            },
-                          ]}
-                          onPress={() => handleToggleOpportunityStatus(opp, 'approved')}
-                        >
-                          <CheckCircle2 size={14} color={isDark ? '#34D399' : '#15803d'} style={{ marginRight: 4 }} />
-                          <Text style={{ color: isDark ? '#34D399' : '#15803d', fontSize: 12, fontWeight: '600' }}>
-                            Publish
-                          </Text>
-                        </TouchableOpacity>
-                      )}
-
-                      {opp.status === 'approved' && (
-                        <TouchableOpacity
-                          style={[styles.btnOutline, { borderColor: isDark ? '#EF4444' : '#dc2626' }]}
-                          onPress={() => handleToggleOpportunityStatus(opp, 'closed')}
-                        >
-                          <XCircle size={14} color={isDark ? '#F87171' : '#dc2626'} style={{ marginRight: 4 }} />
-                          <Text style={{ color: isDark ? '#F87171' : '#dc2626', fontSize: 12, fontWeight: '600' }}>
-                            Close
-                          </Text>
-                        </TouchableOpacity>
-                      )}
-
-                      <TouchableOpacity
-                        style={[styles.btnOutline, { borderColor: isDark ? '#3F3F46' : '#E2E8F0', paddingHorizontal: 10 }]}
-                        onPress={() => handleDeleteOpportunity(opp)}
-                      >
-                        <Trash2 size={14} color="#DC2626" />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                ))
+                    </TouchableOpacity>
+                  );
+                })
               )}
             </View>
           )}
@@ -1296,10 +1466,18 @@ export default function AdminJobCircleDashboard({ navigation, routeParams }: Adm
             )}
 
             <TouchableOpacity
-              style={[styles.closeModalBtn, { borderColor: adminBorderColor, marginTop: 16 }]}
+              style={[
+                styles.closeModalBtn,
+                {
+                  borderColor: isDark ? '#52525B' : '#94A3B8',
+                  backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                  marginTop: 16,
+                },
+              ]}
               onPress={() => setReviewModalVisible(false)}
+              activeOpacity={0.75}
             >
-              <Text style={{ color: primaryText, fontWeight: '600' }}>Close</Text>
+              <Text style={{ color: isDark ? primaryText : '#0F172A', fontWeight: '700', fontSize: 14 }}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1377,10 +1555,18 @@ export default function AdminJobCircleDashboard({ navigation, routeParams }: Adm
 
               <View style={{ flexDirection: 'row', gap: 12, marginTop: 24, marginBottom: 8 }}>
                 <TouchableOpacity
-                  style={[styles.closeModalBtn, { flex: 1, borderColor: adminBorderColor }]}
+                  style={[
+                    styles.closeModalBtn,
+                    {
+                      flex: 1,
+                      borderColor: isDark ? '#52525B' : '#94A3B8',
+                      backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                    },
+                  ]}
                   onPress={() => setScheduleModalVisible(false)}
+                  activeOpacity={0.75}
                 >
-                  <Text style={{ color: primaryText, fontWeight: '600' }}>Cancel</Text>
+                  <Text style={{ color: isDark ? primaryText : '#0F172A', fontWeight: '700' }}>Cancel</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -1585,12 +1771,45 @@ const styles = createAdminThemedStyles(
 
     sectionTitle: { fontSize: 17, fontWeight: '700' },
     addBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
-    card: { padding: 14, borderRadius: 14, borderWidth: 1, marginBottom: 12 },
-    cardTitle: { fontSize: 16, fontWeight: '700' },
+    card: { padding: 16, borderRadius: 16, borderWidth: 1, marginBottom: 14 },
+    oppCardHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+    cardTitle: { fontSize: 16.5, fontWeight: '800', letterSpacing: -0.2 },
     cardSub: { fontSize: 13, marginTop: 2 },
-    statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-    statusText: { fontSize: 11, fontWeight: '700' },
-    cardActionsRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+    statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
+    statusText: { fontSize: 10.5, fontWeight: '800', letterSpacing: 0.4 },
+    oppMetaContainer: { marginTop: 10, gap: 6 },
+    scheduleChipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+    scheduleChipPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 8,
+      borderWidth: 1,
+    },
+    scheduleChipText: { fontSize: 12, fontWeight: '600' },
+    locationMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
+    cardActionsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginTop: 14,
+      paddingTop: 12,
+      borderTopWidth: 1,
+    },
+    cardActionBtn: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      paddingVertical: 9,
+      paddingHorizontal: 10,
+      borderRadius: 10,
+      borderWidth: 1,
+    },
+    cardActionBtnTxt: { fontSize: 12.5, fontWeight: '700' },
     btnOutline: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1 },
     emptyBox: { padding: 24, borderRadius: 12, borderWidth: 1, alignItems: 'center' },
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
@@ -1619,6 +1838,6 @@ const styles = createAdminThemedStyles(
     },
     statusActionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
     statusBtn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8 },
-    closeModalBtn: { paddingVertical: 12, borderRadius: 10, borderWidth: 1, alignItems: 'center' },
+    closeModalBtn: { paddingVertical: 13, borderRadius: 12, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   })
 );

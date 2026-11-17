@@ -67,13 +67,25 @@ class NotificationService {
         (await FirestoreService.getChurchId().catch(() => null)) ||
         'rhema';
 
-      // Save to church members subcollection and root users document
+      // Save token to root users document, and only update members/{uid} if that member profile already exists
+      // (avoids creating a duplicate nameless stub doc in members/ for unapproved or phone-keyed users)
+      const memberRef = firestore().collection('Rhema Church').doc(targetChurchId).collection('members').doc(user.uid);
+      const memberSnap = await memberRef.get().catch(() => null);
+      const memberExists = memberSnap && (typeof (memberSnap as any).exists === 'function' ? (memberSnap as any).exists() : Boolean(memberSnap.exists));
+
       await Promise.allSettled([
-        firestore().collection('Rhema Church').doc(targetChurchId).collection('members').doc(user.uid).set({
-          fcmToken: token,
-          lastTokenUpdate: firestore.FieldValue.serverTimestamp(),
-          platform: Platform.OS,
-        }, { merge: true }),
+        ...(memberExists
+          ? [
+              memberRef.set(
+                {
+                  fcmToken: token,
+                  lastTokenUpdate: firestore.FieldValue.serverTimestamp(),
+                  platform: Platform.OS,
+                },
+                { merge: true }
+              ),
+            ]
+          : []),
         firestore().collection('users').doc(user.uid).set({
           fcmToken: token,
           primaryChurchId: targetChurchId,
@@ -509,6 +521,31 @@ class NotificationService {
               applicationId: appId,
               timestamp: Date.now(),
             });
+          }
+          break;
+        }
+        case 'registration_request_admin': {
+          const reqId = rawData.requestId || rawData.referenceId || id;
+          console.log('🆕 [NotificationService] Routing Admin to Registration Approvals:', { reqId });
+          nav.navigate('AdminRoot', {
+            targetTab: 'Approvals',
+            requestId: reqId,
+            timestamp: Date.now(),
+          });
+          break;
+        }
+        case 'registration_approved':
+        case 'registration_rejected': {
+          const routeNames = nav.getState?.()?.routeNames || [];
+          if (routeNames.includes('ApprovalPending')) {
+            nav.navigate('ApprovalPending', {
+              requestId: rawData.requestId || rawData.referenceId || id,
+              churchId: rawData.churchId,
+            });
+          } else if (routeNames.includes('Updates')) {
+            nav.navigate('Updates', { highlightId: id, highlightType: type });
+          } else if (routeNames.includes('Tabs')) {
+            nav.navigate('Tabs');
           }
           break;
         }
