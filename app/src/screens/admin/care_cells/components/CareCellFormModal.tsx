@@ -12,7 +12,9 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  StatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X, UserPlus, MapPin, Shield, Calendar, Clock, Users, CheckCircle2, ChevronDown, User, Sparkles, Check, AlertCircle, Building2, Trash2, AlertTriangle } from 'lucide-react-native';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import FirestoreService from '../../../../services/FirestoreService';
@@ -39,6 +41,11 @@ export default function CareCellFormModal({
   cellToEdit,
 }: CareCellFormModalProps) {
   const { isDark, primaryText, secondaryText, cardSurface, secondarySurface, borderColor } = useAdminTheme();
+  const insets = useSafeAreaInsets();
+  const formHeaderTopPadding = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight || 28) : 44
+  ) + 8;
   const primaryBtnBg = isDark ? '#FFFFFF' : '#0F172A';
   const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
   const secondaryBtnBg = isDark ? '#27272A' : '#F8FAFC';
@@ -414,6 +421,11 @@ export default function CareCellFormModal({
   return (
     <>
       <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+        <StatusBar
+          barStyle={isDark ? 'light-content' : 'dark-content'}
+          translucent
+          backgroundColor="transparent"
+        />
         <View style={styles.overlay}>
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -422,7 +434,7 @@ export default function CareCellFormModal({
           >
             <View style={styles.sheetContainer}>
               {/* Sheet Header */}
-              <View style={styles.header}>
+              <View style={[styles.header, { paddingTop: formHeaderTopPadding }]}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.headerTitle}>{isEditing ? 'Edit Care Cell' : 'Create Care Cell'}</Text>
                   <Text style={styles.headerSubtitle}>

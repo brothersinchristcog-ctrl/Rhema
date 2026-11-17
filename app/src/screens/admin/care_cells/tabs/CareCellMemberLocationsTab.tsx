@@ -614,34 +614,66 @@ export default function CareCellMemberLocationsTab({
                   key={`group_${idx}_${first.memberId}`}
                   coordinate={{ latitude: first.latitude, longitude: first.longitude }}
                   onPress={() => handleMarkerPress(group)}
-                  anchor={{ x: 0.5, y: 0.5 }}
+                  anchor={{ x: 0.5, y: 1.0 }}
+                  tracksViewChanges={false}
                 >
-                  <View
-                    style={[
-                      styles.clusterPin,
-                      {
-                        backgroundColor: dominantColor,
-                        borderColor: isSelected ? '#FFFFFF' : 'rgba(255,255,255,0.7)',
-                        transform: [{ scale: isSelected ? 1.15 : 1 }],
-                      },
-                    ]}
-                  >
-                    {isMulti ? (
-                      <View style={styles.clusterContent}>
-                        <Users size={12} color="#FFFFFF" />
-                        <Text style={styles.clusterCountTxt}>{group.length}</Text>
-                      </View>
-                    ) : (
-                      <View style={styles.clusterContent}>
-                        <MapPin size={13} color="#FFFFFF" />
-                      </View>
-                    )}
+                  <View style={styles.tabLollipopWrap}>
+                    {/* Lollipop Head: Circular Avatar Container */}
+                    <View
+                      style={[
+                        styles.tabLollipopHead,
+                        {
+                          borderColor: isSelected ? '#F59E0B' : dominantColor,
+                          borderWidth: isSelected ? 3.5 : 2.5,
+                          transform: [{ scale: isSelected ? 1.15 : 1 }],
+                        },
+                      ]}
+                    >
+                      {first.profilePhoto ? (
+                        <Image
+                          source={{ uri: first.profilePhoto }}
+                          style={styles.tabLollipopAvatarImg}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={[styles.tabLollipopAvatarFallback, { backgroundColor: dominantColor }]}>
+                          <Text style={styles.tabLollipopInitials}>
+                            {(first.memberName || 'M').slice(0, 2).toUpperCase()}
+                          </Text>
+                        </View>
+                      )}
 
-                    {hasVerified && (
-                      <View style={styles.verifiedPinDot}>
-                        <Home size={8} color="#FFFFFF" />
-                      </View>
-                    )}
+                      {/* Multi-member cluster count pill */}
+                      {isMulti && (
+                        <View style={[styles.tabLollipopCountBadge, { backgroundColor: dominantColor }]}>
+                          <Users size={9} color="#FFFFFF" style={{ marginRight: 2 }} />
+                          <Text style={styles.tabLollipopCountTxt}>{group.length}</Text>
+                        </View>
+                      )}
+
+                      {/* Verified home pin badge */}
+                      {hasVerified && !isMulti && (
+                        <View style={styles.tabLollipopVerifiedBadge}>
+                          <Home size={8} color="#FFFFFF" />
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Lollipop Stem / Needle pointing directly to coordinate */}
+                    <View style={styles.tabLollipopStemWrap}>
+                      <View
+                        style={[
+                          styles.tabLollipopStem,
+                          { backgroundColor: isSelected ? '#F59E0B' : dominantColor },
+                        ]}
+                      />
+                      <View
+                        style={[
+                          styles.tabLollipopTipDot,
+                          { backgroundColor: isSelected ? '#F59E0B' : dominantColor },
+                        ]}
+                      />
+                    </View>
                   </View>
                 </Marker>
               );
@@ -1187,6 +1219,87 @@ const styles = createAdminThemedStyles(
     },
 
     // Markers
+    tabLollipopWrap: {
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    tabLollipopHead: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor: '#FFFFFF',
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 3 },
+      shadowOpacity: 0.3,
+      shadowRadius: 4,
+      elevation: 6,
+    },
+    tabLollipopAvatarImg: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+    },
+    tabLollipopAvatarFallback: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    tabLollipopInitials: {
+      color: '#FFFFFF',
+      fontSize: 13,
+      fontWeight: '800',
+      letterSpacing: -0.2,
+    },
+    tabLollipopCountBadge: {
+      position: 'absolute',
+      top: -4,
+      right: -4,
+      flexDirection: 'row',
+      alignItems: 'center',
+      minWidth: 20,
+      height: 18,
+      borderRadius: 9,
+      borderWidth: 1.5,
+      borderColor: '#FFFFFF',
+      paddingHorizontal: 4,
+      justifyContent: 'center',
+    },
+    tabLollipopCountTxt: {
+      color: '#FFFFFF',
+      fontSize: 10,
+      fontWeight: '800',
+    },
+    tabLollipopVerifiedBadge: {
+      position: 'absolute',
+      top: -4,
+      right: -4,
+      width: 16,
+      height: 16,
+      borderRadius: 8,
+      backgroundColor: '#10B981',
+      borderWidth: 1.5,
+      borderColor: '#FFFFFF',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    tabLollipopStemWrap: {
+      alignItems: 'center',
+    },
+    tabLollipopStem: {
+      width: 3.5,
+      height: 13,
+      borderRadius: 1.75,
+    },
+    tabLollipopTipDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      marginTop: -1,
+    },
     clusterPin: {
       borderRadius: 999,
       paddingHorizontal: 8,

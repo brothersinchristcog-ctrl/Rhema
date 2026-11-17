@@ -1,5 +1,7 @@
 import firestore from '@react-native-firebase/firestore';
 import { Linking, Platform } from 'react-native';
+import { KNOWN_REGION_COORDS, calculateDistanceKm } from './CareCellService';
+import { CareCell, CareCellMembership } from '../types/CareCellTypes';
 
 export type LocationAccuracyType =
   | 'verified_home' // Exact pin confirmed by member with consent
@@ -64,6 +66,9 @@ export interface MemberLocationRecord {
 const GOOGLE_MAPS_API_KEY =
   process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY ||
   'AIzaSyBHqVKR6H6ro85c6VQ8vvTZGSgxjEJJeJ4';
+
+const DEFAULT_KURNOOL_LAT = 15.8281;
+const DEFAULT_KURNOOL_LNG = 78.0373;
 
 class MemberLocationService {
   getGoogleMapsApiKey(): string {
@@ -742,6 +747,171 @@ class MemberLocationService {
     Linking.openURL(url).catch((err) =>
       console.error('Could not open multi-stop Google Maps route:', err)
     );
+  }
+
+  /**
+   * Resolves coordinates, distance, and profile details for all members of a specific Care Cell.
+   * Pulls existing profile data, applies Google Maps geocoding and caching,
+   * and computes distances from the cell's center location.
+   */
+  async resolveCareCellMemberLocations(
+    churchId: string | undefined,
+    cell: { id?: string; name?: string; location?: string; meetingLatitude?: number; meetingLongitude?: number },
+    members: Array<CareCellMembership>
+  ): Promise<{
+    cellCenter: { latitude: number; longitude: number };
+    resolvedMembers: Array<
+      CareCellMembership & {
+        distanceKm?: number;
+        profilePhoto?: string;
+        locationAccuracy?: string;
+      }
+    >;
+  }> {
+    const activeChurchId = churchId || 'rhema';
+    const db = firestore();
+    const churchDoc = db.collection('Rhema Church').doc(activeChurchId);
+
+    // 1. Resolve Cell Center
+    let cellLat = cell.meetingLatitude;
+    let cellLng = cell.meetingLongitude;
+
+    if (!cellLat || !cellLng) {
+      const locKey = (cell.location || '').toLowerCase().trim();
+      if (locKey && KNOWN_REGION_COORDS[locKey]) {
+        cellLat = KNOWN_REGION_COORDS[locKey].lat;
+        cellLng = KNOWN_REGION_COORDS[locKey].lng;
+      } else if (locKey) {
+        // Try geocoding cell location
+        try {
+          const res = await this.geocodeAddress(activeChurchId, {
+            village: cell.location,
+            city: 'Kurnool',
+            district: 'Kurnool',
+            state: 'Andhra Pradesh',
+          });
+          if (res.latitude && res.longitude) {
+            cellLat = res.latitude;
+            cellLng = res.longitude;
+          }
+        } catch (_) {}
+      }
+    }
+
+    // Fallback: Koilakuntla if location includes Koilakuntla, else default Kurnool
+    if (!cellLat || !cellLng) {
+      if ((cell.location || '').toLowerCase().includes('koila')) {
+        cellLat = KNOWN_REGION_COORDS['koilakuntla'].lat;
+        cellLng = KNOWN_REGION_COORDS['koilakuntla'].lng;
+      } else {
+        cellLat = DEFAULT_KURNOOL_LAT;
+        cellLng = DEFAULT_KURNOOL_LNG;
+      }
+    }
+
+    const cellCenter = { latitude: cellLat, longitude: cellLng };
+
+    // 2. Resolve Each Member
+    const resolvedMembers = await Promise.all(
+      members.map(async (m) => {
+        let lat = m.latitude;
+        let lng = m.longitude;
+        let photo = m.memberPhoto;
+        let locality = m.locality;
+        let address = m.address;
+        let accuracy = 'village_approximate';
+
+        // Check if member already has valid coordinates and photo
+        const needsFetch = !lat || !lng || !photo || isNaN(lat) || isNaN(lng);
+
+        if (needsFetch && m.memberId) {
+          try {
+            const memberDoc = await churchDoc.collection('members').doc(m.memberId).get();
+            if (memberDoc.exists) {
+              const data = memberDoc.data() || {};
+              if (!photo) {
+                photo = data.profilePhoto || data.photoURL || data.photoUrl || '';
+              }
+              if (!locality) {
+                locality = data.village || data.city || data.mailingCity || cell.location || '';
+              }
+              if (!address) {
+                address = data.street || data.address || data.mailingStreet || '';
+              }
+
+              // Check existing coords on profile
+              if (data.locationData?.latitude && data.locationData?.longitude) {
+                lat = data.locationData.latitude;
+                lng = data.locationData.longitude;
+                accuracy = data.locationData.locationAccuracy || 'village_approximate';
+              } else if (data.latitude && data.longitude) {
+                lat = data.latitude;
+                lng = data.longitude;
+                accuracy = data.hasVerifiedHome ? 'verified_home' : 'village_approximate';
+              } else {
+                // Geocode using profile address
+                const village = data.village || data.city || locality || cell.location;
+                const street = data.street || address;
+                const city = data.city || 'Kurnool';
+                const district = data.district || 'Kurnool';
+                const state = data.state || 'Andhra Pradesh';
+
+                const geoRes = await this.geocodeAddress(activeChurchId, {
+                  street,
+                  village,
+                  city,
+                  district,
+                  state,
+                });
+
+                if (geoRes.latitude && geoRes.longitude) {
+                  lat = geoRes.latitude;
+                  lng = geoRes.longitude;
+                  accuracy = geoRes.locationAccuracy || 'village_approximate';
+                }
+              }
+            }
+          } catch (e) {
+            console.warn(`Error enriching member ${m.memberId}:`, e);
+          }
+        }
+
+        // Region coordinates fallback if geocoding didn't find coordinates
+        if ((!lat || !lng || isNaN(lat) || isNaN(lng)) && locality) {
+          const normLoc = locality.toLowerCase().trim();
+          if (KNOWN_REGION_COORDS[normLoc]) {
+            lat = KNOWN_REGION_COORDS[normLoc].lat;
+            lng = KNOWN_REGION_COORDS[normLoc].lng;
+          } else if (normLoc.includes('koila')) {
+            lat = KNOWN_REGION_COORDS['koilakuntla'].lat;
+            lng = KNOWN_REGION_COORDS['koilakuntla'].lng;
+          }
+        }
+
+        // If still without coordinates, use cellCenter as approximate location
+        if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
+          lat = cellCenter.latitude;
+          lng = cellCenter.longitude;
+        }
+
+        // Compute distance from cell center
+        const dist = calculateDistanceKm(cellCenter.latitude, cellCenter.longitude, lat, lng);
+        const distanceKm = Math.round(dist * 10) / 10;
+
+        return {
+          ...m,
+          latitude: lat,
+          longitude: lng,
+          memberPhoto: photo || m.memberPhoto || '',
+          locality: locality || m.locality || cell.location || '',
+          address: address || m.address || '',
+          distanceKm,
+          locationAccuracy: accuracy,
+        };
+      })
+    );
+
+    return { cellCenter, resolvedMembers };
   }
 }
 

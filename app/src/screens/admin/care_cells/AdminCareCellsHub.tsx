@@ -120,9 +120,13 @@ export default function AdminCareCellsHub() {
   };
 
   const activeCellsCount = cells.filter((c) => c.status === 'Active').length;
+  const headerTopPadding =
+    Platform.OS === 'android'
+      ? Math.max(insets.top, StatusBar.currentHeight || 28) + 6
+      : insets.top + 6;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={['left', 'right']}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={screenBg} />
 
       {/* Hero Header */}
@@ -130,6 +134,7 @@ export default function AdminCareCellsHub() {
         style={[
           styles.heroHeader,
           {
+            paddingTop: headerTopPadding,
             backgroundColor: isDark ? '#000000' : '#FFFFFF',
             borderBottomWidth: 1,
             borderBottomColor: isDark ? '#27272A' : '#E2E8F0',

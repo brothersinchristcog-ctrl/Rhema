@@ -11,7 +11,9 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  StatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X, Calendar, Clock, MapPin, BookOpen, ChevronDown, Check, Sparkles } from 'lucide-react-native';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import CareCellService from '../../../../services/CareCellService';
@@ -47,6 +49,11 @@ export default function MeetingFormModal({
   meetingToEdit,
 }: MeetingFormModalProps) {
   const { isDark, primaryText, secondaryText } = useAdminTheme();
+  const insets = useSafeAreaInsets();
+  const formHeaderTopPadding = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight || 28) : 44
+  ) + 8;
   const primaryBtnBg = isDark ? '#FFFFFF' : '#0F172A';
   const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
 
@@ -225,13 +232,18 @@ export default function MeetingFormModal({
   return (
     <>
       <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+        <StatusBar
+          barStyle={isDark ? 'light-content' : 'dark-content'}
+          translucent
+          backgroundColor="transparent"
+        />
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.overlay}
         >
           <View style={styles.sheetContainer}>
             {/* Header */}
-            <View style={styles.header}>
+            <View style={[styles.header, { paddingTop: formHeaderTopPadding }]}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.headerTitle}>{isEditing ? 'Edit Meeting' : 'Schedule Fellowship Meeting'}</Text>
                 <Text style={styles.headerSubtitle}>

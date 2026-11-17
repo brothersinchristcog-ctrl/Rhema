@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,8 +12,11 @@ import {
   ScrollView,
   Image,
   FlatList,
+  StatusBar,
+  ActivityIndicator,
 } from 'react-native';
-import MapView, { Marker, PROVIDER_GOOGLE, Callout } from 'react-native-maps';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import {
   ArrowLeft,
   Navigation,
@@ -32,15 +35,24 @@ import {
   X,
   Plus,
   Route,
+  Home,
 } from 'lucide-react-native';
 import { CareCell, CareCellMembership } from '../../../../types/CareCellTypes';
 import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
+import MemberLocationService from '../../../../services/MemberLocationService';
+import CareCellService, { calculateDistanceKm, KNOWN_REGION_COORDS } from '../../../../services/CareCellService';
 
 const { width, height } = Dimensions.get('window');
 
 // Default Kurnool coordinates if cell doesn't have coordinates
 const DEFAULT_KURNOOL_LAT = 15.8281;
 const DEFAULT_KURNOOL_LNG = 78.0373;
+
+interface EnrichedCareCellMembership extends CareCellMembership {
+  distanceKm?: number;
+  profilePhoto?: string;
+  locationAccuracy?: string;
+}
 
 interface CareCellMapModalProps {
   visible: boolean;
@@ -59,7 +71,8 @@ export default function CareCellMapModal({
   inactiveMembers = [],
   onLogFollowup,
 }: CareCellMapModalProps) {
-  const { isDark, primaryText, secondaryText } = useAdminTheme();
+  const insets = useSafeAreaInsets();
+  const { isDark, primaryText, secondaryText, cardSurface, borderColor } = useAdminTheme();
   const primaryBtnBg = isDark ? '#FFFFFF' : '#0F172A';
   const primaryBtnText = isDark ? '#000000' : '#FFFFFF';
   const secondaryBtnBg = isDark ? '#27272A' : '#F8FAFC';
@@ -68,13 +81,27 @@ export default function CareCellMapModal({
 
   const mapRef = useRef<MapView | null>(null);
 
+  // Top Inset ensuring zero status bar overlap on any Android / iOS device
+  const topHeaderInset = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight || 28) : 44
+  ) + 8;
+
   // View mode: 'map' or 'list'
   const [viewMode, setViewMode] = useState<'map' | 'list'>('map');
   const [selectedLocality, setSelectedLocality] = useState<string>('ALL');
   const [filterNeedsVisitOnly, setFilterNeedsVisitOnly] = useState<boolean>(false);
 
+  // Loading & Enriched data state
+  const [loadingLocations, setLoadingLocations] = useState<boolean>(true);
+  const [enrichedMembers, setEnrichedMembers] = useState<EnrichedCareCellMembership[]>([]);
+  const [resolvedCenter, setResolvedCenter] = useState<{ latitude: number; longitude: number }>({
+    latitude: cell.meetingLatitude || DEFAULT_KURNOOL_LAT,
+    longitude: cell.meetingLongitude || DEFAULT_KURNOOL_LNG,
+  });
+
   // Selected member card on map
-  const [selectedMember, setSelectedMember] = useState<CareCellMembership | null>(null);
+  const [selectedMember, setSelectedMember] = useState<EnrichedCareCellMembership | null>(null);
 
   // Route Planning: list of member IDs in visit order
   const [plannedRouteMemberIds, setPlannedRouteMemberIds] = useState<string[]>([]);
@@ -84,32 +111,82 @@ export default function CareCellMapModal({
     return new Set(inactiveMembers.map((im) => im.memberId));
   }, [inactiveMembers]);
 
-  // Center coordinate: Cell Meeting coordinate or Kurnool center
-  const centerCoord = useMemo(() => {
-    const lat = cell.meetingLatitude || DEFAULT_KURNOOL_LAT;
-    const lng = cell.meetingLongitude || DEFAULT_KURNOOL_LNG;
-    return {
-      latitude: lat,
-      longitude: lng,
-      latitudeDelta: 0.05,
-      longitudeDelta: 0.05,
+  // Resolve locations and coordinates from Firestore / Member profiles
+  useEffect(() => {
+    let isMounted = true;
+    async function loadLocations() {
+      if (!visible) return;
+      setLoadingLocations(true);
+      try {
+        const churchId = await CareCellService.getChurchId();
+        const res = await MemberLocationService.resolveCareCellMemberLocations(churchId, cell, members);
+        if (isMounted) {
+          setResolvedCenter(res.cellCenter);
+          setEnrichedMembers(res.resolvedMembers);
+        }
+      } catch (err) {
+        console.error('Failed to resolve member locations for map:', err);
+        if (isMounted) {
+          setEnrichedMembers(members);
+        }
+      } finally {
+        if (isMounted) setLoadingLocations(false);
+      }
+    }
+
+    loadLocations();
+    return () => {
+      isMounted = false;
     };
-  }, [cell]);
+  }, [visible, cell, members]);
+
+  // Initial map region centered on resolved cell center (e.g. Koilakuntla)
+  const initialRegion = useMemo(() => {
+    return {
+      latitude: resolvedCenter.latitude,
+      longitude: resolvedCenter.longitude,
+      latitudeDelta: 0.045,
+      longitudeDelta: 0.045,
+    };
+  }, [resolvedCenter]);
+
+  // Auto-fit map camera when coordinates are ready
+  useEffect(() => {
+    if (!loadingLocations && enrichedMembers.length > 0 && mapRef.current) {
+      const validCoords = enrichedMembers
+        .filter((m) => typeof m.latitude === 'number' && typeof m.longitude === 'number' && !isNaN(m.latitude))
+        .map((m) => ({ latitude: m.latitude!, longitude: m.longitude! }));
+
+      if (resolvedCenter.latitude && resolvedCenter.longitude) {
+        validCoords.push(resolvedCenter);
+      }
+
+      if (validCoords.length > 0) {
+        const timer = setTimeout(() => {
+          mapRef.current?.fitToCoordinates(validCoords, {
+            edgePadding: { top: 120, right: 60, bottom: 240, left: 60 },
+            animated: true,
+          });
+        }, 400);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [loadingLocations, enrichedMembers, resolvedCenter]);
 
   // Compute distinct localities from members
   const localities = useMemo(() => {
     const set = new Set<string>();
-    members.forEach((m) => {
+    enrichedMembers.forEach((m) => {
       if (m.locality && m.locality.trim()) {
         set.add(m.locality.trim());
       }
     });
     return Array.from(set).sort();
-  }, [members]);
+  }, [enrichedMembers]);
 
   // Filtered members list
   const filteredMembers = useMemo(() => {
-    let list = members;
+    let list = enrichedMembers;
     if (filterNeedsVisitOnly) {
       list = list.filter((m) => inactiveMemberIdSet.has(m.memberId));
     }
@@ -117,17 +194,68 @@ export default function CareCellMapModal({
       list = list.filter((m) => (m.locality || '').trim().toLowerCase() === selectedLocality.toLowerCase());
     }
     return list;
-  }, [members, filterNeedsVisitOnly, selectedLocality, inactiveMemberIdSet]);
+  }, [enrichedMembers, filterNeedsVisitOnly, selectedLocality, inactiveMemberIdSet]);
 
-  // Members with valid GPS coordinates for map plotting
-  const membersWithCoords = useMemo(() => {
-    return filteredMembers.filter(
-      (m) => typeof m.latitude === 'number' && typeof m.longitude === 'number' && !isNaN(m.latitude) && !isNaN(m.longitude)
-    );
+  // Members to render on the map with slight radial offset for identical village coordinates
+  const membersToRenderOnMap = useMemo(() => {
+    const coordSeenCount = new Map<string, number>();
+
+    return filteredMembers
+      .filter(
+        (m) =>
+          typeof m.latitude === 'number' &&
+          typeof m.longitude === 'number' &&
+          !isNaN(m.latitude) &&
+          !isNaN(m.longitude)
+      )
+      .map((m) => {
+        const key = `${m.latitude!.toFixed(4)}_${m.longitude!.toFixed(4)}`;
+        const seen = coordSeenCount.get(key) || 0;
+        coordSeenCount.set(key, seen + 1);
+
+        if (seen > 0) {
+          // Jitter by ~22 meters radially so lollipop pins never hide each other
+          const angle = (seen * 2 * Math.PI) / 3;
+          const offsetLat = 0.00022 * Math.cos(angle);
+          const offsetLng = 0.00022 * Math.sin(angle);
+          return {
+            ...m,
+            plotLat: m.latitude! + offsetLat,
+            plotLng: m.longitude! + offsetLng,
+          };
+        }
+
+        return {
+          ...m,
+          plotLat: m.latitude!,
+          plotLng: m.longitude!,
+        };
+      });
   }, [filteredMembers]);
 
+  // Total sequential route distance in kilometers
+  const totalRouteDistanceKm = useMemo(() => {
+    if (plannedRouteMemberIds.length === 0) return 0;
+    const ordered = plannedRouteMemberIds
+      .map((id) => enrichedMembers.find((m) => m.memberId === id))
+      .filter((m): m is EnrichedCareCellMembership => !!m && typeof m.latitude === 'number' && typeof m.longitude === 'number');
+
+    if (ordered.length === 0) return 0;
+
+    let total = 0;
+    let prevLat = resolvedCenter.latitude;
+    let prevLng = resolvedCenter.longitude;
+
+    for (const stop of ordered) {
+      total += calculateDistanceKm(prevLat, prevLng, stop.latitude!, stop.longitude!);
+      prevLat = stop.latitude!;
+      prevLng = stop.longitude!;
+    }
+    return Math.round(total * 10) / 10;
+  }, [plannedRouteMemberIds, enrichedMembers, resolvedCenter]);
+
   // Navigation: Open Google Maps directions to a single member
-  const handleNavigateToMember = (m: CareCellMembership) => {
+  const handleNavigateToMember = (m: EnrichedCareCellMembership) => {
     if (typeof m.latitude === 'number' && typeof m.longitude === 'number') {
       const lat = m.latitude;
       const lng = m.longitude;
@@ -145,7 +273,7 @@ export default function CareCellMapModal({
         });
       });
     } else if (m.address || m.locality) {
-      const query = encodeURIComponent(`${m.address || ''}, ${m.locality || ''}, Kurnool`);
+      const query = encodeURIComponent(`${m.address || ''}, ${m.locality || ''}, Andhra Pradesh`);
       const url = `https://www.google.com/maps/search/?api=1&query=${query}`;
       Linking.openURL(url).catch(() => {
         Alert.alert('Navigation Error', 'Could not open Google Maps.');
@@ -196,8 +324,8 @@ export default function CareCellMapModal({
     if (plannedRouteMemberIds.length === 0) return;
 
     const routeMembers = plannedRouteMemberIds
-      .map((id) => members.find((m) => m.memberId === id))
-      .filter((m): m is CareCellMembership => !!m && typeof m.latitude === 'number' && typeof m.longitude === 'number');
+      .map((id) => enrichedMembers.find((m) => m.memberId === id))
+      .filter((m): m is EnrichedCareCellMembership => !!m && typeof m.latitude === 'number' && typeof m.longitude === 'number');
 
     if (routeMembers.length === 0) {
       Alert.alert('Missing Coordinates', 'The selected members for the visit route do not have GPS coordinates.');
@@ -225,16 +353,23 @@ export default function CareCellMapModal({
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        translucent
+        backgroundColor="transparent"
+      />
       <View style={styles.container}>
-        {/* Top Header Bar */}
-        <View style={styles.header}>
+        {/* Top Header Bar with Safe Top Inset */}
+        <View style={[styles.header, { paddingTop: topHeaderInset }]}>
           <TouchableOpacity style={styles.circularBackBtn} onPress={onClose} activeOpacity={0.8}>
             <ArrowLeft size={20} color={primaryText} strokeWidth={2.2} />
           </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.headerTitle}>{cell.name}</Text>
+          <View style={{ flex: 1, paddingRight: 8 }}>
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              {cell.name}
+            </Text>
             <Text style={styles.headerSub} numberOfLines={1}>
-              {cell.cellCode} · {cell.location || 'Kurnool'} · {members.length} Members
+              {cell.cellCode} · {cell.location || 'Local Area'} · {members.length} Members
             </Text>
           </View>
           <View style={styles.viewModeToggleRow}>
@@ -322,74 +457,134 @@ export default function CareCellMapModal({
               ref={mapRef}
               provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
               style={StyleSheet.absoluteFillObject}
-              initialRegion={centerCoord}
+              initialRegion={initialRegion}
               showsUserLocation={true}
               showsMyLocationButton={true}
               showsCompass={true}
             >
-              {/* Care Cell Meeting Marker */}
-              {cell.meetingLatitude && cell.meetingLongitude ? (
+              {/* Care Cell Meeting Marker: Amber Center Lollipop */}
+              {resolvedCenter.latitude && resolvedCenter.longitude ? (
                 <Marker
-                  coordinate={{
-                    latitude: cell.meetingLatitude,
-                    longitude: cell.meetingLongitude,
-                  }}
+                  coordinate={resolvedCenter}
+                  anchor={{ x: 0.5, y: 1.0 }}
                   title={cell.name}
-                  description={`Care Cell Center: ${cell.meetingLocation || cell.location}`}
-                  pinColor="#D97706"
+                  description={`Care Cell Center: ${cell.meetingLocation || cell.location || 'Local'}`}
                 >
-                  <View style={styles.churchMarkerBubble}>
-                    <MapPin size={16} color="#FFFFFF" />
+                  <View style={styles.lollipopMarkerWrap}>
+                    <View style={[styles.lollipopHead, { borderColor: '#D97706', borderWidth: 2.5 }]}>
+                      <View style={[styles.lollipopAvatarFallback, { backgroundColor: '#D97706' }]}>
+                        <Users size={18} color="#FFFFFF" />
+                      </View>
+                    </View>
+                    <View style={styles.lollipopStemWrap}>
+                      <View style={[styles.lollipopStem, { backgroundColor: '#D97706' }]} />
+                      <View style={[styles.lollipopTipDot, { backgroundColor: '#D97706' }]} />
+                    </View>
                   </View>
                 </Marker>
               ) : null}
 
-              {/* Member Residence Markers */}
-              {membersWithCoords.map((m, idx) => {
+              {/* Member Residence Lollipop Markers with Profile Pictures */}
+              {membersToRenderOnMap.map((m) => {
                 const isInactive = inactiveMemberIdSet.has(m.memberId);
                 const isSelected = selectedMember?.memberId === m.memberId;
                 const inRouteIndex = plannedRouteMemberIds.indexOf(m.memberId);
+
+                // Status Ring & Stem Color
+                const statusColor = isInactive ? '#EF4444' : '#10B981';
 
                 return (
                   <Marker
                     key={m.id || m.memberId}
                     coordinate={{
-                      latitude: m.latitude!,
-                      longitude: m.longitude!,
+                      latitude: m.plotLat,
+                      longitude: m.plotLng,
                     }}
+                    anchor={{ x: 0.5, y: 1.0 }}
                     onPress={() => setSelectedMember(m)}
+                    tracksViewChanges={false}
                   >
-                    <View
-                      style={[
-                        styles.memberMarkerBubble,
-                        isInactive ? styles.memberMarkerAlert : styles.memberMarkerNormal,
-                        isSelected && styles.memberMarkerSelected,
-                      ]}
-                    >
-                      {inRouteIndex >= 0 ? (
-                        <View style={styles.routeOrderBadge}>
-                          <Text style={styles.routeOrderBadgeTxt}>{inRouteIndex + 1}</Text>
-                        </View>
-                      ) : (
-                        <Text style={styles.markerInitialsTxt}>
-                          {m.memberName.slice(0, 2).toUpperCase()}
-                        </Text>
-                      )}
+                    <View style={styles.lollipopMarkerWrap}>
+                      {/* Lollipop Head: Circular Avatar Container */}
+                      <View
+                        style={[
+                          styles.lollipopHead,
+                          {
+                            borderColor: isSelected ? '#F59E0B' : statusColor,
+                            borderWidth: isSelected ? 3.5 : 2.5,
+                            transform: [{ scale: isSelected ? 1.15 : 1 }],
+                          },
+                        ]}
+                      >
+                        {m.memberPhoto ? (
+                          <Image
+                            source={{ uri: m.memberPhoto }}
+                            style={styles.lollipopAvatarImg}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View
+                            style={[
+                              styles.lollipopAvatarFallback,
+                              { backgroundColor: isInactive ? '#EF4444' : '#1E293B' },
+                            ]}
+                          >
+                            <Text style={styles.lollipopInitialsTxt}>
+                              {(m.memberName || 'M').slice(0, 2).toUpperCase()}
+                            </Text>
+                          </View>
+                        )}
+
+                        {/* Route Order Badge or Alert Icon */}
+                        {inRouteIndex >= 0 ? (
+                          <View style={styles.lollipopRouteBadge}>
+                            <Text style={styles.lollipopRouteBadgeTxt}>{inRouteIndex + 1}</Text>
+                          </View>
+                        ) : isInactive ? (
+                          <View style={styles.lollipopAlertBadge}>
+                            <AlertTriangle size={8} color="#FFFFFF" strokeWidth={3} />
+                          </View>
+                        ) : null}
+                      </View>
+
+                      {/* Lollipop Stem / Needle pointing directly to exact location */}
+                      <View style={styles.lollipopStemWrap}>
+                        <View
+                          style={[
+                            styles.lollipopStem,
+                            { backgroundColor: isSelected ? '#F59E0B' : statusColor },
+                          ]}
+                        />
+                        <View
+                          style={[
+                            styles.lollipopTipDot,
+                            { backgroundColor: isSelected ? '#F59E0B' : statusColor },
+                          ]}
+                        />
+                      </View>
                     </View>
                   </Marker>
                 );
               })}
             </MapView>
 
+            {/* Loading Indicator Overlay */}
+            {loadingLocations && (
+              <View style={styles.mapLoadingOverlay}>
+                <ActivityIndicator size="small" color="#2563EB" />
+                <Text style={styles.mapLoadingTxt}>Locating member residences in {cell.location || 'cell'}...</Text>
+              </View>
+            )}
+
             {/* Floating Top Route Summary Bar */}
             {plannedRouteMemberIds.length > 0 && (
               <View style={styles.floatingRouteBar}>
-                <View style={{ flex: 1 }}>
+                <View style={{ flex: 1, marginRight: 8 }}>
                   <Text style={styles.floatingRouteTitle}>
-                    {plannedRouteMemberIds.length} House Visits Planned
+                    {plannedRouteMemberIds.length} House Visits Planned ({totalRouteDistanceKm} km)
                   </Text>
-                  <Text style={styles.floatingRouteSub}>
-                    Sequential pastoral route optimized for nearby houses
+                  <Text style={styles.floatingRouteSub} numberOfLines={1}>
+                    Sequential pastoral route starting from {cell.name}
                   </Text>
                 </View>
                 <TouchableOpacity
@@ -413,7 +608,7 @@ export default function CareCellMapModal({
                     ) : (
                       <View style={styles.selectedMemberAvatarFallback}>
                         <Text style={styles.selectedMemberAvatarInitials}>
-                          {selectedMember.memberName.slice(0, 2).toUpperCase()}
+                          {(selectedMember.memberName || 'M').slice(0, 2).toUpperCase()}
                         </Text>
                       </View>
                     )}
@@ -421,13 +616,21 @@ export default function CareCellMapModal({
                       <Text style={styles.selectedMemberName} numberOfLines={1}>
                         {selectedMember.memberName}
                       </Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 3 }}>
                         {selectedMember.locality ? (
                           <View style={styles.localityTag}>
                             <MapPin size={10} color="#1A2D5A" />
                             <Text style={styles.localityTagTxt}>{selectedMember.locality}</Text>
                           </View>
                         ) : null}
+
+                        {selectedMember.distanceKm != null ? (
+                          <View style={styles.distanceTag}>
+                            <Compass size={10} color="#2563EB" />
+                            <Text style={styles.distanceTagTxt}>{selectedMember.distanceKm} km away</Text>
+                          </View>
+                        ) : null}
+
                         {inactiveMemberIdSet.has(selectedMember.memberId) && (
                           <View style={styles.needsVisitTag}>
                             <Text style={styles.needsVisitTagTxt}>Needs Visit</Text>
@@ -521,24 +724,39 @@ export default function CareCellMapModal({
             data={filteredMembers}
             keyExtractor={(item) => item.id || item.memberId}
             contentContainerStyle={styles.listContent}
-            renderItem={({ item, index }) => {
+            renderItem={({ item }) => {
               const isInactive = inactiveMemberIdSet.has(item.memberId);
               const inRoute = plannedRouteMemberIds.includes(item.memberId);
 
               return (
                 <View style={styles.memberListItem}>
                   <View style={styles.listItemTopRow}>
-                    <View style={styles.itemAvatarFallback}>
-                      <Text style={styles.itemAvatarInitials}>{item.memberName.slice(0, 2).toUpperCase()}</Text>
-                    </View>
+                    {item.memberPhoto ? (
+                      <Image source={{ uri: item.memberPhoto }} style={styles.listAvatarImg} />
+                    ) : (
+                      <View style={styles.itemAvatarFallback}>
+                        <Text style={styles.itemAvatarInitials}>
+                          {(item.memberName || 'M').slice(0, 2).toUpperCase()}
+                        </Text>
+                      </View>
+                    )}
                     <View style={{ flex: 1 }}>
                       <Text style={styles.itemMemberName}>{item.memberName}</Text>
-                      {item.locality ? (
-                        <View style={styles.localityTag}>
-                          <MapPin size={10} color="#1A2D5A" />
-                          <Text style={styles.localityTagTxt}>{item.locality}</Text>
-                        </View>
-                      ) : null}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 2 }}>
+                        {item.locality ? (
+                          <View style={styles.localityTag}>
+                            <MapPin size={10} color="#1A2D5A" />
+                            <Text style={styles.localityTagTxt}>{item.locality}</Text>
+                          </View>
+                        ) : null}
+
+                        {item.distanceKm != null ? (
+                          <View style={styles.distanceTag}>
+                            <Compass size={10} color="#2563EB" />
+                            <Text style={styles.distanceTagTxt}>{item.distanceKm} km away</Text>
+                          </View>
+                        ) : null}
+                      </View>
                     </View>
                     {isInactive && (
                       <View style={styles.needsVisitTag}>
@@ -622,7 +840,6 @@ const styles = createAdminThemedStyles({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 48 : 16,
     paddingBottom: 12,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
@@ -660,9 +877,6 @@ const styles = createAdminThemedStyles({
     paddingVertical: 6,
     borderRadius: 8,
   },
-  modeToggleBtnActive: {
-    backgroundColor: '#1A2D5A',
-  },
   filterBar: {
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
@@ -683,10 +897,6 @@ const styles = createAdminThemedStyles({
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
-  filterPillActive: {
-    backgroundColor: '#1A2D5A',
-    borderColor: '#1A2D5A',
-  },
   filterPillAlertActive: {
     backgroundColor: '#DC2626',
     borderColor: '#DC2626',
@@ -696,72 +906,116 @@ const styles = createAdminThemedStyles({
     fontWeight: '600',
     color: '#64748B',
   },
-  filterPillTxtActive: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
   mapContainer: {
     flex: 1,
   },
-  churchMarkerBubble: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#D97706',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    justifyContent: 'center',
+  mapLoadingOverlay: {
+    position: 'absolute',
+    top: 14,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
     elevation: 4,
   },
-  memberMarkerBubble: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#1A2D5A',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    justifyContent: 'center',
+  mapLoadingTxt: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+
+  /* ── Lollipop Marker Styles (User Request: Profile pic with lollipop symbol) ── */
+  lollipopMarkerWrap: {
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lollipopHead: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 6,
   },
-  memberMarkerNormal: {
-    backgroundColor: '#1A2D5A',
+  lollipopAvatarImg: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
   },
-  memberMarkerAlert: {
-    backgroundColor: '#DC2626',
+  lollipopAvatarFallback: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  memberMarkerSelected: {
-    borderColor: '#F59E0B',
-    borderWidth: 3,
-    transform: [{ scale: 1.2 }],
+  lollipopInitialsTxt: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: -0.2,
   },
-  markerInitialsTxt: {
+  lollipopRouteBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#059669',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  lollipopRouteBadgeTxt: {
+    color: '#FFFFFF',
     fontSize: 10,
     fontWeight: '800',
-    color: '#FFFFFF',
   },
-  routeOrderBadge: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 15,
-    backgroundColor: '#059669',
+  lollipopAlertBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#DC2626',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
     justifyContent: 'center',
+  },
+  lollipopStemWrap: {
     alignItems: 'center',
   },
-  routeOrderBadgeTxt: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#FFFFFF',
+  lollipopStem: {
+    width: 3.5,
+    height: 13,
+    borderRadius: 1.75,
   },
+  lollipopTipDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginTop: -1,
+  },
+
+  /* Floating Route Summary Bar */
   floatingRouteBar: {
     position: 'absolute',
     top: 12,
@@ -801,6 +1055,8 @@ const styles = createAdminThemedStyles({
     fontWeight: '700',
     color: '#FFFFFF',
   },
+
+  /* Selected Member Detail Callout Card */
   selectedMemberCard: {
     position: 'absolute',
     bottom: 20,
@@ -823,14 +1079,14 @@ const styles = createAdminThemedStyles({
     justifyContent: 'space-between',
   },
   selectedMemberAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
   },
   selectedMemberAvatarFallback: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     backgroundColor: '#EFF6FF',
     justifyContent: 'center',
     alignItems: 'center',
@@ -860,6 +1116,22 @@ const styles = createAdminThemedStyles({
     fontSize: 10.5,
     fontWeight: '700',
     color: '#1A2D5A',
+  },
+  distanceTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    gap: 3,
+  },
+  distanceTagTxt: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#15803D',
   },
   needsVisitTag: {
     backgroundColor: '#FEE2E2',
@@ -943,6 +1215,8 @@ const styles = createAdminThemedStyles({
   actionRouteBtnTxtActive: {
     color: '#FFFFFF',
   },
+
+  /* List View Mode */
   listContent: {
     padding: 14,
     paddingBottom: 30,
@@ -960,10 +1234,15 @@ const styles = createAdminThemedStyles({
     alignItems: 'center',
     gap: 10,
   },
+  listAvatarImg: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+  },
   itemAvatarFallback: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: '#EFF6FF',
     justifyContent: 'center',
     alignItems: 'center',
@@ -1057,4 +1336,3 @@ const styles = createAdminThemedStyles({
     color: '#FFFFFF',
   },
 });
-
