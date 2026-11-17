@@ -680,12 +680,9 @@ export default function VolunteerScreen({ navigation, route }: any) {
                 },
               ]}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Sparkles size={16} color="#059669" />
-                <Text style={[styles.bannerTitle, { color: isDark ? '#6EE7B7' : '#047857' }]}>
-                  Serve the Lord with Gladness
-                </Text>
-              </View>
+              <Text style={[styles.bannerTitle, { color: isDark ? '#6EE7B7' : '#047857' }]}>
+                Serve the Lord with Gladness
+              </Text>
               <Text
                 style={[
                   styles.bannerQuote,
