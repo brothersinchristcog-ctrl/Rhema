@@ -11,6 +11,7 @@ class NotificationService {
   private notificationHandlerConfigured = false;
   private lastLiveNotifKey = '';
   private lastLiveNotifAt = 0;
+  private recentSystemNotifs = new Map<string, number>();
 
   messaging() {
     return messaging();
@@ -67,31 +68,72 @@ class NotificationService {
         (await FirestoreService.getChurchId().catch(() => null)) ||
         'rhema';
 
-      // Save token to root users document, and only update members/{uid} if that member profile already exists
-      // (avoids creating a duplicate nameless stub doc in members/ for unapproved or phone-keyed users)
-      const memberRef = firestore().collection('Rhema Church').doc(targetChurchId).collection('members').doc(user.uid);
-      const memberSnap = await memberRef.get().catch(() => null);
-      const memberExists = memberSnap && (typeof (memberSnap as any).exists === 'function' ? (memberSnap as any).exists() : Boolean(memberSnap.exists));
+      // Save token to root users document, and update any EXISTING matching member doc(s) in members/
+      // (using update on existing docs only, so it never creates a duplicate nameless stub doc)
+      const membersCol = firestore().collection('Rhema Church').doc(targetChurchId).collection('members');
+      const tokenUpdatePayload = {
+        fcmToken: token,
+        fcmTokens: firestore.FieldValue.arrayUnion(token),
+        lastTokenUpdate: firestore.FieldValue.serverTimestamp(),
+        platform: Platform.OS,
+      };
+
+      const matchedMemberRefs = new Map<string, any>();
+
+      const directRef = membersCol.doc(user.uid);
+      const directSnap = await directRef.get().catch(() => null);
+      const directExists =
+        directSnap &&
+        (typeof (directSnap as any).exists === 'function'
+          ? (directSnap as any).exists()
+          : Boolean(directSnap.exists));
+      if (directExists) {
+        matchedMemberRefs.set(directRef.path, directRef);
+      }
+
+      try {
+        const authUidSnap = await membersCol.where('authUid', '==', user.uid).get();
+        authUidSnap.forEach((d: any) => matchedMemberRefs.set(d.ref.path, d.ref));
+      } catch (_) {}
+
+      const rawPhone = String(user.phoneNumber || globalUser?.phone || '').trim();
+      const digits10 = rawPhone.replace(/\D/g, '').slice(-10);
+      if (digits10.length === 10) {
+        const phoneCandidates = Array.from(new Set([rawPhone, `+91${digits10}`, digits10].filter(Boolean)));
+        for (const pVal of phoneCandidates) {
+          try {
+            const pDocRef = membersCol.doc(pVal);
+            const pDocSnap = await pDocRef.get().catch(() => null);
+            const pDocExists =
+              pDocSnap &&
+              (typeof (pDocSnap as any).exists === 'function'
+                ? (pDocSnap as any).exists()
+                : Boolean(pDocSnap.exists));
+            if (pDocExists) {
+              matchedMemberRefs.set(pDocRef.path, pDocRef);
+            }
+          } catch (_) {}
+          try {
+            const pQuerySnap = await membersCol.where('phone', '==', pVal).get();
+            pQuerySnap.forEach((d: any) => matchedMemberRefs.set(d.ref.path, d.ref));
+          } catch (_) {}
+        }
+      }
 
       await Promise.allSettled([
-        ...(memberExists
-          ? [
-              memberRef.set(
-                {
-                  fcmToken: token,
-                  lastTokenUpdate: firestore.FieldValue.serverTimestamp(),
-                  platform: Platform.OS,
-                },
-                { merge: true }
-              ),
-            ]
-          : []),
-        firestore().collection('users').doc(user.uid).set({
-          fcmToken: token,
-          primaryChurchId: targetChurchId,
-          lastTokenUpdate: firestore.FieldValue.serverTimestamp(),
-          platform: Platform.OS,
-        }, { merge: true }),
+        ...Array.from(matchedMemberRefs.values()).map((ref) =>
+          ref.set(tokenUpdatePayload, { merge: true })
+        ),
+        firestore()
+          .collection('users')
+          .doc(user.uid)
+          .set(
+            {
+              ...tokenUpdatePayload,
+              primaryChurchId: targetChurchId,
+            },
+            { merge: true }
+          ),
       ]);
 
       console.log('✨ Token saved successfully to member profile!');
@@ -219,6 +261,63 @@ class NotificationService {
       return true;
     } catch (err) {
       console.error('❌ [NotificationService] Failed to post live notification to panel:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Posts a high-priority system tray notification banner (with sound & vibration on 'church_alerts')
+   * when the app is in the foreground or via real-time broadcast listener, with strict deduplication.
+   */
+  async displaySystemPushNotification(
+    title: string,
+    body: string,
+    data?: Record<string, any>
+  ): Promise<boolean> {
+    try {
+      await this.setupCategoriesAndChannels();
+      const cleanTitle = (title || 'Rhema Church Update').trim();
+      const cleanBody = (body || '').trim();
+      if (!cleanTitle && !cleanBody) return false;
+
+      const rawId = String(
+        data?.postId ||
+          data?.opportunityId ||
+          data?.applicationId ||
+          data?.requestId ||
+          data?.eventId ||
+          data?.referenceId ||
+          data?.id ||
+          ''
+      )
+        .replace(/^vol_post_/, '')
+        .trim();
+      const dedupKey = `${data?.type || 'general'}|${rawId}|${cleanTitle}`;
+      const now = Date.now();
+      const prevAt = this.recentSystemNotifs.get(dedupKey) || 0;
+      if (now - prevAt < 20000) {
+        return false;
+      }
+      this.recentSystemNotifs.set(dedupKey, now);
+
+      const identifier = rawId
+        ? `rhema_push_${data?.type || 'notif'}_${rawId}`
+        : `rhema_push_${now}`;
+
+      await Notifications.scheduleNotificationAsync({
+        identifier,
+        content: {
+          title: cleanTitle,
+          body: cleanBody,
+          data: data || {},
+          sound: 'default',
+          autoDismiss: true,
+        },
+        trigger: Platform.OS === 'android' ? { channelId: 'church_alerts' } : null,
+      });
+      return true;
+    } catch (err) {
+      console.warn('⚠️ [NotificationService] displaySystemPushNotification notice:', err);
       return false;
     }
   }
@@ -482,6 +581,12 @@ class NotificationService {
           } else {
             nav.navigate('Volunteer');
           }
+          break;
+        }
+        case 'volunteer_post_new': {
+          const rawPostId = String(rawData.postId || rawData.referenceId || id || '').replace(/^vol_post_/, '');
+          console.log('🤝 [NotificationService] Routing to General Volunteer Call Post:', { postId: rawPostId });
+          nav.navigate('Volunteer', { postId: rawPostId });
           break;
         }
         case 'job_opportunity_new': {

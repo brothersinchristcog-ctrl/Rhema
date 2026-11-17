@@ -748,19 +748,28 @@ export default function AdminEventEditor() {
           const churchId = await FirestoreService.getChurchId();
           const formatDisplayDate = (d: string) => {
             try {
+              if (!d) return '';
               const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
               const parts = d.split('-');
-              if (parts.length === 3 && parts[0].length === 4) {
-                return `${parseInt(parts[2], 10)} ${months[parseInt(parts[1], 10) - 1]} ${parts[0]}`;
+              if (parts.length === 3) {
+                if (parts[0].length === 4) {
+                  return `${parseInt(parts[2], 10)} ${months[parseInt(parts[1], 10) - 1]} ${parts[0]}`;
+                } else if (parts[2].length === 4) {
+                  return `${parseInt(parts[0], 10)} ${months[parseInt(parts[1], 10) - 1]} ${parts[2]}`;
+                }
               }
               return d;
             } catch { return d; }
           };
           const displayDate = formatDisplayDate(sfDate);
           const displayEndDate = formatDisplayDate(sfEndDate);
+          const isSameDay = !sfEndDate || sfDate === sfEndDate || !displayEndDate || displayDate === displayEndDate;
+          const eventDateLabel = isSameDay ? displayDate : `${displayDate} - ${displayEndDate}`;
+          const datePhrase = isSameDay ? `on ${displayDate}` : `from ${displayDate} to ${displayEndDate}`;
+
           await FirestoreService.createNotificationBroadcast({
-            title: `📅 New Event: ${titleEn}`,
-            content: `Join us for "${titleEn}" from ${displayDate} to ${displayEndDate} at ${startTime}${venueEn ? ` · ${venueEn}` : ''}. ${descEn ? descEn.substring(0, 100) : ''}`,
+            title: `🗓️ New Event: ${titleEn}`,
+            content: `Join us for "${titleEn}" ${datePhrase}${startTime ? ` at ${startTime}` : ''}${venueEn ? ` · ${venueEn}` : ''}. ${descEn ? descEn.substring(0, 100) : ''}`.trim(),
             type: 'event',
             eventType: eventType,
             eventId: finalEventId,

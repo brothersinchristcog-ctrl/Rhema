@@ -1006,33 +1006,30 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
             {/* ── TIME COMMITMENT (Quick Presets + Intuitive Day & Time Selector) ── */}
             <View style={[styles.fGroup, { marginTop: 6 }]}>
               <View style={styles.fieldHeaderBetween}>
-                <View>
-                  <Text style={[styles.fLabel, { color: primaryText, marginBottom: 2 }]}>
-                    Schedule Timing
-                  </Text>
-                  <Text style={{ fontSize: 11.5, color: secondaryText }}>
-                    Choose a quick preset or customize days & hours below
-                  </Text>
-                </View>
+                <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0, flexShrink: 1, marginRight: 8 }]}>
+                  Schedule Timing
+                </Text>
                 <TouchableOpacity
                   onPress={handleAddScheduleSlot}
                   style={[
                     styles.smallAddPill,
                     {
-                      borderColor: isDark ? '#3B82F6' : '#1a2d5a',
-                      backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF',
-                      paddingHorizontal: 10,
-                      paddingVertical: 5,
+                      borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+                      backgroundColor: isDark ? '#27272A' : '#F1F5F9',
+                      flexShrink: 0,
                     },
                   ]}
                   activeOpacity={0.75}
                 >
-                  <Plus size={12} color={isDark ? '#93C5FD' : '#1a2d5a'} strokeWidth={2.5} />
-                  <Text style={[styles.smallAddPillTxt, { color: isDark ? '#93C5FD' : '#1a2d5a' }]}>
-                    Add Time Slot
+                  <Plus size={11} color={isDark ? '#FFFFFF' : '#1a2d5a'} strokeWidth={2.5} />
+                  <Text style={[styles.smallAddPillTxt, { color: isDark ? '#FFFFFF' : '#1a2d5a' }]}>
+                    Add
                   </Text>
                 </TouchableOpacity>
               </View>
+              <Text style={{ fontSize: 11.5, color: secondaryText, marginBottom: 4 }}>
+                Choose a quick preset or customize days & hours below
+              </Text>
 
               {/* 1-Tap Quick Presets Row */}
               <ScrollView

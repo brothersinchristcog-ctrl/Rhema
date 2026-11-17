@@ -253,8 +253,6 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
           styles.headerRow,
           {
             paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 44 : 28) + 8,
-            borderBottomWidth: 1,
-            borderBottomColor: isDark ? '#1F242D' : '#E2E8F0',
             backgroundColor: isDark ? '#000000' : '#FFFFFF',
           },
         ]}
@@ -287,7 +285,7 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Opportunity Banner Image (if uploaded) */}
         {opportunity.thumbnailUrl ? (
-          <View style={[styles.detailBannerWrap, { borderColor: dividerColor }]}>
+          <View style={styles.detailBannerWrap}>
             <Image
               source={{ uri: opportunity.thumbnailUrl }}
               style={styles.detailBannerImg}
@@ -296,141 +294,74 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
           </View>
         ) : null}
 
-        {/* Clean Title & Role Header Block (no card box) */}
+        {/* Clean Title & Role Header Block (plain text, no boxes or lines) */}
         <View style={styles.heroHeaderBlock}>
-          <View style={styles.badgeRow}>
-            <View style={[styles.categoryPill, { backgroundColor: isDark ? '#172554' : '#EFF6FF' }]}>
-              <Text style={[styles.categoryPillText, { color: isDark ? '#93C5FD' : '#1D4ED8' }]}>
-                {(opportunity.categoryName || 'Ministry Role').toUpperCase()}
-              </Text>
-            </View>
-            <View style={[styles.typeBadge, { backgroundColor: isPaid ? '#FEF3C7' : (isDark ? 'rgba(16, 185, 129, 0.2)' : '#E1F5EE') }]}>
-              <Text style={[styles.typeBadgeText, { color: isPaid ? '#B45309' : (isDark ? '#34D399' : Colors.success) }]}>
-                {opportunity.opportunityType.replace(/_/g, ' ').toUpperCase()}
-              </Text>
-            </View>
-          </View>
-
           <Text style={[styles.title, { color: headingColor }]}>{opportunity.title}</Text>
+          <Text style={[styles.subtitlePlainText, { color: accentColor }]}>
+            {opportunity.categoryName || 'Ministry Role'}
+            {opportunity.opportunityType ? ` • ${opportunity.opportunityType.replace(/_/g, ' ')}` : ''}
+          </Text>
         </View>
 
-        {/* Application Status Callout (if applied) */}
+        {/* Application Status Notice (if applied) */}
         {userApplication ? (
-          <View
-            style={[
-              styles.statusCallout,
-              {
-                backgroundColor: isDark ? '#111827' : '#F8FAFC',
-                borderLeftColor:
-                  userApplication.status === 'selected'
-                    ? '#10B981'
-                    : userApplication.status === 'meeting_scheduled'
-                    ? '#F59E0B'
-                    : userApplication.status === 'under_review'
-                    ? '#3B82F6'
-                    : userApplication.status === 'rejected'
-                    ? '#EF4444'
-                    : accentColor,
-              },
-            ]}
-          >
-            <View style={styles.statusCalloutHeader}>
-              <Text style={[styles.statusCalloutTitle, { color: headingColor }]}>
-                Your Application Status
-              </Text>
-              <View
-                style={[
-                  styles.typeBadge,
-                  {
-                    backgroundColor:
-                      userApplication.status === 'selected'
-                        ? (isDark ? 'rgba(16, 185, 129, 0.25)' : '#D1FAE5')
-                        : userApplication.status === 'meeting_scheduled'
-                        ? (isDark ? 'rgba(245, 158, 11, 0.25)' : '#FEF3C7')
-                        : userApplication.status === 'under_review'
-                        ? (isDark ? 'rgba(59, 130, 246, 0.25)' : '#DBEAFE')
-                        : userApplication.status === 'rejected'
-                        ? (isDark ? 'rgba(239, 68, 68, 0.25)' : '#FEE2E2')
-                        : (isDark ? 'rgba(148, 163, 184, 0.25)' : '#E2E8F0'),
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.typeBadgeText,
-                    {
-                      color:
-                        userApplication.status === 'selected'
-                          ? (isDark ? '#34D399' : '#059669')
-                          : userApplication.status === 'meeting_scheduled'
-                          ? (isDark ? '#FBBF24' : '#B45309')
-                          : userApplication.status === 'under_review'
-                          ? (isDark ? '#93C5FD' : '#2563EB')
-                          : userApplication.status === 'rejected'
-                          ? (isDark ? '#FCA5A5' : '#DC2626')
-                          : (isDark ? '#CBD5E1' : '#475569'),
-                    },
-                  ]}
-                >
-                  {userApplication.status.replace(/_/g, ' ').toUpperCase()}
-                </Text>
-              </View>
-            </View>
+          <View style={styles.detailSection}>
+            <Text style={[styles.sectionHeading, { color: headingColor }]}>
+              Your Application Status ({userApplication.status.replace(/_/g, ' ').toUpperCase()})
+            </Text>
 
             {userApplication.status === 'meeting_scheduled' ? (
-              <View style={{ marginTop: 6 }}>
-                <Text style={{ fontWeight: '700', color: isDark ? '#FBBF24' : '#B45309', fontSize: 13.5, marginBottom: 4 }}>
-                  📅 Ministry Interview Scheduled
+              <View style={{ marginTop: 2 }}>
+                <Text style={[styles.sectionDescription, { color: isDark ? '#FBBF24' : '#B45309', fontWeight: '600' }]}>
+                  Ministry Interview Scheduled
                 </Text>
                 {userApplication.meetingDate ? (
-                  <Text style={{ color: bodyCopyColor, fontSize: 13.5, marginTop: 2 }}>
-                    Date: <Text style={{ fontWeight: '600', color: headingColor }}>{userApplication.meetingDate}</Text>
+                  <Text style={[styles.sectionDescription, { color: bodyCopyColor, marginTop: 2 }]}>
+                    Date: {userApplication.meetingDate}
                   </Text>
                 ) : null}
                 {userApplication.meetingTime ? (
-                  <Text style={{ color: bodyCopyColor, fontSize: 13.5, marginTop: 2 }}>
-                    Time: <Text style={{ fontWeight: '600', color: headingColor }}>{userApplication.meetingTime}</Text>
+                  <Text style={[styles.sectionDescription, { color: bodyCopyColor, marginTop: 2 }]}>
+                    Time: {userApplication.meetingTime}
                   </Text>
                 ) : null}
                 {userApplication.meetingLocation ? (
-                  <Text style={{ color: bodyCopyColor, fontSize: 13.5, marginTop: 2 }}>
-                    Location / Link: <Text style={{ fontWeight: '600', color: headingColor }}>{userApplication.meetingLocation}</Text>
+                  <Text style={[styles.sectionDescription, { color: bodyCopyColor, marginTop: 2 }]}>
+                    Location / Link: {userApplication.meetingLocation}
                   </Text>
                 ) : null}
                 {userApplication.meetingNotes ? (
-                  <Text style={{ color: theme.textSecondary, fontSize: 13, marginTop: 4, fontStyle: 'italic' }}>
+                  <Text style={[styles.sectionDescription, { color: theme.textSecondary, marginTop: 4, fontStyle: 'italic' }]}>
                     "{userApplication.meetingNotes}"
                   </Text>
                 ) : null}
               </View>
             ) : userApplication.status === 'selected' ? (
-              <Text style={{ color: isDark ? '#34D399' : '#059669', fontSize: 13.5, lineHeight: 20, marginTop: 4 }}>
-                🎉 Congratulations! You have been appointed to serve in this ministry. A ministry leader will connect with you soon.
+              <Text style={[styles.sectionDescription, { color: isDark ? '#34D399' : '#059669' }]}>
+                Congratulations! You have been appointed to serve in this ministry. A ministry leader will connect with you soon.
               </Text>
             ) : userApplication.status === 'under_review' ? (
-              <Text style={{ color: bodyCopyColor, fontSize: 13.5, lineHeight: 20, marginTop: 4 }}>
+              <Text style={[styles.sectionDescription, { color: bodyCopyColor }]}>
                 Your calling and application are currently being prayerfully reviewed by ministry leaders.
               </Text>
             ) : userApplication.status === 'rejected' ? (
-              <View style={{ marginTop: 4 }}>
-                <Text style={{ color: isDark ? '#FCA5A5' : '#DC2626', fontSize: 13.5, lineHeight: 20 }}>
+              <View>
+                <Text style={[styles.sectionDescription, { color: isDark ? '#FCA5A5' : '#DC2626' }]}>
                   Thank you for your heart to serve. This application has not been selected at this time.
                 </Text>
                 {userApplication.adminNotes ? (
-                  <Text style={{ color: theme.textSecondary, fontSize: 12.5, marginTop: 4, fontStyle: 'italic' }}>
+                  <Text style={[styles.sectionDescription, { color: theme.textSecondary, marginTop: 4, fontStyle: 'italic' }]}>
                     Leader Note: {userApplication.adminNotes}
                   </Text>
                 ) : null}
               </View>
             ) : (
-              <Text style={{ color: bodyCopyColor, fontSize: 13.5, lineHeight: 20, marginTop: 4 }}>
+              <Text style={[styles.sectionDescription, { color: bodyCopyColor }]}>
                 Application received. You will receive notifications as leaders review your calling.
               </Text>
             )}
           </View>
         ) : null}
-
-        <View style={[styles.sectionDivider, { backgroundColor: dividerColor }]} />
 
         {/* 1. Ministry Overview */}
         <View style={styles.detailSection}>
@@ -442,113 +373,70 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
 
         {/* 2. Responsibilities */}
         {opportunity.responsibilities && opportunity.responsibilities.length > 0 ? (
-          <>
-            <View style={[styles.sectionDivider, { backgroundColor: dividerColor }]} />
-            <View style={styles.detailSection}>
-              <Text style={[styles.sectionHeading, { color: headingColor }]}>Responsibilities</Text>
-              {opportunity.responsibilities.map((resp, idx) => (
-                <View key={idx} style={styles.bulletRow}>
-                  <Text style={[styles.bullet, { color: accentColor }]}>•</Text>
-                  <Text style={[styles.bulletText, { color: bodyCopyColor }]}>{resp}</Text>
-                </View>
-              ))}
-            </View>
-          </>
+          <View style={styles.detailSection}>
+            <Text style={[styles.sectionHeading, { color: headingColor }]}>Responsibilities</Text>
+            <Text style={[styles.sectionDescription, { color: bodyCopyColor }]}>
+              {opportunity.responsibilities.join('\n')}
+            </Text>
+          </View>
         ) : null}
 
         {/* 3. Required Skills */}
         {opportunity.requiredSkills && opportunity.requiredSkills.length > 0 ? (
-          <>
-            <View style={[styles.sectionDivider, { backgroundColor: dividerColor }]} />
-            <View style={styles.detailSection}>
-              <Text style={[styles.sectionHeading, { color: headingColor }]}>Required Skills</Text>
-              <View style={styles.chipsWrap}>
-                {opportunity.requiredSkills.map((skill, idx) => (
-                  <View
-                    key={idx}
-                    style={[
-                      styles.skillChip,
-                      {
-                        backgroundColor: isDark ? '#18181B' : '#F8FAFC',
-                        borderColor: dividerColor,
-                      },
-                    ]}
-                  >
-                    <Text style={[styles.skillChipText, { color: headingColor }]}>{skill}</Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-          </>
+          <View style={styles.detailSection}>
+            <Text style={[styles.sectionHeading, { color: headingColor }]}>Required Skills</Text>
+            <Text style={[styles.sectionDescription, { color: bodyCopyColor }]}>
+              {opportunity.requiredSkills.join(', ')}
+            </Text>
+          </View>
         ) : null}
-
-        <View style={[styles.sectionDivider, { backgroundColor: dividerColor }]} />
 
         {/* 4. Location */}
         <View style={styles.detailSection}>
           <Text style={[styles.sectionHeading, { color: headingColor }]}>Location</Text>
-          <View style={styles.metaInlineRow}>
-            <MapPin size={16} color={accentColor} />
-            <Text style={[styles.sectionDescription, { color: bodyCopyColor, flex: 1 }]}>
-              {opportunity.location || 'Rhema Main Campus'}
-            </Text>
-          </View>
+          <Text style={[styles.sectionDescription, { color: bodyCopyColor }]}>
+            {opportunity.location || 'Rhema Main Campus'}
+          </Text>
         </View>
-
-        <View style={[styles.sectionDivider, { backgroundColor: dividerColor }]} />
 
         {/* 5. Time Commitment */}
         <View style={styles.detailSection}>
           <Text style={[styles.sectionHeading, { color: headingColor }]}>Time Commitment</Text>
-          <View style={styles.metaInlineRow}>
-            <Clock size={16} color={accentColor} />
-            <Text style={[styles.sectionDescription, { color: bodyCopyColor, flex: 1 }]}>
-              {opportunity.timeCommitment || 'Flexible schedule'}
-            </Text>
-          </View>
+          <Text style={[styles.sectionDescription, { color: bodyCopyColor }]}>
+            {opportunity.timeCommitment || 'Flexible schedule'}
+          </Text>
         </View>
-
-        <View style={[styles.sectionDivider, { backgroundColor: dividerColor }]} />
 
         {/* 6. Compensation */}
         <View style={styles.detailSection}>
           <Text style={[styles.sectionHeading, { color: headingColor }]}>Compensation</Text>
-          <Text style={[styles.sectionDescription, { color: isPaid ? (isDark ? '#FBBF24' : '#B45309') : bodyCopyColor, fontWeight: isPaid ? '600' : '400' }]}>
+          <Text style={[styles.sectionDescription, { color: bodyCopyColor }]}>
             {formatCompensationSummary()}
           </Text>
         </View>
 
         {/* Optional Application Deadline */}
         {opportunity.applicationDeadline ? (
-          <>
-            <View style={[styles.sectionDivider, { backgroundColor: dividerColor }]} />
-            <View style={styles.detailSection}>
-              <Text style={[styles.sectionHeading, { color: headingColor }]}>Application Deadline</Text>
-              <View style={styles.metaInlineRow}>
-                <Calendar size={16} color={accentColor} />
-                <Text style={[styles.sectionDescription, { color: bodyCopyColor, flex: 1 }]}>
-                  {new Date(
-                    opportunity.applicationDeadline.seconds
-                      ? opportunity.applicationDeadline.seconds * 1000
-                      : opportunity.applicationDeadline
-                  ).toLocaleDateString()}
-                </Text>
-              </View>
-            </View>
-          </>
+          <View style={styles.detailSection}>
+            <Text style={[styles.sectionHeading, { color: headingColor }]}>Application Deadline</Text>
+            <Text style={[styles.sectionDescription, { color: bodyCopyColor }]}>
+              {new Date(
+                opportunity.applicationDeadline.seconds
+                  ? opportunity.applicationDeadline.seconds * 1000
+                  : opportunity.applicationDeadline
+              ).toLocaleDateString()}
+            </Text>
+          </View>
         ) : null}
 
         {/* Optional Additional Instructions */}
         {opportunity.additionalInstructions ? (
-          <>
-            <View style={[styles.sectionDivider, { backgroundColor: dividerColor }]} />
-            <View style={styles.detailSection}>
-              <Text style={[styles.sectionHeading, { color: headingColor }]}>Additional Notes</Text>
-              <Text style={[styles.sectionDescription, { color: bodyCopyColor }]}>
-                {opportunity.additionalInstructions}
-              </Text>
-            </View>
-          </>
+          <View style={styles.detailSection}>
+            <Text style={[styles.sectionHeading, { color: headingColor }]}>Additional Notes</Text>
+            <Text style={[styles.sectionDescription, { color: bodyCopyColor }]}>
+              {opportunity.additionalInstructions}
+            </Text>
+          </View>
         ) : null}
       </ScrollView>
 
@@ -558,7 +446,6 @@ export default function OpportunityDetailScreen({ navigation, route }: Opportuni
           styles.bottomBar,
           {
             backgroundColor: isDark ? '#000000' : '#FFFFFF',
-            borderTopColor: dividerColor,
             paddingBottom: Math.max(insets.bottom, 8) + 8,
           },
         ]}
@@ -776,46 +663,18 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: 'hidden',
     marginBottom: 18,
-    borderWidth: 1,
   },
   detailBannerImg: {
     width: '100%',
     height: 210,
   },
-  heroHeaderBlock: { marginBottom: 16 },
-  badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
-  categoryPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
-  categoryPillText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.4 },
-  typeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
-  typeBadgeText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
+  heroHeaderBlock: { marginBottom: 24 },
   title: { fontSize: 24, fontWeight: '800', lineHeight: 30, letterSpacing: -0.3 },
-  statusCallout: {
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderLeftWidth: 3.5,
-    borderRadius: 8,
-    marginBottom: 16,
-  },
-  statusCalloutHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 4,
-  },
-  statusCalloutTitle: { fontSize: 15, fontWeight: '700' },
-  sectionDivider: { height: 1, marginVertical: 16 },
-  detailSection: { paddingVertical: 2 },
-  sectionHeading: { fontSize: 16, fontWeight: '700', marginBottom: 8, letterSpacing: 0.1 },
+  subtitlePlainText: { fontSize: 14, fontWeight: '600', marginTop: 4, textTransform: 'capitalize' },
+  detailSection: { marginBottom: 22 },
+  sectionHeading: { fontSize: 16, fontWeight: '700', marginBottom: 6, letterSpacing: 0.1 },
   sectionDescription: { fontSize: 15, lineHeight: 23 },
-  metaInlineRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  bulletRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8 },
-  bullet: { fontSize: 16, marginRight: 10, lineHeight: 22, fontWeight: '700' },
-  bulletText: { flex: 1, fontSize: 15, lineHeight: 22 },
-  chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 2 },
-  skillChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, borderWidth: 1 },
-  skillChipText: { fontSize: 13.5, fontWeight: '600' },
-  bottomBar: { paddingHorizontal: 20, paddingTop: 12, borderTopWidth: 1 },
+  bottomBar: { paddingHorizontal: 20, paddingTop: 12 },
   applyBtn: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 14, borderRadius: 999 },
   applyBtnText: { fontSize: 16, fontWeight: '700' },
   appliedBanner: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, paddingVertical: 14 },

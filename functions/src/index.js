@@ -864,10 +864,50 @@ async function handleBroadcastPushDispatch(data, churchIdParam, messageIdParam) 
         console.log(`🛑 Skipping broadcast push for silent document: ${messageIdParam}`);
         return;
     }
-    const title = data.title || 'Church Update';
-    const body = data.content || '';
     const type = data.type || 'general';
+    const body = data.content || '';
+    let title = (data.title || 'Church Update').trim();
+    // Strip bracketed date prefix (e.g. [17-11-2026] or [17 Nov 2026]) so only the calendar icon is shown
+    title = title.replace(/\[\s*[^\]]*\d{4}[^\]]*\]\s*/g, '');
+    title = title.replace(/\[\s*\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}\s*\]\s*/g, '');
+    // Replace the static 📅 emoji (which displays "July 17" in mobile OS fonts) with 🗓️ (clean spiral calendar with no dates)
+    title = title.replace(/📅\s*/g, '🗓️ ');
+    if (type === 'event' && !title.includes('🗓️')) {
+        title = `🗓️ ${title}`;
+    }
     const churchId = churchIdParam || data.targetChurchId || DEFAULT_CHURCH_ID;
+    // Atomic coordination with onVolunteerPostCreated so volunteer_post_new is sent once and never skipped
+    if (type === 'volunteer_post_new' && data.postId) {
+        try {
+            const db = getDb();
+            const postRef = db
+                .collection('Rhema Church')
+                .doc(churchId)
+                .collection('volunteer_posts')
+                .doc(String(data.postId));
+            const nowMs = Date.now();
+            const claimed = await db.runTransaction(async (tx) => {
+                const snap = await tx.get(postRef);
+                if (!snap.exists)
+                    return true;
+                const pData = snap.data() || {};
+                if (pData.postNotificationSent === true ||
+                    (typeof pData.postPushClaimAt === 'number' && nowMs - pData.postPushClaimAt < 120000)) {
+                    return false;
+                }
+                tx.update(postRef, {
+                    postNotificationSent: true,
+                    postNotificationSentAt: FieldValue.serverTimestamp(),
+                });
+                return true;
+            });
+            if (!claimed) {
+                console.log(`🛑 [BroadcastPush] volunteer_post_new already claimed/sent for post ${data.postId}`);
+                return;
+            }
+        }
+        catch (_) { }
+    }
     console.log(`🔔 handleBroadcastPushDispatch fired for: [${title}] type: [${type}] church: [${churchId}]`);
     const isTargetAdmin = data.targetRole === 'admin' || data.type === 'baptism_request_admin' || data.type === 'prayer_request_admin';
     try {
@@ -893,6 +933,12 @@ async function handleBroadcastPushDispatch(data, churchIdParam, messageIdParam) 
                 if (mData.fcmToken && typeof mData.fcmToken === 'string' && mData.fcmToken.trim().length > 0) {
                     tokenSet.add(mData.fcmToken.trim());
                 }
+                if (Array.isArray(mData.fcmTokens)) {
+                    mData.fcmTokens.forEach((tk) => {
+                        if (typeof tk === 'string' && tk.trim().length > 10)
+                            tokenSet.add(tk.trim());
+                    });
+                }
             });
         }
         catch (err) {
@@ -917,6 +963,12 @@ async function handleBroadcastPushDispatch(data, churchIdParam, messageIdParam) 
                 }
                 if (mData.fcmToken && typeof mData.fcmToken === 'string' && mData.fcmToken.trim().length > 0) {
                     tokenSet.add(mData.fcmToken.trim());
+                }
+                if (Array.isArray(mData.fcmTokens)) {
+                    mData.fcmTokens.forEach((tk) => {
+                        if (typeof tk === 'string' && tk.trim().length > 10)
+                            tokenSet.add(tk.trim());
+                    });
                 }
             });
         }
@@ -958,15 +1010,16 @@ async function handleBroadcastPushDispatch(data, churchIdParam, messageIdParam) 
             }
         }
         else {
-            // General member broadcasts check
+            // General member broadcasts check across all users belonging to this church
             try {
-                let query = db.collection('users');
-                if (churchId) {
-                    query = query.where('primaryChurchId', '==', churchId);
-                }
-                const snapshotUsers = await query.get();
+                const snapshotUsers = await db.collection('users').get();
                 snapshotUsers.forEach((doc) => {
                     const uData = doc.data();
+                    if (!uData)
+                        return;
+                    const uChurch = uData.primaryChurchId || uData.churchId || 'rhema';
+                    if (churchId && uChurch !== churchId)
+                        return;
                     if (data.targetPhone) {
                         const rawDigits = String(data.targetPhone).replace(/\D/g, '').slice(-10);
                         const userDigits = String(uData.phone || uData.mobile || '').replace(/\D/g, '').slice(-10);
@@ -975,6 +1028,12 @@ async function handleBroadcastPushDispatch(data, churchIdParam, messageIdParam) 
                     }
                     if (uData.fcmToken && typeof uData.fcmToken === 'string' && uData.fcmToken.trim().length > 0) {
                         tokenSet.add(uData.fcmToken.trim());
+                    }
+                    if (Array.isArray(uData.fcmTokens)) {
+                        uData.fcmTokens.forEach((tk) => {
+                            if (typeof tk === 'string' && tk.trim().length > 10)
+                                tokenSet.add(tk.trim());
+                        });
                     }
                 });
             }
@@ -988,6 +1047,7 @@ async function handleBroadcastPushDispatch(data, churchIdParam, messageIdParam) 
             title,
             body: plainBody.length > 200 ? plainBody.substring(0, 197) + '...' : plainBody,
             ...(data.eventId ? { eventId: String(data.eventId) } : {}),
+            ...(data.postId ? { postId: String(data.postId) } : {}),
             ...(data.prayerId ? { prayerId: String(data.prayerId) } : {}),
             ...(data.requestId ? { requestId: String(data.requestId) } : {}),
             ...(data.targetTab ? { targetTab: String(data.targetTab) } : {}),
@@ -999,6 +1059,8 @@ async function handleBroadcastPushDispatch(data, churchIdParam, messageIdParam) 
             ...(data.screen ? { screen: String(data.screen) } : { screen: 'AdminRoot' }),
             ...(churchId ? { churchId: String(churchId) } : {}),
             ...(data.date ? { date: String(data.date) } : {}),
+            ...(data.endDate ? { endDate: String(data.endDate) } : {}),
+            ...(data.startTime ? { startTime: String(data.startTime) } : {}),
             click_action: 'FLUTTER_NOTIFICATION_CLICK',
         };
         const isPromise = type === 'promise' || type === 'daily_verse';
@@ -1629,7 +1691,7 @@ const testBaptismsV1 = functionsCompat.https.onRequest(async (req, res) => {
         res.status(500).send(error.message);
     }
 });
-export { publishScheduledSermons, triggerPublishScheduledSermonsHttp, triggerDailyVersePushHttp, sendDailyVersePushScheduled, monitorMeetingLive, pushMeetingLive, onBaptismRequestCreatedAdmin, onBaptismRequestCreatedAdminLegacy, onPrayerRequestCreatedAdmin, onPrayerRequestCreatedAdminLegacy, onPrayerRequestProcessedMember, onPrayerRequestProcessedMemberLegacy, pushPrayerRequestApproved, pushCareCellAnnouncement, pushCareCellMeeting, pushCareCellPrayerRequest, pushCareCellVisit, onTestimonyCreatedAdmin, onTestimonyCreatedAdminLegacy, onTestimonyUpdatedWorkflow, onTestimonyUpdatedWorkflowLegacy, onVolunteerApplicationCreated, onVolunteerApplicationCreatedLegacy, onVolunteerApplicationUpdated, onVolunteerApplicationUpdatedLegacy, onEventUpdatedForVolunteers, onEventUpdatedForVolunteersLegacy, scheduledVolunteerReminders, triggerVolunteerPushTestHttp, onJobApplicationCreated, onJobApplicationUpdated, onJobOpportunityCreated, onJobOpportunityUpdated, onRegistrationRequestCreated, onRegistrationRequestUpdated, } from './notifications.js';
+export { publishScheduledSermons, triggerPublishScheduledSermonsHttp, triggerDailyVersePushHttp, sendDailyVersePushScheduled, monitorMeetingLive, pushMeetingLive, onBaptismRequestCreatedAdmin, onBaptismRequestCreatedAdminLegacy, onPrayerRequestCreatedAdmin, onPrayerRequestCreatedAdminLegacy, onPrayerRequestProcessedMember, onPrayerRequestProcessedMemberLegacy, pushPrayerRequestApproved, pushCareCellAnnouncement, pushCareCellMeeting, pushCareCellPrayerRequest, pushCareCellVisit, onTestimonyCreatedAdmin, onTestimonyCreatedAdminLegacy, onTestimonyUpdatedWorkflow, onTestimonyUpdatedWorkflowLegacy, onVolunteerApplicationCreated, onVolunteerApplicationCreatedLegacy, onVolunteerApplicationUpdated, onVolunteerApplicationUpdatedLegacy, onEventUpdatedForVolunteers, onEventUpdatedForVolunteersLegacy, scheduledVolunteerReminders, triggerVolunteerPushTestHttp, onJobApplicationCreated, onJobApplicationUpdated, onJobOpportunityCreated, onJobOpportunityUpdated, onRegistrationRequestCreated, onRegistrationRequestUpdated, onVolunteerPostCreated, onVolunteerPostUpdated, } from './notifications.js';
 export { onServiceAssignmentQueueDispatched, onServiceAssignmentResponded, checkServiceAssignmentTimeoutsCron, sendServiceRosterRemindersCron, triggerCheckRosterTimeoutsHttp, dispatchServiceAssignmentNotificationHttp, onServiceRehearsalCreated, onServicePlanPublished, bookResponsibilitySlotHttp, declineResponsibilitySlotHttp, } from './rosterNotifications.js';
 export { guestInviteLanding } from './guestInvite.js';
 //# sourceMappingURL=index.js.map

@@ -361,4 +361,18 @@ export declare const onRegistrationRequestUpdated: import("firebase-functions").
     churchId: string;
     requestId: string;
 }>>;
+/**
+ * Trigger: When an Admin publishes a new General Volunteer Call Post (`status == 'open'`)
+ */
+export declare const onVolunteerPostCreated: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+    churchId: string;
+    postId: string;
+}>>;
+/**
+ * Trigger: When a closed General Volunteer Call Post is reopened (`status` transitions to `'open'`)
+ */
+export declare const onVolunteerPostUpdated: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
+    churchId: string;
+    postId: string;
+}>>;
 //# sourceMappingURL=notifications.d.ts.map

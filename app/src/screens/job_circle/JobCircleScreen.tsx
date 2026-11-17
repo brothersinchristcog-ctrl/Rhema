@@ -175,14 +175,20 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
   useFocusEffect(
     React.useCallback(() => {
       const readKey = `@read_job_notif_ids_${user?.uid || member?.id || 'guest'}`;
-      AsyncStorage.getItem(readKey)
-        .then(raw => {
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) setReadJobNotifIds(parsed);
-          }
-        })
-        .catch(() => {});
+      Promise.all([
+        AsyncStorage.getItem(readKey).catch(() => null),
+        AsyncStorage.getItem('@deleted_notification_ids').catch(() => null),
+      ]).then(([rawRead, rawDeleted]) => {
+        const readArr = rawRead ? JSON.parse(rawRead) : [];
+        const delArr = rawDeleted ? JSON.parse(rawDeleted) : [];
+        const merged = Array.from(
+          new Set([
+            ...(Array.isArray(readArr) ? readArr : []),
+            ...(Array.isArray(delArr) ? delArr : []),
+          ])
+        );
+        setReadJobNotifIds(merged);
+      }).catch(() => {});
       loadAppliedStatus();
     }, [user?.uid, member?.id])
   );

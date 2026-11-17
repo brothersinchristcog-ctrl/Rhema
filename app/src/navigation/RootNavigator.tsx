@@ -1193,6 +1193,10 @@ function Navigation() {
 
   useEffect(() => {
     if (user && !loading) {
+      let unsubLiveNotifs: (() => void) | null = null;
+      const listenerStartMs = Date.now();
+      let initialSnapshotHandled = false;
+
       const initNotifications = async () => {
         const hasPermission = await NotificationService.requestUserPermission();
         if (hasPermission) {
@@ -1208,10 +1212,67 @@ function Navigation() {
 
         const targetChurchId = (await FirestoreService.getChurchId()) || 'rhema';
         await NotificationService.subscribeToChurchTopic(targetChurchId);
+
+        try {
+          const firestoreMod = require('@react-native-firebase/firestore').default;
+          unsubLiveNotifs = firestoreMod()
+            .collection('Rhema Church')
+            .doc(targetChurchId)
+            .collection('notifications')
+            .limit(15)
+            .onSnapshot(
+              (snap: any) => {
+                if (!initialSnapshotHandled) {
+                  initialSnapshotHandled = true;
+                  return;
+                }
+                if (!snap || typeof snap.docChanges !== 'function') return;
+                snap.docChanges().forEach((change: any) => {
+                  if (change.type !== 'added') return;
+                  const d = change.doc.data() || {};
+                  const createdMs = d.createdAt?.toMillis
+                    ? d.createdAt.toMillis()
+                    : Date.now();
+                  // Only trigger for brand-new notifications created after listener started
+                  if (createdMs < listenerStartMs - 10000) return;
+
+                  // Filter out admin-only alerts for regular members
+                  if ((d.targetRole === 'admin' || d.recipientRole === 'admin') && !isAdmin) {
+                    return;
+                  }
+                  // Filter out member-targeted alerts meant for a different member
+                  const targetMember = String(d.targetMemberId || d.recipientId || '').trim();
+                  if (targetMember && targetMember !== user.uid) {
+                    const userPhone10 = String(user.phoneNumber || member?.phone || '')
+                      .replace(/\D/g, '')
+                      .slice(-10);
+                    const targetPhone10 = String(d.targetPhone || '')
+                      .replace(/\D/g, '')
+                      .slice(-10);
+                    if (!userPhone10 || userPhone10 !== targetPhone10) {
+                      return;
+                    }
+                  }
+
+                  const nTitle = d.title || 'Church Update';
+                  const nBody = d.body || d.content || '';
+                  NotificationService.displaySystemPushNotification(nTitle, nBody, {
+                    ...d,
+                    id: change.doc.id,
+                  }).catch(() => {});
+                });
+              },
+              () => {}
+            );
+        } catch (_) {}
       };
       initNotifications();
+
+      return () => {
+        if (unsubLiveNotifs) unsubLiveNotifs();
+      };
     }
-  }, [user, loading]);
+  }, [user, loading, isAdmin, member?.phone]);
 
   // Ensure splash screen always dismisses after a fixed duration and never resets on user state updates
   useEffect(() => {

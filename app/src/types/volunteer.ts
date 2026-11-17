@@ -1,5 +1,22 @@
 export type VolunteerType = 'general' | 'event';
 export type VolunteerStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn';
+export type VolunteerPostStatus = 'open' | 'closed';
+
+export interface GeneralVolunteerPost {
+  id: string;
+  churchId: string;
+  title: string;
+  description: string;
+  ministries: string[];
+  recommendedSkills?: string[];
+  scheduleSummary?: string;
+  slotsNeeded?: number;
+  status: VolunteerPostStatus;
+  createdBy?: string;
+  createdByName?: string;
+  createdAt?: any;
+  updatedAt?: any;
+}
 
 export interface EventVolunteerRole {
   id: string;
@@ -23,6 +40,8 @@ export interface VolunteerApplication {
   updatedAt: any;
 
   // --- General Volunteer fields ---
+  postId?: string;
+  postTitle?: string;
   preferredMinistries?: string[];
   skills?: string[];
   availabilityNotes?: string;

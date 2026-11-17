@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, StatusBar, Platform, ActivityIndicator, Modal, PanResponder, Animated, Dimensions, Linking, Alert, Image, BackHandler, Clipboard, ToastAndroid } from 'react-native';
-import { ChevronLeft, ArrowLeft, Bell, Calendar, Info, MessageCircle, AlertTriangle, X, Gift, Heart, Sparkles, Droplets, Trash2, Tv, BookOpen, Music, Mic , Video, Layers, UserCheck, Zap, HeartHandshake, Briefcase } from 'lucide-react-native';
+import { ChevronLeft, ArrowLeft, Bell, Calendar, Info, MessageCircle, AlertTriangle, X, Gift, Heart, Sparkles, Droplets, Trash2, Tv, BookOpen, Music, Mic , Video, Layers, UserCheck, Zap, HeartHandshake, Briefcase, CheckCircle2 } from 'lucide-react-native';
 import { openZoomMeeting } from '../utils/ZoomLauncher';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -28,6 +28,7 @@ const VOLUNTEER_NOTIFICATION_TYPES = [
   'volunteer_assignment',
   'volunteer_event_change',
   'volunteer_reminder',
+  'volunteer_post_new',
   'job_opportunity_new',
   'job_application_admin',
   'job_application_member',
@@ -156,6 +157,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
     if (type === 'volunteer_assignment') return 'VOLUNTEER ASSIGNMENT';
     if (type === 'volunteer_event_change') return 'EVENT VOLUNTEER UPDATE';
     if (type === 'volunteer_reminder') return 'VOLUNTEER REMINDER';
+    if (type === 'volunteer_post_new') return 'VOLUNTEER CALL';
     if (type === 'job_opportunity_new') return 'MINISTRY OPPORTUNITY';
     if (type === 'job_application_admin') return 'MINISTRY APPLICATION';
     if (type === 'job_application_member') return 'APPLICATION UPDATE';
@@ -218,8 +220,13 @@ export default function UpdatesScreen({ navigation, route }: any) {
   }, [broadcastsList, churchNotifsList, meetingsList, memberNotifsList]);
   const [selectedUpdate, setSelectedUpdate] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+  const [clearingAll, setClearingAll] = useState(false);
+  const [showClearConfirmModal, setShowClearConfirmModal] = useState(false);
+  const [showClearSuccessModal, setShowClearSuccessModal] = useState(false);
+  const [clearedCount, setClearedCount] = useState(0);
   const [hasAutoOpened, setHasAutoOpened] = useState(false);
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
+  const [clearedBeforeTimestamp, setClearedBeforeTimestamp] = useState<number>(0);
   const { user, member } = useAuth();
   const { activeChurch } = useChurch();
   const adminRoleStr = `${member?.userType || ''} ${(member as any)?.role || ''}`.toUpperCase();
@@ -263,24 +270,219 @@ export default function UpdatesScreen({ navigation, route }: any) {
         if (stored) {
           setDeletedIds(JSON.parse(stored));
         }
+        const userKey = user?.uid || member?.id || 'guest';
+        const storedClearedAt = await AsyncStorage.getItem(`@notifications_cleared_at_${userKey}`);
+        if (storedClearedAt) {
+          setClearedBeforeTimestamp(parseInt(storedClearedAt, 10) || 0);
+        }
       } catch (e) {
         console.warn('Error loading deleted notification IDs:', e);
       }
     };
     loadDeletedIds();
-  }, []);
+  }, [user?.uid, member?.id]);
 
-  const handleDeleteUpdate = async (id: string) => {
-    try {
-      const updated = [...deletedIds, id];
-      setDeletedIds(updated);
-      await AsyncStorage.setItem('@deleted_notification_ids', JSON.stringify(updated));
-    } catch (e) {
-      console.error('Error persisting deleted notification ID:', e);
+  /**
+   * Permanently delete notification document(s) from Firebase across notifications, broadcasts,
+   * and personal member notifications subcollections using atomic Firestore WriteBatches.
+   */
+  const permanentlyDeleteFromFirebase = async (docIds: string[], sourceRefs: any[] = []) => {
+    const churchToQuery = activeChurch?.id || member?.churchId || 'rhema';
+    const cleanIds = Array.from(new Set(docIds.map((id) => String(id || '').trim()).filter(Boolean)));
+    const memberIds = Array.from(new Set([user?.uid, member?.id].filter(Boolean))) as string[];
+
+    const db = firestore();
+    const refsToDelete: any[] = [];
+
+    // 1. Direct snapshot source references (exact document pointers)
+    for (const ref of sourceRefs) {
+      if (ref && typeof ref.path === 'string') {
+        refsToDelete.push(ref);
+      }
+    }
+
+    // 2. Target references across collections
+    for (const docId of cleanIds) {
+      refsToDelete.push(db.collection('Rhema Church').doc(churchToQuery).collection('notifications').doc(docId));
+      refsToDelete.push(db.collection('Rhema Church').doc(churchToQuery).collection('broadcasts').doc(docId));
+      if (churchToQuery !== 'rhema') {
+        refsToDelete.push(db.collection('Rhema Church').doc('rhema').collection('broadcasts').doc(docId));
+      }
+      for (const mId of memberIds) {
+        refsToDelete.push(
+          db.collection('Rhema Church').doc(churchToQuery).collection('members').doc(mId).collection('notifications').doc(docId)
+        );
+      }
+    }
+
+    // Deduplicate references by path
+    const uniqueRefs = new Map<string, any>();
+    for (const ref of refsToDelete) {
+      if (ref && ref.path) {
+        uniqueRefs.set(ref.path, ref);
+      }
+    }
+
+    // Commit in chunks of 400 using Firestore WriteBatch
+    const refArray = Array.from(uniqueRefs.values());
+    const CHUNK_SIZE = 400;
+    for (let i = 0; i < refArray.length; i += CHUNK_SIZE) {
+      const chunk = refArray.slice(i, i + CHUNK_SIZE);
+      const batch = db.batch();
+      chunk.forEach((r) => {
+        batch.delete(r);
+      });
+      await batch.commit().catch((e) => {
+        console.warn('Batch delete notice (non-fatal):', e);
+      });
     }
   };
 
-  const parseUpdateDoc = (docId: string, data: any, churchToQuery: string, hasPendingWrite: boolean = false) => {
+  const handleDeleteUpdate = async (id: string, item?: any) => {
+    try {
+      const targetItem = item || allUpdates.find((u) => u.id === id);
+      const allRawMatches = [...broadcastsList, ...churchNotifsList, ...memberNotifsList, ...meetingsList].filter(
+        (raw) =>
+          raw &&
+          (raw.id === id ||
+            (targetItem &&
+              raw.type === targetItem.type &&
+              raw.title === targetItem.title &&
+              raw.content === targetItem.content))
+      );
+      const idsToRemove = Array.from(new Set([id, ...allRawMatches.map((r) => String(r.id))].filter(Boolean)));
+      const refsToRemove = allRawMatches.map((r) => r.sourceRef).filter(Boolean);
+
+      const deleteSet = new Set(idsToRemove);
+      const updated = Array.from(new Set([...deletedIds, ...idsToRemove]));
+      setDeletedIds(updated);
+      setBroadcastsList((prev) => prev.filter((i) => !deleteSet.has(String(i.id))));
+      setChurchNotifsList((prev) => prev.filter((i) => !deleteSet.has(String(i.id))));
+      setMemberNotifsList((prev) => prev.filter((i) => !deleteSet.has(String(i.id))));
+      setMeetingsList((prev) => prev.filter((i) => !deleteSet.has(String(i.id))));
+      setDynamicUpdates((prev) => prev.filter((i) => !deleteSet.has(String(i.id))));
+
+      await AsyncStorage.setItem('@deleted_notification_ids', JSON.stringify(updated));
+      await markJobCircleNotificationsRead(idsToRemove);
+      permanentlyDeleteFromFirebase(idsToRemove, refsToRemove).catch(() => {});
+    } catch (e) {
+      console.error('Error deleting notification:', e);
+    }
+  };
+
+  const handleClearAllNotifications = () => {
+    if (visibleUpdates.length === 0 || clearingAll) return;
+    setShowClearConfirmModal(true);
+  };
+
+  const confirmClearAllNotifications = async () => {
+    if (clearingAll) return;
+    try {
+      setClearingAll(true);
+      const countCleared = visibleUpdates.length;
+      const clearNow = Date.now();
+      const userKey = user?.uid || member?.id || 'guest';
+
+      const visibleSet = new Set(visibleUpdates.map((u) => String(u.id)));
+      const visibleKeys = new Set(
+        visibleUpdates.map((u) => `${u.type || ''}|${u.title || ''}|${u.content || ''}`)
+      );
+
+      const allRawMatches = [
+        ...broadcastsList,
+        ...churchNotifsList,
+        ...memberNotifsList,
+        ...meetingsList,
+      ].filter((raw) => {
+        if (!raw) return false;
+        if (visibleSet.has(String(raw.id))) return true;
+        const rawKey = `${raw.type || ''}|${raw.title || ''}|${raw.content || ''}`;
+        if (visibleKeys.has(rawKey)) return true;
+        if (filterCategory === 'job_circle') {
+          return (
+            raw.type === 'job_opportunity_new' ||
+            raw.type === 'job_application_admin' ||
+            raw.type === 'job_application_member' ||
+            Boolean(raw.opportunityId) ||
+            Boolean(raw.applicationId)
+          );
+        }
+        return !filterCategory;
+      });
+
+      const idsToDelete = Array.from(
+        new Set([
+          ...visibleUpdates.map((u) => String(u.id)),
+          ...allRawMatches.map((r) => String(r.id)),
+        ].filter(Boolean))
+      );
+      const refsToDelete = allRawMatches
+        .filter((r) => r.type !== 'online_meeting')
+        .map((r) => r.sourceRef)
+        .filter(Boolean);
+
+      const deleteSet = new Set(idsToDelete);
+      const updatedDeletedIds = Array.from(new Set([...deletedIds, ...idsToDelete]));
+
+      // 1. Immediately clear from Member View state & refresh list
+      setDeletedIds(updatedDeletedIds);
+      if (!filterCategory) {
+        setClearedBeforeTimestamp(clearNow);
+        setBroadcastsList([]);
+        setChurchNotifsList([]);
+        setMemberNotifsList([]);
+        setMeetingsList([]);
+        setDynamicUpdates([]);
+      } else {
+        setBroadcastsList((prev) => prev.filter((i) => !deleteSet.has(String(i.id))));
+        setChurchNotifsList((prev) => prev.filter((i) => !deleteSet.has(String(i.id))));
+        setMemberNotifsList((prev) => prev.filter((i) => !deleteSet.has(String(i.id))));
+        setMeetingsList((prev) => prev.filter((i) => !deleteSet.has(String(i.id))));
+        setDynamicUpdates((prev) => prev.filter((i) => !deleteSet.has(String(i.id))));
+      }
+      setSelectedUpdate(null);
+
+      // 2. Persist state in AsyncStorage
+      await AsyncStorage.setItem(
+        '@deleted_notification_ids',
+        JSON.stringify(updatedDeletedIds)
+      );
+      if (!filterCategory) {
+        await AsyncStorage.setItem(
+          `@notifications_cleared_at_${userKey}`,
+          String(clearNow)
+        );
+      }
+      await markJobCircleNotificationsRead(idsToDelete);
+
+      // 3. Close confirm modal and display success modal immediately
+      setClearedCount(countCleared);
+      setShowClearConfirmModal(false);
+      setShowClearSuccessModal(true);
+
+      // 4. Permanently delete notification records from Firebase via WriteBatch
+      const firebaseDocIds = allRawMatches
+        .filter((r) => r.type !== 'online_meeting')
+        .map((r) => String(r.id));
+      permanentlyDeleteFromFirebase(
+        firebaseDocIds.length > 0 ? firebaseDocIds : idsToDelete,
+        refsToDelete
+      ).catch((e) => console.warn('Background delete notice:', e));
+    } catch (err) {
+      console.error('Error clearing all notifications:', err);
+      setShowClearConfirmModal(false);
+    } finally {
+      setClearingAll(false);
+    }
+  };
+
+  const parseUpdateDoc = (
+    docId: string,
+    data: any,
+    churchToQuery: string,
+    hasPendingWrite: boolean = false,
+    sourceRef?: any
+  ) => {
     if (!data) return null;
 
     // SECURITY: If broadcast is targeted to a specific church, skip it if not for this user's church
@@ -376,6 +578,10 @@ export default function UpdatesScreen({ navigation, route }: any) {
       icon = Bell;
       color = '#7C3AED';
       resolvedType = 'volunteer_reminder';
+    } else if (data.type === 'volunteer_post_new' || data.referenceType === 'general_volunteer_post') {
+      icon = HeartHandshake;
+      color = '#059669';
+      resolvedType = 'volunteer_post_new';
     } else if (
       data.type === 'job_opportunity_new' ||
       data.type === 'job_application_admin' ||
@@ -403,7 +609,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
       } else {
         resolvedType = data.type || 'job_opportunity_new';
       }
-    } else if (data.type === 'event' || data.title?.includes('📅')) {
+    } else if (data.type === 'event' || data.title?.includes('📅') || data.title?.includes('🗓️')) {
       icon = Calendar;
       color = '#10b981';
       resolvedType = 'event';
@@ -546,6 +752,14 @@ export default function UpdatesScreen({ navigation, route }: any) {
     }
 
     let itemTitle = data.title || t('updates.announcement');
+    // Strip bracketed date prefix (e.g. [17-11-2026] or [17 Nov 2026]) so only the calendar icon is shown
+    itemTitle = itemTitle.replace(/\[\s*[^\]]*\d{4}[^\]]*\]\s*/g, '');
+    itemTitle = itemTitle.replace(/\[\s*\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}\s*\]\s*/g, '');
+    // Replace the static 📅 emoji (which displays "July 17" in mobile OS fonts) with 🗓️ (clean spiral calendar with no dates)
+    itemTitle = itemTitle.replace(/📅\s*/g, '🗓️ ');
+    if (resolvedType === 'event' && !itemTitle.includes('🗓️')) {
+      itemTitle = `🗓️ ${itemTitle}`;
+    }
     let itemContent = stripHtml(data.content || data.body || '');
 
     if (resolvedType === 'youtube_live') {
@@ -589,18 +803,31 @@ export default function UpdatesScreen({ navigation, route }: any) {
       serviceDate: data.serviceDate || null,
       requestId: data.requestId || null,
       prayerId: data.prayerId || null,
-      opportunityId: data.opportunityId || (data.referenceType === 'job_circle_opportunity' ? data.referenceId : null) || null,
-      applicationId: data.applicationId || (data.referenceType === 'job_circle_application' ? data.referenceId : null) || null,
+      opportunityId:
+        data.opportunityId ||
+        (data.referenceType === 'job_circle_opportunity' ? data.referenceId : null) ||
+        (docId.startsWith('job_opp_') ? docId.replace(/^job_opp_/, '') : null) ||
+        null,
+      applicationId:
+        data.applicationId ||
+        (data.referenceType === 'job_circle_application' ? data.referenceId : null) ||
+        null,
+      postId:
+        data.postId ||
+        (data.referenceType === 'general_volunteer_post' ? data.referenceId : null) ||
+        (docId.startsWith('vol_post_') ? docId.replace(/^vol_post_/, '') : null) ||
+        null,
       eventId: data.eventId || null,
       volunteerType: data.volunteerType || null,
       volunteerStatus: data.status || null,
       churchId: data.churchId || null,
+      sourceRef: sourceRef || null,
       rawDate: data.createdAt?.toMillis?.() || (typeof data.createdAt === 'number' ? data.createdAt : (hasPendingWrite ? Date.now() : 0))
     };
   };
 
   useEffect(() => {
-    const churchToQuery = activeChurch?.id || member?.churchId;
+    const churchToQuery = activeChurch?.id || member?.churchId || 'rhema';
     if (!churchToQuery) {
       setLoading(false);
       return;
@@ -610,7 +837,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
     const q = query(
       collection(db, 'Rhema Church', churchToQuery, 'broadcasts'),
       orderBy('createdAt', 'desc'),
-      limit(20)
+      limit(30)
     );
 
     const unsubscribe = onSnapshot(
@@ -618,8 +845,16 @@ export default function UpdatesScreen({ navigation, route }: any) {
       (snapshot) => {
         if (snapshot) {
           const list = snapshot.docs
-            .map(doc => parseUpdateDoc(doc.id, doc.data(), churchToQuery, Boolean((doc as any).metadata?.hasPendingWrites)))
-            .filter(item => item !== null);
+            .map((doc) =>
+              parseUpdateDoc(
+                doc.id,
+                doc.data(),
+                churchToQuery,
+                Boolean((doc as any).metadata?.hasPendingWrites),
+                (doc as any).ref
+              )
+            )
+            .filter((item) => item !== null);
           setBroadcastsList(list);
         }
         setLoading(false);
@@ -630,94 +865,147 @@ export default function UpdatesScreen({ navigation, route }: any) {
       }
     );
 
-    const qVolunteerNotifs = query(
-      collection(db, 'Rhema Church', churchToQuery, 'notifications'),
-      where('type', 'in', VOLUNTEER_NOTIFICATION_TYPES)
-    );
-
-    const unsubscribeChurchNotifs = onSnapshot(
-      qVolunteerNotifs,
-      (snapshot) => {
-        if (snapshot) {
-          const list = snapshot.docs
-            .map(doc => parseUpdateDoc(doc.id, doc.data(), churchToQuery, Boolean((doc as any).metadata?.hasPendingWrites)))
-            .filter(item => item !== null);
-          setChurchNotifsList(list);
-        }
-      },
-      (error) => {
-        console.warn('Note: Volunteer notifications listener:', error);
-      }
-    );
-
-    const currentMemberId = member?.id || user?.uid;
-    let unsubscribeMemberNotifs = () => {};
-    if (currentMemberId) {
-      const qMemberNotifs = query(
-        collection(db, 'Rhema Church', churchToQuery, 'members', currentMemberId, 'notifications'),
-        orderBy('createdAt', 'desc'),
-        limit(20)
+    // Query church notifications directly without a 12-item `where('type', 'in', ...)`
+    // (which exceeded Firestore's 10-element `in` filter limit and threw a synchronous error)
+    let unsubscribeChurchNotifs = () => {};
+    try {
+      const qChurchNotifs = query(
+        collection(db, 'Rhema Church', churchToQuery, 'notifications'),
+        limit(60)
       );
 
-      unsubscribeMemberNotifs = onSnapshot(
-        qMemberNotifs,
+      unsubscribeChurchNotifs = onSnapshot(
+        qChurchNotifs,
         (snapshot) => {
           if (snapshot) {
             const list = snapshot.docs
-              .map(doc => parseUpdateDoc(doc.id, doc.data(), churchToQuery, Boolean((doc as any).metadata?.hasPendingWrites)))
-              .filter(item => item !== null);
-            setMemberNotifsList(list);
+              .map((doc) =>
+                parseUpdateDoc(
+                  doc.id,
+                  doc.data(),
+                  churchToQuery,
+                  Boolean((doc as any).metadata?.hasPendingWrites),
+                  (doc as any).ref
+                )
+              )
+              .filter((item) => item !== null);
+            setChurchNotifsList(list);
+          }
+          setLoading(false);
+        },
+        (error) => {
+          console.warn('Note: Church notifications listener:', error);
+          setLoading(false);
+        }
+      );
+    } catch (err) {
+      console.warn('Error setting up church notifications listener:', err);
+    }
+
+    // Listen to personal member notifications across all candidate member IDs (UID and phone-keyed ID)
+    const candidateMemberIds = Array.from(
+      new Set([user?.uid, member?.id].filter(Boolean))
+    ) as string[];
+    const memberNotifMap = new Map<string, any[]>();
+    const memberUnsubs: (() => void)[] = [];
+
+    for (const mId of candidateMemberIds) {
+      try {
+        const qMemberNotifs = query(
+          collection(db, 'Rhema Church', churchToQuery, 'members', mId, 'notifications'),
+          limit(40)
+        );
+        const unsubMem = onSnapshot(
+          qMemberNotifs,
+          (snapshot) => {
+            if (snapshot) {
+              const list = snapshot.docs
+                .map((doc) =>
+                  parseUpdateDoc(
+                    doc.id,
+                    doc.data(),
+                    churchToQuery,
+                    Boolean((doc as any).metadata?.hasPendingWrites),
+                    (doc as any).ref
+                  )
+                )
+                .filter((item) => item !== null);
+              memberNotifMap.set(mId, list);
+              const mergedMemberList = Array.from(memberNotifMap.values()).flat();
+              setMemberNotifsList(mergedMemberList);
+            }
+          },
+          (error) => {
+            console.warn('Note: Member notifications listener:', error);
+          }
+        );
+        memberUnsubs.push(unsubMem);
+      } catch (_) {}
+    }
+
+    let unsubscribeMeetings = () => {};
+    try {
+      const qMeetings = query(
+        collection(db, 'Rhema Church', churchToQuery, 'online_meetings'),
+        orderBy('createdAt', 'desc'),
+        limit(10)
+      );
+
+      unsubscribeMeetings = onSnapshot(
+        qMeetings,
+        (snapshot) => {
+          if (snapshot) {
+            const list = snapshot.docs.map((doc) => {
+              const data = doc.data();
+              let dateStr = new Date().toISOString().split('T')[0];
+              if (data.startTime && typeof data.startTime.toDate === 'function') {
+                const dt = data.startTime.toDate();
+                dateStr =
+                  dt.toLocaleDateString() +
+                  ' • ' +
+                  dt.toLocaleTimeString('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true,
+                  });
+              }
+
+              return {
+                id: doc.id,
+                title: t('updates.newOnlineMeeting'),
+                content: `${data.title || ''} ${t('updates.meetingScheduled')}`.trim(),
+                date: dateStr,
+                type: 'online_meeting',
+                icon: Video,
+                color: '#3B82F6',
+                url: data.meetingLink || '',
+                rawDate: data.createdAt?.toMillis?.() || 0,
+              };
+            });
+            setMeetingsList(list);
           }
         },
         (error) => {
-          console.warn('Note: Member notifications listener:', error);
+          console.error('Error fetching meetings:', error);
         }
       );
-    }
+    } catch (_) {}
 
-    const qMeetings = query(
-      collection(db, 'Rhema Church', churchToQuery, 'online_meetings'),
-      orderBy('createdAt', 'desc'),
-      limit(10)
-    );
-
-    const unsubscribeMeetings = onSnapshot(
-      qMeetings,
-      (snapshot) => {
-        if (snapshot) {
-          const list = snapshot.docs.map(doc => {
-            const data = doc.data();
-            let dateStr = new Date().toISOString().split('T')[0];
-            if (data.startTime && typeof data.startTime.toDate === 'function') {
-              const dt = data.startTime.toDate();
-              dateStr = dt.toLocaleDateString() + ' • ' + dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-            }
-            
-            return {
-              id: doc.id,
-              title: t('updates.newOnlineMeeting'),
-              content: `${data.title || ''} ${t('updates.meetingScheduled')}`.trim(),
-              date: dateStr,
-              type: 'online_meeting',
-              icon: Video,
-              color: '#3B82F6',
-              url: data.meetingLink || '',
-              rawDate: data.createdAt?.toMillis?.() || 0
-            };
-          });
-          setMeetingsList(list);
-        }
-      },
-      (error) => {
-        console.error('Error fetching meetings:', error);
-      }
-    );
-
-    return () => { unsubscribe(); unsubscribeChurchNotifs(); unsubscribeMeetings(); unsubscribeMemberNotifs(); };
+    return () => {
+      unsubscribe();
+      unsubscribeChurchNotifs();
+      unsubscribeMeetings();
+      memberUnsubs.forEach((fn) => fn());
+    };
   }, [activeChurch?.id, member?.churchId, user?.phoneNumber, member?.phone, member?.id, user?.uid, isAdmin]);
   const allUpdates = dynamicUpdates;
+  const deletedSet = React.useMemo(() => new Set(deletedIds.map(String)), [deletedIds]);
   const visibleUpdates = allUpdates.filter(update => {
-    if (deletedIds.includes(update.id)) return false;
+    if (!update || !update.id) return false;
+    if (deletedSet.has(String(update.id))) return false;
+    if (clearedBeforeTimestamp > 0 && update.rawDate && update.rawDate <= clearedBeforeTimestamp) {
+      return false;
+    }
     if (filterCategory === 'job_circle') {
       const isJobCircle =
         update.type === 'job_opportunity_new' ||
@@ -820,7 +1108,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
       />
       
       {/* ── Page Header Hero Card ── */}
-            {/* ── Screen Header (Clean circular back button & title) ── */}
+      {/* ── Screen Header (Clean circular back button, title & Clear All button) ── */}
       <View
         style={[
           styles.headerRow,
@@ -836,11 +1124,43 @@ export default function UpdatesScreen({ navigation, route }: any) {
           <ArrowLeft size={20} color={colors.text} strokeWidth={2.4} />
         </TouchableOpacity>
 
-        <Text style={[styles.headerTitleText, { color: colors.text }]} numberOfLines={1}>
+        <Text style={[styles.headerTitleText, { color: colors.text, flex: 1, paddingHorizontal: 8 }]} numberOfLines={1}>
           {filterTitle || t('updates.title')}
         </Text>
 
-        <View style={styles.headerRightSpacer} />
+        {visibleUpdates.length > 0 ? (
+          <TouchableOpacity
+            onPress={handleClearAllNotifications}
+            disabled={clearingAll}
+            activeOpacity={0.8}
+            style={{
+              alignItems: 'center',
+              justifyContent: 'center',
+              paddingHorizontal: 14,
+              paddingVertical: 8,
+              borderRadius: 999,
+              backgroundColor: isDark ? 'rgba(239, 68, 68, 0.16)' : '#FEF2F2',
+              borderWidth: 1,
+              borderColor: isDark ? 'rgba(239, 68, 68, 0.35)' : '#FECACA',
+            }}
+          >
+            {clearingAll ? (
+              <ActivityIndicator size="small" color={isDark ? '#F87171' : '#DC2626'} />
+            ) : (
+              <Text
+                style={{
+                  fontSize: 12,
+                  fontWeight: '800',
+                  color: isDark ? '#F87171' : '#DC2626',
+                }}
+              >
+                Clear All
+              </Text>
+            )}
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.headerRightSpacer} />
+        )}
       </View>
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -858,7 +1178,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
           ) : null}
 
           {visibleUpdates.map((update) => (
-            <SwipeableRow key={update.id} onDelete={() => handleDeleteUpdate(update.id)}>
+            <SwipeableRow key={update.id} onDelete={() => handleDeleteUpdate(update.id, update)}>
               <TouchableOpacity 
                 style={[
                   styles.updateCard,
@@ -921,6 +1241,13 @@ export default function UpdatesScreen({ navigation, route }: any) {
                       subType: update.volunteerType || 'general',
                       timestamp: Date.now(),
                     });
+                  } else if (update.type === 'volunteer_post_new') {
+                    const postId = String(update.postId || update.referenceId || update.id || '').replace(/^vol_post_/, '');
+                    if (postId) {
+                      navigation.navigate('Volunteer', { postId });
+                    } else {
+                      navigation.navigate('Volunteer');
+                    }
                   } else if (
                     update.type === 'volunteer_application_member' ||
                     update.type === 'volunteer_assignment' ||
@@ -1419,7 +1746,8 @@ export default function UpdatesScreen({ navigation, route }: any) {
                 {(selectedUpdate?.type === 'volunteer_application_member' ||
                   selectedUpdate?.type === 'volunteer_assignment' ||
                   selectedUpdate?.type === 'volunteer_event_change' ||
-                  selectedUpdate?.type === 'volunteer_reminder') && (
+                  selectedUpdate?.type === 'volunteer_reminder' ||
+                  selectedUpdate?.type === 'volunteer_post_new') && (
                   <TouchableOpacity
                     style={[
                       styles.joinLiveBtn,
@@ -1435,16 +1763,23 @@ export default function UpdatesScreen({ navigation, route }: any) {
                     ]}
                     onPress={() => {
                       const evId = selectedUpdate?.eventId;
+                      const postId = String(selectedUpdate?.postId || selectedUpdate?.referenceId || '').replace(/^vol_post_/, '');
                       setSelectedUpdate(null);
                       if (evId) {
                         navigation.navigate('EventDetails', { eventId: evId, id: evId });
+                      } else if (selectedUpdate?.type === 'volunteer_post_new' && postId) {
+                        navigation.navigate('Volunteer', { postId });
                       } else {
                         navigation.navigate('Volunteer');
                       }
                     }}
                   >
                     <Text style={styles.joinLiveBtnTxt}>
-                      {selectedUpdate?.eventId ? '📅 View Event Volunteer Details' : '🤝 Open Volunteer Portal'}
+                      {selectedUpdate?.eventId
+                        ? '📅 View Event Volunteer Details'
+                        : selectedUpdate?.type === 'volunteer_post_new'
+                        ? '🤝 Apply to Volunteer'
+                        : '🤝 Open Volunteer Portal'}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -1534,6 +1869,332 @@ export default function UpdatesScreen({ navigation, route }: any) {
                 )}
               </View>
             )}
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* ── CLEAR ALL CONFIRMATION CARD MODAL ── */}
+      <Modal
+        visible={showClearConfirmModal}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => !clearingAll && setShowClearConfirmModal(false)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(9, 9, 11, 0.72)',
+            justifyContent: 'center',
+            alignItems: 'center',
+            paddingHorizontal: 24,
+          }}
+        >
+          <View
+            style={{
+              width: '100%',
+              maxWidth: 380,
+              backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+              borderRadius: 28,
+              padding: 26,
+              alignItems: 'center',
+              borderWidth: 1.5,
+              borderColor: isDark ? '#27272A' : '#E2E8F0',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 14 },
+              shadowOpacity: 0.28,
+              shadowRadius: 24,
+              elevation: 18,
+            }}
+          >
+            {/* Double-Ringed Icon Badge */}
+            <View
+              style={{
+                width: 76,
+                height: 76,
+                borderRadius: 38,
+                backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2',
+                borderWidth: 1,
+                borderColor: isDark ? 'rgba(239, 68, 68, 0.25)' : '#FECACA',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: 16,
+              }}
+            >
+              <View
+                style={{
+                  width: 54,
+                  height: 54,
+                  borderRadius: 27,
+                  backgroundColor: isDark ? 'rgba(239, 68, 68, 0.22)' : '#FEE2E2',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Trash2 size={26} color="#EF4444" strokeWidth={2.3} />
+              </View>
+            </View>
+
+            {/* Count Pill */}
+            <View
+              style={{
+                paddingHorizontal: 12,
+                paddingVertical: 4,
+                borderRadius: 999,
+                backgroundColor: isDark ? '#27272A' : '#F1F5F9',
+                marginBottom: 10,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 11.5,
+                  fontWeight: '800',
+                  color: isDark ? '#F87171' : '#DC2626',
+                  letterSpacing: 0.3,
+                }}
+              >
+                {visibleUpdates.length} NOTIFICATION{visibleUpdates.length === 1 ? '' : 'S'}
+              </Text>
+            </View>
+
+            <Text
+              style={{
+                fontSize: 20,
+                fontWeight: '800',
+                color: isDark ? '#FFFFFF' : '#0F172A',
+                textAlign: 'center',
+                fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+              }}
+            >
+              Clear All Notifications?
+            </Text>
+
+            <Text
+              style={{
+                fontSize: 14,
+                color: isDark ? '#A1A1AA' : '#475569',
+                textAlign: 'center',
+                lineHeight: 21,
+                marginTop: 8,
+                marginBottom: 24,
+                paddingHorizontal: 6,
+              }}
+            >
+              Are you sure you want to clear all notifications? This action cannot be undone.
+            </Text>
+
+            <View style={{ flexDirection: 'row', width: '100%', gap: 12 }}>
+              <TouchableOpacity
+                onPress={() => setShowClearConfirmModal(false)}
+                disabled={clearingAll}
+                activeOpacity={0.8}
+                style={{
+                  flex: 1,
+                  paddingVertical: 13.5,
+                  borderRadius: 999,
+                  backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                  borderWidth: 1.5,
+                  borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 14,
+                    fontWeight: '700',
+                    color: isDark ? '#E4E4E7' : '#334155',
+                  }}
+                >
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={confirmClearAllNotifications}
+                disabled={clearingAll}
+                activeOpacity={0.85}
+                style={{
+                  flex: 1,
+                  borderRadius: 999,
+                  overflow: 'hidden',
+                  opacity: clearingAll ? 0.7 : 1,
+                }}
+              >
+                <LinearGradient
+                  colors={['#DC2626', '#EF4444']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={{
+                    paddingVertical: 14,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: 999,
+                  }}
+                >
+                  {clearingAll ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text
+                      style={{
+                        fontSize: 14,
+                        fontWeight: '800',
+                        color: '#FFFFFF',
+                      }}
+                    >
+                      Clear All
+                    </Text>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── CLEAR ALL SUCCESS CARD MODAL ── */}
+      <Modal
+        visible={showClearSuccessModal}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setShowClearSuccessModal(false)}
+      >
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={() => setShowClearSuccessModal(false)}
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(9, 9, 11, 0.72)',
+            justifyContent: 'center',
+            alignItems: 'center',
+            paddingHorizontal: 24,
+          }}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            style={{
+              width: '100%',
+              maxWidth: 380,
+              backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+              borderRadius: 28,
+              padding: 28,
+              alignItems: 'center',
+              borderWidth: 1.5,
+              borderColor: isDark ? 'rgba(16, 185, 129, 0.35)' : '#A7F3D0',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 14 },
+              shadowOpacity: 0.28,
+              shadowRadius: 24,
+              elevation: 18,
+            }}
+          >
+            {/* Double-Ringed Emerald Checkmark Badge */}
+            <View
+              style={{
+                width: 80,
+                height: 80,
+                borderRadius: 40,
+                backgroundColor: isDark ? 'rgba(16, 185, 129, 0.14)' : '#ECFDF5',
+                borderWidth: 1,
+                borderColor: isDark ? 'rgba(16, 185, 129, 0.3)' : '#A7F3D0',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: 16,
+              }}
+            >
+              <View
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: 28,
+                  backgroundColor: '#10B981',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <CheckCircle2 size={30} color="#FFFFFF" strokeWidth={2.6} />
+              </View>
+            </View>
+
+            <View
+              style={{
+                paddingHorizontal: 12,
+                paddingVertical: 4,
+                borderRadius: 999,
+                backgroundColor: isDark ? 'rgba(16, 185, 129, 0.16)' : '#DCFCE7',
+                marginBottom: 10,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 11.5,
+                  fontWeight: '800',
+                  color: isDark ? '#34D399' : '#059669',
+                  letterSpacing: 0.3,
+                }}
+              >
+                {clearedCount > 0 ? `${clearedCount} REMOVED` : 'ALL CLEARED'}
+              </Text>
+            </View>
+
+            <Text
+              style={{
+                fontSize: 20,
+                fontWeight: '800',
+                color: isDark ? '#FFFFFF' : '#0F172A',
+                textAlign: 'center',
+                fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+              }}
+            >
+              All Notifications Cleared!
+            </Text>
+
+            <Text
+              style={{
+                fontSize: 14,
+                color: isDark ? '#A1A1AA' : '#475569',
+                textAlign: 'center',
+                lineHeight: 21,
+                marginTop: 8,
+                marginBottom: 24,
+                paddingHorizontal: 8,
+              }}
+            >
+              Your notification inbox is now completely clean and up to date.
+            </Text>
+
+            <TouchableOpacity
+              onPress={() => setShowClearSuccessModal(false)}
+              activeOpacity={0.85}
+              style={{
+                width: '100%',
+                borderRadius: 999,
+                overflow: 'hidden',
+              }}
+            >
+              <LinearGradient
+                colors={['#059669', '#10B981']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={{
+                  paddingVertical: 14,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 999,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 15,
+                    fontWeight: '800',
+                    color: '#FFFFFF',
+                  }}
+                >
+                  Done
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
