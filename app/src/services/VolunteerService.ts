@@ -5,6 +5,8 @@ import {
   VolunteerStatus,
   VolunteerType,
   EventVolunteerRole,
+  GeneralVolunteerPost,
+  VolunteerPostStatus,
 } from '../types/volunteer';
 
 class VolunteerService {
@@ -13,9 +15,14 @@ class VolunteerService {
     return firestore().collection('Rhema Church').doc(cid).collection('volunteer_applications');
   }
 
+  private getPostsCollection(churchId: string) {
+    const cid = churchId || 'rhema';
+    return firestore().collection('Rhema Church').doc(cid).collection('volunteer_posts');
+  }
+
   /**
    * Submit a General Church Volunteer Application
-   * Enforces Resubmission Rule: Only one pending application at a time.
+   * Enforces Resubmission Rule: Only one pending application at a time (per post or general).
    */
   async submitGeneralApplication(
     churchId: string,
@@ -24,20 +31,30 @@ class VolunteerService {
       preferredMinistries: string[];
       skills: string[];
       availabilityNotes?: string;
+      postId?: string;
+      postTitle?: string;
     }
   ): Promise<string> {
     const col = this.getCollection(churchId);
+    const targetPostId = (data.postId || '').trim();
 
     // 1. Check for existing pending application for General Volunteering
     try {
-      const pendingSnap = await col
+      const snap = await col
         .where('memberId', '==', member.id)
         .where('volunteerType', '==', 'general')
         .where('status', '==', 'pending')
-        .limit(1)
         .get();
 
-      if (!pendingSnap.empty) {
+      const hasDuplicatePending = snap.docs.some((d) => {
+        const docData = d.data();
+        if (targetPostId) {
+          return String(docData.postId || '').trim() === targetPostId;
+        }
+        return !docData.postId;
+      });
+
+      if (hasDuplicatePending) {
         throw new Error(
           'Your previous volunteer application is currently under review. You can submit a new application once the review is completed.'
         );
@@ -48,9 +65,14 @@ class VolunteerService {
       }
       // Index fallback
       const snap = await col.where('memberId', '==', member.id).get();
-      const hasPending = snap.docs.some(
-        (d) => d.data().volunteerType === 'general' && d.data().status === 'pending'
-      );
+      const hasPending = snap.docs.some((d) => {
+        const docData = d.data();
+        if (docData.volunteerType !== 'general' || docData.status !== 'pending') return false;
+        if (targetPostId) {
+          return String(docData.postId || '').trim() === targetPostId;
+        }
+        return !docData.postId;
+      });
       if (hasPending) {
         throw new Error(
           'Your previous volunteer application is currently under review. You can submit a new application once the review is completed.'
@@ -75,6 +97,8 @@ class VolunteerService {
       memberFcmToken: memberFcmToken || '',
       volunteerType: 'general',
       status: 'pending',
+      postId: targetPostId,
+      postTitle: (data.postTitle || '').trim(),
       preferredMinistries: data.preferredMinistries || [],
       skills: data.skills || [],
       availabilityNotes: data.availabilityNotes || '',
@@ -84,7 +108,14 @@ class VolunteerService {
     };
 
     await docRef.set(application);
-    await this.notifyAdminApplicationSubmitted(churchId, docRef.id, member.name, 'general');
+    await this.notifyAdminApplicationSubmitted(
+      churchId,
+      docRef.id,
+      member.name,
+      'general',
+      undefined,
+      data.postTitle
+    );
     return docRef.id;
   }
 
@@ -498,19 +529,236 @@ class VolunteerService {
     await this.getCollection(churchId).doc(applicationId).delete();
   }
 
+  // ── GENERAL VOLUNTEER POSTS (Admin Call for Volunteers -> Members) ──
+
+  /**
+   * Listen to all general volunteer posts for a church
+   */
+  subscribeVolunteerPosts(
+    churchId: string,
+    onUpdate: (posts: GeneralVolunteerPost[]) => void,
+    onError?: (error: Error) => void
+  ) {
+    return this.getPostsCollection(churchId)
+      .orderBy('createdAt', 'desc')
+      .onSnapshot(
+        (snap) => {
+          const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as GeneralVolunteerPost));
+          onUpdate(list);
+        },
+        (err) => {
+          console.warn('Volunteer posts snapshot error, falling back to unordered:', err);
+          this.getPostsCollection(churchId).onSnapshot(
+            (fallbackSnap) => {
+              const list = fallbackSnap.docs.map(
+                (d) => ({ id: d.id, ...d.data() } as GeneralVolunteerPost)
+              );
+              list.sort((a, b) => {
+                const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+                const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+                return timeB - timeA;
+              });
+              onUpdate(list);
+            },
+            (fallbackErr) => {
+              if (onError) onError(fallbackErr);
+            }
+          );
+        }
+      );
+  }
+
+  /**
+   * Admin creates a new General Volunteer Application Post for members
+   */
+  async createVolunteerPost(
+    churchId: string,
+    admin: { id: string; name: string },
+    data: {
+      title: string;
+      description: string;
+      ministries: string[];
+      recommendedSkills?: string[];
+      scheduleSummary?: string;
+      slotsNeeded?: number;
+      notifyMembers?: boolean;
+    }
+  ): Promise<string> {
+    const cid = churchId || 'rhema';
+    const col = this.getPostsCollection(cid);
+    const docRef = col.doc();
+
+    const cleanTitle = (data.title || '').trim() || 'Church Volunteer Call';
+    const cleanDesc = (data.description || '').trim();
+    const cleanMinistries = Array.isArray(data.ministries) ? data.ministries : [];
+    const cleanSkills = Array.isArray(data.recommendedSkills) ? data.recommendedSkills : [];
+    const cleanSchedule = (data.scheduleSummary || '').trim();
+    const cleanSlots =
+      typeof data.slotsNeeded === 'number' && data.slotsNeeded > 0 ? data.slotsNeeded : 0;
+
+    const postDoc: Record<string, any> = {
+      id: docRef.id,
+      churchId: cid,
+      title: cleanTitle,
+      description: cleanDesc,
+      ministries: cleanMinistries,
+      recommendedSkills: cleanSkills,
+      scheduleSummary: cleanSchedule,
+      slotsNeeded: cleanSlots,
+      status: 'open',
+      notifyMembers: data.notifyMembers !== false,
+      createdBy: admin.id || 'admin',
+      createdByName: admin.name || 'Church Admin',
+      createdAt: firestore.FieldValue.serverTimestamp(),
+      updatedAt: firestore.FieldValue.serverTimestamp(),
+    };
+
+    await docRef.set(postDoc);
+
+    if (data.notifyMembers !== false) {
+      await this.broadcastVolunteerPostNotification(cid, {
+        ...(postDoc as GeneralVolunteerPost),
+        id: docRef.id,
+      });
+    }
+
+    return docRef.id;
+  }
+
+  /**
+   * Admin updates an existing General Volunteer Post
+   */
+  async updateVolunteerPost(
+    churchId: string,
+    postId: string,
+    data: {
+      title?: string;
+      description?: string;
+      ministries?: string[];
+      recommendedSkills?: string[];
+      scheduleSummary?: string;
+      slotsNeeded?: number;
+      status?: VolunteerPostStatus;
+    }
+  ): Promise<void> {
+    const cid = churchId || 'rhema';
+    const docRef = this.getPostsCollection(cid).doc(postId);
+    const updates: Record<string, any> = {
+      updatedAt: firestore.FieldValue.serverTimestamp(),
+    };
+
+    if (typeof data.title === 'string') updates.title = data.title.trim();
+    if (typeof data.description === 'string') updates.description = data.description.trim();
+    if (Array.isArray(data.ministries)) updates.ministries = data.ministries;
+    if (Array.isArray(data.recommendedSkills)) updates.recommendedSkills = data.recommendedSkills;
+    if (typeof data.scheduleSummary === 'string') updates.scheduleSummary = data.scheduleSummary.trim();
+    if (typeof data.slotsNeeded === 'number') updates.slotsNeeded = Math.max(0, data.slotsNeeded);
+    if (data.status) updates.status = data.status;
+
+    await docRef.update(updates);
+  }
+
+  /**
+   * Admin closes or reopens a General Volunteer Post
+   */
+  async toggleVolunteerPostStatus(
+    churchId: string,
+    postId: string,
+    status: VolunteerPostStatus
+  ): Promise<void> {
+    await this.getPostsCollection(churchId).doc(postId).update({
+      status,
+      updatedAt: firestore.FieldValue.serverTimestamp(),
+    });
+  }
+
+  /**
+   * Admin deletes a General Volunteer Post
+   */
+  async deleteVolunteerPost(churchId: string, postId: string): Promise<void> {
+    await this.getPostsCollection(churchId).doc(postId).delete();
+  }
+
+  /**
+   * Broadcasts push + in-app notification to all church members when a General Volunteer Post is published
+   */
+  async broadcastVolunteerPostNotification(
+    churchId: string,
+    post: GeneralVolunteerPost
+  ): Promise<void> {
+    const cid = churchId || 'rhema';
+    const docId = `vol_post_${post.id}`;
+    const ministryLabels = (post.ministries || [])
+      .map((m) => m.split('·')[0]?.trim() || m)
+      .filter(Boolean);
+    const minPart =
+      ministryLabels.length > 0 ? ` (${ministryLabels.slice(0, 2).join(', ')})` : '';
+    const title = `🤝 Volunteer Call: ${post.title}`;
+    const body =
+      post.description?.trim() ||
+      `We are inviting church members to serve in "${post.title}"${minPart}. Tap to apply and serve!`;
+
+    const payload: Record<string, any> = {
+      type: 'volunteer_post_new',
+      churchId: cid,
+      targetChurchId: cid,
+      title,
+      body,
+      content: body,
+      postId: post.id,
+      postTitle: post.title,
+      referenceId: post.id,
+      referenceType: 'general_volunteer_post',
+      screen: 'Volunteer',
+      read: false,
+      createdAt: firestore.FieldValue.serverTimestamp(),
+    };
+
+    try {
+      await firestore()
+        .collection('Rhema Church')
+        .doc(cid)
+        .collection('notifications')
+        .doc(docId)
+        .set(payload, { merge: true });
+    } catch (err) {
+      console.warn('[VolunteerService] Volunteer post notification write warning:', err);
+    }
+
+    try {
+      // silent: false triggers sendRhemaBroadcastPush in Cloud Functions to alert all church members
+      await firestore()
+        .collection('Rhema Church')
+        .doc(cid)
+        .collection('broadcasts')
+        .doc(docId)
+        .set({ ...payload, silent: false }, { merge: true });
+    } catch (err) {
+      console.warn('[VolunteerService] Volunteer post broadcast write warning:', err);
+    }
+  }
+
   private async notifyAdminApplicationSubmitted(
     churchId: string,
     applicationId: string,
     memberNameRaw: string,
     volunteerType: 'general' | 'event',
-    event?: { id: string; title: string }
+    event?: { id: string; title: string },
+    postTitle?: string
   ): Promise<void> {
     const memberDisplayName = (memberNameRaw || '').trim() || 'A Church Member';
     const isEvent = volunteerType === 'event';
     const eventTitleClean = (event?.title || 'Church Event').trim();
-    const title = isEvent ? '📅 New Event Volunteer Application!' : '📋 New Volunteer Application!';
+    const postTitleClean = (postTitle || '').trim();
+    const title = isEvent
+      ? '📅 New Event Volunteer Application!'
+      : postTitleClean
+      ? `📋 Volunteer Application: ${postTitleClean}`
+      : '📋 New Volunteer Application!';
     const body = isEvent
       ? `${memberDisplayName} has applied to volunteer for ${eventTitleClean}. Please review the application.`
+      : postTitleClean
+      ? `${memberDisplayName} has applied for "${postTitleClean}". Please review the application.`
       : `${memberDisplayName} has submitted a new General Volunteer application. Please review the application.`;
 
     await this.writeInAppNotification(
@@ -526,6 +774,7 @@ class VolunteerService {
         volunteerType,
         eventId: isEvent ? (event?.id || '') : '',
         eventTitle: isEvent ? eventTitleClean : '',
+        postTitle: postTitleClean,
         applicationId,
         referenceId: applicationId,
         referenceType: isEvent ? 'event_volunteer' : 'general_volunteer',

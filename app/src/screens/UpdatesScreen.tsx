@@ -28,6 +28,7 @@ const VOLUNTEER_NOTIFICATION_TYPES = [
   'volunteer_assignment',
   'volunteer_event_change',
   'volunteer_reminder',
+  'volunteer_post_new',
   'job_opportunity_new',
   'job_application_admin',
   'job_application_member',
@@ -156,6 +157,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
     if (type === 'volunteer_assignment') return 'VOLUNTEER ASSIGNMENT';
     if (type === 'volunteer_event_change') return 'EVENT VOLUNTEER UPDATE';
     if (type === 'volunteer_reminder') return 'VOLUNTEER REMINDER';
+    if (type === 'volunteer_post_new') return 'VOLUNTEER CALL';
     if (type === 'job_opportunity_new') return 'MINISTRY OPPORTUNITY';
     if (type === 'job_application_admin') return 'MINISTRY APPLICATION';
     if (type === 'job_application_member') return 'APPLICATION UPDATE';
@@ -1419,7 +1421,8 @@ export default function UpdatesScreen({ navigation, route }: any) {
                 {(selectedUpdate?.type === 'volunteer_application_member' ||
                   selectedUpdate?.type === 'volunteer_assignment' ||
                   selectedUpdate?.type === 'volunteer_event_change' ||
-                  selectedUpdate?.type === 'volunteer_reminder') && (
+                  selectedUpdate?.type === 'volunteer_reminder' ||
+                  selectedUpdate?.type === 'volunteer_post_new') && (
                   <TouchableOpacity
                     style={[
                       styles.joinLiveBtn,
@@ -1435,16 +1438,23 @@ export default function UpdatesScreen({ navigation, route }: any) {
                     ]}
                     onPress={() => {
                       const evId = selectedUpdate?.eventId;
+                      const postId = String(selectedUpdate?.postId || selectedUpdate?.referenceId || '').replace(/^vol_post_/, '');
                       setSelectedUpdate(null);
                       if (evId) {
                         navigation.navigate('EventDetails', { eventId: evId, id: evId });
+                      } else if (selectedUpdate?.type === 'volunteer_post_new' && postId) {
+                        navigation.navigate('Volunteer', { postId });
                       } else {
                         navigation.navigate('Volunteer');
                       }
                     }}
                   >
                     <Text style={styles.joinLiveBtnTxt}>
-                      {selectedUpdate?.eventId ? '📅 View Event Volunteer Details' : '🤝 Open Volunteer Portal'}
+                      {selectedUpdate?.eventId
+                        ? '📅 View Event Volunteer Details'
+                        : selectedUpdate?.type === 'volunteer_post_new'
+                        ? '🤝 Apply to Volunteer'
+                        : '🤝 Open Volunteer Portal'}
                     </Text>
                   </TouchableOpacity>
                 )}

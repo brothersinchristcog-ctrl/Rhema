@@ -859,9 +859,9 @@ import { onDocumentCreated } from 'firebase-functions/v2/firestore';
 async function handleBroadcastPushDispatch(data, churchIdParam, messageIdParam) {
     if (!data)
         return;
-    // Skip if silent/already handled by scheduler
-    if (data.silent === true) {
-        console.log(`🛑 Skipping broadcast push for silent document: ${messageIdParam}`);
+    // Skip if silent/already handled by scheduler or dedicated trigger
+    if (data.silent === true || data.type === 'volunteer_post_new') {
+        console.log(`🛑 Skipping broadcast push for silent/dedicated document: ${messageIdParam}`);
         return;
     }
     const title = data.title || 'Church Update';
@@ -988,6 +988,7 @@ async function handleBroadcastPushDispatch(data, churchIdParam, messageIdParam) 
             title,
             body: plainBody.length > 200 ? plainBody.substring(0, 197) + '...' : plainBody,
             ...(data.eventId ? { eventId: String(data.eventId) } : {}),
+            ...(data.postId ? { postId: String(data.postId) } : {}),
             ...(data.prayerId ? { prayerId: String(data.prayerId) } : {}),
             ...(data.requestId ? { requestId: String(data.requestId) } : {}),
             ...(data.targetTab ? { targetTab: String(data.targetTab) } : {}),
@@ -1629,7 +1630,7 @@ const testBaptismsV1 = functionsCompat.https.onRequest(async (req, res) => {
         res.status(500).send(error.message);
     }
 });
-export { publishScheduledSermons, triggerPublishScheduledSermonsHttp, triggerDailyVersePushHttp, sendDailyVersePushScheduled, monitorMeetingLive, pushMeetingLive, onBaptismRequestCreatedAdmin, onBaptismRequestCreatedAdminLegacy, onPrayerRequestCreatedAdmin, onPrayerRequestCreatedAdminLegacy, onPrayerRequestProcessedMember, onPrayerRequestProcessedMemberLegacy, pushPrayerRequestApproved, pushCareCellAnnouncement, pushCareCellMeeting, pushCareCellPrayerRequest, pushCareCellVisit, onTestimonyCreatedAdmin, onTestimonyCreatedAdminLegacy, onTestimonyUpdatedWorkflow, onTestimonyUpdatedWorkflowLegacy, onVolunteerApplicationCreated, onVolunteerApplicationCreatedLegacy, onVolunteerApplicationUpdated, onVolunteerApplicationUpdatedLegacy, onEventUpdatedForVolunteers, onEventUpdatedForVolunteersLegacy, scheduledVolunteerReminders, triggerVolunteerPushTestHttp, onJobApplicationCreated, onJobApplicationUpdated, onJobOpportunityCreated, onJobOpportunityUpdated, onRegistrationRequestCreated, onRegistrationRequestUpdated, } from './notifications.js';
+export { publishScheduledSermons, triggerPublishScheduledSermonsHttp, triggerDailyVersePushHttp, sendDailyVersePushScheduled, monitorMeetingLive, pushMeetingLive, onBaptismRequestCreatedAdmin, onBaptismRequestCreatedAdminLegacy, onPrayerRequestCreatedAdmin, onPrayerRequestCreatedAdminLegacy, onPrayerRequestProcessedMember, onPrayerRequestProcessedMemberLegacy, pushPrayerRequestApproved, pushCareCellAnnouncement, pushCareCellMeeting, pushCareCellPrayerRequest, pushCareCellVisit, onTestimonyCreatedAdmin, onTestimonyCreatedAdminLegacy, onTestimonyUpdatedWorkflow, onTestimonyUpdatedWorkflowLegacy, onVolunteerApplicationCreated, onVolunteerApplicationCreatedLegacy, onVolunteerApplicationUpdated, onVolunteerApplicationUpdatedLegacy, onEventUpdatedForVolunteers, onEventUpdatedForVolunteersLegacy, scheduledVolunteerReminders, triggerVolunteerPushTestHttp, onJobApplicationCreated, onJobApplicationUpdated, onJobOpportunityCreated, onJobOpportunityUpdated, onRegistrationRequestCreated, onRegistrationRequestUpdated, onVolunteerPostCreated, onVolunteerPostUpdated, } from './notifications.js';
 export { onServiceAssignmentQueueDispatched, onServiceAssignmentResponded, checkServiceAssignmentTimeoutsCron, sendServiceRosterRemindersCron, triggerCheckRosterTimeoutsHttp, dispatchServiceAssignmentNotificationHttp, onServiceRehearsalCreated, onServicePlanPublished, bookResponsibilitySlotHttp, declineResponsibilitySlotHttp, } from './rosterNotifications.js';
 export { guestInviteLanding } from './guestInvite.js';
 //# sourceMappingURL=index.js.map

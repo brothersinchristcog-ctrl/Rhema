@@ -948,9 +948,9 @@ import { onDocumentCreated } from 'firebase-functions/v2/firestore';
 async function handleBroadcastPushDispatch(data: any, churchIdParam?: string, messageIdParam?: string) {
   if (!data) return;
 
-  // Skip if silent/already handled by scheduler
-  if (data.silent === true) {
-    console.log(`🛑 Skipping broadcast push for silent document: ${messageIdParam}`);
+  // Skip if silent/already handled by scheduler or dedicated trigger
+  if (data.silent === true || data.type === 'volunteer_post_new') {
+    console.log(`🛑 Skipping broadcast push for silent/dedicated document: ${messageIdParam}`);
     return;
   }
 
@@ -1075,6 +1075,7 @@ async function handleBroadcastPushDispatch(data: any, churchIdParam?: string, me
       title,
       body: plainBody.length > 200 ? plainBody.substring(0, 197) + '...' : plainBody,
       ...(data.eventId ? { eventId: String(data.eventId) } : {}),
+      ...(data.postId ? { postId: String(data.postId) } : {}),
       ...(data.prayerId ? { prayerId: String(data.prayerId) } : {}),
       ...(data.requestId ? { requestId: String(data.requestId) } : {}),
       ...(data.targetTab ? { targetTab: String(data.targetTab) } : {}),
@@ -1797,6 +1798,8 @@ export {
   onJobOpportunityUpdated,
   onRegistrationRequestCreated,
   onRegistrationRequestUpdated,
+  onVolunteerPostCreated,
+  onVolunteerPostUpdated,
 } from './notifications.js';
 
 export {

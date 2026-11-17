@@ -484,6 +484,12 @@ class NotificationService {
           }
           break;
         }
+        case 'volunteer_post_new': {
+          const rawPostId = String(rawData.postId || rawData.referenceId || id || '').replace(/^vol_post_/, '');
+          console.log('🤝 [NotificationService] Routing to General Volunteer Call Post:', { postId: rawPostId });
+          nav.navigate('Volunteer', { postId: rawPostId });
+          break;
+        }
         case 'job_opportunity_new': {
           const oppId = rawData.opportunityId || rawData.referenceId || id;
           console.log('💼 [NotificationService] Routing to Ministry Opportunity:', { oppId });

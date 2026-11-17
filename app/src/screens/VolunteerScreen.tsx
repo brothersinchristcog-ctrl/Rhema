@@ -12,6 +12,8 @@ import {
   StatusBar,
   Platform,
   Alert,
+  Modal,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -33,6 +35,7 @@ import {
   Plus,
   Trash2,
   X,
+  Users,
 } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
 import { useChurch } from '../context/ChurchContext';
@@ -41,6 +44,7 @@ import VolunteerService from '../services/VolunteerService';
 import {
   VolunteerApplication,
   VolunteerStatus,
+  GeneralVolunteerPost,
   COMMON_MINISTRIES,
 } from '../types/volunteer';
 import { formatDateDisplay, formatDateMonthYear, formatTimeTo12Hour } from '../utils/DateUtils';
@@ -107,15 +111,20 @@ const MINISTRY_METAS: Record<string, { emoji: string; short: string }> = {
   transport: { emoji: '🚗', short: 'Transport' },
 };
 
-export default function VolunteerScreen({ navigation }: any) {
+export default function VolunteerScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
   const { user, member } = useAuth();
   const { activeChurch } = useChurch();
   const { isDark, colors } = useTheme();
 
   const churchId = activeChurch?.id || 'rhema';
+  const targetPostId = route?.params?.postId || '';
 
   const [myApplications, setMyApplications] = useState<VolunteerApplication[]>([]);
+  const [volunteerPosts, setVolunteerPosts] = useState<GeneralVolunteerPost[]>([]);
+  const [selectedPost, setSelectedPost] = useState<GeneralVolunteerPost | null>(null);
+  const [quickApplyPost, setQuickApplyPost] = useState<GeneralVolunteerPost | null>(null);
+  const [quickApplyNotes, setQuickApplyNotes] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -130,6 +139,11 @@ export default function VolunteerScreen({ navigation }: any) {
   // Active View Tab: 'apply' | 'my_status'
   const [activeTab, setActiveTab] = useState<'apply' | 'my_status'>('apply');
 
+  // Open Volunteer Posts published by Admin
+  const openPosts = useMemo(() => {
+    return volunteerPosts.filter((p) => p.status !== 'closed');
+  }, [volunteerPosts]);
+
   // Filter skills by active category
   const displayedSkills = useMemo(() => {
     return SKILLS_BY_CATEGORY[selectedSkillCategory] || SKILLS_BY_CATEGORY.worship;
@@ -143,12 +157,20 @@ export default function VolunteerScreen({ navigation }: any) {
     type?: 'success' | 'error' | 'info';
   }>({ visible: false, title: '', message: '' });
 
-  // Resubmission Rule: Check for active pending general application
+  // Resubmission Rule: Check for active pending general application (not tied to a different specific post)
   const pendingGeneralApp = useMemo(() => {
+    if (selectedPost) {
+      return myApplications.find(
+        (app) =>
+          app.volunteerType === 'general' &&
+          app.status === 'pending' &&
+          app.postId === selectedPost.id
+      );
+    }
     return myApplications.find(
-      (app) => app.volunteerType === 'general' && app.status === 'pending'
+      (app) => app.volunteerType === 'general' && app.status === 'pending' && !app.postId
     );
-  }, [myApplications]);
+  }, [myApplications, selectedPost]);
 
   // Latest general application (for status awareness)
   const latestGeneralApp = useMemo(() => {
@@ -161,8 +183,8 @@ export default function VolunteerScreen({ navigation }: any) {
     try {
       const apps = await VolunteerService.getMyApplications(churchId, user.uid);
       setMyApplications(apps);
-      // If user has existing applications, switch to status tab by default on initial load
-      if (apps.length > 0 && loading) {
+      // If user has existing applications and didn't tap a specific post notification, switch to status tab by default on initial load
+      if (apps.length > 0 && loading && !targetPostId) {
         setActiveTab('my_status');
       }
     } catch (err) {
@@ -175,7 +197,106 @@ export default function VolunteerScreen({ navigation }: any) {
 
   useEffect(() => {
     fetchApplications();
-  }, [churchId, user?.uid]);
+    const unsubPosts = VolunteerService.subscribeVolunteerPosts(
+      churchId,
+      (posts) => {
+        setVolunteerPosts(posts);
+        if (targetPostId) {
+          const matched = posts.find((p) => p.id === targetPostId && p.status !== 'closed');
+          if (matched) {
+            setActiveTab('apply');
+            setQuickApplyPost(matched);
+          }
+        }
+      },
+      () => {}
+    );
+    return () => unsubPosts();
+  }, [churchId, user?.uid, targetPostId]);
+
+  const handleOpenQuickApply = (post: GeneralVolunteerPost) => {
+    const existingPendingForPost = myApplications.find(
+      (a) => a.volunteerType === 'general' && a.postId === post.id && a.status === 'pending'
+    );
+    if (existingPendingForPost) {
+      notifyPendingUnderReview();
+      return;
+    }
+    setQuickApplyPost(post);
+    setQuickApplyNotes(post.scheduleSummary ? `Available for: ${post.scheduleSummary}` : '');
+  };
+
+  const handlePrefillFromPost = (post: GeneralVolunteerPost) => {
+    setSelectedPost(post);
+    if (Array.isArray(post.ministries) && post.ministries.length > 0) {
+      setSelectedMinistries(post.ministries);
+    }
+    if (Array.isArray(post.recommendedSkills) && post.recommendedSkills.length > 0) {
+      setSelectedSkills(post.recommendedSkills);
+    }
+    if (post.scheduleSummary && !availabilityNotes.trim()) {
+      setAvailabilityNotes(`Available for: ${post.scheduleSummary}`);
+    }
+    setQuickApplyPost(null);
+  };
+
+  const handleSubmitQuickApply = async () => {
+    if (!quickApplyPost) return;
+    try {
+      setSubmitting(true);
+      const memberName =
+        member?.name ||
+        user?.displayName ||
+        (member?.firstName ? `${member.firstName} ${member.lastName || ''}`.trim() : 'Faithful Member');
+      const memberPhone = member?.phone || user?.phoneNumber || '';
+      const memberEmail = member?.email || user?.email || '';
+
+      await VolunteerService.submitGeneralApplication(
+        churchId,
+        {
+          id: user?.uid || '',
+          name: memberName,
+          phone: memberPhone,
+          email: memberEmail,
+        },
+        {
+          postId: quickApplyPost.id,
+          postTitle: quickApplyPost.title,
+          preferredMinistries:
+            Array.isArray(quickApplyPost.ministries) && quickApplyPost.ministries.length > 0
+              ? quickApplyPost.ministries
+              : ['General Church Volunteering'],
+          skills: Array.isArray(quickApplyPost.recommendedSkills)
+            ? quickApplyPost.recommendedSkills
+            : [],
+          availabilityNotes: quickApplyNotes.trim(),
+        }
+      );
+
+      const submittedTitle = quickApplyPost.title;
+      setQuickApplyPost(null);
+      setQuickApplyNotes('');
+      await fetchApplications();
+      setActiveTab('my_status');
+
+      setAlertConfig({
+        visible: true,
+        title: 'Application Submitted!',
+        message: `Thank you for applying for "${submittedTitle}"! Church leadership has been notified and will review your application shortly.`,
+        type: 'success',
+      });
+    } catch (err: any) {
+      setQuickApplyPost(null);
+      setAlertConfig({
+        visible: true,
+        title: 'Submission Notice',
+        message: err.message || 'Could not submit your volunteer application. Please try again.',
+        type: 'info',
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const notifyPendingUnderReview = () => {
     setAlertConfig({
@@ -263,6 +384,8 @@ export default function VolunteerScreen({ navigation }: any) {
           email: memberEmail,
         },
         {
+          postId: selectedPost?.id || '',
+          postTitle: selectedPost?.title || '',
           preferredMinistries: selectedMinistries,
           skills: selectedSkills,
           availabilityNotes: availabilityNotes.trim(),
@@ -270,6 +393,7 @@ export default function VolunteerScreen({ navigation }: any) {
       );
 
       // Reset form
+      setSelectedPost(null);
       setSelectedMinistries([]);
       setSelectedSkills([]);
       setAvailabilityNotes('');
@@ -660,6 +784,191 @@ export default function VolunteerScreen({ navigation }: any) {
                 </Text>
               </View>
             ) : null}
+
+            {/* ── OPEN VOLUNTEER CALLS (POSTED BY ADMIN) ── */}
+            {openPosts.length > 0 && (
+              <View style={{ marginBottom: 14 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Sparkles size={15} color="#059669" />
+                    <Text style={{ fontSize: 15, fontWeight: '800', color: colors.text }}>
+                      Open Volunteer Calls ({openPosts.length})
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={{ gap: 10 }}>
+                  {openPosts.map((post) => {
+                    const existingForPost = myApplications.find(
+                      (a) =>
+                        a.volunteerType === 'general' &&
+                        a.postId === post.id &&
+                        a.status !== 'withdrawn'
+                    );
+                    const minTitles = (post.ministries || []).map(
+                      (m) => m.split('·')[0]?.trim() || m
+                    );
+
+                    return (
+                      <TouchableOpacity
+                        key={post.id}
+                        activeOpacity={0.85}
+                        onPress={() => handleOpenQuickApply(post)}
+                        style={{
+                          backgroundColor: colors.surface,
+                          borderColor: selectedPost?.id === post.id ? '#059669' : colors.border,
+                          borderWidth: selectedPost?.id === post.id ? 1.5 : 1,
+                          borderRadius: 16,
+                          padding: 15,
+                        }}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 15.5, fontWeight: '800', color: colors.text }}>
+                              {post.title}
+                            </Text>
+                            {minTitles.length > 0 && (
+                              <Text
+                                style={{
+                                  fontSize: 12.5,
+                                  fontWeight: '700',
+                                  color: '#059669',
+                                  marginTop: 2,
+                                }}
+                              >
+                                {minTitles.join(' • ')}
+                              </Text>
+                            )}
+                          </View>
+
+                          {existingForPost ? (
+                            renderStatusBadge(existingForPost.status)
+                          ) : (
+                            <View
+                              style={{
+                                backgroundColor: isDark ? 'rgba(16, 185, 129, 0.16)' : '#DCFCE7',
+                                borderColor: isDark ? 'rgba(16, 185, 129, 0.35)' : '#BBF7D0',
+                                borderWidth: 1,
+                                paddingHorizontal: 8,
+                                paddingVertical: 3,
+                                borderRadius: 6,
+                              }}
+                            >
+                              <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? '#34D399' : '#15803D' }}>
+                                OPEN
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+
+                        {!!post.description && (
+                          <Text
+                            style={{
+                              fontSize: 13,
+                              color: colors.textSecondary,
+                              marginTop: 6,
+                              lineHeight: 18,
+                            }}
+                          >
+                            {post.description}
+                          </Text>
+                        )}
+
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginTop: 8 }}>
+                          {!!post.scheduleSummary && (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                              <Clock size={12.5} color={colors.textSecondary} />
+                              <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: '600' }}>
+                                {post.scheduleSummary}
+                              </Text>
+                            </View>
+                          )}
+                          {!!post.slotsNeeded && post.slotsNeeded > 0 && (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                              <Users size={12.5} color="#059669" />
+                              <Text style={{ fontSize: 12, color: '#059669', fontWeight: '700' }}>
+                                {post.slotsNeeded} Volunteer{post.slotsNeeded === 1 ? '' : 's'} Needed
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+
+                        {existingForPost?.status === 'pending' ? (
+                          <View
+                            style={{
+                              marginTop: 12,
+                              paddingVertical: 8,
+                              paddingHorizontal: 14,
+                              borderRadius: 999,
+                              backgroundColor: isDark ? '#27272A' : '#F1F5F9',
+                              alignSelf: 'center',
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              gap: 6,
+                            }}
+                          >
+                            <Clock size={13} color={colors.textSecondary} />
+                            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary }}>
+                              Application Under Review
+                            </Text>
+                          </View>
+                        ) : (
+                          <View style={{ marginTop: 12, alignItems: 'center' }}>
+                            <TouchableOpacity
+                              onPress={() => handleOpenQuickApply(post)}
+                              activeOpacity={0.85}
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 6,
+                                backgroundColor: '#059669',
+                                paddingVertical: 9,
+                                paddingHorizontal: 26,
+                                borderRadius: 999,
+                              }}
+                            >
+                              <HeartHandshake size={14} color="#FFFFFF" />
+                              <Text style={{ fontSize: 13, fontWeight: '800', color: '#FFFFFF' }}>
+                                Apply Now
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
+            {selectedPost && (
+              <View
+                style={{
+                  backgroundColor: isDark ? 'rgba(5, 150, 105, 0.16)' : '#ECFDF5',
+                  borderColor: '#059669',
+                  borderWidth: 1,
+                  borderRadius: 12,
+                  padding: 12,
+                  marginBottom: 4,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: '#059669' }}>
+                    APPLYING FOR VOLUNTEER CALL
+                  </Text>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: colors.text, marginTop: 1 }}>
+                    {selectedPost.title}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => setSelectedPost(null)}>
+                  <X size={16} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* ── WHERE WOULD YOU LIKE TO SERVE (MODERN 2-COLUMN GRID) ── */}
             <View
@@ -1106,7 +1415,9 @@ export default function VolunteerScreen({ navigation }: any) {
                           {renderStatusBadge(app.status)}
                         </View>
                         <Text style={[styles.appNameTxt, { color: colors.text }]} numberOfLines={1}>
-                          {isEvent ? app.eventTitle || 'Church Event' : app.memberName || 'Volunteer'}
+                          {isEvent
+                            ? app.eventTitle || 'Church Event'
+                            : app.postTitle || app.memberName || 'Volunteer'}
                         </Text>
                         <Text style={[styles.appDateTxt, { color: colors.textSecondary }]}>
                           Submitted: {app.createdAt?.toDate ? formatDateMonthYear(app.createdAt.toDate()) : 'Recently'}
@@ -1249,6 +1560,292 @@ export default function VolunteerScreen({ navigation }: any) {
           </View>
         )}
       </ScrollView>
+
+      {/* ── QUICK APPLY MODAL FOR ADMIN VOLUNTEER CALL POST ── */}
+      <Modal
+        visible={Boolean(quickApplyPost)}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setQuickApplyPost(null)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(0,0,0,0.55)',
+            justifyContent: 'flex-end',
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+              borderTopLeftRadius: 22,
+              borderTopRightRadius: 22,
+              padding: 20,
+              maxHeight: '85%',
+            }}
+          >
+            {/* Header */}
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'flex-start',
+                justifyContent: 'space-between',
+                marginBottom: 12,
+              }}
+            >
+              <View style={{ flex: 1, paddingRight: 10 }}>
+                <Text style={{ fontSize: 11, fontWeight: '800', color: '#059669' }}>
+                  VOLUNTEER OPPORTUNITY
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 18,
+                    fontWeight: '800',
+                    color: isDark ? '#FFFFFF' : '#0F172A',
+                    marginTop: 2,
+                  }}
+                >
+                  {quickApplyPost?.title}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setQuickApplyPost(null)}
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 16,
+                  backgroundColor: isDark ? '#27272A' : '#F1F5F9',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <X size={18} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 360 }} showsVerticalScrollIndicator={false}>
+              {!!quickApplyPost?.description && (
+                <Text
+                  style={{
+                    fontSize: 13.5,
+                    color: isDark ? '#D4D4D8' : '#334155',
+                    lineHeight: 20,
+                    marginBottom: 12,
+                  }}
+                >
+                  {quickApplyPost.description}
+                </Text>
+              )}
+
+              {!!quickApplyPost?.scheduleSummary && (
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 8,
+                    backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                    padding: 10,
+                    borderRadius: 10,
+                    marginBottom: 12,
+                  }}
+                >
+                  <Clock size={15} color="#059669" />
+                  <Text
+                    style={{
+                      fontSize: 12.5,
+                      fontWeight: '700',
+                      color: isDark ? '#E4E4E7' : '#1E293B',
+                    }}
+                  >
+                    Schedule: {quickApplyPost.scheduleSummary}
+                  </Text>
+                </View>
+              )}
+
+              {Array.isArray(quickApplyPost?.ministries) &&
+                quickApplyPost!.ministries.length > 0 && (
+                  <View style={{ marginBottom: 12 }}>
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontWeight: '800',
+                        color: isDark ? '#A1A1AA' : '#64748B',
+                        marginBottom: 6,
+                      }}
+                    >
+                      MINISTRY AREAS
+                    </Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                      {quickApplyPost!.ministries.map((m, i) => (
+                        <View
+                          key={i}
+                          style={{
+                            backgroundColor: isDark ? 'rgba(5, 150, 105, 0.2)' : '#ECFDF5',
+                            borderColor: '#059669',
+                            borderWidth: 1,
+                            paddingHorizontal: 10,
+                            paddingVertical: 5,
+                            borderRadius: 8,
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 12,
+                              fontWeight: '700',
+                              color: isDark ? '#6EE7B7' : '#047857',
+                            }}
+                          >
+                            {m.split('·')[0]?.trim() || m}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                )}
+
+              {Array.isArray(quickApplyPost?.recommendedSkills) &&
+                quickApplyPost!.recommendedSkills.length > 0 && (
+                  <View style={{ marginBottom: 12 }}>
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontWeight: '800',
+                        color: isDark ? '#A1A1AA' : '#64748B',
+                        marginBottom: 6,
+                      }}
+                    >
+                      RECOMMENDED SKILLS
+                    </Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                      {quickApplyPost!.recommendedSkills.map((sk, i) => (
+                        <View
+                          key={i}
+                          style={{
+                            backgroundColor: isDark ? '#27272A' : '#F1F5F9',
+                            paddingHorizontal: 9,
+                            paddingVertical: 4,
+                            borderRadius: 6,
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 11.5,
+                              fontWeight: '600',
+                              color: isDark ? '#E4E4E7' : '#334155',
+                            }}
+                          >
+                            {sk}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                )}
+
+              <Text
+                style={{
+                  fontSize: 11,
+                  fontWeight: '800',
+                  color: isDark ? '#A1A1AA' : '#64748B',
+                  marginBottom: 6,
+                }}
+              >
+                AVAILABILITY / MESSAGE TO ADMIN (OPTIONAL)
+              </Text>
+              <TextInput
+                style={{
+                  borderWidth: 1,
+                  borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+                  backgroundColor: isDark ? '#27272A' : '#F8FAFC',
+                  borderRadius: 10,
+                  padding: 12,
+                  color: isDark ? '#FFFFFF' : '#0F172A',
+                  fontSize: 13,
+                  minHeight: 75,
+                  textAlignVertical: 'top',
+                }}
+                value={quickApplyNotes}
+                onChangeText={setQuickApplyNotes}
+                placeholder="Share your availability or any notes for the ministry team..."
+                placeholderTextColor="#94A3B8"
+                multiline
+              />
+
+              <TouchableOpacity
+                onPress={() => quickApplyPost && handlePrefillFromPost(quickApplyPost)}
+                style={{ marginTop: 10, alignSelf: 'center', paddingVertical: 4 }}
+              >
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#059669' }}>
+                  Or customize skills & ministries in full form →
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+
+            <View
+              style={{
+                flexDirection: 'row',
+                gap: 10,
+                marginTop: 16,
+                paddingTop: 12,
+                borderTopWidth: 1,
+                borderTopColor: isDark ? '#27272A' : '#F1F5F9',
+              }}
+            >
+              <TouchableOpacity
+                onPress={() => setQuickApplyPost(null)}
+                disabled={submitting}
+                style={{
+                  flex: 1,
+                  paddingVertical: 12,
+                  borderRadius: 999,
+                  borderWidth: 1,
+                  borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 13,
+                    fontWeight: '700',
+                    color: isDark ? '#E4E4E7' : '#475569',
+                  }}
+                >
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleSubmitQuickApply}
+                disabled={submitting}
+                style={{
+                  flex: 2,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  paddingVertical: 12,
+                  borderRadius: 999,
+                  backgroundColor: '#059669',
+                  opacity: submitting ? 0.65 : 1,
+                }}
+              >
+                {submitting ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Send size={14} color="#FFFFFF" />
+                    <Text style={{ fontSize: 13.5, fontWeight: '800', color: '#FFFFFF' }}>
+                      Submit Application
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       <CustomAlert
         visible={alertConfig.visible}

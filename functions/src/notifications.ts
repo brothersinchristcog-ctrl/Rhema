@@ -5676,3 +5676,207 @@ export const onRegistrationRequestUpdated = onDocumentUpdated(
     }
   }
 );
+
+// ─────────────────────────────────────────────────────────────
+// 📢 GENERAL VOLUNTEER CALL POSTS – MEMBER PUSH NOTIFICATIONS
+// ─────────────────────────────────────────────────────────────
+
+async function handleVolunteerPostPublishedPush(
+  data: any,
+  churchId: string,
+  postId: string,
+  snapRef?: any
+) {
+  if (!data) return;
+  if (data.notifyMembers === false) {
+    console.log(`🛑 [VolunteerPost] notifyMembers is false for ${postId}, skipping push.`);
+    return;
+  }
+
+  const db = getFirestore();
+  const messaging = getMessaging();
+  const cid = churchId || 'rhema';
+
+  if (snapRef) {
+    const shouldSend = await claimJobCircleNotificationLease(
+      db,
+      snapRef,
+      'postPushClaimAt',
+      (freshData, nowMs) =>
+        freshData.postNotificationSent === true ||
+        (typeof freshData.postPushClaimAt === 'number' &&
+          nowMs - freshData.postPushClaimAt < JOB_CIRCLE_CLAIM_TTL_MS)
+    );
+    if (!shouldSend) {
+      console.log(`🛑 [VolunteerPost] Skipping duplicate push for volunteer post: ${postId}`);
+      return;
+    }
+  } else if (data.postNotificationSent === true) {
+    return;
+  }
+
+  try {
+    const postTitle = (data.title || 'Church Volunteer Call').trim();
+    const ministries: string[] = Array.isArray(data.ministries) ? data.ministries : [];
+    const ministryLabels = ministries
+      .map((m) => String(m || '').split('·')[0]?.trim() || String(m || '').trim())
+      .filter(Boolean);
+    const minPart =
+      ministryLabels.length > 0 ? ` (${ministryLabels.slice(0, 2).join(', ')})` : '';
+
+    const title = `🤝 Volunteer Call: ${postTitle}`;
+    const body =
+      (data.description || '').trim() ||
+      `We are inviting church members to serve in "${postTitle}"${minPart}. Tap to apply and serve!`;
+
+    const tokenSet = new Set<string>();
+    const addTokens = (docData: any) => {
+      if (!docData) return;
+      if (Array.isArray(docData.fcmTokens)) {
+        docData.fcmTokens.forEach((tk: any) => {
+          if (typeof tk === 'string' && tk.trim().length > 10) tokenSet.add(tk.trim());
+        });
+      }
+      if (typeof docData.fcmToken === 'string' && docData.fcmToken.trim().length > 10) {
+        tokenSet.add(docData.fcmToken.trim());
+      }
+    };
+
+    try {
+      const membersSnap = await db.collection('Rhema Church').doc(cid).collection('members').get();
+      membersSnap.forEach((mDoc: any) => addTokens(mDoc.data()));
+    } catch (e) {
+      console.warn('[VolunteerPost] Could not read Rhema Church members tokens:', e);
+    }
+
+    try {
+      const altMembersSnap = await db.collection('churches').doc(cid).collection('members').get();
+      altMembersSnap.forEach((mDoc: any) => addTokens(mDoc.data()));
+    } catch (_) {}
+
+    try {
+      const usersSnap = await db.collection('users').where('primaryChurchId', '==', cid).get();
+      usersSnap.forEach((uDoc: any) => addTokens(uDoc.data()));
+    } catch (_) {}
+
+    const memberTokens = Array.from(tokenSet);
+    const pushData: Record<string, string> = {
+      type: 'volunteer_post_new',
+      churchId: cid,
+      postId,
+      postTitle,
+      screen: 'Volunteer',
+      click_action: 'FLUTTER_NOTIFICATION_CLICK',
+    };
+
+    let pushDelivered = false;
+    if (memberTokens.length > 0) {
+      const pushRes = await sendHighPriorityPush(
+        messaging,
+        memberTokens,
+        title,
+        body,
+        pushData,
+        'church_alerts'
+      );
+      pushDelivered = pushRes.successCount > 0;
+    } else {
+      pushDelivered = await sendHighPriorityTopicPush(
+        messaging,
+        `church_${cid}`,
+        title,
+        body,
+        pushData,
+        'church_alerts'
+      );
+    }
+
+    const docId = `vol_post_${postId}`;
+    const inAppPayload = {
+      type: 'volunteer_post_new',
+      churchId: cid,
+      targetChurchId: cid,
+      title,
+      body,
+      content: body,
+      postId,
+      postTitle,
+      referenceId: postId,
+      referenceType: 'general_volunteer_post',
+      screen: 'Volunteer',
+      read: false,
+      createdAt: FieldValue.serverTimestamp(),
+    };
+
+    await Promise.all([
+      db
+        .collection('Rhema Church')
+        .doc(cid)
+        .collection('notifications')
+        .doc(docId)
+        .set(inAppPayload, { merge: true }),
+      db
+        .collection('Rhema Church')
+        .doc(cid)
+        .collection('broadcasts')
+        .doc(docId)
+        .set({ ...inAppPayload, silent: true }, { merge: true }),
+    ]);
+
+    if (!pushDelivered) {
+      throw new Error(`[VolunteerPost] Member FCM push failed for ${postId}`);
+    }
+
+    if (snapRef) {
+      await snapRef.update({
+        postNotificationSent: true,
+        postNotificationSentAt: FieldValue.serverTimestamp(),
+        postPushClaimAt: FieldValue.delete(),
+      });
+    }
+
+    console.log(`✅ [VolunteerPost] Broadcasted volunteer call "${postTitle}" to ${memberTokens.length} member device(s).`);
+  } catch (err) {
+    await releaseJobCircleNotificationLease(snapRef, ['postPushClaimAt']);
+    console.error('[VolunteerPost] Error broadcasting volunteer post push:', err);
+    throw err;
+  }
+}
+
+/**
+ * Trigger: When an Admin publishes a new General Volunteer Call Post (`status == 'open'`)
+ */
+export const onVolunteerPostCreated = onDocumentCreated(
+  { document: 'Rhema Church/{churchId}/volunteer_posts/{postId}', region: 'asia-south1' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+
+    const data = snap.data() || {};
+    const churchId = event.params.churchId || 'rhema';
+    const postId = event.params.postId;
+
+    if (data.status && data.status !== 'open') return;
+    await handleVolunteerPostPublishedPush(data, churchId, postId, snap.ref);
+  }
+);
+
+/**
+ * Trigger: When a closed General Volunteer Call Post is reopened (`status` transitions to `'open'`)
+ */
+export const onVolunteerPostUpdated = onDocumentUpdated(
+  { document: 'Rhema Church/{churchId}/volunteer_posts/{postId}', region: 'asia-south1' },
+  async (event) => {
+    const change = event.data;
+    if (!change) return;
+
+    const before = change.before.data() || {};
+    const after = change.after.data() || {};
+    const churchId = event.params.churchId || 'rhema';
+    const postId = event.params.postId;
+
+    if (before.status !== 'open' && after.status === 'open') {
+      await handleVolunteerPostPublishedPush(after, churchId, postId, change.after.ref);
+    }
+  }
+);
