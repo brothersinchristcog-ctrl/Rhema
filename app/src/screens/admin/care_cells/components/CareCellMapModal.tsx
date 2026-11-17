@@ -14,9 +14,10 @@ import {
   FlatList,
   StatusBar,
   ActivityIndicator,
+  PixelRatio,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE, Polyline } from 'react-native-maps';
 import {
   ArrowLeft,
   Navigation,
@@ -36,13 +37,23 @@ import {
   Plus,
   Route,
   Home,
+  Save,
 } from 'lucide-react-native';
-import { CareCell, CareCellMembership } from '../../../../types/CareCellTypes';
+import { CareCell, CareCellMembership, formatCareCellCode, formatCareCellDisplayName } from '../../../../types/CareCellTypes';
 import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
 import MemberLocationService from '../../../../services/MemberLocationService';
 import CareCellService, { calculateDistanceKm, KNOWN_REGION_COORDS } from '../../../../services/CareCellService';
 
 const { width, height } = Dimensions.get('window');
+
+// Android New Architecture fabric marker sizing
+const ANDROID_MARKER_BOX =
+  Platform.OS === 'android'
+    ? Math.min(38, Math.max(26, Math.floor(96 / Math.max(1, PixelRatio.get()))))
+    : 56;
+const PIN_HEAD_SIZE = Platform.OS === 'android' ? ANDROID_MARKER_BOX - 6 : 44;
+const PIN_BORDER_WIDTH = Platform.OS === 'android' ? 2 : 2.5;
+const PIN_IMAGE_SIZE = PIN_HEAD_SIZE - PIN_BORDER_WIDTH * 2;
 
 // Default Kurnool coordinates if cell doesn't have coordinates
 const DEFAULT_KURNOOL_LAT = 15.8281;
@@ -61,6 +72,12 @@ interface CareCellMapModalProps {
   members: CareCellMembership[];
   inactiveMembers?: Array<{ memberId: string; missedCount: number; memberName?: string }>;
   onLogFollowup?: (member: CareCellMembership) => void;
+  // Visiting Route extensions
+  initialPlannedRouteIds?: string[];
+  visitMemberMeta?: Record<string, { response?: any; preferredTime?: string }>;
+  visitDefaultTime?: string;
+  onSaveVisitRoute?: (stops: any[]) => void;
+  visitTitle?: string;
 }
 
 export default function CareCellMapModal({
@@ -70,6 +87,11 @@ export default function CareCellMapModal({
   members,
   inactiveMembers = [],
   onLogFollowup,
+  initialPlannedRouteIds,
+  visitMemberMeta,
+  visitDefaultTime,
+  onSaveVisitRoute,
+  visitTitle,
 }: CareCellMapModalProps) {
   const insets = useSafeAreaInsets();
   const { isDark, primaryText, secondaryText, cardSurface, borderColor } = useAdminTheme();
@@ -82,29 +104,66 @@ export default function CareCellMapModal({
   const mapRef = useRef<MapView | null>(null);
 
   // Top Inset ensuring zero status bar overlap on any Android / iOS device
-  const topHeaderInset = Math.max(
-    insets.top,
-    Platform.OS === 'android' ? (StatusBar.currentHeight || 28) : 44
-  ) + 8;
+  const topHeaderInset =
+    Platform.OS === 'android'
+      ? (StatusBar.currentHeight || 28) + 16
+      : insets.top + 12;
 
   // View mode: 'map' or 'list'
   const [viewMode, setViewMode] = useState<'map' | 'list'>('map');
   const [selectedLocality, setSelectedLocality] = useState<string>('ALL');
   const [filterNeedsVisitOnly, setFilterNeedsVisitOnly] = useState<boolean>(false);
+  const [visitResponseFilter, setVisitResponseFilter] = useState<'ALL' | 'ACCEPTED_ONLY' | 'NON_DECLINED'>('ALL');
+
+  // Marker tracking state so images snapshot properly
+  const [loadedMarkerPhotos, setLoadedMarkerPhotos] = useState<Record<string, boolean>>({});
+  const [refreshMarkersCount, setRefreshMarkersCount] = useState<number>(0);
 
   // Loading & Enriched data state
   const [loadingLocations, setLoadingLocations] = useState<boolean>(true);
   const [enrichedMembers, setEnrichedMembers] = useState<EnrichedCareCellMembership[]>([]);
-  const [resolvedCenter, setResolvedCenter] = useState<{ latitude: number; longitude: number }>({
-    latitude: cell.meetingLatitude || DEFAULT_KURNOOL_LAT,
-    longitude: cell.meetingLongitude || DEFAULT_KURNOOL_LNG,
-  });
+
+  // Resolve Initial Cell Center immediately from known regions if coordinates missing
+  const getInitialCenter = () => {
+    if (cell.meetingLatitude && cell.meetingLongitude) {
+      return { latitude: cell.meetingLatitude, longitude: cell.meetingLongitude };
+    }
+    const locLower = (cell.location || cell.meetingLocation || '').toLowerCase().trim();
+    if (locLower && KNOWN_REGION_COORDS[locLower]) {
+      return { latitude: KNOWN_REGION_COORDS[locLower].lat, longitude: KNOWN_REGION_COORDS[locLower].lng };
+    }
+    if (locLower.includes('koila')) {
+      return { latitude: 15.2333, longitude: 78.3167 };
+    }
+    return { latitude: DEFAULT_KURNOOL_LAT, longitude: DEFAULT_KURNOOL_LNG };
+  };
+
+  const [resolvedCenter, setResolvedCenter] = useState<{ latitude: number; longitude: number }>(getInitialCenter);
 
   // Selected member card on map
   const [selectedMember, setSelectedMember] = useState<EnrichedCareCellMembership | null>(null);
 
   // Route Planning: list of member IDs in visit order
-  const [plannedRouteMemberIds, setPlannedRouteMemberIds] = useState<string[]>([]);
+  const [plannedRouteMemberIds, setPlannedRouteMemberIds] = useState<string[]>(
+    initialPlannedRouteIds || []
+  );
+
+  useEffect(() => {
+    if (initialPlannedRouteIds && initialPlannedRouteIds.length > 0) {
+      setPlannedRouteMemberIds(initialPlannedRouteIds);
+    }
+  }, [initialPlannedRouteIds]);
+
+  // Marker view refresh timers to snapshot lollipop pins cleanly
+  useEffect(() => {
+    if (!visible) return;
+    const t1 = setTimeout(() => setRefreshMarkersCount((c) => c + 1), 300);
+    const t2 = setTimeout(() => setRefreshMarkersCount((c) => c + 1), 800);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [visible, loadingLocations]);
 
   // Inactive Member IDs set for fast lookup
   const inactiveMemberIdSet = useMemo(() => {
@@ -121,7 +180,9 @@ export default function CareCellMapModal({
         const churchId = await CareCellService.getChurchId();
         const res = await MemberLocationService.resolveCareCellMemberLocations(churchId, cell, members);
         if (isMounted) {
-          setResolvedCenter(res.cellCenter);
+          if (res.cellCenter && res.cellCenter.latitude && res.cellCenter.longitude) {
+            setResolvedCenter(res.cellCenter);
+          }
           setEnrichedMembers(res.resolvedMembers);
         }
       } catch (err) {
@@ -140,7 +201,7 @@ export default function CareCellMapModal({
     };
   }, [visible, cell, members]);
 
-  // Initial map region centered on resolved cell center (e.g. Koilakuntla)
+  // Initial map region centered on resolved cell center
   const initialRegion = useMemo(() => {
     return {
       latitude: resolvedCenter.latitude,
@@ -352,27 +413,47 @@ export default function CareCellMapModal({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" statusBarTranslucent={true} onRequestClose={onClose}>
       <StatusBar
         barStyle={isDark ? 'light-content' : 'dark-content'}
         translucent
         backgroundColor="transparent"
       />
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: isDark ? '#000000' : '#FAF7F2' }]}>
         {/* Top Header Bar with Safe Top Inset */}
-        <View style={[styles.header, { paddingTop: topHeaderInset }]}>
-          <TouchableOpacity style={styles.circularBackBtn} onPress={onClose} activeOpacity={0.8}>
+        <View
+          style={[
+            styles.header,
+            {
+              paddingTop: topHeaderInset,
+              backgroundColor: isDark ? '#000000' : '#FFFFFF',
+              borderBottomColor: isDark ? '#27272A' : '#E2E8F0',
+            },
+          ]}
+        >
+          <TouchableOpacity
+            style={[
+              styles.circularBackBtn,
+              {
+                backgroundColor: isDark ? '#18181B' : '#F8FAFC',
+                borderColor: isDark ? '#27272A' : '#E2E8F0',
+              },
+            ]}
+            onPress={onClose}
+            activeOpacity={0.8}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
             <ArrowLeft size={20} color={primaryText} strokeWidth={2.2} />
           </TouchableOpacity>
           <View style={{ flex: 1, paddingRight: 8 }}>
-            <Text style={styles.headerTitle} numberOfLines={1}>
-              {cell.name}
+            <Text style={[styles.headerTitle, { color: primaryText }]} numberOfLines={1}>
+              {visitTitle || formatCareCellDisplayName(cell.name, cell.cellCode)}
             </Text>
-            <Text style={styles.headerSub} numberOfLines={1}>
-              {cell.cellCode} · {cell.location || 'Local Area'} · {members.length} Members
+            <Text style={[styles.headerSub, { color: secondaryText }]} numberOfLines={1}>
+              {formatCareCellCode(cell.cellCode)} · {cell.location || 'Local Area'} · {members.length} Members
             </Text>
           </View>
-          <View style={styles.viewModeToggleRow}>
+          <View style={[styles.viewModeToggleRow, { backgroundColor: isDark ? '#18181B' : '#F1F5F9' }]}>
             <TouchableOpacity
               style={[styles.modeToggleBtn, viewMode === 'map' && { backgroundColor: primaryBtnBg }]}
               onPress={() => setViewMode('map')}
@@ -389,12 +470,15 @@ export default function CareCellMapModal({
         </View>
 
         {/* Filter Pills Bar */}
-        <View style={styles.filterBar}>
+        <View style={[styles.filterBar, { backgroundColor: cardSurface, borderBottomColor: borderColor }]}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
             <TouchableOpacity
               style={[
                 styles.filterPill,
-                selectedLocality === 'ALL' && !filterNeedsVisitOnly && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+                selectedLocality === 'ALL' && !filterNeedsVisitOnly && {
+                  backgroundColor: isDark ? '#2563EB' : '#1E3A8A',
+                  borderColor: isDark ? '#3B82F6' : '#1E3A8A',
+                },
               ]}
               onPress={() => {
                 setSelectedLocality('ALL');
@@ -404,12 +488,65 @@ export default function CareCellMapModal({
               <Text
                 style={[
                   styles.filterPillTxt,
-                  selectedLocality === 'ALL' && !filterNeedsVisitOnly && { color: primaryBtnText, fontWeight: '700' },
+                  selectedLocality === 'ALL' && !filterNeedsVisitOnly && { color: '#FFFFFF', fontWeight: '700' },
                 ]}
               >
                 All Members ({members.length})
               </Text>
             </TouchableOpacity>
+
+            {visitMemberMeta ? (
+              <>
+                <TouchableOpacity
+                  style={[
+                    styles.filterPill,
+                    visitResponseFilter === 'ACCEPTED_ONLY' && {
+                      backgroundColor: '#059669',
+                      borderColor: '#059669',
+                    },
+                  ]}
+                  onPress={() =>
+                    setVisitResponseFilter((prev) => (prev === 'ACCEPTED_ONLY' ? 'ALL' : 'ACCEPTED_ONLY'))
+                  }
+                >
+                  <CheckCircle2
+                    size={12}
+                    color={visitResponseFilter === 'ACCEPTED_ONLY' ? '#FFFFFF' : '#059669'}
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text
+                    style={[
+                      styles.filterPillTxt,
+                      visitResponseFilter === 'ACCEPTED_ONLY' && { color: '#FFFFFF', fontWeight: '700' },
+                    ]}
+                  >
+                    Accepted Only
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.filterPill,
+                    visitResponseFilter === 'NON_DECLINED' && {
+                      backgroundColor: isDark ? '#2563EB' : '#1E3A8A',
+                      borderColor: isDark ? '#3B82F6' : '#1E3A8A',
+                    },
+                  ]}
+                  onPress={() =>
+                    setVisitResponseFilter((prev) => (prev === 'NON_DECLINED' ? 'ALL' : 'NON_DECLINED'))
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.filterPillTxt,
+                      visitResponseFilter === 'NON_DECLINED' && { color: '#FFFFFF', fontWeight: '700' },
+                    ]}
+                  >
+                    Non-Declined
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : null}
 
             {inactiveMembers.length > 0 && (
               <TouchableOpacity
@@ -436,14 +573,20 @@ export default function CareCellMapModal({
               return (
                 <TouchableOpacity
                   key={loc}
-                  style={[styles.filterPill, isSelected && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg }]}
+                  style={[
+                    styles.filterPill,
+                    isSelected && {
+                      backgroundColor: isDark ? '#2563EB' : '#1E3A8A',
+                      borderColor: isDark ? '#3B82F6' : '#1E3A8A',
+                    },
+                  ]}
                   onPress={() => {
                     setFilterNeedsVisitOnly(false);
                     setSelectedLocality(loc);
                   }}
                 >
-                  <MapPin size={11} color={isSelected ? primaryBtnText : secondaryText} style={{ marginRight: 4 }} />
-                  <Text style={[styles.filterPillTxt, isSelected && { color: primaryBtnText, fontWeight: '700' }]}>{loc}</Text>
+                  <MapPin size={11} color={isSelected ? '#FFFFFF' : secondaryText} style={{ marginRight: 4 }} />
+                  <Text style={[styles.filterPillTxt, isSelected && { color: '#FFFFFF', fontWeight: '700' }]}>{loc}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -467,19 +610,31 @@ export default function CareCellMapModal({
                 <Marker
                   coordinate={resolvedCenter}
                   anchor={{ x: 0.5, y: 1.0 }}
-                  title={cell.name}
+                  title={formatCareCellDisplayName(cell.name, cell.cellCode)}
                   description={`Care Cell Center: ${cell.meetingLocation || cell.location || 'Local'}`}
+                  pinColor="#D97706"
                 >
-                  <View style={styles.lollipopMarkerWrap}>
-                    <View style={[styles.lollipopHead, { borderColor: '#D97706', borderWidth: 2.5 }]}>
-                      <View style={[styles.lollipopAvatarFallback, { backgroundColor: '#D97706' }]}>
-                        <Users size={18} color="#FFFFFF" />
-                      </View>
+                  <View collapsable={false} style={styles.photoPinWrapper}>
+                    <View
+                      collapsable={false}
+                      style={[
+                        styles.photoPinHead,
+                        {
+                          borderColor: '#D97706',
+                          borderWidth: 2.5,
+                          backgroundColor: '#D97706',
+                        },
+                      ]}
+                    >
+                      <Users size={18} color="#FFFFFF" />
                     </View>
-                    <View style={styles.lollipopStemWrap}>
-                      <View style={[styles.lollipopStem, { backgroundColor: '#D97706' }]} />
-                      <View style={[styles.lollipopTipDot, { backgroundColor: '#D97706' }]} />
-                    </View>
+                    <View
+                      collapsable={false}
+                      style={[
+                        styles.photoPinTriangle,
+                        { borderTopColor: '#D97706' },
+                      ]}
+                    />
                   </View>
                 </Marker>
               ) : null}
@@ -490,8 +645,17 @@ export default function CareCellMapModal({
                 const isSelected = selectedMember?.memberId === m.memberId;
                 const inRouteIndex = plannedRouteMemberIds.indexOf(m.memberId);
 
-                // Status Ring & Stem Color
-                const statusColor = isInactive ? '#EF4444' : '#10B981';
+                // Rhema Status Accent Color: Amber for Selected, Green for Route, Red for Inactive, Deep Blue for Regular
+                const accentColor = isSelected
+                  ? '#F59E0B'
+                  : inRouteIndex >= 0
+                    ? '#059669'
+                    : isInactive
+                      ? '#DC2626'
+                      : '#1E3A8A';
+
+                const photoUri = typeof m.memberPhoto === 'string' ? m.memberPhoto.trim() : '';
+                const hasPhoto = photoUri.length > 0;
 
                 return (
                   <Marker
@@ -502,34 +666,37 @@ export default function CareCellMapModal({
                     }}
                     anchor={{ x: 0.5, y: 1.0 }}
                     onPress={() => setSelectedMember(m)}
-                    tracksViewChanges={false}
+                    tracksViewChanges={Boolean(
+                      (hasPhoto && !loadedMarkerPhotos[m.memberId]) ||
+                      isSelected ||
+                      refreshMarkersCount < 2
+                    )}
                   >
-                    <View style={styles.lollipopMarkerWrap}>
+                    <View collapsable={false} style={[styles.photoPinWrapper, isSelected && styles.photoPinWrapperSelected]}>
                       {/* Lollipop Head: Circular Avatar Container */}
                       <View
+                        collapsable={false}
                         style={[
-                          styles.lollipopHead,
+                          styles.photoPinHead,
                           {
-                            borderColor: isSelected ? '#F59E0B' : statusColor,
-                            borderWidth: isSelected ? 3.5 : 2.5,
-                            transform: [{ scale: isSelected ? 1.15 : 1 }],
+                            borderColor: accentColor,
+                            backgroundColor: hasPhoto ? '#FFFFFF' : accentColor,
                           },
                         ]}
                       >
-                        {m.memberPhoto ? (
+                        {hasPhoto ? (
                           <Image
-                            source={{ uri: m.memberPhoto }}
-                            style={styles.lollipopAvatarImg}
+                            source={{ uri: photoUri }}
+                            style={styles.photoPinImage}
                             resizeMode="cover"
+                            fadeDuration={0}
+                            onLoad={() => {
+                              setLoadedMarkerPhotos((prev) => ({ ...prev, [m.memberId]: true }));
+                            }}
                           />
                         ) : (
-                          <View
-                            style={[
-                              styles.lollipopAvatarFallback,
-                              { backgroundColor: isInactive ? '#EF4444' : '#1E293B' },
-                            ]}
-                          >
-                            <Text style={styles.lollipopInitialsTxt}>
+                          <View collapsable={false} style={[styles.photoPinFallback, { backgroundColor: accentColor }]}>
+                            <Text style={styles.markerInitialsTxt}>
                               {(m.memberName || 'M').slice(0, 2).toUpperCase()}
                             </Text>
                           </View>
@@ -537,35 +704,41 @@ export default function CareCellMapModal({
 
                         {/* Route Order Badge or Alert Icon */}
                         {inRouteIndex >= 0 ? (
-                          <View style={styles.lollipopRouteBadge}>
-                            <Text style={styles.lollipopRouteBadgeTxt}>{inRouteIndex + 1}</Text>
+                          <View collapsable={false} style={styles.routeOrderCornerBadge}>
+                            <Text style={styles.routeOrderCornerTxt}>{inRouteIndex + 1}</Text>
                           </View>
                         ) : isInactive ? (
-                          <View style={styles.lollipopAlertBadge}>
+                          <View collapsable={false} style={styles.routeOrderCornerBadgeAlert}>
                             <AlertTriangle size={8} color="#FFFFFF" strokeWidth={3} />
                           </View>
                         ) : null}
                       </View>
 
-                      {/* Lollipop Stem / Needle pointing directly to exact location */}
-                      <View style={styles.lollipopStemWrap}>
-                        <View
-                          style={[
-                            styles.lollipopStem,
-                            { backgroundColor: isSelected ? '#F59E0B' : statusColor },
-                          ]}
-                        />
-                        <View
-                          style={[
-                            styles.lollipopTipDot,
-                            { backgroundColor: isSelected ? '#F59E0B' : statusColor },
-                          ]}
-                        />
-                      </View>
+                      {/* Lollipop Pointer Triangle */}
+                      <View
+                        collapsable={false}
+                        style={[
+                          styles.photoPinTriangle,
+                          { borderTopColor: accentColor },
+                        ]}
+                      />
                     </View>
                   </Marker>
                 );
               })}
+
+              {/* Planned Route Line connecting consecutive stops */}
+              {plannedRouteMemberIds.length >= 2 && (
+                <Polyline
+                  coordinates={plannedRouteMemberIds
+                    .map((id) => membersToRenderOnMap.find((mem) => mem.memberId === id))
+                    .filter((m): m is any => !!m && typeof m.plotLat === 'number' && typeof m.plotLng === 'number')
+                    .map((m) => ({ latitude: m.plotLat, longitude: m.plotLng }))}
+                  strokeColor="#059669"
+                  strokeWidth={3.5}
+                  lineDashPattern={[8, 5]}
+                />
+              )}
             </MapView>
 
             {/* Loading Indicator Overlay */}
@@ -578,23 +751,53 @@ export default function CareCellMapModal({
 
             {/* Floating Top Route Summary Bar */}
             {plannedRouteMemberIds.length > 0 && (
-              <View style={styles.floatingRouteBar}>
+              <View style={[styles.floatingRouteBar, { backgroundColor: isDark ? '#18181B' : '#1E3A8A' }]}>
                 <View style={{ flex: 1, marginRight: 8 }}>
                   <Text style={styles.floatingRouteTitle}>
                     {plannedRouteMemberIds.length} House Visits Planned ({totalRouteDistanceKm} km)
                   </Text>
                   <Text style={styles.floatingRouteSub} numberOfLines={1}>
-                    Sequential pastoral route starting from {cell.name}
+                    Sequential pastoral route from {formatCareCellDisplayName(cell.name, cell.cellCode)}
                   </Text>
                 </View>
-                <TouchableOpacity
-                  style={styles.floatingNavigateRouteBtn}
-                  onPress={handleOpenMultiStopRoute}
-                  activeOpacity={0.85}
-                >
-                  <Navigation size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
-                  <Text style={styles.floatingNavigateRouteBtnTxt}>Start Route</Text>
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  {onSaveVisitRoute && (
+                    <TouchableOpacity
+                      style={[styles.floatingNavigateRouteBtn, { backgroundColor: isDark ? '#2563EB' : '#1E3A8A', borderWidth: 1, borderColor: '#3B82F6' }]}
+                      onPress={() => {
+                        const stops = plannedRouteMemberIds
+                          .map((id, idx) => {
+                            const m = enrichedMembers.find((mem) => mem.memberId === id);
+                            if (!m) return null;
+                            return {
+                              memberId: m.memberId,
+                              memberName: m.memberName,
+                              locality: m.locality,
+                              address: m.address,
+                              latitude: m.latitude,
+                              longitude: m.longitude,
+                              order: idx + 1,
+                            };
+                          })
+                          .filter(Boolean);
+                        onSaveVisitRoute(stops);
+                        Alert.alert('Route Saved', 'Pastoral visit route stops saved successfully.');
+                      }}
+                      activeOpacity={0.85}
+                    >
+                      <Save size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
+                      <Text style={styles.floatingNavigateRouteBtnTxt}>Save</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity
+                    style={styles.floatingNavigateRouteBtn}
+                    onPress={handleOpenMultiStopRoute}
+                    activeOpacity={0.85}
+                  >
+                    <Navigation size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
+                    <Text style={styles.floatingNavigateRouteBtnTxt}>Start Route</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
 
@@ -933,86 +1136,89 @@ const styles = createAdminThemedStyles({
   },
 
   /* ── Lollipop Marker Styles (User Request: Profile pic with lollipop symbol) ── */
-  lollipopMarkerWrap: {
+  photoPinWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
   },
-  lollipopHead: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  photoPinWrapperSelected: {
+    transform: [{ scale: 1.15 }],
+  },
+  photoPinHead: {
+    width: PIN_HEAD_SIZE,
+    height: PIN_HEAD_SIZE,
+    borderRadius: PIN_HEAD_SIZE / 2,
+    borderWidth: PIN_BORDER_WIDTH,
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.5,
+    elevation: 5,
   },
-  lollipopAvatarImg: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+  photoPinImage: {
+    width: PIN_IMAGE_SIZE,
+    height: PIN_IMAGE_SIZE,
+    borderRadius: PIN_IMAGE_SIZE / 2,
   },
-  lollipopAvatarFallback: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+  photoPinFallback: {
+    width: PIN_IMAGE_SIZE,
+    height: PIN_IMAGE_SIZE,
+    borderRadius: PIN_IMAGE_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  lollipopInitialsTxt: {
-    color: '#FFFFFF',
-    fontSize: 13,
+  markerInitialsTxt: {
+    fontSize: 12,
     fontWeight: '800',
-    letterSpacing: -0.2,
+    color: '#FFFFFF',
   },
-  lollipopRouteBadge: {
+  photoPinTriangle: {
+    width: 0,
+    height: 0,
+    backgroundColor: 'transparent',
+    borderStyle: 'solid',
+    borderLeftWidth: 5,
+    borderRightWidth: 5,
+    borderTopWidth: 7,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    marginTop: -1,
+  },
+  routeOrderCornerBadge: {
     position: 'absolute',
-    top: -4,
-    right: -4,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
+    top: -3,
+    right: -3,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
     backgroundColor: '#059669',
     borderWidth: 1.5,
     borderColor: '#FFFFFF',
-    alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 3,
+    alignItems: 'center',
+    paddingHorizontal: 2,
+    elevation: 6,
   },
-  lollipopRouteBadgeTxt: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  lollipopAlertBadge: {
+  routeOrderCornerBadgeAlert: {
     position: 'absolute',
-    top: -4,
-    right: -4,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    top: -3,
+    right: -3,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
     backgroundColor: '#DC2626',
     borderWidth: 1.5,
     borderColor: '#FFFFFF',
-    alignItems: 'center',
     justifyContent: 'center',
-  },
-  lollipopStemWrap: {
     alignItems: 'center',
+    elevation: 6,
   },
-  lollipopStem: {
-    width: 3.5,
-    height: 13,
-    borderRadius: 1.75,
-  },
-  lollipopTipDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginTop: -1,
+  routeOrderCornerTxt: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
 
   /* Floating Route Summary Bar */

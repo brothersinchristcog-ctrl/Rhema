@@ -619,9 +619,9 @@ export default function CareCellFormModal({
                       style={[
                         styles.toggleAllBtn,
                         {
-                          backgroundColor: isDark ? '#27272A' : '#E0E7FF',
-                          borderWidth: isDark ? 1 : 0,
-                          borderColor: isDark ? '#3F3F46' : 'transparent',
+                          backgroundColor: isDark ? '#27272A' : '#EFF6FF',
+                          borderWidth: 1,
+                          borderColor: isDark ? '#3F3F46' : '#BFDBFE',
                         },
                       ]}
                       onPress={
@@ -633,7 +633,7 @@ export default function CareCellFormModal({
                       <Text
                         style={[
                           styles.toggleAllBtnTxt,
-                          { color: isDark ? '#FFFFFF' : '#1A2D5A' },
+                          { color: isDark ? '#FFFFFF' : '#1E3A8A' },
                         ]}
                       >
                         {selectedMembersMap.size === locationMatchedMembers.length ? 'Deselect All' : 'Select All'}
@@ -667,10 +667,10 @@ export default function CareCellFormModal({
                               styles.matchedMemberItem,
                               {
                                 backgroundColor: isDark
-                                  ? (isSelected ? 'rgba(59, 130, 246, 0.16)' : '#18181B')
+                                  ? (isSelected ? 'rgba(37, 99, 235, 0.22)' : '#18181B')
                                   : (isSelected ? '#EFF6FF' : '#FFFFFF'),
                                 borderColor: isSelected
-                                  ? (isDark ? '#60A5FA' : '#2563EB')
+                                  ? (isDark ? '#3B82F6' : '#2563EB')
                                   : (isDark ? '#27272A' : '#E2E8F0'),
                               },
                             ]}
@@ -682,10 +682,10 @@ export default function CareCellFormModal({
                                 styles.memberCheckbox,
                                 {
                                   backgroundColor: isSelected
-                                    ? (isDark ? '#3B82F6' : '#2563EB')
+                                    ? (isDark ? '#2563EB' : '#1E3A8A')
                                     : (isDark ? '#27272A' : '#FFFFFF'),
                                   borderColor: isSelected
-                                    ? (isDark ? '#3B82F6' : '#2563EB')
+                                    ? (isDark ? '#3B82F6' : '#1E3A8A')
                                     : (isDark ? '#52525B' : '#94A3B8'),
                                 },
                               ]}
@@ -698,7 +698,7 @@ export default function CareCellFormModal({
                                 <Text
                                   style={[
                                     styles.matchedMemberName,
-                                    { color: isDark ? '#FFFFFF' : '#0F172A' },
+                                    { color: isDark ? '#FFFFFF' : '#0F172A', fontSize: 14, fontWeight: '700' },
                                   ]}
                                 >
                                   {mem.name}
@@ -706,8 +706,8 @@ export default function CareCellFormModal({
                                 {(mem as any).memberCode ? (
                                   <View
                                     style={{
-                                      backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF',
-                                      borderColor: isDark ? 'rgba(59, 130, 246, 0.3)' : '#BFDBFE',
+                                      backgroundColor: isDark ? 'rgba(37, 99, 235, 0.25)' : '#EFF6FF',
+                                      borderColor: isDark ? 'rgba(96, 165, 250, 0.4)' : '#BFDBFE',
                                       borderWidth: 1,
                                       paddingHorizontal: 6,
                                       paddingVertical: 1.5,
@@ -718,7 +718,7 @@ export default function CareCellFormModal({
                                       style={{
                                         fontSize: 10,
                                         fontWeight: '700',
-                                        color: isDark ? '#93C5FD' : '#1D4ED8',
+                                        color: isDark ? '#93C5FD' : '#1E40AF',
                                       }}
                                     >
                                       {(mem as any).memberCode}
@@ -732,15 +732,15 @@ export default function CareCellFormModal({
                                   style={[
                                     styles.localityBadge,
                                     {
-                                      backgroundColor: isDark ? 'rgba(59, 130, 246, 0.12)' : '#EFF6FF',
+                                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9',
                                     },
                                   ]}
                                 >
-                                  <MapPin size={9} color={isDark ? '#93C5FD' : '#1A2D5A'} style={{ marginRight: 2 }} />
+                                  <MapPin size={9} color={isDark ? '#93C5FD' : '#1E3A8A'} style={{ marginRight: 2 }} />
                                   <Text
                                     style={[
                                       styles.localityBadgeTxt,
-                                      { color: isDark ? '#93C5FD' : '#1A2D5A' },
+                                      { color: isDark ? '#E4E4E7' : '#1E3A8A' },
                                     ]}
                                   >
                                     {mem.city || mem.village || mem.locality || location}
@@ -750,7 +750,7 @@ export default function CareCellFormModal({
                                   <Text
                                     style={[
                                       styles.matchedMemberPhone,
-                                      { color: isDark ? '#A1A1AA' : '#64748B' },
+                                      { color: isDark ? '#A1A1AA' : '#64748B', fontSize: 12 },
                                     ]}
                                   >
                                     {mem.phone}
@@ -1697,15 +1697,15 @@ const styles = createAdminThemedStyles({
     lineHeight: 16,
   },
   toggleAllBtn: {
-    backgroundColor: '#E0E7FF',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 8,
   },
   toggleAllBtnTxt: {
-    fontSize: 11,
+    fontSize: 11.5,
     fontWeight: '700',
-    color: '#1A2D5A',
+    color: '#1E3A8A',
   },
   membersLoadingRow: {
     flexDirection: 'row',

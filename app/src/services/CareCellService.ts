@@ -16,6 +16,8 @@ import {
   MemberVisitResponseStatus,
   VisitStatus,
   AttendanceStatus,
+  VisitRoutePoint,
+  PreselectedVisitMember,
 } from '../types/CareCellTypes';
 
 /**
@@ -1280,19 +1282,34 @@ class CareCellService {
       createdBy: string;
       createdByName?: string;
       targetMemberIds?: string[];
+      assignedLeaderId?: string;
+      assignedLeaderName?: string;
+      routeStops?: VisitRoutePoint[];
+      preselectedMembers?: PreselectedVisitMember[];
+      initialStatus?: VisitStatus;
     }
   ): Promise<string> {
     const activeChurchId = churchId || (await this.getChurchId());
     const col = await this.getVisitsRef(activeChurchId);
     const docRef = col.doc();
 
-    // 1. Fetch all active members assigned to this specific Care Cell
-    const allCellMembers = await this.getActiveCellMemberships(activeChurchId, data.cellId);
+    // 1. Fetch target members: either from preselectedMembers or cell memberships
+    let targetMembers: Array<{
+      memberId: string;
+      memberName: string;
+      memberPhone?: string;
+      memberPhoto?: string;
+      preferredVisitTime?: string;
+    }> = [];
 
-    // Filter to selected members if specific members were selected
-    const targetMembers = data.targetMemberIds && data.targetMemberIds.length > 0
-      ? allCellMembers.filter((mem) => data.targetMemberIds!.includes(mem.memberId))
-      : allCellMembers;
+    if (data.preselectedMembers && data.preselectedMembers.length > 0) {
+      targetMembers = data.preselectedMembers;
+    } else if (data.cellId && data.cellId !== 'DIRECT') {
+      const allCellMembers = await this.getActiveCellMemberships(activeChurchId, data.cellId);
+      targetMembers = data.targetMemberIds && data.targetMemberIds.length > 0
+        ? allCellMembers.filter((mem) => data.targetMemberIds!.includes(mem.memberId))
+        : allCellMembers;
+    }
 
     // 2. Initialize each target member's availability response as 'Pending'
     const responses: Record<string, CareCellVisitMemberResponse> = {};
@@ -1318,10 +1335,13 @@ class CareCellService {
       visitDate: data.visitDate,
       visitTime: data.visitTime,
       visitors: data.visitors,
-      status: 'Scheduled',
+      status: data.initialStatus || 'Scheduled',
       notificationSent: false,
       createdBy: data.createdBy,
       createdByName: data.createdByName || '',
+      assignedLeaderId: data.assignedLeaderId,
+      assignedLeaderName: data.assignedLeaderName,
+      routeStops: data.routeStops,
       totalMembersCount: targetMembers.length,
       acceptedCount: 0,
       declinedCount: 0,
@@ -1502,6 +1522,61 @@ class CareCellService {
   async deleteVisit(churchId: string | undefined, visitId: string): Promise<void> {
     const col = await this.getVisitsRef(churchId);
     await col.doc(visitId).delete();
+  }
+
+  /**
+   * Updates the sequential route stops for an existing visit in Firestore.
+   */
+  async updateVisitRouteStops(
+    churchId: string | undefined,
+    visitId: string,
+    routeStops: VisitRoutePoint[]
+  ): Promise<void> {
+    const activeChurchId = churchId || (await this.getChurchId());
+    const col = await this.getVisitsRef(activeChurchId);
+    await col.doc(visitId).update(
+      sanitizeForFirestore({
+        routeStops,
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+      })
+    );
+  }
+
+  /**
+   * Fetches visit history (past & upcoming) associated with a specific member across the church.
+   */
+  async getMemberVisitHistory(
+    churchId: string | undefined,
+    memberId: string,
+    memberPhone?: string
+  ): Promise<CareCellVisit[]> {
+    try {
+      const col = await this.getVisitsRef(churchId);
+      const snap = await col.get();
+      const list: CareCellVisit[] = [];
+
+      snap.docs.forEach((d: any) => {
+        const data = d.data() as CareCellVisit;
+        const inTargets = Array.isArray(data.targetMemberIds) && data.targetMemberIds.includes(memberId);
+        const inResponses = Boolean(data.responses && data.responses[memberId]);
+        const inRouteStops = Array.isArray(data.routeStops) && data.routeStops.some((s) => s.memberId === memberId);
+
+        if (inTargets || inResponses || inRouteStops) {
+          list.push({ id: d.id, ...data });
+        }
+      });
+
+      list.sort((a, b) => {
+        const tA = new Date(`${a.visitDate}T${a.visitTime || '00:00'}`).getTime();
+        const tB = new Date(`${b.visitDate}T${b.visitTime || '00:00'}`).getTime();
+        return tB - tA; // Most recent first
+      });
+
+      return list;
+    } catch (e) {
+      console.error('Error fetching member visit history:', e);
+      return [];
+    }
   }
 
   /**

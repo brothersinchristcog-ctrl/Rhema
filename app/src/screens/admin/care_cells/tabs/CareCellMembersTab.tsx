@@ -35,7 +35,7 @@ import MemberLookupModal from '../components/MemberLookupModal';
 import CareCellMapModal from '../components/CareCellMapModal';
 import { formatDateDisplay } from '../../../../utils/DateUtils';
 import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
-import { CareCell, CareCellMembership, formatCareCellCode } from '../../../../types/CareCellTypes';
+import { CareCell, CareCellMembership, formatCareCellCode, formatCareCellDisplayName } from '../../../../types/CareCellTypes';
 
 interface CareCellMembersTabProps {
   cells: CareCell[];
@@ -306,12 +306,20 @@ export default function CareCellMembersTab({
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.cellSelectorScroll}>
           {cells.map((c) => {
             const isSelected = activeCellId === c.id;
+            const displayName = formatCareCellDisplayName(c.name, c.cellCode);
             return (
               <TouchableOpacity
                 key={c.id}
                 style={[
                   styles.cellChip,
-                  isSelected && { backgroundColor: primaryBtnBg, borderColor: primaryBtnBg },
+                  {
+                    backgroundColor: isSelected
+                      ? (isDark ? '#2563EB' : '#1E3A8A')
+                      : (isDark ? '#18181B' : '#FFFFFF'),
+                    borderColor: isSelected
+                      ? (isDark ? '#3B82F6' : '#1E3A8A')
+                      : (isDark ? '#27272A' : '#CBD5E1'),
+                  },
                 ]}
                 onPress={() => onSelectCellId(c.id)}
                 activeOpacity={0.75}
@@ -320,17 +328,20 @@ export default function CareCellMembersTab({
                   <Text
                     style={[
                       styles.cellChipTxt,
-                      isSelected && { color: primaryBtnText, fontWeight: '800' },
+                      {
+                        color: isSelected ? '#FFFFFF' : (isDark ? '#E4E4E7' : '#0F172A'),
+                        fontWeight: isSelected ? '800' : '600',
+                      },
                     ]}
                   >
-                    {c.name}
+                    {displayName}
                   </Text>
                   <View
                     style={[
                       styles.cellChipCodeBadge,
                       {
                         backgroundColor: isSelected
-                          ? (isDark ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.22)')
+                          ? 'rgba(255,255,255,0.22)'
                           : (isDark ? '#27272A' : '#E2E8F0'),
                       },
                     ]}
@@ -339,7 +350,7 @@ export default function CareCellMembersTab({
                       style={[
                         styles.cellChipCodeBadgeTxt,
                         {
-                          color: isSelected ? primaryBtnText : (isDark ? '#A1A1AA' : '#64748B'),
+                          color: isSelected ? '#FFFFFF' : (isDark ? '#A1A1AA' : '#64748B'),
                         },
                       ]}
                     >
@@ -356,35 +367,38 @@ export default function CareCellMembersTab({
       {/* Cell Roster Header Banner */}
       {activeCell && (
         <View style={[styles.rosterBanner, { backgroundColor: cardSurface, borderColor }]}>
-          <View style={{ flex: 1, marginRight: 8 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 3 }}>
-              <Text style={[styles.rosterBannerTitle, { color: primaryText }]}>
-                {activeCell.name}
-              </Text>
-              <View
-                style={[
-                  styles.rosterBannerCodePill,
-                  {
-                    backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF',
-                    borderColor: isDark ? 'rgba(59, 130, 246, 0.35)' : '#BFDBFE',
-                  },
-                ]}
-              >
-                <Text
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
+            <View style={{ flex: 1, marginRight: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 4 }}>
+                <Text style={[styles.rosterBannerTitle, { color: primaryText }]}>
+                  {formatCareCellDisplayName(activeCell.name, activeCell.cellCode)}
+                </Text>
+                <View
                   style={[
-                    styles.rosterBannerCodePillTxt,
-                    { color: isDark ? '#93C5FD' : '#1D4ED8' },
+                    styles.rosterBannerCodePill,
+                    {
+                      backgroundColor: isDark ? 'rgba(37, 99, 235, 0.18)' : '#EFF6FF',
+                      borderColor: isDark ? 'rgba(59, 130, 246, 0.35)' : '#BFDBFE',
+                    },
                   ]}
                 >
-                  {formatCareCellCode(activeCell.cellCode)}
-                </Text>
+                  <Text
+                    style={[
+                      styles.rosterBannerCodePillTxt,
+                      { color: isDark ? '#93C5FD' : '#1D4ED8' },
+                    ]}
+                  >
+                    {formatCareCellCode(activeCell.cellCode)}
+                  </Text>
+                </View>
               </View>
+              <Text style={[styles.rosterBannerSub, { color: secondaryText }]}>
+                Leader: <Text style={{ fontWeight: '700', color: primaryText }}>{activeCell.leaderName}</Text> · {memberships.length} of {activeCell.maximumMembers} members
+              </Text>
             </View>
-            <Text style={[styles.rosterBannerSub, { color: secondaryText }]}>
-              Leader: <Text style={{ fontWeight: '700', color: primaryText }}>{activeCell.leaderName}</Text> · {memberships.length} of {activeCell.maximumMembers} members
-            </Text>
           </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
             <TouchableOpacity
               style={[styles.mapBtn, { backgroundColor: secondaryBtnBg, borderColor: secondaryBtnBorder }]}
               onPress={() => setMapModalVisible(true)}
@@ -403,12 +417,12 @@ export default function CareCellMembersTab({
               <Download size={15} color={secondaryBtnText} />
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.addMembersBtn, { backgroundColor: primaryBtnBg }]}
+              style={[styles.addMembersBtn, { backgroundColor: isDark ? '#2563EB' : '#1E3A8A' }]}
               onPress={() => setAddMembersModalVisible(true)}
               activeOpacity={0.85}
             >
-              <UserPlus size={15} color={primaryBtnText} style={{ marginRight: 5 }} />
-              <Text style={[styles.addMembersBtnTxt, { color: primaryBtnText }]}>Add</Text>
+              <UserPlus size={15} color="#FFFFFF" style={{ marginRight: 5 }} />
+              <Text style={[styles.addMembersBtnTxt, { color: '#FFFFFF' }]}>Add</Text>
             </TouchableOpacity>
           </View>
         </View>

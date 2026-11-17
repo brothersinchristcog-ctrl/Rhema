@@ -39,7 +39,7 @@ import CareCellService from '../../../../services/CareCellService';
 import { useAuth } from '../../../../context/AuthContext';
 import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
 import GrantAdminAccessModal from '../components/GrantAdminAccessModal';
-import { CareCell, CareCellStatus, formatCareCellCode } from '../../../../types/CareCellTypes';
+import { CareCell, CareCellStatus, formatCareCellCode, formatCareCellDisplayName } from '../../../../types/CareCellTypes';
 
 const { width } = Dimensions.get('window');
 
@@ -222,7 +222,7 @@ export default function CareCellsManageTab({
         </View>
 
         {/* Name & Description */}
-        <Text style={styles.cellName}>{item.name}</Text>
+        <Text style={styles.cellName}>{formatCareCellDisplayName(item.name, item.cellCode)}</Text>
         {item.description ? (
           <Text style={styles.cellDesc} numberOfLines={2}>
             {item.description}

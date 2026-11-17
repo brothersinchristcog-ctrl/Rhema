@@ -141,60 +141,65 @@ export default function AdminCareCellsHub() {
           },
         ]}
       >
-        <TouchableOpacity
-          onPress={handleBack}
-          style={[
-            styles.circularBackBtn,
-            {
-              borderColor: isDark ? '#3F3F46' : '#E2E8F0',
-              backgroundColor: isDark ? '#18181B' : '#FFFFFF',
-            },
-          ]}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          activeOpacity={0.7}
-        >
-          <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#0F172A'} strokeWidth={2.2} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+          {/* Left: Back Button */}
+          <View style={{ minWidth: 40, alignItems: 'flex-start', justifyContent: 'center' }}>
+            <TouchableOpacity
+              onPress={handleBack}
+              style={styles.circularBackBtn}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              activeOpacity={0.7}
+            >
+              <ArrowLeft size={22} color={isDark ? '#FFFFFF' : '#0F172A'} strokeWidth={2.2} />
+            </TouchableOpacity>
+          </View>
 
-        <View style={styles.headerTitleWrap}>
-          <Text
-            style={[
-              styles.headerTitle,
-              { color: isDark ? '#FFFFFF' : '#0F172A' },
-            ]}
-            numberOfLines={1}
-          >
-            Care Cells
-          </Text>
-          <Text style={[styles.headerSubtitle, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
-            {activeCellsCount} active fellowship {activeCellsCount === 1 ? 'group' : 'groups'}
-          </Text>
-        </View>
-
-        {/* Quick Add Button (Super Admin Only) */}
-        {isPlatformSuperAdmin ? (
-          <TouchableOpacity
-            style={[
-              styles.quickAddHeaderBtn,
-              {
-                backgroundColor: isDark ? '#FFFFFF' : '#000000',
-                borderColor: isDark ? '#FFFFFF' : '#000000',
-              },
-            ]}
-            onPress={() => {
-              setEditingCell(null);
-              setCreateCellModalVisible(true);
-            }}
-            activeOpacity={0.8}
-          >
-            <Plus size={15} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.5} style={{ marginRight: 4 }} />
-            <Text style={[styles.quickAddHeaderBtnTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
-              New Cell
+          {/* Middle: Title */}
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 }}>
+            <Text
+              style={[
+                styles.headerTitle,
+                {
+                  color: isDark ? '#FFFFFF' : '#0F172A',
+                  fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+                },
+              ]}
+              numberOfLines={1}
+            >
+              Care Cells
             </Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={{ width: 40, height: 40 }} />
-        )}
+            <Text style={[styles.headerSubtitle, { color: isDark ? '#A1A1AA' : '#64748B' }]} numberOfLines={1}>
+              {activeCellsCount} active fellowship {activeCellsCount === 1 ? 'group' : 'groups'}
+            </Text>
+          </View>
+
+          {/* Right: + New Button */}
+          <View style={{ minWidth: 40, alignItems: 'flex-end', justifyContent: 'center' }}>
+            {isPlatformSuperAdmin ? (
+              <TouchableOpacity
+                style={[
+                  styles.quickAddHeaderBtn,
+                  {
+                    backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                    borderColor: isDark ? '#FFFFFF' : '#000000',
+                  },
+                ]}
+                onPress={() => {
+                  setEditingCell(null);
+                  setCreateCellModalVisible(true);
+                }}
+                activeOpacity={0.8}
+              >
+                <Plus size={14} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.5} style={{ marginRight: 4 }} />
+                <Text style={[styles.quickAddHeaderBtnTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
+                  New Cell
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={{ width: 40, height: 40 }} />
+            )}
+          </View>
+        </View>
       </View>
 
       {/* Segmented Subtab Navigation Bar */}
@@ -390,15 +395,8 @@ const styles = createAdminThemedStyles({
   circularBackBtn: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
   },
   headerTitleWrap: {
     flex: 1,

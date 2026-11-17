@@ -26,14 +26,18 @@ import {
   Trash2,
   Ban,
   Share2,
+  MapPin,
+  Navigation,
 } from 'lucide-react-native';
+import { Linking } from 'react-native';
 import CareCellService from '../../../../services/CareCellService';
 import { formatDateDisplay } from '../../../../utils/DateUtils';
 import { useAuth } from '../../../../context/AuthContext';
 import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
-import { CareCell, CareCellVisit, VisitStatus } from '../../../../types/CareCellTypes';
+import { CareCell, CareCellVisit, CareCellMembership, VisitStatus } from '../../../../types/CareCellTypes';
 import CareCellVisitModal from '../components/CareCellVisitModal';
 import CareCellVisitResponsesModal from '../components/CareCellVisitResponsesModal';
+import CareCellMapModal from '../components/CareCellMapModal';
 
 const { width } = Dimensions.get('window');
 
@@ -70,6 +74,115 @@ export default function CareCellVisitsTab({
   // Modals
   const [createModalVisible, setCreateModalVisible] = useState(false);
   const [selectedVisitForResponses, setSelectedVisitForResponses] = useState<CareCellVisit | null>(null);
+
+  // Visiting Route Map state
+  const [routeMapState, setRouteMapState] = useState<{
+    visible: boolean;
+    cell: CareCell | null;
+    visit: CareCellVisit | null;
+    members: CareCellMembership[];
+    initialPlannedRouteIds: string[];
+    visitMemberMeta: Record<string, { response?: any; preferredTime?: string }>;
+    visitTitle: string;
+  }>({
+    visible: false,
+    cell: null,
+    visit: null,
+    members: [],
+    initialPlannedRouteIds: [],
+    visitMemberMeta: {},
+    visitTitle: '',
+  });
+
+  const handleOpenVisitRouteMap = async (visit: CareCellVisit) => {
+    const targetCell = cells.find((c) => c.id === visit.careCellId) || cells[0];
+    if (!targetCell) {
+      Alert.alert('Care Cell Not Found', 'No Care Cell linked to this visit.');
+      return;
+    }
+
+    try {
+      const activeChurchId = churchId || (await CareCellService.getChurchId());
+      const cellMembers = await CareCellService.getActiveCellMemberships(activeChurchId, targetCell.id);
+
+      const meta: Record<string, { response?: any; preferredTime?: string }> = {};
+      if (visit.responses) {
+        Object.entries(visit.responses).forEach(([mId, resp]) => {
+          meta[mId] = {
+            response: resp.status,
+            preferredTime: resp.preferredTime,
+          };
+        });
+      }
+
+      let routeIds: string[] = [];
+      if (visit.routeStops && visit.routeStops.length > 0) {
+        routeIds = visit.routeStops.map((s) => s.memberId);
+      } else if (visit.responses) {
+        const accepted = Object.entries(visit.responses)
+          .filter(([_, r]) => r.status === 'Accepted')
+          .map(([id]) => id);
+        const others = Object.keys(visit.responses).filter(
+          (id) => !accepted.includes(id) && visit.responses[id].status !== 'Declined'
+        );
+        routeIds = [...accepted, ...others];
+      }
+
+      setRouteMapState({
+        visible: true,
+        cell: targetCell,
+        visit,
+        members: cellMembers,
+        initialPlannedRouteIds: routeIds,
+        visitMemberMeta: meta,
+        visitTitle: `${visit.title} · Route Map`,
+      });
+    } catch (e: any) {
+      console.error('Error opening visit route map:', e);
+      Alert.alert('Map Error', 'Could not prepare visit route map.');
+    }
+  };
+
+  const handleSaveOptimizedVisitRoute = async (stops: any[]) => {
+    if (!routeMapState.visit) return;
+    try {
+      const activeChurchId = churchId || (await CareCellService.getChurchId());
+      await CareCellService.updateVisitRouteStops(activeChurchId, routeMapState.visit.id, stops);
+      loadVisits();
+    } catch (e: any) {
+      console.error('Error saving visit route stops:', e);
+      Alert.alert('Save Error', 'Failed to save updated visit route stops.');
+    }
+  };
+
+  const handleDirectionsForVisit = async (visit: CareCellVisit) => {
+    if (visit.routeStops && visit.routeStops.length > 0) {
+      const validStops = visit.routeStops.filter(
+        (s) => typeof s.latitude === 'number' && typeof s.longitude === 'number'
+      );
+      if (validStops.length === 0) {
+        Alert.alert('No Coordinates', 'Visit stops do not have saved GPS coordinates.');
+        return;
+      }
+      if (validStops.length === 1) {
+        const url = `https://www.google.com/maps/dir/?api=1&destination=${validStops[0].latitude},${validStops[0].longitude}`;
+        Linking.openURL(url);
+        return;
+      }
+      const destination = `${validStops[validStops.length - 1].latitude},${validStops[validStops.length - 1].longitude}`;
+      const midWaypoints = validStops
+        .slice(0, validStops.length - 1)
+        .map((s) => `${s.latitude},${s.longitude}`)
+        .join('|');
+      const routeUrl = `https://www.google.com/maps/dir/?api=1&destination=${destination}&waypoints=${midWaypoints}&travelmode=driving`;
+      Linking.openURL(routeUrl).catch(() => {
+        Alert.alert('Navigation Error', 'Could not open Google Maps navigation.');
+      });
+      return;
+    }
+
+    handleOpenVisitRouteMap(visit);
+  };
 
   const loadVisits = useCallback(async () => {
     try {
@@ -432,9 +545,54 @@ export default function CareCellVisitsTab({
                   >
                     <Users size={14} color={secondaryBtnText} style={{ marginRight: 6 }} />
                     <Text style={[styles.viewResponsesBtnTxt, { color: secondaryBtnText }]}>
-                      View Member Responses ({total})
+                      Responses ({total})
                     </Text>
                     <ChevronRight size={14} color={secondaryBtnText} />
+                  </TouchableOpacity>
+
+                  {/* Route Map & Directions Buttons */}
+                  <TouchableOpacity
+                    style={[
+                      styles.routeMapActionBtn,
+                      {
+                        backgroundColor: isDark ? 'rgba(37, 99, 235, 0.2)' : '#EFF6FF',
+                        borderColor: isDark ? 'rgba(59, 130, 246, 0.35)' : '#BFDBFE',
+                      },
+                    ]}
+                    onPress={() => handleOpenVisitRouteMap(item)}
+                    activeOpacity={0.8}
+                  >
+                    <MapPin size={13} color={isDark ? '#93C5FD' : '#1E3A8A'} style={{ marginRight: 4 }} />
+                    <Text
+                      style={[
+                        styles.routeMapActionBtnTxt,
+                        { color: isDark ? '#93C5FD' : '#1E3A8A' },
+                      ]}
+                    >
+                      Route Map
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.routeMapActionBtn,
+                      {
+                        backgroundColor: secondaryBtnBg,
+                        borderColor: secondaryBtnBorder,
+                      },
+                    ]}
+                    onPress={() => handleDirectionsForVisit(item)}
+                    activeOpacity={0.8}
+                  >
+                    <Navigation size={13} color={primaryText} style={{ marginRight: 4 }} />
+                    <Text
+                      style={[
+                        styles.routeMapActionBtnTxt,
+                        { color: primaryText },
+                      ]}
+                    >
+                      Directions
+                    </Text>
                   </TouchableOpacity>
 
                   <View style={styles.quickOpsRow}>
@@ -492,6 +650,21 @@ export default function CareCellVisitsTab({
         churchId={churchId}
         onResponseUpdated={loadVisits}
       />
+
+      {/* Visiting Route Map Modal */}
+      {routeMapState.visible && routeMapState.cell && (
+        <CareCellMapModal
+          visible={routeMapState.visible}
+          onClose={() => setRouteMapState((prev) => ({ ...prev, visible: false }))}
+          cell={routeMapState.cell}
+          members={routeMapState.members}
+          initialPlannedRouteIds={routeMapState.initialPlannedRouteIds}
+          visitMemberMeta={routeMapState.visitMemberMeta}
+          visitDefaultTime={routeMapState.visit?.visitTime}
+          onSaveVisitRoute={handleSaveOptimizedVisitRoute}
+          visitTitle={routeMapState.visitTitle}
+        />
+      )}
     </View>
   );
 }
@@ -800,15 +973,27 @@ const styles = createAdminThemedStyles({
     backgroundColor: '#F8FAFC',
     borderWidth: 1.2,
     borderColor: '#CBD5E1',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 9,
   },
   viewResponsesBtnTxt: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '700',
     color: '#334155',
     marginRight: 4,
+  },
+  routeMapActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    borderRadius: 9,
+  },
+  routeMapActionBtnTxt: {
+    fontSize: 11.5,
+    fontWeight: '700',
   },
   quickOpsRow: {
     flexDirection: 'row',

@@ -116,6 +116,19 @@ export default function CareCellMemberLocationsTab({
   } | null>(null);
   const [calculatingRoute, setCalculatingRoute] = useState(false);
 
+  // Marker view refresh timers to snapshot lollipop pins cleanly
+  const [loadedMarkerPhotos, setLoadedMarkerPhotos] = useState<Record<string, boolean>>({});
+  const [refreshMarkersCount, setRefreshMarkersCount] = useState<number>(0);
+
+  useEffect(() => {
+    const t1 = setTimeout(() => setRefreshMarkersCount((c) => c + 1), 300);
+    const t2 = setTimeout(() => setRefreshMarkersCount((c) => c + 1), 800);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [loading]);
+
   const loadMemberLocations = useCallback(async () => {
     try {
       const activeChurchId = churchId || 'rhema';
@@ -615,11 +628,16 @@ export default function CareCellMemberLocationsTab({
                   coordinate={{ latitude: first.latitude, longitude: first.longitude }}
                   onPress={() => handleMarkerPress(group)}
                   anchor={{ x: 0.5, y: 1.0 }}
-                  tracksViewChanges={false}
+                  tracksViewChanges={Boolean(
+                    (!loadedMarkerPhotos[first.memberId] && !!first.profilePhoto) ||
+                    isSelected ||
+                    refreshMarkersCount < 2
+                  )}
                 >
-                  <View style={styles.tabLollipopWrap}>
+                  <View collapsable={false} style={styles.tabLollipopWrap}>
                     {/* Lollipop Head: Circular Avatar Container */}
                     <View
+                      collapsable={false}
                       style={[
                         styles.tabLollipopHead,
                         {
@@ -634,9 +652,13 @@ export default function CareCellMemberLocationsTab({
                           source={{ uri: first.profilePhoto }}
                           style={styles.tabLollipopAvatarImg}
                           resizeMode="cover"
+                          fadeDuration={0}
+                          onLoad={() => {
+                            setLoadedMarkerPhotos((prev) => ({ ...prev, [first.memberId]: true }));
+                          }}
                         />
                       ) : (
-                        <View style={[styles.tabLollipopAvatarFallback, { backgroundColor: dominantColor }]}>
+                        <View collapsable={false} style={[styles.tabLollipopAvatarFallback, { backgroundColor: dominantColor }]}>
                           <Text style={styles.tabLollipopInitials}>
                             {(first.memberName || 'M').slice(0, 2).toUpperCase()}
                           </Text>
@@ -645,7 +667,7 @@ export default function CareCellMemberLocationsTab({
 
                       {/* Multi-member cluster count pill */}
                       {isMulti && (
-                        <View style={[styles.tabLollipopCountBadge, { backgroundColor: dominantColor }]}>
+                        <View collapsable={false} style={[styles.tabLollipopCountBadge, { backgroundColor: dominantColor }]}>
                           <Users size={9} color="#FFFFFF" style={{ marginRight: 2 }} />
                           <Text style={styles.tabLollipopCountTxt}>{group.length}</Text>
                         </View>
@@ -653,27 +675,20 @@ export default function CareCellMemberLocationsTab({
 
                       {/* Verified home pin badge */}
                       {hasVerified && !isMulti && (
-                        <View style={styles.tabLollipopVerifiedBadge}>
+                        <View collapsable={false} style={styles.tabLollipopVerifiedBadge}>
                           <Home size={8} color="#FFFFFF" />
                         </View>
                       )}
                     </View>
 
-                    {/* Lollipop Stem / Needle pointing directly to coordinate */}
-                    <View style={styles.tabLollipopStemWrap}>
-                      <View
-                        style={[
-                          styles.tabLollipopStem,
-                          { backgroundColor: isSelected ? '#F59E0B' : dominantColor },
-                        ]}
-                      />
-                      <View
-                        style={[
-                          styles.tabLollipopTipDot,
-                          { backgroundColor: isSelected ? '#F59E0B' : dominantColor },
-                        ]}
-                      />
-                    </View>
+                    {/* Lollipop Pointer Triangle */}
+                    <View
+                      collapsable={false}
+                      style={[
+                        styles.photoPinTriangle,
+                        { borderTopColor: isSelected ? '#F59E0B' : dominantColor },
+                      ]}
+                    />
                   </View>
                 </Marker>
               );
@@ -1298,6 +1313,18 @@ const styles = createAdminThemedStyles(
       width: 6,
       height: 6,
       borderRadius: 3,
+      marginTop: -1,
+    },
+    photoPinTriangle: {
+      width: 0,
+      height: 0,
+      backgroundColor: 'transparent',
+      borderStyle: 'solid',
+      borderLeftWidth: 5,
+      borderRightWidth: 5,
+      borderTopWidth: 7,
+      borderLeftColor: 'transparent',
+      borderRightColor: 'transparent',
       marginTop: -1,
     },
     clusterPin: {

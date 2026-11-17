@@ -14,6 +14,27 @@ export function formatCareCellCode(code?: string): string {
   }
   return code.replace(/_/g, ' ').trim();
 }
+
+export function formatCareCellDisplayName(name?: string, cellCode?: string): string {
+  if (!name) return 'Care Cell';
+  let clean = name.trim();
+  // Strip patterns like "Rhema_CareCell-001 (Boys Care Cell)" -> "Boys Care Cell"
+  const bracketMatch = clean.match(/\(([^)]+)\)/);
+  if (bracketMatch && bracketMatch[1]?.trim()) {
+    return bracketMatch[1].trim();
+  }
+  // Strip "Rhema_CareCell-001 · Boys Care Cell" -> "Boys Care Cell"
+  if (clean.includes('·')) {
+    const parts = clean.split('·');
+    if (parts[1]?.trim()) return parts[1].trim();
+  }
+  // Sanitize "Rhema_carecell_001" / "Rhema_CareCell-001" -> "Care Cell 001"
+  if (clean.toLowerCase().startsWith('rhema_carecell_') || clean.toLowerCase().startsWith('rhema_carecell-') || clean.toLowerCase().startsWith('rhema_carecell')) {
+    const match = clean.match(/(\d+)/);
+    return match ? `Care Cell ${match[1].padStart(3, '0')}` : 'Care Cell';
+  }
+  return clean.replace(/_/g, ' ');
+}
 export type MeetingType = 
   | 'Bible Study' 
   | 'Prayer Meeting' 
@@ -71,6 +92,12 @@ export interface CareCellVisit {
   pendingCount?: number;
   responses?: Record<string, CareCellVisitMemberResponse>;
   targetMemberIds?: string[];
+  assignedLeaderId?: string;
+  assignedLeaderName?: string;
+  assignedAdminIds?: string[];
+  routeStops?: VisitRoutePoint[];
+  completedAt?: any;
+  cancelledAt?: any;
 }
 
 export interface CareCell {
@@ -128,6 +155,13 @@ export interface CareCellMembership {
   updatedAt?: any;
 }
 
+export interface PreselectedVisitMember {
+  memberId: string;
+  memberName: string;
+  memberPhone?: string;
+  memberPhoto?: string;
+}
+
 export interface VisitRoutePoint {
   memberId: string;
   memberCode?: string; // e.g. "Rhema-001"
@@ -138,6 +172,12 @@ export interface VisitRoutePoint {
   latitude: number;
   longitude: number;
   order: number;
+  accuracy?: string;
+  distanceFromPreviousKm?: number;
+  isApproximateDistance?: boolean;
+  consent?: boolean;
+  preferredTime?: string;
+  responseStatus?: MemberVisitResponseStatus;
 }
 
 export interface CareCellMeeting {
