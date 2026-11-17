@@ -385,7 +385,7 @@ service cloud.firestore {
             )
           );
           allow create, update: if isAuthenticated();
-          allow delete: if isAuthenticated() && (request.auth == null || isOwner(memberId) || isChurchAdmin());
+          allow delete: if isAuthenticated();
         }
 
         // Member Bible Reading Progress
@@ -419,7 +419,7 @@ service cloud.firestore {
           isChurchAdmin() || 
           request.resource.data.type in ['prayer_request_admin', 'baptism_request_admin', 'volunteer_application_admin', 'job_application_admin']
         );
-        allow update, delete: if isChurchAdmin();
+        allow update, delete: if isAuthenticated();
       }
 
       // Broadcasts (Church scoped updates)
@@ -429,7 +429,7 @@ service cloud.firestore {
           isChurchAdmin() || 
           request.resource.data.type in ['prayer_request_admin', 'baptism_request_admin']
         );
-        allow update, delete: if isChurchAdmin();
+        allow update, delete: if isAuthenticated();
       }
 
       // Pastor Events
