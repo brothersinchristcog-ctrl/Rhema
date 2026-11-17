@@ -42,6 +42,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { useChurch } from '../../../context/ChurchContext';
 import { AdminTabContext } from '../../../context/AdminTabContext';
 import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
+import { parseLocalDate, toStandardDateString } from '../../../utils/DateUtils';
 import JobCircleService from '../../../services/JobCircleService';
 import InAppDocumentViewerModal from '../../../components/InAppDocumentViewerModal';
 import {
@@ -233,6 +234,7 @@ export default function AdminJobCircleDashboard({ navigation, routeParams }: Adm
   // Status Action: Open Interview Scheduler
   const handleOpenScheduleModal = () => {
     if (!selectedApp) return;
+    setInterviewDate(selectedApp.meetingDate ? parseLocalDate(selectedApp.meetingDate) : new Date());
     setInterviewNotes(selectedApp.meetingNotes || '');
     setInterviewLocation(selectedApp.meetingLocation || 'Rhema Church / Online Meet');
     setInterviewTime(selectedApp.meetingTime || '10:00 AM');
@@ -244,7 +246,7 @@ export default function AdminJobCircleDashboard({ navigation, routeParams }: Adm
     if (!selectedApp) return;
     try {
       setUpdatingStatus(true);
-      const dateStr = interviewDate.toISOString().split('T')[0];
+      const dateStr = toStandardDateString(interviewDate);
       await JobCircleService.updateApplicationStatus(churchId, selectedApp.id, 'meeting_scheduled', {
         adminId: user?.uid || 'admin',
         adminName: member?.name || user?.displayName || 'Admin',

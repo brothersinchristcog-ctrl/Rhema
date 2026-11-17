@@ -55,6 +55,7 @@ export interface JobOpportunity {
   thumbnailUrl?: string; // Banner / thumbnail image for LinkedIn-style feed
   location: string;
   timeCommitment: string;
+  scheduleSlots?: { days: string[]; startTime: string; endTime: string }[];
   opportunityType: JobOpportunityType;
   compensationType: JobCompensationType;
   compensationDetails?: string; // e.g. "Rs. 25,000 - 35,000 / month" or "Honorarium provided"

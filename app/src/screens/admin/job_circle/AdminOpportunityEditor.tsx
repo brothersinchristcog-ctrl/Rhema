@@ -86,6 +86,74 @@ interface ScheduleSlot {
   endTime: string; // e.g. "8:00 PM"
 }
 
+const DEFAULT_SCHEDULE_SLOT: ScheduleSlot = {
+  days: ['Sunday'],
+  startTime: '9:00 AM',
+  endTime: '12:00 PM',
+};
+
+function normalizeWeekdayName(raw: string): string | null {
+  const token = raw.trim().toLowerCase();
+  const matched = WEEKDAYS.find(
+    (w) => w.full.toLowerCase() === token || w.label.toLowerCase() === token
+  );
+  return matched ? matched.full : null;
+}
+
+function parseOpportunitySchedule(opp?: JobOpportunity): {
+  slots: ScheduleSlot[];
+  isLegacyString: boolean;
+} {
+  if (Array.isArray(opp?.scheduleSlots) && opp.scheduleSlots.length > 0) {
+    return {
+      slots: opp.scheduleSlots.map((slot) => ({
+        days: Array.isArray(slot.days) && slot.days.length > 0 ? [...slot.days] : ['Sunday'],
+        startTime: slot.startTime || '9:00 AM',
+        endTime: slot.endTime || '12:00 PM',
+      })),
+      isLegacyString: false,
+    };
+  }
+
+  const rawCommitment = typeof opp?.timeCommitment === 'string' ? opp.timeCommitment.trim() : '';
+  if (!rawCommitment) {
+    return { slots: [{ ...DEFAULT_SCHEDULE_SLOT, days: ['Sunday'] }], isLegacyString: false };
+  }
+
+  const parts = rawCommitment.split('|').map((p) => p.trim()).filter(Boolean);
+  const parsed: ScheduleSlot[] = [];
+
+  for (const part of parts) {
+    const match = part.match(/^([^:]+):\s*(\d{1,2}:\d{2}\s*(?:AM|PM))\s*[–—-]\s*(\d{1,2}:\d{2}\s*(?:AM|PM))$/i);
+    if (!match) {
+      return {
+        slots: [{ ...DEFAULT_SCHEDULE_SLOT, days: ['Sunday'] }],
+        isLegacyString: true,
+      };
+    }
+    const parsedDays = match[1]
+      .split(',')
+      .map((d) => normalizeWeekdayName(d))
+      .filter((d): d is string => Boolean(d));
+    if (parsedDays.length === 0) {
+      return {
+        slots: [{ ...DEFAULT_SCHEDULE_SLOT, days: ['Sunday'] }],
+        isLegacyString: true,
+      };
+    }
+    parsed.push({
+      days: parsedDays,
+      startTime: match[2].trim().toUpperCase(),
+      endTime: match[3].trim().toUpperCase(),
+    });
+  }
+
+  if (parsed.length === 0) {
+    return { slots: [{ ...DEFAULT_SCHEDULE_SLOT, days: ['Sunday'] }], isLegacyString: true };
+  }
+  return { slots: parsed, isLegacyString: false };
+}
+
 export default function AdminOpportunityEditor({ navigation, route }: AdminOpportunityEditorProps) {
   const insets = useSafeAreaInsets();
   const { user, member } = useAuth();
@@ -119,14 +187,10 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
   const [compensationType, setCompensationType] = useState<string>(editingOpp?.compensationType || 'unpaid');
   const [compensationDetails, setCompensationDetails] = useState(editingOpp?.compensationDetails || '');
 
-  // Time Commitment Schedule Slots
-  const [schedules, setSchedules] = useState<ScheduleSlot[]>(() => {
-    if (editingOpp?.timeCommitment) {
-      // Keep legacy string representation accessible
-      return [{ days: ['Sunday'], startTime: '9:00 AM', endTime: '12:00 PM' }];
-    }
-    return [{ days: ['Sunday'], startTime: '9:00 AM', endTime: '12:00 PM' }];
-  });
+  // Time Commitment Schedule Slots (restore saved schedule or preserve legacy summary)
+  const [initialScheduleState] = useState(() => parseOpportunitySchedule(editingOpp));
+  const [schedules, setSchedules] = useState<ScheduleSlot[]>(initialScheduleState.slots);
+  const [scheduleModified, setScheduleModified] = useState(false);
 
   // Time Picker State for Schedule Slot
   const [timePickerTarget, setTimePickerTarget] = useState<{ slotIdx: number; field: 'start' | 'end' } | null>(null);
@@ -388,24 +452,28 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
 
   // ── SCHEDULE SLOTS HELPERS ──
   const handleAddScheduleSlot = () => {
+    setScheduleModified(true);
     setSchedules([...schedules, { days: ['Sunday'], startTime: '9:00 AM', endTime: '12:00 PM' }]);
   };
 
   const handleRemoveScheduleSlot = (idx: number) => {
+    setScheduleModified(true);
     setSchedules(schedules.filter((_, i) => i !== idx));
   };
 
   const handleToggleDay = (slotIdx: number, dayFull: string) => {
-    const updated = [...schedules];
-    const slot = updated[slotIdx];
-    if (slot.days.includes(dayFull)) {
-      if (slot.days.length > 1) {
-        slot.days = slot.days.filter(d => d !== dayFull);
-      }
-    } else {
-      slot.days = [...slot.days, dayFull];
-    }
-    setSchedules(updated);
+    setScheduleModified(true);
+    setSchedules(prev =>
+      prev.map((slot, idx) => {
+        if (idx !== slotIdx) return slot;
+        if (slot.days.includes(dayFull)) {
+          return slot.days.length > 1
+            ? { ...slot, days: slot.days.filter(d => d !== dayFull) }
+            : slot;
+        }
+        return { ...slot, days: [...slot.days, dayFull] };
+      })
+    );
   };
 
   const formatScheduleCommitmentSummary = (): string => {
@@ -427,13 +495,17 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
     const minStr = minutes < 10 ? `0${minutes}` : minutes;
     const formatted = `${hours}:${minStr} ${ampm}`;
 
-    const updated = [...schedules];
-    if (field === 'start') {
-      updated[slotIdx].startTime = formatted;
-    } else {
-      updated[slotIdx].endTime = formatted;
-    }
-    setSchedules(updated);
+    setScheduleModified(true);
+    setSchedules(prev =>
+      prev.map((slot, idx) =>
+        idx === slotIdx
+          ? {
+              ...slot,
+              [field === 'start' ? 'startTime' : 'endTime']: formatted,
+            }
+          : slot
+      )
+    );
     setTimePickerTarget(null);
   };
 
@@ -530,7 +602,16 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
       setSaving(true);
       const cleanResponsibilities = responsibilities.map(r => r.trim()).filter(Boolean);
       const cleanSkills = requiredSkills.map(s => s.trim()).filter(Boolean);
-      const timeCommitmentSummary = formatScheduleCommitmentSummary();
+      const preserveLegacyCommitment =
+        Boolean(editingOpp?.timeCommitment) &&
+        initialScheduleState.isLegacyString &&
+        !scheduleModified;
+      const timeCommitmentSummary = preserveLegacyCommitment
+        ? editingOpp!.timeCommitment
+        : formatScheduleCommitmentSummary();
+      const scheduleSlotsToSave = preserveLegacyCommitment
+        ? editingOpp?.scheduleSlots
+        : schedules;
 
       if (editingOpp) {
         const creatorPhoto =
@@ -548,15 +629,16 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
           description: description.trim(),
           location: location.trim() || 'Rhema Main Campus',
           timeCommitment: timeCommitmentSummary,
+          ...(scheduleSlotsToSave ? { scheduleSlots: scheduleSlotsToSave } : {}),
           opportunityType: opportunityType as any,
           compensationType: compensationType as any,
           compensationDetails: compensationDetails.trim(),
           responsibilities: cleanResponsibilities,
           requiredSkills: cleanSkills,
-          thumbnailUrl: thumbnailUrl.trim() || undefined,
+          thumbnailUrl: thumbnailUrl.trim(),
           createdByName: member?.name || user?.displayName || editingOpp.createdByName || '',
-          createdByPhoto: creatorPhoto || editingOpp.createdByPhoto || undefined,
-          createdByRole: (member as any)?.role || editingOpp.createdByRole || undefined,
+          createdByPhoto: creatorPhoto || editingOpp.createdByPhoto || '',
+          createdByRole: (member as any)?.role || editingOpp.createdByRole || '',
           status: isPublish ? 'approved' : 'draft',
         });
       } else {
@@ -578,15 +660,16 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
           requiredSkills: cleanSkills,
           location: location.trim() || 'Rhema Main Campus',
           timeCommitment: timeCommitmentSummary,
+          ...(scheduleSlotsToSave ? { scheduleSlots: scheduleSlotsToSave } : {}),
           opportunityType: opportunityType as any,
           compensationType: compensationType as any,
           compensationDetails: compensationDetails.trim(),
-          thumbnailUrl: thumbnailUrl.trim() || undefined,
+          thumbnailUrl: thumbnailUrl.trim(),
           status: isPublish ? 'approved' : 'draft',
           createdById: user?.uid || 'admin',
           createdByName: member?.name || user?.displayName || '',
-          createdByPhoto: creatorPhoto || undefined,
-          createdByRole: (member as any)?.role || undefined,
+          createdByPhoto: creatorPhoto || '',
+          createdByRole: (member as any)?.role || '',
         });
       }
 
