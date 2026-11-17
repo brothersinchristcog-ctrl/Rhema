@@ -378,13 +378,21 @@ export default function UpdatesScreen({ navigation, route }: any) {
       data.referenceType === 'job_circle_opportunity' ||
       data.title?.includes('Ministry Opportunity') ||
       data.title?.includes('Ministry Application') ||
-      data.title?.includes('Ministry Interview')
+      data.title?.includes('Ministry Interview') ||
+      data.title?.includes('Application Under Review') ||
+      data.title?.includes('Application Shortlisted') ||
+      (data.title?.includes('You have been Selected') && (data.applicationId || data.opportunityId))
     ) {
       icon = Briefcase;
       color = '#0284c7';
       if (data.type === 'job_application_admin') {
         resolvedType = 'job_application_admin';
-      } else if (data.type === 'job_application_member' || data.title?.includes('Ministry Interview') || data.title?.includes('Application')) {
+      } else if (
+        data.type === 'job_application_member' ||
+        data.referenceType === 'job_circle_application' ||
+        data.title?.includes('Ministry Interview') ||
+        data.title?.includes('Application')
+      ) {
         resolvedType = 'job_application_member';
       } else {
         resolvedType = data.type || 'job_opportunity_new';
@@ -707,6 +715,28 @@ export default function UpdatesScreen({ navigation, route }: any) {
     return true;
   });
 
+  const markJobCircleNotificationsRead = React.useCallback(
+    async (idsToMark: string[]) => {
+      if (!idsToMark || idsToMark.length === 0) return;
+      try {
+        const readKey = `@read_job_notif_ids_${user?.uid || member?.id || 'guest'}`;
+        const raw = await AsyncStorage.getItem(readKey);
+        const existing: string[] = raw ? JSON.parse(raw) : [];
+        const merged = Array.from(new Set([...(Array.isArray(existing) ? existing : []), ...idsToMark]));
+        await AsyncStorage.setItem(readKey, JSON.stringify(merged));
+      } catch {
+        // Non-fatal
+      }
+    },
+    [user?.uid, member?.id]
+  );
+
+  useEffect(() => {
+    if (filterCategory === 'job_circle' && visibleUpdates.length > 0) {
+      markJobCircleNotificationsRead(visibleUpdates.map(u => String(u.id)));
+    }
+  }, [filterCategory, visibleUpdates, markJobCircleNotificationsRead]);
+
   // Reset hasAutoOpened whenever route params change to allow new notification clicks to pop up
   useEffect(() => {
     setHasAutoOpened(false);
@@ -922,18 +952,21 @@ export default function UpdatesScreen({ navigation, route }: any) {
                       navigation.navigate('Testimonies', { initialTab: 'mine' });
                     }
                   } else if (update.type === 'job_opportunity_new') {
+                    markJobCircleNotificationsRead([String(update.id)]);
                     if (update.opportunityId) {
                       navigation.navigate('OpportunityDetailScreen', { opportunityId: update.opportunityId });
                     } else {
-                      navigation.navigate('JobCircle');
+                      navigation.navigate('JobCircle', { skipSplash: true });
                     }
                   } else if (update.type === 'job_application_admin') {
+                    markJobCircleNotificationsRead([String(update.id)]);
                     navigation.navigate('AdminRoot', {
                       targetTab: 'Job Circle',
                       applicationId: update.applicationId,
                       timestamp: Date.now(),
                     });
                   } else if (update.type === 'job_application_member') {
+                    markJobCircleNotificationsRead([String(update.id)]);
                     if (update.opportunityId) {
                       navigation.navigate('OpportunityDetailScreen', {
                         opportunityId: update.opportunityId,

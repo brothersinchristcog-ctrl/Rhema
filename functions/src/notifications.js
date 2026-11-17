@@ -3281,6 +3281,14 @@ async function resolveVolunteerMemberTokens(db, churchId, memberId, memberPhone,
             }
             catch (_) { }
         }
+        // 4b. Check members collection by `uid` field in case doc ID differs from Auth UID
+        if (tokenSet.size === 0) {
+            try {
+                const uidSnap = await db.collection('Rhema Church').doc(cid).collection('members').where('uid', '==', memberId).limit(3).get();
+                uidSnap.forEach((d) => extractFromDoc(d));
+            }
+            catch (_) { }
+        }
     }
     // 5. Query members by phone if no token found yet
     if (tokenSet.size === 0 && memberPhone) {
@@ -4311,6 +4319,11 @@ async function handleJobOpportunityPublishedPush(data, churchId, opportunityId, 
             console.warn('[JobCircle] Could not read Rhema Church members tokens:', e);
         }
         try {
+            const altMembersSnap = await db.collection('churches').doc(cid).collection('members').get();
+            altMembersSnap.forEach((mDoc) => addTokens(mDoc.data()));
+        }
+        catch (_) { }
+        try {
             const usersSnap = await db.collection('users').where('primaryChurchId', '==', cid).get();
             usersSnap.forEach((uDoc) => addTokens(uDoc.data()));
         }
@@ -4320,6 +4333,7 @@ async function handleJobOpportunityPublishedPush(data, churchId, opportunityId, 
             type: 'job_opportunity_new',
             churchId: cid,
             opportunityId,
+            targetTab: 'Job Circle',
             screen: 'OpportunityDetailScreen',
             click_action: 'FLUTTER_NOTIFICATION_CLICK',
         };
@@ -4486,14 +4500,33 @@ export const onJobApplicationUpdated = onDocumentUpdated({ document: 'Rhema Chur
         }
         const db = getFirestore();
         const messaging = getMessaging();
-        // Mark lastNotifiedStatus on the application document to guard against retries
+        // Atomic Firestore transaction on lastNotifiedStatus so retries never double-notify
+        let shouldSend = false;
         try {
-            await change.after.ref.update({
-                lastNotifiedStatus: status,
-                lastNotifiedStatusAt: FieldValue.serverTimestamp(),
+            shouldSend = await db.runTransaction(async (tx) => {
+                const fresh = await tx.get(change.after.ref);
+                if (!fresh.exists)
+                    return false;
+                const freshData = fresh.data() || {};
+                if (freshData.lastNotifiedStatus === status)
+                    return false;
+                tx.update(change.after.ref, {
+                    lastNotifiedStatus: status,
+                    lastNotifiedStatusAt: FieldValue.serverTimestamp(),
+                });
+                return true;
             });
         }
-        catch (_) { }
+        catch (txErr) {
+            console.warn('[JobCircle] Transaction check error on lastNotifiedStatus:', txErr);
+            if (after.lastNotifiedStatus === status)
+                return;
+            shouldSend = true;
+        }
+        if (!shouldSend) {
+            console.log(`🛑 [JobCircle] Skipping duplicate member status push for ${applicationId} -> ${status}`);
+            return;
+        }
         const tokens = await resolveVolunteerMemberTokens(db, churchId, memberId, after.memberPhone, after.memberEmail, after.memberName, after.memberFcmToken || after.fcmToken);
         if (tokens.length > 0) {
             await sendHighPriorityPush(messaging, tokens, title, body, {

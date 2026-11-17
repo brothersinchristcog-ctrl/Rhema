@@ -485,6 +485,21 @@ class JobCircleService {
     }
   }
 
+  async getApplicationById(churchId: string, applicationId: string): Promise<JobApplication | null> {
+    if (!applicationId) return null;
+    try {
+      const doc = await this.getRootRef(churchId)
+        .collection('job_circle_applications')
+        .doc(applicationId)
+        .get();
+      if (!doc.exists) return null;
+      return { id: doc.id, ...doc.data() } as JobApplication;
+    } catch (err) {
+      console.warn('[JobCircleService] getApplicationById error:', err);
+      return null;
+    }
+  }
+
   async getAllApplications(
     churchId: string,
     opportunityId?: string,

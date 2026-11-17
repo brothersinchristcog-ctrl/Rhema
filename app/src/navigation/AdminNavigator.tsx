@@ -189,6 +189,7 @@ export default function AdminNavigator({ navigation, route }: any) {
         (lower.includes('baptism') && t.name === 'Baptism') ||
         (lower.includes('testimon') && t.name === 'Testimonies') ||
         (lower.includes('volunteer') && t.name === 'Volunteer Management') ||
+        (lower.includes('job') && t.name === 'Job Circle') ||
         ((lower.includes('roster') || lower.includes('service')) && t.name === 'Service Roster')
       );
       if (idx !== -1 && idx !== activeTab) {
