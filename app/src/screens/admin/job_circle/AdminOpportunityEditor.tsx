@@ -972,21 +972,9 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
 
             {/* 5. Job Description Document (PDF, Word, or Image) */}
             <View style={styles.fGroup}>
-              <View style={styles.fieldHeaderBetween}>
-                <Text style={[styles.fLabel, { color: primaryText, marginBottom: 0 }]}>
-                  Job Description Document (Optional)
-                </Text>
-                {jdAttachment ? (
-                  <TouchableOpacity
-                    onPress={handleRemoveJdDocument}
-                    style={[styles.smallAddPill, { borderColor: '#EF4444', backgroundColor: isDark ? '#7F1D1D30' : '#FEE2E2' }]}
-                    activeOpacity={0.7}
-                  >
-                    <Trash2 size={11} color="#EF4444" />
-                    <Text style={[styles.smallAddPillTxt, { color: '#EF4444' }]}>Remove</Text>
-                  </TouchableOpacity>
-                ) : null}
-              </View>
+              <Text style={[styles.fLabel, { color: primaryText }]}>
+                Job Description Document (Optional)
+              </Text>
 
               {jdAttachment ? (
                 <View
@@ -1067,6 +1055,18 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                     >
                       <Upload size={13} color={primaryText} />
                       <Text style={[styles.jdDocBtnTxt, { color: primaryText }]}>Replace</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.jdDocBtn,
+                        { backgroundColor: isDark ? '#7F1D1D30' : '#FEE2E2', borderColor: '#EF4444' },
+                      ]}
+                      onPress={handleRemoveJdDocument}
+                      activeOpacity={0.8}
+                    >
+                      <Trash2 size={13} color="#EF4444" />
+                      <Text style={[styles.jdDocBtnTxt, { color: '#EF4444' }]}>Remove</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -2207,6 +2207,7 @@ const styles = createAdminThemedStyles(
     jdDocActions: {
       flexDirection: 'row',
       alignItems: 'center',
+      flexWrap: 'wrap',
       gap: 8,
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: 'rgba(150, 150, 150, 0.2)',
