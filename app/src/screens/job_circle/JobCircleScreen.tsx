@@ -49,9 +49,7 @@ import {
   Bell,
   ArrowRight,
   Compass,
-  Eye,
 } from 'lucide-react-native';
-import InAppDocumentViewerModal, { InAppDocumentViewerDoc } from '../../components/InAppDocumentViewerModal';
 import { RHEMA_LOGO_PATH, RHEMA_LOGO_VIEWBOX, RHEMA_LOGO_ASPECT } from '../auth/rhemaLogoPath';
 import { useAuth } from '../../context/AuthContext';
 import { useChurch } from '../../context/ChurchContext';
@@ -121,7 +119,6 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
   const [applicationMessage, setApplicationMessage] = useState('');
   const [selectedFile, setSelectedFile] = useState<{ uri: string; name: string; mimeType?: string; size?: number } | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [viewerDoc, setViewerDoc] = useState<InAppDocumentViewerDoc | null>(null);
 
   // Splash Screen Entrance Fade (stays visible until member taps Continue)
   useEffect(() => {
@@ -582,34 +579,6 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
             </View>
           ) : null}
 
-          {/* Attached Job Description Quick View */}
-          {opp.jdAttachment?.url ? (
-            <TouchableOpacity
-              style={[
-                styles.cardJdBadge,
-                {
-                  backgroundColor: isDark ? '#1E293B80' : '#EFF6FF',
-                  borderColor: isDark ? '#3B82F640' : '#DBEAFE',
-                },
-              ]}
-              onPress={(e) => {
-                e?.stopPropagation?.();
-                setViewerDoc({
-                  url: opp.jdAttachment!.url,
-                  name: opp.jdAttachment!.fileName || 'Job Description',
-                  mimeType: opp.jdAttachment!.mimeType,
-                });
-              }}
-              activeOpacity={0.8}
-            >
-              <FileText size={13} color={isDark ? '#60A5FA' : '#2563EB'} />
-              <Text style={[styles.cardJdBadgeTxt, { color: isDark ? '#93C5FD' : '#1D4ED8' }]} numberOfLines={1}>
-                {opp.jdAttachment.fileName || 'View Job Description'}
-              </Text>
-              <Eye size={12} color={isDark ? '#93C5FD' : '#1D4ED8'} />
-            </TouchableOpacity>
-          ) : null}
-
           {/* Description */}
           {opp.description ? (
             <View style={{ marginTop: 8 }}>
@@ -966,40 +935,6 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 16 }}>
-              {/* Job Description Document Banner (if attached) */}
-              {selectedOppForApply?.jdAttachment?.url ? (
-                <TouchableOpacity
-                  style={[
-                    styles.applyJdBanner,
-                    {
-                      backgroundColor: isDark ? '#1E293B80' : '#EFF6FF',
-                      borderColor: isDark ? '#3B82F640' : '#BFDBFE',
-                    },
-                  ]}
-                  onPress={() =>
-                    setViewerDoc({
-                      url: selectedOppForApply.jdAttachment!.url,
-                      name: selectedOppForApply.jdAttachment!.fileName || 'Job Description',
-                      mimeType: selectedOppForApply.jdAttachment!.mimeType,
-                    })
-                  }
-                  activeOpacity={0.8}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, marginRight: 8 }}>
-                    <FileText size={20} color={isDark ? '#60A5FA' : '#2563EB'} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.applyJdTitle, { color: primaryText }]} numberOfLines={1}>
-                        {selectedOppForApply.jdAttachment.fileName || 'Job Description Document'}
-                      </Text>
-                      <Text style={[styles.applyJdSub, { color: isDark ? '#93C5FD' : '#2563EB' }]}>
-                        Tap to view official job description in-app
-                      </Text>
-                    </View>
-                  </View>
-                  <Eye size={16} color={isDark ? '#60A5FA' : '#2563EB'} />
-                </TouchableOpacity>
-              ) : null}
-
               {/* Message Input */}
               <Text style={[styles.fieldLabel, { color: primaryText }]}>
                 Message / Calling Statement
@@ -1126,13 +1061,6 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
           </View>
         </KeyboardAvoidingView>
       </Modal>
-
-      {/* ── IN-APP DOCUMENT VIEWER MODAL ── */}
-      <InAppDocumentViewerModal
-        visible={!!viewerDoc}
-        doc={viewerDoc}
-        onClose={() => setViewerDoc(null)}
-      />
     </View>
   );
 }
@@ -1614,41 +1542,5 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
     letterSpacing: 0.2,
-  },
-
-  // ── IN-APP JD DOCUMENT STYLES ──
-  cardJdBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    borderWidth: 1,
-    marginTop: 6,
-    alignSelf: 'flex-start',
-  },
-  cardJdBadgeTxt: {
-    fontSize: 12,
-    fontWeight: '700',
-    maxWidth: 220,
-  },
-  applyJdBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 14,
-  },
-  applyJdTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  applyJdSub: {
-    fontSize: 11.5,
-    fontWeight: '600',
-    marginTop: 1,
   },
 });

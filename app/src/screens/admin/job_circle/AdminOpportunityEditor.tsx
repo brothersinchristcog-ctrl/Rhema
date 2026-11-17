@@ -31,23 +31,17 @@ import {
   X,
   ImageIcon,
   Upload,
-  Eye,
-  FileSpreadsheet,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
-import * as DocumentPicker from 'expo-document-picker';
 import storage from '@react-native-firebase/storage';
-import firestore from '@react-native-firebase/firestore';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import { useAuth } from '../../../context/AuthContext';
 import { useChurch } from '../../../context/ChurchContext';
 import { useAdminTheme, createAdminThemedStyles } from '../../../utils/adminThemeHelper';
 import JobCircleService from '../../../services/JobCircleService';
-import InAppDocumentViewerModal, { InAppDocumentViewerDoc } from '../../../components/InAppDocumentViewerModal';
 import {
   JobOpportunity,
   JobCategory,
-  AttachmentInfo,
   DEFAULT_MINISTRY_CATEGORIES,
 } from '../../../types/jobCircle';
 
@@ -193,9 +187,6 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
   const [location, setLocation] = useState(editingOpp?.location || '');
   const [thumbnailUrl, setThumbnailUrl] = useState(editingOpp?.thumbnailUrl || '');
   const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
-  const [jdAttachment, setJdAttachment] = useState<AttachmentInfo | null>(editingOpp?.jdAttachment || null);
-  const [uploadingJdDoc, setUploadingJdDoc] = useState(false);
-  const [previewDoc, setPreviewDoc] = useState<InAppDocumentViewerDoc | null>(null);
 
   // Opportunity Types & Compensation Types with Custom Support
   const [roleTypes, setRoleTypes] = useState(DEFAULT_ROLE_TYPES);
@@ -627,61 +618,6 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
     setThumbnailUrl('');
   };
 
-  // ── JOB DESCRIPTION DOCUMENT PICKER & HANDLERS ──
-  const formatFileSize = (bytes?: number): string => {
-    if (!bytes || bytes <= 0) return '';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
-  const handlePickJdDocument = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: [
-          'application/pdf',
-          'application/msword',
-          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-          'image/*',
-        ],
-        copyToCacheDirectory: true,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const file = result.assets[0];
-        const maxSizeBytes = 25 * 1024 * 1024; // 25MB limit
-        if (file.size && file.size > maxSizeBytes) {
-          Alert.alert('File Too Large', 'Please select a document smaller than 25MB.');
-          return;
-        }
-        setUploadingJdDoc(true);
-        try {
-          const uploaded = await JobCircleService.uploadJdDocument(
-            churchId,
-            file.uri,
-            file.name,
-            file.mimeType,
-            file.size
-          );
-          setJdAttachment(uploaded);
-        } catch (uploadErr: any) {
-          console.error('JD document upload failed:', uploadErr);
-          Alert.alert('Upload Failed', uploadErr?.message || 'Could not upload document. Please try again.');
-        } finally {
-          setUploadingJdDoc(false);
-        }
-      }
-    } catch (err: any) {
-      console.error('Error selecting document:', err);
-      Alert.alert('Error', 'Unable to pick document. Please try again.');
-      setUploadingJdDoc(false);
-    }
-  };
-
-  const handleRemoveJdDocument = () => {
-    setJdAttachment(null);
-  };
-
   // ── SAVE & PUBLISH ──
   const handleSave = async (isPublish: boolean) => {
     if (!title.trim()) {
@@ -731,7 +667,6 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
           responsibilities: cleanResponsibilities,
           requiredSkills: cleanSkills,
           thumbnailUrl: thumbnailUrl.trim(),
-          ...(jdAttachment ? { jdAttachment } : { jdAttachment: firestore.FieldValue.delete() as any }),
           createdByName: member?.name || user?.displayName || editingOpp.createdByName || '',
           createdByPhoto: creatorPhoto || editingOpp.createdByPhoto || '',
           createdByRole: (member as any)?.role || editingOpp.createdByRole || '',
@@ -761,7 +696,6 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
           compensationType: compensationType as any,
           compensationDetails: compensationDetails.trim(),
           thumbnailUrl: thumbnailUrl.trim(),
-          ...(jdAttachment ? { jdAttachment } : {}),
           status: isPublish ? 'approved' : 'draft',
           createdById: user?.uid || 'admin',
           createdByName: member?.name || user?.displayName || '',
@@ -963,141 +897,6 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
                       </Text>
                       <Text style={[styles.uploadBoxSub, { color: secondaryText }]}>
                         Tap to choose 16:9 banner or post graphic from gallery
-                      </Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {/* 5. Job Description Document (PDF, Word, or Image) */}
-            <View style={styles.fGroup}>
-              <Text style={[styles.fLabel, { color: primaryText }]}>
-                Job Description Document (Optional)
-              </Text>
-
-              {jdAttachment ? (
-                <View
-                  style={[
-                    styles.jdDocCard,
-                    {
-                      borderColor: isDark ? '#3F3F46' : '#CBD5E1',
-                      backgroundColor: isDark ? '#27272A80' : '#F8FAFC',
-                    },
-                  ]}
-                >
-                  <View style={styles.jdDocLeft}>
-                    <View
-                      style={[
-                        styles.jdDocIconBadge,
-                        {
-                          backgroundColor:
-                            jdAttachment.fileName?.toLowerCase().endsWith('.pdf')
-                              ? (isDark ? '#7F1D1D40' : '#FEE2E2')
-                              : (isDark ? '#1E3A8A40' : '#DBEAFE'),
-                        },
-                      ]}
-                    >
-                      <FileText
-                        size={22}
-                        color={
-                          jdAttachment.fileName?.toLowerCase().endsWith('.pdf')
-                            ? '#EF4444'
-                            : '#3B82F6'
-                        }
-                      />
-                    </View>
-                    <View style={{ flex: 1, marginRight: 8 }}>
-                      <Text
-                        style={[styles.jdDocName, { color: primaryText }]}
-                        numberOfLines={1}
-                      >
-                        {jdAttachment.fileName || 'Job_Description.pdf'}
-                      </Text>
-                      <Text style={[styles.jdDocSub, { color: secondaryText }]}>
-                        {[
-                          formatFileSize(jdAttachment.fileSize),
-                          jdAttachment.fileName?.toLowerCase().endsWith('.pdf') ? 'PDF Document' : 'Document',
-                        ]
-                          .filter(Boolean)
-                          .join(' • ')}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.jdDocActions}>
-                    <TouchableOpacity
-                      style={[
-                        styles.jdDocBtn,
-                        { backgroundColor: isDark ? '#3B82F625' : '#EFF6FF', borderColor: '#3B82F6' },
-                      ]}
-                      onPress={() =>
-                        setPreviewDoc({
-                          url: jdAttachment.url,
-                          name: jdAttachment.fileName || 'Job Description',
-                          mimeType: jdAttachment.mimeType,
-                        })
-                      }
-                      activeOpacity={0.8}
-                    >
-                      <Eye size={13} color="#3B82F6" />
-                      <Text style={[styles.jdDocBtnTxt, { color: '#3B82F6' }]}>View Document</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[
-                        styles.jdDocBtn,
-                        { backgroundColor: isDark ? '#3F3F46' : '#F1F5F9', borderColor: isDark ? '#52525B' : '#CBD5E1' },
-                      ]}
-                      onPress={handlePickJdDocument}
-                      disabled={uploadingJdDoc}
-                      activeOpacity={0.8}
-                    >
-                      <Upload size={13} color={primaryText} />
-                      <Text style={[styles.jdDocBtnTxt, { color: primaryText }]}>Replace</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[
-                        styles.jdDocBtn,
-                        { backgroundColor: isDark ? '#7F1D1D30' : '#FEE2E2', borderColor: '#EF4444' },
-                      ]}
-                      onPress={handleRemoveJdDocument}
-                      activeOpacity={0.8}
-                    >
-                      <Trash2 size={13} color="#EF4444" />
-                      <Text style={[styles.jdDocBtnTxt, { color: '#EF4444' }]}>Remove</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ) : (
-                <TouchableOpacity
-                  style={[
-                    styles.thumbnailUploadBox,
-                    {
-                      borderColor: isDark ? '#3F3F46' : '#CBD5E1',
-                      backgroundColor: isDark ? '#27272A50' : '#F8FAFC',
-                    },
-                  ]}
-                  onPress={handlePickJdDocument}
-                  disabled={uploadingJdDoc}
-                  activeOpacity={0.8}
-                >
-                  {uploadingJdDoc ? (
-                    <View style={{ alignItems: 'center', gap: 6 }}>
-                      <ActivityIndicator size="small" color={isDark ? '#60A5FA' : '#1a2d5a'} />
-                      <Text style={[styles.uploadBoxSub, { color: secondaryText }]}>Uploading JD document to cloud storage...</Text>
-                    </View>
-                  ) : (
-                    <View style={{ alignItems: 'center', gap: 6 }}>
-                      <View style={[styles.uploadIconCircle, { backgroundColor: isDark ? '#3F3F46' : '#E2E8F0' }]}>
-                        <FileText size={22} color={isDark ? '#93C5FD' : '#1a2d5a'} />
-                      </View>
-                      <Text style={[styles.uploadBoxTitle, { color: primaryText }]}>
-                        Upload Job Description (JD)
-                      </Text>
-                      <Text style={[styles.uploadBoxSub, { color: secondaryText }]}>
-                        Attach official PDF, Word (.doc/.docx), or scan (max 25MB)
                       </Text>
                     </View>
                   )}
@@ -1912,13 +1711,6 @@ export default function AdminOpportunityEditor({ navigation, route }: AdminOppor
         onConfirm={handleTimeConfirm}
         onCancel={() => setTimePickerTarget(null)}
       />
-
-      {/* ── IN-APP DOCUMENT VIEWER MODAL ── */}
-      <InAppDocumentViewerModal
-        visible={!!previewDoc}
-        doc={previewDoc}
-        onClose={() => setPreviewDoc(null)}
-      />
     </View>
   );
 }
@@ -2173,56 +1965,6 @@ const styles = createAdminThemedStyles(
       elevation: 2,
     },
     replaceThumbnailTxt: {
-      fontSize: 12,
-      fontWeight: '700',
-    },
-
-    // Job Description Document Styles
-    jdDocCard: {
-      borderRadius: 14,
-      borderWidth: 1.5,
-      padding: 14,
-      gap: 12,
-    },
-    jdDocLeft: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 12,
-    },
-    jdDocIconBadge: {
-      width: 44,
-      height: 44,
-      borderRadius: 10,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    jdDocName: {
-      fontSize: 14,
-      fontWeight: '700',
-    },
-    jdDocSub: {
-      fontSize: 12,
-      marginTop: 2,
-    },
-    jdDocActions: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      flexWrap: 'wrap',
-      gap: 8,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: 'rgba(150, 150, 150, 0.2)',
-      paddingTop: 10,
-    },
-    jdDocBtn: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 5,
-      paddingHorizontal: 12,
-      paddingVertical: 7,
-      borderRadius: 8,
-      borderWidth: 1,
-    },
-    jdDocBtnTxt: {
       fontSize: 12,
       fontWeight: '700',
     },

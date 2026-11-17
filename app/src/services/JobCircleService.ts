@@ -392,30 +392,6 @@ class JobCircleService {
     };
   }
 
-  async uploadJdDocument(
-    churchId: string,
-    localUri: string,
-    fileName: string,
-    mimeType?: string,
-    fileSize?: number
-  ): Promise<AttachmentInfo> {
-    const cleanFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const timestamp = Date.now();
-    const storagePath = `Rhema Church/${churchId || 'rhema'}/job_descriptions/jd_${timestamp}_${cleanFileName}`;
-    const storageRef = storage().ref(storagePath);
-
-    await storageRef.putFile(localUri);
-    const downloadUrl = await storageRef.getDownloadURL();
-
-    return {
-      url: downloadUrl,
-      fileName,
-      fileSize,
-      mimeType: mimeType || 'application/pdf',
-      uploadedAt: new Date().toISOString(),
-    };
-  }
-
   // ─────────────────────────────────────────────────────────────
   // 4. APPLICATION MANAGEMENT
   // ─────────────────────────────────────────────────────────────
