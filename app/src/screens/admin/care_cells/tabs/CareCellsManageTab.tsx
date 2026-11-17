@@ -39,7 +39,7 @@ import CareCellService from '../../../../services/CareCellService';
 import { useAuth } from '../../../../context/AuthContext';
 import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
 import GrantAdminAccessModal from '../components/GrantAdminAccessModal';
-import { CareCell, CareCellStatus } from '../../../../types/CareCellTypes';
+import { CareCell, CareCellStatus, formatCareCellCode } from '../../../../types/CareCellTypes';
 
 const { width } = Dimensions.get('window');
 
@@ -198,7 +198,7 @@ export default function CareCellsManageTab({
         {/* Top Header Row */}
         <View style={styles.cardHeader}>
           <View style={styles.codeBadge}>
-            <Text style={styles.codeBadgeTxt}>{item.cellCode || 'Rhema_CareCell'}</Text>
+            <Text style={styles.codeBadgeTxt}>{formatCareCellCode(item.cellCode)}</Text>
           </View>
           <View
             style={[

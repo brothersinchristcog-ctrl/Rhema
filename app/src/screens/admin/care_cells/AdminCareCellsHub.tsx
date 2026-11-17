@@ -126,19 +126,42 @@ export default function AdminCareCellsHub() {
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={screenBg} />
 
       {/* Hero Header */}
-      <View style={[styles.heroHeader, { borderBottomWidth: 1.2, borderBottomColor: isDark ? '#2E2E2E' : '#CBD5E1' }]}>
+      <View
+        style={[
+          styles.heroHeader,
+          {
+            backgroundColor: isDark ? '#000000' : '#FFFFFF',
+            borderBottomWidth: 1,
+            borderBottomColor: isDark ? '#27272A' : '#E2E8F0',
+          },
+        ]}
+      >
         <TouchableOpacity
           onPress={handleBack}
-          style={styles.circularBackBtn}
+          style={[
+            styles.circularBackBtn,
+            {
+              borderColor: isDark ? '#3F3F46' : '#E2E8F0',
+              backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+            },
+          ]}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           activeOpacity={0.7}
         >
-          <ArrowLeft size={22} color={primaryText} strokeWidth={2.2} />
+          <ArrowLeft size={20} color={isDark ? '#FFFFFF' : '#0F172A'} strokeWidth={2.2} />
         </TouchableOpacity>
 
         <View style={styles.headerTitleWrap}>
-          <Text style={[styles.headerTitle, { color: primaryText, textAlign: 'center' }]}>Care Cells</Text>
-          <Text style={[styles.headerSubtitle, { color: secondaryText, textAlign: 'center' }]}>
+          <Text
+            style={[
+              styles.headerTitle,
+              { color: isDark ? '#FFFFFF' : '#0F172A' },
+            ]}
+            numberOfLines={1}
+          >
+            Care Cells
+          </Text>
+          <Text style={[styles.headerSubtitle, { color: isDark ? '#A1A1AA' : '#64748B' }]}>
             {activeCellsCount} active fellowship {activeCellsCount === 1 ? 'group' : 'groups'}
           </Text>
         </View>
@@ -146,18 +169,26 @@ export default function AdminCareCellsHub() {
         {/* Quick Add Button (Super Admin Only) */}
         {isPlatformSuperAdmin ? (
           <TouchableOpacity
-            style={[styles.quickAddHeaderBtn, { backgroundColor: primaryBtnBg }]}
+            style={[
+              styles.quickAddHeaderBtn,
+              {
+                backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                borderColor: isDark ? '#FFFFFF' : '#000000',
+              },
+            ]}
             onPress={() => {
               setEditingCell(null);
               setCreateCellModalVisible(true);
             }}
-            activeOpacity={0.85}
+            activeOpacity={0.8}
           >
-            <Plus size={16} color={primaryBtnText} strokeWidth={2.5} style={{ marginRight: 5 }} />
-            <Text style={[styles.quickAddHeaderBtnTxt, { color: primaryBtnText }]}>New Cell</Text>
+            <Plus size={15} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.5} style={{ marginRight: 4 }} />
+            <Text style={[styles.quickAddHeaderBtnTxt, { color: isDark ? '#000000' : '#FFFFFF' }]}>
+              New Cell
+            </Text>
           </TouchableOpacity>
         ) : (
-          <View style={{ width: 42, height: 42 }} />
+          <View style={{ width: 40, height: 40 }} />
         )}
       </View>
 
@@ -346,17 +377,23 @@ const styles = createAdminThemedStyles({
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 12,
-    backgroundColor: 'transparent',
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   circularBackBtn: {
-    width: 42,
-    height: 42,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
   },
   headerTitleWrap: {
     flex: 1,
@@ -365,35 +402,34 @@ const styles = createAdminThemedStyles({
     paddingHorizontal: 8,
   },
   headerTitle: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '800',
-    color: '#0F172A',
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    textAlign: 'center',
     letterSpacing: -0.4,
   },
   headerSubtitle: {
-    fontSize: 12,
-    color: '#64748B',
+    fontSize: 11.5,
     fontWeight: '500',
     marginTop: 1,
+    textAlign: 'center',
   },
   quickAddHeaderBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0F172A',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 20,
+    justifyContent: 'center',
+    paddingHorizontal: 13,
+    paddingVertical: 7.5,
+    borderRadius: 999,
+    borderWidth: 1.5,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
     elevation: 2,
   },
   quickAddHeaderBtnTxt: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '800',
-    color: '#FFFFFF',
   },
   tabBarContainer: {
     marginBottom: 8,

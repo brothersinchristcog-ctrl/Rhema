@@ -14,7 +14,7 @@ import {
   Alert,
   FlatList,
 } from 'react-native';
-import MapView, { Marker, Circle, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, Circle, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import {
   Search,
   MapPin,
@@ -45,6 +45,7 @@ import MemberLocationService, {
   LocationAccuracyType,
 } from '../../../../services/MemberLocationService';
 import MemberIdService from '../../../../services/MemberIdService';
+import LocationService from '../../../../services/LocationService';
 import CareCellVisitModal from '../components/CareCellVisitModal';
 import { useAuth } from '../../../../context/AuthContext';
 
@@ -101,6 +102,19 @@ export default function CareCellMemberLocationsTab({
 
   // ID Backfill Feedback
   const [backfilling, setBackfilling] = useState(false);
+
+  // In-App Directions & Route Navigation State
+  const [activeInAppRoute, setActiveInAppRoute] = useState<{
+    origin: { latitude: number; longitude: number; label: string };
+    destination: { latitude: number; longitude: number; label: string; member: MemberLocationRecord };
+    stops?: Array<{ latitude: number; longitude: number; label: string; member: MemberLocationRecord }>;
+    coordinates: Array<{ latitude: number; longitude: number }>;
+    distanceKm: number;
+    durationMins: number;
+    steps: string[];
+    isMultiStop?: boolean;
+  } | null>(null);
+  const [calculatingRoute, setCalculatingRoute] = useState(false);
 
   const loadMemberLocations = useCallback(async () => {
     try {
@@ -207,16 +221,55 @@ export default function CareCellMemberLocationsTab({
     setScheduleModalVisible(true);
   };
 
-  const handleDirections = (memberRec: MemberLocationRecord) => {
+  const handleDirections = async (memberRec: MemberLocationRecord) => {
     if (!memberRec.latitude || !memberRec.longitude) {
       Alert.alert('Location Missing', 'Coordinates are not yet available for this member.');
       return;
     }
-    MemberLocationService.openDirections(
-      memberRec.latitude,
-      memberRec.longitude,
-      `${memberRec.memberName} (${memberRec.village || 'Location'})`
-    );
+
+    setCalculatingRoute(true);
+    try {
+      let originCoords = { latitude: DEFAULT_CENTER.latitude, longitude: DEFAULT_CENTER.longitude };
+      let originLabel = 'Church Office';
+
+      try {
+        const gps = await LocationService.getCurrentLocation();
+        if (gps.success && gps.coords) {
+          originCoords = { latitude: gps.coords.latitude, longitude: gps.coords.longitude };
+          originLabel = 'Current Location';
+        }
+      } catch (_) {}
+
+      const destCoords = { latitude: memberRec.latitude, longitude: memberRec.longitude };
+      const routeData = await MemberLocationService.computeInAppRoute(originCoords, destCoords);
+
+      setActiveInAppRoute({
+        origin: { ...originCoords, label: originLabel },
+        destination: { ...destCoords, label: `${memberRec.memberName} (${memberRec.village || 'Residence'})`, member: memberRec },
+        coordinates: routeData.coordinates,
+        distanceKm: routeData.distanceKm,
+        durationMins: routeData.durationMins,
+        steps: routeData.steps,
+        isMultiStop: false,
+      });
+
+      // Close bottom detail card to let the user see the navigation route
+      setSelectedMember(null);
+      setSelectedGroup(null);
+
+      // Fit route smoothly on map
+      setTimeout(() => {
+        mapRef.current?.fitToCoordinates(routeData.coordinates, {
+          edgePadding: { top: 100, right: 50, bottom: 280, left: 50 },
+          animated: true,
+        });
+      }, 350);
+    } catch (e: any) {
+      console.error('Error starting in-app navigation:', e);
+      Alert.alert('Routing Notice', 'Generating local route...');
+    } finally {
+      setCalculatingRoute(false);
+    }
   };
 
   const handleToggleNearby = (memberRec: MemberLocationRecord) => {
@@ -234,29 +287,76 @@ export default function CareCellMemberLocationsTab({
     );
   };
 
-  const handlePlanCombinedRoute = () => {
+  const handlePlanCombinedRoute = async () => {
     const selectedRecs = records.filter((r) => multiSelectedMemberIds.includes(r.memberId));
     if (selectedRecs.length === 0) {
       Alert.alert('No Members Selected', 'Please select at least one member to navigate.');
       return;
     }
 
-    const validStops = selectedRecs
-      .filter((r) => r.latitude && r.longitude)
-      .map((r) => ({
-        lat: r.latitude!,
-        lng: r.longitude!,
-        label: `${r.memberName} (${r.village})`,
-      }));
-
-    if (validStops.length === 0) {
+    const validMembers = selectedRecs.filter((r) => r.latitude && r.longitude);
+    if (validMembers.length === 0) {
       Alert.alert('Notice', 'Selected members do not have mapped coordinates.');
       return;
     }
 
-    // Default origin to first stop
-    const origin = { lat: validStops[0].lat, lng: validStops[0].lng };
-    MemberLocationService.openMultiStopRoute(origin, validStops);
+    setCalculatingRoute(true);
+    try {
+      let originCoords = { latitude: DEFAULT_CENTER.latitude, longitude: DEFAULT_CENTER.longitude };
+      let originLabel = 'Church Office';
+      try {
+        const gps = await LocationService.getCurrentLocation();
+        if (gps.success && gps.coords) {
+          originCoords = { latitude: gps.coords.latitude, longitude: gps.coords.longitude };
+          originLabel = 'Current Location';
+        }
+      } catch (_) {}
+
+      const remainingStops = validMembers.slice(0, validMembers.length - 1).map((m) => ({
+        latitude: m.latitude!,
+        longitude: m.longitude!,
+        label: `${m.memberName} (${m.village})`,
+        member: m,
+      }));
+
+      const destMember = validMembers[validMembers.length - 1];
+      const routeData = await MemberLocationService.computeInAppRoute(
+        originCoords,
+        { latitude: destMember.latitude!, longitude: destMember.longitude! },
+        remainingStops.map((s) => ({ latitude: s.latitude, longitude: s.longitude }))
+      );
+
+      setActiveInAppRoute({
+        origin: { ...originCoords, label: originLabel },
+        destination: {
+          latitude: destMember.latitude!,
+          longitude: destMember.longitude!,
+          label: `${destMember.memberName} (${destMember.village})`,
+          member: destMember,
+        },
+        stops: remainingStops,
+        coordinates: routeData.coordinates,
+        distanceKm: routeData.distanceKm,
+        durationMins: routeData.durationMins,
+        steps: routeData.steps,
+        isMultiStop: true,
+      });
+
+      setSelectedMember(null);
+      setSelectedGroup(null);
+
+      setTimeout(() => {
+        mapRef.current?.fitToCoordinates(routeData.coordinates, {
+          edgePadding: { top: 100, right: 50, bottom: 300, left: 50 },
+          animated: true,
+        });
+      }, 350);
+    } catch (e: any) {
+      console.error('Error generating multi-stop route:', e);
+      Alert.alert('Notice', 'Could not compute combined route.');
+    } finally {
+      setCalculatingRoute(false);
+    }
   };
 
   const handleBatchScheduleVisit = () => {
@@ -546,6 +646,53 @@ export default function CareCellMemberLocationsTab({
                 </Marker>
               );
             })}
+
+            {/* In-App Route Polyline */}
+            {activeInAppRoute && (
+              <>
+                {/* Contrast outer polyline */}
+                <Polyline
+                  coordinates={activeInAppRoute.coordinates}
+                  strokeColor={isDark ? '#000000' : '#1E3A8A'}
+                  strokeWidth={7}
+                  lineCap="round"
+                  lineJoin="round"
+                />
+                {/* Active blue polyline */}
+                <Polyline
+                  coordinates={activeInAppRoute.coordinates}
+                  strokeColor="#2563EB"
+                  strokeWidth={4.5}
+                  lineCap="round"
+                  lineJoin="round"
+                />
+
+                {/* Starting Location Marker (Current Location / Church) */}
+                <Marker
+                  coordinate={activeInAppRoute.origin}
+                  title={activeInAppRoute.origin.label}
+                  anchor={{ x: 0.5, y: 0.5 }}
+                >
+                  <View style={styles.originMarkerBadge}>
+                    <Compass size={14} color="#FFFFFF" strokeWidth={2.5} />
+                  </View>
+                </Marker>
+
+                {/* Multi-stop intermediate waypoints */}
+                {activeInAppRoute.stops?.map((stop, sIdx) => (
+                  <Marker
+                    key={`inapp_stop_${sIdx}`}
+                    coordinate={stop}
+                    title={`Stop ${sIdx + 1}: ${stop.label}`}
+                    anchor={{ x: 0.5, y: 0.5 }}
+                  >
+                    <View style={styles.waypointMarkerBadge}>
+                      <Text style={styles.waypointMarkerNum}>{sIdx + 1}</Text>
+                    </View>
+                  </Marker>
+                ))}
+              </>
+            )}
           </MapView>
         )}
 
@@ -556,6 +703,7 @@ export default function CareCellMemberLocationsTab({
             setNearbyMode(false);
             setSelectedGroup(null);
             setSelectedMember(null);
+            setActiveInAppRoute(null);
             animateToLocation(DEFAULT_CENTER.latitude, DEFAULT_CENTER.longitude, 0.12);
           }}
           activeOpacity={0.8}
@@ -563,6 +711,128 @@ export default function CareCellMemberLocationsTab({
           <Compass size={18} color={primaryText} />
         </TouchableOpacity>
       </View>
+
+      {/* ── IN-APP NAVIGATION & DIRECTIONS CARD ── */}
+      {activeInAppRoute && (
+        <View
+          style={[
+            styles.navCardContainer,
+            {
+              backgroundColor: cardSurface,
+              borderColor: isDark ? 'rgba(59, 130, 246, 0.4)' : '#BFDBFE',
+            },
+          ]}
+        >
+          {/* Header Status */}
+          <View style={styles.navCardHeader}>
+            <View style={styles.navCardStatusPill}>
+              <View style={styles.navLiveDot} />
+              <Text style={styles.navCardStatusTxt}>
+                {activeInAppRoute.isMultiStop ? 'MULTI-STOP ROUTE NAVIGATION' : 'IN-APP ROUTE NAVIGATION'}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.navCardCloseBtn}
+              onPress={() => setActiveInAppRoute(null)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <X size={16} color={secondaryText} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Destination Member Info */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+            <View style={styles.navDestIconWrap}>
+              <Navigation size={18} color="#FFFFFF" />
+            </View>
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <Text style={[styles.navDestName, { color: primaryText }]} numberOfLines={1}>
+                  {activeInAppRoute.destination.member.memberName}
+                </Text>
+                {activeInAppRoute.destination.member.memberCode ? (
+                  <View style={styles.navIdBadge}>
+                    <Text style={styles.navIdBadgeTxt}>{activeInAppRoute.destination.member.memberCode}</Text>
+                  </View>
+                ) : null}
+              </View>
+              <Text style={[styles.navDestAddr, { color: secondaryText }]} numberOfLines={1}>
+                {activeInAppRoute.destination.member.village || activeInAppRoute.destination.member.city || 'Church Territory'}
+                {activeInAppRoute.destination.member.landmark ? ` · Near: ${activeInAppRoute.destination.member.landmark}` : ''}
+              </Text>
+            </View>
+          </View>
+
+          {/* Big Key Stats */}
+          <View style={[styles.navStatsRow, { backgroundColor: isDark ? '#1C1917' : '#EFF6FF' }]}>
+            <View style={styles.navStatItem}>
+              <Text style={[styles.navStatVal, { color: isDark ? '#60A5FA' : '#1D4ED8' }]}>
+                {activeInAppRoute.distanceKm} km
+              </Text>
+              <Text style={styles.navStatLbl}>Distance</Text>
+            </View>
+            <View style={styles.navStatDivider} />
+            <View style={styles.navStatItem}>
+              <Text style={[styles.navStatVal, { color: isDark ? '#34D399' : '#059669' }]}>
+                ~{activeInAppRoute.durationMins} mins
+              </Text>
+              <Text style={styles.navStatLbl}>Drive Time (IST)</Text>
+            </View>
+            <View style={styles.navStatDivider} />
+            <View style={styles.navStatItem}>
+              <Text style={[styles.navStatVal, { color: isDark ? '#FBBF24' : '#D97706' }]}>
+                {activeInAppRoute.isMultiStop ? `${(activeInAppRoute.stops?.length || 0) + 1} Stops` : 'Direct'}
+              </Text>
+              <Text style={styles.navStatLbl}>Visiting Plan</Text>
+            </View>
+          </View>
+
+          {/* Turn-by-Turn Guidance Preview */}
+          <View style={styles.navStepsBox}>
+            {activeInAppRoute.steps.slice(0, 2).map((st, i) => (
+              <View key={i} style={styles.navStepRow}>
+                <Text style={styles.navStepNum}>{i + 1}.</Text>
+                <Text style={[styles.navStepTxt, { color: primaryText }]} numberOfLines={1}>
+                  {st}
+                </Text>
+              </View>
+            ))}
+          </View>
+
+          {/* Navigation Action Buttons */}
+          <View style={styles.navActionsRow}>
+            <TouchableOpacity
+              style={styles.navEndBtn}
+              onPress={() => setActiveInAppRoute(null)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.navEndBtnTxt}>End Navigation</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.navExtBtn,
+                {
+                  backgroundColor: isDark ? '#27272A' : '#F1F5F9',
+                  borderColor: isDark ? '#3F3F46' : '#CBD5E1',
+                },
+              ]}
+              onPress={() => {
+                MemberLocationService.openDirections(
+                  activeInAppRoute.destination.latitude,
+                  activeInAppRoute.destination.longitude,
+                  activeInAppRoute.destination.label
+                );
+              }}
+              activeOpacity={0.8}
+            >
+              <Route size={14} color={secondaryText} style={{ marginRight: 5 }} />
+              <Text style={[styles.navExtBtnTxt, { color: primaryText }]}>Google Maps Voice</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       {/* ── BOTTOM SHEET / ACTION CARD ── */}
       {selectedMember ? (
@@ -645,10 +915,17 @@ export default function CareCellMemberLocationsTab({
             <TouchableOpacity
               style={[styles.secondaryActionBtn, { backgroundColor: secondarySurface, borderColor }]}
               onPress={() => handleDirections(selectedMember)}
+              disabled={calculatingRoute}
               activeOpacity={0.8}
             >
-              <Navigation size={13} color={primaryText} />
-              <Text style={[styles.secondaryActionTxt, { color: primaryText }]}>Get Directions</Text>
+              {calculatingRoute ? (
+                <ActivityIndicator size="small" color={primaryText} style={{ marginRight: 4 }} />
+              ) : (
+                <Navigation size={13} color={primaryText} style={{ marginRight: 4 }} />
+              )}
+              <Text style={[styles.secondaryActionTxt, { color: primaryText }]}>
+                {calculatingRoute ? 'Routing...' : 'Directions'}
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -1234,6 +1511,184 @@ const styles = createAdminThemedStyles(
     nearbyMemSub: {
       fontSize: 11,
       marginTop: 2,
+    },
+    originMarkerBadge: {
+      width: 30,
+      height: 30,
+      borderRadius: 15,
+      backgroundColor: '#10B981',
+      borderWidth: 2,
+      borderColor: '#FFFFFF',
+      alignItems: 'center',
+      justifyContent: 'center',
+      elevation: 4,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.2,
+      shadowRadius: 3,
+    },
+    waypointMarkerBadge: {
+      width: 26,
+      height: 26,
+      borderRadius: 13,
+      backgroundColor: '#2563EB',
+      borderWidth: 2,
+      borderColor: '#FFFFFF',
+      alignItems: 'center',
+      justifyContent: 'center',
+      elevation: 4,
+    },
+    waypointMarkerNum: {
+      color: '#FFFFFF',
+      fontSize: 12,
+      fontWeight: '800',
+    },
+    navCardContainer: {
+      position: 'absolute',
+      bottom: 12,
+      left: 12,
+      right: 12,
+      borderRadius: 16,
+      borderWidth: 1.5,
+      padding: 14,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.15,
+      shadowRadius: 8,
+      elevation: 6,
+    },
+    navCardHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    navCardStatusPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: 'rgba(37, 99, 235, 0.12)',
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 6,
+      gap: 5,
+    },
+    navLiveDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: '#2563EB',
+    },
+    navCardStatusTxt: {
+      fontSize: 10,
+      fontWeight: '800',
+      color: '#2563EB',
+      letterSpacing: 0.5,
+    },
+    navCardCloseBtn: {
+      padding: 4,
+    },
+    navDestIconWrap: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: '#2563EB',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    navDestName: {
+      fontSize: 15,
+      fontWeight: '800',
+    },
+    navIdBadge: {
+      backgroundColor: 'rgba(37, 99, 235, 0.15)',
+      paddingHorizontal: 6,
+      paddingVertical: 1.5,
+      borderRadius: 4,
+    },
+    navIdBadgeTxt: {
+      fontSize: 10,
+      fontWeight: '700',
+      color: '#2563EB',
+    },
+    navDestAddr: {
+      fontSize: 11.5,
+      marginTop: 2,
+    },
+    navStatsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-around',
+      borderRadius: 10,
+      paddingVertical: 8,
+      marginTop: 10,
+    },
+    navStatItem: {
+      alignItems: 'center',
+      flex: 1,
+    },
+    navStatVal: {
+      fontSize: 14,
+      fontWeight: '800',
+    },
+    navStatLbl: {
+      fontSize: 10,
+      color: '#64748B',
+      marginTop: 1,
+      fontWeight: '600',
+    },
+    navStatDivider: {
+      width: 1,
+      height: 20,
+      backgroundColor: 'rgba(148, 163, 184, 0.25)',
+    },
+    navStepsBox: {
+      marginTop: 8,
+      gap: 3,
+    },
+    navStepRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    navStepNum: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: '#64748B',
+    },
+    navStepTxt: {
+      fontSize: 11,
+      flex: 1,
+    },
+    navActionsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginTop: 12,
+    },
+    navEndBtn: {
+      flex: 1,
+      backgroundColor: '#DC2626',
+      paddingVertical: 10,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    navEndBtnTxt: {
+      color: '#FFFFFF',
+      fontSize: 12.5,
+      fontWeight: '800',
+    },
+    navExtBtn: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 9,
+      borderRadius: 10,
+      borderWidth: 1,
+    },
+    navExtBtnTxt: {
+      fontSize: 12,
+      fontWeight: '700',
     },
   })
 );

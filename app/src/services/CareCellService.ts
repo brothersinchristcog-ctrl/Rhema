@@ -241,7 +241,7 @@ class CareCellService {
       let maxNum = 0;
       snap.docs.forEach((doc) => {
         const code = String(doc.data()?.cellCode || '').trim();
-        const match = code.match(/^Rhema_CareCell-(\d+)$/i);
+        const match = code.match(/(\d+)/);
         if (match) {
           const parsed = parseInt(match[1], 10);
           if (!isNaN(parsed) && parsed > maxNum) {
@@ -251,7 +251,7 @@ class CareCellService {
       });
 
       let candidateNum = maxNum + 1;
-      let candidateCode = `Rhema_CareCell-${String(candidateNum).padStart(3, '0')}`;
+      let candidateCode = `Rhema-CC-${String(candidateNum).padStart(3, '0')}`;
 
       // Extra safety check in case of custom or manual codes
       let collision = true;
@@ -261,14 +261,14 @@ class CareCellService {
           collision = false;
         } else {
           candidateNum++;
-          candidateCode = `Rhema_CareCell-${String(candidateNum).padStart(3, '0')}`;
+          candidateCode = `Rhema-CC-${String(candidateNum).padStart(3, '0')}`;
         }
       }
 
       return candidateCode;
     } catch (error) {
       console.error('Error generating Care Cell code:', error);
-      return 'Rhema_CareCell-001';
+      return 'Rhema-CC-001';
     }
   }
 

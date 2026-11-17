@@ -35,7 +35,7 @@ import MemberLookupModal from '../components/MemberLookupModal';
 import CareCellMapModal from '../components/CareCellMapModal';
 import { formatDateDisplay } from '../../../../utils/DateUtils';
 import { useAdminTheme, createAdminThemedStyles } from '../../../../utils/adminThemeHelper';
-import { CareCell, CareCellMembership } from '../../../../types/CareCellTypes';
+import { CareCell, CareCellMembership, formatCareCellCode } from '../../../../types/CareCellTypes';
 
 interface CareCellMembersTabProps {
   cells: CareCell[];
@@ -316,14 +316,37 @@ export default function CareCellMembersTab({
                 onPress={() => onSelectCellId(c.id)}
                 activeOpacity={0.75}
               >
-                <Text
-                  style={[
-                    styles.cellChipTxt,
-                    isSelected && { color: primaryBtnText, fontWeight: '800' },
-                  ]}
-                >
-                  {c.cellCode} ({c.name})
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text
+                    style={[
+                      styles.cellChipTxt,
+                      isSelected && { color: primaryBtnText, fontWeight: '800' },
+                    ]}
+                  >
+                    {c.name}
+                  </Text>
+                  <View
+                    style={[
+                      styles.cellChipCodeBadge,
+                      {
+                        backgroundColor: isSelected
+                          ? (isDark ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.22)')
+                          : (isDark ? '#27272A' : '#E2E8F0'),
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.cellChipCodeBadgeTxt,
+                        {
+                          color: isSelected ? primaryBtnText : (isDark ? '#A1A1AA' : '#64748B'),
+                        },
+                      ]}
+                    >
+                      {formatCareCellCode(c.cellCode)}
+                    </Text>
+                  </View>
+                </View>
               </TouchableOpacity>
             );
           })}
@@ -334,9 +357,29 @@ export default function CareCellMembersTab({
       {activeCell && (
         <View style={[styles.rosterBanner, { backgroundColor: cardSurface, borderColor }]}>
           <View style={{ flex: 1, marginRight: 8 }}>
-            <Text style={[styles.rosterBannerTitle, { color: primaryText }]}>
-              {activeCell.cellCode} · {activeCell.name}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 3 }}>
+              <Text style={[styles.rosterBannerTitle, { color: primaryText }]}>
+                {activeCell.name}
+              </Text>
+              <View
+                style={[
+                  styles.rosterBannerCodePill,
+                  {
+                    backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF',
+                    borderColor: isDark ? 'rgba(59, 130, 246, 0.35)' : '#BFDBFE',
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.rosterBannerCodePillTxt,
+                    { color: isDark ? '#93C5FD' : '#1D4ED8' },
+                  ]}
+                >
+                  {formatCareCellCode(activeCell.cellCode)}
+                </Text>
+              </View>
+            </View>
             <Text style={[styles.rosterBannerSub, { color: secondaryText }]}>
               Leader: <Text style={{ fontWeight: '700', color: primaryText }}>{activeCell.leaderName}</Text> · {memberships.length} of {activeCell.maximumMembers} members
             </Text>
@@ -500,6 +543,16 @@ const styles = createAdminThemedStyles({
   cellChipTxtActive: {
     color: '#FFFFFF',
   },
+  cellChipCodeBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 5,
+  },
+  cellChipCodeBadgeTxt: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
   rosterBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -519,9 +572,20 @@ const styles = createAdminThemedStyles({
     elevation: 1,
   },
   rosterBannerTitle: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '800',
     color: '#0F172A',
+  },
+  rosterBannerCodePill: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  rosterBannerCodePillTxt: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   rosterBannerSub: {
     fontSize: 12,

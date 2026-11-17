@@ -1,6 +1,19 @@
 export type CareCellStatus = 'Active' | 'Inactive' | 'Archived';
 export type MembershipStatus = 'Active' | 'Transferred' | 'Removed';
 export type MeetingStatus = 'Upcoming' | 'Completed' | 'Cancelled';
+
+/**
+ * Formats a raw care cell identifier (e.g. "Rhema_CareCell-001" or "Rhema_carecell_001")
+ * into a clean, professional label: "Cell #001".
+ */
+export function formatCareCellCode(code?: string): string {
+  if (!code) return '';
+  const match = code.match(/(\d+)/);
+  if (match) {
+    return `Cell #${match[1].padStart(3, '0')}`;
+  }
+  return code.replace(/_/g, ' ').trim();
+}
 export type MeetingType = 
   | 'Bible Study' 
   | 'Prayer Meeting' 
