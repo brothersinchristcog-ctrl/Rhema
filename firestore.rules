@@ -672,7 +672,6 @@ service cloud.firestore {
           isChurchAdmin() || resource.data.memberId == request.auth.uid
         );
       }
-      }
 
       // Any other church subcollection: authenticated members can read, admins can write
       match /{subcollection}/{docId} {
