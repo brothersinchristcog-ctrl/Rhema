@@ -752,15 +752,8 @@ export default function UpdatesScreen({ navigation, route }: any) {
     }
 
     let itemTitle = data.title || t('updates.announcement');
-    // Replace misleading static 📅 emoji (which displays "JUL 17" in system fonts) with the event's actual date
-    if (itemTitle.includes('📅')) {
-      const eventDateStr = data.date ? formatDateDisplay(data.date) : '';
-      if (eventDateStr) {
-        itemTitle = itemTitle.replace(/📅\s*/g, `🗓️ [${eventDateStr}] `);
-      } else {
-        itemTitle = itemTitle.replace(/📅\s*/g, '🗓️ ');
-      }
-    }
+    // Ensure only clean calendar icon is shown without unwanted bracketed date text
+    itemTitle = itemTitle.replace(/🗓️\s*\[.*?\]\s*/g, '📅 ').replace(/🗓️\s*/g, '📅 ');
     let itemContent = stripHtml(data.content || data.body || '');
 
     if (resolvedType === 'youtube_live') {

@@ -955,10 +955,8 @@ async function handleBroadcastPushDispatch(data: any, churchIdParam?: string, me
   }
 
   let title = (data.title || 'Church Update').trim();
-  // Sanitize static 📅 calendar emoji (which renders as "JUL 17" in standard OS emoji fonts)
-  if (title.includes('📅')) {
-    title = title.replace(/📅\s*/g, '🗓️ ');
-  }
+  // Clean up any bracketed date format if present, keeping calendar icon
+  title = title.replace(/🗓️\s*\[.*?\]\s*/g, '📅 ').replace(/🗓️\s*/g, '📅 ');
   const body = data.content || '';
   const type = data.type || 'general';
   const churchId = churchIdParam || data.targetChurchId || DEFAULT_CHURCH_ID;
