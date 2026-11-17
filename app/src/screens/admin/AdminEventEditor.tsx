@@ -768,7 +768,7 @@ export default function AdminEventEditor() {
           const datePhrase = isSameDay ? `on ${displayDate}` : `from ${displayDate} to ${displayEndDate}`;
 
           await FirestoreService.createNotificationBroadcast({
-            title: `📅 New Event: ${titleEn}`,
+            title: `🗓️ New Event: ${titleEn}`,
             content: `Join us for "${titleEn}" ${datePhrase}${startTime ? ` at ${startTime}` : ''}${venueEn ? ` · ${venueEn}` : ''}. ${descEn ? descEn.substring(0, 100) : ''}`.trim(),
             type: 'event',
             eventType: eventType,

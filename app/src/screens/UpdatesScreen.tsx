@@ -755,9 +755,10 @@ export default function UpdatesScreen({ navigation, route }: any) {
     // Strip bracketed date prefix (e.g. [17-11-2026] or [17 Nov 2026]) so only the calendar icon is shown
     itemTitle = itemTitle.replace(/\[\s*[^\]]*\d{4}[^\]]*\]\s*/g, '');
     itemTitle = itemTitle.replace(/\[\s*\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}\s*\]\s*/g, '');
-    itemTitle = itemTitle.replace(/🗓️\s*/g, '📅 ');
-    if (resolvedType === 'event' && !itemTitle.includes('📅')) {
-      itemTitle = `📅 ${itemTitle}`;
+    // Replace the static 📅 emoji (which displays "July 17" in mobile OS fonts) with 🗓️ (clean spiral calendar with no dates)
+    itemTitle = itemTitle.replace(/📅\s*/g, '🗓️ ');
+    if (resolvedType === 'event' && !itemTitle.includes('🗓️')) {
+      itemTitle = `🗓️ ${itemTitle}`;
     }
     let itemContent = stripHtml(data.content || data.body || '');
 

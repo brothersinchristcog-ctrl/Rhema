@@ -870,9 +870,10 @@ async function handleBroadcastPushDispatch(data, churchIdParam, messageIdParam) 
     // Strip bracketed date prefix (e.g. [17-11-2026] or [17 Nov 2026]) so only the calendar icon is shown
     title = title.replace(/\[\s*[^\]]*\d{4}[^\]]*\]\s*/g, '');
     title = title.replace(/\[\s*\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}\s*\]\s*/g, '');
-    title = title.replace(/🗓️\s*/g, '📅 ');
-    if (type === 'event' && !title.includes('📅')) {
-        title = `📅 ${title}`;
+    // Replace the static 📅 emoji (which displays "July 17" in mobile OS fonts) with 🗓️ (clean spiral calendar with no dates)
+    title = title.replace(/📅\s*/g, '🗓️ ');
+    if (type === 'event' && !title.includes('🗓️')) {
+        title = `🗓️ ${title}`;
     }
     const churchId = churchIdParam || data.targetChurchId || DEFAULT_CHURCH_ID;
     // Atomic coordination with onVolunteerPostCreated so volunteer_post_new is sent once and never skipped
