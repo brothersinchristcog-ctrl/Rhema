@@ -751,7 +751,7 @@ class VolunteerService {
     const eventTitleClean = (event?.title || 'Church Event').trim();
     const postTitleClean = (postTitle || '').trim();
     const title = isEvent
-      ? '📅 New Event Volunteer Application!'
+      ? '🤝 New Event Volunteer Application!'
       : postTitleClean
       ? `📋 Volunteer Application: ${postTitleClean}`
       : '📋 New Volunteer Application!';

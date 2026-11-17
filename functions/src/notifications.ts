@@ -3997,7 +3997,7 @@ async function handleVolunteerApplicationAdminCreatedPush(
 
   // 2. Notification title and body according to specification
   const title = isEventVolunteer
-    ? '📅 New Event Volunteer Application!'
+    ? '🤝 New Event Volunteer Application!'
     : '📋 New Volunteer Application!';
 
   const body = isEventVolunteer

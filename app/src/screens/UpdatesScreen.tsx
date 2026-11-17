@@ -226,6 +226,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
   const [clearedCount, setClearedCount] = useState(0);
   const [hasAutoOpened, setHasAutoOpened] = useState(false);
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
+  const [clearedBeforeTimestamp, setClearedBeforeTimestamp] = useState<number>(0);
   const { user, member } = useAuth();
   const { activeChurch } = useChurch();
   const adminRoleStr = `${member?.userType || ''} ${(member as any)?.role || ''}`.toUpperCase();
@@ -269,65 +270,72 @@ export default function UpdatesScreen({ navigation, route }: any) {
         if (stored) {
           setDeletedIds(JSON.parse(stored));
         }
+        const userKey = user?.uid || member?.id || 'guest';
+        const storedClearedAt = await AsyncStorage.getItem(`@notifications_cleared_at_${userKey}`);
+        if (storedClearedAt) {
+          setClearedBeforeTimestamp(parseInt(storedClearedAt, 10) || 0);
+        }
       } catch (e) {
         console.warn('Error loading deleted notification IDs:', e);
       }
     };
     loadDeletedIds();
-  }, []);
+  }, [user?.uid, member?.id]);
 
   /**
    * Permanently delete notification document(s) from Firebase across notifications, broadcasts,
-   * and personal member notifications subcollections.
+   * and personal member notifications subcollections using atomic Firestore WriteBatches.
    */
   const permanentlyDeleteFromFirebase = async (docIds: string[], sourceRefs: any[] = []) => {
     const churchToQuery = activeChurch?.id || member?.churchId || 'rhema';
     const cleanIds = Array.from(new Set(docIds.map((id) => String(id || '').trim()).filter(Boolean)));
     const memberIds = Array.from(new Set([user?.uid, member?.id].filter(Boolean))) as string[];
 
-    const deletePromises: Promise<any>[] = [];
+    const db = firestore();
+    const refsToDelete: any[] = [];
 
+    // 1. Direct snapshot source references (exact document pointers)
     for (const ref of sourceRefs) {
-      if (ref && typeof ref.delete === 'function') {
-        deletePromises.push(ref.delete().catch(() => {}));
+      if (ref && typeof ref.path === 'string') {
+        refsToDelete.push(ref);
       }
     }
 
+    // 2. Target references across collections
     for (const docId of cleanIds) {
-      deletePromises.push(
-        firestore()
-          .collection('Rhema Church')
-          .doc(churchToQuery)
-          .collection('notifications')
-          .doc(docId)
-          .delete()
-          .catch(() => {})
-      );
-      deletePromises.push(
-        firestore()
-          .collection('Rhema Church')
-          .doc(churchToQuery)
-          .collection('broadcasts')
-          .doc(docId)
-          .delete()
-          .catch(() => {})
-      );
+      refsToDelete.push(db.collection('Rhema Church').doc(churchToQuery).collection('notifications').doc(docId));
+      refsToDelete.push(db.collection('Rhema Church').doc(churchToQuery).collection('broadcasts').doc(docId));
+      if (churchToQuery !== 'rhema') {
+        refsToDelete.push(db.collection('Rhema Church').doc('rhema').collection('broadcasts').doc(docId));
+      }
       for (const mId of memberIds) {
-        deletePromises.push(
-          firestore()
-            .collection('Rhema Church')
-            .doc(churchToQuery)
-            .collection('members')
-            .doc(mId)
-            .collection('notifications')
-            .doc(docId)
-            .delete()
-            .catch(() => {})
+        refsToDelete.push(
+          db.collection('Rhema Church').doc(churchToQuery).collection('members').doc(mId).collection('notifications').doc(docId)
         );
       }
     }
 
-    await Promise.allSettled(deletePromises);
+    // Deduplicate references by path
+    const uniqueRefs = new Map<string, any>();
+    for (const ref of refsToDelete) {
+      if (ref && ref.path) {
+        uniqueRefs.set(ref.path, ref);
+      }
+    }
+
+    // Commit in chunks of 400 using Firestore WriteBatch
+    const refArray = Array.from(uniqueRefs.values());
+    const CHUNK_SIZE = 400;
+    for (let i = 0; i < refArray.length; i += CHUNK_SIZE) {
+      const chunk = refArray.slice(i, i + CHUNK_SIZE);
+      const batch = db.batch();
+      chunk.forEach((r) => {
+        batch.delete(r);
+      });
+      await batch.commit().catch((e) => {
+        console.warn('Batch delete notice (non-fatal):', e);
+      });
+    }
   };
 
   const handleDeleteUpdate = async (id: string, item?: any) => {
@@ -342,20 +350,21 @@ export default function UpdatesScreen({ navigation, route }: any) {
               raw.title === targetItem.title &&
               raw.content === targetItem.content))
       );
-      const idsToRemove = Array.from(new Set([id, ...allRawMatches.map((r) => r.id)].filter(Boolean)));
+      const idsToRemove = Array.from(new Set([id, ...allRawMatches.map((r) => String(r.id))].filter(Boolean)));
       const refsToRemove = allRawMatches.map((r) => r.sourceRef).filter(Boolean);
 
+      const deleteSet = new Set(idsToRemove);
       const updated = Array.from(new Set([...deletedIds, ...idsToRemove]));
       setDeletedIds(updated);
-      setBroadcastsList((prev) => prev.filter((i) => !idsToRemove.includes(i.id)));
-      setChurchNotifsList((prev) => prev.filter((i) => !idsToRemove.includes(i.id)));
-      setMemberNotifsList((prev) => prev.filter((i) => !idsToRemove.includes(i.id)));
-      setMeetingsList((prev) => prev.filter((i) => !idsToRemove.includes(i.id)));
-      setDynamicUpdates((prev) => prev.filter((i) => !idsToRemove.includes(i.id)));
+      setBroadcastsList((prev) => prev.filter((i) => !deleteSet.has(String(i.id))));
+      setChurchNotifsList((prev) => prev.filter((i) => !deleteSet.has(String(i.id))));
+      setMemberNotifsList((prev) => prev.filter((i) => !deleteSet.has(String(i.id))));
+      setMeetingsList((prev) => prev.filter((i) => !deleteSet.has(String(i.id))));
+      setDynamicUpdates((prev) => prev.filter((i) => !deleteSet.has(String(i.id))));
 
       await AsyncStorage.setItem('@deleted_notification_ids', JSON.stringify(updated));
       await markJobCircleNotificationsRead(idsToRemove);
-      await permanentlyDeleteFromFirebase(idsToRemove, refsToRemove);
+      permanentlyDeleteFromFirebase(idsToRemove, refsToRemove).catch(() => {});
     } catch (e) {
       console.error('Error deleting notification:', e);
     }
@@ -371,7 +380,10 @@ export default function UpdatesScreen({ navigation, route }: any) {
     try {
       setClearingAll(true);
       const countCleared = visibleUpdates.length;
-      const visibleSet = new Set(visibleUpdates.map((u) => u.id));
+      const clearNow = Date.now();
+      const userKey = user?.uid || member?.id || 'guest';
+
+      const visibleSet = new Set(visibleUpdates.map((u) => String(u.id)));
       const visibleKeys = new Set(
         visibleUpdates.map((u) => `${u.type || ''}|${u.title || ''}|${u.content || ''}`)
       );
@@ -383,7 +395,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
         ...meetingsList,
       ].filter((raw) => {
         if (!raw) return false;
-        if (visibleSet.has(raw.id)) return true;
+        if (visibleSet.has(String(raw.id))) return true;
         const rawKey = `${raw.type || ''}|${raw.title || ''}|${raw.content || ''}`;
         if (visibleKeys.has(rawKey)) return true;
         if (filterCategory === 'job_circle') {
@@ -414,31 +426,48 @@ export default function UpdatesScreen({ navigation, route }: any) {
 
       // 1. Immediately clear from Member View state & refresh list
       setDeletedIds(updatedDeletedIds);
-      setBroadcastsList((prev) => prev.filter((i) => !deleteSet.has(i.id)));
-      setChurchNotifsList((prev) => prev.filter((i) => !deleteSet.has(i.id)));
-      setMemberNotifsList((prev) => prev.filter((i) => !deleteSet.has(i.id)));
-      setMeetingsList((prev) => prev.filter((i) => !deleteSet.has(i.id)));
-      setDynamicUpdates((prev) => prev.filter((i) => !deleteSet.has(i.id)));
+      if (!filterCategory) {
+        setClearedBeforeTimestamp(clearNow);
+        setBroadcastsList([]);
+        setChurchNotifsList([]);
+        setMemberNotifsList([]);
+        setMeetingsList([]);
+        setDynamicUpdates([]);
+      } else {
+        setBroadcastsList((prev) => prev.filter((i) => !deleteSet.has(String(i.id))));
+        setChurchNotifsList((prev) => prev.filter((i) => !deleteSet.has(String(i.id))));
+        setMemberNotifsList((prev) => prev.filter((i) => !deleteSet.has(String(i.id))));
+        setMeetingsList((prev) => prev.filter((i) => !deleteSet.has(String(i.id))));
+        setDynamicUpdates((prev) => prev.filter((i) => !deleteSet.has(String(i.id))));
+      }
       setSelectedUpdate(null);
 
+      // 2. Persist state in AsyncStorage
       await AsyncStorage.setItem(
         '@deleted_notification_ids',
         JSON.stringify(updatedDeletedIds)
       );
+      if (!filterCategory) {
+        await AsyncStorage.setItem(
+          `@notifications_cleared_at_${userKey}`,
+          String(clearNow)
+        );
+      }
       await markJobCircleNotificationsRead(idsToDelete);
 
-      // 2. Permanently delete notification records from Firebase
-      const firebaseDocIds = allRawMatches
-        .filter((r) => r.type !== 'online_meeting')
-        .map((r) => String(r.id));
-      await permanentlyDeleteFromFirebase(
-        firebaseDocIds.length > 0 ? firebaseDocIds : idsToDelete,
-        refsToDelete
-      );
-
+      // 3. Close confirm modal and display success modal immediately
       setClearedCount(countCleared);
       setShowClearConfirmModal(false);
       setShowClearSuccessModal(true);
+
+      // 4. Permanently delete notification records from Firebase via WriteBatch
+      const firebaseDocIds = allRawMatches
+        .filter((r) => r.type !== 'online_meeting')
+        .map((r) => String(r.id));
+      permanentlyDeleteFromFirebase(
+        firebaseDocIds.length > 0 ? firebaseDocIds : idsToDelete,
+        refsToDelete
+      ).catch((e) => console.warn('Background delete notice:', e));
     } catch (err) {
       console.error('Error clearing all notifications:', err);
       setShowClearConfirmModal(false);
@@ -580,7 +609,7 @@ export default function UpdatesScreen({ navigation, route }: any) {
       } else {
         resolvedType = data.type || 'job_opportunity_new';
       }
-    } else if (data.type === 'event' || data.title?.includes('📅')) {
+    } else if (data.type === 'event' || data.title?.includes('📅') || data.title?.includes('🗓️')) {
       icon = Calendar;
       color = '#10b981';
       resolvedType = 'event';
@@ -723,6 +752,15 @@ export default function UpdatesScreen({ navigation, route }: any) {
     }
 
     let itemTitle = data.title || t('updates.announcement');
+    // Replace misleading static 📅 emoji (which displays "JUL 17" in system fonts) with the event's actual date
+    if (itemTitle.includes('📅')) {
+      const eventDateStr = data.date ? formatDateDisplay(data.date) : '';
+      if (eventDateStr) {
+        itemTitle = itemTitle.replace(/📅\s*/g, `🗓️ [${eventDateStr}] `);
+      } else {
+        itemTitle = itemTitle.replace(/📅\s*/g, '🗓️ ');
+      }
+    }
     let itemContent = stripHtml(data.content || data.body || '');
 
     if (resolvedType === 'youtube_live') {
@@ -962,8 +1000,13 @@ export default function UpdatesScreen({ navigation, route }: any) {
     };
   }, [activeChurch?.id, member?.churchId, user?.phoneNumber, member?.phone, member?.id, user?.uid, isAdmin]);
   const allUpdates = dynamicUpdates;
+  const deletedSet = React.useMemo(() => new Set(deletedIds.map(String)), [deletedIds]);
   const visibleUpdates = allUpdates.filter(update => {
-    if (deletedIds.includes(update.id)) return false;
+    if (!update || !update.id) return false;
+    if (deletedSet.has(String(update.id))) return false;
+    if (clearedBeforeTimestamp > 0 && update.rawDate && update.rawDate <= clearedBeforeTimestamp) {
+      return false;
+    }
     if (filterCategory === 'job_circle') {
       const isJobCircle =
         update.type === 'job_opportunity_new' ||

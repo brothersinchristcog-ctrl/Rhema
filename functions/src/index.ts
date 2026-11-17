@@ -954,7 +954,11 @@ async function handleBroadcastPushDispatch(data: any, churchIdParam?: string, me
     return;
   }
 
-  const title = data.title || 'Church Update';
+  let title = (data.title || 'Church Update').trim();
+  // Sanitize static 📅 calendar emoji (which renders as "JUL 17" in standard OS emoji fonts)
+  if (title.includes('📅')) {
+    title = title.replace(/📅\s*/g, '🗓️ ');
+  }
   const body = data.content || '';
   const type = data.type || 'general';
   const churchId = churchIdParam || data.targetChurchId || DEFAULT_CHURCH_ID;
@@ -1134,6 +1138,8 @@ async function handleBroadcastPushDispatch(data: any, churchIdParam?: string, me
       ...(data.screen ? { screen: String(data.screen) } : { screen: 'AdminRoot' }),
       ...(churchId ? { churchId: String(churchId) } : {}),
       ...(data.date ? { date: String(data.date) } : {}),
+      ...(data.endDate ? { endDate: String(data.endDate) } : {}),
+      ...(data.startTime ? { startTime: String(data.startTime) } : {}),
       click_action: 'FLUTTER_NOTIFICATION_CLICK',
     };
 

@@ -3707,7 +3707,7 @@ async function handleVolunteerApplicationAdminCreatedPush(appData, churchId, app
     const eventName = (appData.eventTitle || 'Church Event').trim();
     // 2. Notification title and body according to specification
     const title = isEventVolunteer
-        ? '📅 New Event Volunteer Application!'
+        ? '🤝 New Event Volunteer Application!'
         : '📋 New Volunteer Application!';
     const body = isEventVolunteer
         ? `${memberName} has applied to volunteer for ${eventName}. Please review the application.`
