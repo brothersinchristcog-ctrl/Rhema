@@ -466,7 +466,6 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
   // RENDER: MINISTRY OPPORTUNITY CARD
   // ─────────────────────────────────────────────────────────────
   const renderOpportunityCard = (opp: JobOpportunity, isCarousel: boolean = false) => {
-    const isPaid = opp.compensationType !== 'unpaid';
     const isExpanded = !!expandedDescIds[opp.id];
     const postedTimeAgo = formatPostedDate(opp.createdAt);
     const hasLongDesc = (opp.description || '').length > 130;
@@ -509,12 +508,6 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
             </View>
             <Text style={[styles.posterSubtitleText, { color: secondaryText }]} numberOfLines={1}>
               {posterRole ? `${posterRole} • ${postedTimeAgo}` : postedTimeAgo}
-            </Text>
-          </View>
-
-          <View style={[styles.typeBadge, { backgroundColor: isPaid ? (isDark ? '#F59E0B25' : '#FEF3C7') : (isDark ? '#10B98125' : '#ECFDF5') }]}>
-            <Text style={[styles.typeBadgeTxt, { color: isPaid ? (isDark ? '#FBBF24' : '#B45309') : (isDark ? '#34D399' : '#047857') }]}>
-              {opp.opportunityType.replace(/_/g, ' ').toUpperCase()}
             </Text>
           </View>
         </View>
@@ -1290,20 +1283,11 @@ const styles = StyleSheet.create({
     fontSize: 14.5,
     fontWeight: '700',
     letterSpacing: -0.2,
+    flexShrink: 1,
   },
   posterSubtitleText: {
     fontSize: 12,
     marginTop: 1,
-  },
-  typeBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  typeBadgeTxt: {
-    fontSize: 10.5,
-    fontWeight: '800',
-    letterSpacing: 0.3,
   },
   cardBannerWrap: {
     width: '100%',
