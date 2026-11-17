@@ -13,7 +13,6 @@ import {
   Platform,
   RefreshControl,
   Animated,
-  Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import YoutubePlayer from 'react-native-youtube-iframe';
@@ -30,7 +29,6 @@ import {
   ShieldCheck,
   Tv,
   CheckCircle2,
-  ExternalLink,
 } from 'lucide-react-native';
 import firestore from '@react-native-firebase/firestore';
 import { useChurch } from '../context/ChurchContext';
@@ -40,8 +38,8 @@ import {
   findActiveLiveStream,
   getChannelId,
   checkVideoLiveStatus,
+  resolveRhemaYoutubeUrl,
   RHEMA_YOUTUBE_CHANNEL_URL,
-  RHEMA_YOUTUBE_STREAMS_URL,
 } from '../services/YouTubeService';
 
 const { width } = Dimensions.get('window');
@@ -73,12 +71,6 @@ function extractYoutubeVideoId(urlOrId?: string): string {
   const embedMatch = clean.match(/\/embed\/([\w-]{11})/);
   if (embedMatch) return embedMatch[1];
 
-  // Channel handle / streams URL fallback for testing ministry
-  const lower = clean.toLowerCase();
-  if (lower.includes('brother') || lower.includes('uc3j_2zp2biucweia_asvghw')) {
-    return 'vgzXs5QCjIA';
-  }
-
   return '';
 }
 
@@ -93,7 +85,7 @@ function formatCleanStreamTitle(rawTitle?: string, isLive?: boolean): string {
   s = s.replace(/^[|\s/-]+|[|\s/-]+$/g, '');
   // Clean repeated pipes into bullet separator
   s = s.replace(/\|{1,2}/g, ' • ');
-  // Strip hashtags like #brotherinchristfellowship
+  // Strip inline #hashtags
   s = s.replace(/#[\w-]+/g, '');
   // Strip standalone Live keyword from title string as status badge indicates it
   s = s.replace(/\bLive\b/gi, '').trim();
@@ -121,19 +113,12 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
   } = useAdminTheme();
 
   const churchId = route?.params?.churchId || activeChurch?.id || 'rhema';
-  const churchName = activeChurch?.name || 'Rhema Fellowship';
+  const churchName = activeChurch?.name || 'Rhema Global Ministries';
   const churchAvatar = (activeChurch as any)?.logoUrl || (activeChurch as any)?.photoUrl;
-  const rawConfiguredUrl = activeChurch?.socialLinks?.youtube?.trim() || '';
-  const configuredChannelUrl =
-    rawConfiguredUrl && !/brothersinchristfellowship/i.test(rawConfiguredUrl)
-      ? rawConfiguredUrl
-      : RHEMA_YOUTUBE_CHANNEL_URL;
-  const channelHomeUrl = route?.params?.channelUrl || configuredChannelUrl;
-  const streamsPageUrl =
-    route?.params?.streamsUrl ||
-    (channelHomeUrl.startsWith('http')
-      ? `${channelHomeUrl.replace(/\/(live|streams)\/?$/i, '').replace(/\/+$/, '')}/streams`
-      : RHEMA_YOUTUBE_STREAMS_URL);
+  const configuredChannelUrl = resolveRhemaYoutubeUrl(activeChurch?.socialLinks?.youtube);
+  const channelHomeUrl = route?.params?.channelUrl
+    ? resolveRhemaYoutubeUrl(route.params.channelUrl)
+    : configuredChannelUrl;
 
   // Input params
   const paramVideoId = extractYoutubeVideoId(route?.params?.videoId || route?.params?.url);
@@ -298,13 +283,14 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
         }
 
         // Step 3: Check channel handle or URL using YouTubeService
-        const targetUrl =
+        const targetUrl = resolveRhemaYoutubeUrl(
           paramUrl ||
-          configuredChannelUrl ||
-          churchData?.youtubeLiveUrl ||
-          churchData?.youtubeChannelUrl ||
-          churchData?.socialLinks?.youtube ||
-          RHEMA_YOUTUBE_CHANNEL_URL;
+            configuredChannelUrl ||
+            churchData?.youtubeLiveUrl ||
+            churchData?.youtubeChannelUrl ||
+            churchData?.socialLinks?.youtube ||
+            RHEMA_YOUTUBE_CHANNEL_URL
+        );
 
         if (targetUrl) {
           const liveResult = await findActiveLiveStream(targetUrl);
@@ -361,7 +347,7 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
     try {
       const shareUrl = activeVideoId
         ? `https://youtu.be/${activeVideoId}`
-        : streamsPageUrl || channelHomeUrl || RHEMA_YOUTUBE_CHANNEL_URL;
+        : channelHomeUrl || RHEMA_YOUTUBE_CHANNEL_URL;
       await Share.share({
         title: streamTitle || `${churchName} Live`,
         message: `🔴 ${churchName} is streaming live on YouTube! Tap to watch worship with us: ${shareUrl}`,
@@ -514,14 +500,6 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
                 >
                   <RefreshCw size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
                   <Text style={styles.statusActionBtnTxt}>Check Again</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.statusActionBtn, styles.statusActionBtnSecondary, { borderColor: adminBorderColor }]}
-                  onPress={() => Linking.openURL(streamsPageUrl).catch(() => {})}
-                  activeOpacity={0.85}
-                >
-                  <ExternalLink size={14} color={primaryText} style={{ marginRight: 6 }} />
-                  <Text style={[styles.statusActionBtnTxt, { color: primaryText }]}>Open Streams</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.statusActionBtn, styles.statusActionBtnSecondary, { borderColor: adminBorderColor }]}
@@ -699,47 +677,6 @@ export default function YouTubeLiveScreen({ route, navigation }: any) {
               <Text style={[styles.quickTileTitle, { color: primaryText }]}>Prayer Wall</Text>
               <Text style={[styles.quickTileSub, { color: secondaryText }]}>Ask for prayer</Text>
             </View>
-          </TouchableOpacity>
-        </View>
-
-        {/* ── OFFICIAL YOUTUBE LINKS ── */}
-        <View
-          style={[
-            styles.ytLinksCard,
-            {
-              backgroundColor: cardSurface,
-              borderColor: adminBorderColor,
-            },
-          ]}
-        >
-          <Text style={[styles.ytLinksHeader, { color: primaryText }]}>
-            Official YouTube Links
-          </Text>
-          <TouchableOpacity
-            style={[styles.ytLinkRow, { borderColor: adminBorderColor, backgroundColor: secondarySurface }]}
-            onPress={() => Linking.openURL(channelHomeUrl).catch(() => {})}
-            activeOpacity={0.8}
-          >
-            <View style={{ flex: 1, marginRight: 10 }}>
-              <Text style={[styles.ytLinkLabel, { color: primaryText }]}>YouTube Home</Text>
-              <Text style={[styles.ytLinkUrl, { color: secondaryText }]} numberOfLines={1}>
-                {channelHomeUrl}
-              </Text>
-            </View>
-            <ExternalLink size={16} color={primaryText} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.ytLinkRow, { borderColor: adminBorderColor, backgroundColor: secondarySurface }]}
-            onPress={() => Linking.openURL(streamsPageUrl).catch(() => {})}
-            activeOpacity={0.8}
-          >
-            <View style={{ flex: 1, marginRight: 10 }}>
-              <Text style={[styles.ytLinkLabel, { color: primaryText }]}>YouTube Live & Streams</Text>
-              <Text style={[styles.ytLinkUrl, { color: secondaryText }]} numberOfLines={1}>
-                {streamsPageUrl}
-              </Text>
-            </View>
-            <ExternalLink size={16} color={primaryText} />
           </TouchableOpacity>
         </View>
 
@@ -1040,34 +977,5 @@ const styles = createAdminThemedStyles({
   infoBannerDesc: {
     fontSize: 11.5,
     lineHeight: 16,
-  },
-  ytLinksCard: {
-    marginHorizontal: 12,
-    marginTop: 14,
-    padding: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    gap: 8,
-  },
-  ytLinksHeader: {
-    fontSize: 13.5,
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  ytLinkRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  ytLinkLabel: {
-    fontSize: 12.5,
-    fontWeight: '700',
-  },
-  ytLinkUrl: {
-    fontSize: 11,
-    marginTop: 2,
   },
 });

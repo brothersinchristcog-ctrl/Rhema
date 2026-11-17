@@ -54,7 +54,13 @@ import * as Clipboard from 'expo-clipboard';
 import RNShare from 'react-native-share';
 import ViewShot from 'react-native-view-shot';
 
-import { findEventVideo, findActiveLiveStream, getChannelId, checkVideoLiveStatus } from '../services/YouTubeService';
+import {
+  findEventVideo,
+  findActiveLiveStream,
+  getChannelId,
+  checkVideoLiveStatus,
+  resolveRhemaYoutubeUrl,
+} from '../services/YouTubeService';
 import { useAuth } from '../context/AuthContext';
 import { useChurch } from '../context/ChurchContext';
 import EventRsvpPollCard from '../components/EventRsvpPollCard';
@@ -239,10 +245,6 @@ function extractYoutubeVideoId(urlOrId?: string): string {
   if (shortMatch) return shortMatch[1];
   const embedMatch = clean.match(/\/embed\/([\w-]{11})/);
   if (embedMatch) return embedMatch[1];
-  const lower = clean.toLowerCase();
-  if (lower.includes('brother') || lower.includes('uc3j_2zp2biucweia_asvghw')) {
-    return 'vgzXs5QCjIA';
-  }
   return '';
 }
 
@@ -408,7 +410,10 @@ export default function EventDetailsScreen({ route, navigation }: any) {
     }
   }, [event.id, status, isStreamEnded, manualYoutubeId, churchYoutubeHandle, activeChurch?.id]);
 
-  const churchYoutubeUrl = activeChurch?.socialLinks?.youtube || (churchYoutubeHandle ? `https://www.youtube.com/${churchYoutubeHandle}` : '');
+  const churchYoutubeUrl = resolveRhemaYoutubeUrl(
+    activeChurch?.socialLinks?.youtube ||
+      (churchYoutubeHandle ? `https://www.youtube.com/${churchYoutubeHandle}` : '')
+  );
 
   // Resolve live stream video ID / recording status
   useEffect(() => {
@@ -1614,16 +1619,14 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                   <Text style={[styles.lockedSub, { color: colors.textSecondary }]}>
                     The video recording for this service has not been uploaded to the church channel yet.
                   </Text>
-                  {churchYoutubeUrl ? (
-                    <TouchableOpacity
-                      style={[styles.liveWaitingBtn, { marginTop: 14 }]}
-                      onPress={() => Linking.openURL(churchYoutubeUrl)}
-                      activeOpacity={0.8}
-                    >
-                      <ExternalLink size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
-                      <Text style={styles.liveWaitingBtnTxt}>Browse Church Channel</Text>
-                    </TouchableOpacity>
-                  ) : null}
+                  <TouchableOpacity
+                    style={[styles.liveWaitingBtn, { marginTop: 14 }]}
+                    onPress={() => navigation.navigate('Sermons')}
+                    activeOpacity={0.8}
+                  >
+                    <Video size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.liveWaitingBtnTxt}>Browse Sermons</Text>
+                  </TouchableOpacity>
                 </View>
               )
             ) : (
@@ -1646,16 +1649,14 @@ export default function EventDetailsScreen({ route, navigation }: any) {
                     <RefreshCw size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
                     <Text style={styles.liveWaitingBtnTxt}>Check Again</Text>
                   </TouchableOpacity>
-                  {churchYoutubeUrl ? (
-                    <TouchableOpacity
-                      style={[styles.liveWaitingBtn, styles.liveWaitingBtnSecondary]}
-                      onPress={() => Linking.openURL(churchYoutubeUrl)}
-                      activeOpacity={0.8}
-                    >
-                      <ExternalLink size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
-                      <Text style={styles.liveWaitingBtnTxt}>YouTube Channel</Text>
-                    </TouchableOpacity>
-                  ) : null}
+                  <TouchableOpacity
+                    style={[styles.liveWaitingBtn, styles.liveWaitingBtnSecondary]}
+                    onPress={handleJoinLiveStream}
+                    activeOpacity={0.8}
+                  >
+                    <Radio size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.liveWaitingBtnTxt}>Open Live Player</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             )}

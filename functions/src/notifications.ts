@@ -1214,12 +1214,9 @@ export async function checkChurchYouTubeLive(churchDoc: any, churchId: string, d
   const cData = churchDoc.data() || {};
   let rawYtUrl = cData.socialLinks?.youtube?.trim() || '';
 
-  // Fix typos in raw URL
+  // Fix typos in raw URL and discard legacy Brothers in Christ placeholder handles for Rhema
   rawYtUrl = rawYtUrl.replace(/https?:\/\/(www\w*)\.(?:yyoutube|youtube)\.com/i, 'https://www.youtube.com');
-  rawYtUrl = rawYtUrl.replace(/Brothersinchhristfellowship/gi, 'Brothersinchristfellowship');
-
-  // Single-church default fallback
-  if (!rawYtUrl && churchId === 'rhema') {
+  if (churchId === 'rhema' && (!rawYtUrl || /brothersinchrist/i.test(rawYtUrl))) {
     rawYtUrl = 'https://www.youtube.com/@RhemaGlobalMinistries';
   }
 

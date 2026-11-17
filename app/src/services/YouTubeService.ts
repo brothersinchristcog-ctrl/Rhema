@@ -4,23 +4,26 @@
 export const RHEMA_YOUTUBE_CHANNEL_URL = 'https://www.youtube.com/@RhemaGlobalMinistries';
 export const RHEMA_YOUTUBE_STREAMS_URL = 'https://www.youtube.com/@RhemaGlobalMinistries/streams';
 
+/**
+ * Resolves a church YouTube URL, discarding empty or legacy placeholder handles
+ * so Rhema Global Ministries streams always use the official church channel.
+ */
+export function resolveRhemaYoutubeUrl(rawUrl?: string): string {
+  const clean = (rawUrl || '').trim();
+  if (
+    !clean ||
+    /brothersinchrist/i.test(clean) ||
+    /uc3j_2zp2biucweia_asvghw/i.test(clean)
+  ) {
+    return RHEMA_YOUTUBE_CHANNEL_URL;
+  }
+  return clean;
+}
+
 const YOUTUBE_API_KEY = 'AIzaSyBGkm7DNk_jpM-XKJI0JPk_vJlufS4Q7-Q';
 
-// Cache channelId per handle so we don't fetch it every time
-const channelIdCache: Record<string, string> = {
-  '@Brothersinchristfellowship': 'UC3J_2zP2bIuCwEia_ASvghw',
-  '@Brothersinchhristfellowship': 'UC3J_2zP2bIuCwEia_ASvghw',
-  '@brothersinchristfellowship': 'UC3J_2zP2bIuCwEia_ASvghw',
-  '@RhemaGlobalMinistries': 'UC3J_2zP2bIuCwEia_ASvghw',
-};
-
-// Verified active live broadcast / stream IDs per channel
-const knownChannelLiveVideos: Record<string, string> = {
-  '@brothersinchristfellowship': 'vgzXs5QCjIA',
-  '@brothersinchrist': 'vgzXs5QCjIA',
-  'uc3j_2zp2biucweia_asvghw': 'vgzXs5QCjIA',
-  'brothersinchristfellowship': 'vgzXs5QCjIA',
-};
+// Runtime cache of channelId per handle/URL
+const channelIdCache: Record<string, string> = {};
 
 /**
  * Sanitizes input handles or URLs, fixing common user typos
@@ -329,25 +332,58 @@ export async function checkVideoLiveStatus(videoId: string): Promise<{
   try {
     const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet,liveStreamingDetails&id=${videoId}&key=${YOUTUBE_API_KEY}`;
     const res = await fetch(url);
-    const data = await res.json();
-    const item = data.items && data.items[0];
-    if (!item) {
-      return { status: 'none', isLiveNow: false, hasEnded: false };
-    }
-    const title = item.snippet?.title || '';
-    const liveContent = item.snippet?.liveBroadcastContent;
-    const liveDetails = item.liveStreamingDetails;
+    if (res.ok) {
+      const data = await res.json();
+      const item = data.items && data.items[0];
+      if (item) {
+        const title = item.snippet?.title || '';
+        const liveContent = item.snippet?.liveBroadcastContent;
+        const liveDetails = item.liveStreamingDetails;
 
-    if (liveContent === 'live') {
-      return { status: 'live', isLiveNow: true, hasEnded: false, title };
+        if (liveContent === 'live') {
+          return { status: 'live', isLiveNow: true, hasEnded: false, title };
+        }
+        if (liveDetails && (liveDetails.actualEndTime || liveContent === 'none')) {
+          return { status: 'completed', isLiveNow: false, hasEnded: true, title };
+        }
+        return { status: 'none', isLiveNow: false, hasEnded: false, title };
+      }
     }
-    if (liveDetails && (liveDetails.actualEndTime || liveContent === 'none')) {
-      return { status: 'completed', isLiveNow: false, hasEnded: true, title };
-    }
-    return { status: 'none', isLiveNow: false, hasEnded: false, title };
   } catch (e) {
-    return { status: 'none', isLiveNow: false, hasEnded: false };
+    // Fall through to direct watch-page inspection when API quota/network fails
   }
+
+  // Fallback: inspect YouTube watch page HTML directly (zero API quota cost)
+  try {
+    const watchRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    });
+    if (watchRes.ok) {
+      const html = await watchRes.text();
+      const titleMatch = html.match(/<title>([^<]+)<\/title>/);
+      const title = titleMatch ? titleMatch[1].replace(/ - YouTube$/i, '').trim() : '';
+      const hasEnded = html.includes('"status":"ENDED"') || html.includes('"isLive":false');
+      const isLiveNow =
+        (html.includes('"isLive":true') ||
+          html.includes('"isLiveNow":true') ||
+          html.includes('"status":"LIVE"')) &&
+        !hasEnded;
+      if (isLiveNow) {
+        return { status: 'live', isLiveNow: true, hasEnded: false, title };
+      }
+      if (hasEnded) {
+        return { status: 'completed', isLiveNow: false, hasEnded: true, title };
+      }
+      return { status: 'none', isLiveNow: false, hasEnded: false, title };
+    }
+  } catch {
+    // Non-fatal
+  }
+
+  return { status: 'none', isLiveNow: false, hasEnded: false };
 }
 
 /**
@@ -378,10 +414,6 @@ export async function findActiveLiveStream(
 
     const channelId = directCId || (handle ? await getChannelId(handle) : null);
     const targetPath = handle ? handle : (channelId ? `channel/${channelId}` : null);
-
-    const normKey = (handle || channelId || channelHandleOrUrl || '').toLowerCase();
-    const isTestMinistry = normKey.includes('brother') || normKey.includes('uc3j_2zp2biucweia_asvghw');
-    const knownTestVideoId = isTestMinistry ? 'vgzXs5QCjIA' : null;
 
     // Method 1: Direct Live URL Check (Zero API quota cost, bypasses 429 quota limit)
     if (targetPath) {
@@ -442,8 +474,9 @@ export async function findActiveLiveStream(
         if (streamsRes.ok) {
           const streamsHtml = await streamsRes.text();
           const liveItemMatch =
-            streamsHtml.match(/"videoRenderer":\{"videoId":"([a-zA-Z0-9_-]{11})"[\s\S]{0,1200}?"style":"LIVE"/) ||
-            streamsHtml.match(/"videoId":"([a-zA-Z0-9_-]{11})"[\s\S]{0,1200}?"style":"LIVE"/);
+            streamsHtml.match(/"videoRenderer":\{"videoId":"([a-zA-Z0-9_-]{11})"[\s\S]{0,1400}?"style":"LIVE"/) ||
+            streamsHtml.match(/"videoRenderer":\{"videoId":"([a-zA-Z0-9_-]{11})"[\s\S]{0,1400}?LIVE_NOW/) ||
+            streamsHtml.match(/"videoId":"([a-zA-Z0-9_-]{11})"[\s\S]{0,1400}?"style":"LIVE"/);
           if (liveItemMatch && liveItemMatch[1]) {
             const vStatus = await checkVideoLiveStatus(liveItemMatch[1]);
             if (vStatus.isLiveNow) {
@@ -491,18 +524,6 @@ export async function findActiveLiveStream(
       } catch (apiErr) {
         // Ignored
       }
-    }
-
-    // Method 3: Check known test stream status if applicable
-    if (knownTestVideoId) {
-      const vStatus = await checkVideoLiveStatus(knownTestVideoId);
-      return {
-        videoId: knownTestVideoId,
-        title: vStatus.title || 'Brothers in Christ Fellowship - Live',
-        isLiveNow: vStatus.isLiveNow,
-        hasEnded: vStatus.hasEnded,
-        status: vStatus.status,
-      };
     }
 
     return { videoId: null, title: '', isLiveNow: false, hasEnded: false, status: 'none' };
