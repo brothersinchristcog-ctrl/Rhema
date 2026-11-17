@@ -467,7 +467,35 @@ export default function AdminMembers() {
 
   // Village Filtered Members (used for stats based on the selected village)
   const villageFilteredMembers = useMemo(() => {
-    return members.filter(m => villageFilter === 'All' || (m.city || m.village || '').trim() === villageFilter);
+    const seenKeys = new Set<string>();
+    const uniqueMembers: any[] = [];
+    for (const m of members) {
+      const phoneKey = String(m.phone || m.phoneNumber || m.mobile || '').replace(/\D/g, '').slice(-10);
+      const nameKey = stripGuestSuffix(String(m.name || m.displayName || `${m.firstName || ''} ${m.lastName || ''}`))
+        .toLowerCase()
+        .replace(/^(bro\.?|brother|sis\.?|sister|pastor|rev\.?)\s+/i, '')
+        .replace(/[^a-z0-9]/g, '');
+      const isDependent = Boolean(
+        m.accountId &&
+        m.accountId !== m.id &&
+        m.relation &&
+        !['self', 'head', 'guest', 'member'].includes(String(m.relation).trim().toLowerCase())
+      );
+      const key = isDependent
+        ? `dep:${m.accountId}:${nameKey || m.id}`
+        : phoneKey
+          ? `phone:${phoneKey}`
+          : nameKey
+            ? `name:${nameKey}`
+            : `id:${m.id}`;
+      if (seenKeys.has(key) || (nameKey && !isDependent && seenKeys.has(`name:${nameKey}`))) {
+        continue;
+      }
+      seenKeys.add(key);
+      if (nameKey && !isDependent) seenKeys.add(`name:${nameKey}`);
+      uniqueMembers.push(m);
+    }
+    return uniqueMembers.filter(m => villageFilter === 'All' || (m.city || m.village || '').trim() === villageFilter);
   }, [members, villageFilter]);
 
   // Stats calculation

@@ -2409,27 +2409,201 @@ class FirestoreService {
       throw e;
     }
   }
+  private deduplicateMemberDocs(rawMembers: any[], colRef?: any): any[] {
+    const normalizeNameKey = (val: string) =>
+      stripGuestSuffix(val || '')
+        .toLowerCase()
+        .replace(/^(bro\.?|brother|sis\.?|sister|pastor|rev\.?)\s+/i, '')
+        .replace(/[^a-z0-9]/g, '');
+
+    const getRoleRank = (userType: any, isGuestFlag?: boolean) => {
+      const r = String(userType || '').toLowerCase();
+      if (r.includes('super')) return 4;
+      if (r.includes('admin') || r.includes('pastor')) return 3;
+      if (isGuestFlag || r === 'guest') return 1;
+      return 2;
+    };
+
+    const isPreferredPrimaryDoc = (candidate: any, existing: any, last10: string) => {
+      const candId = String(candidate.id || '');
+      const existId = String(existing.id || '');
+      const candIsTempId = candId === last10 || candId.startsWith('guest_');
+      const existIsTempId = existId === last10 || existId.startsWith('guest_');
+      if (!candIsTempId && existIsTempId) return true;
+      if (candIsTempId && !existIsTempId) return false;
+      const candRank = getRoleRank(candidate.userType, isGuestMemberDoc(candidate));
+      const existRank = getRoleRank(existing.userType, isGuestMemberDoc(existing));
+      if (candRank !== existRank) return candRank > existRank;
+      if (candidate._hasRealName && !existing._hasRealName) return true;
+      if (!candidate._hasRealName && existing._hasRealName) return false;
+      if (candidate.uid && candidate.id === candidate.uid && existing.id !== existing.uid) return true;
+      return false;
+    };
+
+    const mergeRecords = (primary: any, secondary: any) => {
+      const pRank = getRoleRank(primary.userType, isGuestMemberDoc(primary));
+      const sRank = getRoleRank(secondary.userType, isGuestMemberDoc(secondary));
+      const bestUserType = sRank > pRank ? secondary.userType : primary.userType;
+      const pHasRealName = Boolean(primary._hasRealName);
+      const sHasRealName = Boolean(secondary._hasRealName);
+
+      const bestName =
+        (pHasRealName ? primary.name : '') ||
+        (sHasRealName ? secondary.name : '') ||
+        primary.name ||
+        secondary.name;
+      const cleanName = stripGuestSuffix(bestName) || bestName;
+
+      return {
+        ...secondary,
+        ...primary,
+        id: primary.id,
+        uid: primary.uid || secondary.uid || primary.id,
+        name: cleanName,
+        displayName: cleanName,
+        firstName: primary.firstName || secondary.firstName || '',
+        lastName: primary.lastName || secondary.lastName || '',
+        phone: primary.phone || secondary.phone || '',
+        email: primary.email || secondary.email || '',
+        city: primary.city || secondary.city || primary.village || secondary.village || '',
+        village: primary.village || secondary.village || primary.city || secondary.city || '',
+        dob: primary.dob || secondary.dob || '',
+        baptismDate: primary.baptismDate || secondary.baptismDate || '',
+        anniversaryDate: primary.anniversaryDate || secondary.anniversaryDate || '',
+        primarySkill: primary.primarySkill || secondary.primarySkill || '',
+        secondarySkill: primary.secondarySkill || secondary.secondarySkill || '',
+        profilePhoto:
+          primary.profilePhoto ||
+          secondary.profilePhoto ||
+          primary.photoURL ||
+          secondary.photoURL ||
+          '',
+        userType: bestUserType || 'Member',
+        isGuest: Math.max(pRank, sRank) === 1,
+        lastAppOpened: primary.lastAppOpened || secondary.lastAppOpened || null,
+        _hasRealName: pHasRealName || sHasRealName,
+      };
+    };
+
+    const byKey = new Map<string, any>();
+    const keyByPhone = new Map<string, string>();
+    const keyByUid = new Map<string, string>();
+    const keyByName = new Map<string, string>();
+    const duplicateIdsToCleanup = new Set<string>();
+
+    for (const item of rawMembers) {
+      const rawPhone =
+        item.phone ||
+        item.phoneNumber ||
+        item.mobile ||
+        item.MobilePhone ||
+        item.contactNumber ||
+        item.normalizedPhone10 ||
+        '';
+      const last10 =
+        normalizePhone10(String(rawPhone)) ||
+        (/^\d{10}$/.test(String(item.id || '')) ? String(item.id) : '') ||
+        (String(item.id || '').startsWith('guest_')
+          ? normalizePhone10(String(item.id).replace(/^guest_/, ''))
+          : '');
+
+      // Skip empty nameless/phoneless stub documents (e.g. bare FCM token docs)
+      if (!item._hasRealName && !last10) {
+        continue;
+      }
+
+      const nameKey = item._hasRealName ? normalizeNameKey(item.name || '') : '';
+      const uidKey = String(item.uid || '').trim();
+      // Only treat as a separate household dependent if linked to a DIFFERENT member's accountId
+      // and NOT sharing the exact same person name.
+      const isHouseholdDependent = Boolean(
+        item.accountId &&
+        item.accountId !== item.id &&
+        item.relation &&
+        !['self', 'head', 'guest', 'member'].includes(String(item.relation).trim().toLowerCase())
+      );
+
+      let matchedKey: string | undefined;
+      if (isHouseholdDependent) {
+        matchedKey = nameKey ? keyByName.get(nameKey) : undefined;
+      } else {
+        if (last10 && keyByPhone.has(last10)) {
+          matchedKey = keyByPhone.get(last10);
+        } else if (uidKey && keyByUid.has(uidKey)) {
+          matchedKey = keyByUid.get(uidKey);
+        } else if (nameKey && keyByName.has(nameKey)) {
+          matchedKey = keyByName.get(nameKey);
+        }
+      }
+
+      const dedupKey =
+        matchedKey ||
+        (isHouseholdDependent
+          ? `dep:${item.accountId}:${nameKey || item.id}`
+          : last10
+            ? `phone:${last10}`
+            : uidKey
+              ? `uid:${uidKey}`
+              : nameKey
+                ? `name:${nameKey}`
+                : `id:${item.id}`);
+
+      const existing = byKey.get(dedupKey);
+      if (!existing) {
+        byKey.set(dedupKey, item);
+      } else {
+        const useCandidateAsPrimary = isPreferredPrimaryDoc(item, existing, last10);
+        const primary = useCandidateAsPrimary ? item : existing;
+        const secondary = useCandidateAsPrimary ? existing : item;
+        const merged = mergeRecords(primary, secondary);
+        byKey.set(dedupKey, merged);
+
+        // If the duplicate record is a redundant phone-ID or guest-ID stub for the same phone,
+        // schedule background cleanup so the database stays duplicate-free.
+        const secId = String(secondary.id || '');
+        if (secId && secId !== String(primary.id) && (secId === last10 || secId.startsWith('guest_'))) {
+          duplicateIdsToCleanup.add(secId);
+        }
+      }
+
+      if (!isHouseholdDependent && last10) keyByPhone.set(last10, dedupKey);
+      if (uidKey) keyByUid.set(uidKey, dedupKey);
+      if (nameKey) keyByName.set(nameKey, dedupKey);
+    }
+
+    if (colRef && duplicateIdsToCleanup.size > 0) {
+      for (const dupId of duplicateIdsToCleanup) {
+        colRef.doc(dupId).delete().catch(() => {});
+      }
+    }
+
+    return Array.from(byKey.values()).map(({ _hasRealName, ...rest }) => rest);
+  }
+
   async getAllMembers(): Promise<any[]> {
     try {
       const col = await this.getCollection('members');
       const snapshot = await col.get();
-      return snapshot.docs
+      const mapped = snapshot.docs
         .filter((doc: any) => doc.data().status !== 'Left')
         .map((doc: any) => {
           const data = doc.data();
-          const fullName = (data.name && data.name.trim()) ||
+          const rawName =
+            (data.name && data.name.trim()) ||
             (data.displayName && data.displayName.trim()) ||
             (data.fullName && data.fullName.trim()) ||
-            (`${data.firstName || ''} ${data.lastName || ''}`.trim()) ||
-            (data.phone ? `Member (${data.phone})` : 'Unknown');
+            (`${data.firstName || ''} ${data.lastName || ''}`.trim());
+          const fullName = rawName || (data.phone ? `Member (${data.phone})` : 'Unknown');
           return {
             ...data,
             name: fullName,
             displayName: fullName,
             email: data.email || '',
-            id: doc.id
+            id: doc.id,
+            _hasRealName: Boolean(rawName),
           };
         });
+      return this.deduplicateMemberDocs(mapped, col);
     } catch (error) {
       console.error('Error fetching all members:', error);
       return [];
@@ -2440,21 +2614,24 @@ class FirestoreService {
     try {
       const col = await this.getCollection('members');
       const snapshot = await col.where('userType', 'in', ['Admin', 'admin', 'Super Admin', 'super_admin']).get();
-      return snapshot.docs.map((doc: any) => {
+      const mapped = snapshot.docs.map((doc: any) => {
         const data = doc.data();
-        const fullName = (data.name && data.name.trim()) ||
+        const rawName =
+          (data.name && data.name.trim()) ||
           (data.displayName && data.displayName.trim()) ||
           (data.fullName && data.fullName.trim()) ||
-          (`${data.firstName || ''} ${data.lastName || ''}`.trim()) ||
-          (data.phone ? `Member (${data.phone})` : 'Unknown');
+          (`${data.firstName || ''} ${data.lastName || ''}`.trim());
+        const fullName = rawName || (data.phone ? `Member (${data.phone})` : 'Unknown');
         return {
+          ...data,
           id: doc.id,
           name: fullName,
           displayName: fullName,
           email: data.email || '',
-          ...data
+          _hasRealName: Boolean(rawName),
         };
       });
+      return this.deduplicateMemberDocs(mapped);
     } catch (error) {
       console.error('Error fetching admin members:', error);
       return [];
@@ -5276,22 +5453,68 @@ class FirestoreService {
         ...(reqData.platform ? { platform: reqData.platform } : {}),
       };
 
-      await firestore()
-        .collection('Rhema Church')
-        .doc(churchId)
-        .collection('members')
-        .doc(targetMemberId)
-        .set(newMemberDoc, { merge: true });
+      const membersCol = firestore().collection('Rhema Church').doc(churchId).collection('members');
+      const last10 = normalizePhone10(reqData.phone || requestId);
+      const duplicateIdsToRemove = new Set<string>();
+      let preservedRole = 'Member';
+      let preservedExtras: Record<string, any> = {};
 
-      // If the request had a separate 10-digit ID and an authUid, make sure both are synced
+      if (last10) {
+        try {
+          const existingSnap = await membersCol.get();
+          existingSnap.docs.forEach((d) => {
+            const dData = d.data() || {};
+            const dPhone = normalizePhone10(
+              String(dData.phone || dData.phoneNumber || dData.mobile || dData.normalizedPhone10 || '')
+            );
+            if (dPhone === last10 || d.id === requestId || d.id === `guest_${requestId}`) {
+              const roleStr = String(dData.userType || '').toLowerCase();
+              if (roleStr.includes('super') || roleStr.includes('admin') || roleStr.includes('pastor')) {
+                preservedRole = dData.userType;
+              }
+              preservedExtras = {
+                ...(dData.primarySkill ? { primarySkill: dData.primarySkill } : {}),
+                ...(dData.secondarySkill ? { secondarySkill: dData.secondarySkill } : {}),
+                ...(dData.profilePhoto ? { profilePhoto: dData.profilePhoto } : {}),
+                ...preservedExtras,
+              };
+              if (d.id !== targetMemberId) {
+                duplicateIdsToRemove.add(d.id);
+              }
+            }
+          });
+        } catch (_) {}
+      }
+
       if (reqData.authUid && reqData.authUid !== requestId) {
-        await firestore()
-          .collection('Rhema Church')
-          .doc(churchId)
-          .collection('members')
-          .doc(requestId)
-          .set(newMemberDoc, { merge: true })
-          .catch(() => {});
+        duplicateIdsToRemove.add(requestId);
+      }
+      if (requestId) {
+        duplicateIdsToRemove.add(`guest_${requestId}`);
+      }
+
+      await membersCol.doc(targetMemberId).set(
+        {
+          ...preservedExtras,
+          ...newMemberDoc,
+          ...(last10 ? { normalizedPhone10: last10 } : {}),
+          uid: reqData.authUid || targetMemberId,
+          userType: preservedRole,
+          role: preservedRole,
+          isGuest: false,
+        },
+        { merge: true }
+      );
+
+      for (const dupId of duplicateIdsToRemove) {
+        if (dupId && dupId !== targetMemberId) {
+          await membersCol.doc(dupId).delete().catch(() => {});
+        }
+      }
+      if (last10) {
+        await this.upsertPhoneIndex(churchId, reqData.phone || last10, targetMemberId, {
+          userType: preservedRole,
+        }).catch(() => {});
       }
 
       // Update registration request status

@@ -67,13 +67,25 @@ class NotificationService {
         (await FirestoreService.getChurchId().catch(() => null)) ||
         'rhema';
 
-      // Save to church members subcollection and root users document
+      // Save token to root users document, and only update members/{uid} if that member profile already exists
+      // (avoids creating a duplicate nameless stub doc in members/ for unapproved or phone-keyed users)
+      const memberRef = firestore().collection('Rhema Church').doc(targetChurchId).collection('members').doc(user.uid);
+      const memberSnap = await memberRef.get().catch(() => null);
+      const memberExists = memberSnap && (typeof (memberSnap as any).exists === 'function' ? (memberSnap as any).exists() : Boolean(memberSnap.exists));
+
       await Promise.allSettled([
-        firestore().collection('Rhema Church').doc(targetChurchId).collection('members').doc(user.uid).set({
-          fcmToken: token,
-          lastTokenUpdate: firestore.FieldValue.serverTimestamp(),
-          platform: Platform.OS,
-        }, { merge: true }),
+        ...(memberExists
+          ? [
+              memberRef.set(
+                {
+                  fcmToken: token,
+                  lastTokenUpdate: firestore.FieldValue.serverTimestamp(),
+                  platform: Platform.OS,
+                },
+                { merge: true }
+              ),
+            ]
+          : []),
         firestore().collection('users').doc(user.uid).set({
           fcmToken: token,
           primaryChurchId: targetChurchId,
