@@ -312,19 +312,24 @@ class JobCircleService {
             .collection('Rhema Church')
             .doc(churchId || 'rhema')
             .collection('notifications')
-            .add({
-              type: 'job_opportunity_new',
-              title,
-              body,
-              content: body,
-              opportunityId: id,
-              opportunityTitle: oppData?.title || '',
-              categoryName: oppData?.categoryName || '',
-              referenceId: id,
-              referenceType: 'job_circle_opportunity',
-              createdAt: firestore.FieldValue.serverTimestamp(),
-              read: false,
-            });
+            .doc(`job_opp_${id}`)
+            .set(
+              {
+                type: 'job_opportunity_new',
+                churchId: churchId || 'rhema',
+                title,
+                body,
+                content: body,
+                opportunityId: id,
+                opportunityTitle: oppData?.title || '',
+                categoryName: oppData?.categoryName || '',
+                referenceId: id,
+                referenceType: 'job_circle_opportunity',
+                createdAt: firestore.FieldValue.serverTimestamp(),
+                read: false,
+              },
+              { merge: true }
+            );
         }
       } catch (err) {
         console.warn('[JobCircleService] Failed to write new opportunity broadcast notification:', err);
@@ -422,28 +427,35 @@ class JobCircleService {
       })
       .catch(() => {});
 
-    // Write in-app notification for Admin
+    // Write deterministic in-app notification for Admin (matches Cloud Function docId to prevent duplicates)
     try {
       await firestore()
         .collection('Rhema Church')
         .doc(churchId || 'rhema')
         .collection('notifications')
-        .add({
-          type: 'job_application_admin',
-          targetRole: 'admin',
-          title: '💼 New Ministry Application Received!',
-          body: `${member.name} has applied for "${opportunity.title}". Tap to review applicant details.`,
-          content: `${member.name} has applied for "${opportunity.title}". Tap to review applicant details.`,
-          memberName: member.name,
-          memberPhone: member.phone,
-          opportunityId: opportunity.id,
-          opportunityTitle: opportunity.title,
-          applicationId: appDoc.id,
-          referenceId: appDoc.id,
-          referenceType: 'job_circle_application',
-          read: false,
-          createdAt: firestore.FieldValue.serverTimestamp(),
-        });
+        .doc(`job_admin_${appDoc.id}`)
+        .set(
+          {
+            type: 'job_application_admin',
+            churchId: churchId || 'rhema',
+            targetRole: 'admin',
+            recipientRole: 'admin',
+            title: '💼 New Ministry Application!',
+            body: `${member.name} has applied for "${opportunity.title}". Please review their calling and attached CV.`,
+            content: `${member.name} has applied for "${opportunity.title}". Please review their calling and attached CV.`,
+            memberName: member.name,
+            applicantName: member.name,
+            memberPhone: member.phone,
+            opportunityId: opportunity.id,
+            opportunityTitle: opportunity.title,
+            applicationId: appDoc.id,
+            referenceId: appDoc.id,
+            referenceType: 'job_circle_application',
+            read: false,
+            createdAt: firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
     } catch (notifErr) {
       console.warn('[JobCircleService] Failed to write admin application notification:', notifErr);
     }
@@ -576,23 +588,29 @@ class JobCircleService {
           .collection('Rhema Church')
           .doc(churchId || 'rhema')
           .collection('notifications')
-          .add({
-            type: 'job_application_member',
-            targetMemberId: applicantId,
-            recipientId: applicantId,
-            targetPhone: applicantPhone || '',
-            title,
-            body,
-            content: body,
-            status,
-            opportunityId: appData?.opportunityId || '',
-            opportunityTitle: roleTitle,
-            applicationId,
-            referenceId: applicationId,
-            referenceType: 'job_circle_application',
-            read: false,
-            createdAt: firestore.FieldValue.serverTimestamp(),
-          });
+          .doc(`job_status_${applicationId}_${status}`)
+          .set(
+            {
+              type: 'job_application_member',
+              churchId: churchId || 'rhema',
+              targetMemberId: applicantId,
+              recipientId: applicantId,
+              recipientRole: 'member',
+              targetPhone: applicantPhone || '',
+              title,
+              body,
+              content: body,
+              status,
+              opportunityId: appData?.opportunityId || '',
+              opportunityTitle: roleTitle,
+              applicationId,
+              referenceId: applicationId,
+              referenceType: 'job_circle_application',
+              read: false,
+              createdAt: firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          );
       }
     } catch (notifErr) {
       console.warn('[JobCircleService] Failed to write member application notification:', notifErr);

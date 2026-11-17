@@ -428,13 +428,21 @@ class NotificationService {
         case 'job_application_member': {
           const appId = rawData.applicationId || rawData.referenceId || id;
           const oppId = rawData.opportunityId;
-          console.log('💼 [NotificationService] Routing Member to Job Circle Applications:', { appId, oppId });
-          nav.navigate('JobCircle', {
-            initialTab: 'applications',
-            applicationId: appId,
-            opportunityId: oppId,
-            timestamp: Date.now(),
-          });
+          console.log('💼 [NotificationService] Routing Member to Application Details:', { appId, oppId });
+          if (oppId) {
+            nav.navigate('OpportunityDetailScreen', {
+              opportunityId: oppId,
+              applicationId: appId,
+              timestamp: Date.now(),
+            });
+          } else {
+            nav.navigate('JobCircle', {
+              skipSplash: true,
+              initialTab: 'applications',
+              applicationId: appId,
+              timestamp: Date.now(),
+            });
+          }
           break;
         }
         default:

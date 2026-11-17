@@ -163,6 +163,12 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
   // Listen to Job Circle notifications to display real-time unread badge
   useEffect(() => {
     if (!churchId) return;
+    const adminRoleStr = `${member?.userType || ''} ${(member as any)?.role || ''}`.toUpperCase();
+    const isAdminUser = adminRoleStr.includes('ADMIN') || adminRoleStr.includes('SUPER') || adminRoleStr.includes('PASTOR');
+    const uId = user?.uid || '';
+    const mId = member?.id || '';
+    const uPhone = (user?.phoneNumber || member?.phone || '').replace(/\D/g, '');
+
     try {
       const unsub = firestore()
         .collection('Rhema Church')
@@ -173,15 +179,28 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
           if (snap) {
             const count = snap.docs.filter(doc => {
               const d = doc.data();
-              return (
+              const isJobType =
                 d.type === 'job_opportunity_new' ||
                 d.type === 'job_application_admin' ||
                 d.type === 'job_application_member' ||
                 d.opportunityId ||
                 d.applicationId ||
                 d.referenceType === 'job_circle_opportunity' ||
-                d.referenceType === 'job_circle_application'
-              );
+                d.referenceType === 'job_circle_application';
+              if (!isJobType) return false;
+
+              if ((d.targetRole === 'admin' || d.type === 'job_application_admin') && !isAdminUser) {
+                return false;
+              }
+
+              const targetIdVal = d.targetMemberId || d.targetUid || d.recipientId;
+              const targetPhoneVal = (d.targetPhone || '').replace(/\D/g, '');
+              if (targetIdVal || targetPhoneVal) {
+                const idMatch = Boolean(targetIdVal && ((uId && targetIdVal === uId) || (mId && targetIdVal === mId)));
+                const phoneMatch = Boolean(targetPhoneVal && uPhone && (uPhone.endsWith(targetPhoneVal) || targetPhoneVal.endsWith(uPhone)));
+                if (!idMatch && !phoneMatch) return false;
+              }
+              return true;
             }).length;
             setUnreadNotifCount(count);
           }
@@ -193,7 +212,7 @@ export default function JobCircleScreen({ navigation, route }: JobCircleScreenPr
     } catch (e) {
       console.warn('[JobCircleScreen] notifications listener caught error:', e);
     }
-  }, [churchId]);
+  }, [churchId, user?.uid, user?.phoneNumber, member?.id, member?.phone, member?.userType]);
 
   const loadAppliedStatus = async () => {
     if (!user?.uid) return;

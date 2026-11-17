@@ -1786,6 +1786,7 @@ export {
   onJobApplicationCreated,
   onJobApplicationUpdated,
   onJobOpportunityCreated,
+  onJobOpportunityUpdated,
 } from './notifications.js';
 
 export {

@@ -319,18 +319,26 @@ export declare const onJobApplicationCreated: import("firebase-functions/core").
     applicationId: string;
 }>>;
 /**
- * Trigger: When an Admin updates an Application Status (Under Review, Meeting Scheduled, Selected, Rejected)
- * Sends instant push notification to the member.
+ * Trigger: When an Admin updates an Application Status (Under Review, Meeting Scheduled, Selected, Shortlisted, Rejected)
+ * Sends instant push notification & personal in-app notification strictly to the applicant member.
  */
 export declare const onJobApplicationUpdated: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
     churchId: string;
     applicationId: string;
 }>>;
 /**
- * Trigger: When a new Ministry Opportunity is published (status == 'approved')
+ * Trigger: When a new Ministry Opportunity is created as published (`status == 'approved'`)
  * Automatically broadcasts a high-priority push notification to all church members!
  */
 export declare const onJobOpportunityCreated: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+    churchId: string;
+    opportunityId: string;
+}>>;
+/**
+ * Trigger: When an existing Draft / Pending Ministry Opportunity is published (`status` transitions to 'approved')
+ * Automatically broadcasts a high-priority push notification to all church members!
+ */
+export declare const onJobOpportunityUpdated: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").QueryDocumentSnapshot> | undefined, {
     churchId: string;
     opportunityId: string;
 }>>;

@@ -180,9 +180,9 @@ export default function UpdatesScreen({ navigation, route }: any) {
       }
       seenIds.add(item.id);
 
-      // Deduplicate identical volunteer alerts across notifications/broadcasts/member subcollection
-      if (String(item.type || '').startsWith('volunteer_')) {
-        const volKey = `${item.type}|${item.applicationId || item.eventId || ''}|${item.volunteerStatus || ''}|${item.title || ''}|${item.content || ''}`;
+      // Deduplicate identical volunteer & Job Circle alerts across notifications/broadcasts/member subcollection
+      if (String(item.type || '').startsWith('volunteer_') || String(item.type || '').startsWith('job_')) {
+        const volKey = `${item.type}|${item.applicationId || item.opportunityId || item.eventId || ''}|${item.volunteerStatus || ''}|${item.title || ''}|${item.content || ''}`;
         if (seenVolunteerKeys.has(volKey)) {
           return false;
         }
@@ -934,12 +934,20 @@ export default function UpdatesScreen({ navigation, route }: any) {
                       timestamp: Date.now(),
                     });
                   } else if (update.type === 'job_application_member') {
-                    navigation.navigate('JobCircle', {
-                      initialTab: 'applications',
-                      applicationId: update.applicationId,
-                      opportunityId: update.opportunityId,
-                      timestamp: Date.now(),
-                    });
+                    if (update.opportunityId) {
+                      navigation.navigate('OpportunityDetailScreen', {
+                        opportunityId: update.opportunityId,
+                        applicationId: update.applicationId,
+                        timestamp: Date.now(),
+                      });
+                    } else {
+                      navigation.navigate('JobCircle', {
+                        skipSplash: true,
+                        initialTab: 'applications',
+                        applicationId: update.applicationId,
+                        timestamp: Date.now(),
+                      });
+                    }
                   } else {
                     setSelectedUpdate(update);
                   }

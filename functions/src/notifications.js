@@ -4202,6 +4202,121 @@ export const triggerVolunteerPushTestHttp = onRequest({ cors: true, region: 'asi
 // 💼 JOB CIRCLE & MINISTRY RECRUITMENT CLOUD TRIGGERS
 // ─────────────────────────────────────────────────────────────
 /**
+ * Shared Helper: Broadcast high-priority push & deterministic in-app notification
+ * when a Ministry Opportunity is published (`status === 'approved'`).
+ * Atomic transaction on `approvedNotificationSent` prevents duplicate blasts.
+ */
+async function handleJobOpportunityPublishedPush(data, churchId, opportunityId, snapRef) {
+    if (!data || data.status !== 'approved')
+        return;
+    const cid = churchId || 'rhema';
+    const db = getFirestore();
+    const messaging = getMessaging();
+    // Atomic idempotency guard so Create + Edit/Update never double-notifies
+    if (snapRef) {
+        let shouldSend = false;
+        try {
+            shouldSend = await db.runTransaction(async (tx) => {
+                const fresh = await tx.get(snapRef);
+                if (!fresh.exists)
+                    return false;
+                const freshData = fresh.data();
+                if (freshData?.status !== 'approved' || freshData?.approvedNotificationSent === true) {
+                    return false;
+                }
+                tx.update(snapRef, {
+                    approvedNotificationSent: true,
+                    approvedNotificationSentAt: FieldValue.serverTimestamp(),
+                });
+                return true;
+            });
+        }
+        catch (txErr) {
+            console.warn('[JobCircle] Transaction check error on approvedNotificationSent:', txErr);
+            if (data.approvedNotificationSent === true)
+                return;
+            shouldSend = true;
+        }
+        if (!shouldSend) {
+            console.log(`🛑 [JobCircle] Skipping duplicate opportunity push for: ${opportunityId}`);
+            return;
+        }
+    }
+    else if (data.approvedNotificationSent === true) {
+        return;
+    }
+    try {
+        const oppTitle = data.title || 'Ministry Volunteer';
+        const categoryText = data.categoryName ? ` in ${data.categoryName}` : '';
+        const title = '💼 New Ministry Opportunity Open!';
+        const body = `Rhema Church is inviting members to serve in "${oppTitle}"${categoryText}. Tap to view details and submit your calling!`;
+        const tokenSet = new Set();
+        const addTokens = (docData) => {
+            if (!docData)
+                return;
+            if (Array.isArray(docData.fcmTokens)) {
+                docData.fcmTokens.forEach((tk) => {
+                    if (typeof tk === 'string' && tk.trim().length > 10)
+                        tokenSet.add(tk.trim());
+                });
+            }
+            if (typeof docData.fcmToken === 'string' && docData.fcmToken.trim().length > 10) {
+                tokenSet.add(docData.fcmToken.trim());
+            }
+        };
+        try {
+            const membersSnap = await db.collection('Rhema Church').doc(cid).collection('members').get();
+            membersSnap.forEach((mDoc) => addTokens(mDoc.data()));
+        }
+        catch (e) {
+            console.warn('[JobCircle] Could not read Rhema Church members tokens:', e);
+        }
+        try {
+            const usersSnap = await db.collection('users').where('primaryChurchId', '==', cid).get();
+            usersSnap.forEach((uDoc) => addTokens(uDoc.data()));
+        }
+        catch (_) { }
+        const memberTokens = Array.from(tokenSet);
+        const pushData = {
+            type: 'job_opportunity_new',
+            churchId: cid,
+            opportunityId,
+            screen: 'OpportunityDetailScreen',
+            click_action: 'FLUTTER_NOTIFICATION_CLICK',
+        };
+        if (memberTokens.length > 0) {
+            await sendHighPriorityPush(messaging, memberTokens, title, body, pushData, 'church_alerts');
+        }
+        else {
+            await sendHighPriorityTopicPush(messaging, `church_${cid}`, title, body, pushData, 'church_alerts');
+        }
+        // Persist deterministically in church notifications for Updates screen visibility (no duplicates)
+        await db
+            .collection('Rhema Church')
+            .doc(cid)
+            .collection('notifications')
+            .doc(`job_opp_${opportunityId}`)
+            .set({
+            type: 'job_opportunity_new',
+            churchId: cid,
+            title,
+            body,
+            content: body,
+            opportunityId,
+            opportunityTitle: oppTitle,
+            categoryName: data.categoryName || '',
+            referenceId: opportunityId,
+            referenceType: 'job_circle_opportunity',
+            createdAt: FieldValue.serverTimestamp(),
+            read: false,
+        }, { merge: true });
+        console.log(`✅ [JobCircle] Broadcasted new opportunity "${oppTitle}" to ${memberTokens.length} member device(s).`);
+    }
+    catch (err) {
+        console.error('[JobCircle] Error broadcasting new opportunity push:', err);
+    }
+}
+/**
  * Trigger: When a member submits a new Ministry Application
  * Notifies Church Admins so they can review the candidate and their attached CV.
  */
@@ -4210,39 +4325,70 @@ export const onJobApplicationCreated = onDocumentCreated({ document: 'Rhema Chur
     if (!snap)
         return;
     const data = snap.data();
-    const churchId = event.params.churchId;
+    const churchId = event.params.churchId || 'rhema';
     const applicationId = event.params.applicationId;
+    const db = getFirestore();
+    const messaging = getMessaging();
+    // Atomic deduplication guard
+    try {
+        const shouldSend = await db.runTransaction(async (tx) => {
+            const fresh = await tx.get(snap.ref);
+            if (!fresh.exists)
+                return false;
+            if (fresh.data()?.adminPushSent === true)
+                return false;
+            tx.update(snap.ref, {
+                adminPushSent: true,
+                adminPushSentAt: FieldValue.serverTimestamp(),
+            });
+            return true;
+        });
+        if (!shouldSend) {
+            console.log(`🛑 [JobCircle] Skipping duplicate admin push for application: ${applicationId}`);
+            return;
+        }
+    }
+    catch (_) {
+        if (data?.adminPushSent === true)
+            return;
+    }
     try {
         const applicantName = data.memberName || 'A church member';
         const roleTitle = data.opportunityTitle || 'Ministry Position';
         const title = '💼 New Ministry Application!';
         const body = `${applicantName} has applied for "${roleTitle}". Please review their calling and attached CV.`;
-        const db = getFirestore();
-        const messaging = getMessaging();
         const { tokens: adminTokens, adminUids } = await resolveVolunteerAdminTokens(db, churchId);
+        const pushData = {
+            type: 'job_application_admin',
+            churchId,
+            applicationId,
+            opportunityId: data.opportunityId || '',
+            targetTab: 'Job Circle',
+            screen: 'AdminRoot',
+            click_action: 'FLUTTER_NOTIFICATION_CLICK',
+        };
         if (adminTokens.length > 0) {
-            await sendHighPriorityPush(messaging, adminTokens, title, body, {
-                type: 'job_application_admin',
-                churchId,
-                applicationId,
-                opportunityId: data.opportunityId || '',
-                targetTab: 'Job Circle',
-            }, 'church_alerts');
+            await sendHighPriorityPush(messaging, adminTokens, title, body, pushData, 'church_alerts');
         }
-        // Persist in-app notifications for admins
-        if (adminUids.length > 0) {
-            await writeVolunteerInAppNotifications(db, churchId, `job_admin_${applicationId}`, {
-                type: 'job_application_admin',
-                title,
-                body,
-                applicationId,
-                opportunityId: data.opportunityId || '',
-                opportunityTitle: roleTitle,
-                applicantName,
-                referenceType: 'job_circle_application',
-                referenceId: applicationId,
-            }, adminUids);
+        else {
+            await sendHighPriorityTopicPush(messaging, `church_${churchId}_admin`, title, body, pushData, 'church_alerts');
         }
+        // Persist deterministic in-app notification for admins (targetRole: 'admin' restricts from non-admins)
+        await writeVolunteerInAppNotifications(db, churchId, `job_admin_${applicationId}`, {
+            type: 'job_application_admin',
+            targetRole: 'admin',
+            recipientRole: 'admin',
+            title,
+            body,
+            content: body,
+            memberName: applicantName,
+            applicationId,
+            opportunityId: data.opportunityId || '',
+            opportunityTitle: roleTitle,
+            applicantName,
+            referenceType: 'job_circle_application',
+            referenceId: applicationId,
+        }, adminUids);
         console.log(`✅ [JobCircle] Notified admins for new application: ${applicationId}`);
     }
     catch (err) {
@@ -4250,8 +4396,8 @@ export const onJobApplicationCreated = onDocumentCreated({ document: 'Rhema Chur
     }
 });
 /**
- * Trigger: When an Admin updates an Application Status (Under Review, Meeting Scheduled, Selected, Rejected)
- * Sends instant push notification to the member.
+ * Trigger: When an Admin updates an Application Status (Under Review, Meeting Scheduled, Selected, Shortlisted, Rejected)
+ * Sends instant push notification & personal in-app notification strictly to the applicant member.
  */
 export const onJobApplicationUpdated = onDocumentUpdated({ document: 'Rhema Church/{churchId}/job_circle_applications/{applicationId}', region: 'asia-south1' }, async (event) => {
     const change = event.data;
@@ -4259,46 +4405,78 @@ export const onJobApplicationUpdated = onDocumentUpdated({ document: 'Rhema Chur
         return;
     const before = change.before.data();
     const after = change.after.data();
-    const churchId = event.params.churchId;
+    const churchId = event.params.churchId || 'rhema';
     const applicationId = event.params.applicationId;
     if (!before || !after)
         return;
     if (before.status === after.status)
         return; // Only notify on status transitions
+    const status = String(after.status || '').trim();
+    if (!status || status === 'withdrawn' || status === 'submitted')
+        return;
+    if (after.lastNotifiedStatus === status)
+        return;
     try {
-        const memberId = after.memberId;
+        const memberId = after.memberId || '';
         const roleTitle = after.opportunityTitle || 'Ministry Position';
-        const status = after.status;
         let title = '💼 Ministry Application Update';
-        let body = `Your application for "${roleTitle}" has been updated to ${status.replace('_', ' ').toUpperCase()}.`;
-        if (status === 'meeting_scheduled') {
+        let body = `Your application for "${roleTitle}" has been updated to ${status.replace(/_/g, ' ').toUpperCase()}.`;
+        if (status === 'under_review') {
+            title = '🔍 Application Under Review';
+            body = `Your application for "${roleTitle}" is now prayerfully under review by church ministry leaders.`;
+        }
+        else if (status === 'meeting_scheduled') {
             title = '📅 Ministry Interview / Meeting Scheduled!';
-            body = `A meeting has been scheduled for your application for "${roleTitle}". Please check Job Circle in the app for details.`;
+            const dateStr = after.meetingDate ? ` on ${after.meetingDate}` : '';
+            const timeStr = after.meetingTime ? ` at ${after.meetingTime}` : '';
+            const locStr = after.meetingLocation ? ` (${after.meetingLocation})` : '';
+            body = `A ministry interview has been scheduled for your application for "${roleTitle}"${dateStr}${timeStr}${locStr}. Tap to view full details.`;
         }
         else if (status === 'selected') {
             title = '🎉 Congratulations! You have been Selected!';
-            body = `You have been selected for "${roleTitle}" at Rhema Church. Welcome to the ministry team!`;
+            body = `Congratulations! You have been selected to serve in "${roleTitle}". Welcome to the ministry team!`;
         }
         else if (status === 'shortlisted') {
             title = '⭐ Application Shortlisted!';
             body = `Your application for "${roleTitle}" has been shortlisted by church ministry leaders.`;
         }
+        else if (status === 'rejected') {
+            title = '📋 Ministry Application Update';
+            const reasonStr = after.adminNotes ? ` Note: ${after.adminNotes}` : '';
+            body = `Thank you for your heart to serve. Your application for "${roleTitle}" has not been selected at this time.${reasonStr}`;
+        }
         const db = getFirestore();
         const messaging = getMessaging();
-        const tokens = await resolveVolunteerMemberTokens(db, churchId, memberId, after.memberPhone, after.memberEmail, after.memberName);
+        // Mark lastNotifiedStatus on the application document to guard against retries
+        try {
+            await change.after.ref.update({
+                lastNotifiedStatus: status,
+                lastNotifiedStatusAt: FieldValue.serverTimestamp(),
+            });
+        }
+        catch (_) { }
+        const tokens = await resolveVolunteerMemberTokens(db, churchId, memberId, after.memberPhone, after.memberEmail, after.memberName, after.memberFcmToken || after.fcmToken);
         if (tokens.length > 0) {
             await sendHighPriorityPush(messaging, tokens, title, body, {
                 type: 'job_application_member',
                 churchId,
                 applicationId,
+                opportunityId: after.opportunityId || '',
                 status,
-                screen: 'JobCircle',
+                screen: after.opportunityId ? 'OpportunityDetailScreen' : 'JobCircle',
+                click_action: 'FLUTTER_NOTIFICATION_CLICK',
             }, 'church_alerts');
         }
+        // Target strictly to applicant member so other church members do NOT see this personal update
         await writeVolunteerInAppNotifications(db, churchId, `job_status_${applicationId}_${status}`, {
             type: 'job_application_member',
+            recipientId: memberId,
+            recipientRole: 'member',
+            targetMemberId: memberId,
+            targetPhone: after.memberPhone || '',
             title,
             body,
+            content: body,
             applicationId,
             opportunityId: after.opportunityId || '',
             opportunityTitle: roleTitle,
@@ -4313,7 +4491,7 @@ export const onJobApplicationUpdated = onDocumentUpdated({ document: 'Rhema Chur
     }
 });
 /**
- * Trigger: When a new Ministry Opportunity is published (status == 'approved')
+ * Trigger: When a new Ministry Opportunity is created as published (`status == 'approved'`)
  * Automatically broadcasts a high-priority push notification to all church members!
  */
 export const onJobOpportunityCreated = onDocumentCreated({ document: 'Rhema Church/{churchId}/job_circle_opportunities/{opportunityId}', region: 'asia-south1' }, async (event) => {
@@ -4327,51 +4505,24 @@ export const onJobOpportunityCreated = onDocumentCreated({ document: 'Rhema Chur
         console.log(`[JobCircle] Opportunity ${opportunityId} created with status '${data.status}', skipping member broadcast.`);
         return;
     }
-    try {
-        const title = '💼 New Ministry Opportunity Open!';
-        const categoryText = data.categoryName ? ` in ${data.categoryName}` : '';
-        const body = `Rhema Church is looking for a "${data.title}"${categoryText}. Tap to view details and submit your calling!`;
-        const db = getFirestore();
-        const messaging = getMessaging();
-        // Gather FCM tokens from all church members
-        const tokenSet = new Set();
-        const membersSnap = await db.collection('Rhema Church').doc(churchId).collection('members').get();
-        membersSnap.forEach((mDoc) => {
-            const mData = mDoc.data();
-            if (Array.isArray(mData?.fcmTokens)) {
-                mData.fcmTokens.forEach((tk) => {
-                    if (typeof tk === 'string' && tk.trim().length > 10)
-                        tokenSet.add(tk.trim());
-                });
-            }
-            if (typeof mData?.fcmToken === 'string' && mData.fcmToken.trim().length > 10) {
-                tokenSet.add(mData.fcmToken.trim());
-            }
-        });
-        const memberTokens = Array.from(tokenSet);
-        if (memberTokens.length > 0) {
-            await sendHighPriorityPush(messaging, memberTokens, title, body, {
-                type: 'job_opportunity_new',
-                churchId,
-                opportunityId,
-                screen: 'JobCircle',
-            }, 'church_alerts');
-        }
-        // Persist in church notifications for member in-app visibility
-        await db.collection('Rhema Church').doc(churchId).collection('notifications').add({
-            type: 'job_opportunity_new',
-            title,
-            body,
-            opportunityId,
-            opportunityTitle: data.title || '',
-            categoryName: data.categoryName || '',
-            createdAt: FieldValue.serverTimestamp(),
-            read: false,
-        });
-        console.log(`✅ [JobCircle] Broadcasted new opportunity "${data.title}" to ${memberTokens.length} member device(s).`);
-    }
-    catch (err) {
-        console.error('[JobCircle] Error broadcasting new opportunity push:', err);
+    await handleJobOpportunityPublishedPush(data, churchId, opportunityId, snap.ref);
+});
+/**
+ * Trigger: When an existing Draft / Pending Ministry Opportunity is published (`status` transitions to 'approved')
+ * Automatically broadcasts a high-priority push notification to all church members!
+ */
+export const onJobOpportunityUpdated = onDocumentUpdated({ document: 'Rhema Church/{churchId}/job_circle_opportunities/{opportunityId}', region: 'asia-south1' }, async (event) => {
+    const change = event.data;
+    if (!change)
+        return;
+    const before = change.before.data();
+    const after = change.after.data();
+    const churchId = event.params.churchId;
+    const opportunityId = event.params.opportunityId;
+    if (!after)
+        return;
+    if (before?.status !== 'approved' && after.status === 'approved') {
+        await handleJobOpportunityPublishedPush(after, churchId, opportunityId, change.after.ref);
     }
 });
 //# sourceMappingURL=notifications.js.map
